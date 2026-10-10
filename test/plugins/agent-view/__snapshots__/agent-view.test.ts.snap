@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`agent view > renders the transcript with pi's message and tool components 1`] = `
+"Transcript
+
+ Task from main (agent id explorer-cb2e):
+ List the files in /repo/agents.
+
+
+
+ ls /repo/agents
+
+ explorer.md
+ implementer.md
+ reviewer.md
+
+
+ Reading the explorer definition.
+
+
+ read /repo/agents/explorer.md
+
+
+ Three files: explorer.md, implementer.md, reviewer.md."
+`;
+
+exports[`system prompt block > renders the recorded prompt, tools, skills, guidelines and provider payload 1`] = `
+"› ▾ System prompt · preamble (1 lines)
+    You are an expert coding assistant operating inside pi.
+  ▾ System prompt · tools (4 lines)
+    <tools>
+    - read: Read file contents
+    - ls: List directory contents
+    </tools>
+  ▾ System prompt · addendum (4 lines)
+    <addendum>
+    # Working as a background agent
+    Do the task.
+    </addendum>
+  ▾ System prompt · cwd (1 lines)
+    <cwd>/repo</cwd>
+  ▾ Tools (2) (21 lines)
+    read: Read file contents
+      {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    ls: List directory contents
+      {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+  ▾ Skills (1) (1 lines)
+    search: Search the web
+  ▾ Tool guidelines (1) (1 lines)
+    - Use read to examine files instead of cat or sed.
+  ▾ Provider request (first, as sent) (12 lines)
+    {
+      "model": "gpt-6-luna",
+      "instructions": "You are an expert coding assistant operating inside pi.",
+      "tools": [
+        {
+          "name": "read"
+        },
+        {
+          "name": "ls"
+        }
+      ]
+    }"
+`;

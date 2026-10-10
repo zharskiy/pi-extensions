@@ -1,0 +1,5 @@
+node_modules/
+.vitest/
+*.log
+.DS_Store
+scratch/
