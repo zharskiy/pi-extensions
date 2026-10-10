@@ -1,0 +1,168 @@
+import { describe, expect, it, vi } from "vitest";
+import { emptyUsage } from "../../../src/adapter/contract.ts";
+import type { SpendLedger } from "../../../src/manager/types.ts";
+import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
+import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
+import {
+  type AgentStatusDetails,
+  type AgentStatusParams,
+  agentStatusPlugin,
+} from "../../../src/plugins/agent-status/index.ts";
+import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import { flush, usageOf } from "../../helpers/fakes.ts";
+import { createHarness } from "../../helpers/harness.ts";
+
+const setup = () => {
+  const harness = createHarness([
+    agentRegistryPlugin,
+    agentDefinitionsPlugin,
+    runAgentPlugin,
+    agentStatusPlugin,
+  ]);
+  const status = harness.host.tool<AgentStatusParams, AgentStatusDetails>("agent_status");
+  const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
+
+  return { ...harness, status, runAgent };
+};
+
+describe("agent_status", () => {
+  it("returns a snapshot for one or several agents in one call", async () => {
+    const harness = setup();
+
+    await harness.runAgent.execute(
+      {
+        agents: [
+          { agent: "explorer", task: "one" },
+          { agent: "reviewer", task: "two" },
+        ],
+      },
+      { update: () => {} },
+    );
+    await flush();
+
+    const [first, second] = harness.services.require("registry").list();
+    const child = harness.runtime.child(first.id);
+
+    child.emit({ type: "tool_start", toolName: "grep" });
+    child.emit({
+      type: "assistant_message",
+      text: "Looking at src/auth.ts\nfound the handler",
+      stopReason: "toolUse",
+    });
+    child.usage = usageOf(0.01, 1_000);
+    child.turn({ tokens: 30_000, window: 200_000, percent: 15 });
+
+    const result = await harness.status.execute(
+      { ids: [first.id, second.id, "ghost-0000"] },
+      { update: () => {} },
+    );
+    const snapshot = result.details?.agents[0];
+
+    expect(snapshot).toMatchObject({
+      id: first.id,
+      agent: "explorer",
+      model: "openai/gpt-6-luna:low",
+      state: "running",
+      tokens: 2_000,
+      toolCalls: 1,
+      contextPercent: 15,
+      lastLine: "found the handler",
+    });
+    expect(Object.keys(snapshot ?? {}).sort()).toEqual(
+      [
+        "agent",
+        "contextPercent",
+        "description",
+        "elapsedMs",
+        "error",
+        "graceSecondsLeft",
+        "handoffPath",
+        "id",
+        "lastLine",
+        "model",
+        "resultPath",
+        "state",
+        "tokens",
+        "toolCalls",
+      ].sort(),
+    );
+    expect(result.details?.agents).toHaveLength(2);
+    expect(result.details?.unknown).toEqual(["ghost-0000"]);
+    expect(result.text).toContain(`${first.id} (explorer, openai/gpt-6-luna:low) running`);
+    expect(result.text).toContain("ctx 15%");
+    expect(result.text).toContain("ghost-0000: unknown agent");
+
+    harness.host.settle();
+    child.finish("final answer");
+
+    const after = await harness.status.execute({ ids: [first.id] }, { update: () => {} });
+
+    expect(after.text).toContain(`result: ${harness.services.require("registry").get(first.id)?.resultPath}`);
+  });
+
+  it("shows the grace state with the seconds left after a stop", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+
+    const harness = setup();
+
+    await harness.runAgent.execute({ agents: [{ agent: "explorer", task: "x" }] }, { update: () => {} });
+    await flush();
+
+    const [record] = harness.services.require("registry").list();
+
+    await harness.services.require("runner").stop(record.id);
+    vi.advanceTimersByTime(15_000);
+
+    const result = await harness.status.execute({ ids: [record.id] }, { update: () => {} });
+
+    expect(result.details?.agents[0]).toMatchObject({ state: "grace", graceSecondsLeft: 45 });
+    expect(result.text).toContain(
+      `${record.id} (explorer, openai/gpt-6-luna:low) grace (closes in 45s unless messaged)`,
+    );
+
+    await harness.host.shutdown("quit");
+    vi.useRealTimers();
+  });
+
+  it("lists every agent when no ids are given", async () => {
+    const harness = setup();
+    const empty = await harness.status.execute({}, { update: () => {} });
+
+    expect(empty.text).toBe("No agents in this session.");
+
+    await harness.runAgent.execute({ agents: [{ agent: "explorer", task: "x" }] }, { update: () => {} });
+
+    const all = await harness.status.execute({}, { update: () => {} });
+
+    expect(all.details?.agents).toHaveLength(1);
+  });
+
+  it("carries not-yet-reported usage on its result exactly once", async () => {
+    const harness = setup();
+    let pending = usageOf(0.05);
+
+    const ledger: SpendLedger = {
+      record: () => {},
+      persist: () => {},
+      agentsTotal: emptyUsage,
+      deliveredTotal: emptyUsage,
+      restore: () => {},
+      takeUndelivered: () => {
+        const taken = pending.cost.total > 0 ? pending : undefined;
+
+        pending = emptyUsage();
+
+        return taken;
+      },
+    };
+
+    harness.services.provide("ledger", ledger);
+
+    const first = await harness.status.execute({}, { update: () => {} });
+    const second = await harness.status.execute({}, { update: () => {} });
+
+    expect(first.usage?.cost.total).toBe(0.05);
+    expect(second.usage).toBeUndefined();
+  });
+});
