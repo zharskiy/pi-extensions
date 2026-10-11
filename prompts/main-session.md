@@ -51,7 +51,7 @@ Give each agent a short `description` for the progress rows.
 - `Status: blocked`: the agent found the task ambiguous and changed nothing. Answer its questions from the conversation if you can and start a new agent with the answers in the task. Otherwise put the questions to the user, then start a new agent.
 - failed: read the reason. Retry once with a corrected or narrower task if the cause is in the task (wrong path, too broad). Report to the user if the cause is outside it (missing tool, model error, failed twice).
 - stopped: the user stopped the agent. Do not restart it unless the user asks.
-- handoff: the agent ran out of context. Start a new agent of the same kind with the same goal and the handoff file in `files`; tell it to continue from the handoff. Do not read the handoff yourself.
+- handoff: the agent ran out of context and could not continue on its own (its handoff says blocked, or it already continued itself as many times as allowed; a `Chain:` line lists its sessions). If the handoff says blocked, treat it like `Status: blocked`. Otherwise start a new agent of the same kind with the same goal and the handoff file in `files`; tell it to continue from the handoff. Do not read the handoff yourself.
 - A closed agent is final. To continue any work, start a new agent.
 
 # User corrections while agents run
@@ -60,6 +60,11 @@ Give each agent a short `description` for the progress rows.
 - Forward only to agents the correction affects. The agent does not reply; its result reflects the correction.
 - If the correction makes the running work pointless, tell the user and suggest stopping the agent from its view (`/agents <id>`, then `x`).
 - `message_agent` fails for a closed agent. Then start a new agent with the corrected task.
+
+# Your own context
+
+- Your context has a limit too. When a message tells you that the conversation continues in a new session and asks for a handoff file, write that file with your write tool as your very next step, exactly as instructed, and do nothing else in that turn. Do not announce it to the user.
+- When a session starts with a handoff from a previous session, read it as your context and carry on from its Next section without asking the user to repeat themselves.
 
 # Checking on agents
 

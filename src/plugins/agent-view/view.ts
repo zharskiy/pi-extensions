@@ -1,20 +1,29 @@
 import type {
+  InputPane,
   KeyPress,
   OverlayApi,
   SessionRecord,
   ThemeLike,
   ViewComponent,
 } from "../../adapter/contract.ts";
-import { finishSummary, progressText, stateIcon, truncate } from "../../components/agent-row.ts";
+import {
+  attentionText,
+  chainLabel,
+  finishSummary,
+  progressText,
+  stateIcon,
+  truncate,
+} from "../../components/agent-row.ts";
 import { type CollapsibleSection, renderSections, toggleSection } from "../../components/collapsible.ts";
 import { promptSections } from "../../components/system-prompt-block.ts";
-import { type AgentRecord, isClosed } from "../../manager/types.ts";
+import { type AgentRecord, isClosed, type RouteResult } from "../../manager/types.ts";
 
-export type ViewData = { record: AgentRecord; session?: SessionRecord; error?: string };
+export type ViewData = { record: AgentRecord; openedId?: string; session?: SessionRecord; error?: string };
 
 export type ViewDeps = {
   load(): ViewData;
   stop(): Promise<unknown> | undefined;
+  send(text: string): Promise<RouteResult>;
   subscribe(onChange: () => void): () => void;
   now?: () => number;
 };
@@ -31,6 +40,8 @@ export const wrapPlain = (text: string, width: number) => {
   );
 };
 
+export const INPUT_PLACEHOLDER = "message the agent…";
+
 const stopHint = (record: AgentRecord) => {
   if (record.state === "grace") {
     return "x again closes now";
@@ -39,18 +50,56 @@ const stopHint = (record: AgentRecord) => {
   return isClosed(record.state) ? undefined : "x stop";
 };
 
-export const hintText = (api: OverlayApi, record: AgentRecord) => {
-  const scrollKeys = api.wheelScrolling ? "PgUp/PgDn Home/End wheel" : "PgUp/PgDn Home/End";
+const scrollHint = (api: OverlayApi) =>
+  api.wheelScrolling ? "PgUp/PgDn Home/End wheel scroll" : "PgUp/PgDn Home/End scroll";
+
+export const inputHintText = (api: OverlayApi) =>
+  [
+    "Message box: Enter send",
+    "Esc clear, again leaves the box",
+    "Tab prompt sections",
+    `${api.toolsKey} tool detail`,
+    scrollHint(api),
+  ].join(" · ");
+
+export const hintText = (api: OverlayApi, record: AgentRecord, openedId?: string) => {
+  const closed = isClosed(record.state);
 
   return [
     "Esc close",
+    openedId ? `opened ${openedId}, following the chain` : undefined,
     stopHint(record),
     `${api.toolsKey} tool detail`,
-    `${scrollKeys} scroll`,
-    "Tab/Enter prompt sections",
+    scrollHint(api),
+    closed ? "Tab/Enter prompt sections" : "Tab/Enter prompt sections, Tab to the message box",
+    closed ? "agent closed, messages disabled" : undefined,
   ]
     .filter((part) => part !== undefined)
     .join(" · ");
+};
+
+export const titleText = (record: AgentRecord, theme: ThemeLike) => {
+  const links = [
+    record.predecessorId ? `continues ${record.predecessorId}` : undefined,
+    record.successorId ? `continued by ${record.successorId}` : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .map((part) => ` · ${part}`)
+    .join("");
+
+  const attention = attentionText(record);
+  const alert = attention ? theme.fg("warning", ` · ${attention}`) : "";
+  const name = theme.bold(`${record.id}${chainLabel(record)}`);
+
+  return `${stateIcon(record.state, 0)} ${name} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}${links}${alert}`;
+};
+
+type Status = { tone: "warning" | "dim"; text: string };
+
+const deliveryText: Record<"steer" | "followUp" | "held", string> = {
+  steer: "sent: steered into the current run",
+  followUp: "sent: the agent answers in a new turn",
+  held: "sent: held until the agent starts",
 };
 
 const mergeCollapsed = (previous: CollapsibleSection[], next: CollapsibleSection[]) => {
@@ -80,14 +129,39 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   let sections = data.session ? promptSections(data.session.prompt) : [];
   let toolsExpanded = api.toolsExpanded;
   let focused = 0;
+  let inputFocused = false;
+  let input: InputPane | undefined;
+  let status: Status | undefined;
   let headerRows: number[] = [];
   let promptCache: PromptBlock | undefined;
 
   transcript.sync(data.session?.items ?? []);
 
+  const messageBox = () => {
+    if (isClosed(data.record.state)) {
+      return undefined;
+    }
+
+    if (!input) {
+      input = api.createInput(INPUT_PLACEHOLDER);
+      input.setFocused(inputFocused);
+    }
+
+    return input;
+  };
+
+  const setInputFocus = (value: boolean) => {
+    inputFocused = value;
+    input?.setFocused(value);
+  };
+
   const reload = () => {
     data = deps.load();
     sections = mergeCollapsed(sections, data.session ? promptSections(data.session.prompt) : []);
+
+    if (isClosed(data.record.state)) {
+      setInputFocus(false);
+    }
 
     transcript.sync(data.session?.items ?? []);
     api.requestRender();
@@ -99,10 +173,9 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const record = data.record;
     const theme = api.theme;
     const detail = isClosed(record.state) ? finishSummary(record, now()) : progressText(record, now());
-    const title = `${stateIcon(record.state, 0)} ${theme.bold(record.id)} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}`;
 
     return [
-      title,
+      titleText(record, theme),
       theme.fg("muted", truncate(`Task: ${record.description}`, width)),
       theme.fg("dim", truncate(detail, width)),
       theme.fg("dim", "─".repeat(Math.max(0, width))),
@@ -112,10 +185,11 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const promptBlock = (width: number) => {
     const theme = api.theme;
     const cached = promptCache;
+    const sectionFocus = inputFocused ? -1 : focused;
 
     const reusable =
       cached?.sections === sections &&
-      cached.focused === focused &&
+      cached.focused === sectionFocus &&
       cached.width === width &&
       cached.theme === theme &&
       cached.error === data.error;
@@ -124,7 +198,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       return cached;
     }
 
-    const rendered = renderSections(sections, focused, theme, (text) => wrapPlain(text, width - 4));
+    const rendered = renderSections(sections, sectionFocus, theme, (text) => wrapPlain(text, width - 4));
 
     rendered.lines.unshift(theme.bold("Effective prompt"));
 
@@ -136,7 +210,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
     promptCache = {
       sections,
-      focused,
+      focused: sectionFocus,
       width,
       theme,
       error: data.error,
@@ -168,19 +242,40 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     return `${position.top + 1}-${last}/${position.total}${follow}`;
   };
 
+  const messageLines = (width: number) => {
+    const theme = api.theme;
+    const box = messageBox();
+    const lines: string[] = [];
+
+    if (box) {
+      const marker = inputFocused ? theme.fg("accent", "›") : " ";
+      const line = box.render(width - 2)[0] ?? "";
+
+      lines.push(`${marker} ${inputFocused ? line : theme.fg("dim", line)}`);
+    }
+
+    if (status) {
+      lines.push(theme.fg(status.tone, truncate(status.text, width)));
+    }
+
+    return lines;
+  };
+
+  const hintLine = () => {
+    const hint = inputFocused ? inputHintText(api) : hintText(api, data.record, data.openedId);
+
+    return `${api.theme.fg("dim", hint)}  ${api.theme.fg("dim", positionText())}`;
+  };
+
   const render = (width: number) => {
     const header = headerLines(width);
-    const height = Math.max(3, api.rows() - header.length - 1);
+    const message = messageLines(width);
+    const height = Math.max(3, api.rows() - header.length - message.length - 1);
 
     const window = scroll.window(bodyLines(width), height);
     const padding = Array.from({ length: height - window.length }, () => "");
-    const hint = hintText(api, data.record);
 
-    return header.concat(
-      window,
-      padding,
-      `${api.theme.fg("dim", hint)}  ${api.theme.fg("dim", positionText())}`,
-    );
+    return header.concat(window, padding, message, hintLine());
   };
 
   const focusSection = (index: number) => {
@@ -196,6 +291,23 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     if (row < position.top || row >= position.top + position.height) {
       scroll.scrollTo(row);
     }
+  };
+
+  const cycleFocus = () => {
+    if (inputFocused) {
+      setInputFocus(false);
+      focusSection(0);
+      return;
+    }
+
+    const lastSection = focused >= sections.length - 1;
+
+    if (lastSection && messageBox()) {
+      setInputFocus(true);
+      return;
+    }
+
+    focusSection(focused + 1);
   };
 
   const close = () => {
@@ -214,27 +326,103 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     transcript.setToolsExpanded(toolsExpanded);
   };
 
+  const showRouteResult = (result: RouteResult, text: string, box: InputPane) => {
+    if (result.ok) {
+      status = { tone: "dim", text: deliveryText[result.delivery] };
+    }
+
+    if (!result.ok) {
+      status = { tone: "warning", text: result.error };
+    }
+
+    if (!result.ok && box.value() === "") {
+      box.setValue(text);
+    }
+
+    reload();
+  };
+
+  const submit = (box: InputPane) => {
+    const text = box.value().trim();
+
+    if (text.length === 0) {
+      return;
+    }
+
+    box.setValue("");
+
+    void deps
+      .send(text)
+      .catch((error: unknown): RouteResult => ({ ok: false, error: (error as Error).message }))
+      .then((result) => showRouteResult(result, text, box));
+  };
+
+  const escapeInput = (box: InputPane) => {
+    if (box.value() !== "") {
+      box.setValue("");
+      return;
+    }
+
+    setInputFocus(false);
+  };
+
   const page = () => Math.max(1, scroll.state().height - 1);
 
-  const actions: Partial<Record<KeyPress["name"], () => void>> = {
-    escape: close,
+  const scrollActions: Partial<Record<KeyPress["name"], () => void>> = {
     toggleTools,
-    enter: () => {
-      sections = toggleSection(sections, focused);
-    },
-    space: () => {
-      sections = toggleSection(sections, focused);
-    },
-    tab: () => focusSection(focused + 1),
-    up: () => scroll.scrollBy(-1),
-    down: () => scroll.scrollBy(1),
     pageUp: () => scroll.scrollBy(-page()),
     pageDown: () => scroll.scrollBy(page()),
     home: () => scroll.scrollToStart(),
     end: () => scroll.scrollToEnd(),
   };
 
+  const actions: Partial<Record<KeyPress["name"], () => void>> = {
+    ...scrollActions,
+    escape: close,
+    enter: () => {
+      sections = toggleSection(sections, focused);
+    },
+    space: () => {
+      sections = toggleSection(sections, focused);
+    },
+    tab: cycleFocus,
+    up: () => scroll.scrollBy(-1),
+    down: () => scroll.scrollBy(1),
+  };
+
+  const handleInputKey = (key: KeyPress, box: InputPane) => {
+    const scrollAction = scrollActions[key.name];
+
+    if (scrollAction) {
+      scrollAction();
+      return;
+    }
+
+    if (key.name === "escape") {
+      escapeInput(box);
+      return;
+    }
+
+    if (key.name === "tab") {
+      cycleFocus();
+      return;
+    }
+
+    if (box.feed(key) === "submitted") {
+      submit(box);
+    }
+  };
+
   const handleKey = (key: KeyPress) => {
+    const box = messageBox();
+
+    status = undefined;
+
+    if (inputFocused && box) {
+      handleInputKey(key, box);
+      return;
+    }
+
     if (key.char === "x") {
       stop();
       return;

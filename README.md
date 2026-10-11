@@ -4,7 +4,7 @@ Repository: https://github.com/zharskiy/pi-extensions
 
 Background subagents for the [pi coding agent](https://pi.dev). The main session becomes a coordinator: it delegates tasks to agents that run in the background with their own context, is woken once per batch with all results, and can check on, message, inspect and stop any agent. Spending of all agents is added up in the footer.
 
-Release 0.1. Agents can start their own agents when their file allows it, up to three levels by default (main session, agent, sub-agent).
+Release 0.2. Agents can start their own agents when their file allows it, up to three levels by default (main session, agent, sub-agent). An agent that runs out of context continues itself from a handoff file; you can message any agent from its view, browse all agents in a list, answer permission prompts raised inside agents, and the main session hands itself over to a new session before its own context fills up.
 
 ## What you need
 
@@ -33,11 +33,17 @@ Try it for one run without installing: `pi -e ./pi-subagents-mz/src/index.ts`.
 
 - Ask for work that splits well ("find every place we parse dates and review them"). The main session calls `run_agent`, ends its turn, and is woken once when the whole batch is done.
 - While agents run you can keep typing. Corrections for a running agent are forwarded with `message_agent`.
-- The widget below the editor lists running agents. `/agents <id>` (or `/agents` to pick) opens an agent's view: the effective system prompt, tools, skills and the first provider request as collapsible sections, then the transcript. Keys: arrows and PgUp/PgDn scroll, Tab moves between sections, Enter toggles, `x` stops the agent, Esc closes.
+- The widget below the editor lists running agents. `/agents <id>` opens an agent's view: the effective system prompt, tools, skills and the first provider request as collapsible sections, then the transcript, then a message box for open agents.
+  - Prompt sections focused: `Esc` closes, `x` stops the agent (it enters a grace period in which you can still ask it questions; `x` again closes it now), `Tab` moves through the sections and then into the message box, `Enter`/`Space` expands or collapses a section, arrows and PgUp/PgDn/Home/End or the mouse wheel scroll, Ctrl+O (pi's tools key) toggles tool detail.
+  - Message box focused: typing edits the text (including `x`), `Enter` sends it to the agent as you (a running agent is steered, a stopped one answers in a new turn, a queued one gets it when it starts), `Esc` clears the text or, on an empty box, leaves it, `Tab` returns to the sections. A line under the box says how the message was delivered. Closed agents have no message box.
+- `/agents` without an id opens the list of all agents grouped by state: working, needs attention, done, failed, closed. `↑`/`↓` select, `Enter` opens the agent's view, `x` stops the selected agent (`x` again closes it now), `X` then `y` stops every open agent, `/` filters by name, id or state (`Enter` keeps the filter, `Esc` clears it), `Esc` closes.
+- An agent that reaches its context limit writes a handoff file and, when its work is only partial, continues itself in a new session from that file, up to `maxChainLength` sessions (3 by default). The caller is woken once, at the end of the chain, with one result; rows show `#2`, `#3` for the later sessions and any id of the chain works with `message_agent`, `agent_status` and `/agents`. Only a blocked handoff, or one at the cap, reaches the main session as `handoff`.
+- When an agent asks for a confirmation, a choice or a text (for example a permission dialog of another extension loaded in it), the dialog appears in the main session with the agent's id and name in the title; the rows say `needs input`. `Esc` denies that one call and the agent carries on.
+- The main session can run indefinitely without interrupting you. Once its context passes `mainSoftRatio` of the model's window (60% by default) a footer segment turns orange (`ctx 62% · handoff at 75%`); nothing is said in the conversation. At `mainHardRatio` (75%) the session writes a handoff file (current goal, delegated agents and their result files, decisions, your last request, next steps) as its very next step. pi then opens a new session seeded with that handoff, linked to the old one in `/resume`, and you keep typing there. If agents are still running, the switch waits until they finish. If the handoff cannot be written after one retry, the segment turns red and a warning names the file; `/subagents-handoff` switches by hand once the file is valid.
 - To run an agent on another model or thinking level, say so ("review this with haiku", "use gpt-6.1-sol on high"). The main session passes your words in the `model` parameter of `run_agent` as `name[:thinking]`; it never picks a model on its own. The harness resolves the name among providers you are logged in to, tolerating misspellings (`hiaku`), and takes the newest version when you give none (`haiku` → `anthropic/claude-haiku-5-5`). If the name fits several model families, or none, nothing starts and the main session asks you with the candidates and their prices. The model that actually runs, as `provider/id:thinking`, is shown in the start message, the progress row, `agent_status` and the agent's manifest.
 - The footer shows `main $x · agents $y · total $z`, counting agents at every depth.
 
-Tools added to the main session: `run_agent`, `agent_status`, `message_agent`. Command: `/agents`.
+Tools added to the main session: `run_agent`, `agent_status`, `message_agent`. Commands: `/agents [id]`, `/subagents-handoff`.
 
 ## Agents
 
@@ -65,10 +71,12 @@ An agent whose `subagents` list is not empty, and which runs below the depth cap
 
 ## Prompts
 
-Two prompt files ship in the package's `prompts/` directory:
+Four prompt files ship in the package's `prompts/` directory:
 
 - `main-session.md`: replaces pi's default system prompt in the main session. It holds all orchestration rules: when to delegate, how to split and write tasks, how to handle results, and when to forward corrections. pi's tool list, rules and docs sections are kept. The replacement happens at runtime, only in sessions where this extension is loaded; nothing is written to `~/.pi/agent`.
 - `base-system-prompt.md`: added to every agent's system prompt, followed by the agent file's body.
+- `handoff.md`: the instruction an agent gets at its context limit, with the handoff file schema.
+- `main-handoff.md`: the same for the main session at its hard limit.
 
 To customise them, edit the files in your local checkout of this package (the one you passed to `pi install`) and run `/reload` in pi:
 
@@ -91,7 +99,7 @@ Optional JSON in `~/.pi/agent/pi-subagents.json` or `.pi/pi-subagents.json` (tru
 }
 ```
 
-Other keys: `maxDepth` (3, from 2 to 4; the main session counts as level 1, so 2 means agents cannot start agents), `softBudgetRatio` (0.8), `hardBudgetRatio` (1.15), `reserveTokens` (16384), `lingerMs`, `failedLingerMs`, `renderThrottleMs`.
+Other keys: `maxDepth` (3, from 2 to 4; the main session counts as level 1, so 2 means agents cannot start agents), `maxChainLength` (3; sessions one agent may use before a partial handoff reaches the caller), `softBudgetRatio` (0.8), `hardBudgetRatio` (1.15), `reserveTokens` (16384), `stopGraceSeconds` (60), `mainSoftRatio` (0.6) and `mainHardRatio` (0.75) of the main model's context window, `lingerMs`, `failedLingerMs`, `renderThrottleMs`.
 
 ## Update
 

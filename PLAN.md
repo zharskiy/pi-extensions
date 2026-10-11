@@ -2,7 +2,7 @@
 
 Date: 10 October 2026. Input: `HANDOFF.md` and the four research reports in `research/`.
 
-Status: release 0.1 is implemented on branch `feat/mvp`, uncommitted, pending the product owner's review. Every departure from this plan is listed in `docs/deviations.md`.
+Status: release 0.1 is merged. Release 0.2 (F9, F11, F12, F13, F14) is implemented on branch `feat/0.2`, uncommitted, pending the product owner's review. Every departure from this plan is listed in `docs/deviations.md`.
 
 ## 1. Research conclusions that fix the design
 

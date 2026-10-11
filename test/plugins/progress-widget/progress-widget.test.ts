@@ -153,7 +153,7 @@ describe("progress widget plugin", () => {
 
     expect(render).toBeDefined();
     expect(render?.(120, plainTheme)).toEqual([
-      "Agents · 1 running · /agents <id> to inspect",
+      "Agents · 1 running · /agents to browse",
       expect.stringMatching(new RegExp(`^○ ${record.id} · look around · queued`)),
     ]);
 

@@ -13,6 +13,9 @@ export type Settings = {
   failedLingerMs: number;
   renderThrottleMs: number;
   stopGraceSeconds: number;
+  maxChainLength: number;
+  mainSoftRatio: number;
+  mainHardRatio: number;
   disabledPlugins: string[];
 };
 
@@ -30,6 +33,9 @@ export const defaultSettings = (): Settings => ({
   failedLingerMs: 60_000,
   renderThrottleMs: 250,
   stopGraceSeconds: 60,
+  maxChainLength: 3,
+  mainSoftRatio: 0.6,
+  mainHardRatio: 0.75,
   disabledPlugins: [],
 });
 
@@ -47,6 +53,9 @@ const numberRules: NumberRule[] = [
   { key: "failedLingerMs", min: 0, max: 3_600_000 },
   { key: "renderThrottleMs", min: 0, max: 10_000 },
   { key: "stopGraceSeconds", min: 0, max: 3_600 },
+  { key: "maxChainLength", min: 1, max: 20 },
+  { key: "mainSoftRatio", min: 0.1, max: 1 },
+  { key: "mainHardRatio", min: 0.1, max: 1 },
 ];
 
 export type SettingsParse = { patch: Partial<Settings>; errors: string[] };

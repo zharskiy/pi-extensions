@@ -58,12 +58,6 @@ export type AnyToolSpec = ToolSpec<never, unknown>;
 
 export type CompletionItem = { value: string; label: string };
 
-export type CommandSpec = {
-  description: string;
-  complete?(prefix: string): CompletionItem[] | null;
-  run(args: string): Promise<void> | void;
-};
-
 export type KeyName =
   | "up"
   | "down"
@@ -78,7 +72,17 @@ export type KeyName =
   | "toggleTools"
   | "other";
 
-export type KeyPress = { name: KeyName; char?: string };
+export type KeyPress = { name: KeyName; char?: string; raw?: string };
+
+export type InputOutcome = "submitted" | "cancelled" | "changed";
+
+export type InputPane = {
+  feed(key: KeyPress): InputOutcome;
+  value(): string;
+  setValue(value: string): void;
+  setFocused(focused: boolean): void;
+  render(width: number): string[];
+};
 
 export type ViewComponent = {
   render(width: number): string[];
@@ -126,6 +130,7 @@ export type OverlayApi = {
   wheelScrolling: boolean;
   createTranscript(): TranscriptPane;
   createScroll(): ScrollPane;
+  createInput(placeholder: string): InputPane;
 };
 
 export type OverlayFactory = (api: OverlayApi) => ViewComponent;
@@ -134,11 +139,16 @@ export type WidgetHandle = { refresh(): void };
 
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
+  style(token: ThemeToken, text: string): string;
   setStatus(key: string, text: string | undefined): void;
+  confirm(title: string, message: string): Promise<boolean>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
   setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;
   select(title: string, options: string[]): Promise<string | undefined>;
 };
+
+export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
 
 export type SessionInfo = {
   id: string;
@@ -153,6 +163,18 @@ export type SessionInfo = {
 
 export type ShutdownReason = "quit" | "reload" | "new" | "resume" | "fork";
 
+export type NewSessionOptions = { parentSession?: string; seed?: { customType: string; text: string } };
+
+export type SessionControl = {
+  newSession(options: NewSessionOptions): Promise<boolean>;
+};
+
+export type CommandSpec = {
+  description: string;
+  complete?(prefix: string): CompletionItem[] | null;
+  run(args: string, control: SessionControl): Promise<void> | void;
+};
+
 export type Host = {
   readonly ui: HostUi;
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
@@ -162,15 +184,16 @@ export type Host = {
   onSessionStart(handler: (info: SessionInfo) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: () => void): void;
+  onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   isIdle(): boolean;
+  contextUsage(): ContextSnapshot | undefined;
+  dispatchCommand(name: string, args?: string): void;
   sendUserMessage(text: string): void;
   appendEntry(customType: string, data: unknown): void;
   readEntries<T>(customType: string): T[];
   sessionUsage(): UsageTotals;
   session(): SessionInfo | undefined;
 };
-
-export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";
 
@@ -203,6 +226,13 @@ export type ChildSession = {
   wake(text: string): Promise<void>;
 };
 
+export type ChildPrompts = {
+  confirm(title: string, message: string): Promise<boolean>;
+  select(title: string, options: string[]): Promise<string | undefined>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
+  notify(message: string, level: "info" | "warning" | "error"): void;
+};
+
 export type SpawnSpec = {
   id: string;
   cwd: string;
@@ -215,6 +245,7 @@ export type SpawnSpec = {
   promptAppend: string[];
   reserveTokens: number;
   customTools?: AnyToolSpec[];
+  prompts?: ChildPrompts;
 };
 
 export type PromptSection = { name: string; text: string };

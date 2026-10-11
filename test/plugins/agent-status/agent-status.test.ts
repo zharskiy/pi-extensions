@@ -72,6 +72,7 @@ describe("agent_status", () => {
     expect(Object.keys(snapshot ?? {}).sort()).toEqual(
       [
         "agent",
+        "chainIndex",
         "contextPercent",
         "description",
         "elapsedMs",
@@ -81,8 +82,11 @@ describe("agent_status", () => {
         "id",
         "lastLine",
         "model",
+        "predecessorId",
+        "requestedId",
         "resultPath",
         "state",
+        "successorId",
         "tokens",
         "toolCalls",
       ].sort(),

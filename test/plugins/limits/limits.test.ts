@@ -128,7 +128,7 @@ describe("limits plugin", () => {
   });
 
   it("closes the agent as handoff and wakes the caller with the file path when the handoff is valid", async () => {
-    const { child, turn, record, host, services } = await setup();
+    const { child, turn, record, host, services } = await setup({ maxChainLength: 1 });
 
     await turn(100_500);
 

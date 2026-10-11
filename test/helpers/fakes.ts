@@ -6,7 +6,11 @@ import {
   type ContextSnapshot,
   emptyUsage,
   type Host,
+  type InputOutcome,
+  type InputPane,
+  type KeyPress,
   type MessageDelivery,
+  type NewSessionOptions,
   type OverlayFactory,
   type RoutedMessage,
   type SessionInfo,
@@ -35,9 +39,19 @@ export type FakeHost = Host & {
   overlays: OverlayFactory[];
   idle: boolean;
   usage: UsageTotals;
+  context?: ContextSnapshot;
   info: SessionInfo;
+  confirmations: { title: string; message: string }[];
+  confirmAnswer: boolean | ((title: string, message: string) => boolean);
+  inputs: { title: string; placeholder?: string }[];
+  inputAnswer?: string;
+  dispatched: { name: string; args?: string }[];
+  newSessions: NewSessionOptions[];
+  newSessionAccepted: boolean;
   start(): void;
   settle(): void;
+  turnEnd(context: ContextSnapshot): void;
+  runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
 };
@@ -46,6 +60,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
+  const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   let started = false;
 
   const host: FakeHost = {
@@ -61,6 +76,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     overlays: [],
     idle: true,
     usage: emptyUsage(),
+    confirmations: [],
+    confirmAnswer: true,
+    inputs: [],
+    dispatched: [],
+    newSessions: [],
+    newSessionAccepted: true,
     info: {
       id: "main-session",
       file: undefined,
@@ -76,8 +97,21 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       notify: (message, level) => {
         host.notices.push({ message, level });
       },
+      style: (_token, text) => text,
       setStatus: (key, text) => {
         host.statuses.set(key, text);
+      },
+      confirm: async (title, message) => {
+        host.confirmations.push({ title, message });
+
+        return typeof host.confirmAnswer === "function"
+          ? host.confirmAnswer(title, message)
+          : host.confirmAnswer;
+      },
+      input: async (title, placeholder) => {
+        host.inputs.push({ title, placeholder });
+
+        return host.inputAnswer;
       },
       setWidget: (key, render) => {
         host.widgets.set(key, render);
@@ -113,7 +147,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     onIdle: (handler) => {
       idleHandlers.push(handler);
     },
+    onTurnEnd: (handler) => {
+      turnEndHandlers.push(handler);
+    },
     isIdle: () => host.idle,
+    contextUsage: () => host.context,
+    dispatchCommand: (name, args) => {
+      host.dispatched.push({ name, args });
+      void host.runCommand(name, args);
+    },
     sendUserMessage: (text) => {
       host.sent.push(text);
     },
@@ -138,6 +180,28 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         handler();
       });
     },
+    turnEnd: (context) => {
+      host.context = context;
+
+      turnEndHandlers.forEach((handler) => {
+        handler(context);
+      });
+    },
+    runCommand: async (name, args = "") => {
+      const spec = host.commands.get(name);
+
+      if (!spec) {
+        throw new Error(`command ${name} not registered`);
+      }
+
+      await spec.run(args, {
+        newSession: async (options) => {
+          host.newSessions.push(options);
+
+          return host.newSessionAccepted;
+        },
+      });
+    },
     shutdown: async (reason) => {
       await Promise.all(shutdownHandlers.map((handler) => handler(reason)));
     },
@@ -153,6 +217,43 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   };
 
   return host;
+};
+
+export const createFakeInputPane = (): InputPane & { isFocused(): boolean } => {
+  let value = "";
+  let focused = true;
+
+  const feed = (key: KeyPress): InputOutcome => {
+    if (key.name === "enter") {
+      return "submitted";
+    }
+
+    if (key.name === "escape") {
+      return "cancelled";
+    }
+
+    if (key.raw === "\x7f") {
+      value = value.slice(0, -1);
+      return "changed";
+    }
+
+    value += key.char ?? "";
+
+    return "changed";
+  };
+
+  return {
+    feed,
+    value: () => value,
+    setValue: (next) => {
+      value = next;
+    },
+    setFocused: (next) => {
+      focused = next;
+    },
+    isFocused: () => focused,
+    render: () => [value.length > 0 ? value : "(type a message)"],
+  };
 };
 
 export type FakeChild = ChildSession & {

@@ -18,7 +18,7 @@ const stub = (id: string, requires: string[] = [], log: string[] = []): Plugin =
 });
 
 describe("extension manager", () => {
-  it("enables the release 0.1 plugin set and reports everything it adds to pi", () => {
+  it("enables the release 0.2 plugin set and reports everything it adds to pi", () => {
     const harness = createHarness(plugins);
     const report = harness.manager.report();
 
@@ -30,8 +30,10 @@ describe("extension manager", () => {
       "run-agent",
       "agent-status",
       "limits",
+      "session-limits",
       "progress-widget",
       "agent-view",
+      "agent-list-view",
     ]);
     expect(report.skipped).toEqual([]);
     expect(report.contributions.filter((entry) => entry.kind !== "prompt-section")).toEqual([
@@ -39,6 +41,7 @@ describe("extension manager", () => {
       { plugin: "run-agent", kind: "tool", name: "run_agent" },
       { plugin: "run-agent", kind: "tool", name: "message_agent" },
       { plugin: "agent-status", kind: "tool", name: "agent_status" },
+      { plugin: "session-limits", kind: "command", name: "subagents-handoff" },
       { plugin: "agent-view", kind: "command", name: "agents" },
     ]);
     expect([...harness.host.tools.keys()]).toEqual(["run_agent", "message_agent", "agent_status"]);

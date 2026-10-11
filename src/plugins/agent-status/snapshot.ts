@@ -16,6 +16,10 @@ export type AgentSnapshot = {
   handoffPath?: string;
   error?: string;
   graceSecondsLeft?: number;
+  chainIndex: number;
+  predecessorId?: string;
+  successorId?: string;
+  requestedId?: string;
 };
 
 export const LAST_LINE_CHARS = 160;
@@ -49,7 +53,7 @@ export const stateLabel = (snapshot: AgentSnapshot) => {
   return `grace (closes in ${snapshot.graceSecondsLeft}s unless messaged)`;
 };
 
-export const snapshotOf = (record: AgentRecord, now: number): AgentSnapshot => ({
+export const snapshotOf = (record: AgentRecord, now: number, requestedId?: string): AgentSnapshot => ({
   id: record.id,
   agent: record.agent,
   model: record.model,
@@ -64,14 +68,28 @@ export const snapshotOf = (record: AgentRecord, now: number): AgentSnapshot => (
   handoffPath: record.state === "handoff" ? record.handoffPath : undefined,
   error: record.error,
   graceSecondsLeft: graceSecondsLeft(record, now),
+  chainIndex: record.chainIndex,
+  predecessorId: record.predecessorId,
+  successorId: record.successorId,
+  requestedId: requestedId === record.id ? undefined : requestedId,
 });
+
+const chainText = (snapshot: AgentSnapshot) => {
+  if (!snapshot.predecessorId) {
+    return undefined;
+  }
+
+  return `chain: link ${snapshot.chainIndex}, continues ${snapshot.predecessorId}`;
+};
 
 export const snapshotLine = (snapshot: AgentSnapshot) => {
   const percent =
     snapshot.contextPercent === null ? "ctx n/a" : `ctx ${Math.round(snapshot.contextPercent)}%`;
 
+  const name = snapshot.requestedId ? `${snapshot.requestedId} → ${snapshot.id}` : snapshot.id;
+
   const parts = [
-    `${snapshot.id} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
+    `${name} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
     formatElapsed(snapshot.elapsedMs),
     `${formatTokens(snapshot.tokens)} tokens`,
     `${snapshot.toolCalls} tool calls`,
@@ -79,6 +97,8 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
   ];
 
   const extras = [
+    chainText(snapshot),
+    snapshot.successorId ? `continued by: ${snapshot.successorId}` : undefined,
     snapshot.lastLine ? `last: ${snapshot.lastLine}` : undefined,
     snapshot.error ? `error: ${snapshot.error}` : undefined,
     snapshot.resultPath ? `result: ${snapshot.resultPath}` : undefined,

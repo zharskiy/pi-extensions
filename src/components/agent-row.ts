@@ -1,5 +1,5 @@
 import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
-import type { AgentRecord, AgentState } from "../manager/types.ts";
+import { type AgentRecord, type AgentState, isClosed } from "../manager/types.ts";
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -123,6 +123,30 @@ export const truncate = (text: string, width: number) => {
 
 export const singleLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
+export const chainLabel = (record: AgentRecord) => (record.chainIndex > 1 ? ` #${record.chainIndex}` : "");
+
+export const attentionText = (record: AgentRecord) => {
+  if (!record.attention || isClosed(record.state)) {
+    return undefined;
+  }
+
+  return `needs input: ${singleLine(record.attention.title)}`;
+};
+
+export const graceCountdown = (record: AgentRecord, now: number) => {
+  if (record.state !== "grace") {
+    return undefined;
+  }
+
+  if (record.graceEndsAt === undefined) {
+    return "stopping · answering";
+  }
+
+  const seconds = Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
+
+  return `stopping in ${seconds}s`;
+};
+
 export const agentRow = (
   record: AgentRecord,
   now: number,
@@ -131,13 +155,30 @@ export const agentRow = (
   width: number,
 ) => {
   const icon = theme.fg(STATE_COLORS[record.state], stateIcon(record.state, frame));
-  const closed = ["done", "failed", "stopped", "handoff"].includes(record.state);
-  const detail = closed ? finishSummary(record, now) : progressText(record, now);
+  const detail = isClosed(record.state) ? finishSummary(record, now) : progressText(record, now);
   const description = singleLine(record.description);
+  const name = `${record.id}${chainLabel(record)}`;
   const model = record.model ? ` (${record.model})` : "";
-  const head = `${record.id}${model} · `;
+  const attention = attentionText(record);
+  const alert = attention ? ` · ${attention}` : "";
+  const head = `${name}${model} · `;
   const tail = ` · ${detail}`;
-  const room = Math.max(8, width - 2 - head.length - tail.length);
+  const room = Math.max(8, width - 2 - head.length - tail.length - alert.length);
+  const row = `${icon} ${theme.bold(name)}${theme.fg("dim", model)} · ${theme.fg("muted", truncate(description, room))}${theme.fg("dim", tail)}`;
 
-  return `${icon} ${theme.bold(record.id)}${theme.fg("dim", model)} · ${theme.fg("muted", truncate(description, room))}${theme.fg("dim", tail)}`;
+  return attention ? `${row}${theme.fg("warning", alert)}` : row;
+};
+
+export const treeRow = (record: AgentRecord, now: number, frame: number, theme: ThemeLike, width: number) => {
+  const indent = "  ".repeat(Math.max(0, record.depth - 2));
+  const countdown = graceCountdown(record, now);
+
+  if (countdown === undefined) {
+    return `${indent}${agentRow(record, now, frame, theme, width - indent.length)}`;
+  }
+
+  const suffix = ` · ${countdown}`;
+  const row = agentRow(record, now, frame, theme, width - indent.length - suffix.length);
+
+  return `${indent}${row}${theme.fg("warning", suffix)}`;
 };

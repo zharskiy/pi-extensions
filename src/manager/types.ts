@@ -8,6 +8,25 @@ export const CLOSED_STATES: ReadonlySet<AgentState> = new Set(["done", "failed",
 
 export const isClosed = (state: AgentState) => CLOSED_STATES.has(state);
 
+export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord => {
+  const successor = record.successorId ? registry.get(record.successorId) : undefined;
+
+  return successor ? chainTerminal(registry, successor) : record;
+};
+
+export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] => {
+  const predecessor = record.predecessorId ? registry.get(record.predecessorId) : undefined;
+  const earlier = predecessor ? chainLinks(registry, predecessor) : [];
+
+  earlier.push(record);
+
+  return earlier;
+};
+
+export type AttentionKind = "confirm" | "select" | "input";
+
+export type Attention = { kind: AttentionKind; title: string; since: number };
+
 export type AgentRecord = {
   id: string;
   agent: string;
@@ -16,6 +35,10 @@ export type AgentRecord = {
   callerId: string;
   depth: number;
   batchId: string;
+  chainIndex: number;
+  predecessorId?: string;
+  successorId?: string;
+  attention?: Attention;
   state: AgentState;
   createdAt: number;
   startedAt?: number;
@@ -74,6 +97,8 @@ export type NewAgent = {
   dir: string;
   budgetTokens: number;
   model?: string;
+  chainIndex?: number;
+  predecessorId?: string;
 };
 
 export type AgentRegistry = {
@@ -124,8 +149,18 @@ export type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
+export type AgentViewService = {
+  open(id: string): Promise<void>;
+};
+
+export type AgentListService = {
+  open(): Promise<void>;
+};
+
 export type ServiceMap = {
   registry: AgentRegistry;
+  agentView: AgentViewService;
+  agentList: AgentListService;
   definitions: AgentDefinitions;
   ledger: SpendLedger;
   runner: AgentRunner;

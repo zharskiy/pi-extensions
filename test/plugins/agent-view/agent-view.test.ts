@@ -7,13 +7,16 @@ import { createScrollPane, createTranscriptPane, initRenderTheme } from "../../.
 import { readSessionFile } from "../../../src/adapter/session-file.ts";
 import { renderSections, setAllCollapsed } from "../../../src/components/collapsible.ts";
 import { promptSections } from "../../../src/components/system-prompt-block.ts";
+import type { AgentRecord, RouteResult } from "../../../src/manager/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin, COMMAND } from "../../../src/plugins/agent-view/index.ts";
+import { agentViewPlugin, COMMAND, REFRESH_MS } from "../../../src/plugins/agent-view/index.ts";
 import { createAgentView } from "../../../src/plugins/agent-view/view.ts";
+import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
+import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush, plainTheme } from "../../helpers/fakes.ts";
+import { createFakeInputPane, flush, plainTheme } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
@@ -40,6 +43,7 @@ const fakeApi = (rows = 200) => {
     wheelScrolling: true,
     createTranscript: () => createTranscriptPane({ requestRender } as never, "/repo", false),
     createScroll: () => createScrollPane(requestRender),
+    createInput: createFakeInputPane,
   };
 
   return { api, state };
@@ -83,7 +87,7 @@ const setup = () => {
   ]);
 
   const openView = async (args: string, rows = 200) => {
-    await harness.host.commands.get(COMMAND)?.run(args);
+    await harness.host.runCommand(COMMAND, args);
 
     const factory = harness.host.overlays.at(-1);
 
@@ -135,6 +139,7 @@ const viewOf = (session: SessionRecord, rows: number) => {
     {
       load: () => ({ record, session: current }),
       stop: () => undefined,
+      send: async () => ({ ok: true, delivery: "steer" }),
       subscribe: (onChange) => {
         changed = onChange;
         return () => {};
@@ -177,7 +182,12 @@ describe("agent view", () => {
     };
 
     const view = createAgentView(
-      { load: () => ({ record, session }), stop: () => undefined, subscribe: () => () => {} },
+      {
+        load: () => ({ record, session }),
+        stop: () => undefined,
+        send: async () => ({ ok: true, delivery: "steer" }),
+        subscribe: () => () => {},
+      },
       countingApi,
     );
 
@@ -357,10 +367,335 @@ describe("agent view", () => {
   it("only notifies for unknown agents and opens nothing", async () => {
     const harness = setup();
 
-    await harness.host.commands.get(COMMAND)?.run("ghost-0000");
+    await harness.host.runCommand(COMMAND, "ghost-0000");
 
     expect(harness.host.overlays).toEqual([]);
     expect(harness.host.notices).toHaveLength(1);
     expect(harness.host.notices[0]?.message).toContain('unknown agent "ghost-0000"');
+  });
+});
+
+const typeText = (view: { handleKey(key: KeyPress): void }, text: string) => {
+  Array.from(text).forEach((char) => {
+    view.handleKey(key("other", char));
+  });
+};
+
+const tabToInput = (view: { handleKey(key: KeyPress): void }, sectionCount: number) => {
+  Array.from({ length: sectionCount }).forEach(() => {
+    view.handleKey(key("tab"));
+  });
+};
+
+const runningAgent = async () => {
+  const harness = setup();
+  const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
+
+  await runAgent.execute({ agents: [{ agent: "explorer", task: "long job" }] }, { update: () => {} });
+  await flush();
+  harness.host.settle();
+
+  const record = harness.services.require("registry").list()[0];
+  const opened = await harness.openView(record.id);
+
+  return { harness, record, ...opened };
+};
+
+const openViewWith = (record: AgentRecord, send: (text: string) => Promise<RouteResult>) => {
+  const { api, state } = fakeApi(60);
+  const sent: string[] = [];
+
+  const view = createAgentView(
+    {
+      load: () => ({ record, session: readSessionFile(FIXTURE) }),
+      stop: () => undefined,
+      send: (text) => {
+        sent.push(text);
+        return send(text);
+      },
+      subscribe: () => () => {},
+    },
+    api,
+  );
+
+  return { view, state, sent };
+};
+
+const SECTION_COUNT = 8;
+
+describe("agent view message box", () => {
+  it("reaches the input with Tab and routes the typed text as the user", async () => {
+    const { harness, record, view } = await runningAgent();
+
+    expect(plain(view.render(100)).at(-2)).toBe("  (type a message)");
+
+    tabToInput(view, 1);
+
+    expect(plain(view.render(100)).at(-2)).toBe("› (type a message)");
+    expect(plain(view.render(100)).at(-1)).toMatch(/^Message box: Enter send/);
+
+    typeText(view, "also check x tests");
+
+    expect(harness.services.require("registry").get(record.id)?.state).toBe("running");
+    expect(plain(view.render(100)).at(-2)).toBe("› also check x tests");
+
+    view.handleKey(key("enter"));
+    await flush();
+
+    expect(harness.runtime.child(record.id).messages).toEqual([
+      { message: { sender: "user", text: "also check x tests" }, delivery: "steer" },
+    ]);
+
+    const lines = plain(view.render(100));
+
+    expect(lines).toContain("› (type a message)");
+    expect(lines).toContain("sent: steered into the current run");
+  });
+
+  it("asks a stopped agent a question during grace", async () => {
+    const { harness, record, view } = await runningAgent();
+
+    view.handleKey(key("other", "x"));
+    await flush();
+
+    expect(harness.services.require("registry").get(record.id)?.state).toBe("grace");
+
+    tabToInput(view, 1);
+    typeText(view, "why?");
+    view.handleKey(key("enter"));
+    await flush();
+
+    expect(harness.runtime.child(record.id).messages).toEqual([
+      { message: { sender: "user", text: "why?" }, delivery: "followUp" },
+    ]);
+    expect(harness.services.require("registry").get(record.id)?.state).toBe("grace");
+  });
+
+  it("clears the text on Esc, leaves the box on a second Esc and closes on a third", async () => {
+    const record = { ...closedAgent(setup()), state: "running" as const };
+    const { view, state, sent } = openViewWith(record, async () => ({ ok: true, delivery: "steer" }));
+
+    tabToInput(view, SECTION_COUNT);
+    typeText(view, "draft");
+    view.handleKey(key("escape"));
+
+    expect(plain(view.render(100)).at(-2)).toBe("› (type a message)");
+    expect(state.closed).toBe(false);
+
+    view.handleKey(key("escape"));
+
+    expect(plain(view.render(100)).at(-2)).toBe("  (type a message)");
+    expect(state.closed).toBe(false);
+
+    view.handleKey(key("escape"));
+
+    expect(state.closed).toBe(true);
+    expect(sent).toEqual([]);
+  });
+
+  it("cycles from the input back to the first prompt section with Tab", () => {
+    const record = { ...closedAgent(setup()), state: "running" as const };
+    const { view } = openViewWith(record, async () => ({ ok: true, delivery: "steer" }));
+
+    tabToInput(view, SECTION_COUNT);
+    view.handleKey(key("tab"));
+    view.handleKey(key("home"));
+
+    const lines = plain(view.render(100));
+
+    expect(lines).toContain("› ▸ System prompt · preamble (1 lines)");
+    expect(lines.at(-2)).toBe("  (type a message)");
+  });
+
+  it("types x into the focused box instead of stopping", async () => {
+    const { harness, record, view } = await runningAgent();
+
+    tabToInput(view, 1);
+    view.handleKey(key("other", "x"));
+    await flush();
+
+    expect(harness.services.require("registry").get(record.id)?.state).toBe("running");
+    expect(plain(view.render(100)).at(-2)).toBe("› x");
+  });
+
+  it("shows a failed route under the input until the next key and keeps the text", async () => {
+    const record = { ...closedAgent(setup()), state: "running" as const };
+    const { view, sent } = openViewWith(record, async () => ({ ok: false, error: "agent is closed" }));
+
+    tabToInput(view, SECTION_COUNT);
+    typeText(view, "hello");
+    view.handleKey(key("enter"));
+    await flush();
+
+    const lines = plain(view.render(100));
+
+    expect(sent).toEqual(["hello"]);
+    expect(lines.at(-3)).toBe("› hello");
+    expect(lines.at(-2)).toBe("agent is closed");
+
+    view.handleKey(key("other", "!"));
+
+    expect(plain(view.render(100)).at(-2)).toBe("› hello!");
+  });
+
+  it("shows no input box for a closed agent and says it is closed", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const { view } = await harness.openView(record.id);
+
+    tabToInput(view, SECTION_COUNT + 1);
+
+    const lines = plain(view.render(100));
+
+    expect(lines.join("\n")).not.toContain("(type a message)");
+    expect(lines.at(-1)).toContain("agent closed, messages disabled");
+  });
+});
+
+describe("agent view input focus", () => {
+  it("focuses the message box only while it has focus", () => {
+    const record = { ...closedAgent(setup()), state: "running" as const };
+    const { api } = fakeApi(60);
+    const panes: ReturnType<typeof createFakeInputPane>[] = [];
+
+    const createInput = () => {
+      const pane = createFakeInputPane();
+
+      panes.push(pane);
+
+      return pane;
+    };
+
+    const view = createAgentView(
+      {
+        load: () => ({ record, session: readSessionFile(FIXTURE) }),
+        stop: () => undefined,
+        send: async () => ({ ok: true, delivery: "steer" }),
+        subscribe: () => () => {},
+      },
+      { ...api, createInput },
+    );
+
+    view.render(100);
+
+    expect(panes.map((pane) => pane.isFocused())).toEqual([false]);
+
+    tabToInput(view, SECTION_COUNT);
+
+    expect(panes[0]?.isFocused()).toBe(true);
+
+    view.handleKey(key("tab"));
+
+    expect(panes[0]?.isFocused()).toBe(false);
+
+    tabToInput(view, SECTION_COUNT);
+    view.handleKey(key("escape"));
+
+    expect(panes[0]?.isFocused()).toBe(false);
+  });
+});
+
+const handoffText = [
+  "## Status",
+  "partial",
+  "",
+  "## Outcome",
+  "- auth handler located in src/auth.ts",
+  "",
+  "## Evidence",
+  "- grep for handleLogin: src/auth.ts:42",
+  "",
+  "## Blocker",
+  "none",
+  "",
+  "## Next",
+  "- trace token refresh",
+  "",
+  "## Files touched",
+  "none",
+].join("\n");
+
+const waitForRefresh = () => new Promise<void>((done) => setTimeout(done, REFRESH_MS + 50));
+
+describe("agent view successor chain", () => {
+  it("follows the opened link to its live successor and stops the successor", async () => {
+    const harness = createHarness(
+      [
+        agentRegistryPlugin,
+        agentDefinitionsPlugin,
+        handoffPlugin,
+        runAgentPlugin,
+        limitsPlugin,
+        agentViewPlugin,
+      ],
+      { stopGraceSeconds: 0 },
+    );
+    const registry = harness.services.require("registry");
+    const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
+
+    await runAgent.execute(
+      { agents: [{ agent: "explorer", task: "map the auth flow" }] },
+      { update: () => {} },
+    );
+    await flush();
+    harness.host.settle();
+
+    const first = registry.list()[0] as AgentRecord;
+
+    await harness.host.runCommand(COMMAND, first.id);
+
+    const factory = harness.host.overlays.at(-1);
+
+    if (!factory) {
+      throw new Error("no overlay opened");
+    }
+
+    const view = factory(fakeApi(200).api);
+
+    harness.runtime
+      .child(first.id)
+      .turn({ tokens: first.budgetTokens + 500, window: 1_000_000, percent: 20 });
+    await flush();
+
+    mkdirSync(join(first.handoffPath, ".."), { recursive: true });
+    writeFileSync(first.handoffPath, handoffText);
+    harness.runtime.child(first.id).finish(first.handoffPath);
+    await flush();
+    await waitForRefresh();
+
+    const second = registry.get(first.id)?.successorId as string;
+    const lines = plain(view.render(200));
+
+    expect(second).toBeDefined();
+    expect(lines[0]).toContain(`${second} #2`);
+    expect(lines[0]).toContain(`continues ${first.id}`);
+    expect(lines).toContain("  (type a message)");
+    expect(lines.at(-1)).toContain(`opened ${first.id}, following the chain`);
+    expect(lines.at(-1)).toContain("x stop");
+
+    view.handleKey(key("other", "x"));
+    await flush();
+
+    expect(registry.get(second)?.state).toBe("stopped");
+  });
+});
+
+describe("agent view header", () => {
+  it("shows the chain index, chain links and a pending question", () => {
+    const base = closedAgent(setup());
+    const record: AgentRecord = {
+      ...base,
+      state: "running",
+      chainIndex: 2,
+      predecessorId: "explorer-0001",
+      successorId: "explorer-0003",
+      attention: { kind: "confirm", title: "Allow rm -rf build?", since: 0 },
+    };
+
+    const { view } = openViewWith(record, async () => ({ ok: true, delivery: "steer" }));
+
+    expect(plain(view.render(200))[0]).toBe(
+      `⠋ ${record.id} #2 (explorer) · running · model n/a · continues explorer-0001 · continued by explorer-0003 · needs input: Allow rm -rf build?`,
+    );
   });
 });

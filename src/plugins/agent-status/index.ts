@@ -1,6 +1,6 @@
 import type { AnyToolSpec, ToolSpec, UsageTotals } from "../../adapter/contract.ts";
 import type { Plugin } from "../../manager/plugin.ts";
-import type { AgentRegistry } from "../../manager/types.ts";
+import { type AgentRegistry, chainTerminal } from "../../manager/types.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "./snapshot.ts";
 
 export type AgentStatusParams = { ids?: string[] };
@@ -23,6 +23,7 @@ const defaultIds = ({ registry, callerId }: StatusScope) =>
   registry
     .list()
     .filter((record) => callerId === undefined || record.callerId === callerId)
+    .filter((record) => !record.successorId)
     .map((record) => record.id);
 
 export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
@@ -43,9 +44,10 @@ export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, Agen
     const unknown = wanted.filter((id) => !scope.registry.get(id));
 
     const agents = wanted
-      .map((id) => scope.registry.get(id))
-      .filter((record) => record !== undefined)
-      .map((record) => snapshotOf(record, now));
+      .map((id) => ({ id, record: scope.registry.get(id) }))
+      .flatMap(({ id, record }) =>
+        record ? [snapshotOf(chainTerminal(scope.registry, record), now, id)] : [],
+      );
 
     const lines = agents.map(snapshotLine);
 

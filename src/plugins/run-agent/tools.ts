@@ -1,6 +1,6 @@
 import type { ThemeLike, ToolResult, ToolSpec, UsageTotals } from "../../adapter/contract.ts";
 import { agentRow } from "../../components/agent-row.ts";
-import { type AgentDefinition, type AgentRegistry, MAIN_CALLER } from "../../manager/types.ts";
+import { type AgentDefinition, type AgentRegistry, chainTerminal, MAIN_CALLER } from "../../manager/types.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
 export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
@@ -92,7 +92,7 @@ export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgen
       "- Model: each agent runs on the model shown next to it. Set `model` only when the user (or, for an agent, its task) explicitly names a model or thinking level for this work; never choose or change a model yourself, for cost, speed or any other reason. Pass the words as given, as `name[:thinking]`. The harness resolves the name, tolerating misspellings and picking the newest version, and reports the model it runs. If it reports an ambiguous or unknown model, nothing was started: ask the user with the listed candidates and reuse the answer for the rest of the conversation.",
       depthRule(limits),
       `- Concurrency: at most ${limits.maxConcurrent} agents run at the same time across the whole tree; extra agents wait in a queue.`,
-      "- Budget: an agent that reaches its context limit stops and writes a handoff file instead of a result. To continue its work, start a new agent and pass the handoff file in `files`.",
+      "- Budget: an agent that reaches its context limit writes a handoff file. When the handoff says the work is partial, the harness starts a successor from it in the same batch on its own; you are not woken and the chain counts as one agent. Only when the chain cap is reached or the handoff says blocked does the agent end as handoff.",
       "- Batches: put independent tasks in one call so they run in parallel. Run a dependent task in a later call, after the results it depends on have arrived.",
       "- Tasks: each task must stand alone: goal, scope, file paths, constraints and the exact shape of the expected result.",
     ].join("\n"),
@@ -100,7 +100,8 @@ export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgen
       "Result contract: one message per batch with one section per agent, headed `## <id> (<agent>) - <state>`.",
       "- done: the result follows inline, or as `Result file: <path>` with a preview when it is large. A result whose first line is `Status: blocked` means the agent stopped because the task was ambiguous; it lists the questions it needs answered and changed nothing.",
       "- failed or stopped: the reason is given; there is no result.",
-      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing.",
+      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, or the chain cap was reached). To continue, start a new agent and pass the handoff file in `files`.",
+      "- A `Chain: <id> → <id> (N sessions)` line means the agent continued itself from handoffs; the section carries the last session's id and the totals of all sessions. Any id of the chain works with `message_agent` and `agent_status`.",
     ].join("\n"),
   ].join("\n\n");
 
@@ -162,7 +163,7 @@ const renderRows = (deps: ToolDeps, details: RunAgentDetails | undefined, theme:
   return (details?.ids ?? [])
     .map((id) => deps.registry.get(id))
     .filter((record) => record !== undefined)
-    .map((record) => agentRow(record, now, frame, theme, 120))
+    .map((record) => agentRow(chainTerminal(deps.registry, record), now, frame, theme, 120))
     .join("\n");
 };
 

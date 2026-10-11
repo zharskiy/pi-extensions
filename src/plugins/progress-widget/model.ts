@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../adapter/contract.ts";
-import { agentRow } from "../../components/agent-row.ts";
+import { treeRow } from "../../components/agent-row.ts";
 import type { Settings } from "../../manager/settings.ts";
 import { type AgentRecord, isClosed } from "../../manager/types.ts";
 
@@ -28,20 +28,6 @@ export const visibleRecords = (
   settings: Pick<Settings, "lingerMs" | "failedLingerMs">,
 ) => records.filter((record) => isVisible(record, now, settings));
 
-export const graceCountdown = (record: AgentRecord, now: number) => {
-  if (record.state !== "grace") {
-    return undefined;
-  }
-
-  if (record.graceEndsAt === undefined) {
-    return "stopping · answering";
-  }
-
-  const seconds = Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
-
-  return `stopping in ${seconds}s`;
-};
-
 export type WidgetRow = (
   record: AgentRecord,
   now: number,
@@ -50,19 +36,7 @@ export type WidgetRow = (
   width: number,
 ) => string;
 
-export const widgetRow: WidgetRow = (record, now, frame, theme, width) => {
-  const indent = "  ".repeat(Math.max(0, record.depth - 2));
-  const countdown = graceCountdown(record, now);
-
-  if (countdown === undefined) {
-    return `${indent}${agentRow(record, now, frame, theme, width - indent.length)}`;
-  }
-
-  const suffix = ` · ${countdown}`;
-  const row = agentRow(record, now, frame, theme, width - indent.length - suffix.length);
-
-  return `${indent}${row}${theme.fg("warning", suffix)}`;
-};
+export const widgetRow: WidgetRow = treeRow;
 
 type CachedRow = { version: number; width: number; theme: ThemeLike; line: string };
 
@@ -109,7 +83,7 @@ export const widgetLines = (
 ) => {
   const frame = Math.floor(now / SPINNER_INTERVAL_MS);
   const running = records.filter((record) => !isClosed(record.state)).length;
-  const header = theme.fg("muted", `Agents · ${running} running · /agents <id> to inspect`);
+  const header = theme.fg("muted", `Agents · ${running} running · /agents to browse`);
   const lines = records.map((record) => row(record, now, frame, theme, width));
 
   lines.unshift(header);

@@ -5,6 +5,7 @@ import {
   formatElapsed,
   formatTokens,
   progressText,
+  treeRow,
   truncate,
 } from "../../src/components/agent-row.ts";
 import type { AgentRecord } from "../../src/manager/types.ts";
@@ -18,6 +19,7 @@ const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   callerId: "main",
   depth: 2,
   batchId: "b-1",
+  chainIndex: 1,
   state: "running",
   createdAt: 0,
   startedAt: 0,
@@ -83,5 +85,34 @@ describe("agent row formatting", () => {
     expect(line).toContain("…");
     expect(line.length).toBeLessThanOrEqual(82);
     expect(truncate("abcdef", 4)).toBe("abc…");
+  });
+
+  it("shows the chain index after the id of a successor", () => {
+    expect(agentRow(record({ chainIndex: 3 }), 45_000, 0, plainTheme, 120)).toBe(
+      "⠋ explorer-1a2b #3 · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx",
+    );
+  });
+
+  it("appends a pending question in warning colour while the agent waits for input", () => {
+    const theme = { fg: (token: string, text: string) => `<${token}>${text}`, bold: (text: string) => text };
+    const waiting = record({ attention: { kind: "confirm", title: "Allow bash?", since: 0 } });
+
+    expect(agentRow(waiting, 45_000, 0, plainTheme, 120)).toBe(
+      "⠋ explorer-1a2b · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx · needs input: Allow bash?",
+    );
+    expect(agentRow(waiting, 45_000, 0, theme as never, 120)).toMatch(
+      /<warning> · needs input: Allow bash\?$/,
+    );
+    expect(agentRow({ ...waiting, state: "done", endedAt: 1_000 }, 45_000, 0, plainTheme, 120)).not.toContain(
+      "needs input",
+    );
+  });
+
+  it("indents nested agents and shows the grace countdown", () => {
+    expect(
+      treeRow(record({ depth: 3, state: "grace", graceEndsAt: 50_000 }), 45_000, 0, plainTheme, 140),
+    ).toBe(
+      "  ◐ explorer-1a2b · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx · stopping in 5s",
+    );
   });
 });

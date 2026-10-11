@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type AgentRuntime,
   type AnyToolSpec,
   type ChildEvent,
+  type ChildPrompts,
   type ChildSession,
   type RoutedMessage,
   type SessionInfo,
@@ -20,6 +21,7 @@ import {
   type AgentRecord,
   type AgentRegistry,
   type AgentRunner,
+  chainTerminal,
   type HandoffService,
   isClosed,
   MAIN_CALLER,
@@ -52,6 +54,7 @@ export type RunnerDeps = {
   session: () => SessionInfo | undefined;
   handoff: () => HandoffService | undefined;
   toolsFor?: (record: AgentRecord) => AnyToolSpec[];
+  promptsFor?: (record: AgentRecord) => ChildPrompts;
   now?: () => number;
 };
 
@@ -75,6 +78,8 @@ type Batch = {
   resolve: (records: AgentRecord[]) => void;
 };
 
+type LaunchSlot = { item: BatchItem; plan: ModelPlan };
+
 type Live = {
   child?: ChildSession;
   lastStopReason?: StopReason;
@@ -95,9 +100,25 @@ const FAILED_STOP_REASONS: ReadonlySet<StopReason> = new Set(["error", "aborted"
 
 export const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
-export const composeTask = (record: AgentRecord, item: BatchItem, outputToFile: boolean) => {
-  const files = item.files ?? [];
-  const lines = [`Task from ${record.callerId} (agent id ${record.id}):`, item.task];
+export const composeTask = (
+  record: AgentRecord,
+  item: BatchItem,
+  outputToFile: boolean,
+  predecessor?: AgentRecord,
+) => {
+  const files = predecessor ? [predecessor.handoffPath].concat(item.files ?? []) : (item.files ?? []);
+  const lines = [`Task from ${record.callerId} (agent id ${record.id}):`];
+
+  if (predecessor) {
+    lines.push(
+      `You continue the work of agent ${predecessor.id} as link ${record.chainIndex} of its chain; it reached its context budget and wrote a handoff file.`,
+      `Read the handoff file at ${predecessor.handoffPath} first, then carry on from its Next section without redoing the work it reports as done.`,
+      "",
+      "Original task:",
+    );
+  }
+
+  lines.push(item.task);
 
   if (files.length > 0) {
     lines.push("", "Input files:");
@@ -122,6 +143,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
   const fileOutputs = new Set<string>();
+  const launches = new Map<string, LaunchSlot>();
+  const userStopped = new Set<string>();
   let shuttingDown = false;
 
   const liveOf = (id: string) => {
@@ -159,7 +182,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     batch.woken = true;
-    batch.resolve(records);
+    batch.resolve(records.filter((entry) => !entry.successorId));
 
     if (batch.wait) {
       return;
@@ -291,7 +314,59 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       });
     }
 
+    if (validation.status === "done") {
+      return deps.registry.close(record.id, { state: "done", ...storeResult(record, text) });
+    }
+
+    const slot = launches.get(record.id);
+    const batch = batches.get(record.batchId);
+
+    if (validation.status === "partial" && slot && batch && canContinue(record, batch)) {
+      return continueChain(record, text, slot, batch);
+    }
+
     return deps.registry.close(record.id, { state: "handoff", resultText: text });
+  };
+
+  const canContinue = (record: AgentRecord, batch: Batch) =>
+    record.chainIndex < deps.settings.maxChainLength &&
+    record.state !== "grace" &&
+    !userStopped.has(record.id) &&
+    !shuttingDown &&
+    !batch.woken;
+
+  const continueChain = (record: AgentRecord, text: string, slot: LaunchSlot, batch: Batch) => {
+    const successor = deps.registry.create({
+      agent: record.agent,
+      task: record.task,
+      description: record.description,
+      callerId: record.callerId,
+      depth: record.depth,
+      batchId: record.batchId,
+      dir: dirname(record.dir),
+      budgetTokens: record.budgetTokens,
+      model: record.model,
+      chainIndex: record.chainIndex + 1,
+      predecessorId: record.id,
+    });
+
+    launches.set(successor.id, slot);
+
+    if (fileOutputs.has(record.id)) {
+      fileOutputs.add(successor.id);
+    }
+
+    batch.ids.push(successor.id);
+
+    const closed = deps.registry.close(record.id, {
+      state: "handoff",
+      resultText: text,
+      successorId: successor.id,
+    });
+
+    void launch(successor, slot.item, slot.plan);
+
+    return closed;
   };
 
   const finish = (record: AgentRecord, live: Live, aborted: boolean) => {
@@ -483,6 +558,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         thinking: plan.thinking,
         tools: definition.tools,
         customTools: deps.toolsFor?.(record) ?? [],
+        prompts: deps.promptsFor?.(record),
         skills: definition.skills,
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
@@ -504,8 +580,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         sessionFile: child.sessionFile,
       });
 
+      const predecessor = record.predecessorId ? deps.registry.get(record.predecessorId) : undefined;
+
       live.inFlight = true;
-      child.start(composeTask(record, item, fileOutputs.has(record.id)));
+      child.start(composeTask(record, item, fileOutputs.has(record.id), predecessor));
 
       const held = live.pending.splice(0);
 
@@ -616,6 +694,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         fileOutputs.add(record.id);
       }
 
+      launches.set(record.id, { item, plan: plans[index] });
+
       return record;
     });
 
@@ -666,12 +746,22 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return true;
   };
 
-  const stop = async (id: string, options: { immediate?: boolean } = {}) => {
+  const terminalOf = (id: string) => {
     const record = deps.registry.get(id);
+
+    return record && chainTerminal(deps.registry, record);
+  };
+
+  const stop = async (requestedId: string, options: { immediate?: boolean } = {}) => {
+    const record = terminalOf(requestedId);
 
     if (!record || isClosed(record.state)) {
       return false;
     }
+
+    const id = record.id;
+
+    userStopped.add(id);
 
     const live = lives.get(id);
     const child = live?.child;
@@ -697,12 +787,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return true;
   };
 
-  const route = async (id: string, message: RoutedMessage): Promise<RouteResult> => {
-    const record = deps.registry.get(id);
+  const route = async (requestedId: string, message: RoutedMessage): Promise<RouteResult> => {
+    const record = terminalOf(requestedId);
 
     if (!record) {
-      return { ok: false, error: `unknown agent "${id}"` };
+      return { ok: false, error: `unknown agent "${requestedId}"` };
     }
+
+    const id = record.id;
 
     if (isClosed(record.state)) {
       return {
@@ -737,9 +829,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return { ok: true, delivery: "followUp" };
   };
 
-  const abort = async (id: string, reason: string) => {
-    const record = deps.registry.get(id);
-    const live = lives.get(id);
+  const abort = async (requestedId: string, reason: string) => {
+    const record = terminalOf(requestedId);
+    const live = record && lives.get(record.id);
 
     if (!record || isClosed(record.state) || !live?.child) {
       return;

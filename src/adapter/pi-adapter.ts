@@ -16,8 +16,10 @@ import {
   createWriteToolDefinition,
   DefaultResourceLoader,
   type ExtensionAPI,
+  type ExtensionCommandContext,
   type ExtensionContext,
   type ExtensionFactory,
+  type ExtensionUIContext,
   getAgentDir,
   getMarkdownTheme,
   initTheme,
@@ -33,6 +35,7 @@ import {
 import {
   type Component,
   Container,
+  Input,
   Key,
   matchesKey,
   ScrollView,
@@ -46,16 +49,19 @@ import type {
   AgentRuntime,
   AnyToolSpec,
   ChildEvent,
+  ChildPrompts,
   ChildSession,
   CommandSpec,
   ContextSnapshot,
   Host,
   HostUi,
+  InputPane,
   KeyPress,
   MessageDelivery,
   ModelResolution,
   OverlayFactory,
   ScrollPane,
+  SessionControl,
   SessionInfo,
   ShutdownReason,
   SpawnSpec,
@@ -89,7 +95,7 @@ const themeLike = (theme: Theme): ThemeLike => ({
 
 const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPress => {
   if (isToolsToggle(data)) {
-    return { name: "toggleTools" };
+    return { name: "toggleTools", raw: data };
   }
 
   const names = [
@@ -108,10 +114,10 @@ const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPr
   const match = names.find(([, key]) => matchesKey(data, key));
 
   if (match) {
-    return { name: match[0] };
+    return { name: match[0], raw: data };
   }
 
-  return { name: "other", char: data.length === 1 ? data : undefined };
+  return { name: "other", char: data.length === 1 ? data : undefined, raw: data };
 };
 
 const toPiResult = (result: ToolResult) => ({
@@ -376,6 +382,36 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
   };
 };
 
+export const createInputPane = (placeholder: string): InputPane => {
+  const input = new Input({ placeholder });
+  let outcome: "submitted" | "cancelled" | undefined;
+
+  input.focused = true;
+  input.onSubmit = () => {
+    outcome = "submitted";
+  };
+  input.onEscape = () => {
+    outcome = "cancelled";
+  };
+
+  return {
+    feed: (key) => {
+      outcome = undefined;
+      input.handleInput(key.raw ?? key.char ?? "");
+
+      return outcome ?? "changed";
+    },
+    value: () => input.getValue(),
+    setValue: (value) => {
+      input.setValue(value);
+    },
+    setFocused: (focused) => {
+      input.focused = focused;
+    },
+    render: (width) => input.render(width),
+  };
+};
+
 const createUi = (state: HostState): HostUi => {
   const widgetTuis = new Map<string, TUI>();
 
@@ -443,6 +479,7 @@ const createUi = (state: HostState): HostUi => {
           wheelScrolling: tui.mode === "fullscreen",
           createTranscript: () => createTranscriptPane(tui, cwd, toolsExpanded),
           createScroll: () => createScrollPane(() => tui.requestRender()),
+          createInput: createInputPane,
         });
 
         const isToolsToggle = (data: string) => keybindings.matches(data, "app.tools.expand");
@@ -474,8 +511,27 @@ const createUi = (state: HostState): HostUi => {
     notify: (message, level = "info") => {
       liveCtx(state)?.ui.notify(message, level);
     },
+    style: (token, text) => liveCtx(state)?.ui.theme.fg(token, text) ?? text,
     setStatus: (key, text) => {
       liveCtx(state)?.ui.setStatus(key, text);
+    },
+    confirm: async (title, message) => {
+      const ctx = liveCtx(state);
+
+      if (!ctx?.hasUI) {
+        return false;
+      }
+
+      return ctx.ui.confirm(title, message);
+    },
+    input: async (title, placeholder) => {
+      const ctx = liveCtx(state);
+
+      if (!ctx?.hasUI) {
+        return undefined;
+      }
+
+      return ctx.ui.input(title, placeholder);
     },
     setWidget,
     openOverlay,
@@ -497,6 +553,14 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
+  const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
+
+  const contextOf = (ctx: ExtensionContext): ContextSnapshot => {
+    const usage = ctx.getContextUsage();
+    const window = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+
+    return { tokens: usage?.tokens ?? null, window, percent: usage?.percent ?? null };
+  };
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -539,6 +603,35 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
+  pi.on("turn_end", (_event, ctx) => {
+    capture(ctx);
+
+    const context = contextOf(ctx);
+
+    turnEndHandlers.forEach((handler) => {
+      handler(context);
+    });
+  });
+
+  const sessionControl = (ctx: ExtensionCommandContext): SessionControl => ({
+    newSession: async (options) => {
+      const seed = options.seed;
+      const result = await ctx.newSession({
+        parentSession: options.parentSession,
+        withSession: seed
+          ? async (fresh) => {
+              await fresh.sendMessage(
+                { customType: seed.customType, content: seed.text, display: true },
+                { triggerTurn: false },
+              );
+            }
+          : undefined,
+      });
+
+      return !result.cancelled;
+    },
+  });
+
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
     pi.registerTool(toPiTool(spec, capture));
   };
@@ -549,7 +642,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       getArgumentCompletions: spec.complete ? (prefix: string) => spec.complete?.(prefix) ?? null : undefined,
       handler: async (args, ctx) => {
         capture(ctx);
-        await spec.run(args);
+        await spec.run(args, sessionControl(ctx));
       },
     });
   };
@@ -586,7 +679,22 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onIdle: (handler) => {
       idleHandlers.push(handler);
     },
+    onTurnEnd: (handler) => {
+      turnEndHandlers.push(handler);
+    },
     isIdle: () => liveCtx(state)?.isIdle() ?? true,
+    contextUsage: () => {
+      const ctx = liveCtx(state);
+
+      return ctx ? contextOf(ctx) : undefined;
+    },
+    dispatchCommand: (name, args) => {
+      if (!liveCtx(state)) {
+        return;
+      }
+
+      pi.sendUserMessage(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
+    },
     sendUserMessage: (text) => {
       const ctx = liveCtx(state);
 
@@ -781,6 +889,41 @@ export const createChildExtension =
     });
   };
 
+const silentUi = {
+  onTerminalInput: () => () => {},
+  setStatus: () => {},
+  setWorkingMessage: () => {},
+  setWorkingVisible: () => {},
+  setWorkingIndicator: () => {},
+  setHiddenThinkingLabel: () => {},
+  setWidget: () => {},
+  setFooter: () => {},
+  setHeader: () => {},
+  setTitle: () => {},
+  custom: async () => undefined as never,
+  pasteToEditor: () => {},
+  setEditorText: () => {},
+  getEditorText: () => "",
+  editor: async () => undefined,
+  addAutocompleteProvider: () => {},
+  setEditorComponent: () => {},
+  getEditorComponent: () => undefined,
+  getAllThemes: () => [],
+  getTheme: () => undefined,
+  setTheme: () => ({ success: false, error: "UI not available" }),
+  getToolsExpanded: () => false,
+  setToolsExpanded: () => {},
+};
+
+export const childUiContext = (theme: Theme, prompts: ChildPrompts | undefined): ExtensionUIContext => ({
+  ...silentUi,
+  theme,
+  select: (title, options) => prompts?.select(title, options) ?? Promise.resolve(undefined),
+  confirm: (title, message) => prompts?.confirm(title, message) ?? Promise.resolve(false),
+  input: (title, placeholder) => prompts?.input(title, placeholder) ?? Promise.resolve(undefined),
+  notify: (message, type = "info") => prompts?.notify(message, type),
+});
+
 const OWN_SOURCE_DIR = join(PACKAGE_ROOT, "src");
 
 const isOwnExtension = (path: string) =>
@@ -884,7 +1027,9 @@ export const createPiRuntime = (parent: ParentSource): AgentRuntime => {
       }),
     );
 
-    await childScope.run(scope, () => session.bindExtensions({ mode: "print" }));
+    await childScope.run(scope, () =>
+      session.bindExtensions({ mode: "print", uiContext: childUiContext(ctx.ui.theme, spec.prompts) }),
+    );
 
     session.subscribe((event) => {
       if (event.type === "turn_start") {

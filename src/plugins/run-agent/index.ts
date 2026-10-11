@@ -2,6 +2,7 @@ import type { AnyToolSpec } from "../../adapter/contract.ts";
 import type { Plugin } from "../../manager/plugin.ts";
 import { type AgentDefinition, type AgentRecord, isClosed } from "../../manager/types.ts";
 import { createOutbox } from "./outbox.ts";
+import { childPromptsFor, createPromptQueue } from "./prompts.ts";
 import { createRunner } from "./runner.ts";
 import { describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
 
@@ -48,6 +49,8 @@ export const runAgentPlugin: Plugin = {
       return tools;
     };
 
+    const promptQueue = createPromptQueue();
+
     const runner = createRunner({
       registry,
       runtime,
@@ -58,6 +61,7 @@ export const runAgentPlugin: Plugin = {
       session: () => host.session(),
       handoff: () => (services.has("handoff") ? services.require("handoff") : undefined),
       toolsFor: childTools,
+      promptsFor: (record) => childPromptsFor({ ui: host.ui, registry, queue: promptQueue }, record),
     });
 
     services.provide("runner", runner);

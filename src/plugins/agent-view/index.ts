@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentsDirFor } from "../../manager/paths.ts";
 import type { Plugin } from "../../manager/plugin.ts";
-import type { AgentRecord } from "../../manager/types.ts";
+import { type AgentRecord, chainLinks, chainTerminal, type RouteResult } from "../../manager/types.ts";
 import { createAgentView, type ViewData } from "./view.ts";
 
 export const COMMAND = "agents";
@@ -31,6 +31,7 @@ export const agentViewPlugin: Plugin = {
         lastText: "",
         handoffRequested: false,
         budgetTokens: 0,
+        chainIndex: 1,
         version: 0,
         handoffPath: join(agentsDirFor(host.session()), id, "handoff.md"),
         dir: join(agentsDirFor(host.session()), id),
@@ -41,18 +42,36 @@ export const agentViewPlugin: Plugin = {
 
     const findRecord = (id: string) => registry.get(id) ?? fromManifest(id);
 
+    const followChain = (id: string) => {
+      const live = registry.get(id);
+
+      return live ? chainTerminal(registry, live) : (fromManifest(id) as AgentRecord);
+    };
+
     const load = (id: string): ViewData => {
-      const record = findRecord(id) as AgentRecord;
+      const record = followChain(id);
+      const openedId = record.id === id ? undefined : id;
 
       if (!record.sessionFile || !existsSync(record.sessionFile)) {
-        return { record, error: "session file not written yet" };
+        return { record, openedId, error: "session file not written yet" };
       }
 
       try {
-        return { record, session: runtime.readSession(record.sessionFile) };
+        return { record, openedId, session: runtime.readSession(record.sessionFile) };
       } catch (error) {
-        return { record, error: `cannot read session: ${(error as Error).message}` };
+        return { record, openedId, error: `cannot read session: ${(error as Error).message}` };
       }
+    };
+
+    const inChain = (record: AgentRecord, id: string) =>
+      chainLinks(registry, record).some((link) => link.id === id);
+
+    const send = async (id: string, text: string): Promise<RouteResult> => {
+      if (!services.has("runner")) {
+        return { ok: false, error: "the agent runner is not enabled" };
+      }
+
+      return services.require("runner").route(id, { sender: "user", text });
     };
 
     const open = async (id: string) => {
@@ -66,11 +85,12 @@ export const agentViewPlugin: Plugin = {
           {
             load: () => load(id),
             stop: () => (services.has("runner") ? services.require("runner").stop(id) : undefined),
+            send: (text) => send(id, text),
             subscribe: (onChange) => {
               let timer: ReturnType<typeof setTimeout> | undefined;
 
               const off = bus.on("agent:changed", (record) => {
-                if (record.id !== id || timer) {
+                if (timer || !inChain(record, id)) {
                   return;
                 }
 
@@ -94,6 +114,8 @@ export const agentViewPlugin: Plugin = {
       );
     };
 
+    services.provide("agentView", { open });
+
     const label = (record: AgentRecord) =>
       `${record.id} · ${record.state} · ${record.description}`.slice(0, 100);
 
@@ -109,6 +131,11 @@ export const agentViewPlugin: Plugin = {
 
         if (id) {
           await open(id);
+          return;
+        }
+
+        if (services.has("agentList")) {
+          await services.require("agentList").open();
           return;
         }
 
