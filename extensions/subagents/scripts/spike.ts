@@ -9,9 +9,9 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { ChildEvent, ChildSession } from "../src/adapter/contract.ts";
-import { createPiRuntime } from "../src/adapter/pi-child.ts";
-import { sumOwnUsage, sumSessionUsage } from "../src/adapter/usage.ts";
+import type { ChildEvent, ChildSession } from "../../../core/adapter/contract.ts";
+import { createPiRuntime } from "../../../core/adapter/pi-child.ts";
+import { sumOwnUsage, sumSessionUsage } from "../../../core/adapter/usage.ts";
 
 const PROVIDER = "openai";
 const MODEL = process.env.SPIKE_MODEL ?? "gpt-5.4-mini";
@@ -40,11 +40,14 @@ const fakeCtx = {
   isProjectTrusted: () => false,
 } as unknown as ExtensionContext;
 
-const runtime = createPiRuntime({
-  ctx: () => fakeCtx,
-  settings: () => ({}),
-  thinking: () => "low",
-});
+const runtime = createPiRuntime(
+  {
+    ctx: () => fakeCtx,
+    settings: () => ({}),
+    thinking: () => "low",
+  },
+  { namespace: "pi-subagents", exclude: [join(projectRoot, "src")] },
+);
 
 const settledOnce = (child: ChildSession) =>
   new Promise<void>((done) => {

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { emptyUsage } from "../../../src/adapter/contract.ts";
-import type { SpendLedger } from "../../../src/manager/types.ts";
+import { flush, usageOf } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import {
@@ -10,7 +9,6 @@ import {
 } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush, usageOf } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const setup = () => {
@@ -49,6 +47,7 @@ describe("agent_status", () => {
       type: "assistant_message",
       text: "Looking at src/auth.ts\nfound the handler",
       stopReason: "toolUse",
+      toolCalls: 1,
     });
     child.usage = usageOf(0.01, 1_000);
     child.turn({ tokens: 30_000, window: 200_000, percent: 15 });
@@ -140,33 +139,5 @@ describe("agent_status", () => {
     const all = await harness.status.execute({}, { update: () => {} });
 
     expect(all.details?.agents).toHaveLength(1);
-  });
-
-  it("carries not-yet-reported usage on its result exactly once", async () => {
-    const harness = setup();
-    let pending = usageOf(0.05);
-
-    const ledger: SpendLedger = {
-      record: () => {},
-      persist: () => {},
-      agentsTotal: emptyUsage,
-      deliveredTotal: emptyUsage,
-      restore: () => {},
-      takeUndelivered: () => {
-        const taken = pending.cost.total > 0 ? pending : undefined;
-
-        pending = emptyUsage();
-
-        return taken;
-      },
-    };
-
-    harness.services.provide("ledger", ledger);
-
-    const first = await harness.status.execute({}, { update: () => {} });
-    const second = await harness.status.execute({}, { update: () => {} });
-
-    expect(first.usage?.cost.total).toBe(0.05);
-    expect(second.usage).toBeUndefined();
   });
 });

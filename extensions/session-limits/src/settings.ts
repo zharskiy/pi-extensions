@@ -1,57 +1,30 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { Host } from "./adapter/contract.ts";
+import type { Host } from "../../../core/adapter/contract.ts";
+import {
+  parseSettings as parseWith,
+  projectSettingsPath as projectPath,
+  readSettingsFile as readWith,
+  type SettingsParse,
+  type SettingsSchema,
+  userSettingsPath as userPath,
+} from "../../../core/manager/settings.ts";
 import type { Ratios } from "./thresholds.ts";
 
 export const SETTINGS_FILE = "pi-session-limits.json";
 
 export const defaultRatios = (): Ratios => ({ softRatio: 0.6, hardRatio: 0.75 });
 
-export type SettingsParse = { patch: Partial<Ratios>; errors: string[] };
+const ratio = { type: "number", min: 0, max: 1, minExclusive: true } as const;
 
-const RATIO_KEYS: (keyof Ratios)[] = ["softRatio", "hardRatio"];
+export const settingsSchema: SettingsSchema<Ratios> = { softRatio: ratio, hardRatio: ratio };
 
-const isRatio = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1;
+export const parseSettings = (raw: unknown, source: string): SettingsParse<Ratios> =>
+  parseWith(settingsSchema, raw, source);
 
-export const parseSettings = (raw: unknown, source: string): SettingsParse => {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    return { patch: {}, errors: [`${source}: expected a JSON object`] };
-  }
+export const readSettingsFile = (path: string): SettingsParse<Ratios> => readWith(settingsSchema, path);
 
-  const input = raw as Record<string, unknown>;
-  const patch: Partial<Ratios> = {};
-  const errors: string[] = [];
+export const userSettingsPath = (agentDir: string) => userPath(agentDir, SETTINGS_FILE);
 
-  RATIO_KEYS.filter((key) => input[key] !== undefined).forEach((key) => {
-    const value = input[key];
-
-    if (!isRatio(value)) {
-      errors.push(`${source}: ${key} must be a number above 0 and at most 1`);
-      return;
-    }
-
-    patch[key] = value;
-  });
-
-  return { patch, errors };
-};
-
-export const readSettingsFile = (path: string): SettingsParse => {
-  if (!existsSync(path)) {
-    return { patch: {}, errors: [] };
-  }
-
-  try {
-    return parseSettings(JSON.parse(readFileSync(path, "utf8")), path);
-  } catch (error) {
-    return { patch: {}, errors: [`${path}: ${error instanceof Error ? error.message : String(error)}`] };
-  }
-};
-
-export const userSettingsPath = (agentDir: string) => join(agentDir, SETTINGS_FILE);
-
-export const projectSettingsPath = (cwd: string) => join(cwd, ".pi", SETTINGS_FILE);
+export const projectSettingsPath = (cwd: string) => projectPath(cwd, SETTINGS_FILE);
 
 export type LoadedSettings = { ratios: Ratios; errors: string[] };
 
@@ -78,7 +51,7 @@ export const watchSettings = (host: Host): (() => Ratios) => {
       .filter((error) => !reported.has(error))
       .forEach((error) => {
         reported.add(error);
-        host.notify(`pi-session-limits settings: ${error}`, "warning");
+        host.ui.notify(`pi-session-limits settings: ${error}`, "warning");
       });
   });
 

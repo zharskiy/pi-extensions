@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ChildPrompts, HostUi } from "../../../src/adapter/contract.ts";
-import { createBus } from "../../../src/manager/bus.ts";
-import type { AgentRecord } from "../../../src/manager/types.ts";
+import type { ChildPrompts, HostUi } from "../../../../../core/adapter/contract.ts";
+import { createBus } from "../../../../../core/manager/bus.ts";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import type { BusEvents } from "../../../src/model/events.ts";
+import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { childPromptsFor, createPromptQueue, promptTitle } from "../../../src/plugins/run-agent/prompts.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void };
@@ -23,7 +24,7 @@ const deferred = <T>(): Deferred<T> => {
 };
 
 const createTestRegistry = () => {
-  const bus = createBus();
+  const bus = createBus<BusEvents>();
   let count = 0;
 
   const newId = (agent: string) => {

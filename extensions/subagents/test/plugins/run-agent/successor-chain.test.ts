@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AgentRecord } from "../../../src/manager/types.ts";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { MANIFEST_FILE } from "../../../src/plugins/agent-registry/registry.ts";
@@ -15,7 +16,6 @@ import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const handoffText = (status: string) =>
@@ -162,15 +162,28 @@ describe("successor chain", () => {
     expect(manifestOf(current(second))).toMatchObject({ chainIndex: 2, predecessorId: first.id });
   });
 
-  it("closes a link as done without a successor when the handoff says done", async () => {
-    const { first, current, handOff, registry, host } = await setup();
+  it("closes a link as handoff without a successor when the handoff says done", async () => {
+    const { first, current, handOff, registry } = await setup();
 
     expect(await handOff(first.id, "done")).toBeUndefined();
-    expect(current(first.id)).toMatchObject({ state: "done", resultText: handoffText("done") });
+    expect(current(first.id).state).toBe("handoff");
+    expect(current(first.id).error).toBe("Status must be one of partial, blocked");
     expect(registry.list()).toHaveLength(1);
-    expect(host.sent).toHaveLength(1);
+  });
+
+  it("closes as done without a handoff when the budget is crossed on the final answer turn", async () => {
+    const { first, current, runtime, registry, host } = await setup();
+    const child = runtime.child(first.id);
+
+    child.turn({ tokens: first.budgetTokens + 500, window: 1_000_000, percent: 20 }, "stop");
+    await flush();
+    child.finish("auth flow mapped");
+    await flush();
+
+    expect(child.messages).toEqual([]);
+    expect(current(first.id)).toMatchObject({ state: "done", handoffRequested: false });
+    expect(registry.list()).toHaveLength(1);
     expect(host.sent[0]).toContain("finished: 1 done.");
-    expect(host.sent[0]).not.toContain("Chain:");
   });
 
   it("closes a link as handoff without a successor when the handoff says blocked", async () => {

@@ -1,10 +1,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createExtensionManager } from "../../src/manager/extension-manager.ts";
-import type { Plugin } from "../../src/manager/plugin.ts";
-import { applySettings, defaultSettings, type Settings } from "../../src/manager/settings.ts";
-import { createFakeHost, createFakeRuntime } from "./fakes.ts";
+import { createExtensionManager } from "../../../../core/manager/extension-manager.ts";
+import { createFakeHost, createFakeRuntime } from "../../../../core/test/helpers/fakes.ts";
+import type { Plugin } from "../../src/model/plugin.ts";
+import { applySettings, defaultSettings, type Settings } from "../../src/model/settings.ts";
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");
 
@@ -30,7 +30,8 @@ export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = 
     runtime,
     settings,
     plugins,
-    packageRoot: PACKAGE_ROOT,
+    root: PACKAGE_ROOT,
+    disabled: settings.disabledPlugins,
     onError: (error) => errors.push(error),
   });
 

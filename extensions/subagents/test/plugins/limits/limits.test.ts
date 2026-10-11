@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { StopReason, ToolSpec } from "../../../../../core/adapter/contract.ts";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
@@ -9,7 +11,6 @@ import { budgetStep, effectiveBudget } from "../../../src/plugins/limits/budget.
 import { LIMITS_SENDER, limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const VALID_HANDOFF = [
@@ -42,6 +43,17 @@ const WIDE_AGENT = [
   "Search wide.",
 ].join("\n");
 
+const CAPPED_AGENT = [
+  "---",
+  "name: capped",
+  "description: Test agent with a turn limit.",
+  "max_turns: 2",
+  "limit: 100000",
+  "subagents: []",
+  "---",
+  "Search briefly.",
+].join("\n");
+
 const setup = async (overrides = {}, agent = "explorer") => {
   const harness = createHarness(
     [agentRegistryPlugin, agentDefinitionsPlugin, handoffPlugin, runAgentPlugin, limitsPlugin],
@@ -52,6 +64,7 @@ const setup = async (overrides = {}, agent = "explorer") => {
 
   mkdirSync(userAgentsDir, { recursive: true });
   writeFileSync(join(userAgentsDir, "wide.md"), WIDE_AGENT);
+  writeFileSync(join(userAgentsDir, "capped.md"), CAPPED_AGENT);
   harness.services.require("definitions").reload();
 
   await harness.host
@@ -63,8 +76,8 @@ const setup = async (overrides = {}, agent = "explorer") => {
   const record = harness.services.require("registry").list()[0];
   const child = harness.runtime.child(record.id);
 
-  const turn = async (tokens: number) => {
-    child.turn({ tokens, window: 400_000, percent: (tokens / 400_000) * 100 });
+  const turn = async (tokens: number, stopReason: StopReason = "toolUse", toolCalls?: number) => {
+    child.turn({ tokens, window: 400_000, percent: (tokens / 400_000) * 100 }, stopReason, toolCalls);
     await flush();
   };
 
@@ -141,19 +154,40 @@ describe("limits plugin", () => {
     expect(host.sent[0]).toContain(`Handoff file: ${record.handoffPath}`);
   });
 
-  it("fails the agent when the handoff file is missing or invalid", async () => {
-    const { child, turn, record, services } = await setup();
+  it("closes the agent as handoff with the validation errors when the handoff file is invalid", async () => {
+    const { child, turn, record, services, host } = await setup();
 
     await turn(100_500);
 
     mkdirSync(dirname(record.handoffPath), { recursive: true });
-    writeFileSync(record.handoffPath, "## Status\nmaybe\n");
+    writeFileSync(record.handoffPath, VALID_HANDOFF.replace("partial", "done"));
+    child.finish("wrote it");
+
+    const closed = services.require("registry").get(record.id);
+
+    expect(closed).toMatchObject({
+      state: "handoff",
+      error: "Status must be one of partial, blocked",
+      resultText: VALID_HANDOFF.replace("partial", "done"),
+    });
+    expect(closed?.successorId).toBeUndefined();
+    expect(host.sent[0]).toContain(
+      `Handoff file: ${record.handoffPath} (invalid: Status must be one of partial, blocked)`,
+    );
+  });
+
+  it("fails the agent when the handoff file is missing", async () => {
+    const { child, turn, record, services } = await setup();
+
+    await turn(100_500);
     child.finish("wrote it");
 
     const closed = services.require("registry").get(record.id);
 
     expect(closed?.state).toBe("failed");
-    expect(closed?.error).toContain("handoff file is invalid");
+    expect(closed?.error).toBe(
+      `context budget reached but no handoff file was written at ${record.handoffPath}`,
+    );
   });
 
   it("aborts an agent that keeps going past the hard line", async () => {
@@ -166,6 +200,124 @@ describe("limits plugin", () => {
     expect(services.require("registry").get(record.id)?.error).toBe(
       `context budget reached but no handoff file was written at ${record.handoffPath}`,
     );
+  });
+
+  it("leaves a turn that ends with the final answer alone and lets the agent close as done", async () => {
+    const { child, turn, record, services } = await setup();
+
+    await turn(81_000, "stop");
+    await turn(100_500, "stop");
+
+    expect(child.messages).toEqual([]);
+
+    child.finish("auth flow mapped");
+
+    expect(services.require("registry").get(record.id)).toMatchObject({
+      state: "done",
+      handoffRequested: false,
+    });
+  });
+
+  it("sends the warning and the handoff only on turns that continue with tool calls", async () => {
+    const { child, turn, record } = await setup();
+
+    await turn(81_000, "stop");
+
+    expect(child.messages).toEqual([]);
+
+    await turn(82_000);
+
+    expect(child.messages.map((entry) => entry.message.text)).toEqual([
+      expect.stringContaining("Context budget warning"),
+    ]);
+
+    await turn(100_500, "stop");
+
+    expect(child.messages).toHaveLength(1);
+
+    await turn(100_600);
+
+    expect(child.messages).toHaveLength(2);
+    expect(child.messages[1].message.text).toContain(record.handoffPath);
+  });
+
+  it("counts a turn as continuing from its tool calls, not from the stop reason", async () => {
+    const { child, turn } = await setup();
+
+    await turn(81_000, "toolUse", 0);
+    await turn(81_500, "error", 1);
+    await turn(81_800, "aborted", 1);
+
+    expect(child.messages).toEqual([]);
+
+    await turn(82_000, "length", 1);
+
+    expect(child.messages.map((entry) => entry.message.text)).toEqual([
+      expect.stringContaining("Context budget warning"),
+    ]);
+  });
+
+  it("requests the handoff on the next continuing wake turn of an over-budget agent waiting on its own batch", async () => {
+    const { child, turn, record, runtime, services } = await setup({}, "general");
+    const registry = services.require("registry");
+    const runChild = child.spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as ToolSpec<
+      RunAgentParams,
+      unknown
+    >;
+
+    await runChild.execute({ agents: [{ agent: "explorer", task: "look" }] }, { update: () => {} });
+    await flush();
+    await turn(100_500, "stop");
+    child.finish("Started batch, waiting.");
+    await flush();
+
+    expect(registry.get(record.id)).toMatchObject({ state: "running", handoffRequested: false });
+    expect(child.messages).toEqual([]);
+
+    runtime.child(registry.list()[1].id).finish("found it in src/a.ts");
+    await flush();
+
+    expect(child.wakes).toHaveLength(1);
+
+    await turn(101_000);
+
+    expect(registry.get(record.id)?.handoffRequested).toBe(true);
+    expect(child.messages.map((entry) => entry.message.text)).toEqual([
+      expect.stringContaining(record.handoffPath),
+    ]);
+  });
+
+  it("does not abort an agent past the hard line on the turn that replies with the handoff path", async () => {
+    const { child, turn } = await setup();
+
+    await turn(100_500);
+    await turn(116_000, "stop");
+
+    expect(child.aborted).toBe(false);
+  });
+
+  it("warns at the turn limit and aborts past the grace only on turns that continue", async () => {
+    const { child, turn, record, services } = await setup({}, "capped");
+
+    await turn(1_000);
+    await turn(1_000, "stop");
+
+    expect(child.messages).toEqual([]);
+
+    await turn(1_000);
+
+    expect(child.messages.map((entry) => entry.message.text)).toEqual([
+      expect.stringContaining("Turn limit reached (2 turns)"),
+    ]);
+
+    await turn(1_000, "stop");
+
+    expect(child.aborted).toBe(false);
+
+    await turn(1_000);
+
+    expect(child.aborted).toBe(true);
+    expect(services.require("registry").get(record.id)?.error).toBe("turn limit of 2 exceeded");
   });
 
   it("respects a smaller model window", async () => {
@@ -186,7 +338,7 @@ describe("handoff schema", () => {
   });
 
   it("rejects missing, empty, out-of-order sections and unknown status values", () => {
-    const missing = validateHandoff("## Status\ndone\n## Outcome\nx");
+    const missing = validateHandoff("## Status\npartial\n## Outcome\nx");
     const reordered = validateHandoff(
       VALID_HANDOFF.replace("## Outcome", "## Tmp")
         .replace("## Blocker", "## Outcome")
@@ -201,7 +353,18 @@ describe("handoff schema", () => {
     });
     expect(reordered.ok).toBe(false);
     expect(empty).toEqual({ ok: false, errors: ["empty sections: Next"] });
-    expect(badStatus).toEqual({ ok: false, errors: ["Status must be one of done, partial, blocked"] });
+    expect(badStatus).toEqual({ ok: false, errors: ["Status must be one of partial, blocked"] });
+  });
+
+  it("rejects a done status because a finished agent never writes a handoff", () => {
+    expect(validateHandoff(VALID_HANDOFF.replace("partial", "done"))).toEqual({
+      ok: false,
+      errors: ["Status must be one of partial, blocked"],
+    });
+    expect(validateHandoff(VALID_HANDOFF.replace("partial", "blocked"))).toEqual({
+      ok: true,
+      status: "blocked",
+    });
   });
 
   it("fills the handoff instruction with the target path", () => {

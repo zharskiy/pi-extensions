@@ -5,7 +5,7 @@ Your context budget is used up. Stop the current work now and write a handoff fi
 Use exactly these sections, in this order:
 
 ## Status
-One word: done, partial or blocked.
+One word: partial or blocked.
 
 ## Outcome
 What is finished and true now, in a few bullets.

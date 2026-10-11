@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
 import {
   defaultRatios,
   loadSettings,
@@ -11,7 +12,6 @@ import {
   userSettingsPath,
   watchSettings,
 } from "../src/settings.ts";
-import { createFakeHost } from "./helpers/fake-host.ts";
 
 const dirs = () => {
   const root = mkdtempSync(join(tmpdir(), "pi-session-limits-settings-"));

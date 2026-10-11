@@ -1,4 +1,4 @@
-import type { PromptRecord } from "../adapter/contract.ts";
+import type { PromptRecord } from "../../../../core/adapter/contract.ts";
 import type { CollapsibleSection } from "./collapsible.ts";
 
 const splitLines = (text: string) => text.replace(/\r\n/g, "\n").split("\n");

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
@@ -8,7 +9,6 @@ import { createOutbox } from "../../../src/plugins/run-agent/outbox.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import { createSemaphore } from "../../../src/plugins/run-agent/semaphore.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const setup = (overrides = {}) => {

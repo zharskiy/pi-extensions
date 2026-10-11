@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Plugin } from "../../manager/plugin.ts";
-import type { AgentDefinitions } from "../../manager/types.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import type { AgentDefinitions } from "../../model/types.ts";
 import { type DefinitionDir, type LoadResult, loadDefinitions } from "./loader.ts";
 import { assemblePromptAppend } from "./prompt.ts";
 
@@ -11,9 +11,9 @@ export const MAIN_SESSION_PROMPT_FILE = join("prompts", "main-session.md");
 
 export const agentDefinitionsPlugin: Plugin = {
   id: "agent-definitions",
-  enable: ({ host, services, packageRoot }) => {
-    const basePrompt = readFileSync(join(packageRoot, BASE_PROMPT_FILE), "utf8");
-    const mainPrompt = readFileSync(join(packageRoot, MAIN_SESSION_PROMPT_FILE), "utf8").trim();
+  enable: ({ host, services, root }) => {
+    const basePrompt = readFileSync(join(root, BASE_PROMPT_FILE), "utf8");
+    const mainPrompt = readFileSync(join(root, MAIN_SESSION_PROMPT_FILE), "utf8").trim();
 
     let loaded: LoadResult = { definitions: new Map(), errors: [] };
 
@@ -22,7 +22,7 @@ export const agentDefinitionsPlugin: Plugin = {
 
     const reload = () => {
       const info = host.session();
-      const dirs: DefinitionDir[] = [{ path: join(packageRoot, "agents"), source: "builtin" }];
+      const dirs: DefinitionDir[] = [{ path: join(root, "agents"), source: "builtin" }];
 
       if (info) {
         dirs.push({ path: join(info.agentDir, "agents"), source: "user" });

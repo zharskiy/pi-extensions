@@ -1,4 +1,4 @@
-import type { ModelChoice, ModelResolution } from "../../adapter/contract.ts";
+import type { ModelChoice, ModelResolution } from "../../../../../core/adapter/contract.ts";
 import { formatTokens } from "../../components/agent-row.ts";
 
 const choiceLine = (choice: ModelChoice) =>

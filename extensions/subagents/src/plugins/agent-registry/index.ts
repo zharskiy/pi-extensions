@@ -1,5 +1,5 @@
-import type { Plugin } from "../../manager/plugin.ts";
-import { type AgentRegistry, isClosed } from "../../manager/types.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { type AgentRegistry, isClosed } from "../../model/types.ts";
 import { createRegistry } from "./registry.ts";
 
 export const BUSY_CHANNEL = "session-limits:busy";

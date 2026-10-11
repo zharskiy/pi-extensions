@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ContextSnapshot, Host, SessionControl } from "./adapter/contract.ts";
+import type { ContextSnapshot, Host, SessionControl } from "../../../core/adapter/contract.ts";
 import { handoffPath, instructionFor, seedText, validateHandoff } from "./handoff.ts";
 import {
   contextLevel,
@@ -80,7 +80,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
 
     const segment = segmentFor(state.context, state.phase, ratios(), HANDOFF_COMMAND);
 
-    host.setStatus(STATUS_KEY, segment ? host.style(segment.token, segment.text) : undefined);
+    host.ui.setStatus(STATUS_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
   };
 
   const sendRequest = (path: string) => {
@@ -123,7 +123,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
   const giveUp = (path: string) => {
     state = { ...state, phase: "stuck" };
 
-    host.notify(
+    host.ui.notify(
       `Session handoff failed: no valid handoff file at ${path} after ${MAX_INSTRUCTIONS} requests. Ask the session to write it, then run /${HANDOFF_COMMAND}.`,
       "warning",
     );
@@ -192,7 +192,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
       state = { ...state, phase: "stuck" };
     }
 
-    host.notify(message, "warning");
+    host.ui.notify(message, "warning");
     refresh();
   };
 
@@ -217,7 +217,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
 
     const names = Array.from(sources).join(", ");
 
-    return host.confirm(
+    return host.ui.confirm(
       "Switch to a new session?",
       `Work reported by ${names} is still running and will be ended by the switch. Switch anyway?`,
     );
@@ -291,10 +291,10 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
 
   host.registerCommand(HANDOFF_COMMAND, {
     description: "Continue in a new session seeded from the session handoff file",
-    run: runSwitch,
+    run: (_args, control) => runSwitch(control),
   });
 
-  host.onEvent(BUSY_CHANNEL, (data) => {
+  host.subscribe(BUSY_CHANNEL, (data) => {
     const signal = parseBusySignal(data);
 
     if (!signal) {
@@ -348,10 +348,10 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
     cancelRelease();
     state = initialState();
 
-    host.setStatus(STATUS_KEY, undefined);
+    host.ui.setStatus(STATUS_KEY, undefined);
   });
 
-  host.onShutdown(() => {
+  host.onSessionShutdown(() => {
     cancelRelease();
   });
 

@@ -1,5 +1,5 @@
-import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
-import { type AgentRecord, type AgentState, isClosed } from "../manager/types.ts";
+import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
+import { type AgentRecord, type AgentState, isClosed } from "../model/types.ts";
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 

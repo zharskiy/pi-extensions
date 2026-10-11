@@ -1,7 +1,7 @@
-import type { ThemeLike } from "../../adapter/contract.ts";
+import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { treeRow } from "../../components/agent-row.ts";
-import type { Settings } from "../../manager/settings.ts";
-import { type AgentRecord, isClosed } from "../../manager/types.ts";
+import type { Settings } from "../../model/settings.ts";
+import { type AgentRecord, isClosed } from "../../model/types.ts";
 
 export const SPINNER_INTERVAL_MS = 120;
 

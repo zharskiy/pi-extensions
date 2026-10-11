@@ -1,5 +1,5 @@
-import type { Plugin } from "../../manager/plugin.ts";
-import { isClosed } from "../../manager/types.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { isClosed } from "../../model/types.ts";
 import { createAgentListView } from "./view.ts";
 
 export const REFRESH_MS = 300;

@@ -2,7 +2,7 @@
 
 Date: 10 October 2026. Input: `HANDOFF.md` and the four research reports in `research/`.
 
-Status: release 0.1 is merged. Release 0.2 (F9, F11, F12, F13, F14) is committed on branch `feat/0.2`; the corrections from the product owner's review (one folder per extension, main session limits as a separate extension) are in progress, uncommitted. Every departure from this plan is listed in `docs/deviations.md`.
+Status: release 0.1 is merged. Release 0.2 (F9, F11, F12, F13, F14) is committed on branch `feat/0.2`, followed by the first review round (one folder per extension, main session limits as a separate extension). The second review round (shared `core/`, spending as a separate extension, no handoff from a finished agent, package rename) is uncommitted. Every departure from this plan is listed in `docs/deviations.md`.
 
 ## 1. Research conclusions that fix the design
 
@@ -33,47 +33,55 @@ These are the decisions the research settles, plus the product decisions taken d
 Built once, before any feature. Owned by the platform stream.
 
 ```
-pi-extensions/                # one pi package, one folder per extension
+pi-extensions/                # one pi package: shared core plus one folder per extension
   package.json                # "pi.extensions" lists every extension entry file
   README.md
   biome.json  vitest.config.ts  tsconfig.json
-  test/architecture.test.ts   # repo-wide rules: pi imports only in src/adapter and test/adapter, no imports across extensions
+  test/architecture.test.ts   # repo-wide import rules a–g (docs/deviations.md entry 45)
+  core/                       # shared infrastructure, knows nothing about any extension
+    adapter/                  # ONLY place that imports @earendil-works/* and typebox
+      contract.ts             # our interface: Host, HostUi, SessionControl, AgentRuntime, Session, Usage
+      pi-adapter.ts           # createPiExtension(boot, { root, namespace, childExclude }); the only adapter file an entry may import
+      pi-scope.ts             # the async scope that marks code running inside a child session, kept on globalThis so every extension's copy shares it
+      pi-ui.ts                # HostUi: notify, status, style, widgets, overlays, confirm and input over pi's UI
+      pi-tools.ts             # converts our ToolSpec and tool results to and from pi's tool shapes
+      pi-models.ts            # resolves model names against pi's model registry through the resolver's catalog
+      pi-child.ts             # AgentRuntime: child SDK sessions, their settings, UI context and events
+      main-prompt.ts          # rebuilds the sections pi drops when the preamble is replaced
+      model-resolver.ts       # pure name → provider/id:thinking resolution over a plain catalog
+      route.ts                # formats a routed message for a child
+      session-file.ts         # reads a child's JSONL session for the view
+      usage.ts                # sums usage from session entries
+    manager/
+      extension-manager.ts    # createExtensionManager<Events, Services, Settings>: orders and enables plugins, records contributions
+      plugin.ts               # Plugin<Events, Services, Settings>: id, requires, enable(ctx) returning an optional disable function
+      bus.ts                  # typed in-process events, generic over an event map
+      settings.ts             # generic settings helpers: read a JSON file, validate against a schema, apply a patch
+      paths.ts                # per-session data directory next to the session file
+    test/                     # mirrors core/; helpers/fakes.ts holds the fakes every extension's tests share
+      adapter/                # the only tests allowed to import pi (conformance, host, UI, main prompt, resolver)
+      manager/  helpers/
   extensions/
     subagents/
       src/
-        adapter/              # ONLY place that imports @earendil-works/*
-          contract.ts         # our interface: Host, AgentRuntime, Ui, Session, Usage
-          pi-adapter.ts       # Host implementation against pi 1.1.0; the only adapter file src/index.ts may import
-          pi-scope.ts         # package root and the async scope that marks code running inside a child session
-          pi-ui.ts            # HostUi: notify, status, widgets, overlays, confirm and input over pi's UI
-          pi-tools.ts         # converts our ToolSpec and tool results to and from pi's tool shapes
-          pi-models.ts        # resolves model names against pi's model registry through the resolver's catalog
-          pi-child.ts         # AgentRuntime: child SDK sessions, their settings, UI context and events
-          model-resolver.ts   # pure name → provider/id:thinking resolution over a plain catalog
-          main-prompt.ts      # rebuilds the sections pi drops when the preamble is replaced
-          session-file.ts     # reads an agent's JSONL session for the view
-        manager/
-          extension-manager.ts  # enables plugins, owns every cross-plugin interaction
-          plugin.ts           # Plugin interface: id, deps, enable(host, bus), disable
-          bus.ts              # typed in-process events between plugins
-          settings.ts         # our own JSON settings file + schema + defaults
+        index.ts              # single entry: root, settings, plugin list, createPiExtension
+        plugins.ts            # the plugin list, next to the entry
+        model/                # types.ts (records, registry, service map), events.ts, settings.ts (schema, defaults), paths.ts, plugin.ts
         plugins/
           agent-definitions/  # loads agent .md files, base prompt, main session prompt
           run-agent/          # run_agent tool, batches, wake, result contract
           agent-status/       # agent_status tool
           agent-registry/     # in-memory tree of agents, manifests, lifecycle state, busy signal
           limits/             # per-agent context budget + handoff trigger
-          spending/           # ledger, tool-result usage channel, footer segment
+          usage-report/       # publishes every agent's usage on the `spending:usage` channel
           progress-widget/    # rows below the editor
           agent-view/         # overlay transcript of one agent
           agent-list-view/    # overlay list of all agents
           handoff/            # handoff file schema, writer prompt, successor spawn
         components/
-          collapsible.ts  agent-row.ts  system-prompt-block.ts
-        index.ts              # pi entry: builds adapter, manager, enables plugins
-      test/                   # mirrors src/ one to one; helpers/ holds fakes and the harness
-        adapter/              # the only tests allowed to import pi (conformance, main prompt, resolver)
-        manager/  plugins/  components/
+          collapsible.ts  agent-row.ts  agent-list.ts  system-prompt-block.ts
+      test/                   # mirrors src/; helpers/harness.ts builds the manager over the core fakes
+        model/  plugins/  components/
       agents/                 # shipped agent definitions (.md)
       prompts/
         base-system-prompt.md
@@ -81,21 +89,21 @@ pi-extensions/                # one pi package, one folder per extension
         handoff.md
       scripts/spike.ts        # SDK-level conformance run against a real pi, rerun per pi release
       README.md
+    spending/                 # session totals: main plus every source reporting on `spending:usage`, knows nothing about agents
+      src/  test/  README.md
     session-limits/           # main-session soft/hard limit, knows nothing about agents
       src/
-        adapter/
-          contract.ts         # small host contract: status, confirm, command, turn end, idle, event bus
-          pi-adapter.ts       # the only file that imports pi
+        index.ts              # entry: createPiExtension, conversational-mode guard, limits
+        conversation.ts       # acts only in tui and rpc modes
         limits.ts             # flow: request, retry, busy sources, switch through /session-handoff
         thresholds.ts  handoff.ts  settings.ts
-        index.ts
-      test/                   # mirrors src/; test/adapter may import pi
+      test/                   # mirrors src/
       prompts/handoff.md
       README.md
   docs/  docs/design/  research/
 ```
 
-Rules enforced by lint and review: `plugins/**` and `components/**` never import `@earendil-works/*`, and under `test/` only `test/adapter/**` may; plugins talk only through the bus and the registry; the manager is the single list of what the extension adds to pi. Code conventions: no code comments anywhere, no for-loops, Conventional Commits, tests live under `test/` and never under `src/`.
+Rules enforced by lint and review: only `core/adapter/**` imports `@earendil-works/*`, and among tests only `core/test/adapter/**` may; plugins talk only through the bus and the registry; each extension's `src/index.ts` (with its plugin list next to it) is the single place where its parts are connected. Code conventions: no code comments anywhere, no for-loops, Conventional Commits, tests live under `test/` and never under `src/`.
 
 **Spike (first task, time-boxed to two days):** run three concurrent child sessions from an extension inside the TUI, assert no interference, cache hit on the second turn of each child (`cacheRead` grows), clean `dispose()`, MCP behaviour, and that waking the idle main session via `sendUserMessage` keeps its `cacheRead` stable. The adapter contract is frozen only after the spike passes.
 
@@ -150,6 +158,7 @@ Goal: the main session, a cheap coordinator, can delegate work to one or more ba
 - Scope: process-wide ledger keyed by agent id, high-water-mark per agent persisted as custom entries in the parent session so reloads never double count; footer segment `main $x · agents $y · total $z` via `setStatus`; tool-result `usage` on synchronous waits; subscription usage shown as pi shows it.
 - Plugins: `spending`.
 - Tests: nested agents counted once; reload keeps totals; pi `/session` total equals our main figure plus delivered agent usage.
+- Now: the ledger and the footer are the standalone `extensions/spending` extension, fed over pi's event channel `spending:usage` by the subagents `usage-report` plugin; tool results no longer carry usage, so pi's own session cost shows the main session only and the spending segment shows the total (docs/deviations.md, second review round).
 
 **F7 Agent context budget with handoff file**
 - Value: an agent in a huge repo never silently loses its context; its work survives as a file.
@@ -196,6 +205,12 @@ Goal: the main session, a cheap coordinator, can delegate work to one or more ba
 **F18 Upstream work**: file pi requests for an extension-facing `appendUsage` and a cache-safe wake, and track issues #5581, #10267, #10610; switch adapter paths when fixed.
 
 **F19 Operability**: terminal notification on done or needs input, per-agent worktree isolation, persisted verbose or focus view modes.
+
+**F20 MCP tools per agent**
+- Value: each agent sees only the MCP tools it is allowed to use, so a reviewer cannot call a deploy tool and a search agent does not pay for a large MCP tool list in its prompt.
+- Scope: children do not have MCP tools today: pi's MCP built-in is installed through the session's `extensionFactories`, and the child loader passes only our own child factory (docs/deviations.md entry 9). So the first part of F20 is to load pi's MCP built-in in child sessions next to our factory; the filtering below depends on it. Pi names MCP tools `mcp__<server>__<tool>` and lists them next to the built-in tools; a child session created with a `tools` list keeps only the MCP tools that match an entry starting with `mcp__` and drops them all when the list has none (`core/sdk.d.ts`, `core/mcp-servers.d.ts`). The agent file gets an `mcp` frontmatter field: a list of `mcp__<server>` namespaces or `mcp__<server>__<tool>` names the agent may use, empty by default, so an agent without the field gets no MCP tools. The loader validates the field (list of strings with the `mcp__` prefix) and the harness passes the resolved names together with the agent's `tools` at spawn, frozen like the rest of the tool set so the cache stays stable. The main session keeps pi's own MCP configuration untouched. `run_agent` describes which MCP tools each agent has so the orchestrator can pick the agent that has the tool a task needs. Pi's `mcp_servers_change` event is only informational for us; servers that connect after spawn do not reach a running agent.
+- Plugins: `agent-definitions` (field), `run-agent` (spawn), `agent-view` (the tools section already lists what was sent).
+- Tests: a child session loads pi's MCP built-in; loader accepts and rejects the field; spawn passes the filtered names; an agent without the field gets no MCP tools; the `run_agent` description names them.
 
 ## 4. Team streams and parallelism
 

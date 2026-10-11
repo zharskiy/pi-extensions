@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentsDirFor } from "../../manager/paths.ts";
-import type { Plugin } from "../../manager/plugin.ts";
-import { type AgentRecord, chainLinks, chainTerminal, type RouteResult } from "../../manager/types.ts";
+import { agentsDirFor } from "../../model/paths.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { type AgentRecord, chainLinks, chainTerminal, type RouteResult } from "../../model/types.ts";
 import { createAgentView, type ViewData } from "./view.ts";
 
 export const COMMAND = "agents";

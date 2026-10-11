@@ -1,4 +1,4 @@
-import type { AgentDefinition } from "../../manager/types.ts";
+import type { AgentDefinition } from "../../model/types.ts";
 
 const outputContract = (definition: AgentDefinition) => {
   if (definition.output === "file") {

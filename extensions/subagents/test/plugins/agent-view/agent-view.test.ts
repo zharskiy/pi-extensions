@@ -2,12 +2,18 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
-import type { KeyPress, OverlayApi, SessionRecord } from "../../../src/adapter/contract.ts";
-import { createScrollPane, createTranscriptPane, initRenderTheme } from "../../../src/adapter/pi-ui.ts";
-import { readSessionFile } from "../../../src/adapter/session-file.ts";
+import type { KeyPress, OverlayApi, SessionRecord } from "../../../../../core/adapter/contract.ts";
+import {
+  createScrollPane,
+  createTranscriptPane,
+  initRenderTheme,
+} from "../../../../../core/adapter/pi-ui.ts";
+import { promptRecordEntry, readSessionFile } from "../../../../../core/adapter/session-file.ts";
+import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { renderSections, setAllCollapsed } from "../../../src/components/collapsible.ts";
 import { promptSections } from "../../../src/components/system-prompt-block.ts";
-import type { AgentRecord, RouteResult } from "../../../src/manager/types.ts";
+import { NAMESPACE } from "../../../src/model/paths.ts";
+import type { AgentRecord, RouteResult } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin, COMMAND, REFRESH_MS } from "../../../src/plugins/agent-view/index.ts";
@@ -16,10 +22,11 @@ import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createFakeInputPane, flush, plainTheme } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
+
+const RECORD_ENTRY = promptRecordEntry(NAMESPACE);
 
 initRenderTheme();
 
@@ -53,7 +60,7 @@ const key = (name: KeyPress["name"], char?: string): KeyPress => ({ name, char }
 
 describe("system prompt block", () => {
   it("renders the recorded prompt, tools, skills, guidelines and provider payload", () => {
-    const session = readSessionFile(FIXTURE);
+    const session = readSessionFile(FIXTURE, RECORD_ENTRY);
     const sections = setAllCollapsed(promptSections(session.prompt), false);
     const rendered = renderSections(sections, 0, plainTheme, (text) => [text]);
 
@@ -62,7 +69,7 @@ describe("system prompt block", () => {
   });
 
   it("starts collapsed with one header per section", () => {
-    const session = readSessionFile(FIXTURE);
+    const session = readSessionFile(FIXTURE, RECORD_ENTRY);
     const rendered = renderSections(promptSections(session.prompt), 0, plainTheme, (text) => [text]);
 
     expect(rendered.lines).toEqual([
@@ -107,7 +114,7 @@ const closedAgent = (harness: ReturnType<typeof setup>) => {
   const file = join(harness.root, "recorded.jsonl");
 
   writeFileSync(file, "");
-  harness.runtime.sessions.set(file, readSessionFile(FIXTURE));
+  harness.runtime.sessions.set(file, readSessionFile(FIXTURE, RECORD_ENTRY));
 
   const registry = harness.services.require("registry");
 
@@ -157,7 +164,7 @@ const viewOf = (session: SessionRecord, rows: number) => {
 };
 
 const fixtureWithout = (count: number): SessionRecord => {
-  const session = readSessionFile(FIXTURE);
+  const session = readSessionFile(FIXTURE, RECORD_ENTRY);
 
   return { ...session, items: session.items.slice(0, session.items.length - count) };
 };
@@ -167,7 +174,7 @@ describe("agent view", () => {
     const { api } = fakeApi(40);
     const harness = setup();
     const record = closedAgent(harness);
-    const session = readSessionFile(FIXTURE);
+    const session = readSessionFile(FIXTURE, RECORD_ENTRY);
     const sectionTitles: string[] = [];
 
     const countingApi: OverlayApi = {
@@ -228,7 +235,7 @@ describe("agent view", () => {
     child.finish("Three files.");
     await flush();
 
-    harness.runtime.sessions.set(String(child.sessionFile), readSessionFile(FIXTURE));
+    harness.runtime.sessions.set(String(child.sessionFile), readSessionFile(FIXTURE, RECORD_ENTRY));
     mkdirSync(record.dir, { recursive: true });
     writeFileSync(String(child.sessionFile), "");
 
@@ -289,7 +296,7 @@ describe("agent view", () => {
   });
 
   it("opens at the tail, scrolls with keys and the wheel, and keeps the prompt block first", () => {
-    const { view } = viewOf(readSessionFile(FIXTURE), 20);
+    const { view } = viewOf(readSessionFile(FIXTURE, RECORD_ENTRY), 20);
     const visible = () => plain(view.render(100)).slice(4, -1);
 
     expect(view.render(100)).toHaveLength(20);
@@ -325,7 +332,7 @@ describe("agent view", () => {
 
     const before = visible();
 
-    append(readSessionFile(FIXTURE));
+    append(readSessionFile(FIXTURE, RECORD_ENTRY));
 
     expect(visible()).toEqual(before);
 
@@ -407,7 +414,7 @@ const openViewWith = (record: AgentRecord, send: (text: string) => Promise<Route
 
   const view = createAgentView(
     {
-      load: () => ({ record, session: readSessionFile(FIXTURE) }),
+      load: () => ({ record, session: readSessionFile(FIXTURE, RECORD_ENTRY) }),
       stop: () => undefined,
       send: (text) => {
         sent.push(text);
@@ -568,7 +575,7 @@ describe("agent view input focus", () => {
 
     const view = createAgentView(
       {
-        load: () => ({ record, session: readSessionFile(FIXTURE) }),
+        load: () => ({ record, session: readSessionFile(FIXTURE, RECORD_ENTRY) }),
         stop: () => undefined,
         send: async () => ({ ok: true, delivery: "steer" }),
         subscribe: () => () => {},

@@ -1,4 +1,4 @@
-import type { HandoffValidation } from "../../manager/types.ts";
+import type { HandoffValidation } from "../../model/types.ts";
 
 export const HANDOFF_SECTIONS = [
   "Status",
@@ -9,7 +9,7 @@ export const HANDOFF_SECTIONS = [
   "Files touched",
 ] as const;
 
-export const HANDOFF_STATUSES = ["done", "partial", "blocked"] as const;
+export const HANDOFF_STATUSES = ["partial", "blocked"] as const;
 
 type Heading = { title: string; line: number };
 

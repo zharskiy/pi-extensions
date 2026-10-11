@@ -5,7 +5,7 @@ import type {
   SessionRecord,
   ThemeLike,
   ViewComponent,
-} from "../../adapter/contract.ts";
+} from "../../../../../core/adapter/contract.ts";
 import {
   attentionText,
   chainLabel,
@@ -16,7 +16,7 @@ import {
 } from "../../components/agent-row.ts";
 import { type CollapsibleSection, renderSections, toggleSection } from "../../components/collapsible.ts";
 import { promptSections } from "../../components/system-prompt-block.ts";
-import { type AgentRecord, isClosed, type RouteResult } from "../../manager/types.ts";
+import { type AgentRecord, isClosed, type RouteResult } from "../../model/types.ts";
 
 export type ViewData = { record: AgentRecord; openedId?: string; session?: SessionRecord; error?: string };
 

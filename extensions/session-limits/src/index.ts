@@ -1,12 +1,19 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { createPiExtension } from "./adapter/pi-adapter.ts";
+import { join, resolve } from "node:path";
+import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
+import { conversationOnly } from "./conversation.ts";
 import { createLimits } from "./limits.ts";
 import { watchSettings } from "./settings.ts";
 
-export default createPiExtension((host, paths) => {
-  const ratios = watchSettings(host);
-  const template = readFileSync(join(paths.packageRoot, "prompts", "handoff.md"), "utf8");
+const root = resolve(import.meta.dirname, "..");
 
-  createLimits({ host, template, ratios });
-});
+export default createPiExtension(
+  (piHost, _runtime, paths) => {
+    const host = conversationOnly(piHost);
+    const ratios = watchSettings(host);
+    const template = readFileSync(join(paths.root, "prompts", "handoff.md"), "utf8");
+
+    createLimits({ host, template, ratios });
+  },
+  { root, namespace: "pi-session-limits" },
+);

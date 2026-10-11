@@ -1,46 +1,15 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const EXTENSIONS = join(import.meta.dirname, "..", "extensions");
-
-const extensionDirs = () =>
-  readdirSync(EXTENSIONS)
-    .map((name) => join(EXTENSIONS, name))
-    .filter((path) => statSync(path).isDirectory());
-
-const sourceFiles = (dir: string): string[] =>
-  readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-
-    if (statSync(path).isDirectory()) {
-      return sourceFiles(path);
-    }
-
-    return path.endsWith(".ts") ? [path] : [];
-  });
-
-const importsOf = (file: string) =>
-  [
-    ...readFileSync(file, "utf8").matchAll(
-      /(?:import|export)[^"']*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g,
-    ),
-  ].map((match) => match[1] ?? match[2]);
-
-const isPiPackage = (specifier: string) =>
-  specifier.startsWith("@earendil-works/") || specifier === "typebox";
-
-const offendersIn = (dir: string, keep: (file: string) => boolean, bad: (specifier: string) => boolean) =>
-  sourceFiles(dir)
-    .filter(keep)
-    .flatMap((file) =>
-      importsOf(file)
-        .filter(bad)
-        .map((specifier) => `${relative(EXTENSIONS, file)} imports ${specifier}`),
-    );
-
-const isUnder = (root: string, segment: string) => (file: string) =>
-  relative(root, file).startsWith(`${segment}${sep}`);
+const ROOT = resolve(import.meta.dirname, "..");
+const CORE = join(ROOT, "core");
+const ADAPTER = join(CORE, "adapter");
+const MANAGER = join(CORE, "manager");
+const CORE_TESTS = join(CORE, "test");
+const EXTENSIONS = join(ROOT, "extensions");
+const CONTRACT = join(ADAPTER, "contract.ts");
+const PI_ADAPTER = join(ADAPTER, "pi-adapter.ts");
 
 const exists = (path: string) => {
   try {
@@ -50,13 +19,91 @@ const exists = (path: string) => {
   }
 };
 
-describe("architecture", () => {
-  it("only src/adapter of an extension imports pi packages", () => {
-    const offenders = extensionDirs().flatMap((extension) => {
-      const src = join(extension, "src");
+const extensionDirs = () =>
+  readdirSync(EXTENSIONS)
+    .map((name) => join(EXTENSIONS, name))
+    .filter(exists);
 
-      return offendersIn(src, (file) => !isUnder(src, "adapter")(file), isPiPackage);
-    });
+const sourceFiles = (dir: string): string[] => {
+  if (!exists(dir)) {
+    return [];
+  }
+
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+
+    if (statSync(path).isDirectory()) {
+      return sourceFiles(path);
+    }
+
+    return path.endsWith(".ts") ? [path] : [];
+  });
+};
+
+const isInside = (dir: string) => (path: string) => path.startsWith(`${dir}${sep}`);
+
+const importsOf = (file: string) =>
+  [
+    ...readFileSync(file, "utf8").matchAll(
+      /(?:import|export)[^"']*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|import\s+["']([^"']+)["']/g,
+    ),
+  ].map((match) => match[1] ?? match[2] ?? match[3]);
+
+type Import = { file: string; specifier: string; target?: string };
+
+const importsIn = (files: string[]): Import[] =>
+  files.flatMap((file) =>
+    importsOf(file).map((specifier) => ({
+      file,
+      specifier,
+      target: specifier.startsWith(".") ? resolve(dirname(file), specifier) : undefined,
+    })),
+  );
+
+const describeImport = ({ file, specifier }: Import) => `${relative(ROOT, file)} imports ${specifier}`;
+
+const isPiPackage = ({ specifier }: Import) =>
+  specifier.startsWith("@earendil-works/") || specifier === "typebox";
+
+const coreCode = () => sourceFiles(CORE).filter((file) => !isInside(CORE_TESTS)(file));
+
+const extensionCode = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "src")));
+
+const testCode = () => [
+  ...sourceFiles(CORE_TESTS),
+  ...extensionDirs().flatMap((extension) => sourceFiles(join(extension, "test"))),
+  ...sourceFiles(join(ROOT, "test")),
+];
+
+const isEntry = (file: string) =>
+  extensionDirs().some((extension) => file === join(extension, "src", "index.ts"));
+
+describe("architecture", () => {
+  it("only core/adapter imports pi packages", () => {
+    const offenders = importsIn([...coreCode(), ...extensionCode()])
+      .filter((entry) => !isInside(ADAPTER)(entry.file))
+      .filter(isPiPackage)
+      .map(describeImport);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("only the tests in core/test/adapter import pi packages", () => {
+    const offenders = importsIn(testCode())
+      .filter((entry) => !isInside(join(CORE_TESTS, "adapter"))(entry.file))
+      .filter(isPiPackage)
+      .map(describeImport);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("outside core/adapter only the contract is imported, except pi-adapter by each extension's entry", () => {
+    const offenders = importsIn([...coreCode(), ...extensionCode()])
+      .filter((entry) => !isInside(ADAPTER)(entry.file))
+      .filter((entry) => entry.target !== undefined && isInside(ADAPTER)(entry.target))
+      .filter((entry) => entry.target !== CONTRACT)
+      .filter((entry) => !(entry.target === PI_ADAPTER && isEntry(entry.file)))
+      .map(describeImport);
 
     expect(offenders).toEqual([]);
   });
@@ -66,64 +113,51 @@ describe("architecture", () => {
       .map((extension) => join(extension, "src", "plugins"))
       .filter(exists)
       .flatMap((plugins) =>
-        sourceFiles(plugins).flatMap((file) => {
-          const own = relative(plugins, file).split(sep)[0];
+        importsIn(sourceFiles(plugins))
+          .filter((entry) => entry.target !== undefined && isInside(plugins)(entry.target))
+          .filter((entry) => {
+            const own = relative(plugins, entry.file).split(sep)[0];
 
-          return importsOf(file)
-            .filter((specifier) => specifier.startsWith("."))
-            .filter((specifier) => {
-              const target = relative(plugins, join(dirname(file), specifier));
-
-              return !target.startsWith("..") && target.split(sep)[0] !== own;
-            })
-            .map((specifier) => `${relative(EXTENSIONS, file)} imports ${specifier}`);
-        }),
+            return relative(plugins, entry.target ?? "").split(sep)[0] !== own;
+          })
+          .map(describeImport),
       );
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("everything outside the adapter depends only on the adapter contract", () => {
-    const offenders = extensionDirs().flatMap((extension) => {
-      const src = join(extension, "src");
-
-      return offendersIn(
-        src,
-        (file) => !isUnder(src, "adapter")(file) && relative(src, file) !== "index.ts",
-        (specifier) => specifier.includes("adapter/") && !specifier.endsWith("adapter/contract.ts"),
-      );
-    });
 
     expect(offenders).toEqual([]);
   });
 
   it("extensions never import each other", () => {
     const offenders = extensionDirs().flatMap((extension) =>
-      sourceFiles(extension).flatMap((file) =>
-        importsOf(file)
-          .filter((specifier) => specifier.startsWith("."))
-          .filter((specifier) => relative(extension, join(dirname(file), specifier)).startsWith(".."))
-          .map((specifier) => `${relative(EXTENSIONS, file)} imports ${specifier}`),
-      ),
+      importsIn(sourceFiles(extension))
+        .filter((entry) => entry.target !== undefined && isInside(EXTENSIONS)(entry.target))
+        .filter((entry) => !isInside(extension)(entry.target ?? ""))
+        .map(describeImport),
     );
 
     expect(offenders).toEqual([]);
   });
 
-  it("keeps every test outside src", () => {
-    const offenders = extensionDirs().flatMap((extension) =>
-      sourceFiles(join(extension, "src")).filter((file) => file.endsWith(".test.ts")),
-    );
+  it("core never imports from extensions", () => {
+    const offenders = importsIn(sourceFiles(CORE))
+      .filter((entry) => entry.target !== undefined && isInside(EXTENSIONS)(entry.target))
+      .map(describeImport);
 
     expect(offenders).toEqual([]);
   });
 
-  it("only the adapter tests import pi packages", () => {
-    const offenders = extensionDirs().flatMap((extension) => {
-      const test = join(extension, "test");
+  it("keeps every test outside src, core/adapter and core/manager", () => {
+    const offenders = [...extensionCode(), ...sourceFiles(ADAPTER), ...sourceFiles(MANAGER)]
+      .filter((file) => file.endsWith(".test.ts"))
+      .map((file) => relative(ROOT, file));
 
-      return offendersIn(test, (file) => !isUnder(test, "adapter")(file), isPiPackage);
-    });
+    expect(offenders).toEqual([]);
+  });
+
+  it("mirrors core in core/test", () => {
+    const offenders = sourceFiles(CORE_TESTS)
+      .filter((file) => file.endsWith(".test.ts"))
+      .map((file) => relative(CORE_TESTS, file).split(sep)[0])
+      .filter((area) => !["adapter", "manager"].includes(area));
 
     expect(offenders).toEqual([]);
   });

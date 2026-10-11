@@ -1,5 +1,5 @@
-import type { Plugin } from "../../manager/plugin.ts";
-import { isClosed } from "../../manager/types.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { isClosed } from "../../model/types.ts";
 import { budgetStep, effectiveBudget, softWarning, turnLimitWarning } from "./budget.ts";
 
 export const LIMITS_SENDER = "pi-subagents";
@@ -40,10 +40,10 @@ export const limitsPlugin: Plugin = {
       }
     };
 
-    const off = bus.on("agent:turn", ({ id, context, turns }) => {
+    const off = bus.on("agent:turn", ({ id, context, turns, continuing }) => {
       const record = registry.get(id);
 
-      if (!record || isClosed(record.state)) {
+      if (!continuing || !record || isClosed(record.state)) {
         return;
       }
 

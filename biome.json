@@ -18,7 +18,7 @@
   },
   "overrides": [
     {
-      "includes": ["extensions/*/src/**", "!extensions/*/src/adapter/**"],
+      "includes": ["core/**", "extensions/*/src/**", "!core/adapter/**", "!core/test/**"],
       "linter": {
         "rules": {
           "style": {
@@ -28,7 +28,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "typebox"],
-                    "message": "Only src/adapter/** of an extension may import pi packages."
+                    "message": "Only core/adapter/** may import pi packages."
                   }
                 ]
               }
@@ -38,7 +38,7 @@
       }
     },
     {
-      "includes": ["extensions/*/test/**", "test/**", "!extensions/*/test/adapter/**"],
+      "includes": ["core/test/**", "extensions/*/test/**", "test/**", "!core/test/adapter/**"],
       "linter": {
         "rules": {
           "style": {
@@ -48,7 +48,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "typebox"],
-                    "message": "Only the adapter tests in test/adapter/** of an extension may import pi packages."
+                    "message": "Only the adapter tests in core/test/adapter/** may import pi packages."
                   }
                 ]
               }

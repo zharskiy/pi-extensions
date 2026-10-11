@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
-import { type AgentRecord, chainLinks } from "../../manager/types.ts";
+import { type AgentRecord, chainLinks } from "../../model/types.ts";
 
 export const RESULT_FILE = "result.md";
 
@@ -60,7 +60,7 @@ export const resultEntry = (
   lines.push(finishSummary(chained ? chainTotals(links) : record, now));
 
   if (record.state === "handoff") {
-    lines.push(`Handoff file: ${record.handoffPath}`);
+    lines.push(`Handoff file: ${record.handoffPath}${record.error ? ` (invalid: ${record.error})` : ""}`);
 
     return lines.join("\n");
   }

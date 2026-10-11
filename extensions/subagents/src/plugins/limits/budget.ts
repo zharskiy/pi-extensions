@@ -1,4 +1,4 @@
-import type { ContextSnapshot } from "../../adapter/contract.ts";
+import type { ContextSnapshot } from "../../../../../core/adapter/contract.ts";
 
 export const effectiveBudget = (budgetTokens: number, context: ContextSnapshot, reserveTokens: number) => {
   if (context.window <= 0) {

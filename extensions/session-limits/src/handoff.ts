@@ -1,6 +1,6 @@
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionInfo } from "./adapter/contract.ts";
+import type { SessionInfo } from "../../../core/adapter/contract.ts";
+import { sessionDataDir } from "../../../core/manager/paths.ts";
 
 export const HANDOFF_FILE = "main-handoff.md";
 
@@ -19,17 +19,8 @@ export type HandoffValidation = { ok: true; status: string } | { ok: false; erro
 
 type Heading = { title: string; line: number };
 
-export const handoffPath = (info: SessionInfo | undefined) => {
-  if (!info) {
-    return join(tmpdir(), "pi-session-limits", "no-session", HANDOFF_FILE);
-  }
-
-  if (info.file) {
-    return join(info.file.replace(/\.jsonl$/, ""), HANDOFF_FILE);
-  }
-
-  return join(tmpdir(), "pi-session-limits", info.id, HANDOFF_FILE);
-};
+export const handoffPath = (info: SessionInfo | undefined) =>
+  join(sessionDataDir(info, "pi-session-limits"), HANDOFF_FILE);
 
 export const instructionFor = (template: string, path: string) =>
   template.replaceAll("{{path}}", path).trim();

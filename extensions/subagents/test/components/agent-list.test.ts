@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   emptyListText,
   groupOf,
@@ -7,8 +8,7 @@ import {
   renderList,
   selectedRecord,
 } from "../../src/components/agent-list.ts";
-import type { AgentRecord } from "../../src/manager/types.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import type { AgentRecord } from "../../src/model/types.ts";
 
 const record = (id: string, patch: Partial<AgentRecord> = {}): AgentRecord => ({
   id,

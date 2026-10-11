@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type AgentRecord, MAIN_CALLER } from "../../../src/manager/types.ts";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import { type AgentRecord, MAIN_CALLER } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin, BUSY_CHANNEL, BUSY_SOURCE } from "../../../src/plugins/agent-registry/index.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
@@ -9,7 +10,6 @@ import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const HANDOFF = [

@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../adapter/contract.ts";
+import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 
 export type CollapsibleSection = {
   title: string;

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createFakeHost, flushTimers as flush } from "../../../core/test/helpers/fakes.ts";
 import {
   BUSY_CHANNEL,
   createLimits,
@@ -11,7 +12,6 @@ import {
   STATUS_KEY,
 } from "../src/limits.ts";
 import { defaultRatios } from "../src/settings.ts";
-import { createFakeHost, flush } from "./helpers/fake-host.ts";
 
 const TEMPLATE = readFileSync(resolve(import.meta.dirname, "..", "prompts", "handoff.md"), "utf8");
 
@@ -129,9 +129,9 @@ describe("session limits", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].parentSession).toBe(host.info.file);
-    expect(host.newSessions[0].seed.customType).toBe(HANDOFF_TYPE);
-    expect(host.newSessions[0].seed.text).toContain(`the previous session ${host.info.file}`);
-    expect(host.newSessions[0].seed.text).toContain(VALID_HANDOFF);
+    expect(host.newSessions[0].seed?.customType).toBe(HANDOFF_TYPE);
+    expect(host.newSessions[0].seed?.text).toContain(`the previous session ${host.info.file}`);
+    expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
     expect(host.confirmations).toEqual([]);
     expect(host.sent).toHaveLength(1);
     expect(status()).toBe("<error>ctx 76% · switching session");
@@ -207,7 +207,7 @@ describe("session limits", () => {
     await flush();
 
     expect(host.newSessions).toHaveLength(1);
-    expect(host.newSessions[0].seed.text).toContain("write the release notes");
+    expect(host.newSessions[0].seed?.text).toContain("write the release notes");
   });
 
   it("asks for a fresh handoff when the user spoke while the switch waited", async () => {
@@ -232,7 +232,7 @@ describe("session limits", () => {
     await flush();
 
     expect(host.dispatched).toHaveLength(1);
-    expect(host.newSessions[0].seed.text).toContain("write the release notes");
+    expect(host.newSessions[0].seed?.text).toContain("write the release notes");
     expect(host.sent).toHaveLength(2);
   });
 
@@ -563,7 +563,7 @@ describe("release timer", () => {
     const { host, busy } = waitingSetup();
 
     busy(false);
-    host.shutdown();
+    await host.shutdown();
 
     expect(vi.getTimerCount()).toBe(0);
 

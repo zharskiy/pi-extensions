@@ -1,15 +1,15 @@
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import type { KeyPress, OverlayApi, ViewComponent } from "../../../src/adapter/contract.ts";
-import { createScrollPane, initRenderTheme } from "../../../src/adapter/pi-ui.ts";
-import type { NewAgent } from "../../../src/manager/types.ts";
+import type { KeyPress, OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import { createScrollPane, initRenderTheme } from "../../../../../core/adapter/pi-ui.ts";
+import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import type { NewAgent } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentListViewPlugin } from "../../../src/plugins/agent-list-view/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin, COMMAND } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createFakeInputPane, flush, plainTheme } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 initRenderTheme();

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NewAgent } from "../../../src/manager/types.ts";
+import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import type { NewAgent } from "../../../src/model/types.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { progressWidgetPlugin, WIDGET_KEY } from "../../../src/plugins/progress-widget/index.ts";
 import {
@@ -7,7 +8,6 @@ import {
   createThrottle,
   visibleRecords,
 } from "../../../src/plugins/progress-widget/model.ts";
-import { plainTheme } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const newAgent = (patch: Partial<NewAgent> = {}): NewAgent => ({

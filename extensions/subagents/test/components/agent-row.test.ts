@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   agentRow,
   finishSummary,
@@ -8,8 +9,7 @@ import {
   treeRow,
   truncate,
 } from "../../src/components/agent-row.ts";
-import type { AgentRecord } from "../../src/manager/types.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import type { AgentRecord } from "../../src/model/types.ts";
 
 const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   id: "explorer-1a2b",

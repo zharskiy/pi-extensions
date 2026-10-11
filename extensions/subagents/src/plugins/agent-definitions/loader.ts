@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { splitModelRequest } from "../../adapter/contract.ts";
-import type { AgentDefinition, AgentSource, DefinitionError } from "../../manager/types.ts";
+import { splitModelRequest } from "../../../../../core/adapter/contract.ts";
+import type { AgentDefinition, AgentSource, DefinitionError } from "../../model/types.ts";
 import { type FrontmatterValue, parseFrontmatter } from "./frontmatter.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };

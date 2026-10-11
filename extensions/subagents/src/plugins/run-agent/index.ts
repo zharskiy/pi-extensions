@@ -1,6 +1,6 @@
-import type { AnyToolSpec } from "../../adapter/contract.ts";
-import type { Plugin } from "../../manager/plugin.ts";
-import { type AgentDefinition, type AgentRecord, isClosed } from "../../manager/types.ts";
+import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { type AgentDefinition, type AgentRecord, isClosed } from "../../model/types.ts";
 import { createOutbox } from "./outbox.ts";
 import { childPromptsFor, createPromptQueue } from "./prompts.ts";
 import { createRunner } from "./runner.ts";
@@ -34,7 +34,7 @@ export const runAgentPlugin: Plugin = {
         maxConcurrent: settings.maxConcurrent,
       });
 
-      const childDeps = { runner, registry, takeUsage: () => undefined };
+      const childDeps = { runner, registry };
       const caller = { id: record.id, depth: record.depth };
 
       const tools: AnyToolSpec[] = [
@@ -98,7 +98,6 @@ export const runAgentPlugin: Plugin = {
     const toolDeps = {
       runner,
       registry,
-      takeUsage: () => (services.has("ledger") ? services.require("ledger").takeUndelivered() : undefined),
       onRendered: (batchId: string, invalidate: () => void) => {
         invalidators.set(batchId, invalidate);
       },

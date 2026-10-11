@@ -1,5 +1,5 @@
-import type { Plugin } from "../../manager/plugin.ts";
-import { type AgentRecord, isClosed } from "../../manager/types.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { type AgentRecord, isClosed } from "../../model/types.ts";
 import { createClosedRowCache, createThrottle, visibleRecords, widgetLines } from "./model.ts";
 
 export const WIDGET_KEY = "pi-subagents-progress";

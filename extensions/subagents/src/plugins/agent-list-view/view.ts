@@ -1,4 +1,4 @@
-import type { InputPane, KeyPress, OverlayApi, ViewComponent } from "../../adapter/contract.ts";
+import type { InputPane, KeyPress, OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import {
   emptyListText,
   listEntries,
@@ -8,7 +8,7 @@ import {
   selectedRecord,
 } from "../../components/agent-list.ts";
 import { truncate } from "../../components/agent-row.ts";
-import { type AgentRecord, isClosed } from "../../manager/types.ts";
+import { type AgentRecord, isClosed } from "../../model/types.ts";
 
 export const FRAME_MS = 120;
 

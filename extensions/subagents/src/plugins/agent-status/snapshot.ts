@@ -1,5 +1,5 @@
 import { elapsedOf, formatElapsed, formatTokens, singleLine, truncate } from "../../components/agent-row.ts";
-import type { AgentRecord } from "../../manager/types.ts";
+import type { AgentRecord } from "../../model/types.ts";
 
 export type AgentSnapshot = {
   id: string;

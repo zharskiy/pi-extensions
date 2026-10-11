@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Bus } from "../../manager/bus.ts";
-import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../../manager/types.ts";
+import type { Bus } from "../../model/events.ts";
+import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../../model/types.ts";
 
 export const MANIFEST_FILE = "manifest.json";
 

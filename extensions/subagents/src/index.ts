@@ -1,43 +1,51 @@
-import { createPiExtension } from "./adapter/pi-adapter.ts";
-import { createExtensionManager } from "./manager/extension-manager.ts";
+import { join, resolve } from "node:path";
+import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
+import { createExtensionManager } from "../../../core/manager/extension-manager.ts";
+import { NAMESPACE } from "./model/paths.ts";
 import {
   applySettings,
   defaultSettings,
   projectSettingsPath,
-  readSettingsFile,
+  readSettings,
   userSettingsPath,
-} from "./manager/settings.ts";
+} from "./model/settings.ts";
 import { plugins } from "./plugins.ts";
 
-export default createPiExtension((host, runtime, paths) => {
-  const user = readSettingsFile(userSettingsPath(paths.agentDir));
-  const settings = applySettings(defaultSettings(), user.patch);
+const root = resolve(import.meta.dirname, "..");
 
-  host.onSessionStart((info) => {
-    const project = info.projectTrusted ? readSettingsFile(projectSettingsPath(info.cwd)) : undefined;
-    const fresh = readSettingsFile(userSettingsPath(info.agentDir));
+export default createPiExtension(
+  (host, runtime, paths) => {
+    const user = readSettings(userSettingsPath(paths.agentDir));
+    const settings = applySettings(defaultSettings(), user.patch);
 
-    applySettings(settings, { ...fresh.patch, ...project?.patch });
+    host.onSessionStart((info) => {
+      const project = info.projectTrusted ? readSettings(projectSettingsPath(info.cwd)) : undefined;
+      const fresh = readSettings(userSettingsPath(info.agentDir));
 
-    const notifyError = (message: string) => {
-      host.ui.notify(`pi-subagents settings: ${message}`, "warning");
-    };
+      applySettings(settings, { ...fresh.patch, ...project?.patch });
 
-    fresh.errors.forEach(notifyError);
-    project?.errors.forEach(notifyError);
-  });
+      const notifyError = (message: string) => {
+        host.ui.notify(`${NAMESPACE} settings: ${message}`, "warning");
+      };
 
-  const manager = createExtensionManager({
-    host,
-    runtime,
-    settings,
-    plugins,
-    packageRoot: paths.packageRoot,
-    onError: (error) =>
-      host.ui.notify(`pi-subagents: ${error instanceof Error ? error.message : String(error)}`, "error"),
-  });
+      fresh.errors.forEach(notifyError);
+      project?.errors.forEach(notifyError);
+    });
 
-  host.onSessionShutdown(async () => {
-    await manager.disableAll();
-  });
-});
+    const manager = createExtensionManager({
+      host,
+      runtime,
+      settings,
+      plugins,
+      root: paths.root,
+      disabled: settings.disabledPlugins,
+      onError: (error) =>
+        host.ui.notify(`${NAMESPACE}: ${error instanceof Error ? error.message : String(error)}`, "error"),
+    });
+
+    host.onSessionShutdown(async () => {
+      await manager.disableAll();
+    });
+  },
+  { root, namespace: NAMESPACE, childExclude: [join(root, "src")] },
+);

@@ -1,6 +1,6 @@
-import type { AnyToolSpec, ToolSpec, UsageTotals } from "../../adapter/contract.ts";
-import type { Plugin } from "../../manager/plugin.ts";
-import { type AgentRegistry, chainTerminal } from "../../manager/types.ts";
+import type { AnyToolSpec, ToolSpec } from "../../../../../core/adapter/contract.ts";
+import type { Plugin } from "../../model/plugin.ts";
+import { type AgentRegistry, chainTerminal } from "../../model/types.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "./snapshot.ts";
 
 export type AgentStatusParams = { ids?: string[] };
@@ -10,7 +10,6 @@ export type AgentStatusDetails = { agents: AgentSnapshot[]; unknown: string[] };
 type StatusScope = {
   registry: AgentRegistry;
   callerId?: string;
-  takeUsage: () => UsageTotals | undefined;
 };
 
 const MAIN_DESCRIPTION =
@@ -56,9 +55,7 @@ export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, Agen
     });
 
     const text = lines.length > 0 ? lines.join("\n") : "No agents in this session.";
-    const usage = scope.takeUsage();
-
-    return { text, details: { agents, unknown }, ...(usage ? { usage } : {}) };
+    return { text, details: { agents, unknown } };
   },
   renderCall: (params, theme) =>
     `${theme.bold("agent_status")} ${theme.fg("muted", params.ids?.join(", ") ?? "all")}`,
@@ -69,13 +66,10 @@ export const agentStatusPlugin: Plugin = {
   requires: ["agent-registry"],
   enable: ({ host, services }) => {
     const registry = services.require("registry");
-    const takeUsage = () =>
-      services.has("ledger") ? services.require("ledger").takeUndelivered() : undefined;
-
-    host.registerTool(statusTool({ registry, takeUsage }));
+    host.registerTool(statusTool({ registry }));
 
     services.provide("agentStatus", {
-      toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId, takeUsage: () => undefined }),
+      toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId }),
     });
 
     return undefined;

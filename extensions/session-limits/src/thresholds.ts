@@ -1,4 +1,6 @@
-import type { ContextSnapshot, ThemeToken } from "./adapter/contract.ts";
+import type { ContextSnapshot, ThemeToken } from "../../../core/adapter/contract.ts";
+
+type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
 export const MAX_INSTRUCTIONS = 2;
 
@@ -14,10 +16,10 @@ export type Ratios = { softRatio: number; hardRatio: number };
 
 export type Segment = { token: ThemeToken; text: string };
 
-export const percentOf = (context: ContextSnapshot) =>
+export const percentOf = (context: ContextTokens) =>
   context.tokens === null || context.window <= 0 ? null : Math.round((context.tokens / context.window) * 100);
 
-export const contextLevel = (context: ContextSnapshot, ratios: Ratios): ContextLevel => {
+export const contextLevel = (context: ContextTokens, ratios: Ratios): ContextLevel => {
   if (context.tokens === null || context.window <= 0) {
     return "unknown";
   }
@@ -65,7 +67,7 @@ export const pendingLabels = (command: string): Record<Exclude<Phase, "watching"
 });
 
 export const segmentFor = (
-  context: ContextSnapshot,
+  context: ContextTokens,
   phase: Phase,
   ratios: Ratios,
   command: string,

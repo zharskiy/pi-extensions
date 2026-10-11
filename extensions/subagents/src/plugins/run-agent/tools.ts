@@ -1,6 +1,6 @@
-import type { ThemeLike, ToolResult, ToolSpec, UsageTotals } from "../../adapter/contract.ts";
+import type { ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { agentRow } from "../../components/agent-row.ts";
-import { type AgentDefinition, type AgentRegistry, chainTerminal, MAIN_CALLER } from "../../manager/types.ts";
+import { type AgentDefinition, type AgentRegistry, chainTerminal, MAIN_CALLER } from "../../model/types.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
 export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
@@ -12,16 +12,9 @@ export type MessageAgentParams = { id: string; message: string };
 export type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
-  takeUsage: () => UsageTotals | undefined;
   now?: () => number;
   frame?: () => number;
   onRendered?: (batchId: string, invalidate: () => void) => void;
-};
-
-const withUsage = <D>(result: ToolResult<D>, takeUsage: () => UsageTotals | undefined): ToolResult<D> => {
-  const usage = takeUsage();
-
-  return usage ? { ...result, usage } : result;
 };
 
 export type DelegateAgent = Pick<AgentDefinition, "name" | "description" | "limit"> &
@@ -100,7 +93,7 @@ export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgen
       "Result contract: one message per batch with one section per agent, headed `## <id> (<agent>) - <state>`.",
       "- done: the result follows inline, or as `Result file: <path>` with a preview when it is large. A result whose first line is `Status: blocked` means the agent stopped because the task was ambiguous; it lists the questions it needs answered and changed nothing.",
       "- failed or stopped: the reason is given; there is no result.",
-      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, or the chain cap was reached). To continue, start a new agent and pass the handoff file in `files`.",
+      "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, the chain cap was reached, or the file does not follow the handoff schema, shown as `(invalid: <reasons>)` after the path). Read the file either way; to continue, start a new agent and pass the handoff file in `files`.",
       "- A `Chain: <id> → <id> (N sessions)` line means the agent continued itself from handoffs; the section carries the last session's id and the totals of all sessions. Any id of the chain works with `message_agent` and `agent_status`.",
     ].join("\n"),
   ].join("\n\n");
@@ -195,7 +188,7 @@ export const runAgentTool = (
         .join("\n");
       const text = `Started batch ${started.batchId}:\n${list}\nYou will be woken once when all agents are done. End your turn now.`;
 
-      return withUsage({ text, details }, deps.takeUsage);
+      return { text, details };
     }
 
     const onAbort = () => {
@@ -210,7 +203,7 @@ export const runAgentTool = (
 
     ctx.signal?.removeEventListener("abort", onAbort);
 
-    return withUsage({ text: deps.runner.batchText(started.batchId), details }, deps.takeUsage);
+    return { text: deps.runner.batchText(started.batchId), details };
   },
   renderCall: (params, theme) => {
     const names = (params.agents ?? []).map((item) => item.agent).join(", ");
@@ -244,29 +237,23 @@ export const messageAgentTool = (
     const record = deps.registry.get(params.id);
 
     if (!record) {
-      return withUsage({ text: `Error: unknown agent "${params.id}".`, isError: true }, deps.takeUsage);
+      return { text: `Error: unknown agent "${params.id}".`, isError: true };
     }
 
     if (record.callerId !== callerId) {
-      return withUsage(
-        { text: `Error: only the caller that started ${params.id} may message it.`, isError: true },
-        deps.takeUsage,
-      );
+      return { text: `Error: only the caller that started ${params.id} may message it.`, isError: true };
     }
 
     const routed = await deps.runner.route(params.id, { sender: callerId, text: params.message });
 
     if (!routed.ok) {
-      return withUsage({ text: `Error: ${routed.error}`, isError: true }, deps.takeUsage);
+      return { text: `Error: ${routed.error}`, isError: true };
     }
 
-    return withUsage(
-      {
-        text: `Message delivered to ${params.id} (${routed.delivery}).`,
-        details: { delivery: routed.delivery },
-      },
-      deps.takeUsage,
-    );
+    return {
+      text: `Message delivered to ${params.id} (${routed.delivery}).`,
+      details: { delivery: routed.delivery },
+    };
   },
   renderCall: (params, theme) =>
     `${theme.bold("message_agent")} ${theme.fg("accent", params.id ?? "")} ${theme.fg("muted", (params.message ?? "").slice(0, 60))}`,

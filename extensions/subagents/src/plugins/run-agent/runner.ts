@@ -11,10 +11,10 @@ import {
   type SessionInfo,
   type StopReason,
   splitModelRequest,
-} from "../../adapter/contract.ts";
-import type { Bus } from "../../manager/bus.ts";
-import { agentsDirFor } from "../../manager/paths.ts";
-import type { Settings } from "../../manager/settings.ts";
+} from "../../../../../core/adapter/contract.ts";
+import type { Bus } from "../../model/events.ts";
+import { agentsDirFor } from "../../model/paths.ts";
+import type { Settings } from "../../model/settings.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,
@@ -26,7 +26,7 @@ import {
   isClosed,
   MAIN_CALLER,
   type RouteResult,
-} from "../../manager/types.ts";
+} from "../../model/types.ts";
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, type Outbox } from "./outbox.ts";
 import { batchMessage, RESULT_FILE, storeResult } from "./result.ts";
@@ -83,6 +83,7 @@ type LaunchSlot = { item: BatchItem; plan: ModelPlan };
 type Live = {
   child?: ChildSession;
   lastStopReason?: StopReason;
+  lastToolCalls: number;
   lastError?: string;
   abortReason?: string;
   lastText: string;
@@ -154,7 +155,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return existing;
     }
 
-    const created: Live = { lastText: "", pending: [], answering: false, inFlight: false, idleHandlers: [] };
+    const created: Live = {
+      lastText: "",
+      lastToolCalls: 0,
+      pending: [],
+      answering: false,
+      inFlight: false,
+      idleHandlers: [],
+    };
 
     lives.set(id, created);
 
@@ -309,13 +317,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     if (!validation.ok) {
       return deps.registry.close(record.id, {
-        state: "failed",
-        error: `handoff file is invalid: ${validation.errors.join("; ")}`,
+        state: "handoff",
+        resultText: text,
+        error: validation.errors.join("; "),
       });
-    }
-
-    if (validation.status === "done") {
-      return deps.registry.close(record.id, { state: "done", ...storeResult(record, text) });
     }
 
     const slot = launches.get(record.id);
@@ -478,13 +483,19 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         deps.bus.emit("agent:usage", { id, usage });
       }
 
-      deps.bus.emit("agent:turn", { id, context: event.context, turns });
+      const continuing =
+        live.lastToolCalls > 0 &&
+        live.lastStopReason !== undefined &&
+        !FAILED_STOP_REASONS.has(live.lastStopReason);
+
+      deps.bus.emit("agent:turn", { id, context: event.context, turns, continuing });
 
       return;
     }
 
     if (event.type === "assistant_message") {
       live.lastStopReason = event.stopReason;
+      live.lastToolCalls = event.toolCalls;
       live.lastError = event.errorMessage;
 
       if (event.text.trim()) {

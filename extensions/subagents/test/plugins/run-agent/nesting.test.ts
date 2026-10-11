@@ -1,22 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ToolSpec } from "../../../src/adapter/contract.ts";
+import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
+import { type FakeChild, flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { type AgentStatusParams, agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
+import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { spendingPlugin } from "../../../src/plugins/spending/index.ts";
-import { type FakeChild, flush, usageOf } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
-const plugins = [
-  spendingPlugin,
-  agentRegistryPlugin,
-  agentDefinitionsPlugin,
-  runAgentPlugin,
-  agentStatusPlugin,
-];
+const plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentStatusPlugin];
 
 const childTool = <P>(child: FakeChild, name: string) => {
   const tool = child.spec.customTools?.find((spec) => spec.name === name);
@@ -106,7 +99,6 @@ describe("nested agents", () => {
     ]);
 
     expect(started.text).toContain("Started batch");
-    expect(started.usage).toBeUndefined();
 
     const [, explorer, reviewer] = registry.list();
 
@@ -209,41 +201,6 @@ describe("nested agents", () => {
     const result = await pending;
 
     expect(result.text).toContain("found a");
-  });
-
-  it("counts a grandchild's spend once in the footer total and delivers it to the main session once", async () => {
-    const { startGeneral, spawnFrom, registry, runtime, services, host } = setup();
-    const { child } = await startGeneral();
-    const ledger = services.require("ledger");
-
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
-
-    const grandchild = runtime.child(registry.list()[1].id);
-
-    child.usage = usageOf(0.1);
-    grandchild.usage = usageOf(0.2);
-    child.turn({});
-    grandchild.turn({});
-    grandchild.finish("found a");
-    grandchild.turn({});
-    await flush();
-
-    const childStatus = await childTool<AgentStatusParams>(child, "agent_status").execute(
-      {},
-      { update: () => {} },
-    );
-
-    expect(childStatus.usage).toBeUndefined();
-    expect(childStatus.text).toContain(grandchild.id);
-    expect(ledger.agentsTotal().cost.total).toBeCloseTo(0.3);
-
-    const status = host.tool<AgentStatusParams, unknown>("agent_status");
-    const first = await status.execute({}, { update: () => {} });
-    const second = await status.execute({}, { update: () => {} });
-
-    expect(first.usage?.cost.total).toBeCloseTo(0.3);
-    expect(second.usage).toBeUndefined();
-    expect(ledger.deliveredTotal().cost.total).toBeCloseTo(0.3);
   });
 
   it("lets a child message only the agents it started", async () => {

@@ -1,5 +1,5 @@
-import type { ThemeLike } from "../adapter/contract.ts";
-import { type AgentRecord, isClosed } from "../manager/types.ts";
+import type { ThemeLike } from "../../../../core/adapter/contract.ts";
+import { type AgentRecord, isClosed } from "../model/types.ts";
 import { treeRow } from "./agent-row.ts";
 
 export type AgentGroup = "working" | "attention" | "done" | "failed" | "closed";

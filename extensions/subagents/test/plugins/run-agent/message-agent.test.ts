@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../../../src/adapter/route.ts";
-import { parseSessionLines } from "../../../src/adapter/session-file.ts";
+import { formatRoutedMessage } from "../../../../../core/adapter/route.ts";
+import { parseSessionLines } from "../../../../../core/adapter/session-file.ts";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { MessageAgentParams, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { flush } from "../../helpers/fakes.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const setup = async (maxConcurrent = 4) => {
@@ -121,9 +121,10 @@ describe("message_agent", () => {
   it("tags the message with its sender so it shows in the agent transcript", () => {
     const text = formatRoutedMessage({ sender: "main", text: "also cover the tests" });
 
-    const session = parseSessionLines([
-      JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text }] } }),
-    ]);
+    const session = parseSessionLines(
+      [JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text }] } })],
+      "pi-subagents:prompt-record",
+    );
 
     expect(session.items).toEqual([{ kind: "user", text: "[message from main]\nalso cover the tests" }]);
   });

@@ -1,23 +1,27 @@
 {
-  "name": "pi-subagents-mz",
+  "name": "pi-extensions-mz",
   "version": "0.1.0",
-  "description": "Extensions for the pi coding agent: background subagents you run, watch, message and pay for from the main session, and main session limits that hand the conversation over to a new session before its context fills up.",
+  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session, main session limits that hand the conversation over to a new session before its context fills up, and a spending footer with the session's total cost including subagents.",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "pi-package",
     "pi-extension",
     "subagents",
-    "session-limits"
+    "session-limits",
+    "spending"
   ],
   "files": [
+    "core/adapter",
+    "core/manager",
     "extensions",
     "README.md"
   ],
   "pi": {
     "extensions": [
       "./extensions/subagents/src/index.ts",
-      "./extensions/session-limits/src/index.ts"
+      "./extensions/session-limits/src/index.ts",
+      "./extensions/spending/src/index.ts"
     ]
   },
   "scripts": {

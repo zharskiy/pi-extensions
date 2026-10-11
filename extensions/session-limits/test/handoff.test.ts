@@ -2,14 +2,18 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { SessionInfo } from "../src/adapter/contract.ts";
+import type { SessionInfo } from "../../../core/adapter/contract.ts";
 import { HANDOFF_SECTIONS, handoffPath, instructionFor, seedText, validateHandoff } from "../src/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",
+  dir: "/sessions",
   cwd: "/project",
   agentDir: "/agent",
   projectTrusted: false,
+  hasUI: true,
+  subscription: false,
+  mode: "tui",
   ...patch,
 });
 

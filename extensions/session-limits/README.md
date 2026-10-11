@@ -49,4 +49,4 @@ pi.events.emit("session-limits:busy", { source: "my-extension", busy: false });
 
 ## Layout
 
-`src/index.ts` is the pi entry. `src/adapter/pi-adapter.ts` is the only file that imports pi; everything else depends on `src/adapter/contract.ts`. `src/limits.ts` holds the flow, `src/thresholds.ts` the pure decisions, `src/handoff.ts` the path, seed and validator, `src/settings.ts` the settings files. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/conversation.ts` limits the extension to the conversational modes (`tui`, `rpc`). `src/limits.ts` holds the flow, `src/thresholds.ts` the pure decisions, `src/handoff.ts` the path, seed and validator, `src/settings.ts` the settings files. Tests are under `test/`.

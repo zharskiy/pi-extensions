@@ -1,11 +1,11 @@
-import type { ChildPrompts, HostUi } from "../../adapter/contract.ts";
+import type { ChildPrompts, HostUi } from "../../../../../core/adapter/contract.ts";
 import {
   type AgentRecord,
   type AgentRegistry,
   type Attention,
   type AttentionKind,
   isClosed,
-} from "../../manager/types.ts";
+} from "../../model/types.ts";
 
 export type PromptQueue = { enqueue<T>(run: () => Promise<T>): Promise<T> };
 
