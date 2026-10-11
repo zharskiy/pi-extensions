@@ -1,0 +1,38 @@
+import type { Plugin } from "../../manager/plugin.ts";
+import { type AgentRegistry, isClosed } from "../../manager/types.ts";
+import { createRegistry } from "./registry.ts";
+
+export const BUSY_CHANNEL = "session-limits:busy";
+
+export const BUSY_SOURCE = "pi-subagents";
+
+const hasOpenAgents = (registry: AgentRegistry) => registry.list().some((record) => !isClosed(record.state));
+
+export const agentRegistryPlugin: Plugin = {
+  id: "agent-registry",
+  enable: ({ host, bus, services }) => {
+    const registry = createRegistry({ bus });
+    let busy = false;
+
+    const publish = (next: boolean) => {
+      busy = next;
+      host.publish(BUSY_CHANNEL, { source: BUSY_SOURCE, busy });
+    };
+
+    services.provide("registry", registry);
+
+    const unsubscribe = bus.on("agent:changed", () => {
+      const next = hasOpenAgents(registry);
+
+      if (next !== busy) {
+        publish(next);
+      }
+    });
+
+    host.onSessionStart(() => {
+      publish(hasOpenAgents(registry));
+    });
+
+    return unsubscribe;
+  },
+};

@@ -1,0 +1,359 @@
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { dirname } from "node:path";
+import type { ContextSnapshot, Host, SessionControl } from "./adapter/contract.ts";
+import { handoffPath, instructionFor, seedText, validateHandoff } from "./handoff.ts";
+import {
+  contextLevel,
+  type HandoffFile,
+  handoffStep,
+  isPending,
+  MAX_INSTRUCTIONS,
+  type Phase,
+  type Ratios,
+  retryInstruction,
+  segmentFor,
+  shouldRequest,
+} from "./thresholds.ts";
+
+export const STATUS_KEY = "pi-session-limits";
+
+export const HANDOFF_COMMAND = "session-handoff";
+
+export const HANDOFF_TYPE = "pi-session-limits-handoff";
+
+export const BUSY_CHANNEL = "session-limits:busy";
+
+export type BusySignal = { source: string; busy: boolean };
+
+export type LimitsOptions = {
+  host: Host;
+  template: string;
+  ratios: () => Ratios;
+  releaseDelayMs?: number;
+};
+
+type LimitsState = {
+  phase: Phase;
+  instructions: number;
+  path?: string;
+  staleMtime?: number;
+  context?: ContextSnapshot;
+  settledSinceInstruction: boolean;
+  userActive: boolean;
+};
+
+const initialState = (): LimitsState => ({
+  phase: "watching",
+  instructions: 0,
+  settledSinceInstruction: false,
+  userActive: false,
+});
+
+export const parseBusySignal = (data: unknown): BusySignal | undefined => {
+  if (typeof data !== "object" || data === null) {
+    return undefined;
+  }
+
+  const { source, busy } = data as Record<string, unknown>;
+
+  if (typeof source !== "string" || source.length === 0 || typeof busy !== "boolean") {
+    return undefined;
+  }
+
+  return { source, busy };
+};
+
+const mtimeOf = (path: string) => (existsSync(path) ? statSync(path).mtimeMs : undefined);
+
+export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }: LimitsOptions) => {
+  const sources = new Set<string>();
+  let state = initialState();
+  let turns = 0;
+  let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const instruction = (path: string) => instructionFor(template, path);
+
+  const refresh = () => {
+    if (!state.context) {
+      return;
+    }
+
+    const segment = segmentFor(state.context, state.phase, ratios(), HANDOFF_COMMAND);
+
+    host.setStatus(STATUS_KEY, segment ? host.style(segment.token, segment.text) : undefined);
+  };
+
+  const sendRequest = (path: string) => {
+    state = {
+      ...state,
+      phase: "requested",
+      instructions: 1,
+      path,
+      staleMtime: mtimeOf(path),
+      settledSinceInstruction: false,
+      userActive: false,
+    };
+
+    host.sendUserMessage(instruction(path));
+  };
+
+  const request = () => {
+    const path = handoffPath(host.session());
+
+    mkdirSync(dirname(path), { recursive: true });
+
+    sendRequest(path);
+  };
+
+  const inspect = (path: string): HandoffFile => {
+    const mtime = mtimeOf(path);
+
+    if (mtime === undefined || mtime === state.staleMtime) {
+      return { kind: "missing" };
+    }
+
+    const result = validateHandoff(readFileSync(path, "utf8"));
+
+    return result.ok ? { kind: "valid" } : { kind: "invalid", errors: result.errors };
+  };
+
+  const errorsOf = (file: HandoffFile, path: string) =>
+    file.kind === "invalid" ? file.errors : [`no new handoff file was written to ${path}`];
+
+  const giveUp = (path: string) => {
+    state = { ...state, phase: "stuck" };
+
+    host.notify(
+      `Session handoff failed: no valid handoff file at ${path} after ${MAX_INSTRUCTIONS} requests. Ask the session to write it, then run /${HANDOFF_COMMAND}.`,
+      "warning",
+    );
+  };
+
+  const resend = (path: string, file: HandoffFile) => {
+    state = {
+      ...state,
+      instructions: state.instructions + 1,
+      settledSinceInstruction: false,
+      userActive: false,
+    };
+
+    host.sendUserMessage(retryInstruction(instruction(path), errorsOf(file, path)));
+  };
+
+  const switchSession = () => {
+    state = { ...state, phase: "switching" };
+
+    refresh();
+    host.dispatchCommand(HANDOFF_COMMAND);
+  };
+
+  const check = (settled: boolean) => {
+    const path = state.path;
+
+    if (!path) {
+      return;
+    }
+
+    const file = inspect(path);
+
+    const step = handoffStep({
+      phase: state.phase,
+      file,
+      busy: sources.size > 0,
+      settled,
+      instructions: state.instructions,
+    });
+
+    if (step === "wait") {
+      state = { ...state, phase: "waiting" };
+    }
+
+    if (step === "switch" && host.isIdle() && state.userActive) {
+      sendRequest(path);
+      return;
+    }
+
+    if (step === "switch" && host.isIdle()) {
+      switchSession();
+      return;
+    }
+
+    if (step === "resend") {
+      resend(path, file);
+    }
+
+    if (step === "give-up") {
+      giveUp(path);
+    }
+  };
+
+  const failSwitch = (message: string) => {
+    if (state.phase !== "watching") {
+      state = { ...state, phase: "stuck" };
+    }
+
+    host.notify(message, "warning");
+    refresh();
+  };
+
+  const holdSwitch = () => {
+    if (state.phase !== "switching") {
+      return;
+    }
+
+    state = { ...state, phase: "waiting" };
+
+    refresh();
+
+    if (sources.size === 0) {
+      release();
+    }
+  };
+
+  const confirmBusy = async () => {
+    if (sources.size === 0) {
+      return true;
+    }
+
+    const names = Array.from(sources).join(", ");
+
+    return host.confirm(
+      "Switch to a new session?",
+      `Work reported by ${names} is still running and will be ended by the switch. Switch anyway?`,
+    );
+  };
+
+  const runSwitch = async (control: SessionControl) => {
+    const path = state.path ?? handoffPath(host.session());
+
+    if (!existsSync(path)) {
+      failSwitch(`No session handoff file at ${path}.`);
+      return;
+    }
+
+    const text = readFileSync(path, "utf8");
+    const validation = validateHandoff(text);
+
+    if (!validation.ok) {
+      failSwitch(`Session handoff at ${path} is invalid: ${validation.errors.join("; ")}.`);
+      return;
+    }
+
+    const proceed = await confirmBusy();
+
+    if (!proceed) {
+      holdSwitch();
+      return;
+    }
+
+    const previous = host.session()?.file;
+
+    const accepted = await control
+      .newSession({
+        parentSession: previous,
+        seed: { customType: HANDOFF_TYPE, text: seedText(previous, text) },
+      })
+      .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
+
+    if (accepted instanceof Error) {
+      failSwitch(`Switching to a new session failed: ${accepted.message}. The handoff stays at ${path}.`);
+      return;
+    }
+
+    if (!accepted) {
+      failSwitch(
+        `Switching to a new session was cancelled. The handoff stays at ${path}; run /${HANDOFF_COMMAND} to retry.`,
+      );
+    }
+  };
+
+  const cancelRelease = () => {
+    clearTimeout(releaseTimer);
+    releaseTimer = undefined;
+  };
+
+  const release = () => {
+    const seen = turns;
+
+    cancelRelease();
+
+    releaseTimer = setTimeout(() => {
+      releaseTimer = undefined;
+
+      if (state.phase !== "waiting" || turns !== seen || !host.isIdle()) {
+        return;
+      }
+
+      check(true);
+      refresh();
+    }, releaseDelayMs);
+  };
+
+  host.registerCommand(HANDOFF_COMMAND, {
+    description: "Continue in a new session seeded from the session handoff file",
+    run: runSwitch,
+  });
+
+  host.onEvent(BUSY_CHANNEL, (data) => {
+    const signal = parseBusySignal(data);
+
+    if (!signal) {
+      return;
+    }
+
+    if (signal.busy) {
+      sources.add(signal.source);
+      cancelRelease();
+      return;
+    }
+
+    const released = sources.delete(signal.source);
+
+    if (released && sources.size === 0 && state.phase === "waiting") {
+      release();
+    }
+  });
+
+  host.onTurnEnd((context) => {
+    turns += 1;
+
+    if (isPending(state.phase) && state.settledSinceInstruction) {
+      state = { ...state, userActive: true };
+    }
+
+    const level = contextLevel(context, ratios());
+
+    if (level !== "unknown") {
+      state = { ...state, context };
+    }
+
+    if (shouldRequest(state.phase, level)) {
+      request();
+    }
+
+    check(false);
+    refresh();
+  });
+
+  host.onIdle(() => {
+    if (isPending(state.phase)) {
+      state = { ...state, settledSinceInstruction: true };
+    }
+
+    check(true);
+    refresh();
+  });
+
+  host.onSessionStart(() => {
+    cancelRelease();
+    state = initialState();
+
+    host.setStatus(STATUS_KEY, undefined);
+  });
+
+  host.onShutdown(() => {
+    cancelRelease();
+  });
+
+  return { busySources: () => Array.from(sources) };
+};

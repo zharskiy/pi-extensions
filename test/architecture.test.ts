@@ -1,10 +1,13 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const TEST = import.meta.dirname;
+const EXTENSIONS = join(import.meta.dirname, "..", "extensions");
 
-const SRC = join(TEST, "..", "src");
+const extensionDirs = () =>
+  readdirSync(EXTENSIONS)
+    .map((name) => join(EXTENSIONS, name))
+    .filter((path) => statSync(path).isDirectory());
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((name) => {
@@ -27,57 +30,100 @@ const importsOf = (file: string) =>
 const isPiPackage = (specifier: string) =>
   specifier.startsWith("@earendil-works/") || specifier === "typebox";
 
+const offendersIn = (dir: string, keep: (file: string) => boolean, bad: (specifier: string) => boolean) =>
+  sourceFiles(dir)
+    .filter(keep)
+    .flatMap((file) =>
+      importsOf(file)
+        .filter(bad)
+        .map((specifier) => `${relative(EXTENSIONS, file)} imports ${specifier}`),
+    );
+
+const isUnder = (root: string, segment: string) => (file: string) =>
+  relative(root, file).startsWith(`${segment}${sep}`);
+
+const exists = (path: string) => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 describe("architecture", () => {
-  it("only src/adapter imports pi packages", () => {
-    const offenders = sourceFiles(SRC)
-      .filter((file) => !relative(SRC, file).startsWith(`adapter${sep}`))
-      .flatMap((file) =>
-        importsOf(file)
-          .filter(isPiPackage)
-          .map((specifier) => `${relative(SRC, file)} imports ${specifier}`),
-      );
+  it("only src/adapter of an extension imports pi packages", () => {
+    const offenders = extensionDirs().flatMap((extension) => {
+      const src = join(extension, "src");
 
-    expect(offenders).toEqual([]);
-  });
-
-  it("plugins never import another plugin's code", () => {
-    const offenders = sourceFiles(join(SRC, "plugins")).flatMap((file) => {
-      const own = relative(join(SRC, "plugins"), file).split(sep)[0];
-
-      return importsOf(file)
-        .filter((specifier) => specifier.startsWith("../") && !specifier.startsWith("../../"))
-        .filter((specifier) => !specifier.startsWith(`../${own}/`))
-        .map((specifier) => `${relative(SRC, file)} imports ${specifier}`);
+      return offendersIn(src, (file) => !isUnder(src, "adapter")(file), isPiPackage);
     });
 
     expect(offenders).toEqual([]);
   });
 
-  it("components and the manager depend only on the adapter contract", () => {
-    const offenders = sourceFiles(SRC)
-      .filter((file) => !relative(SRC, file).startsWith(`adapter${sep}`))
-      .filter((file) => relative(SRC, file) !== "index.ts")
-      .flatMap((file) =>
-        importsOf(file)
-          .filter((specifier) => specifier.includes("adapter/") && !specifier.endsWith("adapter/contract.ts"))
-          .map((specifier) => `${relative(SRC, file)} imports ${specifier}`),
+  it("plugins never import another plugin's code", () => {
+    const offenders = extensionDirs()
+      .map((extension) => join(extension, "src", "plugins"))
+      .filter(exists)
+      .flatMap((plugins) =>
+        sourceFiles(plugins).flatMap((file) => {
+          const own = relative(plugins, file).split(sep)[0];
+
+          return importsOf(file)
+            .filter((specifier) => specifier.startsWith("."))
+            .filter((specifier) => {
+              const target = relative(plugins, join(dirname(file), specifier));
+
+              return !target.startsWith("..") && target.split(sep)[0] !== own;
+            })
+            .map((specifier) => `${relative(EXTENSIONS, file)} imports ${specifier}`);
+        }),
       );
 
     expect(offenders).toEqual([]);
   });
 
+  it("everything outside the adapter depends only on the adapter contract", () => {
+    const offenders = extensionDirs().flatMap((extension) => {
+      const src = join(extension, "src");
+
+      return offendersIn(
+        src,
+        (file) => !isUnder(src, "adapter")(file) && relative(src, file) !== "index.ts",
+        (specifier) => specifier.includes("adapter/") && !specifier.endsWith("adapter/contract.ts"),
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("extensions never import each other", () => {
+    const offenders = extensionDirs().flatMap((extension) =>
+      sourceFiles(extension).flatMap((file) =>
+        importsOf(file)
+          .filter((specifier) => specifier.startsWith("."))
+          .filter((specifier) => relative(extension, join(dirname(file), specifier)).startsWith(".."))
+          .map((specifier) => `${relative(EXTENSIONS, file)} imports ${specifier}`),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps every test outside src", () => {
-    expect(sourceFiles(SRC).filter((file) => file.endsWith(".test.ts"))).toEqual([]);
+    const offenders = extensionDirs().flatMap((extension) =>
+      sourceFiles(join(extension, "src")).filter((file) => file.endsWith(".test.ts")),
+    );
+
+    expect(offenders).toEqual([]);
   });
 
   it("only the adapter tests import pi packages", () => {
-    const offenders = sourceFiles(TEST)
-      .filter((file) => !relative(TEST, file).startsWith(`adapter${sep}`))
-      .flatMap((file) =>
-        importsOf(file)
-          .filter(isPiPackage)
-          .map((specifier) => `${relative(TEST, file)} imports ${specifier}`),
-      );
+    const offenders = extensionDirs().flatMap((extension) => {
+      const test = join(extension, "test");
+
+      return offendersIn(test, (file) => !isUnder(test, "adapter")(file), isPiPackage);
+    });
 
     expect(offenders).toEqual([]);
   });

@@ -2,7 +2,7 @@
 
 Date: 10 October 2026. Input: `HANDOFF.md` and the four research reports in `research/`.
 
-Status: release 0.1 is merged. Release 0.2 (F9, F11, F12, F13, F14) is implemented on branch `feat/0.2`, uncommitted, pending the product owner's review. Every departure from this plan is listed in `docs/deviations.md`.
+Status: release 0.1 is merged. Release 0.2 (F9, F11, F12, F13, F14) is committed on branch `feat/0.2`; the corrections from the product owner's review (one folder per extension, main session limits as a separate extension) are in progress, uncommitted. Every departure from this plan is listed in `docs/deviations.md`.
 
 ## 1. Research conclusions that fix the design
 
@@ -33,47 +33,65 @@ These are the decisions the research settles, plus the product decisions taken d
 Built once, before any feature. Owned by the platform stream.
 
 ```
-pi-subagents/
-  package.json              # "pi" field pointing at extensions, skills, prompts
+pi-extensions/                # one pi package, one folder per extension
+  package.json                # "pi.extensions" lists every extension entry file
   README.md
   biome.json  vitest.config.ts  tsconfig.json
-  src/
-    adapter/                # ONLY place that imports @earendil-works/*
-      contract.ts           # our interface: Host, AgentRuntime, Ui, Session, Usage
-      pi-adapter.ts         # implementation against pi 1.1.0
-      model-resolver.ts     # pure name → provider/id:thinking resolution over a plain catalog
-      main-prompt.ts        # rebuilds the sections pi drops when the preamble is replaced
-      session-file.ts       # reads an agent's JSONL session for the view
-    manager/
-      extension-manager.ts  # enables plugins, owns every cross-plugin interaction
-      plugin.ts             # Plugin interface: id, deps, enable(host, bus), disable
-      bus.ts                # typed in-process events between plugins
-      settings.ts           # our own JSON settings file + schema + defaults
-    plugins/
-      agent-definitions/    # loads agent .md files, base prompt, main session prompt
-      run-agent/            # run_agent tool, batches, wake, result contract
-      agent-status/         # agent_status tool
-      agent-registry/       # in-memory tree of agents, manifests, lifecycle state
-      limits/               # per-agent context budget + handoff trigger
-      session-limits/       # main-session soft/hard limit (separate plugin per handoff)
-      spending/             # ledger, tool-result usage channel, footer segment
-      progress-widget/      # rows below the editor
-      agent-view/           # overlay transcript of one agent
-      agent-list-view/      # overlay list of all agents
-      handoff/              # handoff file schema, writer prompt, successor spawn
-    components/
-      collapsible.ts  agent-row.ts  system-prompt-block.ts
-    index.ts                # pi entry: builds adapter, manager, enables plugins
-  test/                     # mirrors src/ one to one; helpers/ holds fakes and the harness
-    adapter/                # the only tests allowed to import pi (conformance, main prompt, resolver)
-    manager/  plugins/  components/
-    architecture.test.ts    # import boundary, no tests under src, pi imports only in test/adapter
-  agents/                   # shipped agent definitions (.md)
-  prompts/
-    base-system-prompt.md
-    main-session.md
-    handoff.md
-  scripts/spike.ts          # SDK-level conformance run against a real pi, rerun per pi release
+  test/architecture.test.ts   # repo-wide rules: pi imports only in src/adapter and test/adapter, no imports across extensions
+  extensions/
+    subagents/
+      src/
+        adapter/              # ONLY place that imports @earendil-works/*
+          contract.ts         # our interface: Host, AgentRuntime, Ui, Session, Usage
+          pi-adapter.ts       # Host implementation against pi 1.1.0; the only adapter file src/index.ts may import
+          pi-scope.ts         # package root and the async scope that marks code running inside a child session
+          pi-ui.ts            # HostUi: notify, status, widgets, overlays, confirm and input over pi's UI
+          pi-tools.ts         # converts our ToolSpec and tool results to and from pi's tool shapes
+          pi-models.ts        # resolves model names against pi's model registry through the resolver's catalog
+          pi-child.ts         # AgentRuntime: child SDK sessions, their settings, UI context and events
+          model-resolver.ts   # pure name → provider/id:thinking resolution over a plain catalog
+          main-prompt.ts      # rebuilds the sections pi drops when the preamble is replaced
+          session-file.ts     # reads an agent's JSONL session for the view
+        manager/
+          extension-manager.ts  # enables plugins, owns every cross-plugin interaction
+          plugin.ts           # Plugin interface: id, deps, enable(host, bus), disable
+          bus.ts              # typed in-process events between plugins
+          settings.ts         # our own JSON settings file + schema + defaults
+        plugins/
+          agent-definitions/  # loads agent .md files, base prompt, main session prompt
+          run-agent/          # run_agent tool, batches, wake, result contract
+          agent-status/       # agent_status tool
+          agent-registry/     # in-memory tree of agents, manifests, lifecycle state, busy signal
+          limits/             # per-agent context budget + handoff trigger
+          spending/           # ledger, tool-result usage channel, footer segment
+          progress-widget/    # rows below the editor
+          agent-view/         # overlay transcript of one agent
+          agent-list-view/    # overlay list of all agents
+          handoff/            # handoff file schema, writer prompt, successor spawn
+        components/
+          collapsible.ts  agent-row.ts  system-prompt-block.ts
+        index.ts              # pi entry: builds adapter, manager, enables plugins
+      test/                   # mirrors src/ one to one; helpers/ holds fakes and the harness
+        adapter/              # the only tests allowed to import pi (conformance, main prompt, resolver)
+        manager/  plugins/  components/
+      agents/                 # shipped agent definitions (.md)
+      prompts/
+        base-system-prompt.md
+        main-session.md
+        handoff.md
+      scripts/spike.ts        # SDK-level conformance run against a real pi, rerun per pi release
+      README.md
+    session-limits/           # main-session soft/hard limit, knows nothing about agents
+      src/
+        adapter/
+          contract.ts         # small host contract: status, confirm, command, turn end, idle, event bus
+          pi-adapter.ts       # the only file that imports pi
+        limits.ts             # flow: request, retry, busy sources, switch through /session-handoff
+        thresholds.ts  handoff.ts  settings.ts
+        index.ts
+      test/                   # mirrors src/; test/adapter may import pi
+      prompts/handoff.md
+      README.md
   docs/  docs/design/  research/
 ```
 
@@ -161,7 +179,7 @@ Goal: the main session, a cheap coordinator, can delegate work to one or more ba
 
 **F13 Main session limits**
 - The user can talk to the main session endlessly; the limits are silent. A cheap main model is the intended default, since the main session only coordinates.
-- Separate plugin with soft and hard limits on the main session's context. At the soft limit the footer segment turns orange; nothing is said in the conversation. At the hard limit the session writes a handoff as its very next step and a new session is created from it automatically, with no user action; the user keeps typing into the new session. Session switching only works from command handlers, so the plugin triggers a registered command itself.
+- Delivered as the standalone extension `extensions/session-limits`, with soft and hard limits on the main session's context. At the soft limit the footer segment turns orange; nothing is said in the conversation. At the hard limit the session writes a handoff as its very next step and a new session is created from it automatically via the extension's own `/session-handoff` command, with no user action; the user keeps typing into the new session. It knows nothing about agents: extensions with running work hold the switch over pi's event channel `session-limits:busy` (see docs/deviations.md entries 38–43).
 - Tests: colour transition, handoff written before any other tool call, new session seeded from the file.
 
 **F14 Permissions and attention**
