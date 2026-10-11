@@ -1,110 +1,46 @@
-# pi-subagents-mz
+# pi-extensions
 
-Repository: https://github.com/zharskiy/pi-extensions
+Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package (`pi-extensions-mz`). Pinned to pi 1.1.0.
 
-Background subagents for the [pi coding agent](https://pi.dev). The main session becomes a coordinator: it delegates tasks to agents that run in the background with their own context, is woken once per batch with all results, and can check on, message, inspect and stop any agent. Spending of all agents is added up in the footer.
-
-Release 0.1. Agents can start their own agents when their file allows it, up to three levels by default (main session, agent, sub-agent).
-
-## What you need
-
-- pi 1.1.0 (`pi --version`). The extension pins its adapter to this version.
-- Node 22 or newer (only for development; pi loads the TypeScript sources directly).
-- A model configured in pi. Agents use the main session's model unless their file names another one.
+- [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session; what they spend is reported to spending.
+- [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
+- [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
 
 ## Install
 
-From a local checkout:
-
 ```bash
-git clone https://github.com/zharskiy/pi-extensions.git pi-subagents-mz
-pi install ./pi-subagents-mz        # add -l to install for the current project only
-```
-
-From git:
-
-```bash
+pi install ./pi-extensions                      # local checkout; add -l for the current project only
 pi install git:github.com/zharskiy/pi-extensions
 ```
 
-Try it for one run without installing: `pi -e ./pi-subagents-mz/src/index.ts`.
-
-## Use
-
-- Ask for work that splits well ("find every place we parse dates and review them"). The main session calls `run_agent`, ends its turn, and is woken once when the whole batch is done.
-- While agents run you can keep typing. Corrections for a running agent are forwarded with `message_agent`.
-- The widget below the editor lists running agents. `/agents <id>` (or `/agents` to pick) opens an agent's view: the effective system prompt, tools, skills and the first provider request as collapsible sections, then the transcript. Keys: arrows and PgUp/PgDn scroll, Tab moves between sections, Enter toggles, `x` stops the agent, Esc closes.
-- To run an agent on another model or thinking level, say so ("review this with haiku", "use gpt-6.1-sol on high"). The main session passes your words in the `model` parameter of `run_agent` as `name[:thinking]`; it never picks a model on its own. The harness resolves the name among providers you are logged in to, tolerating misspellings (`hiaku`), and takes the newest version when you give none (`haiku` → `anthropic/claude-haiku-5-5`). If the name fits several model families, or none, nothing starts and the main session asks you with the candidates and their prices. The model that actually runs, as `provider/id:thinking`, is shown in the start message, the progress row, `agent_status` and the agent's manifest.
-- The footer shows `main $x · agents $y · total $z`, counting agents at every depth.
-
-Tools added to the main session: `run_agent`, `agent_status`, `message_agent`. Command: `/agents`.
-
-## Agents
-
-Starter agents: `explorer` (read-only search, `openai/gpt-6-luna`), `implementer` (scoped edits, `openai/gpt-6.1-sol`), `reviewer` (read-only review, `openai/gpt-6-luna`), and `general` (`openai/gpt-6.1-sol`, all tools), a fallback for work none of the others fits, such as running commands and summarising them or drafting a document. `general` may start `explorer` and `reviewer` agents of its own; the three role agents start none. Add your own as Markdown files with frontmatter in `~/.pi/agent/agents/` or, for trusted projects, `.pi/agents/` (project files win over user files, user files over built-ins). To change a starter agent's model, copy its file to `~/.pi/agent/agents/` and edit it there.
-
-```markdown
----
-name: doc-writer
-description: Writes or updates docs for one module.
-limit: 80000                 # required: context budget in tokens; at the limit the agent writes a handoff
-subagents: []                # required: agents it may start, [] for none
-tools: read, grep, find, ls, edit, write
-model: openai/gpt-6-luna:low # optional name[:thinking]; omit or "inherit" for the main session's model
-fallback: false              # optional: true lists the agent only for work no other agent fits
-skills: [docs-style]         # optional subset of your skills
-output: text                 # text (last message) or file (result.md)
-maxTurns: 30                 # optional
----
-You write documentation...
-```
-
-A file that misses `limit` or `subagents`, names an unknown agent in `subagents`, lists itself, or forms a cycle (`a` may start `b`, `b` may start `a`) is not loaded; pi shows a warning naming the file. `model` is `name[:thinking]`: an exact `provider/id` as listed by `pi --list-models`, or a name the harness resolves when the agent starts, like a `model` passed to `run_agent` (`haiku`, `gpt-6.1-sol:high`). The thinking suffix is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; without it the agent uses the main session's thinking level, and `inherit:high` keeps the main session's model with its own level. A suffix that is not a known level stops the file from loading. There is no separate `thinking` field: a file that still has one is not loaded, and the warning asks you to move the level onto `model`. A model whose provider has no credentials, or a name that is ambiguous or unknown, is rejected when the agent is started, before anything runs. Fields from Claude Code and other pi packages (`color`, `tools` as a list, `max_turns`, ...) are accepted; other unknown keys are ignored.
-
-An agent whose `subagents` list is not empty, and which runs below the depth cap, gets `run_agent`, `message_agent` and `agent_status` tools. It learns which agents it may start, and the depth, concurrency and budget rules, from the description of its `run_agent` tool, which lists only its `subagents`. Its system prompt holds no orchestration rules. Like the main session, an agent that starts a batch ends its turn and is woken once with all results; while it waits it holds no concurrency slot, so a tree of agents cannot deadlock.
-
-## Prompts
-
-Two prompt files ship in the package's `prompts/` directory:
-
-- `main-session.md`: replaces pi's default system prompt in the main session. It holds all orchestration rules: when to delegate, how to split and write tasks, how to handle results, and when to forward corrections. pi's tool list, rules and docs sections are kept. The replacement happens at runtime, only in sessions where this extension is loaded; nothing is written to `~/.pi/agent`.
-- `base-system-prompt.md`: added to every agent's system prompt, followed by the agent file's body.
-
-To customise them, edit the files in your local checkout of this package (the one you passed to `pi install`) and run `/reload` in pi:
+Either installs all extensions. To try one for a single run without installing, pass its entry file:
 
 ```bash
-$EDITOR pi-subagents-mz/prompts/main-session.md
+pi -e ./pi-extensions/extensions/subagents/src/index.ts
+pi -e ./pi-extensions/extensions/session-limits/src/index.ts
+pi -e ./pi-extensions/extensions/spending/src/index.ts
 ```
-
-Packages installed from git or npm are overwritten by `pi update`, so keep custom prompts in a fork or local checkout.
-
-## Settings
-
-Optional JSON in `~/.pi/agent/pi-subagents.json` or `.pi/pi-subagents.json` (trusted projects):
-
-```json
-{
-  "maxConcurrent": 4,
-  "budgetTokens": 100000,
-  "inlineResultChars": 4000,
-  "disabledPlugins": []
-}
-```
-
-Other keys: `maxDepth` (3, from 2 to 4; the main session counts as level 1, so 2 means agents cannot start agents), `softBudgetRatio` (0.8), `hardBudgetRatio` (1.15), `reserveTokens` (16384), `lingerMs`, `failedLingerMs`, `renderThrottleMs`.
 
 ## Update
 
 ```bash
-pi update --extensions            # reconciles the git install of github.com/zharskiy/pi-extensions
-git -C pi-subagents-mz pull       # local checkout; then /reload in pi
+pi update --extensions              # git install
+git -C pi-extensions pull           # local checkout; then /reload in pi
 ```
 
 ## Develop
 
 ```bash
 npm install
-npm run check        # tsc, biome, vitest
+npm run check                       # typecheck, biome, vitest
 ```
 
-Only `src/adapter/` talks to pi. Plugins in `src/plugins/` use the adapter contract and the manager's bus; `src/plugins.ts` lists everything the extension adds to pi.
+## Layout
+
+- `core/adapter/`: the shared pi adapter, the only code that imports pi. `contract.ts` is the interface every extension depends on; `pi-adapter.ts` exports `createPiExtension(boot, { root, namespace, childExclude })`. It knows nothing about any extension: each entry point passes its root, its namespace for custom entries and the source directories child sessions must not load.
+- `core/manager/`: the shared plugin manager (ordering, typed bus, services, contribution report), generic over each extension's event map, service map and settings, plus settings file helpers and session data paths.
+- `core/test/`: mirrors `core/`; `core/test/helpers/fakes.ts` holds the fake host, runtime and child shared by every extension's tests, and only `core/test/adapter/` tests import pi.
+- `extensions/<name>/{src,test,prompts}`: one folder per extension, with its own README. `src/index.ts` is the single entry that connects the extension's parts; `package.json` lists every entry file under `pi.extensions`.
+- Outside `core/adapter` code imports only `core/adapter/contract.ts` and the shared `core/manager/` modules; each extension's `src/index.ts` may also import `core/adapter/pi-adapter.ts`. `core/` never imports from `extensions/`.
+- Extensions never import each other. They talk over pi's event bus (`pi.events`), for example the `session-limits:busy` and `spending:usage` channels.
+- `test/architecture.test.ts` enforces these rules. `PLAN.md`, `docs/` and `research/` hold the plan, the deviations from it and the research behind it.
