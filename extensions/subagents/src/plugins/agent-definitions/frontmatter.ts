@@ -12,7 +12,7 @@ const unquote = (value: string) => {
   return quoted[1] ?? quoted[2] ?? "";
 };
 
-const scalar = (raw: string): FrontmatterValue => {
+export const parseScalar = (raw: string): FrontmatterValue => {
   const value = raw.trim();
 
   if (value.startsWith("[") && value.endsWith("]")) {
@@ -74,15 +74,24 @@ const parseEntry = (lines: string[], state: ParseState) => {
   }
 
   if (value.length > 0) {
-    state.data[key] = scalar(value);
+    state.data[key] = parseScalar(value);
     return;
   }
 
   const block = readBlock(lines, state.index);
-  const items = block.filter((item) => item.trim().startsWith("- "));
+  const filled = block.filter((item) => item.trim().length > 0);
+  const items = filled.filter((item) => item.trim().startsWith("- "));
 
   state.index += block.length;
-  state.data[key] = items.map((item) => unquote(item.trim().slice(2).trim()));
+
+  if (filled.length === 0) {
+    return;
+  }
+
+  state.data[key] =
+    items.length > 0
+      ? items.map((item) => unquote(item.trim().slice(2).trim()))
+      : filled.map((item) => item.trim()).join(" ");
 };
 
 export const parseFrontmatter = (source: string): Frontmatter => {

@@ -14,17 +14,33 @@ import {
   stateIcon,
   truncate,
 } from "../../components/agent-row.ts";
-import { type CollapsibleSection, renderSections, toggleSection } from "../../components/collapsible.ts";
+import {
+  type CollapsibleSection,
+  renderSections,
+  setAllCollapsed,
+  toggleSection,
+} from "../../components/collapsible.ts";
+import { contextBreakdown, renderBreakdown } from "../../components/context-breakdown.ts";
 import { promptSections } from "../../components/system-prompt-block.ts";
-import { type AgentRecord, isClosed, type RouteResult } from "../../model/types.ts";
+import { effectiveContextLimit } from "../../model/context-limit.ts";
+import { type AgentRecord, isClosed, type RouteResult, worktreeText } from "../../model/types.ts";
+import type { ModeStore, ViewMode } from "./mode-store.ts";
 
 export type ViewData = { record: AgentRecord; openedId?: string; session?: SessionRecord; error?: string };
 
+export type ContextSettings = {
+  softRatio: number;
+  reserveTokens: number;
+  estimate(text: string): number;
+};
+
 export type ViewDeps = {
   load(): ViewData;
+  context?: ContextSettings;
   stop(): Promise<unknown> | undefined;
   send(text: string): Promise<RouteResult>;
   subscribe(onChange: () => void): () => void;
+  modes?: ModeStore;
   now?: () => number;
 };
 
@@ -62,8 +78,28 @@ export const inputHintText = (api: OverlayApi) =>
     scrollHint(api),
   ].join(" · ");
 
-export const hintText = (api: OverlayApi, record: AgentRecord, openedId?: string) => {
+export const CONTEXT_KEY = "c";
+
+export const MODE_KEY = "v";
+
+export const modeHint = (mode: ViewMode) =>
+  mode === "focus" ? `focus view, ${MODE_KEY} verbose` : `verbose view, ${MODE_KEY} focus`;
+
+export type HintOptions = {
+  openedId?: string;
+  breakdown: "unavailable" | "shown" | "hidden";
+  mode: ViewMode;
+};
+
+const breakdownHint: Record<HintOptions["breakdown"], string | undefined> = {
+  unavailable: undefined,
+  shown: `${CONTEXT_KEY} hide context`,
+  hidden: `${CONTEXT_KEY} context breakdown`,
+};
+
+export const hintText = (api: OverlayApi, record: AgentRecord, options: HintOptions) => {
   const closed = isClosed(record.state);
+  const { openedId, breakdown, mode } = options;
 
   return [
     "Esc close",
@@ -71,7 +107,9 @@ export const hintText = (api: OverlayApi, record: AgentRecord, openedId?: string
     stopHint(record),
     `${api.toolsKey} tool detail`,
     scrollHint(api),
+    breakdownHint[breakdown],
     closed ? "Tab/Enter prompt sections" : "Tab/Enter prompt sections, Tab to the message box",
+    modeHint(mode),
     closed ? "agent closed, messages disabled" : undefined,
   ]
     .filter((part) => part !== undefined)
@@ -125,16 +163,37 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const now = deps.now ?? Date.now;
   const transcript = api.createTranscript();
   const scroll = api.createScroll();
+  let mode: ViewMode = deps.modes?.read() ?? "focus";
   let data = deps.load();
   let sections = data.session ? promptSections(data.session.prompt) : [];
-  let toolsExpanded = api.toolsExpanded;
+  let toolsExpanded = false;
   let focused = 0;
   let inputFocused = false;
   let input: InputPane | undefined;
   let status: Status | undefined;
   let headerRows: number[] = [];
   let promptCache: PromptBlock | undefined;
+  let contextShown = false;
+  let contextCache: { data: ViewData; width: number; theme: ThemeLike; lines: string[] } | undefined;
 
+  const applyMode = () => {
+    const verbose = mode === "verbose";
+
+    sections = setAllCollapsed(sections, !verbose);
+    toolsExpanded = verbose;
+    contextShown = verbose;
+
+    transcript.setToolsExpanded(verbose);
+  };
+
+  const toggleMode = () => {
+    mode = mode === "focus" ? "verbose" : "focus";
+
+    applyMode();
+    deps.modes?.write(mode);
+  };
+
+  applyMode();
   transcript.sync(data.session?.items ?? []);
 
   const messageBox = () => {
@@ -157,7 +216,10 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
   const reload = () => {
     data = deps.load();
-    sections = mergeCollapsed(sections, data.session ? promptSections(data.session.prompt) : []);
+
+    const fresh = data.session ? promptSections(data.session.prompt) : [];
+
+    sections = mergeCollapsed(sections, setAllCollapsed(fresh, mode === "focus"));
 
     if (isClosed(data.record.state)) {
       setInputFocus(false);
@@ -174,13 +236,52 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const detail = isClosed(record.state) ? finishSummary(record, now()) : progressText(record, now());
 
+    const worktree = record.worktree
+      ? [theme.fg("muted", truncate(`worktree: ${worktreeText(record.worktree)}`, width))]
+      : [];
+
     return [
       titleText(record, theme),
       theme.fg("muted", truncate(`Task: ${record.description}`, width)),
+      ...worktree,
       theme.fg("dim", truncate(detail, width)),
       theme.fg("dim", "─".repeat(Math.max(0, width))),
     ];
   };
+
+  const contextLines = (settings: ContextSettings, width: number) => {
+    const theme = api.theme;
+    const cached = contextCache;
+
+    if (cached?.data === data && cached.width === width && cached.theme === theme) {
+      return cached.lines;
+    }
+
+    const record = data.record;
+    const window = record.context?.window ?? 0;
+    const prompt = data.session?.prompt ?? { sections: [], tools: [], skills: [], guidelines: [] };
+
+    const breakdown = contextBreakdown({
+      prompt,
+      items: data.session?.items ?? [],
+      measured: record.context?.tokens ?? data.session?.contextTokens,
+      limit: effectiveContextLimit(record.contextLimit, window, settings.reserveTokens),
+      window,
+      softRatio: settings.softRatio,
+      estimate: settings.estimate,
+    });
+
+    const lines = renderBreakdown(breakdown, theme, width, `${CONTEXT_KEY} hides`).concat(
+      theme.fg("dim", "─".repeat(Math.max(0, width))),
+    );
+
+    contextCache = { data, width, theme, lines };
+
+    return lines;
+  };
+
+  const contextBlock = (width: number) =>
+    contextShown && deps.context ? contextLines(deps.context, width) : [];
 
   const promptBlock = (width: number) => {
     const theme = api.theme;
@@ -262,13 +363,17 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   };
 
   const hintLine = () => {
-    const hint = inputFocused ? inputHintText(api) : hintText(api, data.record, data.openedId);
+    const breakdown = deps.context ? (contextShown ? "shown" : "hidden") : "unavailable";
+
+    const hint = inputFocused
+      ? inputHintText(api)
+      : hintText(api, data.record, { openedId: data.openedId, breakdown, mode });
 
     return `${api.theme.fg("dim", hint)}  ${api.theme.fg("dim", positionText())}`;
   };
 
   const render = (width: number) => {
-    const header = headerLines(width);
+    const header = headerLines(width).concat(contextBlock(width));
     const message = messageLines(width);
     const height = Math.max(3, api.rows() - header.length - message.length - 1);
 
@@ -425,6 +530,16 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
     if (key.char === "x") {
       stop();
+      return;
+    }
+
+    if (key.char === CONTEXT_KEY && deps.context) {
+      contextShown = !contextShown;
+      return;
+    }
+
+    if (key.char === MODE_KEY) {
+      toggleMode();
       return;
     }
 

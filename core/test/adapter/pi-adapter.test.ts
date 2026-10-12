@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createPiHost } from "../../adapter/pi-adapter.ts";
+import { createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -216,5 +216,18 @@ describe("pi adapter", () => {
     await fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
 
     expect(seen).toEqual(["first start", "first end", "second"]);
+  });
+});
+
+describe("main session MCP", () => {
+  const commandsFrom = (...paths: string[]) => ({
+    getCommands: () =>
+      paths.map((path) => ({ name: "mcp", source: "extension", sourceInfo: { path } })) as never,
+  });
+
+  it("counts only pi's MCP built-in, not another extension's /mcp command", () => {
+    expect(mcpBuiltinLoaded(commandsFrom("/ext/a.ts", "builtin:mcp"))).toBe(true);
+    expect(mcpBuiltinLoaded(commandsFrom("/ext/other-mcp/index.ts"))).toBe(false);
+    expect(mcpBuiltinLoaded(commandsFrom())).toBe(false);
   });
 });

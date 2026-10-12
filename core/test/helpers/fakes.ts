@@ -39,6 +39,7 @@ export type FakeHost = Host & {
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
+  terminalNotices: { title: string; body: string }[];
   statuses: Map<string, string | undefined>;
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
   widgetRefreshes: number;
@@ -102,6 +103,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     dispatched: [],
     published: [],
     notices: [],
+    terminalNotices: [],
     statuses: new Map(),
     widgets: new Map(),
     widgetRefreshes: 0,
@@ -157,6 +159,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       select: async () => undefined,
       style: (token, text) => `<${token}>${text}`,
+      terminalNotify: (title, body) => {
+        host.terminalNotices.push({ title, body });
+      },
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -339,6 +344,7 @@ export type FakeChild = ChildSession & {
   wakes: string[];
   aborted: boolean;
   abortDelayMs?: number;
+  abortHangs?: boolean;
   disposed: boolean;
   usage: UsageTotals;
   text: string;
@@ -390,6 +396,10 @@ export const createFakeChild = (spec: SpawnSpec): FakeChild => {
       child.wakes.push(text);
     },
     abort: async () => {
+      if (child.abortHangs) {
+        return new Promise<void>(() => {});
+      }
+
       if (child.abortDelayMs !== undefined) {
         await new Promise((resolve) => setTimeout(resolve, child.abortDelayMs));
       }
@@ -475,6 +485,7 @@ export const createFakeRuntime = (): FakeRuntime => {
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
     defaultThinking: () => "medium",
+    estimateTokens: (text) => Math.ceil(text.length / 4),
     children: [],
     sessions: new Map(),
     spawned: [],

@@ -55,7 +55,7 @@ const newAgent = (root: string, patch: Partial<NewAgent> = {}): NewAgent => ({
   depth: 2,
   batchId: "b-1",
   dir: root,
-  budgetTokens: 100_000,
+  contextLimit: 100_000,
   ...patch,
 });
 

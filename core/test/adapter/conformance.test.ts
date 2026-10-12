@@ -1,12 +1,58 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
-import { childSettings, createChildExtension } from "../../adapter/pi-child.ts";
+import { Type } from "typebox";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
+import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const PINNED_PI_VERSION = "1.1.0";
 
 type Handler = (event: unknown) => unknown;
+
+const unknown = () => undefined;
+
+const offlineModel = {
+  id: "offline",
+  name: "offline",
+  api: "openai-completions",
+  provider: "fake",
+  baseUrl: "http://127.0.0.1:9",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000,
+  maxTokens: 100,
+};
+
+const namedTool = (name: string) => ({
+  name,
+  label: name,
+  description: name,
+  parameters: Type.Object({}),
+  execute: async () => ({ content: [], details: undefined }),
+});
+
+const lateMcpTools: pi.ExtensionFactory = (api) => {
+  api.on("session_start", () => {
+    [
+      "mcp__github__get_issue",
+      "mcp__github__list",
+      "mcp__my_docs__get_page",
+      "mcp__my_docs__delete",
+      "mcp__slack__post",
+    ]
+      .map(namedTool)
+      .forEach((tool) => {
+        api.registerTool(tool as never);
+      });
+  });
+
+  api.registerTool(namedTool("web_fetch") as never);
+};
 
 const fakeExtensionApi = () => {
   const handlers = new Map<string, Handler[]>();
@@ -36,6 +82,9 @@ describe("pi adapter conformance", () => {
   it("finds every pi export the adapter uses", () => {
     const required = [
       "createAgentSession",
+      "createCodemodeExtension",
+      "createMcpExtension",
+      "createToolSearchExtension",
       "DefaultResourceLoader",
       "SessionManager",
       "SettingsManager",
@@ -131,5 +180,181 @@ describe("pi adapter conformance", () => {
         },
       },
     ]);
+  });
+
+  describe("tool list filtering", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const sessionTools = async (tools: string[] | undefined) => {
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [{ name: "late-mcp", factory: lateMcpTools }],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+        tools,
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const names = session.getAllTools().map((tool) => tool.name);
+      const active = session.getActiveToolNames();
+
+      session.dispose();
+
+      return { names: names.toSorted(), active: active.toSorted() };
+    };
+
+    const LATE_MCP = [
+      "mcp__github__get_issue",
+      "mcp__github__list",
+      "mcp__my_docs__delete",
+      "mcp__my_docs__get_page",
+      "mcp__slack__post",
+    ];
+
+    it("keeps the named tools and every MCP tool, including tools registered after the start", async () => {
+      const { names } = await sessionTools(childToolNames(["read"], [], unknown));
+
+      expect(names).toEqual([...LATE_MCP, "read"]);
+    });
+
+    it("keeps every tool when no list is passed, the fallback without a main session source", async () => {
+      const tools = childToolNames(undefined, [], unknown);
+      const { names, active } = await sessionTools(tools);
+
+      expect(tools).toBeUndefined();
+      expect(names).toEqual(
+        expect.arrayContaining(["read", "bash", "edit", "write", "web_fetch", ...LATE_MCP]),
+      );
+      expect(active).toEqual(expect.arrayContaining(["read", "bash", "edit", "write", "web_fetch"]));
+    });
+
+    it("keeps the main session's tools and every MCP tool for tools: all", async () => {
+      const { names } = await sessionTools(childToolNames(undefined, [], () => ["read", "web_fetch"]));
+
+      expect(names).toEqual([...LATE_MCP, "read", "web_fetch"]);
+    });
+
+    it("keeps no tool at all for tools: []", async () => {
+      const { names, active } = await sessionTools(childToolNames([], [], unknown));
+
+      expect(names).toEqual([]);
+      expect(active).toEqual([]);
+    });
+
+    it("keeps a third-party extension's MCP tools registered but inactive for tools: [] with agent tools", async () => {
+      const tools = childToolNames([], ["web_fetch"], unknown);
+      const { names, active } = await sessionTools(tools);
+
+      expect(tools).toEqual(["web_fetch"]);
+      expect(names).toEqual([...LATE_MCP, "web_fetch"]);
+      expect(active).toEqual(["web_fetch"]);
+    });
+  });
+
+  describe("main session MCP built-in", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const mainSession = async (options: { disabled?: string[]; extensions?: string[] }) => {
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const seen: pi.ExtensionAPI[] = [];
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({ extensions: options.extensions });
+
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        disabledBuiltinExtensions: options.disabled,
+        extensionFactories: [
+          {
+            name: "probe",
+            factory: (api) => {
+              seen.push(api);
+            },
+          },
+          { name: "mcp", factory: pi.createMcpExtension(), replaceable: true, builtin: true },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const loaded = mcpBuiltinLoaded(seen[0]);
+
+      session.dispose();
+
+      return loaded;
+    };
+
+    it("is seen through the /mcp command whose source is builtin:mcp", async () => {
+      expect(await mainSession({})).toBe(true);
+    });
+
+    it("is missing under --no-mcp and with -builtin:mcp in the extensions setting", async () => {
+      expect(await mainSession({ disabled: ["mcp"] })).toBe(false);
+      expect(await mainSession({ extensions: ["-builtin:mcp"] })).toBe(false);
+    });
+  });
+
+  describe("MCP tool names", () => {
+    const piModule = (path: string) =>
+      import(new URL(path, import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+
+    it("match pi's own names for codemode, tool search, server tools and resource tools", async () => {
+      const servers = await piModule("core/mcp-servers.js");
+      const codemode = await piModule("extensions/codemode/tool.js");
+      const search = await piModule("extensions/tool-search/tool.js");
+      const mcpTools = await piModule("extensions/mcp/tools.js");
+      const added = (childToolNames(["read"], [], unknown) ?? []).filter((name) => name !== "read");
+      const serverTool = mcpTools.createMcpToolName("fixture", "code");
+
+      expect(added.filter((name) => !name.includes("*")).toSorted()).toEqual(
+        [
+          codemode.CODEMODE_TOOL_NAME,
+          search.TOOL_SEARCH_TOOL_NAME,
+          servers.LIST_MCP_RESOURCES_TOOL,
+          servers.LIST_MCP_RESOURCE_TEMPLATES_TOOL,
+          servers.READ_MCP_RESOURCE_TOOL,
+        ].toSorted(),
+      );
+      expect(servers.isMcpToolName(serverTool)).toBe(true);
+      expect(servers.createToolNameMatcher(added)(serverTool)).toBe(true);
+    });
   });
 });

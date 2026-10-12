@@ -14,10 +14,9 @@ const agents = [
 
 const general = {
   name: "general",
-  description: "Fallback work.",
+  description: "Use only when no other agent fits the work.",
   limit: 100000,
   model: "openai/gpt-6.1-sol",
-  fallback: true,
   subagents: ["explorer", "reviewer"],
 };
 
@@ -38,16 +37,30 @@ describe("run_agent description", () => {
     expect(text).toContain("handoff: `Handoff file: <path>`");
   });
 
-  it("lists fallback agents in their own block after the role agents, with what they may start", () => {
+  it("lists every agent the same way, by name, with what it may start", () => {
     const text = describeRunAgent([general, ...agents], { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
-    const roles = text.indexOf("- explorer:");
-    const fallback = text.indexOf("Fallback agents (only when no agent above fits the work):\n- general:");
 
-    expect(roles).toBeGreaterThan(0);
-    expect(fallback).toBeGreaterThan(roles);
     expect(text).toContain(
-      "- general: Fallback work. (model openai/gpt-6.1-sol, context limit 100000 tokens, may start explorer, reviewer)",
+      "Agents you may start:\n\n- explorer: Searches the repo. (model of the main session, context limit 100000 tokens)\n- general: Use only when no other agent fits the work. (model openai/gpt-6.1-sol, context limit 100000 tokens, may start explorer, reviewer)\n- reviewer: ",
     );
+    expect(text).not.toContain("allback");
+    expect(text).toContain(
+      "- Choosing: pick the agent whose description fits the work, never because a model was named; when the request names no role, work out the role from the work.",
+    );
+  });
+
+  it("says any other agent for subagents: all and lists no MCP tools", () => {
+    const lead = {
+      ...general,
+      name: "lead",
+      subagents: "all" as const,
+    };
+    const text = describeRunAgent([lead, ...agents], { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
+
+    expect(text).toContain(
+      "- lead: Use only when no other agent fits the work. (model openai/gpt-6.1-sol, context limit 100000 tokens, may start any other agent)\n",
+    );
+    expect(text).not.toContain("MCP");
   });
 
   it("does not promise nesting when the agents run at the depth cap", () => {

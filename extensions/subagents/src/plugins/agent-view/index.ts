@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks, chainTerminal, type RouteResult } from "../../model/types.ts";
+import { createModeStore, viewStatePath } from "./mode-store.ts";
 import { createAgentView, type ViewData } from "./view.ts";
 
 export const COMMAND = "agents";
@@ -12,8 +14,15 @@ export const REFRESH_MS = 300;
 export const agentViewPlugin: Plugin = {
   id: "agent-view",
   requires: ["agent-registry"],
-  enable: ({ host, runtime, bus, services }) => {
+  enable: ({ host, runtime, bus, services, settings }) => {
     const registry = services.require("registry");
+
+    const definedLimit = (agent: string | undefined) => {
+      const definition =
+        agent && services.has("definitions") ? services.require("definitions").get(agent) : undefined;
+
+      return definition?.limit ?? UNKNOWN_LIMIT;
+    };
 
     const fromManifest = (id: string): AgentRecord | undefined => {
       const path = join(agentsDirFor(host.session()), id, "manifest.json");
@@ -30,7 +39,7 @@ export const agentViewPlugin: Plugin = {
         tokens: 0,
         lastText: "",
         handoffRequested: false,
-        budgetTokens: 0,
+        contextLimit: definedLimit(manifest.agent),
         chainIndex: 1,
         version: 0,
         handoffPath: join(agentsDirFor(host.session()), id, "handoff.md"),
@@ -80,10 +89,19 @@ export const agentViewPlugin: Plugin = {
         return;
       }
 
+      const agentDir = host.session()?.agentDir;
+      const modes = agentDir ? createModeStore(viewStatePath(agentDir)) : undefined;
+
       await host.ui.openOverlay((api) =>
         createAgentView(
           {
             load: () => load(id),
+            modes,
+            context: {
+              softRatio: settings.softContextRatio,
+              reserveTokens: settings.reserveTokens,
+              estimate: (text) => runtime.estimateTokens(text),
+            },
             stop: () => (services.has("runner") ? services.require("runner").stop(id) : undefined),
             send: (text) => send(id, text),
             subscribe: (onChange) => {

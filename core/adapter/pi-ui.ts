@@ -286,8 +286,40 @@ export const createInputPane = (placeholder: string): InputPane => {
   };
 };
 
-export const createUi = (state: HostState): HostUi => {
+export type TerminalOut = { write(data: string): unknown };
+
+const CONTROL_CHARS = new RegExp(
+  `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}-${String.fromCharCode(159)}]+`,
+  "g",
+);
+
+const cleanText = (text: string) => text.replace(CONTROL_CHARS, " ").trim();
+
+export type TerminalEnv = { TERM?: string; TERM_PROGRAM?: string };
+
+const OSC_777_TERMINALS = /rxvt/i;
+
+export const usesOsc777 = (env: TerminalEnv) =>
+  [env.TERM, env.TERM_PROGRAM].some((name) => OSC_777_TERMINALS.test(name ?? ""));
+
+export const notificationSequence = (title: string, body: string, env: TerminalEnv = process.env) => {
+  const heading = cleanText(title).replace(/;/g, ",");
+  const text = cleanText(body);
+
+  if (usesOsc777(env)) {
+    return `\x07\x1b]777;notify;${heading};${text}\x07`;
+  }
+
+  return `\x07\x1b]9;${text ? `${heading}: ${text}` : heading}\x07`;
+};
+
+export const createUi = (
+  state: HostState,
+  stdout: TerminalOut = process.stdout,
+  env: TerminalEnv = process.env,
+): HostUi => {
   const widgetTuis = new Map<string, TUI>();
+  let lastTui: TUI | undefined;
 
   const tuiCtx = () => {
     const ctx = liveCtx(state);
@@ -320,6 +352,8 @@ export const createUi = (state: HostState): HostUi => {
 
         widgetTuis.set(key, tui);
 
+        lastTui = tui;
+
         return {
           render: (width: number) => fitLines(render(width, widgetTheme), width),
           invalidate: () => {},
@@ -343,6 +377,8 @@ export const createUi = (state: HostState): HostUi => {
 
     await ctx.ui.custom<void>(
       (tui, theme, keybindings, done) => {
+        lastTui = tui;
+
         const view = factory({
           theme: themeLike(theme),
           rows: () => tui.terminal.rows,
@@ -418,5 +454,19 @@ export const createUi = (state: HostState): HostUi => {
       return ctx.ui.select(title, options);
     },
     style: (token, text) => liveCtx(state)?.ui.theme.fg(token, text) ?? text,
+    terminalNotify: (title, body) => {
+      if (!tuiCtx()) {
+        return;
+      }
+
+      const sequence = notificationSequence(title, body, env);
+
+      if (lastTui) {
+        lastTui.terminal.write(sequence);
+        return;
+      }
+
+      stdout.write(sequence);
+    },
   };
 };

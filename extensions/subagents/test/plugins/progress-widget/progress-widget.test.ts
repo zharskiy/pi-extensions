@@ -18,7 +18,7 @@ const newAgent = (patch: Partial<NewAgent> = {}): NewAgent => ({
   depth: 2,
   batchId: "b-1",
   dir: "/tmp/pi-subagents-widget",
-  budgetTokens: 100_000,
+  contextLimit: 100_000,
   ...patch,
 });
 

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -8,15 +8,20 @@ import {
   createTranscriptPane,
   initRenderTheme,
 } from "../../../../../core/adapter/pi-ui.ts";
-import { promptRecordEntry, readSessionFile } from "../../../../../core/adapter/session-file.ts";
+import {
+  parseSessionLines,
+  promptRecordEntry,
+  readSessionFile,
+} from "../../../../../core/adapter/session-file.ts";
 import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { renderSections, setAllCollapsed } from "../../../src/components/collapsible.ts";
 import { promptSections } from "../../../src/components/system-prompt-block.ts";
-import { NAMESPACE } from "../../../src/model/paths.ts";
+import { agentsDirFor, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord, RouteResult } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin, COMMAND, REFRESH_MS } from "../../../src/plugins/agent-view/index.ts";
+import { VIEW_STATE_FILE } from "../../../src/plugins/agent-view/mode-store.ts";
 import { createAgentView } from "../../../src/plugins/agent-view/view.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
@@ -66,6 +71,29 @@ describe("system prompt block", () => {
 
     expect(rendered.lines.join("\n")).toMatchSnapshot();
     expect(session.prompt.model).toBe("openai/gpt-6-luna");
+  });
+
+  it("lists MCP tools and pi's MCP server section when the child's prompt carried them", () => {
+    const system = {
+      type: "message",
+      message: {
+        role: "system",
+        sections: { mcp_servers: "MCP servers reached through codemode:\n- mcp__docs (codemode)" },
+        toolsAdded: [
+          { name: "codemode", description: "Run a script.", parameters: {} },
+          { name: "mcp__github__create_issue", description: "Create an issue.", parameters: {} },
+        ],
+      },
+    };
+
+    const session = parseSessionLines([JSON.stringify(system)], RECORD_ENTRY);
+    const sections = setAllCollapsed(promptSections(session.prompt), false);
+    const text = renderSections(sections, 0, plainTheme, (line) => [line]).lines.join("\n");
+
+    expect(text).toContain("System prompt · mcp_servers");
+    expect(text).toContain("- mcp__docs (codemode)");
+    expect(text).toContain("Tools (2)");
+    expect(text).toContain("mcp__github__create_issue: Create an issue.");
   });
 
   it("starts collapsed with one header per section", () => {
@@ -126,7 +154,7 @@ const closedAgent = (harness: ReturnType<typeof setup>) => {
     depth: 2,
     batchId: "b-x",
     dir: join(harness.root, "agents"),
-    budgetTokens: 100_000,
+    contextLimit: 100_000,
   });
 
   registry.close(record.id, { state: "done", sessionFile: file });
@@ -661,7 +689,7 @@ describe("agent view successor chain", () => {
 
     harness.runtime
       .child(first.id)
-      .turn({ tokens: first.budgetTokens + 500, window: 1_000_000, percent: 20 });
+      .turn({ tokens: first.contextLimit + 500, window: 1_000_000, percent: 20 });
     await flush();
 
     mkdirSync(join(first.handoffPath, ".."), { recursive: true });
@@ -704,5 +732,227 @@ describe("agent view header", () => {
     expect(plain(view.render(200))[0]).toBe(
       `⠋ ${record.id} #2 (explorer) · running · model n/a · continues explorer-0001 · continued by explorer-0003 · needs input: Allow rm -rf build?`,
     );
+  });
+});
+
+describe("agent view context breakdown", () => {
+  it("toggles the block under the header with c and names the key in the hint bar", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const { view } = await harness.openView(record.id);
+    const hidden = plain(view.render(100));
+
+    expect(hidden[4]).toBe("Effective prompt");
+    expect(hidden.at(-1)).toContain("wheel scroll · c context breakdown · Tab/Enter prompt sections");
+
+    view.handleKey(key("other", "c"));
+
+    const shown = plain(view.render(100));
+
+    expect(shown[4]).toBe("Context · ~ marks estimates (characters / 4), used is measured · c hides");
+    expect(shown.slice(5, 14).map((line) => line.trim().split(/ {2,}/)[0])).toEqual([
+      "system prompt",
+      "tools",
+      "skills",
+      "messages",
+      "user",
+      "assistant",
+      "tool results",
+      "used",
+      "free space",
+    ]);
+    expect(shown[15]).toMatch(/^─+$/);
+    expect(shown[16]).toBe("Effective prompt");
+    expect(shown.at(-1)).toContain("c hide context");
+
+    view.handleKey(key("other", "c"));
+
+    expect(plain(view.render(100))).toEqual(hidden);
+  });
+
+  it("reads the measured total of a closed agent from its session file", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(key("other", "c"));
+
+    const lines = plain(view.render(100));
+    const row = (label: string) => lines.find((line) => line.startsWith(`  ${label} `)) ?? "";
+
+    expect(row("used")).toMatch(/^ {2}used +2\.3k +2\.3% +░+$/);
+    expect(row("free space")).toMatch(/^ {2}free space +97\.7k +97\.7% +█+░?$/);
+    expect(row("system prompt")).toMatch(/^ {2}system prompt +\d+~ /);
+    expect(row("tools")).toMatch(/^ {2}tools +\d+~ /);
+    expect(lines).toContain("  limit 100.0k tokens (model window unknown)");
+  });
+
+  const openFromManifest = async (manifest: Record<string, unknown>) => {
+    const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
+    const id = String(manifest.id);
+    const dir = join(agentsDirFor(harness.host.session()), id);
+    const file = join(dir, "session.jsonl");
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, "");
+    writeFileSync(
+      join(dir, "manifest.json"),
+      JSON.stringify({ description: "old", state: "done", sessionFile: file, ...manifest }),
+    );
+    harness.runtime.sessions.set(file, readSessionFile(FIXTURE, RECORD_ENTRY));
+
+    await harness.host.runCommand(COMMAND, id);
+
+    const view = harness.host.overlays.at(-1)?.(fakeApi(200).api);
+
+    view?.handleKey(key("other", "c"));
+
+    return plain(view?.render(100) ?? []);
+  };
+
+  it("opens from the manifest with the definition's limit", async () => {
+    const lines = await openFromManifest({ id: "explorer-dead", agent: "explorer" });
+
+    expect(lines).toContain("  limit 100.0k tokens (model window unknown)");
+    expect(lines.find((line) => line.startsWith("  used "))).toMatch(/2\.3k /);
+  });
+
+  it("prefers the limit stored in the manifest and says so when no limit is known", async () => {
+    const stored = await openFromManifest({ id: "explorer-old", agent: "explorer", contextLimit: 70_000 });
+    const gone = await openFromManifest({ id: "removed-old", agent: "removed" });
+
+    expect(stored).toContain("  limit 70.0k tokens (model window unknown)");
+    expect(gone).toContain("  limit unknown (the agent's file is gone)");
+    expect(gone.find((line) => line.startsWith("  used "))).toMatch(/2\.3k +0\.0%/);
+  });
+
+  it("refreshes the block with the live turn context", async () => {
+    const { harness, record, view } = await runningAgent();
+
+    view.handleKey(key("other", "c"));
+    harness.runtime.child(record.id).turn({ tokens: 85_000, window: 200_000, percent: 42 });
+    await flush();
+    await waitForRefresh();
+
+    const lines = plain(view.render(100));
+
+    expect(lines.find((line) => line.startsWith("  used "))).toMatch(/^ {2}used +85\.0k +85\.0% +█{17}░{3}$/);
+    expect(lines).toContain("  limit 100.0k tokens (50% of the model window 200.0k)");
+  });
+});
+
+describe("agent view modes", () => {
+  const stateFile = (harness: ReturnType<typeof setup>) => join(harness.host.info.agentDir, VIEW_STATE_FILE);
+
+  const storedMode = (harness: ReturnType<typeof setup>) =>
+    JSON.parse(readFileSync(stateFile(harness), "utf8")).mode;
+
+  it("opens in focus and switches to verbose with v, expanding sections, tool detail and context", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const { view } = await harness.openView(record.id);
+    const focus = plain(view.render(100));
+
+    expect(focus[4]).toBe("Effective prompt");
+    expect(focus).toContain("  ▸ System prompt · tools (4 lines)");
+    expect(focus).not.toContain(" - One finding per line.");
+    expect(focus.at(-1)).toContain("Tab/Enter prompt sections · focus view, v verbose");
+
+    view.handleKey(key("other", "v"));
+
+    const verbose = plain(view.render(100));
+
+    expect(verbose[4]).toBe("Context · ~ marks estimates (characters / 4), used is measured · c hides");
+    expect(verbose).toContain("  ▾ System prompt · tools (4 lines)");
+    expect(verbose).toContain("    - read: Read file contents");
+    expect(verbose).toContain(" - One finding per line.");
+    expect(verbose.at(-1)).toContain("verbose view, v focus");
+    expect(storedMode(harness)).toBe("verbose");
+
+    view.handleKey(key("other", "v"));
+
+    expect(plain(view.render(100))).toEqual(focus);
+    expect(storedMode(harness)).toBe("focus");
+  });
+
+  it("lets c, the tools key and section toggles change the view without changing the stored mode", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(key("other", "v"));
+    view.handleKey(key("other", "c"));
+    view.handleKey(key("toggleTools"));
+    view.handleKey(key("enter"));
+
+    const lines = plain(view.render(100));
+
+    expect(lines[4]).toBe("Effective prompt");
+    expect(lines).not.toContain(" - One finding per line.");
+    expect(lines).toContain("› ▸ System prompt · preamble (1 lines)");
+    expect(lines).toContain("  ▾ System prompt · tools (4 lines)");
+    expect(lines.at(-1)).toContain("verbose view, v focus");
+    expect(storedMode(harness)).toBe("verbose");
+  });
+
+  it("restores the stored mode in the next view and in a fresh session with the same agent dir", async () => {
+    const first = setup();
+    const record = closedAgent(first);
+    const opened = await first.openView(record.id);
+
+    opened.view.handleKey(key("other", "v"));
+
+    const reopened = await first.openView(record.id);
+
+    expect(plain(reopened.view.render(100)).at(-1)).toContain("verbose view, v focus");
+
+    const fresh = setup();
+
+    fresh.host.info.agentDir = first.host.info.agentDir;
+
+    const other = closedAgent(fresh);
+    const { view } = await fresh.openView(other.id);
+    const lines = plain(view.render(100));
+
+    expect(lines.at(-1)).toContain("verbose view, v focus");
+    expect(lines).toContain(" - One finding per line.");
+  });
+
+  it("treats a missing or corrupt state file as focus", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+
+    mkdirSync(harness.host.info.agentDir, { recursive: true });
+    writeFileSync(stateFile(harness), "{ not json");
+
+    const { view } = await harness.openView(record.id);
+
+    expect(plain(view.render(100)).at(-1)).toContain("focus view, v verbose");
+
+    writeFileSync(stateFile(harness), JSON.stringify({ mode: "loud" }));
+
+    const again = await harness.openView(record.id);
+
+    expect(plain(again.view.render(100)).at(-1)).toContain("focus view, v verbose");
+  });
+});
+
+describe("agent view worktree", () => {
+  it("shows the worktree and branch under the task", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const worktree = {
+      path: "/agents/explorer-1/worktree",
+      branch: "pi-agents/explorer-1",
+      cwd: "/agents/x",
+    };
+
+    harness.services.require("registry").update(record.id, { worktree });
+
+    const { view } = await harness.openView(record.id);
+    const lines = plain(view.render(100));
+
+    expect(lines[2]).toBe("worktree: /agents/explorer-1/worktree (branch pi-agents/explorer-1)");
+    expect(lines[5]).toBe("Effective prompt");
   });
 });

@@ -1,4 +1,5 @@
 import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../core/adapter/contract.ts";
+import { type AgentFrontmatter, ALL, type Grant } from "./frontmatter.ts";
 
 export const MAIN_CALLER = "main";
 
@@ -26,6 +27,10 @@ export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRe
 export type AttentionKind = "confirm" | "select" | "input";
 
 export type Attention = { kind: AttentionKind; title: string; since: number };
+
+export type Worktree = { path: string; branch: string; cwd: string };
+
+export const worktreeText = (worktree: Worktree) => `${worktree.path} (branch ${worktree.branch})`;
 
 export type AgentRecord = {
   id: string;
@@ -55,35 +60,32 @@ export type AgentRecord = {
   dir: string;
   sessionFile?: string;
   model?: string;
-  budgetTokens: number;
+  worktree?: Worktree;
+  contextLimit: number;
   handoffRequested: boolean;
   graceEndsAt?: number;
   version: number;
 };
 
-export type AgentInput = "task" | "files";
-
-export type AgentOutput = "text" | "file";
-
 export type AgentSource = "builtin" | "user" | "project";
 
-export type AgentDefinition = {
-  name: string;
-  description: string;
-  model?: string;
+export const allowlist = (grant: Grant): string[] | undefined => (grant === ALL ? undefined : grant);
+
+export const isNone = (grant: Grant) => grant !== ALL && grant.length === 0;
+
+export const grantText = (grant: Grant) => (grant === ALL ? ALL : grant.join(", "));
+
+export const subagentNames = (definition: Pick<AgentDefinition, "name" | "subagents">, names: string[]) =>
+  definition.subagents === ALL ? names.filter((name) => name !== definition.name) : definition.subagents;
+
+export type AgentInternals = {
   thinking?: string;
-  tools?: string[];
-  skills?: string[];
   prompt: string;
-  input: AgentInput;
-  output: AgentOutput;
-  maxTurns?: number;
-  limit: number;
-  subagents: string[];
-  fallback: boolean;
   source: AgentSource;
   path: string;
 };
+
+export type AgentDefinition = AgentFrontmatter & AgentInternals;
 
 export type DefinitionError = { path: string; message: string };
 
@@ -95,7 +97,7 @@ export type NewAgent = {
   depth: number;
   batchId: string;
   dir: string;
-  budgetTokens: number;
+  contextLimit: number;
   model?: string;
   chainIndex?: number;
   predecessorId?: string;
@@ -124,6 +126,7 @@ export type RouteResult =
   | { ok: false; error: string };
 
 export type AgentRunner = {
+  batchSettled(batchId: string): boolean;
   stop(id: string): Promise<boolean>;
   route(id: string, message: RoutedMessage): Promise<RouteResult>;
   abort(id: string, reason: string): Promise<void>;

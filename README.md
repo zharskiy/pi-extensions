@@ -2,7 +2,7 @@
 
 Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package (`pi-extensions-mz`). Pinned to pi 1.1.0.
 
-- [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session; what they spend is reported to spending.
+- [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session, inside the main session's process, optionally in their own git worktree, with a context breakdown per agent, terminal notifications and MCP for every agent with tools; what they spend is reported to spending.
 - [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
 - [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
 
@@ -32,8 +32,11 @@ git -C pi-extensions pull           # local checkout; then /reload in pi
 
 ```bash
 npm install
-npm run check                       # typecheck, biome, vitest
+npm run check                       # typecheck, biome, vitest; no credentials, no network
+npm run test:live                   # real agents on openai/gpt-6-luna:low, about $0.005 per run
 ```
+
+`npm run test:live` runs the `*.live.test.ts` files, which `npm run check` excludes. They need OpenAI credentials in pi's agent dir (`~/.pi/agent/auth.json`, or the dir in `PI_CODING_AGENT_DIR`) or `OPENAI_API_KEY`; without them every live suite is skipped and says why. The runs never read that agent dir otherwise: each live file copies its `auth.json` (and `models.json`, if present) into a temporary agent dir and points pi at it, so your `AGENTS.md`, skills, extensions and MCP config stay out, and a token pi refreshes during a run is not written back. Everything they create lives in temporary directories.
 
 ## Layout
 

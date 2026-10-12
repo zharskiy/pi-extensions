@@ -28,7 +28,7 @@ const record = (id: string, patch: Partial<AgentRecord> = {}): AgentRecord => ({
   lastText: "",
   handoffPath: "/x/handoff.md",
   dir: "/x",
-  budgetTokens: 100_000,
+  contextLimit: 100_000,
   handoffRequested: false,
   version: 0,
   ...patch,

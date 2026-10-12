@@ -102,7 +102,7 @@ describe("message_agent", () => {
       depth: 3,
       batchId: "b-other",
       dir: record.dir,
-      budgetTokens: 100_000,
+      contextLimit: 100_000,
     });
 
     const result = await send(grandchild.id, "hello from main");

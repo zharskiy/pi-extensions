@@ -2,17 +2,22 @@ import { isAbsolute, resolve, sep } from "node:path";
 import {
   type AgentSession,
   createAgentSession,
+  createCodemodeExtension,
+  createMcpExtension,
+  createToolSearchExtension,
   DefaultResourceLoader,
   type ExtensionAPI,
   type ExtensionContext,
   type ExtensionFactory,
   type ExtensionUIContext,
   getAgentDir,
+  type InlineExtension,
   ModelRuntime,
   SessionManager,
   SettingsManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
+import { settleWithin } from "../manager/settle.ts";
 import type {
   AgentRuntime,
   AnyToolSpec,
@@ -26,8 +31,10 @@ import type {
   StopReason,
   UsageTotals,
 } from "./contract.ts";
+import { messageText, toolCallCount } from "./messages.ts";
 import { resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
+import { estimateTextTokens } from "./pi-tokens.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { formatRoutedMessage } from "./route.ts";
 import { promptRecordEntry, readSessionFile } from "./session-file.ts";
@@ -35,37 +42,24 @@ import { sumOwnUsage } from "./usage.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
-const timeout = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
-
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
+
+export type SkillFile = { name: string; path: string };
+
+export type ParentTool = { name: string; path: string };
 
 export type ParentSource = {
   ctx(): ExtensionContext | undefined;
   settings(): Settings;
   thinking(): string;
+  skillFiles?(): SkillFile[];
+  activeTools?(): ParentTool[];
+  mcpDisabled?(): boolean;
 };
 
 export type ChildOptions = {
   namespace: string;
   exclude: readonly string[];
-};
-
-const toolCallCount = (content: unknown) =>
-  Array.isArray(content) ? content.filter((part) => part?.type === "toolCall").length : 0;
-
-const textParts = (content: unknown) => {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (!Array.isArray(content)) {
-    return "";
-  }
-
-  return content
-    .filter((part) => part?.type === "text")
-    .map((part) => String(part.text ?? ""))
-    .join("\n");
 };
 
 const snapshotContext = (session: AgentSession): ContextSnapshot => {
@@ -163,12 +157,75 @@ export const childUiContext = (theme: Theme, prompts: ChildPrompts | undefined):
   notify: (message, type = "info") => prompts?.notify(message, type),
 });
 
+const MCP_PREFIX = "mcp__";
+
+const MCP_DISCOVERY_TOOLS = ["codemode", "tool_search"];
+
+const MCP_RESOURCE_TOOLS = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
+
+const MCP_TOOLS = [...MCP_DISCOVERY_TOOLS, `${MCP_PREFIX}*`, ...MCP_RESOURCE_TOOLS];
+
+const isMcpTool = (name: string) =>
+  name.startsWith(MCP_PREFIX) || MCP_DISCOVERY_TOOLS.includes(name) || MCP_RESOURCE_TOOLS.includes(name);
+
+const wantsMcp = (tools: readonly string[] | undefined) => tools === undefined || tools.length > 0;
+
+export const childToolNames = (
+  tools: string[] | undefined,
+  customNames: string[],
+  mainTools: () => string[] | undefined,
+): string[] | undefined => {
+  const base = tools ?? mainTools();
+
+  if (!base) {
+    return undefined;
+  }
+
+  const mcp = wantsMcp(tools) ? MCP_TOOLS : [];
+
+  return Array.from(new Set([...base, ...mcp, ...customNames]));
+};
+
+const mcpExtensions = (tools: readonly string[] | undefined, mcpDisabled: boolean): InlineExtension[] => {
+  if (!wantsMcp(tools)) {
+    return [];
+  }
+
+  const discovery: InlineExtension[] = [
+    { name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
+    { name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
+  ];
+
+  return mcpDisabled
+    ? discovery
+    : [...discovery, { name: "mcp", factory: createMcpExtension(), replaceable: true, builtin: true }];
+};
+
 const isExcluded = (exclude: readonly string[], path: string) =>
   isAbsolute(path) && exclude.some((dir) => resolve(path).startsWith(`${resolve(dir)}${sep}`));
+
+export const pickSkillFiles = (available: SkillFile[], wanted?: readonly string[]) =>
+  available.filter((skill) => !wanted || wanted.includes(skill.name)).map((skill) => skill.path);
 
 export const createPiRuntime = (parent: ParentSource, options: ChildOptions): AgentRuntime => {
   const recordEntry = promptRecordEntry(options.namespace);
   const defaultProvider = () => (parent.settings() as { defaultProvider?: string }).defaultProvider;
+
+  const mainTools = () =>
+    parent
+      .activeTools?.()
+      .filter((tool) => !isMcpTool(tool.name) && !isExcluded(options.exclude, tool.path))
+      .map((tool) => tool.name);
+
+  const mainSkillFiles = (wanted?: readonly string[]) => {
+    const available = parent.skillFiles?.();
+
+    if (!available && !wanted) {
+      return undefined;
+    }
+
+    return pickSkillFiles(available ?? [], wanted);
+  };
 
   let modelRuntime: Promise<ModelRuntime> | undefined;
 
@@ -214,11 +271,13 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
 
     const agentDir = getAgentDir();
     const wantedSkills = spec.skills ? new Set(spec.skills) : undefined;
+    const skillFiles = mainSkillFiles(spec.skills);
 
     const loader = new DefaultResourceLoader({
       cwd: spec.cwd,
       agentDir,
       settingsManager,
+      ...(skillFiles ? { noSkills: true, additionalSkillPaths: skillFiles } : {}),
       appendSystemPromptOverride: (base) => [...base, ...spec.promptAppend],
       skillsOverride: wantedSkills
         ? (current) => ({
@@ -238,6 +297,7 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
           hidden: true,
           factory: createChildExtension(spec.id, emit, modelLabel, recordEntry),
         },
+        ...mcpExtensions(spec.tools, parent.mcpDisabled?.() ?? false),
       ],
     });
 
@@ -262,7 +322,11 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
         resourceLoader: loader,
         settingsManager,
         sessionManager,
-        tools: spec.tools ? [...spec.tools, ...customTools.map((tool) => tool.name)] : undefined,
+        tools: childToolNames(
+          spec.tools,
+          customTools.map((tool) => tool.name),
+          mainTools,
+        ),
         customTools: customTools.map((tool) => toPiTool(tool)),
       }),
     );
@@ -287,7 +351,7 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
 
         emit({
           type: "assistant_message",
-          text: textParts(message.content),
+          text: messageText(message.content),
           stopReason: message.stopReason,
           toolCalls: toolCallCount(message.content),
           errorMessage: message.errorMessage,
@@ -344,10 +408,7 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       const runner = session.extensionRunner;
 
       if (runner?.hasHandlers("session_shutdown")) {
-        await Promise.race([
-          runner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => undefined),
-          timeout(SHUTDOWN_TIMEOUT_MS),
-        ]);
+        await settleWithin(runner.emit({ type: "session_shutdown", reason: "quit" }), SHUTDOWN_TIMEOUT_MS);
       }
 
       session.dispose();
@@ -396,5 +457,6 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
     readSession: (file) => readSessionFile(file, recordEntry),
     resolveModel,
     defaultThinking: () => parent.thinking(),
+    estimateTokens: estimateTextTokens,
   };
 };

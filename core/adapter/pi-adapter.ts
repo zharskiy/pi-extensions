@@ -22,8 +22,10 @@ import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState, liveCtx } from "./pi-ui.ts";
 import { sumSessionUsage } from "./usage.ts";
 
-export { childSettings, childUiContext, createChildExtension, createPiRuntime } from "./pi-child.ts";
-export { insideChildSession };
+const MCP_BUILTIN_PATH = "builtin:mcp";
+
+export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
+  pi.getCommands().some((command) => command.sourceInfo.path === MCP_BUILTIN_PATH);
 
 const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
@@ -253,6 +255,20 @@ export const createPiExtension =
         ctx: () => liveCtx(state),
         settings: () => pi.getSettings(),
         thinking: () => pi.getThinkingLevel(),
+        skillFiles: () =>
+          pi
+            .getCommands()
+            .filter((command) => command.source === "skill")
+            .map((command) => ({ name: command.name.replace(/^skill:/, ""), path: command.sourceInfo.path })),
+        activeTools: () => {
+          const active = new Set(pi.getActiveTools());
+
+          return pi
+            .getAllTools()
+            .filter((tool) => active.has(tool.name))
+            .map((tool) => ({ name: tool.name, path: tool.sourceInfo.path }));
+        },
+        mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },
       { namespace: options.namespace, exclude: options.childExclude ?? [] },
     );

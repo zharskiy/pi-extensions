@@ -224,6 +224,74 @@ describe("run_agent batches", () => {
     });
   });
 
+  it("passes the agent's named tools at spawn", async () => {
+    const harness = setup();
+    const dir = join(harness.host.info.agentDir, "agents");
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "tracker.md"),
+      `---\nname: tracker\ndescription: Files issues.\nlimit: 50000\ntools: read, ls\nskills: all\nsubagents: []\n---\n`,
+    );
+    harness.services.require("definitions").reload();
+
+    await harness.run([{ agent: "tracker", task: "file it" }]);
+
+    expect(harness.runtime.children[0].spec.tools).toEqual(["read", "ls"]);
+  });
+
+  it("passes no allowlist for all and an empty one for [] at spawn", async () => {
+    const harness = setup();
+    const dir = join(harness.host.info.agentDir, "agents");
+    const header = "description: d\nlimit: 50000\nsubagents: []\n";
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "open.md"), `---\nname: open\n${header}tools: all\nskills: all\n---\n`);
+    writeFileSync(join(dir, "closed.md"), `---\nname: closed\n${header}tools: []\nskills: []\n---\n`);
+    harness.services.require("definitions").reload();
+
+    await harness.run([
+      { agent: "open", task: "a" },
+      { agent: "closed", task: "b" },
+    ]);
+
+    const [open, closed] = harness.runtime.children.map((child) => child.spec);
+
+    expect(open.tools).toBeUndefined();
+    expect(open.skills).toBeUndefined();
+    expect(closed).toMatchObject({ tools: [], skills: [] });
+  });
+
+  it("passes named skills, all as no list and [] as none at spawn", async () => {
+    const harness = setup();
+    const dir = join(harness.host.info.agentDir, "agents");
+    const header = "description: d\nlimit: 50000\ntools: all\nsubagents: []\n";
+
+    mkdirSync(dir, { recursive: true });
+
+    [
+      ["named", "[docs, git]"],
+      ["every", "all"],
+      ["none", "[]"],
+    ].forEach(([name, skills]) => {
+      writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\n${header}skills: ${skills}\n---\n`);
+    });
+
+    harness.services.require("definitions").reload();
+
+    await harness.run([
+      { agent: "named", task: "a" },
+      { agent: "every", task: "b" },
+      { agent: "none", task: "c" },
+    ]);
+
+    expect(harness.runtime.children.map((child) => child.spec.skills)).toEqual([
+      ["docs", "git"],
+      undefined,
+      [],
+    ]);
+  });
+
   it("marks running agents failed on shutdown and never wakes for them", async () => {
     const { run, runtime, host, registry } = setup();
 
@@ -246,6 +314,8 @@ describe("allowed subagents", () => {
     "name: lead",
     "description: Test agent that may only spawn the explorer.",
     "limit: 50000",
+    "tools: all",
+    "skills: all",
     "subagents: [explorer]",
     "---",
     "Lead the work.",
@@ -312,6 +382,45 @@ describe("allowed subagents", () => {
         wait: false,
       }),
     ).toThrow("agent(s) not allowed for this caller: reviewer. Allowed: none");
+  });
+
+  it("lets a caller with subagents: all start every other agent but not itself", async () => {
+    const harness = setup({ maxDepth: 3 });
+    const dir = join(harness.host.info.agentDir, "agents");
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "lead.md"),
+      LEAD_AGENT.replace("subagents: [explorer]", "subagents: all").replace(
+        "description: Test agent that may only spawn the explorer.",
+        "description: Lead.",
+      ),
+    );
+    harness.services.require("definitions").reload();
+
+    await harness.run([{ agent: "lead", task: "coordinate" }]);
+
+    const lead = harness.registry.list()[0];
+    const runner = harness.services.require("runner") as Runner;
+    const spawn = (agent: string) =>
+      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, callerDepth: 1, wait: false });
+
+    expect(() => spawn("lead")).toThrow(
+      "agent(s) not allowed for this caller: lead. Allowed: explorer, general, implementer, reviewer",
+    );
+
+    spawn("implementer");
+    await flush();
+
+    expect(harness.runtime.children).toHaveLength(2);
+
+    const description = (harness.runtime.children[0].spec.customTools ?? []).find(
+      (tool) => tool.name === "run_agent",
+    )?.description;
+
+    expect(description).toContain("- explorer:");
+    expect(description).toContain("- general:");
+    expect(description).not.toContain("- lead:");
   });
 });
 

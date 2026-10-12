@@ -145,6 +145,7 @@ export type HostUi = {
   openOverlay(factory: OverlayFactory): Promise<void>;
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
+  terminalNotify(title: string, body: string): void;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -274,6 +275,7 @@ export type PromptRecord = {
 export type SessionRecord = {
   prompt: PromptRecord;
   items: TranscriptItem[];
+  contextTokens?: number;
 };
 
 export const THINKING_LEVELS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -327,6 +329,7 @@ export type AgentRuntime = {
   readSession(file: string): SessionRecord;
   resolveModel(request: string | undefined): ModelResolution;
   defaultThinking(): string;
+  estimateTokens(text: string): number;
 };
 
 export const emptyUsage = (): UsageTotals => ({

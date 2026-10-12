@@ -5,7 +5,9 @@ export type NumberRule = { type: "number"; min: number; max: number; minExclusiv
 
 export type ListRule = { type: "list"; of: string };
 
-export type SettingsRule = NumberRule | ListRule;
+export type BooleanRule = { type: "boolean" };
+
+export type SettingsRule = NumberRule | ListRule | BooleanRule;
 
 export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 
@@ -20,10 +22,19 @@ const validNumber = (rule: NumberRule, value: unknown) =>
 const validList = (value: unknown) =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string");
 
-const isValid = (rule: SettingsRule, value: unknown) =>
-  rule.type === "number" ? validNumber(rule, value) : validList(value);
+const isValid = (rule: SettingsRule, value: unknown) => {
+  if (rule.type === "boolean") {
+    return typeof value === "boolean";
+  }
+
+  return rule.type === "number" ? validNumber(rule, value) : validList(value);
+};
 
 const expectation = (rule: SettingsRule) => {
+  if (rule.type === "boolean") {
+    return "true or false";
+  }
+
   if (rule.type === "list") {
     return `a list of ${rule.of}`;
   }

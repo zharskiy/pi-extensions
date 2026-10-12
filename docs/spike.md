@@ -42,5 +42,5 @@ The extension was loaded with `additionalExtensionPaths: [src/index.ts]` into an
 - `/reload` with running agents in the TUI (covered only by unit tests: running agents are marked failed and aborted, no wake).
 - Regular (non-fullscreen) TUI mode. The view uses manual windowing in both modes, so it should behave the same, but it was not run.
 - Anthropic and other providers. Cache behaviour and cost were observed on OpenAI only.
-- The budget handoff with a real model (unit-tested with simulated turns; no real agent was run to 100k tokens).
+- The context-limit handoff with a real model (unit-tested with simulated turns at the time; release 0.3 added `extensions/subagents/test/live/handoff.live.test.ts`).
 - `pi install` from git or npm. Local-path install was checked with `pi install -l <path>` in a scratch project: `.pi/settings.json` got the package, and `pi -p --approve` listed `run_agent, message_agent, agent_status`. The global `settings.json` was compared before and after and is unchanged.

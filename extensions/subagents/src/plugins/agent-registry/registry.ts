@@ -37,6 +37,8 @@ export const writeManifestFile = (record: AgentRecord) => {
     handoffPath: record.state === "handoff" ? record.handoffPath : undefined,
     error: record.error,
     model: record.model,
+    worktree: record.worktree,
+    contextLimit: record.contextLimit,
   };
 
   writeFileSync(join(record.dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -94,10 +96,11 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
   const update = (id: string, patch: Partial<AgentRecord>) => {
     const record = require(id);
     const stateChanged = patch.state !== undefined && patch.state !== record.state;
+    const manifestChanged = stateChanged || "worktree" in patch;
 
     Object.assign(record, patch, { version: record.version + 1 });
 
-    if (stateChanged) {
+    if (manifestChanged) {
       writeManifest(record);
     }
 

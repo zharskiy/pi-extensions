@@ -67,7 +67,7 @@ const setup = async (overrides = {}, agent = "explorer") => {
   const requestHandoff = async (id: string) => {
     harness.runtime
       .child(id)
-      .turn({ tokens: current(id).budgetTokens + 500, window: 1_000_000, percent: 20 });
+      .turn({ tokens: current(id).contextLimit + 500, window: 1_000_000, percent: 20 });
     await flush();
   };
 
@@ -171,11 +171,11 @@ describe("successor chain", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
-  it("closes as done without a handoff when the budget is crossed on the final answer turn", async () => {
+  it("closes as done without a handoff when the limit is crossed on the final answer turn", async () => {
     const { first, current, runtime, registry, host } = await setup();
     const child = runtime.child(first.id);
 
-    child.turn({ tokens: first.budgetTokens + 500, window: 1_000_000, percent: 20 }, "stop");
+    child.turn({ tokens: first.contextLimit + 500, window: 1_000_000, percent: 20 }, "stop");
     await flush();
     child.finish("auth flow mapped");
     await flush();

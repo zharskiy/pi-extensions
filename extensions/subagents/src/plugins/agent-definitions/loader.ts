@@ -1,219 +1,206 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { splitModelRequest } from "../../../../../core/adapter/contract.ts";
-import type { AgentDefinition, AgentSource, DefinitionError } from "../../model/types.ts";
-import { type FrontmatterValue, parseFrontmatter } from "./frontmatter.ts";
+import {
+  type AgentFrontmatter,
+  ALL,
+  type FieldKind,
+  type FieldSpec,
+  FRONTMATTER_FIELDS,
+  INHERIT_MODEL,
+  missingFieldMessage,
+} from "../../model/frontmatter.ts";
+import {
+  type AgentDefinition,
+  type AgentSource,
+  type DefinitionError,
+  subagentNames,
+} from "../../model/types.ts";
+import { type FrontmatterValue, parseFrontmatter, parseScalar } from "./frontmatter.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 
-export type LoadResult = { definitions: Map<string, AgentDefinition>; errors: DefinitionError[] };
+export type LoadResult = {
+  definitions: Map<string, AgentDefinition>;
+  errors: DefinitionError[];
+  warnings: DefinitionError[];
+};
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/i;
 
-type FieldResult<T> = { value?: T; error?: string };
+type FieldResult = { value?: unknown; thinking?: string; error?: string; warning?: string };
 
-const stringField = (value: FrontmatterValue | undefined, key: string): FieldResult<string> => {
-  if (value === undefined) {
-    return {};
-  }
+type FieldParser = (spec: FieldSpec, value: FrontmatterValue) => FieldResult;
 
+const textField: FieldParser = (spec, value) => {
   if (typeof value !== "string" || value.trim().length === 0) {
-    return { error: `${key} must be a non-empty string` };
+    return { error: `${spec.key} must be a non-empty string` };
   }
 
   return { value: value.trim() };
 };
 
-const listField = (value: FrontmatterValue | undefined, key: string): FieldResult<string[]> => {
-  if (value === undefined) {
-    return {};
+const nameField: FieldParser = (spec, value) => {
+  const field = textField(spec, value);
+
+  if (typeof field.value === "string" && !NAME_PATTERN.test(field.value)) {
+    return { error: `${spec.key} may only contain letters, digits, '-' and '_'` };
   }
 
-  if (typeof value === "string") {
-    return {
-      value: value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    };
-  }
-
-  if (Array.isArray(value)) {
-    return { value };
-  }
-
-  return { error: `${key} must be a list or a comma-separated string` };
+  return field;
 };
 
-const integerField = (value: FrontmatterValue | undefined, key: string, min: number): FieldResult<number> => {
-  if (value === undefined) {
-    return {};
-  }
+const modelField: FieldParser = (spec, value) => {
+  const field = textField(spec, value);
 
-  if (typeof value !== "number" || !Number.isInteger(value) || value < min) {
-    return { error: `${key} must be an integer of at least ${min}` };
-  }
-
-  return { value };
-};
-
-const choiceField = <T extends string>(
-  value: FrontmatterValue | undefined,
-  key: string,
-  choices: readonly T[],
-  fallback: T,
-): FieldResult<T> => {
-  if (value === undefined) {
-    return { value: fallback };
-  }
-
-  if (typeof value !== "string" || !choices.includes(value as T)) {
-    return { error: `${key} must be one of ${choices.join(", ")}` };
-  }
-
-  return { value: value as T };
-};
-
-const booleanField = (value: FrontmatterValue | undefined, key: string): FieldResult<boolean> => {
-  if (value === undefined) {
-    return { value: false };
-  }
-
-  if (typeof value !== "boolean") {
-    return { error: `${key} must be true or false` };
-  }
-
-  return { value };
-};
-
-const INHERIT_MODEL = "inherit";
-
-type ModelField = { model?: string; thinking?: string; error?: string };
-
-const modelField = (value: FrontmatterValue | undefined): ModelField => {
-  const field = stringField(value, "model");
-
-  if (field.error || !field.value) {
-    return { error: field.error };
+  if (typeof field.value !== "string") {
+    return field;
   }
 
   if (/\s/.test(field.value)) {
-    return { error: `model must be name[:thinking] without spaces, got "${field.value}"` };
+    return { error: `${spec.key} must be name[:thinking] without spaces, got "${field.value}"` };
   }
 
   const request = splitModelRequest(field.value);
 
   if (request.error) {
-    return { error: `model: ${request.error}` };
+    return { error: `${spec.key}: ${request.error}` };
   }
 
   if (request.name.length === 0 || request.name === INHERIT_MODEL) {
     return { thinking: request.thinking };
   }
 
-  return { model: request.name, thinking: request.thinking };
+  return { value: request.name, thinking: request.thinking };
+};
+
+const integerField: FieldParser = (spec, value) => {
+  const min = spec.min ?? 0;
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min) {
+    return { error: `${spec.key} must be an integer of at least ${min}` };
+  }
+
+  return { value };
+};
+
+const listOf = (value: FrontmatterValue) => {
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return Array.isArray(value) ? value : undefined;
+};
+
+const entryErrors = (spec: FieldSpec, names: string[]) => {
+  const invalid = spec.entry ? names.filter((name) => !spec.entry?.pattern.test(name)) : [];
+
+  return invalid.length > 0
+    ? `${spec.key} entries must be ${spec.entry?.text}, got: ${invalid.join(", ")}`
+    : undefined;
+};
+
+const listField: FieldParser = (spec, value) => {
+  const names = listOf(value);
+
+  if (!names) {
+    return { error: `${spec.key} must be a list or a comma-separated string` };
+  }
+
+  const misspelled = names.filter((name) => name !== ALL && name.toLowerCase() === ALL);
+
+  if (misspelled.length > 0) {
+    return { error: `${spec.key} takes all in lowercase, got: ${misspelled.join(", ")}` };
+  }
+
+  if (names.includes(ALL)) {
+    return names.length > 1
+      ? { error: `${spec.key} must be all on its own or a list of names, got: ${names.join(", ")}` }
+      : { value: ALL };
+  }
+
+  const invalid = entryErrors(spec, names);
+
+  if (invalid) {
+    return { error: invalid };
+  }
+
+  const unique = Array.from(new Set(names));
+  const duplicates = Array.from(new Set(names.filter((name, index) => names.indexOf(name) !== index)));
+
+  if (duplicates.length > 0) {
+    return { value: unique, warning: `${spec.key} lists entries more than once: ${duplicates.join(", ")}` };
+  }
+
+  return { value: unique };
+};
+
+const switchField: FieldParser = (spec, value) =>
+  typeof value === "boolean" ? { value } : { error: `${spec.key} must be true or false` };
+
+const PARSERS: Record<FieldKind, FieldParser> = {
+  name: nameField,
+  text: textField,
+  model: modelField,
+  integer: integerField,
+  list: listField,
+  switch: switchField,
+};
+
+const readField = (spec: FieldSpec, raw: FrontmatterValue | undefined): FieldResult => {
+  const value = raw ?? (spec.byDefault === undefined ? undefined : parseScalar(spec.byDefault));
+
+  if (value === undefined) {
+    return spec.required ? { error: missingFieldMessage(spec) } : {};
+  }
+
+  return PARSERS[spec.kind](spec, value);
 };
 
 const REMOVED_THINKING_FIELD =
   "thinking is no longer a field; put the level on the model as a suffix, for example model: openai/gpt-6-luna:high";
 
-export const MIN_LIMIT = 5_000;
+const definedText = (values: (string | undefined)[]) =>
+  values.filter((value): value is string => value !== undefined);
 
 export const parseDefinition = (
   source: string,
   path: string,
   origin: AgentSource,
-): { definition?: AgentDefinition; errors: string[] } => {
+): { definition?: AgentDefinition; errors: string[]; warnings: string[] } => {
   const { data, body } = parseFrontmatter(source);
-  const name = stringField(data.name, "name");
-  const description = stringField(data.description, "description");
-  const model = modelField(data.model);
-  const prompt = stringField(data.prompt, "prompt");
-  const tools = listField(data.tools, "tools");
-  const skills = listField(data.skills, "skills");
-  const subagents = listField(data.subagents, "subagents");
-  const input = choiceField(data.input, "input", ["task", "files"] as const, "task");
-  const output = choiceField(data.output, "output", ["text", "file"] as const, "text");
-  const maxTurns = integerField(data.maxTurns ?? data.max_turns, "maxTurns", 1);
-  const limit = integerField(data.limit, "limit", MIN_LIMIT);
-  const fallback = booleanField(data.fallback, "fallback");
+  const results = FRONTMATTER_FIELDS.map((spec) => ({ spec, result: readField(spec, data[spec.key]) }));
 
-  const fields = [
-    name,
-    description,
-    model,
-    prompt,
-    tools,
-    skills,
-    subagents,
-    input,
-    output,
-    maxTurns,
-    limit,
-    fallback,
-  ];
-
-  const errors = fields.map((field) => field.error).filter((error): error is string => error !== undefined);
+  const errors = definedText(results.map(({ result }) => result.error));
+  const warnings = definedText(results.map(({ result }) => result.warning));
 
   if (data.thinking !== undefined) {
     errors.push(REMOVED_THINKING_FIELD);
   }
 
-  if (!name.value) {
-    errors.push("name is required");
+  if (errors.length > 0) {
+    return { errors, warnings };
   }
 
-  if (!description.value) {
-    errors.push("description is required");
-  }
+  const frontmatter = Object.fromEntries(
+    results.map(({ spec, result }) => [spec.key, result.value]),
+  ) as AgentFrontmatter;
+  const thinking = results.find(({ spec }) => spec.kind === "model")?.result.thinking;
 
-  if (data.limit === undefined) {
-    errors.push("limit is required (context token budget, for example limit: 100000)");
-  }
-
-  if (data.subagents === undefined) {
-    errors.push("subagents is required (agent names it may spawn, or [] for none)");
-  }
-
-  if (name.value && !NAME_PATTERN.test(name.value)) {
-    errors.push("name may only contain letters, digits, '-' and '_'");
-  }
-
-  if (errors.length > 0 || !name.value || !description.value || !limit.value || !subagents.value) {
-    return { errors };
-  }
-
-  const promptText = [body, prompt.value].filter(Boolean).join("\n\n");
-
-  return {
-    errors,
-    definition: {
-      name: name.value,
-      description: description.value,
-      model: model.model,
-      thinking: model.thinking,
-      tools: tools.value,
-      skills: skills.value,
-      prompt: promptText,
-      input: input.value ?? "task",
-      output: output.value ?? "text",
-      maxTurns: maxTurns.value,
-      limit: limit.value,
-      subagents: Array.from(new Set(subagents.value)),
-      fallback: fallback.value ?? false,
-      source: origin,
-      path,
-    },
-  };
+  return { errors, warnings, definition: { ...frontmatter, thinking, prompt: body, source: origin, path } };
 };
 
 const referenceErrors = (definitions: Map<string, AgentDefinition>): DefinitionError[] => {
   const errors: DefinitionError[] = [];
 
   definitions.forEach((definition) => {
-    const unknown = definition.subagents.filter((name) => name !== definition.name && !definitions.has(name));
+    const listed = definition.subagents === ALL ? [] : definition.subagents;
+    const unknown = listed.filter((name) => name !== definition.name && !definitions.has(name));
 
-    if (definition.subagents.includes(definition.name)) {
+    if (listed.includes(definition.name)) {
       errors.push({ path: definition.path, message: "subagents must not include the agent itself" });
     }
 
@@ -228,11 +215,27 @@ const referenceErrors = (definitions: Map<string, AgentDefinition>): DefinitionE
   return errors;
 };
 
+const childrenOf = (definitions: Map<string, AgentDefinition>, name: string) => {
+  const definition = definitions.get(name);
+
+  return definition ? subagentNames(definition, Array.from(definitions.keys())) : [];
+};
+
+const ALL_IN_CYCLE =
+  "subagents: all reaches every other agent, so no agent it can reach may start it; list names instead";
+
+const cycleMessage = (definitions: Map<string, AgentDefinition>, cycle: string[]) => {
+  const text = `subagents form a cycle: ${cycle.join(" -> ")}`;
+  const viaAll = cycle.some((name) => definitions.get(name)?.subagents === ALL);
+
+  return viaAll ? `${text}; ${ALL_IN_CYCLE}` : text;
+};
+
 const findCycle = (definitions: Map<string, AgentDefinition>, start: string): string[] | undefined => {
   const visited = new Set<string>();
 
   const walk = (name: string, path: string[]): string[] | undefined => {
-    const children = definitions.get(name)?.subagents ?? [];
+    const children = childrenOf(definitions, name);
 
     if (children.includes(start)) {
       return [...path, start];
@@ -255,7 +258,7 @@ const cycleErrors = (definitions: Map<string, AgentDefinition>): DefinitionError
     const cycle = findCycle(definitions, definition.name);
 
     if (cycle) {
-      errors.push({ path: definition.path, message: `subagents form a cycle: ${cycle.join(" -> ")}` });
+      errors.push({ path: definition.path, message: cycleMessage(definitions, cycle) });
     }
   });
 
@@ -296,6 +299,7 @@ const markdownFiles = (dir: string) => {
 export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
   const definitions = new Map<string, AgentDefinition>();
   const errors: DefinitionError[] = [];
+  const warnings: DefinitionError[] = [];
 
   dirs.forEach((dir) => {
     markdownFiles(dir.path).forEach((path) => {
@@ -307,10 +311,14 @@ export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
       }
 
       definitions.set(parsed.definition.name, parsed.definition);
+
+      parsed.warnings.forEach((message) => {
+        warnings.push({ path, message });
+      });
     });
   });
 
   pruneSubagentGraph(definitions, errors);
 
-  return { definitions, errors };
+  return { definitions, errors, warnings };
 };

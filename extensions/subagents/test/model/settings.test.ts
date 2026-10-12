@@ -12,7 +12,7 @@ describe("subagents settings", () => {
       {
         maxConcurrent: 8,
         maxDepth: 5,
-        budgetTokens: "big",
+        softContextRatio: "big",
         disabledPlugins: ["agent-view"],
       },
       "pi-subagents.json",
@@ -21,13 +21,28 @@ describe("subagents settings", () => {
     expect(parsed.patch).toEqual({ maxConcurrent: 8, disabledPlugins: ["agent-view"] });
     expect(parsed.errors).toEqual([
       "pi-subagents.json: maxDepth must be a number between 2 and 4",
-      "pi-subagents.json: budgetTokens must be a number between 5000 and 2000000",
+      "pi-subagents.json: softContextRatio must be a number between 0.1 and 1",
     ]);
+  });
+
+  it("ignores unknown keys without an error", () => {
+    const parsed = parseSettings({ somethingElse: 50_000, hardContextRatio: 1.2 }, "f");
+
+    expect(parsed.patch).toEqual({ hardContextRatio: 1.2 });
+    expect(parsed.errors).toEqual([]);
   });
 
   it("rejects a disabled plugin list that is not a list of ids", () => {
     expect(parseSettings({ disabledPlugins: "agent-view" }, "f").errors).toEqual([
       "f: disabledPlugins must be a list of plugin ids",
+    ]);
+  });
+
+  it("takes notifications as a switch, on by default", () => {
+    expect(defaultSettings().notifications).toBe(true);
+    expect(parseSettings({ notifications: false }, "f").patch).toEqual({ notifications: false });
+    expect(parseSettings({ notifications: "off" }, "f").errors).toEqual([
+      "f: notifications must be true or false",
     ]);
   });
 

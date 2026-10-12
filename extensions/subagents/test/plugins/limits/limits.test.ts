@@ -6,66 +6,38 @@ import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
-import { validateHandoff } from "../../../src/plugins/handoff/schema.ts";
-import { budgetStep, effectiveBudget } from "../../../src/plugins/limits/budget.ts";
+import { contextStep } from "../../../src/plugins/limits/context-step.ts";
 import { LIMITS_SENDER, limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import { VALID_HANDOFF } from "../../helpers/handoff.ts";
 import { createHarness } from "../../helpers/harness.ts";
-
-const VALID_HANDOFF = [
-  "## Status",
-  "partial",
-  "",
-  "## Outcome",
-  "- auth handler located in src/auth.ts",
-  "",
-  "## Evidence",
-  "- grep for handleLogin: src/auth.ts:42",
-  "",
-  "## Blocker",
-  "none",
-  "",
-  "## Next",
-  "- trace token refresh",
-  "",
-  "## Files touched",
-  "none",
-].join("\n");
 
 const WIDE_AGENT = [
   "---",
   "name: wide",
-  "description: Test agent with a budget larger than any model window.",
+  "description: Test agent with a limit larger than any model window.",
   "limit: 1000000",
+  "tools: all",
+  "skills: all",
   "subagents: []",
   "---",
   "Search wide.",
 ].join("\n");
 
-const CAPPED_AGENT = [
-  "---",
-  "name: capped",
-  "description: Test agent with a turn limit.",
-  "max_turns: 2",
-  "limit: 100000",
-  "subagents: []",
-  "---",
-  "Search briefly.",
-].join("\n");
-
 const setup = async (overrides = {}, agent = "explorer") => {
   const harness = createHarness(
     [agentRegistryPlugin, agentDefinitionsPlugin, handoffPlugin, runAgentPlugin, limitsPlugin],
-    { budgetTokens: 100_000, ...overrides },
+    overrides,
   );
 
-  const userAgentsDir = join(harness.host.info.agentDir, "agents");
+  if (agent === "wide") {
+    const userAgentsDir = join(harness.host.info.agentDir, "agents");
 
-  mkdirSync(userAgentsDir, { recursive: true });
-  writeFileSync(join(userAgentsDir, "wide.md"), WIDE_AGENT);
-  writeFileSync(join(userAgentsDir, "capped.md"), CAPPED_AGENT);
-  harness.services.require("definitions").reload();
+    mkdirSync(userAgentsDir, { recursive: true });
+    writeFileSync(join(userAgentsDir, "wide.md"), WIDE_AGENT);
+    harness.services.require("definitions").reload();
+  }
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
@@ -84,15 +56,10 @@ const setup = async (overrides = {}, agent = "explorer") => {
   return { ...harness, record, child, turn };
 };
 
-describe("budget arithmetic", () => {
-  it("uses the configured budget unless the model window minus the reserve is smaller", () => {
-    expect(effectiveBudget(100_000, { tokens: 0, window: 400_000, percent: 0 }, 16_384)).toBe(100_000);
-    expect(effectiveBudget(100_000, { tokens: 0, window: 64_000, percent: 0 }, 16_384)).toBe(47_616);
-  });
-
-  it("warns once at the soft line, requests a handoff at the budget and aborts past the hard line", () => {
+describe("context limit steps", () => {
+  it("warns once at the soft line, requests a handoff at the limit and aborts past the hard line", () => {
     const base = {
-      budget: 100_000,
+      limit: 100_000,
       softRatio: 0.8,
       hardRatio: 1.15,
       warned: false,
@@ -101,13 +68,13 @@ describe("budget arithmetic", () => {
       maxTurnsAfterHandoff: 3,
     };
 
-    expect(budgetStep({ ...base, tokens: 79_999 })).toBe("none");
-    expect(budgetStep({ ...base, tokens: 80_000 })).toBe("warn");
-    expect(budgetStep({ ...base, tokens: 85_000, warned: true })).toBe("none");
-    expect(budgetStep({ ...base, tokens: 100_000, warned: true })).toBe("handoff");
-    expect(budgetStep({ ...base, tokens: 110_000, handoffRequested: true })).toBe("none");
-    expect(budgetStep({ ...base, tokens: 115_000, handoffRequested: true })).toBe("abort");
-    expect(budgetStep({ ...base, tokens: 101_000, handoffRequested: true, turnsSinceHandoff: 3 })).toBe(
+    expect(contextStep({ ...base, tokens: 79_999 })).toBe("none");
+    expect(contextStep({ ...base, tokens: 80_000 })).toBe("warn");
+    expect(contextStep({ ...base, tokens: 85_000, warned: true })).toBe("none");
+    expect(contextStep({ ...base, tokens: 100_000, warned: true })).toBe("handoff");
+    expect(contextStep({ ...base, tokens: 110_000, handoffRequested: true })).toBe("none");
+    expect(contextStep({ ...base, tokens: 115_000, handoffRequested: true })).toBe("abort");
+    expect(contextStep({ ...base, tokens: 101_000, handoffRequested: true, turnsSinceHandoff: 3 })).toBe(
       "abort",
     );
   });
@@ -125,7 +92,7 @@ describe("limits plugin", () => {
 
     expect(child.messages).toHaveLength(1);
     expect(child.messages[0].message.sender).toBe(LIMITS_SENDER);
-    expect(child.messages[0].message.text).toContain("Context budget warning");
+    expect(child.messages[0].message.text).toContain("Context limit warning");
     expect(child.messages[0].delivery).toBe("steer");
 
     await turn(90_000);
@@ -186,7 +153,7 @@ describe("limits plugin", () => {
 
     expect(closed?.state).toBe("failed");
     expect(closed?.error).toBe(
-      `context budget reached but no handoff file was written at ${record.handoffPath}`,
+      `context limit reached but no handoff file was written at ${record.handoffPath}`,
     );
   });
 
@@ -198,7 +165,7 @@ describe("limits plugin", () => {
 
     expect(child.aborted).toBe(true);
     expect(services.require("registry").get(record.id)?.error).toBe(
-      `context budget reached but no handoff file was written at ${record.handoffPath}`,
+      `context limit reached but no handoff file was written at ${record.handoffPath}`,
     );
   });
 
@@ -228,7 +195,7 @@ describe("limits plugin", () => {
     await turn(82_000);
 
     expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Context budget warning"),
+      expect.stringContaining("Context limit warning"),
     ]);
 
     await turn(100_500, "stop");
@@ -253,11 +220,11 @@ describe("limits plugin", () => {
     await turn(82_000, "length", 1);
 
     expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Context budget warning"),
+      expect.stringContaining("Context limit warning"),
     ]);
   });
 
-  it("requests the handoff on the next continuing wake turn of an over-budget agent waiting on its own batch", async () => {
+  it("requests the handoff on the next continuing wake turn of an agent over its limit waiting on its own batch", async () => {
     const { child, turn, record, runtime, services } = await setup({}, "general");
     const registry = services.require("registry");
     const runChild = child.spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as ToolSpec<
@@ -296,28 +263,21 @@ describe("limits plugin", () => {
     expect(child.aborted).toBe(false);
   });
 
-  it("warns at the turn limit and aborts past the grace only on turns that continue", async () => {
-    const { child, turn, record, services } = await setup({}, "capped");
+  it("aborts an agent that keeps working three turns after the handoff request", async () => {
+    const { child, turn, record, services } = await setup();
 
-    await turn(1_000);
-    await turn(1_000, "stop");
-
-    expect(child.messages).toEqual([]);
-
-    await turn(1_000);
-
-    expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Turn limit reached (2 turns)"),
-    ]);
-
-    await turn(1_000, "stop");
+    await turn(100_500);
+    await turn(101_000);
+    await turn(101_000);
 
     expect(child.aborted).toBe(false);
 
-    await turn(1_000);
+    await turn(101_000);
 
     expect(child.aborted).toBe(true);
-    expect(services.require("registry").get(record.id)?.error).toBe("turn limit of 2 exceeded");
+    expect(services.require("registry").get(record.id)?.error).toBe(
+      `context limit reached but no handoff file was written at ${record.handoffPath}`,
+    );
   });
 
   it("respects a smaller model window", async () => {
@@ -327,51 +287,7 @@ describe("limits plugin", () => {
     await flush();
 
     expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Context budget warning"),
+      expect.stringContaining("Context limit warning"),
     ]);
-  });
-});
-
-describe("handoff schema", () => {
-  it("accepts the documented schema", () => {
-    expect(validateHandoff(VALID_HANDOFF)).toEqual({ ok: true, status: "partial" });
-  });
-
-  it("rejects missing, empty, out-of-order sections and unknown status values", () => {
-    const missing = validateHandoff("## Status\npartial\n## Outcome\nx");
-    const reordered = validateHandoff(
-      VALID_HANDOFF.replace("## Outcome", "## Tmp")
-        .replace("## Blocker", "## Outcome")
-        .replace("## Tmp", "## Blocker"),
-    );
-    const empty = validateHandoff(VALID_HANDOFF.replace("- trace token refresh", ""));
-    const badStatus = validateHandoff(VALID_HANDOFF.replace("partial", "almost"));
-
-    expect(missing).toEqual({
-      ok: false,
-      errors: ["missing sections: Evidence, Blocker, Next, Files touched"],
-    });
-    expect(reordered.ok).toBe(false);
-    expect(empty).toEqual({ ok: false, errors: ["empty sections: Next"] });
-    expect(badStatus).toEqual({ ok: false, errors: ["Status must be one of partial, blocked"] });
-  });
-
-  it("rejects a done status because a finished agent never writes a handoff", () => {
-    expect(validateHandoff(VALID_HANDOFF.replace("partial", "done"))).toEqual({
-      ok: false,
-      errors: ["Status must be one of partial, blocked"],
-    });
-    expect(validateHandoff(VALID_HANDOFF.replace("partial", "blocked"))).toEqual({
-      ok: true,
-      status: "blocked",
-    });
-  });
-
-  it("fills the handoff instruction with the target path", () => {
-    const harness = createHarness([handoffPlugin]);
-    const text = harness.services.require("handoff").instruction("/tmp/x/handoff.md");
-
-    expect(text).toContain("/tmp/x/handoff.md");
-    expect(text).not.toContain("{{path}}");
   });
 });

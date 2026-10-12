@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
-import { type AgentRecord, chainLinks } from "../../model/types.ts";
+import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 
 export const RESULT_FILE = "result.md";
 
@@ -18,8 +18,8 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
   return { resultText: text, resultPath };
 };
 
-export const shouldInline = (record: AgentRecord, inlineLimit: number, forceFile: boolean) => {
-  if (forceFile || record.state === "handoff") {
+export const shouldInline = (record: AgentRecord, inlineLimit: number) => {
+  if (record.state === "handoff") {
     return false;
   }
 
@@ -45,7 +45,6 @@ export const chainLine = (links: AgentRecord[]) =>
 export const resultEntry = (
   record: AgentRecord,
   inlineLimit: number,
-  forceFile: boolean,
   now: number,
   links: AgentRecord[] = [record],
 ) => {
@@ -59,6 +58,10 @@ export const resultEntry = (
 
   lines.push(finishSummary(chained ? chainTotals(links) : record, now));
 
+  if (record.worktree) {
+    lines.push(`Worktree: ${worktreeText(record.worktree)}`);
+  }
+
   if (record.state === "handoff") {
     lines.push(`Handoff file: ${record.handoffPath}${record.error ? ` (invalid: ${record.error})` : ""}`);
 
@@ -71,7 +74,7 @@ export const resultEntry = (
     return lines.join("\n");
   }
 
-  if (shouldInline(record, inlineLimit, forceFile)) {
+  if (shouldInline(record, inlineLimit)) {
     lines.push("", record.resultText ?? "");
 
     return lines.join("\n");
@@ -96,20 +99,14 @@ export const countByState = (records: AgentRecord[]) => {
     .join(", ");
 };
 
-export const batchMessage = (
-  batchId: string,
-  records: AgentRecord[],
-  inlineLimit: number,
-  fileOutputs: ReadonlySet<string>,
-  now: number,
-) => {
+export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number, now: number) => {
   const byId = new Map(records.map((record) => [record.id, record]));
   const lookup = { get: (id: string) => byId.get(id) };
   const terminals = records.filter((record) => !(record.successorId && byId.has(record.successorId)));
   const header = `[pi-subagents] Batch ${batchId} finished: ${countByState(terminals)}.`;
 
   const entries = terminals.map((record) =>
-    resultEntry(record, inlineLimit, fileOutputs.has(record.id), now, chainLinks(lookup, record)),
+    resultEntry(record, inlineLimit, now, chainLinks(lookup, record)),
   );
 
   entries.unshift(header);

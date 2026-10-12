@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import {
   type AgentRuntime,
   type AnyToolSpec,
@@ -12,6 +12,7 @@ import {
   type StopReason,
   splitModelRequest,
 } from "../../../../../core/adapter/contract.ts";
+import { settleWithin } from "../../../../../core/manager/settle.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -21,28 +22,22 @@ import {
   type AgentRecord,
   type AgentRegistry,
   type AgentRunner,
+  allowlist,
   chainTerminal,
   type HandoffService,
   isClosed,
   MAIN_CALLER,
   type RouteResult,
+  subagentNames,
+  type Worktree,
 } from "../../model/types.ts";
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, type Outbox } from "./outbox.ts";
-import { batchMessage, RESULT_FILE, storeResult } from "./result.ts";
+import { batchMessage, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
-
-export type BatchItem = {
-  agent: string;
-  task: string;
-  files?: string[];
-  description?: string;
-  model?: string;
-};
+import { gitWorktrees, type Worktrees, worktreeBranch } from "./worktree.ts";
 
 export type ModelPlan = { model: string; thinking: string; label: string };
-
-export type StartedBatch = { batchId: string; records: AgentRecord[]; settled: Promise<AgentRecord[]> };
 
 export type RunnerDeps = {
   registry: AgentRegistry;
@@ -55,14 +50,24 @@ export type RunnerDeps = {
   handoff: () => HandoffService | undefined;
   toolsFor?: (record: AgentRecord) => AnyToolSpec[];
   promptsFor?: (record: AgentRecord) => ChildPrompts;
+  worktrees?: Worktrees;
   now?: () => number;
 };
 
+export type BatchItem = {
+  agent: string;
+  task: string;
+  files?: string[];
+  description?: string;
+  model?: string;
+};
+
+export type BatchOptions = { callerId: string; callerDepth: number; wait: boolean };
+
+export type StartedBatch = { batchId: string; records: AgentRecord[]; settled: Promise<AgentRecord[]> };
+
 export type Runner = AgentRunner & {
-  startBatch(
-    items: BatchItem[],
-    options: { callerId: string; callerDepth: number; wait: boolean },
-  ): StartedBatch;
+  startBatch(items: BatchItem[], options: BatchOptions): StartedBatch;
   batchText(batchId: string): string;
   stop(id: string, options?: { immediate?: boolean }): Promise<boolean>;
   shutdown(reason: string): Promise<void>;
@@ -79,6 +84,8 @@ type Batch = {
 };
 
 type LaunchSlot = { item: BatchItem; plan: ModelPlan };
+
+type Placement = { cwd: string; created?: Worktree } | { error: string };
 
 type Live = {
   child?: ChildSession;
@@ -99,20 +106,17 @@ type Live = {
 
 const FAILED_STOP_REASONS: ReadonlySet<StopReason> = new Set(["error", "aborted"]);
 
+const ABORT_WAIT_MS = 5_000;
+
 export const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
-export const composeTask = (
-  record: AgentRecord,
-  item: BatchItem,
-  outputToFile: boolean,
-  predecessor?: AgentRecord,
-) => {
+export const composeTask = (record: AgentRecord, item: BatchItem, predecessor?: AgentRecord) => {
   const files = predecessor ? [predecessor.handoffPath].concat(item.files ?? []) : (item.files ?? []);
   const lines = [`Task from ${record.callerId} (agent id ${record.id}):`];
 
   if (predecessor) {
     lines.push(
-      `You continue the work of agent ${predecessor.id} as link ${record.chainIndex} of its chain; it reached its context budget and wrote a handoff file.`,
+      `You continue the work of agent ${predecessor.id} as link ${record.chainIndex} of its chain; it reached its context limit and wrote a handoff file.`,
       `Read the handoff file at ${predecessor.handoffPath} first, then carry on from its Next section without redoing the work it reports as done.`,
       "",
       "Original task:",
@@ -129,10 +133,6 @@ export const composeTask = (
     });
   }
 
-  if (outputToFile) {
-    lines.push("", `Result file: ${join(record.dir, RESULT_FILE)}`);
-  }
-
   return lines.join("\n");
 };
 
@@ -140,10 +140,10 @@ const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8"
 
 export const createRunner = (deps: RunnerDeps): Runner => {
   const now = deps.now ?? Date.now;
+  const worktrees = deps.worktrees ?? gitWorktrees;
   const semaphore = createSemaphore(() => deps.settings.maxConcurrent);
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
-  const fileOutputs = new Set<string>();
   const launches = new Map<string, LaunchSlot>();
   const userStopped = new Set<string>();
   let shuttingDown = false;
@@ -172,7 +172,21 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const batchText = (batchId: string) => {
     const records = deps.registry.batch(batchId);
 
-    return batchMessage(batchId, records, deps.settings.inlineResultChars, fileOutputs, now());
+    return batchMessage(batchId, records, deps.settings.inlineResultChars, now());
+  };
+
+  const settledTerminals = (batch: Batch) => {
+    const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
+
+    return records.every((entry) => isClosed(entry.state))
+      ? records.filter((entry) => !entry.successorId)
+      : undefined;
+  };
+
+  const batchSettled = (batchId: string) => {
+    const batch = batches.get(batchId);
+
+    return batch !== undefined && settledTerminals(batch) !== undefined;
   };
 
   const checkBatch = (record: AgentRecord) => {
@@ -182,17 +196,21 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
-    const allClosed = records.every((entry) => isClosed(entry.state));
+    const terminals = settledTerminals(batch);
 
-    if (!allClosed) {
+    if (!terminals) {
       return;
     }
 
     batch.woken = true;
-    batch.resolve(records.filter((entry) => !entry.successorId));
+    batch.resolve(terminals);
+    deps.bus.emit("batch:settled", { batchId: batch.id, callerId: batch.callerId, terminals });
 
     if (batch.wait) {
+      return;
+    }
+
+    if (shuttingDown) {
       return;
     }
 
@@ -268,6 +286,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return live.outbox;
   };
 
+  const abortChild = (child: ChildSession) => settleWithin(child.abort(), ABORT_WAIT_MS);
+
   const releaseSlot = (live: Live) => {
     live.release?.();
     live.release = undefined;
@@ -309,7 +329,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     if (text === undefined) {
       return deps.registry.close(record.id, {
         state: "failed",
-        error: `context budget reached but no handoff file was written at ${record.handoffPath}`,
+        error: `context limit reached but no handoff file was written at ${record.handoffPath}`,
       });
     }
 
@@ -349,17 +369,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       depth: record.depth,
       batchId: record.batchId,
       dir: dirname(record.dir),
-      budgetTokens: record.budgetTokens,
+      contextLimit: record.contextLimit,
       model: record.model,
       chainIndex: record.chainIndex + 1,
       predecessorId: record.id,
     });
 
     launches.set(successor.id, slot);
-
-    if (fileOutputs.has(record.id)) {
-      fileOutputs.add(successor.id);
-    }
 
     batch.ids.push(successor.id);
 
@@ -402,8 +418,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const stored = fileOutputs.has(record.id) ? readText(join(record.dir, RESULT_FILE)) : undefined;
-    const result = storeResult(record, stored ?? text);
+    const result = storeResult(record, text);
 
     deps.registry.close(record.id, { state: "done", ...result });
   };
@@ -538,6 +553,44 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
   };
 
+  const place = async (record: AgentRecord, definition: AgentDefinition): Promise<Placement> => {
+    const sessionCwd = deps.session()?.cwd ?? process.cwd();
+
+    if (!definition.worktree) {
+      return { cwd: sessionCwd };
+    }
+
+    const inherited = record.predecessorId ? deps.registry.get(record.predecessorId)?.worktree : undefined;
+
+    if (inherited) {
+      deps.registry.update(record.id, { worktree: inherited });
+      return { cwd: inherited.cwd };
+    }
+
+    const created = await worktrees.create(
+      sessionCwd,
+      record.dir,
+      worktreeBranch(record.id, now().toString(36)),
+    );
+
+    if (!created.ok) {
+      return { error: `worktree failed: ${created.error}` };
+    }
+
+    deps.registry.update(record.id, { worktree: created.worktree });
+
+    return { cwd: created.worktree.cwd, created: created.worktree };
+  };
+
+  const discardWorktree = async (record: AgentRecord, worktree: Worktree) => {
+    const sessionCwd = deps.session()?.cwd ?? process.cwd();
+    const removed = await worktrees.remove(sessionCwd, worktree);
+
+    if (removed) {
+      deps.registry.update(record.id, { worktree: undefined });
+    }
+  };
+
   const launch = async (record: AgentRecord, item: BatchItem, plan: ModelPlan) => {
     const live = liveOf(record.id);
     const release = await semaphore.acquire();
@@ -559,18 +612,38 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
+    const placement = await place(record, definition);
+
+    if ("error" in placement) {
+      deps.registry.close(record.id, { state: "failed", error: placement.error });
+      release();
+      return;
+    }
+
+    const placed = deps.registry.get(record.id);
+
+    if (!placed || isClosed(placed.state) || shuttingDown) {
+      release();
+
+      if (placement.created) {
+        await discardWorktree(record, placement.created);
+      }
+
+      return;
+    }
+
     try {
       const child = await deps.runtime.spawn({
         id: record.id,
-        cwd: deps.session()?.cwd ?? process.cwd(),
+        cwd: placement.cwd,
         sessionDir: record.dir,
         parentSessionFile: deps.session()?.file,
         model: plan.model,
         thinking: plan.thinking,
-        tools: definition.tools,
+        tools: allowlist(definition.tools),
         customTools: deps.toolsFor?.(record) ?? [],
         prompts: deps.promptsFor?.(record),
-        skills: definition.skills,
+        skills: allowlist(definition.skills),
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
       });
@@ -594,7 +667,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       const predecessor = record.predecessorId ? deps.registry.get(record.predecessorId) : undefined;
 
       live.inFlight = true;
-      child.start(composeTask(record, item, fileOutputs.has(record.id), predecessor));
+      child.start(composeTask(record, item, predecessor));
 
       const held = live.pending.splice(0);
 
@@ -631,8 +704,16 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     const caller = deps.registry.get(callerId);
+    const definition = caller && deps.definitions.get(caller.agent);
 
-    return (caller && deps.definitions.get(caller.agent)?.subagents) ?? [];
+    if (!definition) {
+      return [];
+    }
+
+    return subagentNames(
+      definition,
+      deps.definitions.list().map((agent) => agent.name),
+    );
   };
 
   const startBatch: Runner["startBatch"] = (items, options) => {
@@ -687,7 +768,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     });
 
     const records = items.map((item, index) => {
-      const definition = deps.definitions.get(item.agent);
+      const definition = deps.definitions.get(item.agent) as AgentDefinition;
 
       const record = deps.registry.create({
         agent: item.agent,
@@ -697,13 +778,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         depth,
         batchId,
         dir,
-        budgetTokens: definition?.limit ?? deps.settings.budgetTokens,
+        contextLimit: definition.limit,
         model: plans[index].label,
       });
-
-      if (definition?.output === "file") {
-        fileOutputs.add(record.id);
-      }
 
       launches.set(record.id, { item, plan: plans[index] });
 
@@ -750,7 +827,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     closeStopped(record, "stopped by the user");
 
     if (child) {
-      await child.abort().catch(() => undefined);
+      await abortChild(child);
       await releaseLive(record.id);
     }
 
@@ -786,7 +863,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     releaseSlot(live);
     deps.registry.update(id, { state: "grace", graceEndsAt: undefined });
 
-    await child.abort().catch(() => undefined);
+    await abortChild(child);
 
     const current = deps.registry.get(id);
     const idle = current?.state === "grace" && !live.graceTimer && !live.answering;
@@ -849,11 +926,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     live.abortReason = reason;
-    await live.child.abort().catch(() => undefined);
+
+    await abortChild(live.child);
   };
 
   const shutdown = async (reason: string) => {
     shuttingDown = true;
+
+    deps.bus.emit("session:closing", { reason });
 
     const open = deps.registry.list().filter((record) => !isClosed(record.state));
 
@@ -868,10 +948,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     await Promise.all(
       open.map(async (record) => {
-        await lives
-          .get(record.id)
-          ?.child?.abort()
-          .catch(() => undefined);
+        const child = lives.get(record.id)?.child;
+
+        if (child) {
+          await abortChild(child);
+        }
+
         await releaseLive(record.id);
       }),
     );
@@ -880,6 +962,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   return {
     startBatch,
     batchText,
+    batchSettled,
     stop,
     route,
     abort,

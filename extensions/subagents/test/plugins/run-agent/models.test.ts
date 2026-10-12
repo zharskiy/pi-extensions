@@ -112,7 +112,7 @@ describe("per-call model override", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, "locked.md"),
-      "---\nname: locked\ndescription: d\nmodel: locked/claude-haiku-9-0\nlimit: 50000\nsubagents: []\n---\n",
+      "---\nname: locked\ndescription: d\nmodel: locked/claude-haiku-9-0\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
     );
     services.require("definitions").reload();
 
