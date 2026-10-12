@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { footerText, isVisible } from "../src/footer.ts";
+import { footerText } from "../src/footer.ts";
 
 describe("footer", () => {
   it("formats costs in dollars with three decimals and adds up the shown parts", () => {
@@ -31,9 +31,10 @@ describe("footer", () => {
     expect(text).toBe("main $1.000 · agents $0.500 · jobs $0.250 · total $1.750 (sub)");
   });
 
-  it("is visible only once a source spent something", () => {
-    expect(isVisible([])).toBe(false);
-    expect(isVisible([{ source: "agents", cost: 0 }])).toBe(false);
-    expect(isVisible([{ source: "agents", cost: 0.01 }])).toBe(true);
+  it("is hidden until a source spent something", () => {
+    expect(footerText({ main: 1, sources: [], subscription: false })).toBeUndefined();
+    expect(
+      footerText({ main: 1, sources: [{ source: "agents", cost: 0 }], subscription: false }),
+    ).toBeUndefined();
   });
 });

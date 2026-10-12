@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBus } from "../../../../core/manager/bus.ts";
-import { createThrottle, REFRESH_MS, watchAgents } from "../../src/components/refresh.ts";
+import { createThrottle, watchAgents } from "../../src/components/refresh.ts";
 import type { BusEvents } from "../../src/model/events.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 
@@ -53,7 +53,7 @@ describe("agent watch", () => {
 
     bus.emit("agent:changed", record("a"));
     bus.emit("agent:changed", record("a"));
-    vi.advanceTimersByTime(REFRESH_MS);
+    vi.advanceTimersByTime(300);
 
     expect(onChange).toHaveBeenCalledTimes(2);
 

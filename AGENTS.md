@@ -11,5 +11,6 @@ Checks:
 
 Rules:
 
-- Only `core/adapter` imports pi packages; extensions never import each other.
-- No provider knowledge: no provider or model names in code, prompts, agent files or READMEs. Pi handles providers; cost comes from pi's own usage figures.
+- Only `core/adapter` (and `core/test/adapter` tests) import pi packages; extensions never import each other.
+- No provider knowledge: no provider or model names in code or prompts. Pi handles providers; cost comes from pi's own usage figures. Only the shipped agent files (`model: provider/id:thinking`) and the subagents README sentences that list them name models.
+- Every file the extensions write lives under pi's agent dir or session dir (`~/.pi/agent` by default), never in the project; the only exception is git's branch and `.git/worktrees` metadata for `worktree: true` agents.

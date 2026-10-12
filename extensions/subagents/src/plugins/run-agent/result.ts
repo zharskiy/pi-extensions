@@ -3,14 +3,10 @@ import { join } from "node:path";
 import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 
-const RESULT_FILE = "result.md";
-
-const PREVIEW_CHARS = 300;
-
 type StoredResult = { resultText: string; resultPath?: string; error?: string };
 
 export const storeResult = (record: AgentRecord, text: string): StoredResult => {
-  const resultPath = join(record.dir, RESULT_FILE);
+  const resultPath = join(record.dir, "result.md");
 
   try {
     mkdirSync(record.dir, { recursive: true });
@@ -21,9 +17,6 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
     return { resultText: text, error: `result file not written: ${(error as Error).message}` };
   }
 };
-
-const shouldInline = (record: AgentRecord, inlineLimit: number) =>
-  !record.resultPath || (record.resultText ?? "").length <= inlineLimit;
 
 const chainTotals = (links: AgentRecord[]): AgentRecord => {
   const first = links[0];
@@ -41,15 +34,12 @@ const chainTotals = (links: AgentRecord[]): AgentRecord => {
 const chainLine = (links: AgentRecord[]) =>
   `Chain: ${links.map((link) => link.id).join(" → ")} (${links.length} sessions)`;
 
-const resultEntry = (
-  record: AgentRecord,
-  inlineLimit: number,
-  now: number,
-  links: AgentRecord[] = [record],
-) => {
-  const header = `## ${record.id} (${record.agent}) - ${record.state}`;
+const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, links: AgentRecord[]) => {
   const chained = links.length > 1;
-  const lines = [header, `Task: ${truncate(singleLine(record.description), 200)}`];
+  const lines = [
+    `## ${record.id} (${record.agent}) - ${record.state}`,
+    `Task: ${truncate(singleLine(record.description), 200)}`,
+  ];
 
   if (chained) {
     lines.push(chainLine(links));
@@ -73,16 +63,18 @@ const resultEntry = (
     return lines.join("\n");
   }
 
-  if (shouldInline(record, inlineLimit)) {
-    lines.push("", record.resultText ?? "");
+  const text = record.resultText ?? "";
+
+  if (!record.resultPath || text.length <= inlineLimit) {
+    lines.push("", text);
 
     return lines.join("\n");
   }
 
-  const size = (record.resultText ?? "").length;
-  const preview = truncate(singleLine(record.resultText ?? ""), PREVIEW_CHARS);
-
-  lines.push(`Result file: ${record.resultPath} (${size} chars)`, `Preview: ${preview}`);
+  lines.push(
+    `Result file: ${record.resultPath} (${text.length} chars)`,
+    `Preview: ${truncate(singleLine(text), 300)}`,
+  );
 
   return lines.join("\n");
 };

@@ -4,7 +4,7 @@ export const BUSY_CHANNEL = "session-limits:busy";
 
 export const USAGE_CHANNEL = "spending:usage";
 
-export type BusySignal = { source: string; busy: boolean };
+type BusySignal = { source: string; busy: boolean };
 
 export type UsageReport = { source: string; id: string; usage: UsageTotals };
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
+import { createHandoff } from "./handoff.ts";
 import { createOutbox } from "./outbox.ts";
 import { childPromptsFor, createPromptQueue } from "./prompts.ts";
 import { createRunner } from "./runner.ts";
@@ -55,6 +56,7 @@ export const runAgentPlugin: Plugin = {
     };
 
     const promptQueue = createPromptQueue();
+    const handoff = createHandoff(root);
 
     const runner = createRunner({
       registry,
@@ -64,12 +66,13 @@ export const runAgentPlugin: Plugin = {
       definitions,
       outbox,
       session: () => host.session(),
-      handoff: services.has("handoff") ? services.require("handoff") : undefined,
+      handoff,
       toolsFor: childTools,
       promptsFor: (record) => childPromptsFor({ ui: host.ui, registry, queue: promptQueue }, record),
     });
 
     services.provide("runner", runner);
+    services.provide("handoff", handoff);
 
     const invalidators = new Map<string, () => void>();
     let pendingRender: ReturnType<typeof setTimeout> | undefined;
@@ -128,15 +131,11 @@ export const runAgentPlugin: Plugin = {
     const mainPrompt = readPrompt(root, "main-session.md");
     const statusPrompt = readPrompt(root, "main-session-agent-status.md");
 
-    const setMainPrompt = () => {
-      host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
-    };
-
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));
     host.onSessionStart(() => {
       registerRunAgent();
-      setMainPrompt();
+      host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
     });
 
     host.onSessionShutdown(async (reason) => {

@@ -148,7 +148,6 @@ describe("message_agent", () => {
 
     const grandchild = registry.create({
       agent: "explorer",
-      task: "nested",
       description: "nested",
       callerId: record.id,
       depth: 3,

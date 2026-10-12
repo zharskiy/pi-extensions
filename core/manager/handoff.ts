@@ -1,21 +1,15 @@
-export const HANDOFF_SECTIONS = [
-  "Status",
-  "Outcome",
-  "Evidence",
-  "Blocker",
-  "Next",
-  "Files touched",
-] as const;
+const HANDOFF_SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"] as const;
 
 export type HandoffValidation = { ok: true; status: string } | { ok: false; errors: string[] };
 
 type Heading = { title: string; line: number };
 
 const headingsOf = (lines: string[]): Heading[] =>
-  lines
-    .map((line, index) => ({ match: /^##\s+(.+?)\s*$/.exec(line), index }))
-    .filter((entry) => entry.match !== null)
-    .map((entry) => ({ title: entry.match?.[1] ?? "", line: entry.index }));
+  lines.flatMap((line, index) => {
+    const match = /^##\s+(.+?)\s*$/.exec(line);
+
+    return match ? [{ title: match[1], line: index }] : [];
+  });
 
 const bodyOf = (lines: string[], headings: Heading[], position: number) => {
   const start = headings[position].line + 1;

@@ -71,7 +71,7 @@ describe("createInputPane focus", () => {
 
 const captured = (mode: string, env = {}) => {
   const writes: string[] = [];
-  const state: HostState = { ctx: { mode } as unknown as ExtensionContext, stale: false };
+  const state: HostState = { ctx: { mode } as unknown as ExtensionContext };
   const ui = createUi(state, { write: (data: string) => writes.push(data) }, env);
 
   return { ui, writes, state };
@@ -105,7 +105,7 @@ describe("terminalNotify", () => {
 
     const stale = captured("tui");
 
-    stale.state.stale = true;
+    stale.state.ctx = undefined;
     stale.ui.terminalNotify("title", "body");
 
     expect(silent).toEqual([0, 0, 0]);

@@ -10,5 +10,5 @@ export type AgentFrontmatter = {
   tools: Grant;
   skills: Grant;
   subagents: Grant;
-  worktree: boolean;
+  worktree?: boolean;
 };

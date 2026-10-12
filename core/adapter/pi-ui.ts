@@ -83,18 +83,7 @@ export const textComponent = (previous: unknown, text: string): Component => {
 
 const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
 
-export type HostState = {
-  ctx?: ExtensionContext;
-  stale: boolean;
-};
-
-export const liveCtx = (state: HostState) => {
-  if (state.stale || !state.ctx) {
-    return undefined;
-  }
-
-  return state.ctx;
-};
+export type HostState = { ctx?: ExtensionContext };
 
 const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
   read: createReadToolDefinition,
@@ -107,18 +96,18 @@ const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
   ls: createLsToolDefinition,
 };
 
-type RawToolCall = { type: string; id?: string; name?: string; arguments?: unknown };
+type RawToolCall = { type: string; id: string; name: string; arguments: unknown };
 
-type RawAssistant = { content?: RawToolCall[]; stopReason?: string; errorMessage?: string };
+type RawAssistant = { content: RawToolCall[]; stopReason: string; errorMessage?: string };
 
 type Expandable = Component & { setExpanded(expanded: boolean): void };
 
-export const createTranscriptPane = (tui: TUI, cwd: string, expanded: boolean): TranscriptPane => {
+export const createTranscriptPane = (tui: TUI, cwd: string): TranscriptPane => {
   const container = new Container();
   const pendingTools = new Map<string, ToolExecutionComponent>();
   const definitions = new Map<string, object | undefined>();
   const expandables: Expandable[] = [];
-  let toolsExpanded = expanded;
+  let toolsExpanded = false;
   let synced = 0;
 
   const definitionFor = (name: string) => {
@@ -136,14 +125,12 @@ export const createTranscriptPane = (tui: TUI, cwd: string, expanded: boolean): 
   };
 
   const addToolCall = (call: RawToolCall, message: RawAssistant) => {
-    const id = call.id ?? "";
-    const name = call.name ?? "tool";
     const component = new ToolExecutionComponent(
-      name,
-      id,
-      call.arguments ?? {},
+      call.name,
+      call.id,
+      call.arguments,
       {},
-      definitionFor(name) as never,
+      definitionFor(call.name) as never,
       tui,
       cwd,
     );
@@ -157,7 +144,7 @@ export const createTranscriptPane = (tui: TUI, cwd: string, expanded: boolean): 
       return;
     }
 
-    pendingTools.set(id, component);
+    pendingTools.set(call.id, component);
   };
 
   const addItem = (item: TranscriptItem) => {
@@ -171,7 +158,7 @@ export const createTranscriptPane = (tui: TUI, cwd: string, expanded: boolean): 
 
       container.addChild(new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme()));
 
-      (message.content ?? [])
+      message.content
         .filter((part) => part.type === "toolCall")
         .forEach((call) => {
           addToolCall(call, message);
@@ -317,13 +304,11 @@ export const createUi = (
   let lastTui: TUI | undefined;
 
   const tuiCtx = () => {
-    const ctx = liveCtx(state);
-
-    if (ctx?.mode !== "tui") {
+    if (state.ctx?.mode !== "tui") {
       return undefined;
     }
 
-    return ctx;
+    return state.ctx;
   };
 
   const setWidget: HostUi["setWidget"] = (key, render) => {
@@ -368,7 +353,6 @@ export const createUi = (
     }
 
     const cwd = ctx.cwd;
-    const toolsExpanded = ctx.ui.getToolsExpanded();
 
     await ctx.ui.custom<void>(
       (tui, theme, keybindings, done) => {
@@ -379,10 +363,9 @@ export const createUi = (
           rows: () => tui.terminal.rows,
           close: () => done(),
           requestRender: () => tui.requestRender(),
-          toolsExpanded,
           toolsKey: keyText("app.tools.expand"),
           wheelScrolling: tui.mode === "fullscreen",
-          createTranscript: () => createTranscriptPane(tui, cwd, toolsExpanded),
+          createTranscript: () => createTranscriptPane(tui, cwd),
           createScroll: () => createScrollPane(() => tui.requestRender()),
           createInput: createInputPane,
         });
@@ -413,14 +396,14 @@ export const createUi = (
   };
 
   return {
-    notify: (message, level = "info") => {
-      liveCtx(state)?.ui.notify(message, level);
+    notify: (message, level) => {
+      state.ctx?.ui.notify(message, level);
     },
     setStatus: (key, text) => {
-      liveCtx(state)?.ui.setStatus(key, text);
+      state.ctx?.ui.setStatus(key, text);
     },
     confirm: async (title, message) => {
-      const ctx = liveCtx(state);
+      const ctx = state.ctx;
 
       if (!ctx?.hasUI) {
         return false;
@@ -429,7 +412,7 @@ export const createUi = (
       return ctx.ui.confirm(title, message);
     },
     input: async (title, placeholder) => {
-      const ctx = liveCtx(state);
+      const ctx = state.ctx;
 
       if (!ctx?.hasUI) {
         return undefined;
@@ -440,7 +423,7 @@ export const createUi = (
     setWidget,
     openOverlay,
     select: async (title, options) => {
-      const ctx = liveCtx(state);
+      const ctx = state.ctx;
 
       if (!ctx?.hasUI) {
         return undefined;
@@ -448,7 +431,7 @@ export const createUi = (
 
       return ctx.ui.select(title, options);
     },
-    style: (token, text) => liveCtx(state)?.ui.theme.fg(token, text) ?? text,
+    style: (token, text) => state.ctx?.ui.theme.fg(token, text) ?? text,
     terminalNotify: (title, body) => {
       if (!tuiCtx()) {
         return;

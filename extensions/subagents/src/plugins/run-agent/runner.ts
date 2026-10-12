@@ -36,7 +36,6 @@ import { createPlacer } from "./placement.ts";
 import { batchMessage, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
 import { composeTask } from "./task.ts";
-import { gitWorktrees, type Worktrees } from "./worktree.ts";
 
 type ModelPlan = { model: string; thinking: string; label: string };
 
@@ -47,12 +46,10 @@ type RunnerDeps = {
   settings: Settings;
   definitions: AgentDefinitions;
   outbox: Outbox;
-  session: () => SessionInfo | undefined;
-  handoff?: HandoffService;
-  toolsFor?: (record: AgentRecord) => AnyToolSpec[];
-  promptsFor?: (record: AgentRecord) => ChildPrompts;
-  worktrees?: Worktrees;
-  now?: () => number;
+  session: () => SessionInfo;
+  handoff: HandoffService;
+  toolsFor: (record: AgentRecord) => AnyToolSpec[];
+  promptsFor: (record: AgentRecord) => ChildPrompts;
 };
 
 export type BatchItem = {
@@ -101,7 +98,7 @@ type Live = {
   idleHandlers: (() => void)[];
 };
 
-const FAILED_STOP_REASONS: ReadonlySet<StopReason> = new Set(["error", "aborted"]);
+const failedStop = (reason: StopReason | undefined) => reason === "error" || reason === "aborted";
 
 const ABORT_WAIT_MS = 5_000;
 
@@ -110,13 +107,7 @@ const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
-  const now = deps.now ?? Date.now;
-  const { place, discardWorktree } = createPlacer({
-    registry: deps.registry,
-    session: deps.session,
-    worktrees: deps.worktrees ?? gitWorktrees,
-    now,
-  });
+  const { place, discardWorktree } = createPlacer(deps.registry);
   const semaphore = createSemaphore(() => deps.settings.maxConcurrent);
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
@@ -145,11 +136,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return created;
   };
 
-  const batchText = (batchId: string) => {
-    const records = deps.registry.batch(batchId);
-
-    return batchMessage(batchId, records, deps.settings.inlineResultChars, now());
-  };
+  const batchText = (batchId: string) =>
+    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars, Date.now());
 
   const settledTerminals = (batch: Batch) => {
     const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
@@ -177,11 +165,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     batch.resolve(terminals);
     deps.bus.emit("batch:settled", { batchId: batch.id, callerId: batch.callerId, terminals });
 
-    if (batch.wait) {
-      return;
-    }
-
-    if (shuttingDown) {
+    if (batch.wait || shuttingDown) {
       return;
     }
 
@@ -309,7 +293,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
   };
 
-  const finishHandoff = (record: AgentRecord, live: Live, handoff: HandoffService) => {
+  const finishHandoff = (record: AgentRecord, live: Live) => {
     const text = readText(record.handoffPath);
 
     if (text === undefined) {
@@ -319,7 +303,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       });
     }
 
-    const validation = handoff.validate(text);
+    const validation = deps.handoff.validate(text);
 
     if (!validation.ok) {
       return deps.registry.close(record.id, {
@@ -348,7 +332,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const continueChain = (record: AgentRecord, text: string, slot: LaunchSlot, batch: Batch) => {
     const successor = deps.registry.create({
       agent: record.agent,
-      task: record.task,
       description: record.description,
       callerId: record.callerId,
       depth: record.depth,
@@ -380,15 +363,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    if (record.handoffRequested && deps.handoff) {
-      finishHandoff(record, live, deps.handoff);
+    if (record.handoffRequested) {
+      finishHandoff(record, live);
       return;
     }
 
     const text = (live.child?.lastText() || live.lastText).trim();
-    const failedStop = live.lastStopReason !== undefined && FAILED_STOP_REASONS.has(live.lastStopReason);
-
-    if (aborted || failedStop) {
+    if (aborted || failedStop(live.lastStopReason)) {
       deps.registry.close(record.id, {
         state: "failed",
         error:
@@ -409,11 +390,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const clearGrace = (live: Live | undefined) => {
-    if (live?.graceTimer) {
-      clearTimeout(live.graceTimer);
-    }
-
     if (live) {
+      clearTimeout(live.graceTimer);
       live.graceTimer = undefined;
     }
   };
@@ -445,7 +423,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const graceMs = deps.settings.stopGraceSeconds * 1_000;
 
-    deps.registry.update(id, { graceEndsAt: now() + graceMs });
+    deps.registry.update(id, { graceEndsAt: Date.now() + graceMs });
     live.graceTimer = setTimeout(() => void expireGrace(id), graceMs);
   };
 
@@ -485,9 +463,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       }
 
       const continuing =
-        live.lastToolCalls > 0 &&
-        live.lastStopReason !== undefined &&
-        !FAILED_STOP_REASONS.has(live.lastStopReason);
+        live.lastToolCalls > 0 && live.lastStopReason !== undefined && !failedStop(live.lastStopReason);
 
       deps.bus.emit("agent:turn", { id, context: event.context, turns, continuing });
 
@@ -553,6 +529,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
+    const session = deps.session();
     const definition = deps.definitions.get(record.agent);
 
     if (!definition) {
@@ -561,7 +538,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const placement = await place(record, definition);
+    const placement = await place(record, definition, session.cwd);
 
     if ("error" in placement) {
       deps.registry.close(record.id, { state: "failed", error: placement.error });
@@ -573,7 +550,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       await releaseLive(record.id);
 
       if (placement.created) {
-        await discardWorktree(record, placement.created);
+        await discardWorktree(record, placement.created, session.cwd);
       }
     };
 
@@ -589,12 +566,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         id: record.id,
         cwd: placement.cwd,
         sessionDir: record.dir,
-        parentSessionFile: deps.session()?.file,
+        parentSessionFile: session.file,
         model: slot.plan.model,
         thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
-        customTools: deps.toolsFor?.(record) ?? [],
-        prompts: deps.promptsFor?.(record),
+        customTools: deps.toolsFor(record),
+        prompts: deps.promptsFor(record),
         skills: allowlist(definition.skills),
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
@@ -624,7 +601,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     deps.registry.update(record.id, {
       state: "running",
-      startedAt: now(),
+      startedAt: Date.now(),
       sessionFile: child.sessionFile,
     });
 
@@ -655,8 +632,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return { error: resolutionError(item.agent, resolution) };
     }
 
-    const thinking =
-      resolution.thinking ?? override?.thinking ?? definition.thinking ?? deps.runtime.defaultThinking();
+    const thinking = override?.thinking ?? definition.thinking ?? deps.runtime.defaultThinking();
 
     return { model: resolution.model.ref, thinking, label: `${resolution.model.ref}:${thinking}` };
   };
@@ -680,10 +656,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const startBatch: Runner["startBatch"] = (items, options) => {
-    if (items.length === 0) {
-      throw new Error("run_agent needs at least one agent");
-    }
-
     const unknown = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
 
     if (unknown.length > 0) {
@@ -719,8 +691,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       throw new Error(`${modelErrors.map((plan) => plan.error).join("\n\n")}\n\nNothing was started.`);
     }
 
-    const plans = planned as ModelPlan[];
-
+    const slots = (planned as ModelPlan[]).map((plan, index): LaunchSlot => ({ item: items[index], plan }));
     const batchId = newBatchId();
     const dir = agentsDirFor(deps.session());
 
@@ -730,22 +701,21 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       resolve = done;
     });
 
-    const records = items.map((item, index) => {
-      const definition = deps.definitions.get(item.agent) as AgentDefinition;
+    const records = slots.map((slot) => {
+      const { item, plan } = slot;
 
       const record = deps.registry.create({
         agent: item.agent,
-        task: item.task,
         description: item.description ?? item.task,
         callerId: options.callerId,
         depth,
         batchId,
         dir,
-        contextLimit: definition.limit,
-        model: plans[index].label,
+        contextLimit: (deps.definitions.get(item.agent) as AgentDefinition).limit,
+        model: plan.label,
       });
 
-      launches.set(record.id, { item, plan: plans[index] });
+      launches.set(record.id, slot);
 
       return record;
     });
@@ -758,12 +728,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       resolve,
     });
 
-    records.forEach((record) => {
-      const slot = launches.get(record.id);
-
-      if (slot) {
-        void launch(record, slot);
-      }
+    records.forEach((record, index) => {
+      void launch(record, slots[index]);
     });
 
     if (!options.wait || options.callerId === MAIN_CALLER) {
@@ -905,7 +871,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const shutdown = async (reason: string) => {
     shuttingDown = true;
 
-    deps.bus.emit("session:closing", { reason });
+    deps.bus.emit("session:closing", undefined);
 
     const open = deps.registry.list().filter((record) => !isClosed(record.state));
 

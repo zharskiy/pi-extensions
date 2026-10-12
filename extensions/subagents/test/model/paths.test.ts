@@ -1,10 +1,12 @@
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { sessionDataDir } from "../../../../core/manager/paths.ts";
-import { agentsDirFor, NAMESPACE } from "../../src/model/paths.ts";
+import { createFakeHost } from "../../../../core/test/helpers/fakes.ts";
+import { agentsDirFor } from "../../src/model/paths.ts";
 
 describe("agentsDirFor", () => {
-  it("keeps the agents level without a session", () => {
-    expect(agentsDirFor(undefined)).toBe(join(sessionDataDir(undefined, NAMESPACE), "agents"));
+  it("keeps agents under the session's data dir, or under pi's agent dir without a session file", () => {
+    const info = { ...createFakeHost().info, id: "s1", agentDir: "/agent" };
+
+    expect(agentsDirFor({ ...info, file: "/sessions/s1.jsonl" })).toBe("/sessions/s1/agents");
+    expect(agentsDirFor({ ...info, file: undefined })).toBe("/agent/pi-subagents/s1/agents");
   });
 });

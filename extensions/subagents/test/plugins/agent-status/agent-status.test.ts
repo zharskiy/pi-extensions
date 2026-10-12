@@ -150,7 +150,6 @@ describe("agent_status", () => {
     const link = (chainIndex: number) =>
       registry.create({
         agent: "explorer",
-        task: "t",
         description: "t",
         callerId: "main",
         depth: 2,

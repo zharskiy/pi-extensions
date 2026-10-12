@@ -31,15 +31,13 @@ export type AgentSnapshot = {
   worktree?: Worktree;
 };
 
-const LAST_LINE_CHARS = 160;
-
 const lastLineOf = (text: string) => {
   const lines = text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
 
-  return truncate(singleLine(lines.at(-1) ?? ""), LAST_LINE_CHARS);
+  return truncate(singleLine(lines.at(-1) ?? ""), 160);
 };
 
 const stateLabel = (snapshot: AgentSnapshot) => {

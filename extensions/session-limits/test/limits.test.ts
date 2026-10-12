@@ -4,8 +4,9 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flushTimers as flush } from "../../../core/test/helpers/fakes.ts";
-import { createLimits, HANDOFF_COMMAND, HANDOFF_TYPE, STATUS_KEY } from "../src/limits.ts";
-import { defaultRatios } from "../src/settings.ts";
+import { createLimits } from "../src/limits.ts";
+
+const RATIOS = { softRatio: 0.6, hardRatio: 0.75 };
 
 const TEMPLATE = readFileSync(resolve(import.meta.dirname, "..", "prompts", "handoff.md"), "utf8");
 
@@ -29,6 +30,10 @@ const VALID_HANDOFF = [
   "none",
 ].join("\n");
 
+const STATUS_KEY = "pi-session-limits";
+const HANDOFF_COMMAND = "session-handoff";
+const HANDOFF_TYPE = "pi-session-limits-handoff";
+
 const RELEASE_MS = 1_000;
 
 const setup = (releaseDelayMs = 0) => {
@@ -43,7 +48,7 @@ const setup = (releaseDelayMs = 0) => {
     projectTrusted: false,
   });
 
-  createLimits({ host, template: TEMPLATE, ratios: defaultRatios, releaseDelayMs });
+  createLimits({ host, template: TEMPLATE, ratios: () => RATIOS, releaseDelayMs });
 
   host.start();
 
@@ -93,6 +98,10 @@ describe("session limits", () => {
 
     expect(host.sent).toHaveLength(1);
     expect(host.sent[0]).toContain(handoffPath);
+    expect(host.sent[0]).not.toContain("{{path}}");
+    ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"].forEach((section) => {
+      expect(host.sent[0]).toContain(`## ${section}`);
+    });
     expect(host.sent[0]).toContain("Do not start new work in this turn");
     expect(host.sent[0]).toContain("write tool");
     expect(host.sent[0]).not.toMatch(/agent/i);
@@ -410,7 +419,7 @@ describe("session limits", () => {
 
     host.onSessionStart(() => host.emit(BUSY_CHANNEL, { source: "pi-subagents", busy: true }));
 
-    createLimits({ host, template: TEMPLATE, ratios: defaultRatios, releaseDelayMs: 0 });
+    createLimits({ host, template: TEMPLATE, ratios: () => RATIOS, releaseDelayMs: 0 });
 
     host.start();
     host.turnEnd({ tokens: 76_000, window: 100_000 });

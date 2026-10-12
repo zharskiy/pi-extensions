@@ -2,13 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { NewAgent } from "../../../src/model/types.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { progressWidgetPlugin, WIDGET_KEY } from "../../../src/plugins/progress-widget/index.ts";
+import { progressWidgetPlugin } from "../../../src/plugins/progress-widget/index.ts";
 import { createClosedRowCache, visibleRecords } from "../../../src/plugins/progress-widget/model.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const newAgent = (patch: Partial<NewAgent> = {}): NewAgent => ({
   agent: "explorer",
-  task: "t",
   description: "look around",
   callerId: "main",
   depth: 2,
@@ -124,7 +123,7 @@ describe("progress widget plugin", () => {
 
     vi.advanceTimersByTime(250);
 
-    const render = harness.host.widgets.get(WIDGET_KEY);
+    const render = harness.host.widgets.get("pi-subagents-progress");
 
     expect(render).toBeDefined();
     expect(render?.(120, plainTheme)).toEqual([
@@ -137,11 +136,11 @@ describe("progress widget plugin", () => {
 
     vi.advanceTimersByTime(29_000);
 
-    expect(harness.host.widgets.get(WIDGET_KEY)).toBeDefined();
+    expect(harness.host.widgets.get("pi-subagents-progress")).toBeDefined();
 
     vi.advanceTimersByTime(2_000);
 
-    expect(harness.host.widgets.get(WIDGET_KEY)).toBeUndefined();
+    expect(harness.host.widgets.get("pi-subagents-progress")).toBeUndefined();
   });
 
   it("indents nested agents by depth", () => {
@@ -152,7 +151,7 @@ describe("progress widget plugin", () => {
     registry.create(newAgent({ depth: 3, description: "nested" }));
     vi.advanceTimersByTime(1);
 
-    const lines = harness.host.widgets.get(WIDGET_KEY)?.(120, plainTheme) ?? [];
+    const lines = harness.host.widgets.get("pi-subagents-progress")?.(120, plainTheme) ?? [];
 
     expect(lines[2]).toMatch(/^ {2}○ explorer-\w+ · nested/);
   });
@@ -165,7 +164,7 @@ describe("progress widget plugin", () => {
     registry.update(record.id, { state: "grace", startedAt: Date.now(), graceEndsAt: Date.now() + 60_000 });
     vi.advanceTimersByTime(18_000);
 
-    const render = () => harness.host.widgets.get(WIDGET_KEY)?.(120, plainTheme) ?? [];
+    const render = () => harness.host.widgets.get("pi-subagents-progress")?.(120, plainTheme) ?? [];
 
     expect(render()[1]).toMatch(new RegExp(`^◐ ${record.id} · look around · .* · stopping in 42s$`));
 

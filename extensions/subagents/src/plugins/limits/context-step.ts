@@ -1,5 +1,7 @@
 type ContextStep = "none" | "warn" | "handoff" | "abort";
 
+const MAX_TURNS_AFTER_HANDOFF = 3;
+
 type ContextStepInput = {
   tokens: number;
   limit: number;
@@ -8,13 +10,12 @@ type ContextStepInput = {
   warned: boolean;
   handoffRequested: boolean;
   turnsSinceHandoff: number;
-  maxTurnsAfterHandoff: number;
 };
 
 export const contextStep = (input: ContextStepInput): ContextStep => {
   if (input.handoffRequested) {
     const overHard = input.tokens >= input.limit * input.hardRatio;
-    const tooManyTurns = input.turnsSinceHandoff >= input.maxTurnsAfterHandoff;
+    const tooManyTurns = input.turnsSinceHandoff >= MAX_TURNS_AFTER_HANDOFF;
 
     return overHard || tooManyTurns ? "abort" : "none";
   }

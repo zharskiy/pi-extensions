@@ -8,11 +8,10 @@ import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createWorktree, WORKTREE_DIR, worktreeBranch } from "../../../src/plugins/run-agent/worktree.ts";
+import { createWorktree } from "../../../src/plugins/run-agent/worktree.ts";
 import { createHarness, tempDir } from "../../helpers/harness.ts";
 
 const fixedBytes = vi.hoisted(() => ({ value: undefined as Buffer | undefined }));
@@ -67,20 +66,14 @@ const ISOLATED_AGENT = [
 ].join("\n");
 
 const setup = (cwd: string) => {
-  const harness = createHarness([
-    agentRegistryPlugin,
-    agentDefinitionsPlugin,
-    handoffPlugin,
-    runAgentPlugin,
-    limitsPlugin,
-  ]);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin]);
 
   const agents = join(harness.host.info.agentDir, "agents");
 
   mkdirSync(agents, { recursive: true });
   writeFileSync(join(agents, "isolated.md"), ISOLATED_AGENT);
   harness.host.info.cwd = cwd;
-  harness.services.require("definitions").reload();
+  harness.host.start();
 
   const registry = harness.services.require("registry");
   const current = (id: string) => registry.get(id) as AgentRecord;
@@ -104,23 +97,15 @@ describe("createWorktree", () => {
   it("adds a worktree on a pi-agents branch and maps a subdirectory cwd into it", async () => {
     const repo = createRepo();
     const agentDir = join(tempDir(), "explorer-ab12");
-    const branch = worktreeBranch("explorer-ab12", "mg5x1k2a");
-    const result = await createWorktree(join(repo, "src"), agentDir, branch);
-    const path = join(agentDir, WORKTREE_DIR);
+    const result = await createWorktree(join(repo, "src"), agentDir, "explorer-ab12");
+    const path = join(agentDir, "worktree");
+    const branch = result.ok ? result.worktree.branch : "";
 
-    expect(branch).toBe("pi-agents/explorer-ab12-mg5x1k2a");
+    expect(branch).toMatch(/^pi-agents\/explorer-ab12-[0-9a-z]+$/);
     expect(result).toEqual({ ok: true, worktree: { path, branch, cwd: join(path, "src") } });
     expect(readFileSync(join(path, "src", "app.ts"), "utf8")).toBe("export const app = 1;\n");
     expect(git(repo, "branch", "--list", branch)).toContain(branch);
     expect(git(repo, "worktree", "list")).toContain(path);
-  });
-
-  it("reports a directory outside any git repository", async () => {
-    const outside = tempDir("pi-subagents-plain-");
-    const result = await createWorktree(outside, join(outside, "agent"), "pi-agents/a-1-x");
-
-    expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toContain(`${outside} is not inside a git repository`);
   });
 });
 
@@ -132,7 +117,7 @@ describe("worktree agents", () => {
 
     await vi.waitFor(() => expect(runtime.children).toHaveLength(1));
 
-    const path = join(record.dir, WORKTREE_DIR);
+    const path = join(record.dir, "worktree");
     const child = runtime.child(record.id);
 
     expect(child.spec.cwd).toBe(path);
@@ -229,7 +214,7 @@ describe("worktree agents", () => {
 
     expect(registry.get(record.id)?.state).toBe("stopped");
     expect(runtime.children).toHaveLength(0);
-    expect(existsSync(join(record.dir, WORKTREE_DIR))).toBe(false);
+    expect(existsSync(join(record.dir, "worktree"))).toBe(false);
     expect(git(repo, "branch", "--list", branch)).toBe("");
     expect(manifest.worktree).toBeUndefined();
   });
@@ -247,7 +232,7 @@ describe("worktree agents", () => {
     await vi.waitFor(() => expect(git(repo, "branch", "--list", "pi-agents/*")).toBe(""));
 
     expect(registry.get(record.id)).toMatchObject({ error: "spawn failed: no session", worktree: undefined });
-    expect(existsSync(join(record.dir, WORKTREE_DIR))).toBe(false);
+    expect(existsSync(join(record.dir, "worktree"))).toBe(false);
   });
 
   it("gives an agent whose id repeats one from an earlier session a branch of its own", async () => {

@@ -7,7 +7,6 @@ import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from ".
 
 type RegistryOptions = {
   bus: Bus;
-  now?: () => number;
   newId?: (agent: string) => string;
   writeManifest?: (record: AgentRecord) => void;
 };
@@ -44,7 +43,6 @@ const writeManifestFile = (record: AgentRecord) => {
 };
 
 export const createRegistry = (options: RegistryOptions): AgentRegistry => {
-  const now = options.now ?? Date.now;
   const newId = options.newId ?? randomAgentId;
   const writeManifest = options.writeManifest ?? writeManifestFile;
   const records = new Map<string, AgentRecord>();
@@ -83,7 +81,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       dir,
       chainIndex: input.chainIndex ?? 1,
       state: "queued",
-      createdAt: now(),
+      createdAt: Date.now(),
       turns: 0,
       toolCalls: 0,
       tokens: 0,
@@ -123,7 +121,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       return record;
     }
 
-    Object.assign(record, patch, { endedAt: patch.endedAt ?? now(), version: record.version + 1 });
+    Object.assign(record, patch, { endedAt: Date.now(), version: record.version + 1 });
     persist(record);
     options.bus.emit("agent:changed", record);
     options.bus.emit("agent:closed", record);
@@ -135,17 +133,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     create,
     get: (id) => records.get(id),
     list: () => Array.from(records.values()),
-    batch: (batchId) => {
-      const members: AgentRecord[] = [];
-
-      records.forEach((record) => {
-        if (record.batchId === batchId) {
-          members.push(record);
-        }
-      });
-
-      return members;
-    },
+    batch: (batchId) => Array.from(records.values()).filter((record) => record.batchId === batchId),
     update,
     close,
   };

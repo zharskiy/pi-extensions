@@ -10,13 +10,9 @@ export type Phase = "watching" | "requested" | "waiting" | "switching" | "stuck"
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
-type HandoffStep = "none" | "wait" | "switch" | "resend" | "give-up";
-
 export type Ratios = { softRatio: number; hardRatio: number };
 
-type Segment = { token: ThemeToken; text: string };
-
-export const percentOf = (context: ContextTokens) =>
+const percentOf = (context: ContextTokens) =>
   context.tokens === null || context.window <= 0 ? null : Math.floor((context.tokens * 100) / context.window);
 
 export const contextLevel = (context: ContextTokens, ratios: Ratios): ContextLevel => {
@@ -35,7 +31,7 @@ export const shouldRequest = (phase: Phase, level: ContextLevel) => phase === "w
 
 export const isPending = (phase: Phase) => phase === "requested" || phase === "waiting";
 
-export type HandoffInput = {
+type HandoffInput = {
   phase: Phase;
   file: HandoffFile;
   busy: boolean;
@@ -43,7 +39,7 @@ export type HandoffInput = {
   instructions: number;
 };
 
-export const handoffStep = (input: HandoffInput): HandoffStep => {
+export const handoffStep = (input: HandoffInput) => {
   if (!isPending(input.phase)) {
     return "none";
   }
@@ -71,7 +67,7 @@ export const segmentFor = (
   phase: Phase,
   ratios: Ratios,
   command: string,
-): Segment | undefined => {
+): { token: ThemeToken; text: string } | undefined => {
   const percent = percentOf(context);
 
   if (phase !== "watching") {

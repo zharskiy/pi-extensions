@@ -8,8 +8,8 @@ How the three extensions work at runtime. Folder layout is in `STRUCTURE.md`.
 - `core/manager` is pi-free shared infrastructure: plugin manager, typed bus, settings parsing, session data paths, `settleWithin`, and the cross-extension contract: `handoff.ts` (handoff sections, `HandoffValidation`, `validateHandoff`) and `channels.ts` (the `session-limits:busy` and `spending:usage` channel names, payload types and parsers). Channel names and the handoff format live only there; extensions and subagents plugins import them from there, never from each other.
 - Extensions import only `contract.ts` and `core/manager`. Each extension's `src/index.ts` is the single file allowed to import `pi-adapter.ts`.
 - Extensions never import each other; they talk over pi's shared event bus (`Host.publish/subscribe`). Plugins inside an extension never import another plugin's folder; they share code through `src/model` and `src/components` and talk through the manager.
-- No provider knowledge: no code, prompt, agent file or README names a model provider or a model id. Pi resolves providers, credentials and models; the harness passes `provider/id[:thinking]` strings through. The only provider-adjacent data is cost, which is pi's own usage and cost figures.
-- `test/architecture.test.ts` enforces the import rules by scanning imports, plus: `core` never imports `extensions`, no tests inside `src`/`core/adapter`/`core/manager`, and only `core/test/adapter` tests import pi.
+- No provider knowledge: no code or prompt names a model provider or a model id. Pi resolves providers, credentials and models; the harness passes `provider/id[:thinking]` strings through. The only exceptions are configuration: the shipped agent files name their `model`, and the subagents README lists those models. Cost is pi's own usage and cost figures.
+- `test/architecture.test.ts` enforces the import rules above by scanning imports, plus: `core` never imports `extensions`, no tests inside `src`/`core/adapter`/`core/manager`, and `core/test` holds only `adapter` and `manager` tests. Which files may import pi packages (`core/adapter`, and among tests only `core/test/adapter`) is enforced by biome's `noRestrictedImports` overrides in `biome.json` alone.
 
 ## Startup and the adapter
 
@@ -18,7 +18,9 @@ How the three extensions work at runtime. Folder layout is in `STRUCTURE.md`.
 3. Otherwise it builds a `Host` over pi's `ExtensionAPI` and an `AgentRuntime` over pi's SDK, then calls `boot(host, runtime, paths)`.
 
 Host behaviour worth knowing:
-- The adapter keeps the latest pi `ExtensionContext`, captured on every event, tool call and command. On `session_shutdown` every registered handler runs even if an earlier one throws, the context is always marked stale (every Host call that needs it becomes a no-op returning `undefined`, `false` or empty), and the first error is rethrown afterwards so pi reports it.
+- The adapter keeps the latest pi `ExtensionContext`, captured on every event, tool call and command. On `session_shutdown` every registered handler runs even if an earlier one throws, the context is then always dropped, and the first error is rethrown afterwards so pi reports it.
+- `Host.session()` always returns a `SessionInfo`; outside a live session (before `session_start`, after `session_shutdown`) it throws, and so do `readEntries`/`sessionUsage` without a file argument. Every other Host call that needs the context (UI, `publish`, `appendEntry`, `sendUserMessage`, `dispatchCommand`, `isIdle`) is then a no-op. Code that can run after its own shutdown (spending, for reports arriving while other extensions shut down) must not call `session()`.
+- `onSessionStart(info, forkedFrom)`: `forkedFrom` is the parent session file when pi starts the session for `/fork` or `/clone`. `readEntries(customType, file?)` and `sessionUsage(file?)` read the live session, or another session file when one is given. `onCompact` fires after pi compacts the main session.
 - pi builds a fresh extension instance and event bus for every session (`/new`, `/resume`, `/fork`, `/reload`) and fires `session_start` once per instance, except in RPC mode where it fires twice. State therefore starts empty in each instance: handlers that only reset state at session start and unsubscribe handles at shutdown are not needed. Settings are the exception below.
 - `onIdle` is pi's `agent_settled`; `onTurnEnd` passes a `ContextSnapshot` (tokens, window, percent).
 - `sendUserMessage` delivers immediately when idle, otherwise as a pi follow-up.
@@ -26,7 +28,7 @@ Host behaviour worth knowing:
 - `ToolSpec` and overlay/widget factories are plain-text contracts; the adapter converts them to pi tools and TUI components. UI calls degrade to no-ops outside TUI mode.
 - `terminalNotify` writes an OSC 9 (or OSC 777 on rxvt) escape sequence.
 
-Unit tests use `core/test/helpers/fakes.ts` (fake host, runtime and child session) instead of pi; a few UI tests import adapter modules that load pi offline (`pi-ui.ts`, `session-file.ts`, `route.ts`), and only `core/test/adapter` tests import pi packages directly. `core/test/adapter` holds conformance tests against pi, offline.
+Unit tests use `core/test/helpers/fakes.ts` (fake host, runtime and child session) instead of pi; a few tests (UI and message-agent) import adapter modules that load pi offline (`pi-ui.ts`, `session-file.ts`, `route.ts`), and only `core/test/adapter` tests import pi packages directly. `core/test/adapter` holds conformance tests against pi, offline.
 
 ### Child sessions
 
@@ -46,14 +48,15 @@ Settings: each extension has a JSON file `<agentDir>/<file>` (user) and `<cwd>/.
 
 ## Subagents
 
-Plugins: `agent-registry` (in-memory records, `manifest.json`), `agent-definitions` (agent `.md` files, prompts), `handoff`, `run-agent` (runner, tools, outbox), `limits`, `agent-status`, `notifications`, `usage-report`, `progress-widget`, `agent-view` (`/agents`), `agent-list-view`.
+Plugins (`src/plugins.ts`; requirements in brackets): `agent-registry` (in-memory records, `manifest.json`), `agent-definitions` (agent `.md` files, agent prompts), `run-agent` [registry, definitions] (runner, tools, outbox, main prompt, and the `handoff` service: template and schema), `notifications` [run-agent], `usage-report` [run-agent], `agent-status` [registry], `limits` [registry, run-agent], `progress-widget` [registry], `agent-view` [registry] (`/agents`), `agent-list-view` [registry, agent-view].
 
 ### Agent definitions and prompts
 
-- Shipped agents declare no `model`, so they inherit the main session's model and thinking level.
-- Markdown files with frontmatter are loaded from the built-in `agents/`, then `<agentDir>/agents/`, then `<cwd>/.pi/agents/` (trusted projects). Later files override earlier ones by `name`. Invalid files, unknown `subagents` references and `subagents` cycles remove the offending definitions and produce warnings.
+- Markdown files with frontmatter are loaded from the built-in `agents/` when the plugin enables, and from the built-in `agents/`, then `<agentDir>/agents/`, then `<cwd>/.pi/agents/` (trusted projects) at session start. Later files override earlier ones by `name`. Invalid files, unknown `subagents` references and `subagents` cycles remove the offending definitions and produce warnings.
+- Shipped agents name `model: provider/id:thinking`. A file without a `model` line (or with `inherit[:thinking]`) runs on the main session's model and, without a suffix, its thinking level.
+- An agent's configured model and thinking are computed in one place, `parseDefinition` (`agent-definitions/loader.ts`), and stored on the `AgentDefinition`; the runner (`planModel`) and the `run_agent` description read them only through the `definitions` service. A future per-agent override (for example a command that sets an agent's model and thinking) plugs in at the `onSessionStart` reload in `agent-definitions/index.ts`, by overlaying stored values onto the loaded definitions. The `model` parameter of `run_agent` and the main-session fallback are applied on top in `planModel`.
 - Agent prompt = pi's own prompt for the child, with appended text: `prompts/base-system-prompt.md`, then `# Agent: <name>`, the file body and a fixed output contract.
-- The main session prompt is `prompts/main-session.md`, set by `run-agent` at session start (plus `prompts/main-session-agent-status.md` when the agent-status plugin is on). `prompts/handoff.md` is the handoff instruction template (`{{path}}` substituted). Prompt files are read once when the plugin enables.
+- The main session prompt is `prompts/main-session.md`, set by `run-agent` at session start (plus `prompts/main-session-agent-status.md` when the agent-status plugin is on). `prompts/handoff.md` is the agents' handoff instruction template (`{{path}}` substituted), read by run-agent's `handoff.ts`. Prompt files are read once when their plugin enables.
 
 ### A run_agent call, end to end
 
@@ -90,7 +93,7 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 
 ### Worktrees
 
-`worktree: true` runs `git worktree add -b pi-agents/<id>-<stamp> <agent dir>/worktree HEAD` from the session cwd; the agent's cwd is the same subdirectory inside it. Successors reuse it. It is removed when the agent is stopped, interrupted or fails before it spawns; otherwise it is left for the user and reported in the result and manifest.
+`worktree: true` runs `git worktree add -b pi-agents/<id>-<stamp> <agent dir>/worktree HEAD` from the session cwd; the agent's cwd is the same subdirectory inside it. Successors reuse it. It is removed only if the agent never starts running (stopped or closed before or during spawn, or spawn fails); otherwise it is left for the user and reported in the result and manifest.
 
 ## Session-limits
 
@@ -103,17 +106,20 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 
 ## Spending
 
-- Main cost = `sumUsage` over the session entries (assistant, tool result, compaction and branch-summary usage; `Host.sessionUsage()`), as priced by pi. Child agents use the same `sumUsage` (`ChildSession.ownUsage`).
-- Other costs arrive on `spending:usage { source, id, usage }`. Subagents' `usage-report` forwards every `agent:usage` (child session's own assistant usage, at any depth, since all agents share one runner) with `source: "agents"` and `id: <boot token>/<agent id>`, with no dedup of its own, since the ledger is idempotent.
-- The ledger keeps the latest report per `(source, id)` (monotonic: totals never go down), sums per source, and shows `main $x · agents $y · total $z` (plus `(sub)` when pi reports OAuth for the model) in the footer once any source is above zero; total is the sum of the displayed parts. A session created by a handoff switch starts with an empty ledger.
-- Persistence: changed reports are appended as `pi-spending:usage` custom entries in the main session file on idle and shutdown, and replayed on session start (resume).
+- Main cost = `sumUsage` over the session entries (assistant, tool result, `usage`, compaction and branch-summary usage; `Host.sessionUsage()`), as priced by pi. Child agents use the same `sumUsage` (`ChildSession.ownUsage`).
+- Other costs arrive on `spending:usage { source, id, usage }`. Subagents' `usage-report` forwards every `agent:usage` (child session's own usage, at any depth, since all agents share one runner) with `source: "agents"` and the agent id as `id` (ids are unique within the session's agents folder, earlier runs included), with no dedup of its own, since the ledger is idempotent.
+- The ledger keeps the latest report per `(source, id)` (monotonic: totals never go down), sums per source, and shows `main $x · agents $y · total $z` (plus `(sub)` when pi reports OAuth for the model) in the footer once any source is above zero; total is the sum of the displayed parts.
+- Persistence: changed reports are appended as `pi-spending:usage` custom entries in the main session file on idle and shutdown, and replayed on session start (resume). Reports that arrive after spending's own shutdown are ignored.
+- Lineage: totals cover the whole session lineage. Compaction and `/tree` only append to the same file, and `sumUsage` reads every entry of every branch. On `/fork` or `/clone` (`forkedFrom` set) spending appends a `pi-spending:main-offset` entry (the parent's main cost, its own last offset plus all its entries, minus the usage of the entries copied into the fork), so main = last offset + `sumUsage` of the fork's entries; it also appends a fork marker report, absorbs every parent `pi-spending:usage` report under an id prefixed with the parent file name (so new agents cannot collide with parent agent ids) and persists them into the fork at once; restore ignores reports before the last marker, so a resumed fork and forks of forks keep the totals. Only a new session (`/new`, a handoff switch) starts at zero. A fork of a session without a file (`--no-session`) has no parent file to read and starts from the copied entries only.
 
 ## Persistence summary
 
-- Session data dir = main session file path without `.jsonl` (temp dir when the session has no file).
+Every file the extensions write lives under pi's agent dir or session dir (`~/.pi/agent` by default; the `sessionDir` setting or `--session-dir` moves session data). The only exception is `worktree: true`: git records the `pi-agents/...` branch and the `.git/worktrees/` metadata in the user's repository (the checkout itself is under the agent dir). Details and the read/write tables: `docs/review/file-locations.md`.
+
+- Session data dir (`core/manager/paths.ts`, `sessionDataDir(info, namespace)`, needs a session) = main session file path without `.jsonl`; for a session without a file, `<agentDir>/<namespace>/<session id>`. Never the project or the OS temp dir.
 - `<data dir>/agents/<id>/`: `manifest.json` (rewritten on state or worktree change), the child pi session `.jsonl` (with `parentSession` and the prompt record), `result.md`, `handoff.md`, `worktree/`.
 - `<data dir>/main-handoff.md`: session-limits handoff.
-- Main session file: `pi-spending:usage` entries; the new session's seed message after a handoff.
+- Main session file: `pi-spending:usage` and `pi-spending:main-offset` entries; the new session's seed message after a handoff.
 - `<agentDir>`: `pi-subagents.json`, `pi-session-limits.json`, `pi-subagents-view.json`, `agents/*.md`. `<cwd>/.pi/`: the same settings files and `agents/*.md` (trusted projects only).
 - Registry, batches, ledger totals and limit phases live in memory and are lost on reload.
 

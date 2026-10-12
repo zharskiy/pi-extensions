@@ -12,7 +12,7 @@ import { parseFrontmatter } from "./yaml-lite.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 
-export type LoadResult = {
+type LoadResult = {
   definitions: Map<string, AgentDefinition>;
   errors: DefinitionError[];
   warnings: DefinitionError[];

@@ -10,12 +10,12 @@ const toPiResult = (result: ToolResult) => ({
 });
 
 const fromPiResult = (result: {
-  content?: { type: string; text?: string }[];
+  content: { type: string; text?: string }[];
   details?: unknown;
 }): ToolResult => ({
-  text: (result.content ?? [])
+  text: result.content
     .filter((part) => part.type === "text")
-    .map((part) => part.text ?? "")
+    .map((part) => part.text)
     .join("\n"),
   details: result.details,
 });
@@ -41,7 +41,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
         update: (text) => onUpdate?.({ content: [{ type: "text", text }], details: undefined as never }),
       });
 
-      return toPiResult(result as ToolResult) as never;
+      return toPiResult(result) as never;
     },
     renderCall: spec.renderCall
       ? (args: unknown, theme: Theme, context: { lastComponent?: unknown }) =>

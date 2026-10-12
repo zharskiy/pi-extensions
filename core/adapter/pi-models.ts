@@ -6,21 +6,6 @@ type PiModel = NonNullable<ExtensionContext["model"]>;
 
 const catalogOf = (ctx: ExtensionContext) => {
   const models = ctx.modelRegistry.getAll();
-  const authByProvider = new Map<string, boolean>();
-
-  const authenticated = (model: PiModel) => {
-    const known = authByProvider.get(model.provider);
-
-    if (known !== undefined) {
-      return known;
-    }
-
-    const configured = ctx.modelRegistry.hasConfiguredAuth(model);
-
-    authByProvider.set(model.provider, configured);
-
-    return configured;
-  };
 
   const catalog = models.map(
     (model): CatalogModel => ({
@@ -29,7 +14,7 @@ const catalogOf = (ctx: ExtensionContext) => {
       name: model.name,
       contextWindow: model.contextWindow,
       cost: { input: model.cost.input, output: model.cost.output },
-      authenticated: authenticated(model),
+      authenticated: ctx.modelRegistry.hasConfiguredAuth(model),
     }),
   );
 

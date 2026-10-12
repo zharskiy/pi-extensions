@@ -11,7 +11,6 @@ import {
   type AgentStatusParams,
   agentStatusPlugin,
 } from "../../../src/plugins/agent-status/index.ts";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
@@ -41,14 +40,7 @@ const handoffText = (status: string) =>
 
 const setup = async (overrides = {}, agent = "explorer") => {
   const harness = createHarness(
-    [
-      agentRegistryPlugin,
-      agentDefinitionsPlugin,
-      handoffPlugin,
-      runAgentPlugin,
-      limitsPlugin,
-      agentStatusPlugin,
-    ],
+    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentStatusPlugin],
     overrides,
   );
 

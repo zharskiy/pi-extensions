@@ -8,7 +8,6 @@ import {
   childUiContext,
   createPiRuntime,
   type ParentSource,
-  pickSkillFiles,
 } from "../../adapter/pi-child.ts";
 
 type InlineEntry = {
@@ -82,7 +81,15 @@ const parentCtx = {
 
 const runtimeWith = (parent: Partial<ParentSource> = {}, exclude: string[] = []) =>
   createPiRuntime(
-    { ctx: () => parentCtx as never, settings: () => ({}) as never, thinking: () => "off", ...parent },
+    {
+      ctx: () => parentCtx as never,
+      settings: () => ({}) as never,
+      thinking: () => "off",
+      skillFiles: () => [],
+      activeTools: () => [],
+      mcpDisabled: () => false,
+      ...parent,
+    },
     { namespace: "test-ext", exclude },
   );
 
@@ -92,6 +99,9 @@ const spec = (overrides: Partial<SpawnSpec>): SpawnSpec => ({
   id: "a1",
   cwd: tmpdir(),
   sessionDir: join(tmpdir(), "a1"),
+  model: "fake/model",
+  thinking: "off",
+  customTools: [],
   promptAppend: [],
   reserveTokens: 16_384,
   ...overrides,
@@ -134,13 +144,6 @@ describe("child session MCP", () => {
     expect(captured.sessionOptions[0].tools).toEqual([]);
   });
 
-  it("passes no tool list and loads the MCP built-ins for tools: all when the main session's tools are unknown", async () => {
-    await runtime.spawn(spec({}));
-
-    expect(factoriesOf(0).map((entry) => entry.name)).toEqual(["test-ext-child", ...MCP_BUILTINS]);
-    expect(captured.sessionOptions[0].tools).toBeUndefined();
-  });
-
   it("gives tools: all the main session's active tools without MCP or own tools, then every MCP tool", async () => {
     const withParent = runtimeWith(
       {
@@ -177,10 +180,8 @@ describe("child session MCP", () => {
 });
 
 describe("child tool names", () => {
-  const unknown = () => undefined;
-
   it("appends every MCP tool and then the custom tools, without duplicates", () => {
-    expect(childToolNames(["read", "codemode"], ["run_agent"], unknown)).toEqual([
+    expect(childToolNames(["read", "codemode"], ["run_agent"], () => [])).toEqual([
       "read",
       ...EVERY_MCP,
       "run_agent",
@@ -192,10 +193,9 @@ describe("child tool names", () => {
     ]);
   });
 
-  it("keeps only the custom tools for [] and passes no list when tools: all meets unknown main tools", () => {
+  it("keeps only the custom tools for []", () => {
     expect(childToolNames([], [], () => ["read"])).toEqual([]);
     expect(childToolNames([], ["run_agent"], () => ["read"])).toEqual(["run_agent"]);
-    expect(childToolNames(undefined, ["run_agent"], unknown)).toBeUndefined();
   });
 });
 
@@ -264,21 +264,6 @@ describe("child skills", () => {
     captured.loaderOptions.length = 0;
   });
 
-  it("picks every skill file for all and the named ones otherwise", () => {
-    const skills = mainSkills();
-
-    expect(pickSkillFiles(skills)).toEqual([
-      "/skills/docs/SKILL.md",
-      "/skills/git/SKILL.md",
-      "/skills/style/SKILL.md",
-    ]);
-    expect(pickSkillFiles(skills, ["style", "docs", "missing"])).toEqual([
-      "/skills/docs/SKILL.md",
-      "/skills/style/SKILL.md",
-    ]);
-    expect(pickSkillFiles(skills, [])).toEqual([]);
-  });
-
   it("gives a child the main session's skill files instead of its own discovery", async () => {
     await withSkills.spawn(spec({}));
     await withSkills.spawn(spec({ id: "a2", skills: ["docs", "style", "missing"] }));
@@ -298,18 +283,6 @@ describe("child skills", () => {
     expect(keptNames(named)).toEqual(["docs", "style"]);
     expect(none).toMatchObject({ noSkills: true, additionalSkillPaths: [] });
     expect(keptNames(none)).toEqual([]);
-  });
-
-  it("leaves skills to pi's discovery only when the main session's skills are unknown", async () => {
-    await runtime.spawn(spec({}));
-    await runtime.spawn(spec({ id: "a2", skills: ["git"] }));
-
-    const [all, named] = captured.loaderOptions;
-
-    expect(all.noSkills).toBeUndefined();
-    expect(all.skillsOverride).toBeUndefined();
-    expect(named).toMatchObject({ noSkills: true, additionalSkillPaths: [] });
-    expect(keptNames(named)).toEqual(["git"]);
   });
 });
 
@@ -356,7 +329,6 @@ const scriptedSession = () => {
     },
     clearQueue: () => ({ steering: queued.splice(0), followUp: [] }),
     extensionRunner: {
-      hasHandlers: () => true,
       emit: async (event: { type: string }) => {
         calls.push(`emit ${event.type}`);
       },

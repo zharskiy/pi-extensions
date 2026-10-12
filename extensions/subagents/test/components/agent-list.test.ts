@@ -13,7 +13,6 @@ import type { AgentRecord } from "../../src/model/types.ts";
 const record = (id: string, patch: Partial<AgentRecord> = {}): AgentRecord => ({
   id,
   agent: id.split("-")[0] ?? id,
-  task: "t",
   description: `work of ${id}`,
   callerId: "main",
   depth: 2,

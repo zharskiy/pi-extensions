@@ -15,8 +15,6 @@ import {
 import { createModeStore, viewStatePath } from "./mode-store.ts";
 import { createAgentView, type ViewData } from "./view.ts";
 
-export const COMMAND = "agents";
-
 type CachedSession = { file: string; size: number; mtimeMs: number; session: SessionRecord };
 
 export const agentViewPlugin: Plugin = {
@@ -53,7 +51,6 @@ export const agentViewPlugin: Plugin = {
         version: 0,
         handoffPath: join(dir, "handoff.md"),
         dir,
-        task: manifest.description ?? "",
         ...manifest,
       } as AgentRecord;
     };
@@ -151,8 +148,7 @@ export const agentViewPlugin: Plugin = {
         return;
       }
 
-      const agentDir = host.session()?.agentDir;
-      const modes = agentDir ? createModeStore(viewStatePath(agentDir)) : undefined;
+      const modes = createModeStore(viewStatePath(host.session().agentDir));
       const load = createLoader(id, terminal);
 
       const ticking = () => {
@@ -186,7 +182,7 @@ export const agentViewPlugin: Plugin = {
     const label = (record: AgentRecord) =>
       `${record.id} · ${record.state} · ${record.description}`.slice(0, 100);
 
-    host.registerCommand(COMMAND, {
+    host.registerCommand("agents", {
       description: "Open an agent's view: effective prompt and transcript. Usage: /agents [id]",
       complete: (prefix) =>
         registry
@@ -221,7 +217,5 @@ export const agentViewPlugin: Plugin = {
         }
       },
     });
-
-    return undefined;
   },
 };

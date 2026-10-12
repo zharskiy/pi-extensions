@@ -115,6 +115,8 @@ export const describeLive = (name: string, body: () => void) =>
     body();
   });
 
+const PI_DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
+
 export type LiveParent = { trusted?: boolean; skillFiles?: SkillFile[] };
 
 export const createLiveRuntime = (
@@ -130,14 +132,14 @@ export const createLiveRuntime = (
     ui: { theme: {} },
   };
 
-  const skillFiles = parent.skillFiles;
-
   return createPiRuntime(
     {
       ctx: () => ctx as never,
       settings: () => ({ defaultProvider: provider }) as never,
       thinking: () => thinking ?? "off",
-      ...(skillFiles ? { skillFiles: () => skillFiles } : {}),
+      skillFiles: () => parent.skillFiles ?? [],
+      activeTools: () => PI_DEFAULT_TOOLS.map((name) => ({ name, path: `builtin:${name}` })),
+      mcpDisabled: () => false,
     },
     options,
   );

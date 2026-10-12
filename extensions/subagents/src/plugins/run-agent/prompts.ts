@@ -9,7 +9,7 @@ import {
 
 type PromptQueue = { enqueue<T>(run: () => Promise<T>): Promise<T> };
 
-type PromptDeps = { ui: HostUi; registry: AgentRegistry; queue: PromptQueue; now?: () => number };
+type PromptDeps = { ui: HostUi; registry: AgentRegistry; queue: PromptQueue };
 
 export const createPromptQueue = (): PromptQueue => {
   let tail: Promise<void> | undefined;
@@ -40,7 +40,6 @@ const promptTitle = (record: Pick<AgentRecord, "id" | "agent">, title: string) =
   `${record.id} (${record.agent}) asks: ${title}`;
 
 export const childPromptsFor = (deps: PromptDeps, record: AgentRecord): ChildPrompts => {
-  const now = deps.now ?? Date.now;
   let waiting: Attention[] = [];
 
   const open = () => {
@@ -59,7 +58,7 @@ export const childPromptsFor = (deps: PromptDeps, record: AgentRecord): ChildPro
       return denied;
     }
 
-    const prompt: Attention = { kind, title, since: now() };
+    const prompt: Attention = { kind, title, since: Date.now() };
 
     waiting = [...waiting, prompt];
 

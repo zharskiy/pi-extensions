@@ -17,11 +17,9 @@ type ListDeps = {
   open(id: string): void;
   stop(id: string): Promise<unknown> | undefined;
   subscribe(onChange: () => void): () => void;
-  now?: () => number;
 };
 
 export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewComponent => {
-  const now = deps.now ?? Date.now;
   const scroll = api.createScroll();
   let records = deps.records();
   let selectedId: string | undefined;
@@ -118,7 +116,7 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
       return scroll.window([api.theme.fg("dim", emptyListText(records.length, filter))], height);
     }
 
-    const rendered = renderList(list, selectedId, now(), frame, api.theme, width);
+    const rendered = renderList(list, selectedId, Date.now(), frame, api.theme, width);
     const window = scroll.window(rendered.lines, height);
     const row = rendered.selectedRow;
 

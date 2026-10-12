@@ -12,7 +12,7 @@ const unquote = (value: string) => {
   return quoted[1] ?? quoted[2] ?? "";
 };
 
-export const parseScalar = (raw: string): FrontmatterValue => {
+const parseScalar = (raw: string): FrontmatterValue => {
   const value = raw.trim();
 
   if (value.startsWith("[") && value.endsWith("]")) {
@@ -41,9 +41,8 @@ type ParseState = { data: Record<string, FrontmatterValue>; index: number };
 const readBlock = (lines: string[], start: number) => {
   const block = lines.slice(start);
   const end = block.findIndex((line) => line.trim().length > 0 && indentOf(line) === 0);
-  const taken = end < 0 ? block : block.slice(0, end);
 
-  return taken;
+  return end < 0 ? block : block.slice(0, end);
 };
 
 const parseEntry = (lines: string[], state: ParseState) => {

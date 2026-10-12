@@ -6,9 +6,7 @@ import {
   type ContextSnapshot,
   emptyUsage,
   type Host,
-  type InputOutcome,
   type InputPane,
-  type KeyPress,
   type MessageDelivery,
   type NewSessionOptions,
   type OverlayFactory,
@@ -27,13 +25,14 @@ import { type CatalogModel, type ModelPreferences, resolveModel } from "../../ad
 
 export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text };
 
-export type TurnContext = { tokens: number | null; window: number; percent?: number | null };
+type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
 export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
   commands: Map<string, CommandSpec>;
   mainPrompt?: string;
   entries: { customType: string; data: unknown }[];
+  files: Map<string, FakeSessionFile>;
   sent: string[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
@@ -48,12 +47,10 @@ export type FakeHost = Host & {
   info: SessionInfo;
   confirmations: { title: string; message: string }[];
   confirmAnswer: boolean | ((title: string, message: string) => boolean);
-  inputs: { title: string; placeholder?: string }[];
-  inputAnswer?: string;
   newSessions: NewSessionOptions[];
   newSessionResult: boolean | Error;
-  start(): void;
-  turnEnd(context: TurnContext): void;
+  start(forkedFrom?: string): void;
+  turnEnd(context: { tokens: number | null; window: number; percent?: number | null }): void;
   compact(): void;
   settle(): void;
   emit(channel: string, data: unknown): void;
@@ -65,7 +62,7 @@ export type FakeHost = Host & {
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
-  const startHandlers: ((info: SessionInfo) => void)[] = [];
+  const startHandlers: ((info: SessionInfo, forkedFrom?: string) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
@@ -94,10 +91,14 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     });
   };
 
+  const sessionFile = (file: string | undefined): FakeSessionFile =>
+    file ? (host.files.get(file) as FakeSessionFile) : host;
+
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
     entries: [],
+    files: new Map(),
     sent: [],
     dispatched: [],
     published: [],
@@ -111,7 +112,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     usage: emptyUsage(),
     confirmations: [],
     confirmAnswer: true,
-    inputs: [],
     newSessions: [],
     newSessionResult: true,
     info: {
@@ -138,11 +138,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           ? host.confirmAnswer(title, message)
           : host.confirmAnswer;
       },
-      input: async (title, placeholder) => {
-        host.inputs.push({ title, placeholder });
-
-        return host.inputAnswer;
-      },
+      input: async () => undefined,
       setWidget: (key, render) => {
         host.widgets.set(key, render);
         return {
@@ -227,16 +223,24 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       host.entries.push({ customType, data: structuredClone(data) });
     },
-    readEntries: <T>(customType: string) =>
-      host.entries.filter((entry) => entry.customType === customType).map((entry) => entry.data as T),
-    sessionUsage: () => host.usage,
-    session: () => (started ? host.info : undefined),
-    start: () => {
+    readEntries: <T>(customType: string, file?: string) =>
+      sessionFile(file)
+        .entries.filter((entry) => entry.customType === customType)
+        .map((entry) => entry.data as T),
+    sessionUsage: (file) => sessionFile(file).usage,
+    session: () => {
+      if (!started) {
+        throw new Error("no live pi session: called before session_start or after session_shutdown");
+      }
+
+      return host.info;
+    },
+    start: (forkedFrom) => {
       started = true;
       stale = false;
 
       startHandlers.forEach((handler) => {
-        handler(host.info);
+        handler(host.info, forkedFrom);
       });
     },
     turnEnd: (turn) => {
@@ -304,27 +308,25 @@ export const createFakeInputPane = (): InputPane & { isFocused(): boolean } => {
   let value = "";
   let focused = true;
 
-  const feed = (key: KeyPress): InputOutcome => {
-    if (key.name === "enter") {
-      return "submitted";
-    }
-
-    if (key.name === "escape") {
-      return "cancelled";
-    }
-
-    if (key.raw === "\x7f") {
-      value = value.slice(0, -1);
-      return "changed";
-    }
-
-    value += key.char ?? "";
-
-    return "changed";
-  };
-
   return {
-    feed,
+    feed: (key) => {
+      if (key.name === "enter") {
+        return "submitted";
+      }
+
+      if (key.name === "escape") {
+        return "cancelled";
+      }
+
+      if (key.raw === "\x7f") {
+        value = value.slice(0, -1);
+        return "changed";
+      }
+
+      value += key.char ?? "";
+
+      return "changed";
+    },
     value: () => value,
     setValue: (next) => {
       value = next;
@@ -365,7 +367,7 @@ export const usageOf = (cost: number, tokens = 100): UsageTotals => ({
   cost: { input: cost / 2, output: cost / 2, cacheRead: 0, cacheWrite: 0, total: cost },
 });
 
-export const createFakeChild = (spec: SpawnSpec): FakeChild => {
+const createFakeChild = (spec: SpawnSpec): FakeChild => {
   const listeners = new Set<(event: ChildEvent) => void>();
 
   const child: FakeChild = {
@@ -455,37 +457,33 @@ export const catalogModel = (
   ...patch,
 });
 
-export const fakeCatalog = (): CatalogModel[] => [
-  catalogModel("fake/model"),
-  catalogModel("openai/gpt-6-luna"),
-  catalogModel("openai/gpt-6-sol"),
-  catalogModel("openai/gpt-6.1-sol"),
-  catalogModel("anthropic/claude-haiku-4-5"),
-  catalogModel("anthropic/claude-haiku-4-5-20251001"),
-  catalogModel("anthropic/claude-haiku-5-5", true, { cost: { input: 0.1, output: 0.5 } }),
-  catalogModel("locked/claude-haiku-9-0", false),
-];
-
-export type FakeRuntime = AgentRuntime & {
+type FakeRuntime = AgentRuntime & {
   catalog: CatalogModel[];
   preferences: ModelPreferences;
   children: FakeChild[];
   sessions: Map<string, SessionRecord>;
   failNextSpawn?: string;
-  spawned: Promise<FakeChild>[];
   child(id: string): FakeChild;
 };
 
 export const createFakeRuntime = (): FakeRuntime => {
   const runtime: FakeRuntime = {
-    catalog: fakeCatalog(),
+    catalog: [
+      catalogModel("fake/model"),
+      catalogModel("openai/gpt-6-luna"),
+      catalogModel("openai/gpt-6-sol"),
+      catalogModel("openai/gpt-6.1-sol"),
+      catalogModel("anthropic/claude-haiku-4-5"),
+      catalogModel("anthropic/claude-haiku-4-5-20251001"),
+      catalogModel("anthropic/claude-haiku-5-5", true, { cost: { input: 0.1, output: 0.5 } }),
+      catalogModel("locked/claude-haiku-9-0", false),
+    ],
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
     defaultThinking: () => "medium",
     estimateTokens: (text) => Math.ceil(text.length / 4),
     children: [],
     sessions: new Map(),
-    spawned: [],
     spawn: async (spec) => {
       if (runtime.failNextSpawn) {
         const message = runtime.failNextSpawn;

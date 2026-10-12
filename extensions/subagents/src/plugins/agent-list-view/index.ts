@@ -31,7 +31,5 @@ export const agentListViewPlugin: Plugin = {
     };
 
     services.provide("agentList", { open });
-
-    return undefined;
   },
 };

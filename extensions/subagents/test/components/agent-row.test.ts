@@ -14,7 +14,6 @@ import type { AgentRecord } from "../../src/model/types.ts";
 const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   id: "explorer-1a2b",
   agent: "explorer",
-  task: "find the auth handler",
   description: "find the auth handler",
   callerId: "main",
   depth: 2,

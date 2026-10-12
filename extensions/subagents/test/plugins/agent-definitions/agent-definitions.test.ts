@@ -99,7 +99,7 @@ describe("agent definition parsing", () => {
       tools: ["read"],
       model: undefined,
       thinking: undefined,
-      worktree: false,
+      worktree: undefined,
     });
   });
 
@@ -138,12 +138,14 @@ describe("agent definition parsing", () => {
   it("builds the definition from the schema's fields plus the harness internals", () => {
     const parsed = parseDefinition(agentFile("a", "d", "subagents: []", "Body."), "/x/a.md", "project");
 
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toEqual([]);
     expect(Object.keys(parsed.definition ?? {}).sort()).toEqual(
       [...FRONTMATTER_FIELDS.map((spec) => spec.key), "thinking", "prompt", "source", "path"].sort(),
     );
     expect(parsed.definition).toMatchObject({
       model: undefined,
-      worktree: false,
+      worktree: undefined,
       prompt: "Body.",
       source: "project",
     });
@@ -181,6 +183,13 @@ describe("model field", () => {
       "user",
     );
 
+  it("loads a file without a model line with no warnings or errors", () => {
+    const parsed = parse("");
+
+    expect(parsed).toMatchObject({ errors: [], warnings: [] });
+    expect(parsed.definition).toMatchObject({ model: undefined, thinking: undefined });
+  });
+
   it("accepts a bare model name and a thinking suffix", () => {
     expect(parse("model: model-a:low").definition).toMatchObject({ model: "model-a", thinking: "low" });
     expect(parse("model: acme/model-b:high").definition).toMatchObject({
@@ -217,8 +226,8 @@ describe("worktree field", () => {
   const parse = (extra: string) =>
     parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", "user");
 
-  it("defaults to false and accepts a boolean", () => {
-    expect(parse("").definition?.worktree).toBe(false);
+  it("is off by default and accepts a boolean", () => {
+    expect(parse("").definition?.worktree).toBeUndefined();
     expect(parse("worktree: true").definition?.worktree).toBe(true);
     expect(parse("worktree: false").definition?.worktree).toBe(false);
   });
@@ -333,10 +342,20 @@ describe("definition loading", () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect([...result.definitions.keys()].sort()).toEqual(["explorer", "general", "implementer", "reviewer"]);
+    expect(
+      ["explorer", "reviewer", "implementer", "general"].map((name) => {
+        const definition = result.definitions.get(name);
+
+        return `${definition?.model}:${definition?.thinking}`;
+      }),
+    ).toEqual([
+      "openai/gpt-6-luna:low",
+      "openai/gpt-6-luna:high",
+      "openai/gpt-6.1-sol:medium",
+      "openai/gpt-6.1-sol:medium",
+    ]);
 
     result.definitions.forEach((definition) => {
-      expect(definition.model).toBeUndefined();
-      expect(definition.thinking).toBeUndefined();
       expect(definition.limit).toBeGreaterThanOrEqual(5000);
       expect(definition.worktree).toBe(false);
     });
@@ -356,9 +375,9 @@ describe("definition loading", () => {
     );
   });
 
-  it("declares every frontmatter field but model in each shipped file, in the schema's order", () => {
+  it("declares exactly the frontmatter schema's fields in each shipped file, in the schema's order", () => {
     const dir = join(PACKAGE_ROOT, "agents");
-    const keys = FRONTMATTER_FIELDS.map((spec) => spec.key).filter((key) => key !== "model");
+    const keys = FRONTMATTER_FIELDS.map((spec) => spec.key);
 
     readdirSync(dir).forEach((file) => {
       expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
@@ -381,7 +400,7 @@ describe("definition loading", () => {
     FRONTMATTER_FIELDS.forEach((spec, index) => {
       const row = rows[index];
 
-      expect(row.required).toBe(spec.required ? "required" : `\`${spec.byDefault}\``);
+      expect(row.required === "required").toBe(spec.required);
       expect(row.type.includes("`all`")).toBe(spec.kind === "list");
       expect(spec.allMeaning === undefined || row.meaning.includes(`\`all\`: ${spec.allMeaning}`)).toBe(true);
     });

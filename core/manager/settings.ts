@@ -57,13 +57,13 @@ export const parseSettings = <T>(
   const patch: Partial<T> = {};
   const errors: string[] = [];
 
-  Object.entries(schema as Record<string, SettingsRule | undefined>)
-    .filter(([key, rule]) => rule !== undefined && input[key] !== undefined)
+  Object.entries(schema as Record<string, SettingsRule>)
+    .filter(([key]) => input[key] !== undefined)
     .forEach(([key, rule]) => {
       const value = input[key];
 
-      if (!rule || !isValid(rule, value)) {
-        errors.push(`${source}: ${key} must be ${rule ? expectation(rule) : "valid"}`);
+      if (!isValid(rule, value)) {
+        errors.push(`${source}: ${key} must be ${expectation(rule)}`);
         return;
       }
 
@@ -88,9 +88,3 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
 export const userSettingsPath = (agentDir: string, file: string) => join(agentDir, file);
 
 export const projectSettingsPath = (cwd: string, file: string) => join(cwd, ".pi", file);
-
-export const applySettings = <T extends object>(settings: T, patch: Partial<T>) => {
-  Object.assign(settings, patch);
-
-  return settings;
-};

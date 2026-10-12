@@ -20,8 +20,6 @@ export type MessageAgentParams = { id: string; message: string };
 type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
-  now?: () => number;
-  frame?: () => number;
   onRendered?: (batchId: string, invalidate: () => void) => void;
 };
 
@@ -143,13 +141,12 @@ const messageAgentParameters = {
 };
 
 const renderRows = (deps: ToolDeps, details: RunAgentDetails | undefined, theme: ThemeLike) => {
-  const now = deps.now?.() ?? Date.now();
-  const frame = deps.frame?.() ?? 0;
+  const now = Date.now();
 
   return (details?.ids ?? [])
     .map((id) => deps.registry.get(id))
     .filter((record) => record !== undefined)
-    .map((record) => agentRow(chainTerminal(deps.registry, record), now, frame, theme, 120))
+    .map((record) => agentRow(chainTerminal(deps.registry, record), now, 0, theme, 120))
     .join("\n");
 };
 
@@ -206,9 +203,7 @@ export const runAgentTool = (
       deps.onRendered?.(details.batchId, state.invalidate);
     }
 
-    const rows = renderRows(deps, details, theme);
-
-    return rows || result.text;
+    return renderRows(deps, details, theme) || result.text;
   },
 });
 

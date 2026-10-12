@@ -3,12 +3,9 @@ import { parseUsageReport, type UsageReport } from "../../../core/manager/channe
 
 export const USAGE_ENTRY = "pi-spending:usage";
 
-type SourceTotal = { source: string; usage: UsageTotals };
+export const FORK_MARKER: UsageReport = { source: "fork", id: "fork", usage: emptyUsage() };
 
-type LedgerStore = {
-  append(customType: string, data: unknown): void;
-  read<T>(customType: string): T[];
-};
+type SourceTotal = { source: string; usage: UsageTotals };
 
 const isAhead = (candidate: UsageTotals, current: UsageTotals | undefined) => {
   if (!current) {
@@ -20,7 +17,7 @@ const isAhead = (candidate: UsageTotals, current: UsageTotals | undefined) => {
 
 const keyOf = (source: string, id: string) => JSON.stringify([source, id]);
 
-export const createLedger = (store: LedgerStore) => {
+export const createLedger = (append: (customType: string, data: unknown) => void) => {
   const current = new Map<string, UsageReport>();
   const persisted = new Map<string, UsageTotals>();
 
@@ -43,23 +40,25 @@ export const createLedger = (store: LedgerStore) => {
 
     changed.forEach(({ key, report }) => {
       persisted.set(key, report.usage);
-      store.append(USAGE_ENTRY, report);
+      append(USAGE_ENTRY, report);
     });
 
     return changed.length;
   };
 
-  const clear = () => {
-    current.clear();
-    persisted.clear();
+  const absorb = (entries: readonly unknown[], idPrefix = "") => {
+    const reports = entries
+      .map(parseUsageReport)
+      .filter((report): report is UsageReport => report !== undefined);
+    const afterFork = reports.slice(reports.findLastIndex((report) => report.id === FORK_MARKER.id) + 1);
+
+    afterFork.forEach((report) => {
+      keep({ ...report, id: idPrefix + report.id });
+    });
   };
 
-  const restore = () => {
-    store
-      .read<unknown>(USAGE_ENTRY)
-      .map(parseUsageReport)
-      .filter((report): report is UsageReport => report !== undefined)
-      .forEach(keep);
+  const restore = (entries: readonly unknown[]) => {
+    absorb(entries);
 
     current.forEach((report, key) => {
       persisted.set(key, report.usage);
@@ -78,5 +77,5 @@ export const createLedger = (store: LedgerStore) => {
     );
   };
 
-  return { record: keep, persist, clear, restore, totals };
+  return { record: keep, persist, absorb, restore, totals };
 };

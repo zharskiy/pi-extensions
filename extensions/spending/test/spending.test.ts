@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, usageOf } from "../../../core/test/helpers/fakes.ts";
 import { USAGE_ENTRY } from "../src/ledger.ts";
-import { createSpending, STATUS_KEY } from "../src/spending.ts";
+import { createSpending } from "../src/spending.ts";
+
+const STATUS_KEY = "pi-spending";
+const MAIN_OFFSET_ENTRY = "pi-spending:main-offset";
 
 const setup = (subscription = false) => {
   const host = createFakeHost({ id: "main-session", subscription });
@@ -105,7 +108,7 @@ describe("spending", () => {
     ).toEqual([0.1, 0.2]);
   });
 
-  it("shows the same totals in a resumed session and clears state on session start", () => {
+  it("shows the same totals in a resumed session", () => {
     const { host, report } = setup();
 
     report("agents", "a1", 0.3);
@@ -118,10 +121,85 @@ describe("spending", () => {
     resumed.start();
 
     expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.300 · total $0.300");
+  });
 
-    resumed.entries.splice(0);
+  it("keeps the totals across a compaction", () => {
+    const { host, report } = setup();
+
+    host.usage = usageOf(1);
+    report("agents", "a1", 0.3);
+    host.compact();
+    host.settle();
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.300 · total $1.300");
+  });
+
+  it("inherits the whole parent session's totals in a fork, also after resuming the fork", () => {
+    const parent = {
+      entries: [
+        { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.1) } },
+        { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.3) } },
+        { customType: USAGE_ENTRY, data: { source: "agents", id: "a2", usage: usageOf(0.2) } },
+      ],
+      usage: usageOf(2),
+    };
+
+    const fork = createFakeHost();
+
+    fork.files.set("/sessions/parent.jsonl", parent);
+    fork.entries.push(structuredClone(parent.entries[0]));
+    fork.usage = usageOf(0.5);
+    createSpending(fork);
+    fork.start("/sessions/parent.jsonl");
+
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.500 · total $2.500");
+
+    const resumed = createFakeHost();
+
+    resumed.entries.push(...fork.entries);
+    resumed.usage = usageOf(0.75);
+    createSpending(resumed);
     resumed.start();
 
-    expect(resumed.statuses.get(STATUS_KEY)).toBeUndefined();
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.500 · total $2.750");
+  });
+
+  it("carries inherited totals into a fork of a fork", () => {
+    const fork = { entries: [{ customType: MAIN_OFFSET_ENTRY, data: 1.5 }], usage: usageOf(0.75) };
+    const grandchild = createFakeHost();
+
+    grandchild.files.set("/sessions/fork.jsonl", fork);
+    grandchild.entries.push(...structuredClone(fork.entries));
+    grandchild.usage = usageOf(0.5);
+    createSpending(grandchild);
+    grandchild.start("/sessions/fork.jsonl");
+    grandchild.emit(USAGE_CHANNEL, { source: "agents", id: "a3", usage: usageOf(0.1) });
+
+    expect(grandchild.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.100 · total $2.350");
+  });
+
+  it("counts a new agent that draws the id of a parent agent, also after resuming the fork", () => {
+    const parentEntry = {
+      customType: USAGE_ENTRY,
+      data: { source: "agents", id: "a1", usage: usageOf(0.5) },
+    };
+    const fork = createFakeHost();
+
+    fork.files.set("/sessions/parent.jsonl", { entries: [parentEntry], usage: usageOf(0) });
+    fork.entries.push(structuredClone(parentEntry));
+    createSpending(fork);
+    fork.start("/sessions/parent.jsonl");
+    fork.emit(USAGE_CHANNEL, { source: "agents", id: "a1", usage: usageOf(0.1) });
+    fork.settle();
+
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.600 · total $0.600");
+
+    const resumed = createFakeHost();
+
+    resumed.entries.push(...fork.entries);
+    createSpending(resumed);
+    resumed.start();
+
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.600 · total $0.600");
   });
 });

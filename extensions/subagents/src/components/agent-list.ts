@@ -14,8 +14,6 @@ const GROUP_TITLES: Record<AgentGroup, string> = {
   closed: "Closed",
 };
 
-const EMPTY_TEXT = "no agents in this session yet";
-
 export type ListEntry =
   | { kind: "header"; group: AgentGroup; count: number }
   | { kind: "agent"; record: AgentRecord };
@@ -98,7 +96,7 @@ export const selectedRecord = (entries: ListEntry[], selectedId: string | undefi
 };
 
 export const emptyListText = (total: number, filter: string) =>
-  total === 0 ? EMPTY_TEXT : `no agents match "${filter.trim()}"`;
+  total === 0 ? "no agents in this session yet" : `no agents match "${filter.trim()}"`;
 
 export const renderList = (
   entries: ListEntry[],

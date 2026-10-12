@@ -5,9 +5,7 @@ export type ViewMode = "focus" | "verbose";
 
 export type ModeStore = { read(): ViewMode; write(mode: ViewMode): void };
 
-export const VIEW_STATE_FILE = "pi-subagents-view.json";
-
-export const viewStatePath = (agentDir: string) => join(agentDir, VIEW_STATE_FILE);
+export const viewStatePath = (agentDir: string) => join(agentDir, "pi-subagents-view.json");
 
 const parseMode = (text: string): ViewMode => {
   const parsed = JSON.parse(text) as { mode?: unknown } | null;

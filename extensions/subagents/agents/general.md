@@ -1,6 +1,7 @@
 ---
 name: general
 description: Use only when no other agent fits the work, such as running commands and summarising their output, reproducing a problem, drafting a document, or a task that mixes searching, scripting and small edits. Not for pure search, scoped code changes or reviews.
+model: openai/gpt-6.1-sol:medium
 limit: 100000
 tools: all
 skills: all

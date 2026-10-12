@@ -37,7 +37,7 @@ describe("per-call model override", () => {
     );
   });
 
-  it("runs on the main session's model and thinking without an override, and changes only thinking with :level", async () => {
+  it("keeps the agent's own model and thinking without an override, and changes only thinking with :level", async () => {
     const { run, runtime, registry } = setup();
 
     await run([
@@ -47,15 +47,57 @@ describe("per-call model override", () => {
     ]);
 
     expect(runtime.children.map((child) => [child.spec.model, child.spec.thinking])).toEqual([
-      ["fake/model", "medium"],
-      ["fake/model", "low"],
-      ["anthropic/claude-haiku-5-5", "medium"],
+      ["openai/gpt-6-luna", "high"],
+      ["openai/gpt-6-luna", "low"],
+      ["anthropic/claude-haiku-5-5", "high"],
     ]);
     expect(registry.list().map((record) => record.model)).toEqual([
-      "fake/model:medium",
-      "fake/model:low",
-      "anthropic/claude-haiku-5-5:medium",
+      "openai/gpt-6-luna:high",
+      "openai/gpt-6-luna:low",
+      "anthropic/claude-haiku-5-5:high",
     ]);
+  });
+
+  it("runs an agent file without a model line on the main session's model and thinking", async () => {
+    const { run, runtime, host } = setup();
+    const dir = join(host.info.agentDir, "agents");
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "plain.md"),
+      "---\nname: plain\ndescription: d\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
+    );
+    host.start();
+
+    await run([{ agent: "plain", task: "a" }]);
+
+    expect(runtime.children[0].spec).toMatchObject({ model: "fake/model", thinking: "medium" });
+  });
+
+  it("takes the thinking level from a name:level in the frontmatter or the model parameter, parsed once", async () => {
+    const { run, runtime, host } = setup();
+    const dir = join(host.info.agentDir, "agents");
+
+    runtime.catalog.push(catalogModel("acme/model-a"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "tuned.md"),
+      "---\nname: tuned\ndescription: d\nmodel: acme/model-a:minimal\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
+    );
+    host.start();
+
+    await run([
+      { agent: "tuned", task: "a" },
+      { agent: "tuned", task: "b", model: "acme/model-a:xhigh" },
+    ]);
+
+    expect(runtime.children.map((child) => [child.spec.model, child.spec.thinking])).toEqual([
+      ["acme/model-a", "minimal"],
+      ["acme/model-a", "xhigh"],
+    ]);
+    await expect(run([{ agent: "tuned", task: "c", model: "acme/model-a:high:low" }])).rejects.toThrow(
+      /model "acme\/model-a:high"/,
+    );
   });
 
   it("starts nothing and lists the candidates when one item's model is ambiguous", async () => {
@@ -106,7 +148,7 @@ describe("per-call model override", () => {
   });
 
   it("rejects an agent file whose model provider has no credentials before spawning", async () => {
-    const { runtime, host, services } = setup();
+    const { runtime, host } = setup();
     const dir = join(host.info.agentDir, "agents");
 
     mkdirSync(dir, { recursive: true });
@@ -114,7 +156,7 @@ describe("per-call model override", () => {
       join(dir, "locked.md"),
       "---\nname: locked\ndescription: d\nmodel: locked/claude-haiku-9-0\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
     );
-    services.require("definitions").reload();
+    host.start();
 
     await expect(
       host

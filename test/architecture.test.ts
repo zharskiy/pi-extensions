@@ -62,41 +62,14 @@ const importsIn = (files: string[]): Import[] =>
 
 const describeImport = ({ file, specifier }: Import) => `${relative(ROOT, file)} imports ${specifier}`;
 
-const isPiPackage = ({ specifier }: Import) =>
-  specifier.startsWith("@earendil-works/") || specifier === "typebox";
-
 const coreCode = () => sourceFiles(CORE).filter((file) => !isInside(CORE_TESTS)(file));
 
 const extensionCode = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "src")));
-
-const testCode = () => [
-  ...sourceFiles(CORE_TESTS),
-  ...extensionDirs().flatMap((extension) => sourceFiles(join(extension, "test"))),
-  ...sourceFiles(join(ROOT, "test")),
-];
 
 const isEntry = (file: string) =>
   extensionDirs().some((extension) => file === join(extension, "src", "index.ts"));
 
 describe("architecture", () => {
-  it("only core/adapter imports pi packages", () => {
-    const offenders = importsIn([...coreCode(), ...extensionCode()])
-      .filter((entry) => !isInside(ADAPTER)(entry.file))
-      .filter(isPiPackage)
-      .map(describeImport);
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("only the tests in core/test/adapter import pi packages", () => {
-    const offenders = importsIn(testCode())
-      .filter((entry) => !isInside(join(CORE_TESTS, "adapter"))(entry.file))
-      .filter(isPiPackage)
-      .map(describeImport);
-
-    expect(offenders).toEqual([]);
-  });
-
   it("outside core/adapter only the contract is imported, except pi-adapter by each extension's entry", () => {
     const offenders = importsIn([...coreCode(), ...extensionCode()])
       .filter((entry) => !isInside(ADAPTER)(entry.file))

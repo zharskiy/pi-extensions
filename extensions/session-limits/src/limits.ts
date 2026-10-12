@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ContextSnapshot, Host, SessionControl } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
-import { handoffPath, instructionFor, seedText, validateHandoff } from "./handoff.ts";
+import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
 import {
   contextLevel,
   type HandoffFile,
@@ -16,11 +16,11 @@ import {
   shouldRequest,
 } from "./thresholds.ts";
 
-export const STATUS_KEY = "pi-session-limits";
+const STATUS_KEY = "pi-session-limits";
 
-export const HANDOFF_COMMAND = "session-handoff";
+const HANDOFF_COMMAND = "session-handoff";
 
-export const HANDOFF_TYPE = "pi-session-limits-handoff";
+const HANDOFF_TYPE = "pi-session-limits-handoff";
 
 type LimitsOptions = {
   host: Host;
@@ -69,7 +69,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
   let switchRunning = false;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const instruction = (path: string) => instructionFor(template, path);
+  const instruction = (path: string) => template.replaceAll("{{path}}", path).trim();
 
   const refresh = () => {
     const segment = state.context && segmentFor(state.context, state.phase, ratios(), HANDOFF_COMMAND);
@@ -118,7 +118,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
       return { kind: "missing" };
     }
 
-    const result = validateHandoff(text);
+    const result = validateMainHandoff(text);
 
     return result.ok ? { kind: "valid" } : { kind: "invalid", errors: result.errors };
   };
@@ -242,7 +242,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
       return;
     }
 
-    const validation = validateHandoff(text);
+    const validation = validateMainHandoff(text);
 
     if (!validation.ok) {
       failSwitch(`Session handoff at ${path} is invalid: ${validation.errors.join("; ")}.`);
@@ -256,7 +256,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
       return;
     }
 
-    const previous = host.session()?.file;
+    const previous = host.session().file;
 
     const accepted = await control
       .newSession({

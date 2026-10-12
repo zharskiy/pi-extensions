@@ -13,9 +13,9 @@ pi-extensions/
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts / pi-tools.ts   # pi TUI components, tool wrapping
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
-│   │   ├── pi-scope.ts / pi-tokens.ts        # child scope, token counts
+│   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
-│   │   ├── session-file.ts      # reads session jsonl into transcripts
+│   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
 │   │   └── usage.ts / messages.ts / route.ts # usage sums, text, routing
 │   ├── manager/                 # pi-free shared code
 │   │   ├── extension-manager.ts # enables plugins in dependency order
@@ -32,17 +32,20 @@ pi-extensions/
 │   │   ├── src/
 │   │   │   ├── index.ts         # entry point, wires settings + plugins
 │   │   │   ├── plugins.ts       # ordered plugin list
-│   │   │   ├── model/           # types, events, settings, paths, agent-schema
-│   │   │   ├── components/      # pure TUI render helpers (rows, lists,
-│   │   │   │                    #   refresh.ts throttle/ticker, hints.ts)
+│   │   │   ├── model/           # types, events, plugin, settings, paths,
+│   │   │   │                    #   agent-schema, context-limit
+│   │   │   ├── components/      # pure TUI render helpers (agent-row, agent-list,
+│   │   │   │                    #   collapsible, context-breakdown,
+│   │   │   │                    #   system-prompt-block, refresh.ts throttle/ticker, hints.ts)
 │   │   │   └── plugins/         # one folder per feature, see below
 │   │   ├── agents/              # bundled agent definitions (*.md)
-│   │   ├── prompts/             # prompt templates (main-session.md,
-│   │   │                        #   main-session-agent-status.md, ...)
-│   │   ├── test/                # mirrors src, plus helpers/ and live/
+│   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
+│   │   │                        #   base-system-prompt.md, handoff.md
+│   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures)
 │   │   └── README.md
 │   ├── session-limits/          # main session hands over before it fills
-│   │   ├── src/                 # index, limits, thresholds, handoff...
+│   │   ├── src/                 # index, conversation, limits, thresholds,
+│   │   │                        #   handoff, settings
 │   │   ├── prompts/handoff.md   # handoff instruction template
 │   │   ├── test/
 │   │   └── README.md
@@ -51,8 +54,8 @@ pi-extensions/
 │       ├── test/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
-├── docs/review/                 # project review and fixes.md (development only)
-├── research/                    # pi API research notes (development only)
+├── docs/review/                 # open review items, file-locations.md (development only)
+├── research/                    # pi extension API and SDK notes (development only)
 ├── AGENTS.md                    # short guide for coding agents
 ├── ARCHITECTURE.md              # how it works
 ├── STRUCTURE.md                 # this file
@@ -67,27 +70,28 @@ pi-extensions/
 agent-definitions/  # loads agents/*.md: loader.ts, fields.ts (field rules),
                     #   yaml-lite.ts (frontmatter parser), prompt assembly
 agent-registry/     # in-memory agent records (registry.ts)
-run-agent/          # run_agent/message tools, runner, placement (worktree),
-                    #   task.ts (task text), outbox, results
+run-agent/          # runner.ts, tools.ts (run_agent, message_agent), placement.ts
+                    #   + worktree.ts, task.ts (task text), outbox.ts, result.ts,
+                    #   prompts.ts (forwarded dialogs), model-text.ts, semaphore.ts,
+                    #   handoff.ts (handoff template and schema service)
 agent-status/       # status tool and snapshots
 agent-view/         # /agents command view, view-mode store
 agent-list-view/    # agent list overlay
-progress-widget/    # live progress widget above the prompt
+progress-widget/    # live progress widget below the editor
 notifications/      # completion notifications
 limits/             # per-agent context limit steps
-handoff/            # handoff template and file schema
 usage-report/       # reports agent usage to the spending channel
 ```
 
 ### Conventions
 
-- Only `core/adapter/**` (and its tests) may import pi packages; enforced by biome and `test/architecture.test.ts`.
+- Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
 - `*.live.test.ts` (in `extensions/subagents/test/live/`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
 - Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
-- No provider or model names in code, prompts, agent files or READMEs (unit-test fixtures use neutral fake names).
+- No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
 
 ### Published vs development-only
 

@@ -1,7 +1,7 @@
 import type { Bus } from "../model/events.ts";
 import type { AgentRecord } from "../model/types.ts";
 
-export const REFRESH_MS = 300;
+const REFRESH_MS = 300;
 
 const TICK_MS = 1_000;
 
@@ -31,10 +31,7 @@ export const createThrottle = (run: () => void, intervalMs: () => number) => {
   };
 
   throttled.cancel = () => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-
+    clearTimeout(timer);
     timer = undefined;
   };
 

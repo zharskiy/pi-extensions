@@ -1,52 +1,41 @@
-import type { SessionInfo } from "../../../../../core/adapter/contract.ts";
 import type { AgentDefinition, AgentRecord, AgentRegistry, Worktree } from "../../model/types.ts";
-import { type Worktrees, worktreeBranch } from "./worktree.ts";
+import { createWorktree, removeWorktree } from "./worktree.ts";
 
 type Placement = { cwd: string; created?: Worktree } | { error: string };
 
-type PlacerDeps = {
-  registry: AgentRegistry;
-  session: () => SessionInfo | undefined;
-  worktrees: Worktrees;
-  now: () => number;
-};
-
-export const createPlacer = (deps: PlacerDeps) => {
-  const place = async (record: AgentRecord, definition: AgentDefinition): Promise<Placement> => {
-    const sessionCwd = deps.session()?.cwd ?? process.cwd();
-
+export const createPlacer = (registry: AgentRegistry) => {
+  const place = async (
+    record: AgentRecord,
+    definition: AgentDefinition,
+    sessionCwd: string,
+  ): Promise<Placement> => {
     if (!definition.worktree) {
       return { cwd: sessionCwd };
     }
 
-    const inherited = record.predecessorId ? deps.registry.get(record.predecessorId)?.worktree : undefined;
+    const inherited = record.predecessorId ? registry.get(record.predecessorId)?.worktree : undefined;
 
     if (inherited) {
-      deps.registry.update(record.id, { worktree: inherited });
+      registry.update(record.id, { worktree: inherited });
       return { cwd: inherited.cwd };
     }
 
-    const created = await deps.worktrees.create(
-      sessionCwd,
-      record.dir,
-      worktreeBranch(record.id, deps.now().toString(36)),
-    );
+    const created = await createWorktree(sessionCwd, record.dir, record.id);
 
     if (!created.ok) {
       return { error: `worktree failed: ${created.error}` };
     }
 
-    deps.registry.update(record.id, { worktree: created.worktree });
+    registry.update(record.id, { worktree: created.worktree });
 
     return { cwd: created.worktree.cwd, created: created.worktree };
   };
 
-  const discardWorktree = async (record: AgentRecord, worktree: Worktree) => {
-    const sessionCwd = deps.session()?.cwd ?? process.cwd();
-    const removed = await deps.worktrees.remove(sessionCwd, worktree);
+  const discardWorktree = async (record: AgentRecord, worktree: Worktree, sessionCwd: string) => {
+    const removed = await removeWorktree(sessionCwd, worktree);
 
     if (removed) {
-      deps.registry.update(record.id, { worktree: undefined });
+      registry.update(record.id, { worktree: undefined });
     }
   };
 

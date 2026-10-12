@@ -21,8 +21,7 @@ const CHILD_DESCRIPTION =
 const defaultIds = ({ registry, callerId }: StatusScope) =>
   registry
     .list()
-    .filter((record) => callerId === undefined || record.callerId === callerId)
-    .filter((record) => !record.successorId)
+    .filter((record) => (callerId === undefined || record.callerId === callerId) && !record.successorId)
     .map((record) => record.id);
 
 const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
@@ -72,7 +71,5 @@ export const agentStatusPlugin: Plugin = {
     services.provide("agentStatus", {
       toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId }),
     });
-
-    return undefined;
   },
 };

@@ -6,5 +6,4 @@ export const NAMESPACE = "pi-subagents";
 
 export const MANIFEST_FILE = "manifest.json";
 
-export const agentsDirFor = (info: SessionInfo | undefined) =>
-  join(sessionDataDir(info, NAMESPACE), "agents");
+export const agentsDirFor = (info: SessionInfo) => join(sessionDataDir(info, NAMESPACE), "agents");

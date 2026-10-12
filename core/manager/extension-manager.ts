@@ -2,20 +2,20 @@ import type { AgentRuntime, Host } from "../adapter/contract.ts";
 import { type Bus, createBus, type EventMap } from "./bus.ts";
 import type { Disable, Plugin, Services } from "./plugin.ts";
 
-export type ExtensionManager<E extends EventMap, S> = {
+type ExtensionManager<E extends EventMap, S> = {
   bus: Bus<E>;
   services: Services<S>;
   disableAll(): Promise<void>;
 };
 
-export type ManagerOptions<E extends EventMap, S, C> = {
+type ManagerOptions<E extends EventMap, S, C> = {
   host: Host;
   runtime: AgentRuntime;
   settings: C;
   plugins: Plugin<E, S, C>[];
   root: string;
-  disabled?: Iterable<string>;
-  onError?: (error: unknown) => void;
+  disabled: Iterable<string>;
+  onError: (error: unknown) => void;
 };
 
 const createServices = <S>(): Services<S> => {
@@ -38,7 +38,7 @@ const createServices = <S>(): Services<S> => {
 
 type Node = { id: string; requires?: string[] };
 
-export const orderPlugins = <P extends Node>(plugins: P[]): P[] => {
+const orderPlugins = <P extends Node>(plugins: P[]): P[] => {
   const byId = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const ordered: P[] = [];
   const visiting = new Set<string>();
@@ -71,13 +71,12 @@ export const orderPlugins = <P extends Node>(plugins: P[]): P[] => {
 export const createExtensionManager = <E extends EventMap, S, C>(
   options: ManagerOptions<E, S, C>,
 ): ExtensionManager<E, S> => {
-  const onError = options.onError ?? (() => {});
-  const bus = createBus<E>(onError);
+  const bus = createBus<E>(options.onError);
   const services = createServices<S>();
   const enabled: string[] = [];
   const skipped: string[] = [];
   const disables: Disable[] = [];
-  const disabledIds = new Set(options.disabled ?? []);
+  const disabledIds = new Set(options.disabled);
 
   orderPlugins(options.plugins).forEach((plugin) => {
     if (disabledIds.has(plugin.id)) {
@@ -125,7 +124,7 @@ export const createExtensionManager = <E extends EventMap, S, C>(
           try {
             await disable();
           } catch (error) {
-            onError(error);
+            options.onError(error);
           }
         }),
       Promise.resolve(),

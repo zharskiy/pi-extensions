@@ -1,6 +1,6 @@
 import { splitModelRequest } from "../../../../../core/adapter/contract.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
-import { type FrontmatterValue, parseScalar } from "./yaml-lite.ts";
+import type { FrontmatterValue } from "./yaml-lite.ts";
 
 type FieldKey = keyof AgentFrontmatter;
 
@@ -9,7 +9,6 @@ type FieldKind = "name" | "text" | "model" | "integer" | "list" | "switch";
 type FieldRule = {
   kind: FieldKind;
   required: boolean;
-  byDefault?: string;
   hint?: string;
   namesMeaning?: string;
   allMeaning?: string;
@@ -20,8 +19,6 @@ type FieldSpec = FieldRule & { key: FieldKey };
 
 type FieldResult = { value?: unknown; thinking?: string; error?: string; warning?: string };
 
-export const MIN_LIMIT = 5_000;
-
 const INHERIT_MODEL = "inherit";
 
 const PLAIN_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
@@ -31,11 +28,11 @@ const PLAIN_NAME_TEXT = "letters, digits, '_' and '-', not starting with '-'";
 const RULES: { [K in FieldKey]: FieldRule } = {
   name: { kind: "name", required: true },
   description: { kind: "text", required: true },
-  model: { kind: "model", required: false, byDefault: INHERIT_MODEL },
+  model: { kind: "model", required: false },
   limit: {
     kind: "integer",
     required: true,
-    min: MIN_LIMIT,
+    min: 5_000,
     hint: "context limit in tokens, for example limit: 100000",
   },
   tools: {
@@ -56,7 +53,7 @@ const RULES: { [K in FieldKey]: FieldRule } = {
     namesMeaning: "agent names it may start",
     allMeaning: "every other agent",
   },
-  worktree: { kind: "switch", required: false, byDefault: "false" },
+  worktree: { kind: "switch", required: false },
 };
 
 export const FRONTMATTER_FIELDS: readonly FieldSpec[] = Object.entries(RULES).map(([key, rule]) => ({
@@ -185,9 +182,7 @@ const PARSERS: Record<FieldKind, FieldParser> = {
   switch: switchField,
 };
 
-export const readField = (spec: FieldSpec, raw: FrontmatterValue | undefined): FieldResult => {
-  const value = raw ?? (spec.byDefault === undefined ? undefined : parseScalar(spec.byDefault));
-
+export const readField = (spec: FieldSpec, value: FrontmatterValue | undefined): FieldResult => {
   if (value === undefined) {
     return spec.required ? { error: missingFieldMessage(spec) } : {};
   }

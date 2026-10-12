@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeLive, LIVE_TIMEOUT_MS, quiet } from "../../../../core/test/adapter/live.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
-import { MIN_LIMIT } from "../../src/plugins/agent-definitions/fields.ts";
-import { validateHandoff } from "../../src/plugins/handoff/schema.ts";
+import { createHandoff } from "../../src/plugins/run-agent/handoff.ts";
+import { PACKAGE_ROOT } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
 const PARTS = 12;
@@ -30,7 +30,7 @@ describeLive("live context limit handoff", () => {
       agents: {
         "implementer-tight": {
           from: "implementer",
-          fields: { tools: "[read, ls, write]", limit: String(MIN_LIMIT) },
+          fields: { tools: "[read, ls, write]", limit: "5000" },
         },
       },
       settings: { hardContextRatio: 2 },
@@ -60,7 +60,7 @@ describeLive("live context limit handoff", () => {
     const handoff = readFileSync(first?.handoffPath ?? "", "utf8");
 
     expect(first?.state).toBe("handoff");
-    expect(validateHandoff(handoff)).toEqual({ ok: true, status: "partial" });
+    expect(createHandoff(PACKAGE_ROOT).validate(handoff)).toEqual({ ok: true, status: "partial" });
     expect(chain.length).toBeGreaterThan(1);
     expect(["done", "handoff"]).toContain(last.state);
     expect(live.host.sent).toHaveLength(1);

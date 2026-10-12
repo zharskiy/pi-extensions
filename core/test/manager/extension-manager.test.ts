@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createExtensionManager, orderPlugins } from "../../manager/extension-manager.ts";
+import { createExtensionManager } from "../../manager/extension-manager.ts";
 import type { Plugin } from "../../manager/plugin.ts";
 import { createFakeHost, createFakeRuntime } from "../helpers/fakes.ts";
 
@@ -40,10 +40,12 @@ const managerOf = (plugins: TestPlugin[], disabled: string[] = []) => {
 };
 
 describe("extension manager", () => {
-  it("orders plugins by their requirements", () => {
-    const ordered = orderPlugins([stub("c", ["b"]), stub("b", ["a"]), stub("a")]);
+  it("enables plugins in the order of their requirements", () => {
+    const log: string[] = [];
 
-    expect(ordered.map((plugin) => plugin.id)).toEqual(["a", "b", "c"]);
+    managerOf([stub("c", ["b"], log), stub("b", ["a"], log), stub("a", [], log)]);
+
+    expect(log).toEqual(["enable a", "enable b", "enable c"]);
   });
 
   it("skips disabled plugins and the plugins that need them, and disables in reverse order", async () => {
@@ -66,7 +68,7 @@ describe("extension manager", () => {
   });
 
   it("rejects dependency cycles", () => {
-    expect(() => orderPlugins([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
+    expect(() => managerOf([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
   });
 
   it("hands each plugin the host, typed bus, services, settings and root", () => {

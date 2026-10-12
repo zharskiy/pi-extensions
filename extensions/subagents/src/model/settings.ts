@@ -1,11 +1,9 @@
 import {
-  applySettings,
-  parseSettings as parseWith,
-  projectSettingsPath as projectPath,
+  projectSettingsPath,
   readSettingsFile,
   type SettingsParse,
   type SettingsSchema,
-  userSettingsPath as userPath,
+  userSettingsPath,
 } from "../../../../core/manager/settings.ts";
 
 export type Settings = {
@@ -24,7 +22,7 @@ export type Settings = {
   disabledPlugins: string[];
 };
 
-export const SETTINGS_FILE = "pi-subagents.json";
+const SETTINGS_FILE = "pi-subagents.json";
 
 export const defaultSettings = (): Settings => ({
   maxConcurrent: 4,
@@ -44,7 +42,7 @@ export const defaultSettings = (): Settings => ({
 
 const range = (min: number, max: number) => ({ type: "number", min, max }) as const;
 
-export const settingsSchema: SettingsSchema<Settings> = {
+const settingsSchema: SettingsSchema<Settings> = {
   maxConcurrent: range(1, 64),
   maxDepth: range(2, 4),
   softContextRatio: range(0.1, 1),
@@ -60,31 +58,23 @@ export const settingsSchema: SettingsSchema<Settings> = {
   disabledPlugins: { type: "list", of: "plugin ids" },
 };
 
-export const parseSettings = (raw: unknown, source: string): SettingsParse<Settings> =>
-  parseWith(settingsSchema, raw, source);
+const readUser = (agentDir: string) =>
+  readSettingsFile(settingsSchema, userSettingsPath(agentDir, SETTINGS_FILE));
 
-const readSettings = (path: string): SettingsParse<Settings> => readSettingsFile(settingsSchema, path);
-
-export const userSettingsPath = (agentDir: string) => userPath(agentDir, SETTINGS_FILE);
-
-export const projectSettingsPath = (cwd: string) => projectPath(cwd, SETTINGS_FILE);
-
-export const disabledPlugins = (agentDir: string) =>
-  readSettings(userSettingsPath(agentDir)).patch.disabledPlugins ?? [];
+export const disabledPlugins = (agentDir: string) => readUser(agentDir).patch.disabledPlugins ?? [];
 
 export const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
-  const user = readSettings(userSettingsPath(agentDir));
+  const projectPath = projectSettingsPath(cwd, SETTINGS_FILE);
+  const user = readUser(agentDir);
   const project: SettingsParse<Settings> = projectTrusted
-    ? readSettings(projectSettingsPath(cwd))
+    ? readSettingsFile(settingsSchema, projectPath)
     : { patch: {}, errors: [] };
   const { disabledPlugins: ignored, ...projectPatch } = project.patch;
   const errors = [...user.errors, ...project.errors];
 
   if (ignored !== undefined) {
-    errors.push(`${projectSettingsPath(cwd)}: disabledPlugins is read from the user settings file only`);
+    errors.push(`${projectPath}: disabledPlugins is read from the user settings file only`);
   }
 
   return { settings: { ...defaultSettings(), ...user.patch, ...projectPatch }, errors };
 };
-
-export { applySettings };

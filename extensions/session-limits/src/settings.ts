@@ -9,13 +9,13 @@ import type { Ratios } from "./thresholds.ts";
 
 const SETTINGS_FILE = "pi-session-limits.json";
 
-export const defaultRatios = (): Ratios => ({ softRatio: 0.6, hardRatio: 0.75 });
+const DEFAULT_RATIOS: Ratios = { softRatio: 0.6, hardRatio: 0.75 };
 
 const ratio = { type: "number", min: 0, max: 1, minExclusive: true } as const;
 
 const schema: SettingsSchema<Ratios> = { softRatio: ratio, hardRatio: ratio };
 
-export const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
+const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
   const user = readSettingsFile(schema, userSettingsPath(agentDir, SETTINGS_FILE));
 
   const project = projectTrusted
@@ -23,13 +23,13 @@ export const loadSettings = (agentDir: string, cwd: string, projectTrusted: bool
     : { patch: {}, errors: [] };
 
   return {
-    ratios: { ...defaultRatios(), ...user.patch, ...project.patch },
+    ratios: { ...DEFAULT_RATIOS, ...user.patch, ...project.patch },
     errors: [...user.errors, ...project.errors],
   };
 };
 
 export const watchSettings = (host: Host): (() => Ratios) => {
-  let ratios = defaultRatios();
+  let ratios = DEFAULT_RATIOS;
   const reported = new Set<string>();
 
   host.onSessionStart((info) => {

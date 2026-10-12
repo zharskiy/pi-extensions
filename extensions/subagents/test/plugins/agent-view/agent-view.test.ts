@@ -12,16 +12,13 @@ import {
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { renderSections, setAllCollapsed } from "../../../src/components/collapsible.ts";
-import { REFRESH_MS } from "../../../src/components/refresh.ts";
 import { promptSections } from "../../../src/components/system-prompt-block.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord, RouteResult } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin, COMMAND } from "../../../src/plugins/agent-view/index.ts";
-import { VIEW_STATE_FILE } from "../../../src/plugins/agent-view/mode-store.ts";
+import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createAgentView } from "../../../src/plugins/agent-view/view.ts";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
@@ -48,10 +45,9 @@ const fakeApi = (rows = 200) => {
       state.closed = true;
     },
     requestRender,
-    toolsExpanded: false,
     toolsKey: "ctrl+o",
     wheelScrolling: true,
-    createTranscript: () => createTranscriptPane({ requestRender } as never, "/repo", false),
+    createTranscript: () => createTranscriptPane({ requestRender } as never, "/repo"),
     createScroll: () => createScrollPane(requestRender),
     createInput: createFakeInputPane,
   };
@@ -120,7 +116,7 @@ const setup = () => {
   ]);
 
   const openView = async (args: string, rows = 200) => {
-    await harness.host.runCommand(COMMAND, args);
+    await harness.host.runCommand("agents", args);
 
     const factory = harness.host.overlays.at(-1);
 
@@ -146,7 +142,6 @@ const closedAgent = (harness: ReturnType<typeof setup>) => {
 
   const record = registry.create({
     agent: "explorer",
-    task: "t",
     description: "t",
     callerId: "main",
     depth: 2,
@@ -160,6 +155,11 @@ const closedAgent = (harness: ReturnType<typeof setup>) => {
   return record;
 };
 
+const viewDefaults = {
+  context: { softRatio: 0.8, reserveTokens: 0, estimate: (text: string) => Math.ceil(text.length / 4) },
+  modes: { read: () => "focus" as const, write: () => {} },
+};
+
 const viewOf = (session: SessionRecord, rows: number) => {
   const { api, state } = fakeApi(rows);
   let current = session;
@@ -170,6 +170,7 @@ const viewOf = (session: SessionRecord, rows: number) => {
 
   const view = createAgentView(
     {
+      ...viewDefaults,
       load: () => ({ record, session: current }),
       stop: () => undefined,
       send: async () => ({ ok: true, delivery: "steer" }),
@@ -216,6 +217,7 @@ describe("agent view", () => {
 
     const view = createAgentView(
       {
+        ...viewDefaults,
         load: () => ({ record, session }),
         stop: () => undefined,
         send: async () => ({ ok: true, delivery: "steer" }),
@@ -379,6 +381,7 @@ describe("agent view", () => {
 
     const view = createAgentView(
       {
+        ...viewDefaults,
         load: () => current,
         stop: () => undefined,
         send: async () => ({ ok: true, delivery: "steer" }),
@@ -435,7 +438,7 @@ describe("agent view", () => {
   it("only notifies for unknown agents and opens nothing", async () => {
     const harness = setup();
 
-    await harness.host.runCommand(COMMAND, "ghost-0000");
+    await harness.host.runCommand("agents", "ghost-0000");
 
     expect(harness.host.overlays).toEqual([]);
     expect(harness.host.notices).toHaveLength(1);
@@ -475,6 +478,7 @@ const openViewWith = (record: AgentRecord, send: (text: string) => Promise<Route
 
   const view = createAgentView(
     {
+      ...viewDefaults,
       load: () => ({ record, session: readSessionFile(FIXTURE, RECORD_ENTRY) }),
       stop: () => undefined,
       send: (text) => {
@@ -636,6 +640,7 @@ describe("agent view input focus", () => {
 
     const view = createAgentView(
       {
+        ...viewDefaults,
         load: () => ({ record, session: readSessionFile(FIXTURE, RECORD_ENTRY) }),
         stop: () => undefined,
         send: async () => ({ ok: true, delivery: "steer" }),
@@ -683,19 +688,12 @@ const handoffText = [
   "none",
 ].join("\n");
 
-const waitForRefresh = () => new Promise<void>((done) => setTimeout(done, REFRESH_MS + 50));
+const waitForRefresh = () => new Promise<void>((done) => setTimeout(done, 350));
 
 describe("agent view successor chain", () => {
   it("follows the opened link to its live successor and stops the successor", async () => {
     const harness = createHarness(
-      [
-        agentRegistryPlugin,
-        agentDefinitionsPlugin,
-        handoffPlugin,
-        runAgentPlugin,
-        limitsPlugin,
-        agentViewPlugin,
-      ],
+      [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentViewPlugin],
       { stopGraceSeconds: 0 },
     );
     const registry = harness.services.require("registry");
@@ -710,7 +708,7 @@ describe("agent view successor chain", () => {
 
     const first = registry.list()[0] as AgentRecord;
 
-    await harness.host.runCommand(COMMAND, first.id);
+    await harness.host.runCommand("agents", first.id);
 
     const factory = harness.host.overlays.at(-1);
 
@@ -823,7 +821,7 @@ describe("agent view context breakdown", () => {
   const openFromManifest = async (manifest: Record<string, unknown>) => {
     const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
     const id = String(manifest.id);
-    const dir = join(agentsDirFor(harness.host.session()), id);
+    const dir = join(agentsDirFor(harness.host.info), id);
     const file = join(dir, "session.jsonl");
 
     mkdirSync(dir, { recursive: true });
@@ -834,7 +832,7 @@ describe("agent view context breakdown", () => {
     );
     harness.runtime.sessions.set(file, readSessionFile(FIXTURE, RECORD_ENTRY));
 
-    await harness.host.runCommand(COMMAND, id);
+    await harness.host.runCommand("agents", id);
 
     const view = harness.host.overlays.at(-1)?.(fakeApi(200).api);
 
@@ -875,7 +873,8 @@ describe("agent view context breakdown", () => {
 });
 
 describe("agent view modes", () => {
-  const stateFile = (harness: ReturnType<typeof setup>) => join(harness.host.info.agentDir, VIEW_STATE_FILE);
+  const stateFile = (harness: ReturnType<typeof setup>) =>
+    join(harness.host.info.agentDir, "pi-subagents-view.json");
 
   const storedMode = (harness: ReturnType<typeof setup>) =>
     JSON.parse(readFileSync(stateFile(harness), "utf8")).mode;
@@ -1033,6 +1032,7 @@ describe("agent view refresh", () => {
 
     const view = createAgentView(
       {
+        ...viewDefaults,
         load: () => {
           loads += 1;
           return { record, session: readSessionFile(FIXTURE, RECORD_ENTRY) };
@@ -1061,7 +1061,7 @@ describe("agent view refresh", () => {
 
 describe("agent view past sessions", () => {
   const writeManifest = (harness: ReturnType<typeof setup>, manifest: Record<string, unknown>) => {
-    const dir = join(agentsDirFor(harness.host.session()), String(manifest.id));
+    const dir = join(agentsDirFor(harness.host.info), String(manifest.id));
 
     mkdirSync(dir, { recursive: true });
     writeFileSync(
@@ -1106,7 +1106,7 @@ describe("agent view past sessions", () => {
     const harness = setup();
 
     writeManifest(harness, { id: "explorer-bad", raw: "{ broken" });
-    await harness.host.runCommand(COMMAND, "explorer-bad");
+    await harness.host.runCommand("agents", "explorer-bad");
 
     expect(harness.host.overlays).toEqual([]);
     expect(harness.host.notices.at(-1)?.message).toContain('cannot read manifest of "explorer-bad"');

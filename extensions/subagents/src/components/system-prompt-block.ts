@@ -3,7 +3,7 @@ import type { CollapsibleSection } from "./collapsible.ts";
 
 const splitLines = (text: string) => text.replace(/\r\n/g, "\n").split("\n");
 
-const json = (value: unknown) => splitLines(JSON.stringify(value, null, 2) ?? "undefined");
+const json = (value: unknown) => splitLines(JSON.stringify(value, null, 2));
 
 export const promptSections = (record: PromptRecord): CollapsibleSection[] => {
   const sections: CollapsibleSection[] = record.sections.map((section) => ({

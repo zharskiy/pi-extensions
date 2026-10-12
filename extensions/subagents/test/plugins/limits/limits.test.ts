@@ -5,7 +5,6 @@ import type { StopReason, ToolSpec } from "../../../../../core/adapter/contract.
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { contextStep } from "../../../src/plugins/limits/context-step.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
@@ -27,7 +26,7 @@ const WIDE_AGENT = [
 
 const setup = async (overrides = {}, agent = "explorer") => {
   const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, handoffPlugin, runAgentPlugin, limitsPlugin],
+    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
     overrides,
   );
 
@@ -36,7 +35,7 @@ const setup = async (overrides = {}, agent = "explorer") => {
 
     mkdirSync(userAgentsDir, { recursive: true });
     writeFileSync(join(userAgentsDir, "wide.md"), WIDE_AGENT);
-    harness.services.require("definitions").reload();
+    harness.host.start();
   }
 
   await harness.host
@@ -65,7 +64,6 @@ describe("context limit steps", () => {
       warned: false,
       handoffRequested: false,
       turnsSinceHandoff: 0,
-      maxTurnsAfterHandoff: 3,
     };
 
     expect(contextStep({ ...base, tokens: 79_999 })).toBe("none");

@@ -37,12 +37,11 @@ type ContextSettings = {
 
 type ViewDeps = {
   load(): ViewData;
-  context?: ContextSettings;
+  context: ContextSettings;
   stop(): Promise<unknown> | undefined;
   send(text: string): Promise<RouteResult>;
   subscribe(onChange: () => void): () => void;
-  modes?: ModeStore;
-  now?: () => number;
+  modes: ModeStore;
 };
 
 const wrapPlain = (text: string, width: number) => {
@@ -56,8 +55,6 @@ const wrapPlain = (text: string, width: number) => {
     text.slice(index * size, (index + 1) * size),
   );
 };
-
-const INPUT_PLACEHOLDER = "message the agent…";
 
 const inputHintText = (api: OverlayApi) =>
   [
@@ -75,21 +72,11 @@ const MODE_KEY = "v";
 const modeHint = (mode: ViewMode) =>
   mode === "focus" ? `focus view, ${MODE_KEY} verbose` : `verbose view, ${MODE_KEY} focus`;
 
-type HintOptions = {
-  openedId?: string;
-  breakdown: "unavailable" | "shown" | "hidden";
-  mode: ViewMode;
-};
-
-const breakdownHint: Record<HintOptions["breakdown"], string | undefined> = {
-  unavailable: undefined,
-  shown: `${CONTEXT_KEY} hide context`,
-  hidden: `${CONTEXT_KEY} context breakdown`,
-};
+type HintOptions = { openedId?: string; contextShown: boolean; mode: ViewMode };
 
 const hintText = (api: OverlayApi, record: AgentRecord, options: HintOptions) => {
   const closed = isClosed(record.state);
-  const { openedId, breakdown, mode } = options;
+  const { openedId, contextShown, mode } = options;
 
   return [
     "Esc close",
@@ -97,7 +84,7 @@ const hintText = (api: OverlayApi, record: AgentRecord, options: HintOptions) =>
     stopHint(record),
     `${api.toolsKey} tool detail`,
     scrollHint(api.wheelScrolling),
-    breakdownHint[breakdown],
+    contextShown ? `${CONTEXT_KEY} hide context` : `${CONTEXT_KEY} context breakdown`,
     closed ? "Tab/Enter prompt sections" : "Tab/Enter prompt sections, Tab to the message box",
     modeHint(mode),
     closed ? "agent closed, messages disabled" : undefined,
@@ -163,10 +150,9 @@ type PromptBlock = {
 const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.sessionFile ?? ""}`;
 
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
-  const now = deps.now ?? Date.now;
   let transcript = api.createTranscript();
   const scroll = api.createScroll();
-  let mode: ViewMode = deps.modes?.read() ?? "focus";
+  let mode = deps.modes.read();
   let data = deps.load();
   let promptKey = promptKeyOf(data);
   let transcriptKey = transcriptKeyOf(data);
@@ -197,7 +183,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     mode = mode === "focus" ? "verbose" : "focus";
 
     applyMode();
-    deps.modes?.write(mode);
+    deps.modes.write(mode);
   };
 
   const syncTranscript = () => {
@@ -221,7 +207,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     }
 
     if (!input) {
-      input = api.createInput(INPUT_PLACEHOLDER);
+      input = api.createInput("message the agent…");
       input.setFocused(inputFocused);
     }
 
@@ -265,7 +251,9 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const headerLines = (width: number) => {
     const record = data.record;
     const theme = api.theme;
-    const detail = isClosed(record.state) ? finishSummary(record, now()) : progressText(record, now());
+    const detail = isClosed(record.state)
+      ? finishSummary(record, Date.now())
+      : progressText(record, Date.now());
 
     const worktree = record.worktree
       ? [theme.fg("muted", truncate(`worktree: ${worktreeText(record.worktree)}`, width))]
@@ -280,10 +268,10 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     ];
   };
 
-  const contextLines = (settings: ContextSettings, width: number) => {
+  const contextLines = (width: number) => {
+    const settings = deps.context;
     const theme = api.theme;
     const cached = contextCache;
-
     const record = data.record;
 
     const reusable =
@@ -319,9 +307,6 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
     return lines;
   };
-
-  const contextBlock = (width: number) =>
-    contextShown && deps.context ? contextLines(deps.context, width) : [];
 
   const promptBlock = (width: number) => {
     const theme = api.theme;
@@ -403,17 +388,15 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   };
 
   const hintLine = () => {
-    const breakdown = deps.context ? (contextShown ? "shown" : "hidden") : "unavailable";
-
     const hint = inputFocused
       ? inputHintText(api)
-      : hintText(api, data.record, { openedId: data.openedId, breakdown, mode });
+      : hintText(api, data.record, { openedId: data.openedId, contextShown, mode });
 
     return `${api.theme.fg("dim", hint)}  ${api.theme.fg("dim", positionText())}`;
   };
 
   const render = (width: number) => {
-    const header = headerLines(width).concat(contextBlock(width));
+    const header = headerLines(width).concat(contextShown ? contextLines(width) : []);
     const message = messageLines(width);
     const height = Math.max(3, api.rows() - header.length - message.length - 1);
 
@@ -486,13 +469,9 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   };
 
   const showRouteResult = (result: RouteResult, text: string, box: InputPane) => {
-    if (result.ok) {
-      status = { tone: "dim", text: deliveryText[result.delivery] };
-    }
-
-    if (!result.ok) {
-      status = { tone: "warning", text: result.error };
-    }
+    status = result.ok
+      ? { tone: "dim", text: deliveryText[result.delivery] }
+      : { tone: "warning", text: result.error };
 
     if (!result.ok && box.value() === "") {
       box.setValue(text);
@@ -535,15 +514,15 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     end: () => scroll.scrollToEnd(),
   };
 
+  const toggleFocused = () => {
+    sections = toggleSection(sections, focused);
+  };
+
   const actions: Partial<Record<KeyPress["name"], () => void>> = {
     ...scrollActions,
     escape: close,
-    enter: () => {
-      sections = toggleSection(sections, focused);
-    },
-    space: () => {
-      sections = toggleSection(sections, focused);
-    },
+    enter: toggleFocused,
+    space: toggleFocused,
     tab: cycleFocus,
     up: () => scroll.scrollBy(-1),
     down: () => scroll.scrollBy(1),
@@ -587,7 +566,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       return;
     }
 
-    if (key.char === CONTEXT_KEY && deps.context) {
+    if (key.char === CONTEXT_KEY) {
       contextShown = !contextShown;
       return;
     }

@@ -38,7 +38,6 @@ const createTestRegistry = () => {
   const spawn = (agent: string) =>
     registry.create({
       agent,
-      task: "look",
       description: "look",
       callerId: "main",
       depth: 1,
@@ -85,10 +84,7 @@ const setup = () => {
     changes.push({ ...changed });
   });
 
-  const prompts: ChildPrompts = childPromptsFor(
-    { ui, registry, queue: createPromptQueue(), now: () => 4242 },
-    record,
-  );
+  const prompts: ChildPrompts = childPromptsFor({ ui, registry, queue: createPromptQueue() }, record);
 
   return { registry, record, calls, answers, prompts, changes };
 };
@@ -101,7 +97,11 @@ describe("childPromptsFor", () => {
     expect(calls).toEqual([
       { kind: "confirm", args: ["explorer-0001 (explorer) asks: Run bash?", "rm -rf build"] },
     ]);
-    expect(registry.get(record.id)?.attention).toEqual({ kind: "confirm", title: "Run bash?", since: 4242 });
+    expect(registry.get(record.id)?.attention).toEqual({
+      kind: "confirm",
+      title: "Run bash?",
+      since: expect.any(Number),
+    });
 
     answers.confirm.resolve(true);
 
@@ -138,7 +138,11 @@ describe("childPromptsFor", () => {
     const pending = prompts.input("Name?", "type here");
 
     expect(calls[0]).toEqual({ kind: "input", args: ["explorer-0001 (explorer) asks: Name?", "type here"] });
-    expect(registry.get(record.id)?.attention).toEqual({ kind: "input", title: "Name?", since: 4242 });
+    expect(registry.get(record.id)?.attention).toEqual({
+      kind: "input",
+      title: "Name?",
+      since: expect.any(Number),
+    });
 
     answers.input.resolve("bob");
 
@@ -212,7 +216,7 @@ const queuedSetup = () => {
   } as unknown as HostUi;
 
   const queue = createPromptQueue();
-  const promptsOf = (record: AgentRecord) => childPromptsFor({ ui, registry, queue, now: () => 7 }, record);
+  const promptsOf = (record: AgentRecord) => childPromptsFor({ ui, registry, queue }, record);
 
   return { registry, spawn, shown, promptsOf };
 };
@@ -229,8 +233,16 @@ describe("prompt queue", () => {
     await flush();
 
     expect(shown.map((entry) => entry.title)).toEqual(["explorer-0001 (explorer) asks: One?"]);
-    expect(registry.get(first.id)?.attention).toEqual({ kind: "confirm", title: "One?", since: 7 });
-    expect(registry.get(second.id)?.attention).toEqual({ kind: "confirm", title: "Two?", since: 7 });
+    expect(registry.get(first.id)?.attention).toEqual({
+      kind: "confirm",
+      title: "One?",
+      since: expect.any(Number),
+    });
+    expect(registry.get(second.id)?.attention).toEqual({
+      kind: "confirm",
+      title: "Two?",
+      since: expect.any(Number),
+    });
 
     shown[0].answer.resolve(true);
 

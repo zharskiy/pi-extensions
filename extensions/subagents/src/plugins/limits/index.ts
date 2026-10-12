@@ -5,11 +5,9 @@ import { contextStep, softWarning } from "./context-step.ts";
 
 const LIMITS_SENDER = "pi-subagents";
 
-const MAX_TURNS_AFTER_HANDOFF = 3;
-
 export const limitsPlugin: Plugin = {
   id: "limits",
-  requires: ["agent-registry", "run-agent", "handoff"],
+  requires: ["agent-registry", "run-agent"],
   enable: ({ bus, settings, services }) => {
     const registry = services.require("registry");
     const runner = services.require("runner");
@@ -37,7 +35,6 @@ export const limitsPlugin: Plugin = {
         warned: warned.has(id),
         handoffRequested: record.handoffRequested,
         turnsSinceHandoff: turns - (handoffTurn.get(id) ?? turns),
-        maxTurnsAfterHandoff: MAX_TURNS_AFTER_HANDOFF,
       });
 
       if (step === "warn") {

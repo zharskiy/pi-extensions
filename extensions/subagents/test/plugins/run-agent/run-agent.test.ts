@@ -234,7 +234,7 @@ describe("run_agent batches", () => {
       join(dir, "tracker.md"),
       `---\nname: tracker\ndescription: Files issues.\nlimit: 50000\ntools: read, ls\nskills: all\nsubagents: []\n---\n`,
     );
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([{ agent: "tracker", task: "file it" }]);
 
@@ -249,7 +249,7 @@ describe("run_agent batches", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "open.md"), `---\nname: open\n${header}tools: all\nskills: all\n---\n`);
     writeFileSync(join(dir, "closed.md"), `---\nname: closed\n${header}tools: []\nskills: []\n---\n`);
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([
       { agent: "open", task: "a" },
@@ -278,7 +278,7 @@ describe("run_agent batches", () => {
       writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\n${header}skills: ${skills}\n---\n`);
     });
 
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([
       { agent: "named", task: "a" },
@@ -328,7 +328,7 @@ describe("allowed subagents", () => {
 
     mkdirSync(userAgentsDir, { recursive: true });
     writeFileSync(join(userAgentsDir, "lead.md"), LEAD_AGENT);
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([{ agent: "lead", task: "coordinate" }]);
 
@@ -396,7 +396,7 @@ describe("allowed subagents", () => {
         "description: Lead.",
       ),
     );
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([{ agent: "lead", task: "coordinate" }]);
 

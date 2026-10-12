@@ -6,7 +6,7 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { SPENDING_SOURCE, usageReportPlugin } from "../../../src/plugins/usage-report/index.ts";
+import { usageReportPlugin } from "../../../src/plugins/usage-report/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, usageReportPlugin];
@@ -64,8 +64,8 @@ describe("usage report", () => {
     await flush();
 
     expect(reports().map((report) => [report.source, report.id, report.usage.cost.total])).toEqual([
-      [SPENDING_SOURCE, child.id, 0.1],
-      [SPENDING_SOURCE, grandchild.id, 0.2],
+      ["agents", child.id, 0.1],
+      ["agents", grandchild.id, 0.2],
     ]);
   });
 

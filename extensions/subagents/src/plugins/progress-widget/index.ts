@@ -3,7 +3,7 @@ import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 import { createClosedRowCache, visibleRecords, widgetLines } from "./model.ts";
 
-export const WIDGET_KEY = "pi-subagents-progress";
+const WIDGET_KEY = "pi-subagents-progress";
 
 const TICK_MS = 1_000;
 
@@ -12,7 +12,6 @@ export const progressWidgetPlugin: Plugin = {
   requires: ["agent-registry"],
   enable: ({ host, bus, settings, services }) => {
     const registry = services.require("registry");
-    let shown = false;
     let ticker: ReturnType<typeof setInterval> | undefined;
     let handle: { refresh(): void } | undefined;
     let shownSignature = "";
@@ -32,10 +31,7 @@ export const progressWidgetPlugin: Plugin = {
     };
 
     const stopTicker = () => {
-      if (ticker) {
-        clearInterval(ticker);
-      }
-
+      clearInterval(ticker);
       ticker = undefined;
     };
 
@@ -45,11 +41,10 @@ export const progressWidgetPlugin: Plugin = {
       rowCache.prune(rows);
 
       if (rows.length === 0) {
-        if (shown) {
+        if (handle) {
           host.ui.setWidget(WIDGET_KEY, undefined);
         }
 
-        shown = false;
         shownSignature = "";
         handle = undefined;
         stopTicker();
@@ -57,12 +52,10 @@ export const progressWidgetPlugin: Plugin = {
         return;
       }
 
-      if (!shown) {
+      if (!handle) {
         handle = host.ui.setWidget(WIDGET_KEY, (width, theme) =>
           widgetLines(visible(), Date.now(), frame, theme, width, rowCache),
         );
-        shown = true;
-        shownSignature = "";
       }
 
       ticker ??= setInterval(refresh, TICK_MS);
@@ -75,7 +68,7 @@ export const progressWidgetPlugin: Plugin = {
 
       shownSignature = signature ?? "";
       frame += 1;
-      handle?.refresh();
+      handle.refresh();
     };
 
     const throttled = createThrottle(refresh, () => settings.renderThrottleMs);
@@ -85,12 +78,6 @@ export const progressWidgetPlugin: Plugin = {
       off();
       throttled.cancel();
       stopTicker();
-
-      if (shown) {
-        host.ui.setWidget(WIDGET_KEY, undefined);
-      }
-
-      shown = false;
     };
   },
 };

@@ -6,9 +6,7 @@ export const MAIN_CALLER = "main";
 
 export type AgentState = "queued" | "running" | "grace" | "done" | "failed" | "stopped" | "handoff";
 
-const CLOSED_STATES: ReadonlySet<AgentState> = new Set(["done", "failed", "stopped", "handoff"]);
-
-export const isClosed = (state: AgentState) => CLOSED_STATES.has(state);
+export const isClosed = (state: AgentState) => state !== "queued" && state !== "running" && state !== "grace";
 
 export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord => {
   const successor = record.successorId ? registry.get(record.successorId) : undefined;
@@ -36,7 +34,6 @@ export const worktreeText = (worktree: Worktree) => `${worktree.path} (branch ${
 export type AgentRecord = {
   id: string;
   agent: string;
-  task: string;
   description: string;
   callerId: string;
   depth: number;
@@ -92,7 +89,6 @@ export type DefinitionError = { path: string; message: string };
 
 export type NewAgent = {
   agent: string;
-  task: string;
   description: string;
   callerId: string;
   depth: number;
@@ -116,7 +112,6 @@ export type AgentRegistry = {
 export type AgentDefinitions = {
   get(name: string): AgentDefinition | undefined;
   list(): AgentDefinition[];
-  reload(): void;
   promptAppend(definition: AgentDefinition): string[];
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HANDOFF_SECTIONS, validateHandoff } from "../../manager/handoff.ts";
+import { validateHandoff } from "../../manager/handoff.ts";
 
 const STATUSES = ["done", "partial", "blocked"];
 
@@ -18,10 +18,6 @@ const complete = {
 };
 
 describe("validateHandoff", () => {
-  it("lists the six sections", () => {
-    expect(HANDOFF_SECTIONS).toEqual(Object.keys(complete));
-  });
-
   it("accepts the sections in order with a status from the given list", () => {
     expect(validateHandoff(handoff(complete), STATUSES)).toEqual({ ok: true, status: "partial" });
     expect(validateHandoff(handoff({ ...complete, Status: "**Done**" }), STATUSES)).toEqual({

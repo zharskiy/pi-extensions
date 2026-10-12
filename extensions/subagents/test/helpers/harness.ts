@@ -6,7 +6,7 @@ import type { AgentRuntime } from "../../../../core/adapter/contract.ts";
 import { createExtensionManager } from "../../../../core/manager/extension-manager.ts";
 import { createFakeHost, createFakeRuntime, type FakeHost } from "../../../../core/test/helpers/fakes.ts";
 import type { Plugin } from "../../src/model/plugin.ts";
-import { applySettings, defaultSettings, type Settings } from "../../src/model/settings.ts";
+import { defaultSettings, type Settings } from "../../src/model/settings.ts";
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");
 
@@ -32,7 +32,7 @@ export const startPlugins = <R extends AgentRuntime>(
   plugins: Plugin[],
   overrides: Partial<Settings> = {},
 ) => {
-  const settings = applySettings(defaultSettings(), { renderThrottleMs: 0, ...overrides });
+  const settings = { ...defaultSettings(), renderThrottleMs: 0, ...overrides };
   const errors: unknown[] = [];
 
   const manager = createExtensionManager({
