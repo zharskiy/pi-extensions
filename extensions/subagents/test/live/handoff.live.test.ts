@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeLive, LIVE_TIMEOUT_MS, quiet } from "../../../../core/test/adapter/live.ts";
-import { MIN_LIMIT } from "../../src/model/frontmatter.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
+import { MIN_LIMIT } from "../../src/plugins/agent-definitions/fields.ts";
 import { validateHandoff } from "../../src/plugins/handoff/schema.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 

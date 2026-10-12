@@ -2,15 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flushTimers as flush } from "../../../core/test/helpers/fakes.ts";
-import {
-  BUSY_CHANNEL,
-  createLimits,
-  HANDOFF_COMMAND,
-  HANDOFF_TYPE,
-  parseBusySignal,
-  STATUS_KEY,
-} from "../src/limits.ts";
+import { createLimits, HANDOFF_COMMAND, HANDOFF_TYPE, STATUS_KEY } from "../src/limits.ts";
 import { defaultRatios } from "../src/settings.ts";
 
 const TEMPLATE = readFileSync(resolve(import.meta.dirname, "..", "prompts", "handoff.md"), "utf8");
@@ -49,7 +43,7 @@ const setup = (releaseDelayMs = 0) => {
     projectTrusted: false,
   });
 
-  const limits = createLimits({ host, template: TEMPLATE, ratios: defaultRatios, releaseDelayMs });
+  createLimits({ host, template: TEMPLATE, ratios: defaultRatios, releaseDelayMs });
 
   host.start();
 
@@ -71,21 +65,8 @@ const setup = (releaseDelayMs = 0) => {
 
   const busy = (value: boolean, source = "pi-subagents") => host.emit(BUSY_CHANNEL, { source, busy: value });
 
-  return { host, limits, handoffPath, writeHandoff, writeNewerHandoff, turn, status, busy };
+  return { host, handoffPath, writeHandoff, writeNewerHandoff, turn, status, busy };
 };
-
-describe("parseBusySignal", () => {
-  it("accepts a source name and a busy flag only", () => {
-    expect(parseBusySignal({ source: "pi-subagents", busy: true })).toEqual({
-      source: "pi-subagents",
-      busy: true,
-    });
-    expect(parseBusySignal({ source: "", busy: true })).toBeUndefined();
-    expect(parseBusySignal({ source: "x", busy: "yes" })).toBeUndefined();
-    expect(parseBusySignal(null)).toBeUndefined();
-    expect(parseBusySignal("busy")).toBeUndefined();
-  });
-});
 
 describe("session limits", () => {
   it("colours the footer segment by soft and hard limit", () => {
@@ -138,7 +119,7 @@ describe("session limits", () => {
   });
 
   it("waits while a source reports running work and switches once it is released", async () => {
-    const { host, limits, turn, writeHandoff, status, busy } = setup();
+    const { host, turn, writeHandoff, status, busy } = setup();
 
     busy(true);
     turn(76_000);
@@ -146,9 +127,8 @@ describe("session limits", () => {
     host.settle();
     await flush();
 
-    expect(limits.busySources()).toEqual(["pi-subagents"]);
     expect(host.dispatched).toEqual([]);
-    expect(status()).toBe("<error>ctx 76% · handoff waits for running work");
+    expect(status()).toBe("<warning>ctx 76% · handoff waits for running work");
 
     busy(false);
     await flush();
@@ -355,6 +335,43 @@ describe("session limits", () => {
     expect(status()).toContain("handoff failed");
   });
 
+  it("clears the footer segment when the usage becomes unknown", () => {
+    const { turn, status } = setup();
+
+    turn(62_000);
+    expect(status()).toBe("<warning>ctx 62% · handoff at 75%");
+
+    turn(null);
+    expect(status()).toBeUndefined();
+  });
+
+  it("leaves the switching phase when the dispatched command never runs", async () => {
+    const { host, turn, writeHandoff, status } = setup();
+
+    host.commands.set(HANDOFF_COMMAND, { description: "", run: () => undefined });
+    turn(76_000);
+    writeHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(status()).toBe("<error>ctx 76% · switching session");
+
+    host.settle();
+
+    expect(status()).toBe(`<error>ctx 76% · handoff failed, run /${HANDOFF_COMMAND}`);
+  });
+
+  it("ignores a second command while the first one waits for the confirmation", async () => {
+    const { host, writeHandoff, busy } = setup();
+
+    writeHandoff(VALID_HANDOFF);
+    busy(true);
+    await Promise.all([host.runCommand(HANDOFF_COMMAND), host.runCommand(HANDOFF_COMMAND)]);
+
+    expect(host.confirmations).toHaveLength(1);
+    expect(host.newSessions).toHaveLength(1);
+  });
+
   it("does nothing while the context is unknown", () => {
     const { host, turn, status } = setup();
 
@@ -367,17 +384,17 @@ describe("session limits", () => {
     expect(status()).toBeUndefined();
   });
 
-  it("resets the phase on session start", () => {
+  it("hides the stale context segment after compaction until the next turn", () => {
     const { host, turn, status } = setup();
 
-    turn(76_000);
-    host.start();
+    turn(62_000);
+    host.compact();
 
     expect(status()).toBeUndefined();
 
-    turn(76_000);
+    turn(63_000);
 
-    expect(host.sent).toHaveLength(2);
+    expect(status()).toBe("<warning>ctx 63% · handoff at 75%");
   });
 
   it("keeps a busy signal that a source announced in its own session start", () => {
@@ -393,20 +410,28 @@ describe("session limits", () => {
 
     host.onSessionStart(() => host.emit(BUSY_CHANNEL, { source: "pi-subagents", busy: true }));
 
-    const limits = createLimits({ host, template: TEMPLATE, ratios: defaultRatios, releaseDelayMs: 0 });
+    createLimits({ host, template: TEMPLATE, ratios: defaultRatios, releaseDelayMs: 0 });
 
     host.start();
+    host.turnEnd({ tokens: 76_000, window: 100_000 });
+    mkdirSync(join(root, "sessions", "main"), { recursive: true });
+    writeFileSync(join(root, "sessions", "main", "main-handoff.md"), VALID_HANDOFF);
+    host.settle();
 
-    expect(limits.busySources()).toEqual(["pi-subagents"]);
+    expect(host.dispatched).toEqual([]);
+    expect(host.statuses.get(STATUS_KEY)).toBe("<warning>ctx 76% · handoff waits for running work");
   });
 
   it("ignores malformed busy signals", () => {
-    const { host, limits } = setup();
+    const { host, turn, writeHandoff } = setup();
 
     host.emit(BUSY_CHANNEL, { busy: true });
     host.emit(BUSY_CHANNEL, "busy");
+    turn(76_000);
+    writeHandoff(VALID_HANDOFF);
+    host.settle();
 
-    expect(limits.busySources()).toEqual([]);
+    expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
   });
 
   it("lets the user run the command by hand", async () => {
@@ -469,7 +494,7 @@ describe("session limits around the dispatch window", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.confirmations).toHaveLength(1);
     expect(host.newSessions).toEqual([]);
-    expect(status()).toBe("<error>ctx 76% · handoff waits for running work");
+    expect(status()).toBe("<warning>ctx 76% · handoff waits for running work");
 
     busy(false);
     await flush();
@@ -538,18 +563,17 @@ describe("release timer", () => {
     await vi.advanceTimersByTimeAsync(RELEASE_MS);
 
     expect(host.dispatched).toEqual([]);
-    expect(status()).toBe("<error>ctx 76% · handoff waits for running work");
+    expect(status()).toBe("<warning>ctx 76% · handoff waits for running work");
   });
 
   it("holds the switch when a source turns busy again before the timer fires", async () => {
-    const { host, limits, busy } = waitingSetup();
+    const { host, busy } = waitingSetup();
 
     busy(false);
     await vi.advanceTimersByTimeAsync(RELEASE_MS / 2);
     busy(true);
     await vi.advanceTimersByTimeAsync(RELEASE_MS);
 
-    expect(limits.busySources()).toEqual(["pi-subagents"]);
     expect(host.dispatched).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
 
@@ -564,19 +588,6 @@ describe("release timer", () => {
 
     busy(false);
     await host.shutdown();
-
-    expect(vi.getTimerCount()).toBe(0);
-
-    await vi.advanceTimersByTimeAsync(RELEASE_MS);
-
-    expect(host.dispatched).toEqual([]);
-  });
-
-  it("is cancelled by session start", async () => {
-    const { host, busy } = waitingSetup();
-
-    busy(false);
-    host.start();
 
     expect(vi.getTimerCount()).toBe(0);
 

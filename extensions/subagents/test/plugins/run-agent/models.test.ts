@@ -37,7 +37,7 @@ describe("per-call model override", () => {
     );
   });
 
-  it("keeps the agent's own model and thinking without an override, and changes only thinking with :level", async () => {
+  it("runs on the main session's model and thinking without an override, and changes only thinking with :level", async () => {
     const { run, runtime, registry } = setup();
 
     await run([
@@ -47,14 +47,14 @@ describe("per-call model override", () => {
     ]);
 
     expect(runtime.children.map((child) => [child.spec.model, child.spec.thinking])).toEqual([
-      ["openai/gpt-6-luna", "high"],
-      ["openai/gpt-6-luna", "low"],
-      ["anthropic/claude-haiku-5-5", "high"],
+      ["fake/model", "medium"],
+      ["fake/model", "low"],
+      ["anthropic/claude-haiku-5-5", "medium"],
     ]);
     expect(registry.list().map((record) => record.model)).toEqual([
-      "openai/gpt-6-luna:high",
-      "openai/gpt-6-luna:low",
-      "anthropic/claude-haiku-5-5:high",
+      "fake/model:medium",
+      "fake/model:low",
+      "anthropic/claude-haiku-5-5:medium",
     ]);
   });
 

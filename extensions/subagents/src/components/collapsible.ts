@@ -14,7 +14,7 @@ export const toggleSection = (sections: CollapsibleSection[], index: number): Co
 export const setAllCollapsed = (sections: CollapsibleSection[], collapsed: boolean): CollapsibleSection[] =>
   sections.map((section) => ({ ...section, collapsed }));
 
-export type SectionLines = { lines: string[]; headerRows: number[] };
+type SectionLines = { lines: string[]; headerRows: number[] };
 
 export const renderSections = (
   sections: CollapsibleSection[],

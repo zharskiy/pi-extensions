@@ -2,21 +2,13 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { describe } from "vitest";
+import { afterAll, beforeAll, describe } from "vitest";
 import type { AgentRuntime, UsageTotals } from "../../adapter/contract.ts";
 import { createPiRuntime, type SkillFile } from "../../adapter/pi-child.ts";
 
-const LIVE_PROVIDER = "openai";
-
-const LIVE_MODEL_ID = "gpt-6-luna";
-
-const LIVE_THINKING = "low";
-
-const LIVE_MODEL = `${LIVE_PROVIDER}/${LIVE_MODEL_ID}`;
-
-export const LIVE_AGENT_MODEL = `${LIVE_MODEL}:${LIVE_THINKING}`;
-
 export const LIVE_TIMEOUT_MS = 180_000;
+
+const MODEL_ENV = "PI_LIVE_MODEL";
 
 const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
@@ -24,22 +16,88 @@ const COPIED_FILES = ["auth.json", "models.json"];
 
 const CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md"];
 
-const realAgentDir = getAgentDir();
+type LiveState = {
+  realAgentDir: string;
+  agentDir: string;
+  provider: string;
+  modelId: string;
+  thinking: string | undefined;
+  registry: ModelRegistry;
+  model: NonNullable<ReturnType<ModelRegistry["find"]>>;
+};
 
-export const liveAgentDir = mkdtempSync(join(tmpdir(), "pi-live-agent-"));
+let state: LiveState | undefined;
 
-COPIED_FILES.filter((name) => existsSync(join(realAgentDir, name))).forEach((name) => {
-  copyFileSync(join(realAgentDir, name), join(liveAgentDir, name));
-});
+const parseModelSpec = (spec: string | undefined) => {
+  const match = spec?.match(/^([^/:\s]+)\/([^:\s]+)(?::(\w+))?$/);
 
-process.env[AGENT_DIR_ENV] = liveAgentDir;
+  if (!match) {
+    throw new Error(
+      `Set ${MODEL_ENV}=provider/id[:thinking] to run the live tests (got ${spec ?? "nothing"})`,
+    );
+  }
 
-export const removeLiveAgentDir = () => {
-  rmSync(liveAgentDir, { recursive: true, force: true });
+  return { provider: match[1], modelId: match[2], thinking: match[3] };
+};
+
+const liveState = () => {
+  if (!state) {
+    throw new Error("setupLive() has not run");
+  }
+
+  return state;
+};
+
+export const setupLive = async () => {
+  if (state) {
+    return;
+  }
+
+  const { provider, modelId, thinking } = parseModelSpec(process.env[MODEL_ENV]);
+  const realAgentDir = getAgentDir();
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-live-agent-"));
+
+  COPIED_FILES.filter((name) => existsSync(join(realAgentDir, name))).forEach((name) => {
+    copyFileSync(join(realAgentDir, name), join(agentDir, name));
+  });
+
+  process.env[AGENT_DIR_ENV] = agentDir;
+
+  try {
+    const registry = new ModelRegistry(await ModelRuntime.create());
+    const model = registry.find(provider, modelId);
+
+    if (!model) {
+      throw new Error(`${provider}/${modelId} is not in pi's model catalog`);
+    }
+
+    if (!registry.hasConfiguredAuth(model)) {
+      throw new Error(`pi has no credentials for ${provider}/${modelId}; log in with pi first`);
+    }
+
+    state = { realAgentDir, agentDir, provider, modelId, thinking, registry, model };
+  } catch (error) {
+    rmSync(agentDir, { recursive: true, force: true });
+
+    throw error;
+  }
+};
+
+export const teardownLive = () => {
+  if (state) {
+    rmSync(state.agentDir, { recursive: true, force: true });
+    state = undefined;
+  }
+};
+
+export const liveAgentModel = () => {
+  const { provider, modelId, thinking } = liveState();
+
+  return `${provider}/${modelId}${thinking ? `:${thinking}` : ""}`;
 };
 
 export const realContextMarkers = () =>
-  CONTEXT_FILES.map((name) => join(realAgentDir, name))
+  CONTEXT_FILES.map((name) => join(liveState().realAgentDir, name))
     .filter((path) => existsSync(path))
     .flatMap((path) =>
       readFileSync(path, "utf8")
@@ -49,28 +107,13 @@ export const realContextMarkers = () =>
         .slice(0, 1),
     );
 
-const registry = new ModelRegistry(await ModelRuntime.create());
-
-const model = registry.find(LIVE_PROVIDER, LIVE_MODEL_ID);
-
-const missingReason = () => {
-  if (!model) {
-    return `${LIVE_MODEL} is not in pi's model catalog`;
-  }
-
-  return registry.hasConfiguredAuth(model)
-    ? undefined
-    : `pi has no credentials for ${LIVE_MODEL} (log in with pi, or point PI_CODING_AGENT_DIR at an agent dir that has them)`;
-};
-
-const missing = missingReason();
-
-if (missing) {
-  removeLiveAgentDir();
-}
-
 export const describeLive = (name: string, body: () => void) =>
-  describe.skipIf(missing)(missing ? `${name} (skipped: ${missing})` : name, body);
+  describe(name, () => {
+    beforeAll(setupLive);
+    afterAll(teardownLive);
+
+    body();
+  });
 
 export type LiveParent = { trusted?: boolean; skillFiles?: SkillFile[] };
 
@@ -78,6 +121,8 @@ export const createLiveRuntime = (
   options: { namespace: string; exclude: string[] },
   parent: LiveParent = {},
 ): AgentRuntime => {
+  const { model, registry, provider, thinking } = liveState();
+
   const ctx = {
     model,
     modelRegistry: registry,
@@ -90,8 +135,8 @@ export const createLiveRuntime = (
   return createPiRuntime(
     {
       ctx: () => ctx as never,
-      settings: () => ({ defaultProvider: LIVE_PROVIDER }) as never,
-      thinking: () => LIVE_THINKING,
+      settings: () => ({ defaultProvider: provider }) as never,
+      thinking: () => thinking ?? "off",
       ...(skillFiles ? { skillFiles: () => skillFiles } : {}),
     },
     options,

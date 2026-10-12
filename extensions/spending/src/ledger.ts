@@ -1,52 +1,16 @@
 import { addUsage, emptyUsage, type UsageTotals } from "../../../core/adapter/contract.ts";
+import { parseUsageReport, type UsageReport } from "../../../core/manager/channels.ts";
 
 export const USAGE_ENTRY = "pi-spending:usage";
 
-export type UsageReport = { source: string; id: string; usage: UsageTotals };
+type SourceTotal = { source: string; usage: UsageTotals };
 
-export type SourceTotal = { source: string; usage: UsageTotals };
-
-export type LedgerStore = {
+type LedgerStore = {
   append(customType: string, data: unknown): void;
   read<T>(customType: string): T[];
 };
 
-const COUNTS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const;
-
-const COSTS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
-
-const isAmount = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-export const isUsage = (value: unknown): value is UsageTotals => {
-  if (!isRecord(value) || !isRecord(value.cost)) {
-    return false;
-  }
-
-  const cost = value.cost;
-
-  return COUNTS.every((key) => isAmount(value[key])) && COSTS.every((key) => isAmount(cost[key]));
-};
-
-const isLabel = (value: unknown): value is string => typeof value === "string" && value.length > 0;
-
-export const parseUsageReport = (data: unknown): UsageReport | undefined => {
-  if (!isRecord(data)) {
-    return undefined;
-  }
-
-  const { source, id, usage } = data;
-
-  if (!isLabel(source) || !isLabel(id) || !isUsage(usage)) {
-    return undefined;
-  }
-
-  return { source, id, usage };
-};
-
-export const isAhead = (candidate: UsageTotals, current: UsageTotals | undefined) => {
+const isAhead = (candidate: UsageTotals, current: UsageTotals | undefined) => {
   if (!current) {
     return true;
   }
@@ -116,5 +80,3 @@ export const createLedger = (store: LedgerStore) => {
 
   return { record: keep, persist, clear, restore, totals };
 };
-
-export type Ledger = ReturnType<typeof createLedger>;

@@ -1,10 +1,9 @@
 import type { Host } from "../../../core/adapter/contract.ts";
+import { parseUsageReport, USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { footerText, isVisible } from "./footer.ts";
-import { createLedger, parseUsageReport } from "./ledger.ts";
+import { createLedger } from "./ledger.ts";
 
 export const STATUS_KEY = "pi-spending";
-
-export const USAGE_CHANNEL = "spending:usage";
 
 export const createSpending = (host: Host) => {
   const ledger = createLedger({
@@ -52,6 +51,4 @@ export const createSpending = (host: Host) => {
   host.onSessionShutdown(() => {
     ledger.persist();
   });
-
-  return { figures, refresh };
 };

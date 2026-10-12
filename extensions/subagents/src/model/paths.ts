@@ -4,5 +4,7 @@ import { sessionDataDir } from "../../../../core/manager/paths.ts";
 
 export const NAMESPACE = "pi-subagents";
 
+export const MANIFEST_FILE = "manifest.json";
+
 export const agentsDirFor = (info: SessionInfo | undefined) =>
-  info ? join(sessionDataDir(info, NAMESPACE), "agents") : sessionDataDir(undefined, NAMESPACE);
+  join(sessionDataDir(info, NAMESPACE), "agents");

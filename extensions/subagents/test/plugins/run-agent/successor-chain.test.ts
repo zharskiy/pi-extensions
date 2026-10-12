@@ -2,10 +2,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import { MANIFEST_FILE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { MANIFEST_FILE } from "../../../src/plugins/agent-registry/registry.ts";
 import {
   type AgentStatusDetails,
   type AgentStatusParams,
@@ -293,12 +293,41 @@ describe("successor chain", () => {
     expect(all.details?.agents.map((agent) => agent.id)).toEqual([second]);
   });
 
+  it("gives the successor the batch results its predecessor had not received yet", async () => {
+    const { first, current, requestHandoff, writeHandoff, runtime, registry } = await setup({}, "general");
+    const child = runtime.child(first.id);
+    const runAgent = child.spec.customTools?.find((tool) => tool.name === "run_agent");
+
+    await runAgent?.execute({ agents: [{ agent: "explorer", task: "find the token store" }] } as never, {
+      update: () => {},
+    });
+    await flush();
+
+    const explorer = registry.list()[1];
+
+    runtime.child(explorer.id).finish("the token store is src/store.ts");
+    await flush();
+
+    expect(child.wakes).toEqual([]);
+
+    await requestHandoff(first.id);
+    writeHandoff(first.id, "partial");
+    child.finish(current(first.id).handoffPath);
+    await flush();
+
+    const successor = current(first.id).successorId as string;
+    const task = runtime.child(successor).task ?? "";
+
+    expect(task).toContain("Batch results that reached your predecessor after it stopped for the handoff:");
+    expect(task).toContain(`Batch ${explorer.batchId} finished: 1 done.`);
+    expect(task).toContain("the token store is src/store.ts");
+  });
+
   it("resolves a waiting child caller once with the terminal records", async () => {
     const { first, current, handOff, runner, runtime } = await setup({}, "general");
 
     const started = runner.startBatch([{ agent: "explorer", task: "find the token store" }], {
       callerId: first.id,
-      callerDepth: first.depth,
       wait: true,
     });
     await flush();

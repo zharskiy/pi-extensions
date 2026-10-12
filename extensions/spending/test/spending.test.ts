@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, usageOf } from "../../../core/test/helpers/fakes.ts";
 import { USAGE_ENTRY } from "../src/ledger.ts";
-import { createSpending, STATUS_KEY, USAGE_CHANNEL } from "../src/spending.ts";
+import { createSpending, STATUS_KEY } from "../src/spending.ts";
 
 const setup = (subscription = false) => {
   const host = createFakeHost({ id: "main-session", subscription });

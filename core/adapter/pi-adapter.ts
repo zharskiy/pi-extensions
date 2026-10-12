@@ -20,7 +20,7 @@ import { createPiRuntime } from "./pi-child.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState, liveCtx } from "./pi-ui.ts";
-import { sumSessionUsage } from "./usage.ts";
+import { contextOf, sumUsage } from "./usage.ts";
 
 const MCP_BUILTIN_PATH = "builtin:mcp";
 
@@ -30,23 +30,12 @@ export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
 const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
   file: ctx.sessionManager.getSessionFile(),
-  dir: ctx.sessionManager.getSessionDir(),
   cwd: ctx.cwd,
   agentDir: getAgentDir(),
   projectTrusted: ctx.isProjectTrusted(),
-  hasUI: ctx.mode === "tui",
-  subscription: ctx.model
-    ? ctx.model.provider === "kimi-coding" || ctx.modelRegistry.isUsingOAuth(ctx.model)
-    : false,
+  subscription: ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false,
   mode: ctx.mode,
 });
-
-const contextOf = (ctx: ExtensionContext): ContextSnapshot => {
-  const usage = ctx.getContextUsage();
-  const window = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-
-  return { tokens: usage?.tokens ?? null, window, percent: usage?.percent ?? null };
-};
 
 const sessionControl = (ctx: ExtensionCommandContext): SessionControl => ({
   newSession: async ({ parentSession, seed }) => {
@@ -67,12 +56,12 @@ const sessionControl = (ctx: ExtensionCommandContext): SessionControl => ({
 });
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
-  const sections = new Map<string, string>();
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
+  const compactHandlers: (() => void)[] = [];
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -90,12 +79,25 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   });
 
   pi.on("session_shutdown", async (event) => {
+    const errors: unknown[] = [];
+
     await shutdownHandlers.reduce<Promise<void>>(
-      (chain, handler) => chain.then(() => handler(event.reason)),
+      (chain, handler) =>
+        chain.then(async () => {
+          try {
+            await handler(event.reason);
+          } catch (error) {
+            errors.push(error);
+          }
+        }),
       Promise.resolve(),
     );
 
     state.stale = true;
+
+    if (errors.length > 0) {
+      throw errors[0];
+    }
   });
 
   pi.on("before_agent_start", (event, ctx) => {
@@ -104,10 +106,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     if (mainPrompt) {
       replaceMainPrompt(event.systemPromptOptions, mainPrompt);
     }
-
-    sections.forEach((text, name) => {
-      event.systemPromptOptions.sections[name] = text;
-    });
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -117,6 +115,14 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     turnEndHandlers.forEach((handler) => {
       handler(context);
+    });
+  });
+
+  pi.on("session_compact", (_event, ctx) => {
+    capture(ctx);
+
+    compactHandlers.forEach((handler) => {
+      handler();
     });
   });
 
@@ -160,9 +166,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     ui: createUi(state),
     registerTool,
     registerCommand,
-    setPromptSection: (name, text) => {
-      sections.set(name, text);
-    },
     setMainPrompt: (text) => {
       mainPrompt = text;
     },
@@ -178,12 +181,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onTurnEnd: (handler) => {
       turnEndHandlers.push(handler);
     },
-    isIdle: () => liveCtx(state)?.isIdle() ?? false,
-    contextUsage: () => {
-      const ctx = liveCtx(state);
-
-      return ctx ? contextOf(ctx) : undefined;
+    onCompact: (handler) => {
+      compactHandlers.push(handler);
     },
+    isIdle: () => liveCtx(state)?.isIdle() ?? false,
     sendUserMessage: (text) => {
       const ctx = liveCtx(state);
 
@@ -221,7 +222,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       pi.appendEntry(customType, data);
     },
     readEntries,
-    sessionUsage: () => sumSessionUsage(liveCtx(state)?.sessionManager.getEntries() ?? []),
+    sessionUsage: () => sumUsage(liveCtx(state)?.sessionManager.getEntries() ?? []),
     session: () => {
       const ctx = liveCtx(state);
 
@@ -230,11 +231,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   };
 };
 
-export type BootPaths = { root: string; agentDir: string };
+type BootPaths = { root: string; agentDir: string };
 
-export type Boot = (host: Host, runtime: AgentRuntime, paths: BootPaths) => void;
+type Boot = (host: Host, runtime: AgentRuntime, paths: BootPaths) => void;
 
-export type PiExtensionOptions = {
+type PiExtensionOptions = {
   root: string;
   namespace: string;
   childExclude?: readonly string[];

@@ -5,8 +5,6 @@ import {
   type NormalizedBuildSystemPromptOptions,
 } from "@earendil-works/pi-coding-agent";
 
-export const RESTORED_SECTIONS = ["tools", "rules", "docs"] as const;
-
 const toolsSection = (declaredTools: string[], toolSnippets: Record<string, string>) => {
   const visible = declaredTools.filter((name) => Boolean(toolSnippets[name]));
   const list =

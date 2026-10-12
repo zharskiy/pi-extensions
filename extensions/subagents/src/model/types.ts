@@ -1,11 +1,12 @@
 import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../core/adapter/contract.ts";
-import { type AgentFrontmatter, ALL, type Grant } from "./frontmatter.ts";
+import type { HandoffValidation } from "../../../../core/manager/handoff.ts";
+import { type AgentFrontmatter, ALL, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
 
 export type AgentState = "queued" | "running" | "grace" | "done" | "failed" | "stopped" | "handoff";
 
-export const CLOSED_STATES: ReadonlySet<AgentState> = new Set(["done", "failed", "stopped", "handoff"]);
+const CLOSED_STATES: ReadonlySet<AgentState> = new Set(["done", "failed", "stopped", "handoff"]);
 
 export const isClosed = (state: AgentState) => CLOSED_STATES.has(state);
 
@@ -115,9 +116,7 @@ export type AgentRegistry = {
 export type AgentDefinitions = {
   get(name: string): AgentDefinition | undefined;
   list(): AgentDefinition[];
-  errors(): ReadonlyArray<DefinitionError>;
   reload(): void;
-  mainPrompt(): string;
   promptAppend(definition: AgentDefinition): string[];
 };
 
@@ -132,22 +131,20 @@ export type AgentRunner = {
   abort(id: string, reason: string): Promise<void>;
 };
 
-export type HandoffValidation = { ok: true; status: string } | { ok: false; errors: string[] };
-
 export type HandoffService = {
   instruction(path: string): string;
   validate(text: string): HandoffValidation;
 };
 
-export type AgentStatusService = {
+type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
-export type AgentViewService = {
+type AgentViewService = {
   open(id: string): Promise<void>;
 };
 
-export type AgentListService = {
+type AgentListService = {
   open(): Promise<void>;
 };
 

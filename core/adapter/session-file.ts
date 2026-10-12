@@ -32,7 +32,7 @@ type RawEntry = {
   message?: RawMessage;
 };
 
-export type PromptRecordData = {
+type PromptRecordData = {
   skills?: { name: string; description: string }[];
   guidelines?: string[];
   providerPayload?: unknown;

@@ -1,21 +1,20 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Bus } from "../../model/events.ts";
+import { MANIFEST_FILE } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../../model/types.ts";
 
-export const MANIFEST_FILE = "manifest.json";
-
-export type RegistryOptions = {
+type RegistryOptions = {
   bus: Bus;
   now?: () => number;
   newId?: (agent: string) => string;
   writeManifest?: (record: AgentRecord) => void;
 };
 
-export const randomAgentId = (agent: string) => `${agent}-${randomBytes(2).toString("hex")}`;
+const randomAgentId = (agent: string) => `${agent}-${randomBytes(2).toString("hex")}`;
 
-export const writeManifestFile = (record: AgentRecord) => {
+const writeManifestFile = (record: AgentRecord) => {
   mkdirSync(record.dir, { recursive: true });
 
   const manifest = {
@@ -50,10 +49,18 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
   const writeManifest = options.writeManifest ?? writeManifestFile;
   const records = new Map<string, AgentRecord>();
 
-  const uniqueId = (agent: string): string => {
+  const uniqueId = (agent: string, dir: string): string => {
     const id = newId(agent);
 
-    return records.has(id) ? uniqueId(agent) : id;
+    return records.has(id) || existsSync(join(dir, id)) ? uniqueId(agent, dir) : id;
+  };
+
+  const persist = (record: AgentRecord) => {
+    try {
+      writeManifest(record);
+    } catch (error) {
+      record.error ??= `manifest not written: ${(error as Error).message}`;
+    }
   };
 
   const require = (id: string) => {
@@ -67,7 +74,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
   };
 
   const create = (input: NewAgent) => {
-    const id = uniqueId(input.agent);
+    const id = uniqueId(input.agent, input.dir);
     const dir = join(input.dir, id);
 
     const record: AgentRecord = {
@@ -87,7 +94,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     };
 
     records.set(id, record);
-    writeManifest(record);
+    persist(record);
     options.bus.emit("agent:changed", record);
 
     return record;
@@ -101,7 +108,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     Object.assign(record, patch, { version: record.version + 1 });
 
     if (manifestChanged) {
-      writeManifest(record);
+      persist(record);
     }
 
     options.bus.emit("agent:changed", record);
@@ -117,7 +124,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     }
 
     Object.assign(record, patch, { endedAt: patch.endedAt ?? now(), version: record.version + 1 });
-    writeManifest(record);
+    persist(record);
     options.bus.emit("agent:changed", record);
     options.bus.emit("agent:closed", record);
 

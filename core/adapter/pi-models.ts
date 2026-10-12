@@ -2,7 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ModelResolution } from "./contract.ts";
 import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolver.ts";
 
-export type PiModel = NonNullable<ExtensionContext["model"]>;
+type PiModel = NonNullable<ExtensionContext["model"]>;
 
 const catalogOf = (ctx: ExtensionContext) => {
   const models = ctx.modelRegistry.getAll();

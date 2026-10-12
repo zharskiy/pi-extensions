@@ -1,7 +1,6 @@
 ---
 name: reviewer
 description: Read-only review of a change or area of code. Returns findings ranked by severity with file and line references.
-model: openai/gpt-6-luna:high
 limit: 80000
 tools: [read, grep, find, ls, bash]
 skills: []

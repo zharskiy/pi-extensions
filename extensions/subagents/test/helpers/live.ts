@@ -5,9 +5,8 @@ import type { UsageTotals } from "../../../../core/adapter/contract.ts";
 import {
   costOf,
   createLiveRuntime,
-  LIVE_AGENT_MODEL,
   LIVE_TIMEOUT_MS,
-  removeLiveAgentDir,
+  liveAgentModel,
   reportCost,
   waitUntil,
 } from "../../../../core/test/adapter/live.ts";
@@ -44,7 +43,7 @@ const liveAgentFile = (name: string, patch: AgentPatch) => {
   const { head, body } = frontmatterOf(source);
 
   const fields: Record<string, string> = {
-    model: LIVE_AGENT_MODEL,
+    model: liveAgentModel(),
     limit: "20000",
     ...patch.fields,
     name,
@@ -82,10 +81,8 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
   const host = createFakeHost({
     id: "live-main",
     file: join(root, "sessions", "main.jsonl"),
-    dir: join(root, "sessions"),
     cwd: project,
     agentDir,
-    hasUI: false,
     mode: "print",
   });
 
@@ -123,10 +120,9 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
       reportCost(label, costOf(usage.values()));
 
       expect(errors).toEqual([]);
-      expect(registry.list().filter((record) => record.model !== LIVE_AGENT_MODEL)).toEqual([]);
+      expect(registry.list().filter((record) => record.model !== liveAgentModel())).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
-      removeLiveAgentDir();
     }
   };
 

@@ -1,26 +1,24 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { KeyPress, OverlayApi, SessionRecord } from "../../../../../core/adapter/contract.ts";
-import {
-  createScrollPane,
-  createTranscriptPane,
-  initRenderTheme,
-} from "../../../../../core/adapter/pi-ui.ts";
+import { createScrollPane, createTranscriptPane } from "../../../../../core/adapter/pi-ui.ts";
 import {
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
 } from "../../../../../core/adapter/session-file.ts";
+import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { renderSections, setAllCollapsed } from "../../../src/components/collapsible.ts";
+import { REFRESH_MS } from "../../../src/components/refresh.ts";
 import { promptSections } from "../../../src/components/system-prompt-block.ts";
-import { agentsDirFor, NAMESPACE } from "../../../src/model/paths.ts";
+import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord, RouteResult } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin, COMMAND, REFRESH_MS } from "../../../src/plugins/agent-view/index.ts";
+import { agentViewPlugin, COMMAND } from "../../../src/plugins/agent-view/index.ts";
 import { VIEW_STATE_FILE } from "../../../src/plugins/agent-view/mode-store.ts";
 import { createAgentView } from "../../../src/plugins/agent-view/view.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
@@ -270,7 +268,7 @@ describe("agent view", () => {
     const { view } = await harness.openView(record.id);
     const lines = plain(view.render(100));
 
-    expect(lines[0]).toBe(`✓ ${record.id} (explorer) · done · openai/gpt-6-luna:low`);
+    expect(lines[0]).toBe(`✓ ${record.id} (explorer) · done · ${record.model}`);
     expect(lines[4]).toBe("Effective prompt");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
     expect(lines.at(-1)).toMatch(/^Esc close · ctrl\+o tool detail · PgUp\/PgDn Home\/End wheel scroll/);
@@ -367,6 +365,41 @@ describe("agent view", () => {
     view.handleKey(key("end"));
 
     expect(visible()).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
+  });
+
+  it("starts a fresh transcript when the view follows a successor with another session file", () => {
+    const { api } = fakeApi(40);
+    const full = readSessionFile(FIXTURE, RECORD_ENTRY);
+    const head = { ...full, items: full.items.slice(0, 2) };
+    const tail = { ...full, items: full.items.slice(-2) };
+    const harness = setup();
+    const first = closedAgent(harness);
+    let current = { record: first, session: head };
+    let changed = () => {};
+
+    const view = createAgentView(
+      {
+        load: () => current,
+        stop: () => undefined,
+        send: async () => ({ ok: true, delivery: "steer" }),
+        subscribe: (onChange) => {
+          changed = onChange;
+          return () => {};
+        },
+      },
+      api,
+    );
+
+    const body = (lines: string[]) => plain(lines).slice(1).join("\n");
+    const before = body(view.render(100));
+
+    current = { record: { ...first, sessionFile: "/other.jsonl" }, session: tail };
+    changed();
+
+    const after = body(view.render(100));
+
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(body(viewOf(tail, 40).view.render(100)));
   });
 
   it("enters grace on the first x and closes on the second, notifying the caller once", async () => {
@@ -954,5 +987,128 @@ describe("agent view worktree", () => {
 
     expect(lines[2]).toBe("worktree: /agents/explorer-1/worktree (branch pi-agents/explorer-1)");
     expect(lines[5]).toBe("Effective prompt");
+  });
+});
+
+describe("agent view refresh", () => {
+  it("does not parse the session file again while its size and time are unchanged", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const readSession = vi.spyOn(harness.runtime, "readSession");
+    const registry = harness.services.require("registry");
+    const { view } = await harness.openView(record.id);
+
+    view.render(100);
+    registry.update(record.id, { tokens: 1 });
+    await waitForRefresh();
+    registry.update(record.id, { tokens: 2 });
+    await waitForRefresh();
+    view.render(100);
+
+    expect(readSession).toHaveBeenCalledTimes(1);
+
+    writeFileSync(String(record.sessionFile), "{}\n");
+    registry.update(record.id, { tokens: 3 });
+    await waitForRefresh();
+
+    expect(readSession).toHaveBeenCalledTimes(2);
+
+    view.dispose?.();
+  });
+
+  it("never reloads after close, and reports a failed stop", async () => {
+    const harness = setup();
+    const record = { ...closedAgent(harness), state: "running" as const };
+    const { api, state } = fakeApi(60);
+    let loads = 0;
+    let finishStop: () => void = () => {};
+
+    const stops = [
+      () => Promise.reject(new Error("runner gone")),
+      () =>
+        new Promise<void>((done) => {
+          finishStop = done;
+        }),
+    ];
+
+    const view = createAgentView(
+      {
+        load: () => {
+          loads += 1;
+          return { record, session: readSessionFile(FIXTURE, RECORD_ENTRY) };
+        },
+        stop: () => stops.shift()?.(),
+        send: async () => ({ ok: true, delivery: "steer" }),
+        subscribe: () => () => {},
+      },
+      api,
+    );
+
+    view.handleKey(key("other", "x"));
+    await flush();
+
+    expect(plain(view.render(100))).toContain("stop failed: runner gone");
+
+    view.handleKey(key("other", "x"));
+    view.handleKey(key("escape"));
+    finishStop();
+    await flush();
+
+    expect(state.closed).toBe(true);
+    expect(loads).toBe(1);
+  });
+});
+
+describe("agent view past sessions", () => {
+  const writeManifest = (harness: ReturnType<typeof setup>, manifest: Record<string, unknown>) => {
+    const dir = join(agentsDirFor(harness.host.session()), String(manifest.id));
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, MANIFEST_FILE),
+      typeof manifest.raw === "string" ? manifest.raw : JSON.stringify(manifest),
+    );
+
+    return dir;
+  };
+
+  it("follows a chain of an earlier session to its last link", async () => {
+    const harness = setup();
+    const file = join(harness.root, "old-2.jsonl");
+
+    writeFileSync(file, "");
+    harness.runtime.sessions.set(file, readSessionFile(FIXTURE, RECORD_ENTRY));
+    writeManifest(harness, {
+      id: "explorer-old1",
+      agent: "explorer",
+      description: "old",
+      state: "handoff",
+      successorId: "explorer-old2",
+    });
+    writeManifest(harness, {
+      id: "explorer-old2",
+      agent: "explorer",
+      description: "old",
+      state: "done",
+      chainIndex: 2,
+      predecessorId: "explorer-old1",
+      sessionFile: file,
+    });
+
+    const { view } = await harness.openView("explorer-old1");
+    const lines = plain(view.render(200));
+
+    expect(lines[0]).toContain("explorer-old2 #2");
+    expect(lines.at(-1)).toContain("opened explorer-old1, following the chain");
+  });
+
+  it("reports a corrupt manifest instead of throwing", async () => {
+    const harness = setup();
+
+    writeManifest(harness, { id: "explorer-bad", raw: "{ broken" });
+    await harness.host.runCommand(COMMAND, "explorer-bad");
+
+    expect(harness.host.overlays).toEqual([]);
+    expect(harness.host.notices.at(-1)?.message).toContain('cannot read manifest of "explorer-bad"');
   });
 });

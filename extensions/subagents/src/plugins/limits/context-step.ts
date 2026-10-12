@@ -1,6 +1,6 @@
-export type ContextStep = "none" | "warn" | "handoff" | "abort";
+type ContextStep = "none" | "warn" | "handoff" | "abort";
 
-export type ContextStepInput = {
+type ContextStepInput = {
   tokens: number;
   limit: number;
   softRatio: number;

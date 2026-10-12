@@ -1,6 +1,6 @@
 import type { ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { agentRow } from "../../components/agent-row.ts";
-import { type AgentFrontmatter, ALL } from "../../model/frontmatter.ts";
+import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,
   type AgentRegistry,
@@ -17,7 +17,7 @@ export type RunAgentDetails = { batchId?: string; ids: string[] };
 
 export type MessageAgentParams = { id: string; message: string };
 
-export type ToolDeps = {
+type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
   now?: () => number;
@@ -25,15 +25,11 @@ export type ToolDeps = {
   onRendered?: (batchId: string, invalidate: () => void) => void;
 };
 
-export type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
+type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
   Partial<Pick<AgentFrontmatter, "model" | "subagents">> &
   Pick<AgentInternals, "thinking">;
 
-export type RunAgentLimits = { callerDepth: number; maxDepth: number; maxConcurrent: number };
-
-export type Caller = { id: string; depth: number };
-
-export const MAIN_SESSION_CALLER: Caller = { id: MAIN_CALLER, depth: 1 };
+type RunAgentLimits = { callerDepth: number; maxDepth: number; maxConcurrent: number };
 
 const modelText = (agent: DelegateAgent) => {
   const thinking = agent.thinking ? `:${agent.thinking}` : "";
@@ -72,7 +68,7 @@ const depthRule = ({ callerDepth, maxDepth }: RunAgentLimits) => {
 
 export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgentLimits): string =>
   [
-    "Start one or more background agents as one batch. Each agent gets its own context window, works alone with no access to this conversation, and returns one result. The call returns at once with agent ids; you are woken once, with every result of the batch, when all of its agents are done. After starting a batch, end your turn.",
+    "Start one or more background agents as one batch. Each agent gets its own context window, works alone with no access to this conversation, and returns one result. By default the call returns at once with agent ids and you are woken once, with every result of the batch, when all of its agents are done; after starting such a batch, end your turn. With `wait: true` the call blocks until the batch is done and returns its results.",
     "Agents you may start:",
     agentList(allowedAgents, limits),
     [
@@ -88,13 +84,14 @@ export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgen
     [
       "Result contract: one message per batch with one section per agent, headed `## <id> (<agent>) - <state>`.",
       "- done: the result follows inline, or as `Result file: <path>` with a preview when it is large. A result whose first line is `Status: blocked` means the agent stopped because the task was ambiguous; it lists the questions it needs answered and changed nothing.",
-      "- failed or stopped: the reason is given; there is no result.",
+      "- failed: the reason is given; there is no result.",
+      "- stopped: the reason, plus the agent's last output (inline or as a result file) when it had any.",
       "- handoff: `Handoff file: <path>`; the agent ran out of context before finishing and could not be continued automatically (blocked, the chain cap was reached, or the file does not follow the handoff schema, shown as `(invalid: <reasons>)` after the path). Read the file either way; to continue, start a new agent and pass the handoff file in `files`.",
       "- A `Chain: <id> → <id> (N sessions)` line means the agent continued itself from handoffs; the section carries the last session's id and the totals of all sessions. Any id of the chain works with `message_agent` and `agent_status`.",
     ].join("\n"),
   ].join("\n\n");
 
-export const runAgentParameters = {
+const runAgentParameters = {
   type: "object",
   properties: {
     agents: {
@@ -119,7 +116,7 @@ export const runAgentParameters = {
           model: {
             type: "string",
             description:
-              "Only when the user explicitly named a model or thinking level for this task: `name[:thinking]`, for example `haiku`, `anthropic/claude-haiku-5-5`, `gpt-6.1-sol:high`, or `:low` to change only the thinking level. Omit to use the agent's own model.",
+              "Only when the user explicitly named a model or thinking level for this task: their words as `name[:thinking]`, for example `provider/id`, a short model name, `name:high`, or `:low` to change only the thinking level. Omit to use the agent's own model.",
           },
         },
         required: ["agent", "task"],
@@ -135,7 +132,7 @@ export const runAgentParameters = {
   additionalProperties: false,
 };
 
-export const messageAgentParameters = {
+const messageAgentParameters = {
   type: "object",
   properties: {
     id: { type: "string", description: "Id of an agent you started." },
@@ -159,7 +156,7 @@ const renderRows = (deps: ToolDeps, details: RunAgentDetails | undefined, theme:
 export const runAgentTool = (
   deps: ToolDeps,
   description: string,
-  caller: Caller = MAIN_SESSION_CALLER,
+  callerId: string = MAIN_CALLER,
 ): ToolSpec<RunAgentParams, RunAgentDetails> => ({
   name: "run_agent",
   label: "Run agent",
@@ -167,11 +164,7 @@ export const runAgentTool = (
   promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
   parameters: runAgentParameters,
   execute: async (params, ctx) => {
-    const started = deps.runner.startBatch(params.agents, {
-      callerId: caller.id,
-      callerDepth: caller.depth,
-      wait: params.wait === true,
-    });
+    const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
 
     const details: RunAgentDetails = {
       batchId: started.batchId,

@@ -1,4 +1,4 @@
-export type CallerChannel = {
+type CallerChannel = {
   isBusy(): boolean;
   deliver(text: string): void;
   onIdle(handler: () => void): void;
@@ -7,7 +7,7 @@ export type CallerChannel = {
 export type Outbox = {
   post(text: string): void;
   pending(): number;
-  clear(): void;
+  clear(): string[];
 };
 
 export const createOutbox = (channel: CallerChannel): Outbox => {
@@ -38,8 +38,6 @@ export const createOutbox = (channel: CallerChannel): Outbox => {
   return {
     post,
     pending: () => held.length,
-    clear: () => {
-      held.splice(0);
-    },
+    clear: () => held.splice(0),
   };
 };

@@ -2,11 +2,11 @@ import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 import { treeRow } from "./agent-row.ts";
 
-export type AgentGroup = "working" | "attention" | "done" | "failed" | "closed";
+type AgentGroup = "working" | "attention" | "done" | "failed" | "closed";
 
-export const GROUP_ORDER: AgentGroup[] = ["working", "attention", "done", "failed", "closed"];
+const GROUP_ORDER: AgentGroup[] = ["working", "attention", "done", "failed", "closed"];
 
-export const GROUP_TITLES: Record<AgentGroup, string> = {
+const GROUP_TITLES: Record<AgentGroup, string> = {
   working: "Working",
   attention: "Needs attention",
   done: "Done",
@@ -14,13 +14,13 @@ export const GROUP_TITLES: Record<AgentGroup, string> = {
   closed: "Closed",
 };
 
-export const EMPTY_TEXT = "no agents in this session yet";
+const EMPTY_TEXT = "no agents in this session yet";
 
 export type ListEntry =
   | { kind: "header"; group: AgentGroup; count: number }
   | { kind: "agent"; record: AgentRecord };
 
-export type RenderedList = { lines: string[]; selectedRow?: number };
+type RenderedList = { lines: string[]; selectedRow?: number };
 
 export const groupOf = (record: AgentRecord): AgentGroup => {
   const open = !isClosed(record.state);
@@ -40,7 +40,7 @@ export const groupOf = (record: AgentRecord): AgentGroup => {
   return "closed";
 };
 
-export const matchesFilter = (record: AgentRecord, filter: string) => {
+const matchesFilter = (record: AgentRecord, filter: string) => {
   const needle = filter.trim().toLowerCase();
 
   if (needle.length === 0) {

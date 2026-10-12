@@ -2,7 +2,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getPackageDir, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { RESTORED_SECTIONS, replaceMainPrompt, restoredSections } from "../../adapter/main-prompt.ts";
+import { replaceMainPrompt, restoredSections } from "../../adapter/main-prompt.ts";
+
+const RESTORED_SECTIONS = ["tools", "rules", "docs"] as const;
 
 type BuildSections = (options: NormalizedBuildSystemPromptOptions) => Record<string, string>;
 

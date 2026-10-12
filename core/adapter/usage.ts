@@ -1,4 +1,4 @@
-import { addUsage, emptyUsage, type UsageTotals } from "./contract.ts";
+import { addUsage, type ContextSnapshot, emptyUsage, type UsageTotals } from "./contract.ts";
 
 type RawUsage = Partial<Omit<UsageTotals, "cost">> & { cost?: Partial<UsageTotals["cost"]> };
 
@@ -8,7 +8,7 @@ type RawEntry = {
   message?: { role?: string; usage?: RawUsage };
 };
 
-export const normalizeUsage = (raw: RawUsage | undefined): UsageTotals => {
+const normalizeUsage = (raw: RawUsage | undefined): UsageTotals => {
   if (!raw) {
     return emptyUsage();
   }
@@ -31,12 +31,8 @@ export const normalizeUsage = (raw: RawUsage | undefined): UsageTotals => {
   };
 };
 
-const entryUsage = (entry: RawEntry, includeToolResults: boolean): RawUsage | undefined => {
-  if (entry.type === "usage") {
-    return entry.usage;
-  }
-
-  if (entry.type === "compaction" || entry.type === "branch_summary") {
+const entryUsage = (entry: RawEntry): RawUsage | undefined => {
+  if (entry.type === "usage" || entry.type === "compaction" || entry.type === "branch_summary") {
     return entry.usage;
   }
 
@@ -44,25 +40,25 @@ const entryUsage = (entry: RawEntry, includeToolResults: boolean): RawUsage | un
     return undefined;
   }
 
-  if (entry.message?.role === "assistant") {
-    return entry.message.usage;
-  }
-
-  if (includeToolResults && entry.message?.role === "toolResult") {
-    return entry.message.usage;
-  }
-
-  return undefined;
+  return entry.message?.role === "assistant" || entry.message?.role === "toolResult"
+    ? entry.message.usage
+    : undefined;
 };
 
-export const sumSessionUsage = (entries: readonly unknown[]): UsageTotals =>
+export const sumUsage = (entries: readonly unknown[]): UsageTotals =>
   entries
-    .map((entry) => entryUsage(entry as RawEntry, true))
+    .map((entry) => entryUsage(entry as RawEntry))
     .filter((usage): usage is RawUsage => usage !== undefined)
     .reduce<UsageTotals>((total, usage) => addUsage(total, normalizeUsage(usage)), emptyUsage());
 
-export const sumOwnUsage = (entries: readonly unknown[]): UsageTotals =>
-  entries
-    .map((entry) => entryUsage(entry as RawEntry, false))
-    .filter((usage): usage is RawUsage => usage !== undefined)
-    .reduce<UsageTotals>((total, usage) => addUsage(total, normalizeUsage(usage)), emptyUsage());
+type ContextSource = {
+  getContextUsage(): { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
+  readonly model?: { contextWindow: number };
+};
+
+export const contextOf = (source: ContextSource): ContextSnapshot => {
+  const usage = source.getContextUsage();
+  const window = usage?.contextWindow ?? source.model?.contextWindow ?? 0;
+
+  return { tokens: usage?.tokens ?? null, window, percent: usage?.percent ?? null };
+};

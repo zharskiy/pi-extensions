@@ -1,11 +1,11 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FRONTMATTER_FIELDS } from "../../../src/model/frontmatter.ts";
-import { parseFrontmatter } from "../../../src/plugins/agent-definitions/frontmatter.ts";
+import { FRONTMATTER_FIELDS } from "../../../src/plugins/agent-definitions/fields.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { loadDefinitions, parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
 import { assemblePromptAppend } from "../../../src/plugins/agent-definitions/prompt.ts";
+import { parseFrontmatter } from "../../../src/plugins/agent-definitions/yaml-lite.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../helpers/harness.ts";
 
 const writeAgent = (dir: string, file: string, content: string) => {
@@ -66,7 +66,7 @@ describe("frontmatter", () => {
 describe("agent definition parsing", () => {
   it("accepts comma-separated tools", () => {
     const parsed = parseDefinition(
-      "---\nname: a\ndescription: d\ntools: read, ls\nskills: []\nworktree: true\nlimit: 60000\nsubagents: []\nmodel: openai/gpt-6-luna:low\n---\nDo it.",
+      "---\nname: a\ndescription: d\ntools: read, ls\nskills: []\nworktree: true\nlimit: 60000\nsubagents: []\nmodel: acme/model-a:low\n---\nDo it.",
       "/x/a.md",
       "user",
     );
@@ -78,14 +78,14 @@ describe("agent definition parsing", () => {
       worktree: true,
       limit: 60000,
       subagents: [],
-      model: "openai/gpt-6-luna",
+      model: "acme/model-a",
       thinking: "low",
       prompt: "Do it.",
       source: "user",
     });
   });
 
-  it("ignores keys outside the vocabulary without a warning", () => {
+  it("ignores keys outside the vocabulary with a warning naming them", () => {
     const parsed = parseDefinition(
       "---\nname: a\ndescription: d\nlimit: 50000\ntools: [read]\nskills: []\nsubagents: []\ncolor: blue\neffort: high\npermissionMode: plan\nprompt: Extra rule.\n---\nBody.",
       "/x/a.md",
@@ -93,7 +93,7 @@ describe("agent definition parsing", () => {
     );
 
     expect(parsed.errors).toEqual([]);
-    expect(parsed.warnings).toEqual([]);
+    expect(parsed.warnings).toEqual(["unknown field(s) ignored: color, effort, permissionMode, prompt"]);
     expect(parsed.definition).toMatchObject({
       prompt: "Body.",
       tools: ["read"],
@@ -114,8 +114,7 @@ describe("agent definition parsing", () => {
     expect(parsed.errors).toEqual(
       expect.arrayContaining([
         "description is required",
-        "name may only contain letters, digits, '-' and '_'",
-        expect.stringContaining("thinking is no longer a field"),
+        "name must be a plain name of letters, digits, '_' and '-', not starting with '-'",
         "limit must be an integer of at least 5000",
         "subagents must be a list or a comma-separated string",
         'model must be name[:thinking] without spaces, got "gpt 6"',
@@ -183,34 +182,34 @@ describe("model field", () => {
     );
 
   it("accepts a bare model name and a thinking suffix", () => {
-    expect(parse("model: haiku:low").definition).toMatchObject({ model: "haiku", thinking: "low" });
-    expect(parse("model: openai/gpt-6.1-sol:high").definition).toMatchObject({
-      model: "openai/gpt-6.1-sol",
+    expect(parse("model: model-a:low").definition).toMatchObject({ model: "model-a", thinking: "low" });
+    expect(parse("model: acme/model-b:high").definition).toMatchObject({
+      model: "acme/model-b",
       thinking: "high",
     });
     expect(parse("model: inherit:max").definition).toMatchObject({ model: undefined, thinking: "max" });
   });
 
   it("keeps a numeric suffix as part of the model id", () => {
-    expect(parse("model: amazon-bedrock/claude-haiku-4-5-v1:0").definition?.model).toBe(
-      "amazon-bedrock/claude-haiku-4-5-v1:0",
-    );
+    expect(parse("model: acme/model-a-v1:0").definition?.model).toBe("acme/model-a-v1:0");
   });
 
-  it("rejects a thinking field and points to the model suffix", () => {
-    expect(parse("model: haiku\nthinking: low").errors).toEqual([
-      "thinking is no longer a field; put the level on the model as a suffix, for example model: openai/gpt-6-luna:high",
-    ]);
+  it("treats a thinking field as unknown", () => {
+    const parsed = parse("model: model-a\nthinking: low");
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toEqual(["unknown field(s) ignored: thinking"]);
+    expect(parsed.definition?.thinking).toBeUndefined();
   });
 
   it("rejects an invalid thinking suffix", () => {
-    expect(parse("model: haiku:extreme").errors).toEqual([
+    expect(parse("model: model-a:extreme").errors).toEqual([
       expect.stringContaining('model: invalid thinking level "extreme"'),
     ]);
   });
 
   it("inherits the thinking level when the model has no suffix", () => {
-    expect(parse("model: openai/gpt-6.1-sol").definition?.thinking).toBeUndefined();
+    expect(parse("model: acme/model-b").definition?.thinking).toBeUndefined();
   });
 });
 
@@ -334,21 +333,10 @@ describe("definition loading", () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect([...result.definitions.keys()].sort()).toEqual(["explorer", "general", "implementer", "reviewer"]);
-    expect(
-      ["explorer", "reviewer", "implementer", "general"].map((name) => {
-        const definition = result.definitions.get(name);
-
-        return `${definition?.model}:${definition?.thinking}`;
-      }),
-    ).toEqual([
-      "openai/gpt-6-luna:low",
-      "openai/gpt-6-luna:high",
-      "openai/gpt-6.1-sol:medium",
-      "openai/gpt-6.1-sol:medium",
-    ]);
 
     result.definitions.forEach((definition) => {
-      expect(definition.model).toMatch(/^openai\//);
+      expect(definition.model).toBeUndefined();
+      expect(definition.thinking).toBeUndefined();
       expect(definition.limit).toBeGreaterThanOrEqual(5000);
       expect(definition.worktree).toBe(false);
     });
@@ -368,9 +356,9 @@ describe("definition loading", () => {
     );
   });
 
-  it("declares exactly the frontmatter schema's fields in each shipped file, in the schema's order", () => {
+  it("declares every frontmatter field but model in each shipped file, in the schema's order", () => {
     const dir = join(PACKAGE_ROOT, "agents");
-    const keys = FRONTMATTER_FIELDS.map((spec) => spec.key);
+    const keys = FRONTMATTER_FIELDS.map((spec) => spec.key).filter((key) => key !== "model");
 
     readdirSync(dir).forEach((file) => {
       expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
@@ -394,7 +382,6 @@ describe("definition loading", () => {
       const row = rows[index];
 
       expect(row.required).toBe(spec.required ? "required" : `\`${spec.byDefault}\``);
-      expect(row.meaning.startsWith(spec.meaning)).toBe(true);
       expect(row.type.includes("`all`")).toBe(spec.kind === "list");
       expect(spec.allMeaning === undefined || row.meaning.includes(`\`all\`: ${spec.allMeaning}`)).toBe(true);
     });
@@ -560,7 +547,7 @@ describe("prompt assembly", () => {
 });
 
 describe("agent-definitions plugin", () => {
-  it("loads user and trusted project agents, notifies invalid files and sets the main session prompt", () => {
+  it("loads user and trusted project agents and notifies invalid files", () => {
     const harness = createHarness([agentDefinitionsPlugin]);
 
     writeAgent(join(harness.host.info.agentDir, "agents"), "mine.md", agentFile("mine", "my agent"));
@@ -576,12 +563,7 @@ describe("agent-definitions plugin", () => {
     expect(harness.host.notices.map((notice) => notice.message)).toEqual([
       expect.stringContaining("invalid agent file"),
     ]);
-
-    const mainPrompt = readFileSync(join(PACKAGE_ROOT, "prompts", "main-session.md"), "utf8").trim();
-
-    expect(harness.host.mainPrompt).toBe(mainPrompt);
-    expect(definitions.mainPrompt()).toBe(mainPrompt);
-    expect(harness.host.sections.size).toBe(0);
+    expect(harness.host.mainPrompt).toBeUndefined();
 
     harness.host.info.projectTrusted = true;
     harness.host.start();

@@ -21,6 +21,7 @@ import {
   toggleSection,
 } from "../../components/collapsible.ts";
 import { contextBreakdown, renderBreakdown } from "../../components/context-breakdown.ts";
+import { scrollHint, stopHint } from "../../components/hints.ts";
 import { promptSections } from "../../components/system-prompt-block.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
 import { type AgentRecord, isClosed, type RouteResult, worktreeText } from "../../model/types.ts";
@@ -28,13 +29,13 @@ import type { ModeStore, ViewMode } from "./mode-store.ts";
 
 export type ViewData = { record: AgentRecord; openedId?: string; session?: SessionRecord; error?: string };
 
-export type ContextSettings = {
+type ContextSettings = {
   softRatio: number;
   reserveTokens: number;
   estimate(text: string): number;
 };
 
-export type ViewDeps = {
+type ViewDeps = {
   load(): ViewData;
   context?: ContextSettings;
   stop(): Promise<unknown> | undefined;
@@ -44,7 +45,7 @@ export type ViewDeps = {
   now?: () => number;
 };
 
-export const wrapPlain = (text: string, width: number) => {
+const wrapPlain = (text: string, width: number) => {
   const size = Math.max(10, width);
 
   if (text.length <= size) {
@@ -56,36 +57,25 @@ export const wrapPlain = (text: string, width: number) => {
   );
 };
 
-export const INPUT_PLACEHOLDER = "message the agent…";
+const INPUT_PLACEHOLDER = "message the agent…";
 
-const stopHint = (record: AgentRecord) => {
-  if (record.state === "grace") {
-    return "x again closes now";
-  }
-
-  return isClosed(record.state) ? undefined : "x stop";
-};
-
-const scrollHint = (api: OverlayApi) =>
-  api.wheelScrolling ? "PgUp/PgDn Home/End wheel scroll" : "PgUp/PgDn Home/End scroll";
-
-export const inputHintText = (api: OverlayApi) =>
+const inputHintText = (api: OverlayApi) =>
   [
     "Message box: Enter send",
     "Esc clear, again leaves the box",
     "Tab prompt sections",
     `${api.toolsKey} tool detail`,
-    scrollHint(api),
+    scrollHint(api.wheelScrolling),
   ].join(" · ");
 
-export const CONTEXT_KEY = "c";
+const CONTEXT_KEY = "c";
 
-export const MODE_KEY = "v";
+const MODE_KEY = "v";
 
-export const modeHint = (mode: ViewMode) =>
+const modeHint = (mode: ViewMode) =>
   mode === "focus" ? `focus view, ${MODE_KEY} verbose` : `verbose view, ${MODE_KEY} focus`;
 
-export type HintOptions = {
+type HintOptions = {
   openedId?: string;
   breakdown: "unavailable" | "shown" | "hidden";
   mode: ViewMode;
@@ -97,7 +87,7 @@ const breakdownHint: Record<HintOptions["breakdown"], string | undefined> = {
   hidden: `${CONTEXT_KEY} context breakdown`,
 };
 
-export const hintText = (api: OverlayApi, record: AgentRecord, options: HintOptions) => {
+const hintText = (api: OverlayApi, record: AgentRecord, options: HintOptions) => {
   const closed = isClosed(record.state);
   const { openedId, breakdown, mode } = options;
 
@@ -106,7 +96,7 @@ export const hintText = (api: OverlayApi, record: AgentRecord, options: HintOpti
     openedId ? `opened ${openedId}, following the chain` : undefined,
     stopHint(record),
     `${api.toolsKey} tool detail`,
-    scrollHint(api),
+    scrollHint(api.wheelScrolling),
     breakdownHint[breakdown],
     closed ? "Tab/Enter prompt sections" : "Tab/Enter prompt sections, Tab to the message box",
     modeHint(mode),
@@ -116,7 +106,7 @@ export const hintText = (api: OverlayApi, record: AgentRecord, options: HintOpti
     .join(" · ");
 };
 
-export const titleText = (record: AgentRecord, theme: ThemeLike) => {
+const titleText = (record: AgentRecord, theme: ThemeLike, frame: number) => {
   const links = [
     record.predecessorId ? `continues ${record.predecessorId}` : undefined,
     record.successorId ? `continued by ${record.successorId}` : undefined,
@@ -129,10 +119,21 @@ export const titleText = (record: AgentRecord, theme: ThemeLike) => {
   const alert = attention ? theme.fg("warning", ` · ${attention}`) : "";
   const name = theme.bold(`${record.id}${chainLabel(record)}`);
 
-  return `${stateIcon(record.state, 0)} ${name} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}${links}${alert}`;
+  return `${stateIcon(record.state, frame)} ${name} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}${links}${alert}`;
 };
 
 type Status = { tone: "warning" | "dim"; text: string };
+
+type ContextCache = {
+  session?: SessionRecord;
+  record: AgentRecord;
+  version: number;
+  width: number;
+  theme: ThemeLike;
+  lines: string[];
+};
+
+const promptKeyOf = (data: ViewData) => (data.session ? JSON.stringify(data.session.prompt) : "");
 
 const deliveryText: Record<"steer" | "followUp" | "held", string> = {
   steer: "sent: steered into the current run",
@@ -159,13 +160,19 @@ type PromptBlock = {
   headerRows: number[];
 };
 
+const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.sessionFile ?? ""}`;
+
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const now = deps.now ?? Date.now;
-  const transcript = api.createTranscript();
+  let transcript = api.createTranscript();
   const scroll = api.createScroll();
   let mode: ViewMode = deps.modes?.read() ?? "focus";
   let data = deps.load();
+  let promptKey = promptKeyOf(data);
+  let transcriptKey = transcriptKeyOf(data);
   let sections = data.session ? promptSections(data.session.prompt) : [];
+  let frame = 0;
+  let closed = false;
   let toolsExpanded = false;
   let focused = 0;
   let inputFocused = false;
@@ -174,7 +181,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   let headerRows: number[] = [];
   let promptCache: PromptBlock | undefined;
   let contextShown = false;
-  let contextCache: { data: ViewData; width: number; theme: ThemeLike; lines: string[] } | undefined;
+  let contextCache: ContextCache | undefined;
 
   const applyMode = () => {
     const verbose = mode === "verbose";
@@ -193,8 +200,20 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     deps.modes?.write(mode);
   };
 
+  const syncTranscript = () => {
+    const key = transcriptKeyOf(data);
+
+    if (key !== transcriptKey) {
+      transcriptKey = key;
+      transcript = api.createTranscript();
+      transcript.setToolsExpanded(toolsExpanded);
+    }
+
+    transcript.sync(data.session?.items ?? []);
+  };
+
   applyMode();
-  transcript.sync(data.session?.items ?? []);
+  syncTranscript();
 
   const messageBox = () => {
     if (isClosed(data.record.state)) {
@@ -215,17 +234,29 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   };
 
   const reload = () => {
+    if (closed) {
+      return;
+    }
+
+    const previous = data.session;
+
     data = deps.load();
+    frame += 1;
 
-    const fresh = data.session ? promptSections(data.session.prompt) : [];
+    const key = data.session === previous ? promptKey : promptKeyOf(data);
 
-    sections = mergeCollapsed(sections, setAllCollapsed(fresh, mode === "focus"));
+    if (key !== promptKey) {
+      const fresh = data.session ? promptSections(data.session.prompt) : [];
+
+      promptKey = key;
+      sections = mergeCollapsed(sections, setAllCollapsed(fresh, mode === "focus"));
+    }
 
     if (isClosed(data.record.state)) {
       setInputFocus(false);
     }
 
-    transcript.sync(data.session?.items ?? []);
+    syncTranscript();
     api.requestRender();
   };
 
@@ -241,7 +272,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       : [];
 
     return [
-      titleText(record, theme),
+      titleText(record, theme, frame),
       theme.fg("muted", truncate(`Task: ${record.description}`, width)),
       ...worktree,
       theme.fg("dim", truncate(detail, width)),
@@ -253,11 +284,20 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const cached = contextCache;
 
-    if (cached?.data === data && cached.width === width && cached.theme === theme) {
+    const record = data.record;
+
+    const reusable =
+      cached !== undefined &&
+      cached.session === data.session &&
+      cached.record === record &&
+      cached.version === record.version &&
+      cached.width === width &&
+      cached.theme === theme;
+
+    if (reusable) {
       return cached.lines;
     }
 
-    const record = data.record;
     const window = record.context?.window ?? 0;
     const prompt = data.session?.prompt ?? { sections: [], tools: [], skills: [], guidelines: [] };
 
@@ -275,7 +315,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       theme.fg("dim", "─".repeat(Math.max(0, width))),
     );
 
-    contextCache = { data, width, theme, lines };
+    contextCache = { session: data.session, record, version: record.version, width, theme, lines };
 
     return lines;
   };
@@ -415,14 +455,28 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     focusSection(focused + 1);
   };
 
-  const close = () => {
+  const dispose = () => {
+    closed = true;
     unsubscribe();
+  };
+
+  const close = () => {
+    dispose();
     api.close();
+  };
+
+  const fail = (error: unknown) => {
+    if (closed) {
+      return;
+    }
+
+    status = { tone: "warning", text: `stop failed: ${(error as Error).message}` };
+    api.requestRender();
   };
 
   const stop = () => {
     if (!isClosed(data.record.state)) {
-      void Promise.resolve(deps.stop()).then(reload);
+      void Promise.resolve(deps.stop()).then(reload).catch(fail);
     }
   };
 
@@ -552,6 +606,6 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     handleWheel: (lines) => {
       scroll.scrollBy(lines);
     },
-    dispose: unsubscribe,
+    dispose,
   };
 };

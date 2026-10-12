@@ -4,9 +4,9 @@ import type { Worktree } from "../../model/types.ts";
 
 export const WORKTREE_DIR = "worktree";
 
-export const BRANCH_PREFIX = "pi-agents/";
+const BRANCH_PREFIX = "pi-agents/";
 
-export type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
+type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
 
 export type Worktrees = {
   create(cwd: string, agentDir: string, branch: string): Promise<WorktreeResult>;
@@ -20,7 +20,7 @@ const REPOSITORY_OVERRIDES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT
 const gitEnv = () =>
   Object.fromEntries(Object.entries(process.env).filter(([key]) => !REPOSITORY_OVERRIDES.includes(key)));
 
-export const runGit = (cwd: string, args: string[]) =>
+const runGit = (cwd: string, args: string[]) =>
   new Promise<GitResult>((done) => {
     execFile("git", ["-C", cwd, ...args], { env: gitEnv() }, (error, stdout, stderr) => {
       if (error) {
@@ -55,7 +55,7 @@ export const createWorktree = async (
   return { ok: true, worktree: { path, branch, cwd: resolve(path, prefix.output) } };
 };
 
-export const removeWorktree = async (cwd: string, worktree: Worktree) => {
+const removeWorktree = async (cwd: string, worktree: Worktree) => {
   const removed = await runGit(cwd, ["worktree", "remove", "--force", worktree.path]);
 
   if (!removed.ok) {

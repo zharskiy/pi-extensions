@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { FRONTMATTER_FIELDS, missingFieldMessage } from "../../src/model/frontmatter.ts";
+import { FRONTMATTER_FIELDS } from "../../../src/plugins/agent-definitions/fields.ts";
 
-describe("frontmatter schema", () => {
-  it("gives every field a one-line meaning and either a required flag or a default", () => {
+describe("frontmatter fields", () => {
+  it("gives every field either a required flag or a default", () => {
     FRONTMATTER_FIELDS.forEach((spec) => {
-      expect(spec.meaning).toMatch(/^[^\n]+\.$/);
       expect(spec.required).toBe(spec.byDefault === undefined);
     });
   });
@@ -36,19 +35,6 @@ describe("frontmatter schema", () => {
       "skills",
       "subagents",
       "worktree",
-    ]);
-  });
-
-  it("names what a missing required field takes", () => {
-    const messages = FRONTMATTER_FIELDS.filter((spec) => spec.required).map(missingFieldMessage);
-
-    expect(messages).toEqual([
-      "name is required",
-      "description is required",
-      "limit is required (context limit in tokens, for example limit: 100000)",
-      "tools is required (tool names, all for the tools active in the main session, or [] for none)",
-      "skills is required (skill names, all for every skill of the main session, or [] for none)",
-      "subagents is required (agent names it may start, all for every other agent, or [] for none)",
     ]);
   });
 });

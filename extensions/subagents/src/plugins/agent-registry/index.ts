@@ -1,8 +1,7 @@
+import { BUSY_CHANNEL } from "../../../../../core/manager/channels.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, isClosed } from "../../model/types.ts";
 import { createRegistry } from "./registry.ts";
-
-export const BUSY_CHANNEL = "session-limits:busy";
 
 export const BUSY_SOURCE = "pi-subagents";
 

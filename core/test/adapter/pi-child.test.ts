@@ -31,6 +31,7 @@ type LoaderOptions = {
 const captured = vi.hoisted(() => ({
   loaderOptions: [] as LoaderOptions[],
   sessionOptions: [] as { tools?: string[] }[],
+  session: undefined as unknown,
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
@@ -58,7 +59,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
     createAgentSession: async (options: { tools?: string[] }) => {
       captured.sessionOptions.push(options);
 
-      return { session: fakeSession };
+      return { session: captured.session ?? fakeSession };
     },
   };
 });
@@ -66,8 +67,8 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 const fakeModel = { provider: "fake", id: "model", contextWindow: 100_000, cost: { input: 1, output: 1 } };
 
 const otherModel = {
-  provider: "openai",
-  id: "gpt-6-luna",
+  provider: "acme",
+  id: "model-b",
   contextWindow: 400_000,
   cost: { input: 1, output: 1 },
 };
@@ -309,5 +310,159 @@ describe("child skills", () => {
     expect(all.skillsOverride).toBeUndefined();
     expect(named).toMatchObject({ noSkills: true, additionalSkillPaths: [] });
     expect(keptNames(named)).toEqual(["git"]);
+  });
+});
+
+type SessionListener = (event: { type: string; aborted?: boolean; message?: unknown }) => void;
+
+const scriptedSession = () => {
+  const calls: string[] = [];
+  let listener: SessionListener = () => {};
+  let promptError: Error | undefined;
+  let bindError: Error | undefined;
+  const queued: string[] = [];
+
+  const session = {
+    isStreaming: false,
+    sessionFile: undefined,
+    bindExtensions: async () => {
+      if (bindError) {
+        throw bindError;
+      }
+    },
+    subscribe: (next: SessionListener) => {
+      listener = next;
+      return () => {};
+    },
+    prompt: async (text: string) => {
+      calls.push(`prompt ${text}`);
+
+      const error = promptError;
+
+      promptError = undefined;
+
+      if (error) {
+        throw error;
+      }
+    },
+    steer: async (text: string) => {
+      calls.push(`steer ${text}`);
+    },
+    followUp: async (text: string) => {
+      calls.push(`followUp ${text}`);
+    },
+    get pendingMessageCount() {
+      return queued.length;
+    },
+    clearQueue: () => ({ steering: queued.splice(0), followUp: [] }),
+    extensionRunner: {
+      hasHandlers: () => true,
+      emit: async (event: { type: string }) => {
+        calls.push(`emit ${event.type}`);
+      },
+    },
+    dispose: () => {
+      calls.push("dispose");
+    },
+  };
+
+  return {
+    session,
+    calls,
+    settle: () => listener({ type: "agent_settled", aborted: false }),
+    leaveQueued: (text: string) => {
+      queued.push(text);
+    },
+    failNextPrompt: (error: Error) => {
+      promptError = error;
+    },
+    failBind: (error: Error) => {
+      bindError = error;
+    },
+  };
+};
+
+const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+
+describe("child prompting", () => {
+  beforeEach(() => {
+    captured.session = undefined;
+  });
+
+  const spawnScripted = async () => {
+    const scripted = scriptedSession();
+
+    captured.session = scripted.session;
+
+    const child = await runtime.spawn(spec({ tools: [] }));
+    const events: string[] = [];
+
+    child.subscribe((event) => {
+      events.push(event.type === "assistant_message" ? `error ${event.errorMessage}` : event.type);
+    });
+
+    return { ...scripted, child, events };
+  };
+
+  it("queues messages on the running prompt even before pi reports streaming", async () => {
+    const { child, calls, settle } = await spawnScripted();
+
+    child.start("task");
+    await child.send({ sender: "main", text: "hi" }, "steer");
+    await child.wake("more");
+
+    expect(calls).toEqual(["prompt task", expect.stringMatching(/^steer .*hi/s), "followUp more"]);
+
+    settle();
+    await child.wake("again");
+
+    expect(calls.at(-1)).toBe("prompt again");
+  });
+
+  it("reports a wake whose prompt fails after the first turn", async () => {
+    const { child, events, settle, failNextPrompt } = await spawnScripted();
+
+    child.start("task");
+    settle();
+    failNextPrompt(new Error("auth expired"));
+    await child.wake("go on");
+    await flushMicrotasks();
+
+    expect(events).toEqual(["settled", "error Error: auth expired", "settled"]);
+  });
+
+  it("runs messages left in pi's queue at settle instead of reporting settled", async () => {
+    const { child, calls, events, settle, leaveQueued } = await spawnScripted();
+
+    child.start("task");
+    leaveQueued("late");
+    settle();
+
+    expect(calls.at(-1)).toBe("prompt late");
+    expect(events).toEqual([]);
+
+    settle();
+
+    expect(events).toEqual(["settled"]);
+  });
+
+  it("never prompts a disposed session", async () => {
+    const { child, calls } = await spawnScripted();
+
+    await child.dispose();
+    await child.wake("too late");
+    await child.send({ sender: "main", text: "hi" }, "steer");
+
+    expect(calls).toEqual(["emit session_shutdown", "dispose"]);
+  });
+
+  it("shuts down and disposes the session when binding its extensions fails", async () => {
+    const scripted = scriptedSession();
+
+    scripted.failBind(new Error("bind failed"));
+    captured.session = scripted.session;
+
+    await expect(runtime.spawn(spec({ tools: [] }))).rejects.toThrow("bind failed");
+    expect(scripted.calls).toEqual(["emit session_shutdown", "dispose"]);
   });
 });

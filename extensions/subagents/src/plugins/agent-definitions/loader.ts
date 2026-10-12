@@ -1,22 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { splitModelRequest } from "../../../../../core/adapter/contract.ts";
-import {
-  type AgentFrontmatter,
-  ALL,
-  type FieldKind,
-  type FieldSpec,
-  FRONTMATTER_FIELDS,
-  INHERIT_MODEL,
-  missingFieldMessage,
-} from "../../model/frontmatter.ts";
+import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentDefinition,
   type AgentSource,
   type DefinitionError,
   subagentNames,
 } from "../../model/types.ts";
-import { type FrontmatterValue, parseFrontmatter, parseScalar } from "./frontmatter.ts";
+import { FRONTMATTER_FIELDS, readField } from "./fields.ts";
+import { parseFrontmatter } from "./yaml-lite.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 
@@ -26,142 +18,7 @@ export type LoadResult = {
   warnings: DefinitionError[];
 };
 
-const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/i;
-
-type FieldResult = { value?: unknown; thinking?: string; error?: string; warning?: string };
-
-type FieldParser = (spec: FieldSpec, value: FrontmatterValue) => FieldResult;
-
-const textField: FieldParser = (spec, value) => {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return { error: `${spec.key} must be a non-empty string` };
-  }
-
-  return { value: value.trim() };
-};
-
-const nameField: FieldParser = (spec, value) => {
-  const field = textField(spec, value);
-
-  if (typeof field.value === "string" && !NAME_PATTERN.test(field.value)) {
-    return { error: `${spec.key} may only contain letters, digits, '-' and '_'` };
-  }
-
-  return field;
-};
-
-const modelField: FieldParser = (spec, value) => {
-  const field = textField(spec, value);
-
-  if (typeof field.value !== "string") {
-    return field;
-  }
-
-  if (/\s/.test(field.value)) {
-    return { error: `${spec.key} must be name[:thinking] without spaces, got "${field.value}"` };
-  }
-
-  const request = splitModelRequest(field.value);
-
-  if (request.error) {
-    return { error: `${spec.key}: ${request.error}` };
-  }
-
-  if (request.name.length === 0 || request.name === INHERIT_MODEL) {
-    return { thinking: request.thinking };
-  }
-
-  return { value: request.name, thinking: request.thinking };
-};
-
-const integerField: FieldParser = (spec, value) => {
-  const min = spec.min ?? 0;
-
-  if (typeof value !== "number" || !Number.isInteger(value) || value < min) {
-    return { error: `${spec.key} must be an integer of at least ${min}` };
-  }
-
-  return { value };
-};
-
-const listOf = (value: FrontmatterValue) => {
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return Array.isArray(value) ? value : undefined;
-};
-
-const entryErrors = (spec: FieldSpec, names: string[]) => {
-  const invalid = spec.entry ? names.filter((name) => !spec.entry?.pattern.test(name)) : [];
-
-  return invalid.length > 0
-    ? `${spec.key} entries must be ${spec.entry?.text}, got: ${invalid.join(", ")}`
-    : undefined;
-};
-
-const listField: FieldParser = (spec, value) => {
-  const names = listOf(value);
-
-  if (!names) {
-    return { error: `${spec.key} must be a list or a comma-separated string` };
-  }
-
-  const misspelled = names.filter((name) => name !== ALL && name.toLowerCase() === ALL);
-
-  if (misspelled.length > 0) {
-    return { error: `${spec.key} takes all in lowercase, got: ${misspelled.join(", ")}` };
-  }
-
-  if (names.includes(ALL)) {
-    return names.length > 1
-      ? { error: `${spec.key} must be all on its own or a list of names, got: ${names.join(", ")}` }
-      : { value: ALL };
-  }
-
-  const invalid = entryErrors(spec, names);
-
-  if (invalid) {
-    return { error: invalid };
-  }
-
-  const unique = Array.from(new Set(names));
-  const duplicates = Array.from(new Set(names.filter((name, index) => names.indexOf(name) !== index)));
-
-  if (duplicates.length > 0) {
-    return { value: unique, warning: `${spec.key} lists entries more than once: ${duplicates.join(", ")}` };
-  }
-
-  return { value: unique };
-};
-
-const switchField: FieldParser = (spec, value) =>
-  typeof value === "boolean" ? { value } : { error: `${spec.key} must be true or false` };
-
-const PARSERS: Record<FieldKind, FieldParser> = {
-  name: nameField,
-  text: textField,
-  model: modelField,
-  integer: integerField,
-  list: listField,
-  switch: switchField,
-};
-
-const readField = (spec: FieldSpec, raw: FrontmatterValue | undefined): FieldResult => {
-  const value = raw ?? (spec.byDefault === undefined ? undefined : parseScalar(spec.byDefault));
-
-  if (value === undefined) {
-    return spec.required ? { error: missingFieldMessage(spec) } : {};
-  }
-
-  return PARSERS[spec.kind](spec, value);
-};
-
-const REMOVED_THINKING_FIELD =
-  "thinking is no longer a field; put the level on the model as a suffix, for example model: openai/gpt-6-luna:high";
+const FIELD_KEYS: ReadonlySet<string> = new Set(FRONTMATTER_FIELDS.map((spec) => spec.key));
 
 const definedText = (values: (string | undefined)[]) =>
   values.filter((value): value is string => value !== undefined);
@@ -173,12 +30,13 @@ export const parseDefinition = (
 ): { definition?: AgentDefinition; errors: string[]; warnings: string[] } => {
   const { data, body } = parseFrontmatter(source);
   const results = FRONTMATTER_FIELDS.map((spec) => ({ spec, result: readField(spec, data[spec.key]) }));
+  const unknown = Object.keys(data).filter((key) => !FIELD_KEYS.has(key));
 
   const errors = definedText(results.map(({ result }) => result.error));
   const warnings = definedText(results.map(({ result }) => result.warning));
 
-  if (data.thinking !== undefined) {
-    errors.push(REMOVED_THINKING_FIELD);
+  if (unknown.length > 0) {
+    warnings.push(`unknown field(s) ignored: ${unknown.join(", ")}`);
   }
 
   if (errors.length > 0) {

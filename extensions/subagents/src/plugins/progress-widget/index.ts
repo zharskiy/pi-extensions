@@ -1,10 +1,11 @@
+import { createThrottle } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
-import { createClosedRowCache, createThrottle, visibleRecords, widgetLines } from "./model.ts";
+import { createClosedRowCache, visibleRecords, widgetLines } from "./model.ts";
 
 export const WIDGET_KEY = "pi-subagents-progress";
 
-export const TICK_MS = 1_000;
+const TICK_MS = 1_000;
 
 export const progressWidgetPlugin: Plugin = {
   id: "progress-widget",
@@ -15,6 +16,7 @@ export const progressWidgetPlugin: Plugin = {
     let ticker: ReturnType<typeof setInterval> | undefined;
     let handle: { refresh(): void } | undefined;
     let shownSignature = "";
+    let frame = 0;
     const rowCache = createClosedRowCache();
 
     const visible = () => visibleRecords(registry.list(), Date.now(), settings);
@@ -57,7 +59,7 @@ export const progressWidgetPlugin: Plugin = {
 
       if (!shown) {
         handle = host.ui.setWidget(WIDGET_KEY, (width, theme) =>
-          widgetLines(visible(), Date.now(), theme, width, rowCache),
+          widgetLines(visible(), Date.now(), frame, theme, width, rowCache),
         );
         shown = true;
         shownSignature = "";
@@ -72,16 +74,12 @@ export const progressWidgetPlugin: Plugin = {
       }
 
       shownSignature = signature ?? "";
+      frame += 1;
       handle?.refresh();
     };
 
     const throttled = createThrottle(refresh, () => settings.renderThrottleMs);
     const off = bus.on("agent:changed", () => throttled());
-
-    host.onSessionStart(() => {
-      shown = false;
-      throttled();
-    });
 
     return () => {
       off();

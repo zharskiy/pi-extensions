@@ -31,6 +31,9 @@ export const conversationOnly = (host: Host): Host => {
     onIdle: (handler) => {
       host.onIdle(whenActive(handler));
     },
+    onCompact: (handler) => {
+      host.onCompact(whenActive(handler));
+    },
     registerCommand: (name, spec) => {
       host.registerCommand(name, {
         ...spec,

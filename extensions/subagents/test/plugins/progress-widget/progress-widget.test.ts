@@ -3,11 +3,7 @@ import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { NewAgent } from "../../../src/model/types.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { progressWidgetPlugin, WIDGET_KEY } from "../../../src/plugins/progress-widget/index.ts";
-import {
-  createClosedRowCache,
-  createThrottle,
-  visibleRecords,
-} from "../../../src/plugins/progress-widget/model.ts";
+import { createClosedRowCache, visibleRecords } from "../../../src/plugins/progress-widget/model.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const newAgent = (patch: Partial<NewAgent> = {}): NewAgent => ({
@@ -29,27 +25,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe("throttle", () => {
-  it("runs at most once per interval and keeps a trailing call", () => {
-    const run = vi.fn();
-    const throttled = createThrottle(run, () => 250);
-
-    throttled();
-    throttled();
-    throttled();
-
-    expect(run).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(249);
-
-    expect(run).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(1);
-
-    expect(run).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe("linger", () => {

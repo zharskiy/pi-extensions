@@ -1,6 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { afterAll } from "vitest";
 import type { AgentRuntime } from "../../../../core/adapter/contract.ts";
 import { createExtensionManager } from "../../../../core/manager/extension-manager.ts";
 import { createFakeHost, createFakeRuntime, type FakeHost } from "../../../../core/test/helpers/fakes.ts";
@@ -9,7 +10,21 @@ import { applySettings, defaultSettings, type Settings } from "../../src/model/s
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");
 
-export const tempDir = (prefix = "pi-subagents-") => mkdtempSync(join(tmpdir(), prefix));
+const created: string[] = [];
+
+afterAll(() => {
+  created.splice(0).forEach((dir) => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+export const tempDir = (prefix = "pi-subagents-") => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+
+  created.push(dir);
+
+  return dir;
+};
 
 export const startPlugins = <R extends AgentRuntime>(
   host: FakeHost,
@@ -41,7 +56,6 @@ export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = 
   const host = createFakeHost({
     id: "main-session",
     file: join(root, "sessions", "main.jsonl"),
-    dir: join(root, "sessions"),
     cwd: join(root, "project"),
     agentDir: join(root, "agent"),
   });

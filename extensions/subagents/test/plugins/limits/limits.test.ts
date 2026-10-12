@@ -7,7 +7,7 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { contextStep } from "../../../src/plugins/limits/context-step.ts";
-import { LIMITS_SENDER, limitsPlugin } from "../../../src/plugins/limits/index.ts";
+import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { VALID_HANDOFF } from "../../helpers/handoff.ts";
@@ -91,7 +91,7 @@ describe("limits plugin", () => {
     await turn(81_000);
 
     expect(child.messages).toHaveLength(1);
-    expect(child.messages[0].message.sender).toBe(LIMITS_SENDER);
+    expect(child.messages[0].message.sender).toBe("pi-subagents");
     expect(child.messages[0].message.text).toContain("Context limit warning");
     expect(child.messages[0].delivery).toBe("steer");
 

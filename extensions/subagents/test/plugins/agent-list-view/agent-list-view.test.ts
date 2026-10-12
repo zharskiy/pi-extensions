@@ -1,7 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import type { KeyPress, OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
-import { createScrollPane, initRenderTheme } from "../../../../../core/adapter/pi-ui.ts";
+import { createScrollPane } from "../../../../../core/adapter/pi-ui.ts";
+import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { NewAgent } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";

@@ -50,9 +50,12 @@ describe("extension manager", () => {
     const log: string[] = [];
     const some = managerOf([stub("a", [], log), stub("b", ["a"], log), stub("c", [], log)], ["a"]);
 
-    expect(some.manager.report().skipped).toEqual([
-      { id: "a", reason: "disabled in settings" },
-      { id: "b", reason: "requires a" },
+    expect(some.host.notices).toEqual([]);
+
+    some.host.start();
+
+    expect(some.host.notices).toEqual([
+      { message: "plugins skipped because a plugin they need is off: b (needs a)", level: "warning" },
     ]);
 
     const all = managerOf([stub("x", [], log), stub("y", ["x"], log)]);
@@ -66,7 +69,7 @@ describe("extension manager", () => {
     expect(() => orderPlugins([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
   });
 
-  it("hands each plugin the typed bus, services, settings and root, and records what it adds", () => {
+  it("hands each plugin the host, typed bus, services, settings and root", () => {
     const seen: string[] = [];
 
     const provider: TestPlugin = {
@@ -104,12 +107,8 @@ describe("extension manager", () => {
     manager.bus.emit("ping", { from: "test" });
 
     expect(seen).toEqual(["test /ext", "ping from test #1"]);
-    expect(manager.report().enabled).toEqual(["provider", "consumer"]);
-    expect(manager.report().contributions).toEqual([
-      { plugin: "consumer", kind: "command", name: "hello" },
-      { plugin: "consumer", kind: "tool", name: "greet" },
-    ]);
     expect([...host.commands.keys()]).toEqual(["hello"]);
+    expect([...host.tools.keys()]).toEqual(["greet"]);
     expect(manager.services.has("counter")).toBe(true);
   });
 

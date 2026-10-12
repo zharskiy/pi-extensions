@@ -3,15 +3,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../core/adapter/contract.ts";
-import { HANDOFF_SECTIONS, handoffPath, instructionFor, seedText, validateHandoff } from "../src/handoff.ts";
+import { HANDOFF_SECTIONS } from "../../../core/manager/handoff.ts";
+import { handoffPath, instructionFor, seedText, validateHandoff } from "../src/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",
-  dir: "/sessions",
   cwd: "/project",
   agentDir: "/agent",
   projectTrusted: false,
-  hasUI: true,
   subscription: false,
   mode: "tui",
   ...patch,
@@ -66,28 +65,12 @@ describe("instructionFor", () => {
 });
 
 describe("validateHandoff", () => {
-  it("accepts the six sections in order with a known status", () => {
+  it("accepts done, partial and blocked", () => {
     expect(validateHandoff(handoff(complete))).toEqual({ ok: true, status: "partial" });
     expect(validateHandoff(handoff({ ...complete, Status: "**Done**" }))).toEqual({
       ok: true,
       status: "done",
     });
-  });
-
-  it("reports missing, empty and misordered sections", () => {
-    const { Next: _next, ...withoutNext } = complete;
-
-    expect(validateHandoff(handoff(withoutNext))).toEqual({ ok: false, errors: ["missing sections: Next"] });
-    expect(validateHandoff(handoff({ ...complete, Blocker: "" }))).toEqual({
-      ok: false,
-      errors: ["empty sections: Blocker"],
-    });
-
-    const { Status, ...rest } = complete;
-    const result = validateHandoff(handoff({ ...rest, Status }));
-
-    expect(result.ok).toBe(false);
-    expect(result.ok ? [] : result.errors[0]).toContain("must appear in this order");
   });
 
   it("rejects an unknown status", () => {

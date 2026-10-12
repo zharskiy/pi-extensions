@@ -3,7 +3,7 @@ import type { Plugin } from "../../model/plugin.ts";
 import { isClosed } from "../../model/types.ts";
 import { contextStep, softWarning } from "./context-step.ts";
 
-export const LIMITS_SENDER = "pi-subagents";
+const LIMITS_SENDER = "pi-subagents";
 
 const MAX_TURNS_AFTER_HANDOFF = 3;
 

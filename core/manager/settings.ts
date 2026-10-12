@@ -1,13 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
+type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
-export type ListRule = { type: "list"; of: string };
+type ListRule = { type: "list"; of: string };
 
-export type BooleanRule = { type: "boolean" };
+type BooleanRule = { type: "boolean" };
 
-export type SettingsRule = NumberRule | ListRule | BooleanRule;
+type SettingsRule = NumberRule | ListRule | BooleanRule;
 
 export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 

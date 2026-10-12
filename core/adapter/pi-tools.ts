@@ -3,13 +3,13 @@ import { Type } from "typebox";
 import type { ToolResult, ToolSpec } from "./contract.ts";
 import { textComponent, themeLike } from "./pi-ui.ts";
 
-export const toPiResult = (result: ToolResult) => ({
+const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
 });
 
-export const fromPiResult = (result: {
+const fromPiResult = (result: {
   content?: { type: string; text?: string }[];
   details?: unknown;
 }): ToolResult => ({
@@ -26,7 +26,6 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     label: spec.label,
     description: spec.description,
     promptSnippet: spec.promptSnippet,
-    promptGuidelines: spec.promptGuidelines,
     parameters: Type.Unsafe<P>(spec.parameters),
     execute: async (
       _toolCallId: string,
@@ -51,7 +50,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     renderResult: spec.renderResult
       ? (
           result: unknown,
-          options: { expanded: boolean; isPartial: boolean },
+          options: { expanded: boolean },
           theme: Theme,
           context: { lastComponent?: unknown; invalidate: () => void },
         ) =>
@@ -59,7 +58,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
             context.lastComponent,
             spec.renderResult?.(
               fromPiResult(result as never) as ToolResult<D>,
-              { expanded: options.expanded, isPartial: options.isPartial, invalidate: context.invalidate },
+              { expanded: options.expanded, invalidate: context.invalidate },
               themeLike(theme),
             ) ?? "",
           )

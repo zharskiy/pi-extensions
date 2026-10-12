@@ -1,7 +1,6 @@
 ---
 name: explorer
 description: Read-only search in large repositories. Finds where things are and how they connect; returns a file list with findings.
-model: openai/gpt-6-luna:low
 limit: 100000
 tools: [read, grep, find, ls]
 skills: []

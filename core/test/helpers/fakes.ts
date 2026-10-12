@@ -32,7 +32,6 @@ export type TurnContext = { tokens: number | null; window: number; percent?: num
 export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
   commands: Map<string, CommandSpec>;
-  sections: Map<string, string>;
   mainPrompt?: string;
   entries: { customType: string; data: unknown }[];
   sent: string[];
@@ -46,7 +45,6 @@ export type FakeHost = Host & {
   overlays: OverlayFactory[];
   idle: boolean;
   usage: UsageTotals;
-  context?: ContextSnapshot;
   info: SessionInfo;
   confirmations: { title: string; message: string }[];
   confirmAnswer: boolean | ((title: string, message: string) => boolean);
@@ -56,6 +54,7 @@ export type FakeHost = Host & {
   newSessionResult: boolean | Error;
   start(): void;
   turnEnd(context: TurnContext): void;
+  compact(): void;
   settle(): void;
   emit(channel: string, data: unknown): void;
   runCommand(name: string, args?: string): Promise<void>;
@@ -70,6 +69,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
+  const compactHandlers: (() => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -97,7 +97,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
-    sections: new Map(),
     entries: [],
     sent: [],
     dispatched: [],
@@ -118,11 +117,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     info: {
       id: "main-session",
       file: undefined,
-      dir: "/tmp/pi-extensions-test",
       cwd: "/tmp/pi-extensions-test",
       agentDir: "/tmp/pi-extensions-test/agent",
       projectTrusted: false,
-      hasUI: true,
       subscription: false,
       mode: "tui",
       ...info,
@@ -169,9 +166,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     registerCommand: (name, spec) => {
       host.commands.set(name, spec);
     },
-    setPromptSection: (name, text) => {
-      host.sections.set(name, text);
-    },
     setMainPrompt: (text) => {
       host.mainPrompt = text;
     },
@@ -187,8 +181,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     onTurnEnd: (handler) => {
       turnHandlers.push(handler);
     },
+    onCompact: (handler) => {
+      compactHandlers.push(handler);
+    },
     isIdle: () => started && host.idle,
-    contextUsage: () => (started ? host.context : undefined),
     sendUserMessage: (text) => {
       if (stale) {
         return;
@@ -247,10 +243,14 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       const context = { tokens: turn.tokens, window: turn.window, percent: turn.percent ?? null };
 
       host.idle = false;
-      host.context = context;
 
       turnHandlers.forEach((handler) => {
         handler(context);
+      });
+    },
+    compact: () => {
+      compactHandlers.forEach((handler) => {
+        handler();
       });
     },
     settle: () => {
@@ -371,8 +371,6 @@ export const createFakeChild = (spec: SpawnSpec): FakeChild => {
   const child: FakeChild = {
     id: spec.id,
     sessionFile: `${spec.sessionDir}/session.jsonl`,
-    modelLabel: "fake/model",
-    contextWindow: 200_000,
     spec,
     messages: [],
     wakes: [],
@@ -410,7 +408,6 @@ export const createFakeChild = (spec: SpawnSpec): FakeChild => {
     dispose: async () => {
       child.disposed = true;
     },
-    context: () => ({ tokens: 0, window: 200_000, percent: 0 }),
     ownUsage: () => child.usage,
     lastText: () => child.text,
     emit: (event) => {

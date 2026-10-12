@@ -6,14 +6,12 @@ type Handler = (event: unknown, ctx: unknown) => unknown;
 
 const fakeCtx = (mode: string, idle = true) => ({
   mode,
-  hasUI: mode === "tui",
   cwd: "/project",
   model: { contextWindow: 200_000 },
   modelRegistry: { isUsingOAuth: () => false },
   sessionManager: {
     getSessionId: () => "s1",
     getSessionFile: () => "/sessions/s1.jsonl",
-    getSessionDir: () => "/sessions",
   },
   isProjectTrusted: () => true,
   isIdle: () => idle,
@@ -79,15 +77,17 @@ describe("pi adapter", () => {
     expect(host.session()?.mode).toBe("tui");
   });
 
-  it("reports context usage only with a live session", async () => {
+  it("takes the subscription flag only from pi's OAuth check", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { stale: false });
 
-    expect(host.contextUsage()).toBeUndefined();
+    await fire("session_start", { ...fakeCtx("tui"), modelRegistry: { isUsingOAuth: () => true } });
 
-    await fire("session_start", fakeCtx("tui"));
+    expect(host.session()?.subscription).toBe(true);
 
-    expect(host.contextUsage()).toEqual({ tokens: 1_000, window: 100_000, percent: 1 });
+    await fire("session_start", { ...fakeCtx("tui"), model: undefined });
+
+    expect(host.session()?.subscription).toBe(false);
   });
 
   it("sends follow-ups while busy and dispatches commands as prompts", async () => {
@@ -216,6 +216,26 @@ describe("pi adapter", () => {
     await fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
 
     expect(seen).toEqual(["first start", "first end", "second"]);
+  });
+
+  it("runs every shutdown handler and goes stale even when one throws, then rethrows the error", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { stale: false });
+    const seen: string[] = [];
+
+    host.onSessionShutdown(async () => {
+      throw new Error("boom");
+    });
+
+    host.onSessionShutdown(() => {
+      seen.push("second");
+    });
+
+    await fire("session_start", fakeCtx("tui"));
+
+    await expect(fire("session_shutdown", fakeCtx("tui"), { reason: "quit" })).rejects.toThrow("boom");
+    expect(seen).toEqual(["second"]);
+    expect(host.session()).toBeUndefined();
   });
 });
 

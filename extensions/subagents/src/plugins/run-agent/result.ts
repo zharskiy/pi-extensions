@@ -3,30 +3,29 @@ import { join } from "node:path";
 import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 
-export const RESULT_FILE = "result.md";
+const RESULT_FILE = "result.md";
 
-export const PREVIEW_CHARS = 300;
+const PREVIEW_CHARS = 300;
 
-export type StoredResult = { resultText: string; resultPath: string };
+type StoredResult = { resultText: string; resultPath?: string; error?: string };
 
 export const storeResult = (record: AgentRecord, text: string): StoredResult => {
   const resultPath = join(record.dir, RESULT_FILE);
 
-  mkdirSync(record.dir, { recursive: true });
-  writeFileSync(resultPath, text.endsWith("\n") ? text : `${text}\n`);
+  try {
+    mkdirSync(record.dir, { recursive: true });
+    writeFileSync(resultPath, text.endsWith("\n") ? text : `${text}\n`);
 
-  return { resultText: text, resultPath };
-};
-
-export const shouldInline = (record: AgentRecord, inlineLimit: number) => {
-  if (record.state === "handoff") {
-    return false;
+    return { resultText: text, resultPath };
+  } catch (error) {
+    return { resultText: text, error: `result file not written: ${(error as Error).message}` };
   }
-
-  return (record.resultText ?? "").length <= inlineLimit;
 };
 
-export const chainTotals = (links: AgentRecord[]): AgentRecord => {
+const shouldInline = (record: AgentRecord, inlineLimit: number) =>
+  !record.resultPath || (record.resultText ?? "").length <= inlineLimit;
+
+const chainTotals = (links: AgentRecord[]): AgentRecord => {
   const first = links[0];
   const last = links[links.length - 1];
 
@@ -39,10 +38,10 @@ export const chainTotals = (links: AgentRecord[]): AgentRecord => {
   };
 };
 
-export const chainLine = (links: AgentRecord[]) =>
+const chainLine = (links: AgentRecord[]) =>
   `Chain: ${links.map((link) => link.id).join(" → ")} (${links.length} sessions)`;
 
-export const resultEntry = (
+const resultEntry = (
   record: AgentRecord,
   inlineLimit: number,
   now: number,
@@ -88,7 +87,7 @@ export const resultEntry = (
   return lines.join("\n");
 };
 
-export const countByState = (records: AgentRecord[]) => {
+const countByState = (records: AgentRecord[]) => {
   const counts = records.reduce<Record<string, number>>((tally, record) => {
     tally[record.state] = (tally[record.state] ?? 0) + 1;
     return tally;

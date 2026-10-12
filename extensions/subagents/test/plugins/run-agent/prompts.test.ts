@@ -8,7 +8,7 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import { childPromptsFor, createPromptQueue, promptTitle } from "../../../src/plugins/run-agent/prompts.ts";
+import { childPromptsFor, createPromptQueue } from "../../../src/plugins/run-agent/prompts.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
@@ -107,10 +107,6 @@ describe("childPromptsFor", () => {
 
     expect(await pending).toBe(true);
     expect(registry.get(record.id)?.attention).toBeUndefined();
-  });
-
-  it("builds the title from the record", () => {
-    expect(promptTitle({ id: "a-1", agent: "worker" }, "Ok?")).toBe("a-1 (worker) asks: Ok?");
   });
 
   it("lets Esc deny one call without stopping the agent", async () => {

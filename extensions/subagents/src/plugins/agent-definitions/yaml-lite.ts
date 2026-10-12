@@ -1,6 +1,6 @@
 export type FrontmatterValue = string | number | boolean | string[];
 
-export type Frontmatter = { data: Record<string, FrontmatterValue>; body: string };
+type Frontmatter = { data: Record<string, FrontmatterValue>; body: string };
 
 const unquote = (value: string) => {
   const quoted = /^"(.*)"$|^'(.*)'$/s.exec(value);

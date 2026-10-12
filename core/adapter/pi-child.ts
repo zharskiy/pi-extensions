@@ -1,6 +1,5 @@
 import { isAbsolute, resolve, sep } from "node:path";
 import {
-  type AgentSession,
   createAgentSession,
   createCodemodeExtension,
   createMcpExtension,
@@ -24,7 +23,6 @@ import type {
   ChildEvent,
   ChildPrompts,
   ChildSession,
-  ContextSnapshot,
   MessageDelivery,
   ModelResolution,
   SpawnSpec,
@@ -38,7 +36,7 @@ import { estimateTextTokens } from "./pi-tokens.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { formatRoutedMessage } from "./route.ts";
 import { promptRecordEntry, readSessionFile } from "./session-file.ts";
-import { sumOwnUsage } from "./usage.ts";
+import { contextOf, sumUsage } from "./usage.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
@@ -46,7 +44,7 @@ type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
 export type SkillFile = { name: string; path: string };
 
-export type ParentTool = { name: string; path: string };
+type ParentTool = { name: string; path: string };
 
 export type ParentSource = {
   ctx(): ExtensionContext | undefined;
@@ -57,16 +55,9 @@ export type ParentSource = {
   mcpDisabled?(): boolean;
 };
 
-export type ChildOptions = {
+type ChildOptions = {
   namespace: string;
   exclude: readonly string[];
-};
-
-const snapshotContext = (session: AgentSession): ContextSnapshot => {
-  const usage = session.getContextUsage();
-  const window = usage?.contextWindow ?? session.model?.contextWindow ?? 0;
-
-  return { tokens: usage?.tokens ?? null, window, percent: usage?.percent ?? null };
 };
 
 export const childSettings = (snapshot: Settings, reserveTokens: number): Settings => ({
@@ -76,22 +67,13 @@ export const childSettings = (snapshot: Settings, reserveTokens: number): Settin
 });
 
 export const createChildExtension =
-  (
-    agentId: string,
-    emit: (event: ChildEvent) => void,
-    modelLabel: string,
-    recordEntry: string,
-  ): ExtensionFactory =>
+  (agentId: string, modelLabel: string, recordEntry: string): ExtensionFactory =>
   (pi) => {
     let recorded = false;
     let skills: { name: string; description: string }[] = [];
     let guidelines: string[] = [];
 
-    pi.on("session_before_compact", () => {
-      emit({ type: "compaction_blocked" });
-
-      return { cancel: true };
-    });
+    pi.on("session_before_compact", () => ({ cancel: true }));
 
     pi.on("before_agent_start", (event) => {
       skills = event.systemPromptOptions.skills.map((skill) => ({
@@ -250,11 +232,12 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
 
     const modelLabel = `${model.provider}/${model.id}`;
     const listeners = new Set<(event: ChildEvent) => void>();
-    let settled = false;
+    let running = false;
+    let disposed = false;
 
     const emit = (event: ChildEvent) => {
       if (event.type === "settled") {
-        settled = true;
+        running = false;
       }
 
       listeners.forEach((listener) => {
@@ -295,7 +278,7 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
         {
           name: `${options.namespace}-child`,
           hidden: true,
-          factory: createChildExtension(spec.id, emit, modelLabel, recordEntry),
+          factory: createChildExtension(spec.id, modelLabel, recordEntry),
         },
         ...mcpExtensions(spec.tools, parent.mcpDisabled?.() ?? false),
       ],
@@ -331,18 +314,31 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       }),
     );
 
-    await childScope.run(scope, () =>
-      session.bindExtensions({ mode: "print", uiContext: childUiContext(ctx.ui.theme, spec.prompts) }),
-    );
+    const dispose = async () => {
+      disposed = true;
 
-    session.subscribe((event) => {
-      if (event.type === "turn_start") {
-        emit({ type: "turn_start" });
-        return;
+      const runner = session.extensionRunner;
+
+      if (runner?.hasHandlers("session_shutdown")) {
+        await settleWithin(runner.emit({ type: "session_shutdown", reason: "quit" }), SHUTDOWN_TIMEOUT_MS);
       }
 
+      session.dispose();
+      listeners.clear();
+    };
+
+    try {
+      await childScope.run(scope, () =>
+        session.bindExtensions({ mode: "print", uiContext: childUiContext(ctx.ui.theme, spec.prompts) }),
+      );
+    } catch (error) {
+      await dispose();
+      throw error;
+    }
+
+    session.subscribe((event) => {
       if (event.type === "turn_end") {
-        emit({ type: "turn_end", context: snapshotContext(session) });
+        emit({ type: "turn_end", context: contextOf(session) });
         return;
       }
 
@@ -365,18 +361,20 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
         return;
       }
 
-      if (event.type === "tool_execution_end" && !event.parentToolCallId) {
-        emit({ type: "tool_end", toolName: event.toolName, isError: event.isError });
-        return;
-      }
-
       if (event.type === "agent_settled") {
+        if (!event.aborted && !disposed && session.pendingMessageCount > 0) {
+          const { steering, followUp } = session.clearQueue();
+
+          prompt([...steering, ...followUp].join("\n\n"));
+          return;
+        }
+
         emit({ type: "settled", aborted: event.aborted });
       }
     });
 
     const failStart = (error: unknown) => {
-      if (settled) {
+      if (!running) {
         return;
       }
 
@@ -390,9 +388,18 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       emit({ type: "settled", aborted: false });
     };
 
+    const prompt = (text: string) => {
+      running = true;
+      session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
+    };
+
     const deliver = async (text: string, delivery: MessageDelivery) => {
-      if (!session.isStreaming) {
-        session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
+      if (disposed) {
+        return;
+      }
+
+      if (!running && !session.isStreaming) {
+        prompt(text);
         return;
       }
 
@@ -404,27 +411,12 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       await session.followUp(text, undefined, { source: "extension" });
     };
 
-    const dispose = async () => {
-      const runner = session.extensionRunner;
-
-      if (runner?.hasHandlers("session_shutdown")) {
-        await settleWithin(runner.emit({ type: "session_shutdown", reason: "quit" }), SHUTDOWN_TIMEOUT_MS);
-      }
-
-      session.dispose();
-      listeners.clear();
-    };
-
     return {
       id: spec.id,
       get sessionFile() {
         return session.sessionFile;
       },
-      modelLabel,
-      contextWindow: model.contextWindow,
-      start: (task) => {
-        session.prompt(task, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
-      },
+      start: prompt,
       subscribe: (listener) => {
         listeners.add(listener);
 
@@ -436,8 +428,7 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       wake: (text) => deliver(text, "followUp"),
       abort: () => session.abort(),
       dispose,
-      context: () => snapshotContext(session),
-      ownUsage: (): UsageTotals => sumOwnUsage(session.sessionManager.getEntries()),
+      ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),
       lastText: () => session.getLastAssistantText() ?? "",
     };
   };

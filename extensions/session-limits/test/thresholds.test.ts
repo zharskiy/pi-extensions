@@ -83,14 +83,15 @@ describe("segmentFor", () => {
     });
   });
 
-  it("is red in every pending phase and names the command when stuck", () => {
+  it("is red in the pending phases, amber while waiting, and names the command when stuck", () => {
     expect(segmentFor(at(78_000), "requested", ratios, "session-handoff")).toEqual({
       token: "error",
       text: "ctx 78% · writing handoff",
     });
-    expect(segmentFor(at(78_000), "waiting", ratios, "session-handoff")?.text).toBe(
-      "ctx 78% · handoff waits for running work",
-    );
+    expect(segmentFor(at(78_000), "waiting", ratios, "session-handoff")).toEqual({
+      token: "warning",
+      text: "ctx 78% · handoff waits for running work",
+    });
     expect(segmentFor(at(null), "switching", ratios, "session-handoff")?.text).toBe(
       "ctx · switching session",
     );

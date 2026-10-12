@@ -7,9 +7,9 @@ It knows nothing about agents or any other extension. Extensions that spend mone
 ## What it does
 
 - A footer segment `main $x · agents $y · total $z`. `main` is pi's own accounting of the main session; each reporting source gets its own figure, named by the source's label (the subagents extension reports as `agents`); `total` is the sum. With several sources each is listed: `main $x · agents $y · jobs $w · total $z`. Sessions on a subscription get a ` (sub)` suffix.
-- The segment is hidden while every source total is zero.
+- The segment is hidden while every source total is zero. `total` is the sum of the displayed (3-decimal) figures, so the footer always adds up.
 - The figures are refreshed on every report and whenever the session goes idle.
-- Reported figures are written to the session file as custom entries of type `pi-spending:usage`: on idle and on shutdown, and only for figures that changed since the last write. A resumed session restores them, so it shows the same totals.
+- Reported figures are written to the session file as custom entries of type `pi-spending:usage`: on idle and on shutdown, and only for figures that changed since the last write. A resumed session restores them, so it shows the same totals. A session created by a handoff switch (see session-limits) starts again at zero.
 
 ## Usage channel
 
@@ -28,4 +28,4 @@ pi.events.emit("spending:usage", { source: "agents", id: "a1b2", usage });
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/spending.ts` wires the channel, the footer and persistence, `src/ledger.ts` keeps the high-water figures and parses reports, `src/footer.ts` formats the segment. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/spending.ts` wires the channel, the footer and persistence, `src/ledger.ts` keeps the high-water figures and parses reports, `src/footer.ts` formats the segment. The channel name and report parser are shared in `core/manager/channels.ts`. Tests are under `test/`.

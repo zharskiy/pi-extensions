@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
+import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { MessageAgentParams, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
@@ -11,7 +12,10 @@ import { createHarness } from "../../helpers/harness.ts";
 const GRACE_MS = 60_000;
 
 const setup = async (count = 1, overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness(
+    [agentRegistryPlugin, agentDefinitionsPlugin, handoffPlugin, runAgentPlugin],
+    overrides,
+  );
   const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
   const messageAgent = harness.host.tool<MessageAgentParams, { delivery?: string }>("message_agent");
   const registry = harness.services.require("registry");
@@ -220,10 +224,13 @@ describe("stop grace period", () => {
 
     await runner.stop(id);
     await send(id, "keep going");
-    await runner.abort(id, "turn limit of 5 exceeded");
+    await runner.abort(id, "context hard limit reached before the handoff was finished");
     await flush();
 
-    expect(registry.get(id)).toMatchObject({ state: "failed", error: "turn limit of 5 exceeded" });
+    expect(registry.get(id)).toMatchObject({
+      state: "failed",
+      error: "context hard limit reached before the handoff was finished",
+    });
     expect(runtime.child(id).disposed).toBe(true);
     expect(host.sent).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);

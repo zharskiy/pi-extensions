@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { usageOf } from "../../../core/test/helpers/fakes.ts";
-import { createLedger, isAhead, parseUsageReport, USAGE_ENTRY } from "../src/ledger.ts";
+import { createLedger, USAGE_ENTRY } from "../src/ledger.ts";
 
 const createStore = () => {
   const entries: { customType: string; data: unknown }[] = [];
@@ -17,38 +17,6 @@ const createStore = () => {
 
 const costs = (ledger: ReturnType<typeof createLedger>) =>
   ledger.totals().map(({ source, usage }) => [source, Number(usage.cost.total.toFixed(6))]);
-
-describe("parseUsageReport", () => {
-  it("accepts a source, an id and complete usage totals", () => {
-    const report = { source: "agents", id: "a1", usage: usageOf(0.1) };
-
-    expect(parseUsageReport(report)).toEqual(report);
-  });
-
-  it("ignores malformed payloads", () => {
-    const { cost: _cost, ...withoutCost } = usageOf(0.1);
-
-    expect(parseUsageReport(undefined)).toBeUndefined();
-    expect(parseUsageReport("agents")).toBeUndefined();
-    expect(parseUsageReport({ source: "", id: "a1", usage: usageOf(0.1) })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: 7, usage: usageOf(0.1) })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: "a1", usage: withoutCost })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: "a1", usage: usageOf(-1) })).toBeUndefined();
-    expect(
-      parseUsageReport({ source: "agents", id: "a1", usage: { ...usageOf(0.1), totalTokens: Number.NaN } }),
-    ).toBeUndefined();
-  });
-});
-
-describe("isAhead", () => {
-  it("is ahead when cost or tokens grew", () => {
-    expect(isAhead(usageOf(0.1), undefined)).toBe(true);
-    expect(isAhead(usageOf(0.2), usageOf(0.1))).toBe(true);
-    expect(isAhead(usageOf(0.1, 200), usageOf(0.1, 100))).toBe(true);
-    expect(isAhead(usageOf(0.1), usageOf(0.1))).toBe(false);
-    expect(isAhead(usageOf(0.05), usageOf(0.1))).toBe(false);
-  });
-});
 
 describe("ledger", () => {
   it("keeps the highest figure per id and sums ids per source", () => {

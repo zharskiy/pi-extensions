@@ -11,7 +11,6 @@ import {
   createWriteToolDefinition,
   type ExtensionContext,
   getMarkdownTheme,
-  initTheme,
   keyText,
   type Theme,
   ToolExecutionComponent,
@@ -113,10 +112,6 @@ type RawToolCall = { type: string; id?: string; name?: string; arguments?: unkno
 type RawAssistant = { content?: RawToolCall[]; stopReason?: string; errorMessage?: string };
 
 type Expandable = Component & { setExpanded(expanded: boolean): void };
-
-export const initRenderTheme = () => {
-  initTheme(undefined, false);
-};
 
 export const createTranscriptPane = (tui: TUI, cwd: string, expanded: boolean): TranscriptPane => {
   const container = new Container();
@@ -286,7 +281,7 @@ export const createInputPane = (placeholder: string): InputPane => {
   };
 };
 
-export type TerminalOut = { write(data: string): unknown };
+type TerminalOut = { write(data: string): unknown };
 
 const CONTROL_CHARS = new RegExp(
   `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}-${String.fromCharCode(159)}]+`,
@@ -295,11 +290,11 @@ const CONTROL_CHARS = new RegExp(
 
 const cleanText = (text: string) => text.replace(CONTROL_CHARS, " ").trim();
 
-export type TerminalEnv = { TERM?: string; TERM_PROGRAM?: string };
+type TerminalEnv = { TERM?: string; TERM_PROGRAM?: string };
 
 const OSC_777_TERMINALS = /rxvt/i;
 
-export const usesOsc777 = (env: TerminalEnv) =>
+const usesOsc777 = (env: TerminalEnv) =>
   [env.TERM, env.TERM_PROGRAM].some((name) => OSC_777_TERMINALS.test(name ?? ""));
 
 export const notificationSequence = (title: string, body: string, env: TerminalEnv = process.env) => {

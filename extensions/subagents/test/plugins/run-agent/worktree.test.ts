@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import { MANIFEST_FILE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { MANIFEST_FILE } from "../../../src/plugins/agent-registry/registry.ts";
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
@@ -232,6 +232,22 @@ describe("worktree agents", () => {
     expect(existsSync(join(record.dir, WORKTREE_DIR))).toBe(false);
     expect(git(repo, "branch", "--list", branch)).toBe("");
     expect(manifest.worktree).toBeUndefined();
+  });
+
+  it("removes the worktree and its branch when the agent fails to spawn", async () => {
+    const repo = createRepo();
+    const { start, runtime, registry } = setup(repo);
+
+    runtime.failNextSpawn = "no session";
+    await start();
+
+    const [record] = registry.list();
+
+    await vi.waitFor(() => expect(registry.get(record.id)?.state).toBe("failed"));
+    await vi.waitFor(() => expect(git(repo, "branch", "--list", "pi-agents/*")).toBe(""));
+
+    expect(registry.get(record.id)).toMatchObject({ error: "spawn failed: no session", worktree: undefined });
+    expect(existsSync(join(record.dir, WORKTREE_DIR))).toBe(false);
   });
 
   it("gives an agent whose id repeats one from an earlier session a branch of its own", async () => {

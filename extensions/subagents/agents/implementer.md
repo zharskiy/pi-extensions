@@ -1,7 +1,6 @@
 ---
 name: implementer
 description: Makes a scoped code change and verifies it. Returns a summary of the diff and the checks it ran.
-model: openai/gpt-6.1-sol:medium
 limit: 120000
 tools: [read, grep, find, ls, edit, write, bash]
 skills: []

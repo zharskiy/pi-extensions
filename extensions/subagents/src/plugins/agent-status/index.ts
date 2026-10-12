@@ -25,7 +25,7 @@ const defaultIds = ({ registry, callerId }: StatusScope) =>
     .filter((record) => !record.successorId)
     .map((record) => record.id);
 
-export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
+const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
   name: "agent_status",
   label: "Agent status",
   description: scope.callerId === undefined ? MAIN_DESCRIPTION : CHILD_DESCRIPTION,
@@ -46,7 +46,8 @@ export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, Agen
       .map((id) => ({ id, record: scope.registry.get(id) }))
       .flatMap(({ id, record }) =>
         record ? [snapshotOf(chainTerminal(scope.registry, record), now, id)] : [],
-      );
+      )
+      .filter((snapshot, index, all) => all.findIndex((other) => other.id === snapshot.id) === index);
 
     const lines = agents.map(snapshotLine);
 

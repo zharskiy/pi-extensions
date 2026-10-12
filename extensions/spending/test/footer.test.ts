@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { footerText, formatCost, isVisible } from "../src/footer.ts";
+import { footerText, isVisible } from "../src/footer.ts";
 
 describe("footer", () => {
-  it("formats costs in dollars with three decimals", () => {
-    expect(formatCost(0.1234)).toBe("$0.123");
+  it("formats costs in dollars with three decimals and adds up the shown parts", () => {
+    const text = footerText({
+      main: 0.1004,
+      sources: [{ source: "agents", cost: 0.1004 }],
+      subscription: false,
+    });
+
+    expect(text).toBe("main $0.100 · agents $0.100 · total $0.200");
   });
 
   it("shows main, the source and the total", () => {

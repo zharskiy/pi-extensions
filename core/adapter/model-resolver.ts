@@ -35,7 +35,7 @@ const DATE_TOKEN = /^\d{8}$/;
 
 const NUMBER_TOKEN = /^\d+$/;
 
-export const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 export const tokensOf = (text: string) =>
   text
@@ -149,7 +149,7 @@ const fuzzyScore = (query: string, model: CatalogModel) => {
   return Math.max(tokenScore, wholeScore);
 };
 
-export const matchModel = (query: string, model: CatalogModel): Match => {
+const matchModel = (query: string, model: CatalogModel): Match => {
   const wanted = normalise(query);
   const id = normalise(model.id);
 

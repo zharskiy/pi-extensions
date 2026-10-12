@@ -5,15 +5,12 @@ import type { AgentDefinitions } from "../../model/types.ts";
 import { type DefinitionDir, type LoadResult, loadDefinitions } from "./loader.ts";
 import { assemblePromptAppend } from "./prompt.ts";
 
-export const BASE_PROMPT_FILE = join("prompts", "base-system-prompt.md");
-
-export const MAIN_SESSION_PROMPT_FILE = join("prompts", "main-session.md");
+const BASE_PROMPT_FILE = join("prompts", "base-system-prompt.md");
 
 export const agentDefinitionsPlugin: Plugin = {
   id: "agent-definitions",
   enable: ({ host, services, root }) => {
     const basePrompt = readFileSync(join(root, BASE_PROMPT_FILE), "utf8");
-    const mainPrompt = readFileSync(join(root, MAIN_SESSION_PROMPT_FILE), "utf8").trim();
 
     let loaded: LoadResult = { definitions: new Map(), errors: [], warnings: [] };
 
@@ -38,14 +35,11 @@ export const agentDefinitionsPlugin: Plugin = {
     const definitions: AgentDefinitions = {
       get: (name) => loaded.definitions.get(name),
       list,
-      errors: () => loaded.errors,
       reload,
-      mainPrompt: () => mainPrompt,
       promptAppend: (definition) => assemblePromptAppend(basePrompt, definition),
     };
 
     services.provide("definitions", definitions);
-    host.setMainPrompt(mainPrompt);
     reload();
 
     host.onSessionStart(() => {
