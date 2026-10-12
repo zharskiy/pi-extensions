@@ -15,7 +15,7 @@ export const agentDefinitionsPlugin: Plugin = {
     const basePrompt = readFileSync(join(root, BASE_PROMPT_FILE), "utf8");
     const mainPrompt = readFileSync(join(root, MAIN_SESSION_PROMPT_FILE), "utf8").trim();
 
-    let loaded: LoadResult = { definitions: new Map(), errors: [] };
+    let loaded: LoadResult = { definitions: new Map(), errors: [], warnings: [] };
 
     const list = () =>
       Array.from(loaded.definitions.values()).sort((left, right) => left.name.localeCompare(right.name));
@@ -53,6 +53,10 @@ export const agentDefinitionsPlugin: Plugin = {
 
       loaded.errors.forEach((error) => {
         host.ui.notify(`pi-subagents: invalid agent file ${error.path}: ${error.message}`, "warning");
+      });
+
+      loaded.warnings.forEach((warning) => {
+        host.ui.notify(`pi-subagents: agent file ${warning.path}: ${warning.message}`, "warning");
       });
     });
 

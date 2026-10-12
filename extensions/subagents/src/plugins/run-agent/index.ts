@@ -1,6 +1,6 @@
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { type AgentDefinition, type AgentRecord, isClosed } from "../../model/types.ts";
+import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
 import { createOutbox } from "./outbox.ts";
 import { childPromptsFor, createPromptQueue } from "./prompts.ts";
 import { createRunner } from "./runner.ts";
@@ -20,7 +20,9 @@ export const runAgentPlugin: Plugin = {
     });
 
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
-      const allowed = (definitions.get(record.agent)?.subagents ?? [])
+      const own = definitions.get(record.agent);
+      const names = definitions.list().map((definition) => definition.name);
+      const allowed = (own ? subagentNames(own, names) : [])
         .map((name) => definitions.get(name))
         .filter((definition): definition is AgentDefinition => definition !== undefined);
 

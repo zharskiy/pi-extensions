@@ -1,6 +1,7 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { FRONTMATTER_FIELDS } from "../../../src/model/frontmatter.ts";
 import { parseFrontmatter } from "../../../src/plugins/agent-definitions/frontmatter.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { loadDefinitions, parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
@@ -12,8 +13,16 @@ const writeAgent = (dir: string, file: string, content: string) => {
   writeFileSync(join(dir, file), content);
 };
 
+const DEFAULT_LISTS: Record<string, string> = { tools: "all", skills: "all" };
+
+const lists = (extra: string, defaults = DEFAULT_LISTS) =>
+  Object.entries(defaults)
+    .filter(([key]) => !new RegExp(`^${key}:`, "m").test(extra))
+    .map(([key, value]) => `${key}: ${value}\n`)
+    .join("");
+
 const agentFile = (name: string, description: string, extra = "subagents: []", body = "") =>
-  `---\nname: ${name}\ndescription: ${description}\nlimit: 50000\n${extra}\n---\n${body}`;
+  `---\nname: ${name}\ndescription: ${description}\nlimit: 50000\n${lists(extra)}${extra}\n---\n${body}`;
 
 describe("frontmatter", () => {
   it("parses scalars, inline lists, block lists and block text", () => {
@@ -26,7 +35,7 @@ describe("frontmatter", () => {
         "skills:",
         "  - search",
         "  - 'docs'",
-        "maxTurns: 12",
+        "limit: 12000",
         "prompt: |",
         "  line one",
         "  line two",
@@ -41,7 +50,7 @@ describe("frontmatter", () => {
       description: "Finds things: fast",
       tools: ["read", "grep"],
       skills: ["search", "docs"],
-      maxTurns: 12,
+      limit: 12000,
       prompt: "line one\nline two",
       unknownKey: "ignored-but-kept",
     });
@@ -55,9 +64,9 @@ describe("frontmatter", () => {
 });
 
 describe("agent definition parsing", () => {
-  it("accepts comma-separated tools, max_turns and ignores unknown keys", () => {
+  it("accepts comma-separated tools", () => {
     const parsed = parseDefinition(
-      "---\nname: a\ndescription: d\ntools: read, ls\nmax_turns: 3\ncolor: blue\nlimit: 60000\nsubagents: []\nmodel: openai/gpt-6-luna:low\n---\nDo it.",
+      "---\nname: a\ndescription: d\ntools: read, ls\nskills: []\nworktree: true\nlimit: 60000\nsubagents: []\nmodel: openai/gpt-6-luna:low\n---\nDo it.",
       "/x/a.md",
       "user",
     );
@@ -66,21 +75,37 @@ describe("agent definition parsing", () => {
     expect(parsed.definition).toMatchObject({
       name: "a",
       tools: ["read", "ls"],
-      maxTurns: 3,
+      worktree: true,
       limit: 60000,
       subagents: [],
       model: "openai/gpt-6-luna",
       thinking: "low",
       prompt: "Do it.",
-      input: "task",
-      output: "text",
       source: "user",
+    });
+  });
+
+  it("ignores keys outside the vocabulary without a warning", () => {
+    const parsed = parseDefinition(
+      "---\nname: a\ndescription: d\nlimit: 50000\ntools: [read]\nskills: []\nsubagents: []\ncolor: blue\neffort: high\npermissionMode: plan\nprompt: Extra rule.\n---\nBody.",
+      "/x/a.md",
+      "user",
+    );
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.definition).toMatchObject({
+      prompt: "Body.",
+      tools: ["read"],
+      model: undefined,
+      thinking: undefined,
+      worktree: false,
     });
   });
 
   it("reports every problem of an invalid file", () => {
     const parsed = parseDefinition(
-      "---\nname: bad name\noutput: json\nthinking: high\nlimit: 10\nsubagents: 3\nmodel: gpt 6\nfallback: maybe\n---\n",
+      "---\nname: bad name\nthinking: high\nlimit: 10\nsubagents: 3\nmodel: gpt 6\nworktree: maybe\n---\n",
       "/x/bad.md",
       "user",
     );
@@ -90,29 +115,55 @@ describe("agent definition parsing", () => {
       expect.arrayContaining([
         "description is required",
         "name may only contain letters, digits, '-' and '_'",
-        "output must be one of text, file",
         expect.stringContaining("thinking is no longer a field"),
         "limit must be an integer of at least 5000",
         "subagents must be a list or a comma-separated string",
         'model must be name[:thinking] without spaces, got "gpt 6"',
-        "fallback must be true or false",
+        "worktree must be true or false",
       ]),
     );
   });
 
-  it("requires limit and subagents", () => {
+  it("requires limit and every list field", () => {
     const parsed = parseDefinition("---\nname: a\ndescription: d\n---\n", "/x/a.md", "user");
 
     expect(parsed.definition).toBeUndefined();
     expect(parsed.errors).toEqual([
-      "limit is required (context token budget, for example limit: 100000)",
-      "subagents is required (agent names it may spawn, or [] for none)",
+      "limit is required (context limit in tokens, for example limit: 100000)",
+      "tools is required (tool names, all for the tools active in the main session, or [] for none)",
+      "skills is required (skill names, all for every skill of the main session, or [] for none)",
+      "subagents is required (agent names it may start, all for every other agent, or [] for none)",
     ]);
+  });
+
+  it("builds the definition from the schema's fields plus the harness internals", () => {
+    const parsed = parseDefinition(agentFile("a", "d", "subagents: []", "Body."), "/x/a.md", "project");
+
+    expect(Object.keys(parsed.definition ?? {}).sort()).toEqual(
+      [...FRONTMATTER_FIELDS.map((spec) => spec.key), "thinking", "prompt", "source", "path"].sort(),
+    );
+    expect(parsed.definition).toMatchObject({
+      model: undefined,
+      worktree: false,
+      prompt: "Body.",
+      source: "project",
+    });
+  });
+
+  it("warns about a name listed twice in any list field and keeps it once", () => {
+    const parsed = parseDefinition(
+      "---\nname: a\ndescription: d\nlimit: 50000\ntools: []\nskills: [docs, docs]\nsubagents: []\n---\n",
+      "/x/a.md",
+      "user",
+    );
+
+    expect(parsed.definition?.skills).toEqual(["docs"]);
+    expect(parsed.warnings).toEqual(["skills lists entries more than once: docs"]);
   });
 
   it("accepts a block list of subagents and treats model inherit as the main session's model", () => {
     const parsed = parseDefinition(
-      "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\nsubagents:\n  - explorer\n  - reviewer\n---\n",
+      "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\ntools: all\nskills: all\nsubagents:\n  - explorer\n  - reviewer\n---\n",
       "/x/lead.md",
       "user",
     );
@@ -123,10 +174,10 @@ describe("agent definition parsing", () => {
   });
 });
 
-describe("model and fallback fields", () => {
+describe("model field", () => {
   const parse = (extra: string) =>
     parseDefinition(
-      `---\nname: a\ndescription: d\nlimit: 50000\nsubagents: []\n${extra}\n---\n`,
+      `---\nname: a\ndescription: d\nlimit: 50000\n${lists(extra)}subagents: []\n${extra}\n---\n`,
       "/x/a.md",
       "user",
     );
@@ -161,10 +212,23 @@ describe("model and fallback fields", () => {
   it("inherits the thinking level when the model has no suffix", () => {
     expect(parse("model: openai/gpt-6.1-sol").definition?.thinking).toBeUndefined();
   });
+});
 
-  it("parses fallback and defaults it to false", () => {
-    expect(parse("fallback: true").definition?.fallback).toBe(true);
-    expect(parse("").definition?.fallback).toBe(false);
+describe("worktree field", () => {
+  const parse = (extra: string) =>
+    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", "user");
+
+  it("defaults to false and accepts a boolean", () => {
+    expect(parse("").definition?.worktree).toBe(false);
+    expect(parse("worktree: true").definition?.worktree).toBe(true);
+    expect(parse("worktree: false").definition?.worktree).toBe(false);
+  });
+
+  it("rejects anything but a boolean", () => {
+    const parsed = parse("worktree: yes please");
+
+    expect(parsed.definition).toBeUndefined();
+    expect(parsed.errors).toEqual(["worktree must be true or false"]);
   });
 });
 
@@ -256,7 +320,7 @@ describe("definition loading", () => {
     const dir = tempDir();
 
     writeAgent(dir, "ok.md", agentFile("ok", "fine"));
-    writeAgent(dir, "broken.md", "---\nname: broken\nlimit: 50000\nsubagents: []\n---\n");
+    writeAgent(dir, "broken.md", `---\nname: broken\nlimit: 50000\n${lists("")}subagents: []\n---\n`);
 
     const result = loadDefinitions([{ path: dir, source: "user" }]);
 
@@ -264,12 +328,12 @@ describe("definition loading", () => {
     expect(result.errors).toEqual([{ path: join(dir, "broken.md"), message: "description is required" }]);
   });
 
-  it("ships the three role agents and the general fallback", () => {
+  it("ships the three role agents and general, the agent for work none of them fits", () => {
     const result = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
 
     expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
     expect([...result.definitions.keys()].sort()).toEqual(["explorer", "general", "implementer", "reviewer"]);
-    expect(result.definitions.get("explorer")?.tools).toEqual(["read", "grep", "find", "ls"]);
     expect(
       ["explorer", "reviewer", "implementer", "general"].map((name) => {
         const definition = result.definitions.get(name);
@@ -286,29 +350,192 @@ describe("definition loading", () => {
     result.definitions.forEach((definition) => {
       expect(definition.model).toMatch(/^openai\//);
       expect(definition.limit).toBeGreaterThanOrEqual(5000);
+      expect(definition.worktree).toBe(false);
     });
 
-    const roles = ["explorer", "implementer", "reviewer"].map((name) => result.definitions.get(name));
+    const grants = (name: string) => {
+      const definition = result.definitions.get(name);
 
-    expect(roles.map((definition) => [definition?.subagents, definition?.fallback])).toEqual([
-      [[], false],
-      [[], false],
-      [[], false],
+      return [definition?.tools, definition?.skills, definition?.subagents];
+    };
+
+    expect(grants("explorer")).toEqual([["read", "grep", "find", "ls"], [], []]);
+    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], []]);
+    expect(grants("implementer")).toEqual([["read", "grep", "find", "ls", "edit", "write", "bash"], [], []]);
+    expect(grants("general")).toEqual(["all", "all", ["explorer", "reviewer"]]);
+    expect(result.definitions.get("general")?.description).toMatch(
+      /^Use only when no other agent fits the work/,
+    );
+  });
+
+  it("declares exactly the frontmatter schema's fields in each shipped file, in the schema's order", () => {
+    const dir = join(PACKAGE_ROOT, "agents");
+    const keys = FRONTMATTER_FIELDS.map((spec) => spec.key);
+
+    readdirSync(dir).forEach((file) => {
+      expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
+    });
+  });
+
+  it("documents the frontmatter schema in the README table, row by row", () => {
+    const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
+    const table = readme.slice(readme.indexOf("| Field |")).split("\n\n")[0];
+
+    const rows = Array.from(table.matchAll(/^\| `(\w+)` \| (.*) \| (.*) \| (.*) \|$/gm), (match) => ({
+      key: match[1],
+      type: match[2],
+      required: match[3],
+      meaning: match[4],
+    }));
+
+    expect(rows.map((row) => row.key)).toEqual(FRONTMATTER_FIELDS.map((spec) => spec.key));
+
+    FRONTMATTER_FIELDS.forEach((spec, index) => {
+      const row = rows[index];
+
+      expect(row.required).toBe(spec.required ? "required" : `\`${spec.byDefault}\``);
+      expect(row.meaning.startsWith(spec.meaning)).toBe(true);
+      expect(row.type.includes("`all`")).toBe(spec.kind === "list");
+      expect(spec.allMeaning === undefined || row.meaning.includes(`\`all\`: ${spec.allMeaning}`)).toBe(true);
+    });
+  });
+});
+
+describe("list fields", () => {
+  const head = (lists: Record<string, string>) =>
+    Object.entries({ tools: "all", skills: "all", subagents: "[]", ...lists })
+      .filter(([, value]) => value !== "")
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n");
+
+  const parse = (lists: Record<string, string>) =>
+    parseDefinition(`---\nname: a\ndescription: d\nlimit: 50000\n${head(lists)}\n---\n`, "/x/a.md", "user");
+
+  it.each(["tools", "skills", "subagents"])("fails a file without %s and names the field", (key) => {
+    const parsed = parse({ [key]: "" });
+
+    expect(parsed.definition).toBeUndefined();
+    expect(parsed.errors).toEqual([
+      expect.stringMatching(new RegExp(`^${key} is required \\(.*\\[\\] for none\\)$`)),
     ]);
-    expect(result.definitions.get("general")).toMatchObject({
-      fallback: true,
-      model: "openai/gpt-6.1-sol",
-      limit: 100000,
-      subagents: ["explorer", "reviewer"],
-      tools: ["read", "grep", "find", "ls", "edit", "write", "bash"],
+  });
+
+  it.each(["tools", "skills", "subagents"])("fails a bare %s key with no value as missing", (key) => {
+    const bare = parseDefinition(
+      `---\nname: a\ndescription: d\nlimit: 50000\n${head({ [key]: "" })}\n${key}:\n---\n`,
+      "/x/a.md",
+      "user",
+    );
+    const blank = parse({ [key]: "\n" });
+
+    expect(bare.errors).toEqual([expect.stringMatching(new RegExp(`^${key} is required `))]);
+    expect(blank.errors).toEqual([expect.stringMatching(new RegExp(`^${key} is required `))]);
+  });
+
+  it.each([
+    ["tools", "[-bash]", "-bash"],
+    ["tools", "+read, grep", "+read"],
+    ["tools", "~", "~"],
+    ["tools", "[read, web_*]", "web_*"],
+    ["skills", "[docs, ./style]", "./style"],
+    ["subagents", "[explorer, -reviewer]", "-reviewer"],
+  ])("rejects %s entries that are not plain names", (key, value, shown) => {
+    const parsed = parse({ [key]: value });
+
+    expect(parsed.definition).toBeUndefined();
+    expect(parsed.errors).toEqual([
+      `${key} entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: ${shown}`,
+    ]);
+  });
+
+  it.each([
+    ["tools", "All", "All"],
+    ["skills", "[ALL]", "ALL"],
+    ["subagents", "[read, All]", "All"],
+  ])("takes all only in lowercase for %s", (key, value, shown) => {
+    const parsed = parse({ [key]: value });
+
+    expect(parsed.definition).toBeUndefined();
+    expect(parsed.errors).toEqual([`${key} takes all in lowercase, got: ${shown}`]);
+  });
+
+  it.each(["tools", "skills", "subagents"])("takes %s: [] as none", (key) => {
+    expect(parse({ [key]: "[]" }).definition?.[key as "tools"]).toEqual([]);
+  });
+
+  it.each(["tools", "skills", "subagents"])("takes %s: all and [all] as everything", (key) => {
+    expect(parse({ [key]: "all" }).definition?.[key as "tools"]).toBe("all");
+    expect(parse({ [key]: "[all]" }).definition?.[key as "tools"]).toBe("all");
+    expect(parse({ [key]: "\n  - all" }).definition?.[key as "tools"]).toBe("all");
+  });
+
+  it.each([
+    ["tools", "[all, read]", "all, read"],
+    ["skills", "all, docs", "all, docs"],
+    ["subagents", "[all, all]", "all, all"],
+  ])("rejects %s mixing all with names", (key, value, shown) => {
+    const parsed = parse({ [key]: value });
+
+    expect(parsed.definition).toBeUndefined();
+    expect(parsed.errors).toEqual([`${key} must be all on its own or a list of names, got: ${shown}`]);
+  });
+
+  it("keeps listed names as given", () => {
+    expect(parse({ tools: "[read, web_fetch]", skills: "docs, git" }).definition).toMatchObject({
+      tools: ["read", "web_fetch"],
+      skills: ["docs", "git"],
     });
+  });
+
+  it("lets subagents: all reach every other agent and never the agent itself", () => {
+    const dir = tempDir();
+
+    writeAgent(dir, "lead.md", agentFile("lead", "l", "subagents: all"));
+    writeAgent(dir, "worker.md", agentFile("worker", "w", "subagents: [scout]"));
+    writeAgent(dir, "scout.md", agentFile("scout", "s"));
+
+    const result = loadDefinitions([{ path: dir, source: "user" }]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.definitions.get("lead")?.subagents).toBe("all");
+  });
+
+  it("reports a cycle through subagents: all, for two all agents and for an agent that starts an all agent", () => {
+    const dir = tempDir();
+
+    writeAgent(dir, "alpha.md", agentFile("alpha", "a", "subagents: all"));
+    writeAgent(dir, "beta.md", agentFile("beta", "b", "subagents: all"));
+
+    const pair = loadDefinitions([{ path: dir, source: "user" }]);
+    const hint =
+      "subagents: all reaches every other agent, so no agent it can reach may start it; list names instead";
+
+    expect(pair.definitions.size).toBe(0);
+    expect(pair.errors).toEqual([
+      { path: join(dir, "alpha.md"), message: `subagents form a cycle: alpha -> beta -> alpha; ${hint}` },
+      { path: join(dir, "beta.md"), message: `subagents form a cycle: beta -> alpha -> beta; ${hint}` },
+    ]);
+
+    const other = tempDir();
+
+    writeAgent(other, "lead.md", agentFile("lead", "l", "subagents: all"));
+    writeAgent(other, "helper.md", agentFile("helper", "h", "subagents: [lead]"));
+    writeAgent(other, "scout.md", agentFile("scout", "s"));
+
+    const chained = loadDefinitions([{ path: other, source: "user" }]);
+
+    expect([...chained.definitions.keys()]).toEqual(["scout"]);
+    expect(chained.errors.map((error) => error.message)).toEqual([
+      `subagents form a cycle: helper -> lead -> helper; ${hint}`,
+      `subagents form a cycle: lead -> helper -> lead; ${hint}`,
+    ]);
   });
 });
 
 describe("prompt assembly", () => {
   it("appends the base prompt and the agent section, never replacing pi's prompt", () => {
     const parsed = parseDefinition(
-      "---\nname: scout\ndescription: d\noutput: file\nprompt: Extra rule.\nlimit: 50000\nsubagents: []\n---\nYou scout.",
+      "---\nname: scout\ndescription: d\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\nYou scout.",
       "/x/scout.md",
       "user",
     );
@@ -326,9 +553,7 @@ describe("prompt assembly", () => {
 
       You scout.
 
-      Extra rule.
-
-      Output: write your full result to the result file path given in your task, then reply with one line naming that path.",
+      Output: your last message is your result. Make it complete and self-contained; your caller sees nothing else.",
       ]
     `);
   });
@@ -362,5 +587,17 @@ describe("agent-definitions plugin", () => {
     harness.host.start();
 
     expect(definitions.get("proj")?.source).toBe("project");
+  });
+
+  it("shows the warnings of a loaded file on session start", () => {
+    const { host, root } = createHarness([agentDefinitionsPlugin]);
+    const dir = join(root, "agent", "agents");
+
+    writeAgent(dir, "dup.md", agentFile("dup", "d", "subagents: []\ntools: [read, read]"));
+    host.start();
+
+    expect(host.notices.map((notice) => notice.message)).toEqual([
+      `pi-subagents: agent file ${join(dir, "dup.md")}: tools lists entries more than once: read`,
+    ]);
   });
 });

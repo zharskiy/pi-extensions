@@ -30,7 +30,7 @@ const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   lastText: "",
   handoffPath: "/x/handoff.md",
   dir: "/x",
-  budgetTokens: 100_000,
+  contextLimit: 100_000,
   handoffRequested: false,
   version: 0,
   ...patch,
@@ -50,7 +50,7 @@ describe("agent row formatting", () => {
     ]);
   });
 
-  it("summarises a finished agent like Claude Code does", () => {
+  it("summarises a finished agent in one line", () => {
     expect(finishSummary(record({ state: "done", endedAt: 73_000 }), 99_000)).toBe(
       "Done (12 tool calls · 86.4k tokens · 1m 13s)",
     );

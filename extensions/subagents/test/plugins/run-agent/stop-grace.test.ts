@@ -154,6 +154,33 @@ describe("stop grace period", () => {
     expect(host.sent).toEqual([]);
   });
 
+  it("stops waiting for an abort the child never answers, then disposes it on stop and shutdown", async () => {
+    const { registry, runner, runtime, host, ids } = await setup(2, { stopGraceSeconds: 0 });
+    const [stopped, interrupted] = ids;
+
+    ids.forEach((id) => {
+      runtime.child(id).abortHangs = true;
+    });
+
+    const stopping = runner.stop(stopped);
+
+    vi.advanceTimersByTime(5_000);
+
+    expect(await stopping).toBe(true);
+    expect(registry.get(stopped)?.state).toBe("stopped");
+    expect(runtime.child(stopped).disposed).toBe(true);
+
+    const shutdown = host.shutdown("quit");
+
+    await flush();
+    vi.advanceTimersByTime(5_000);
+    await shutdown;
+
+    expect(registry.get(interrupted)?.state).toBe("failed");
+    expect(runtime.child(interrupted).disposed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("closes at once like a plain stop when the grace period is zero", async () => {
     const { registry, runner, runtime, host, ids } = await setup(1, { stopGraceSeconds: 0 });
     const [id] = ids;

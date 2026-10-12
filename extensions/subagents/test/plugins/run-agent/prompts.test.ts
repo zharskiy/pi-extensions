@@ -44,7 +44,7 @@ const createTestRegistry = () => {
       depth: 1,
       batchId: "b1",
       dir: "/tmp/prompts-test",
-      budgetTokens: 1000,
+      contextLimit: 1000,
     });
 
   return { bus, registry, spawn };

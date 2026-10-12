@@ -7,6 +7,8 @@ export type BusEvents = {
   "agent:turn": { id: string; context: ContextSnapshot; turns: number; continuing: boolean };
   "agent:closed": AgentRecord;
   "agent:usage": { id: string; usage: UsageTotals };
+  "batch:settled": { batchId: string; callerId: string; terminals: AgentRecord[] };
+  "session:closing": { reason: string };
 };
 
 export type Bus = CoreBus<BusEvents>;

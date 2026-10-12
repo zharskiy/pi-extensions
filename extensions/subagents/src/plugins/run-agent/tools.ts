@@ -1,6 +1,14 @@
 import type { ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { agentRow } from "../../components/agent-row.ts";
-import { type AgentDefinition, type AgentRegistry, chainTerminal, MAIN_CALLER } from "../../model/types.ts";
+import { type AgentFrontmatter, ALL } from "../../model/frontmatter.ts";
+import {
+  type AgentInternals,
+  type AgentRegistry,
+  chainTerminal,
+  grantText,
+  isNone,
+  MAIN_CALLER,
+} from "../../model/types.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
 export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
@@ -17,8 +25,9 @@ export type ToolDeps = {
   onRendered?: (batchId: string, invalidate: () => void) => void;
 };
 
-export type DelegateAgent = Pick<AgentDefinition, "name" | "description" | "limit"> &
-  Partial<Pick<AgentDefinition, "model" | "thinking" | "fallback" | "subagents">>;
+export type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
+  Partial<Pick<AgentFrontmatter, "model" | "subagents">> &
+  Pick<AgentInternals, "thinking">;
 
 export type RunAgentLimits = { callerDepth: number; maxDepth: number; maxConcurrent: number };
 
@@ -34,34 +43,21 @@ const modelText = (agent: DelegateAgent) => {
 
 const agentLine = (agent: DelegateAgent, limits: RunAgentLimits) => {
   const nested = agent.subagents ?? [];
-  const canNest = nested.length > 0 && limits.callerDepth + 1 < limits.maxDepth;
-  const spawns = canNest ? `, may start ${nested.join(", ")}` : "";
+  const canNest = !isNone(nested) && limits.callerDepth + 1 < limits.maxDepth;
+  const spawns = canNest ? `, may start ${nested === ALL ? "any other agent" : grantText(nested)}` : "";
 
   return `- ${agent.name}: ${agent.description} (${modelText(agent)}, context limit ${agent.limit} tokens${spawns})`;
 };
-
-const sortedLines = (agents: DelegateAgent[], limits: RunAgentLimits) =>
-  agents
-    .toSorted((left, right) => left.name.localeCompare(right.name))
-    .map((agent) => agentLine(agent, limits))
-    .join("\n");
 
 const agentList = (agents: DelegateAgent[], limits: RunAgentLimits) => {
   if (agents.length === 0) {
     return "- none: no agents are available to you; do not call this tool.";
   }
 
-  const roles = agents.filter((agent) => agent.fallback !== true);
-  const fallbacks = agents.filter((agent) => agent.fallback === true);
-  const blocks = [sortedLines(roles, limits)];
-
-  if (fallbacks.length > 0) {
-    blocks.push(
-      `Fallback agents (only when no agent above fits the work):\n${sortedLines(fallbacks, limits)}`,
-    );
-  }
-
-  return blocks.filter(Boolean).join("\n\n");
+  return agents
+    .toSorted((left, right) => left.name.localeCompare(right.name))
+    .map((agent) => agentLine(agent, limits))
+    .join("\n");
 };
 
 const depthRule = ({ callerDepth, maxDepth }: RunAgentLimits) => {
@@ -81,11 +77,11 @@ export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgen
     agentList(allowedAgents, limits),
     [
       "Rules:",
-      "- Choosing: pick the agent whose description fits the work. Use a fallback agent only when no agent above fits; never because a model was named or no role was given.",
+      "- Choosing: pick the agent whose description fits the work, never because a model was named; when the request names no role, work out the role from the work.",
       "- Model: each agent runs on the model shown next to it. Set `model` only when the user (or, for an agent, its task) explicitly names a model or thinking level for this work; never choose or change a model yourself, for cost, speed or any other reason. Pass the words as given, as `name[:thinking]`. The harness resolves the name, tolerating misspellings and picking the newest version, and reports the model it runs. If it reports an ambiguous or unknown model, nothing was started: ask the user with the listed candidates and reuse the answer for the rest of the conversation.",
       depthRule(limits),
       `- Concurrency: at most ${limits.maxConcurrent} agents run at the same time across the whole tree; extra agents wait in a queue.`,
-      "- Budget: an agent that reaches its context limit writes a handoff file. When the handoff says the work is partial, the harness starts a successor from it in the same batch on its own; you are not woken and the chain counts as one agent. Only when the chain cap is reached or the handoff says blocked does the agent end as handoff.",
+      "- Context limit: an agent that reaches its context limit writes a handoff file. When the handoff says the work is partial, the harness starts a successor from it in the same batch on its own; you are not woken and the chain counts as one agent. Only when the chain cap is reached or the handoff says blocked does the agent end as handoff.",
       "- Batches: put independent tasks in one call so they run in parallel. Run a dependent task in a later call, after the results it depends on have arrived.",
       "- Tasks: each task must stand alone: goal, scope, file paths, constraints and the exact shape of the expected result.",
     ].join("\n"),

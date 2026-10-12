@@ -1,4 +1,4 @@
-Your context budget is used up. Stop the current work now and write a handoff file to:
+Your context limit is used up. Stop the current work now and write a handoff file to:
 
 {{path}}
 

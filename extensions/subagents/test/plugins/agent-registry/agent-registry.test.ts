@@ -48,7 +48,7 @@ const setup = () => {
       depth: 1,
       batchId: "batch-1",
       dir: join(harness.root, "agents"),
-      budgetTokens: 100_000,
+      contextLimit: 100_000,
     });
 
   const signals = () => busySignals(harness.host.published);
@@ -135,7 +135,7 @@ describe("busy signal", () => {
 
     runtime
       .child(first.id)
-      .turn({ tokens: current(first.id).budgetTokens + 500, window: 1_000_000, percent: 20 });
+      .turn({ tokens: current(first.id).contextLimit + 500, window: 1_000_000, percent: 20 });
     await flush();
     mkdirSync(dirname(current(first.id).handoffPath), { recursive: true });
     writeFileSync(current(first.id).handoffPath, HANDOFF);

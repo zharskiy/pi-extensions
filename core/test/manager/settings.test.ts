@@ -11,12 +11,13 @@ import {
   userSettingsPath,
 } from "../../manager/settings.ts";
 
-type Example = { count: number; ratio: number; names: string[] };
+type Example = { count: number; ratio: number; names: string[]; loud?: boolean };
 
 const schema: SettingsSchema<Example> = {
   count: { type: "number", min: 1, max: 10 },
   ratio: { type: "number", min: 0, max: 1, minExclusive: true },
   names: { type: "list", of: "names" },
+  loud: { type: "boolean" },
 };
 
 describe("settings helpers", () => {
@@ -35,6 +36,12 @@ describe("settings helpers", () => {
       "f.json: ratio must be a number above 0 and at most 1",
       "f.json: names must be a list of names",
     ]);
+  });
+
+  it("accepts booleans and rejects anything else for a boolean rule", () => {
+    expect(parseSettings(schema, { loud: false }, "f").patch).toEqual({ loud: false });
+    expect(parseSettings(schema, { loud: "no" }, "f").errors).toEqual(["f: loud must be true or false"]);
+    expect(parseSettings(schema, { loud: 0 }, "f").patch).toEqual({});
   });
 
   it("rejects anything but a JSON object", () => {

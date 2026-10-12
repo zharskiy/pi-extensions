@@ -2,7 +2,7 @@
 
 Date: 10 October 2026. Input: `HANDOFF.md` and the four research reports in `research/`.
 
-Status: release 0.1 is merged. Release 0.2 (F9, F11, F12, F13, F14) is committed on branch `feat/0.2`, followed by the first review round (one folder per extension, main session limits as a separate extension). The second review round (shared `core/`, spending as a separate extension, no handoff from a finished agent, package rename) is uncommitted. Every departure from this plan is listed in `docs/deviations.md`.
+Status: releases 0.1 and 0.2 are merged, 0.2 including two review rounds (one folder per extension, main session limits and spending as separate extensions, shared `core/`, no handoff from a finished agent, package rename). Release 0.3 (F15 to F20) is built on branch `feat/0.3`, uncommitted until the product owner has reviewed; F18 was dropped: the upstream requests were drafted and then deleted on the product owner's decision (deviations 58 and 129). F17 (the pi-tasks event-bus protocol and Claude Code agent files) was built and then removed on the product owner's decision; the package speaks only its own vocabulary. F16 (subprocess agents over `pi --mode rpc`) was built and then removed on the product owner's decision; agents run in-process only (deviation 134). F20 was reshaped on the product owner's decision: there is no `mcp` field and no per-agent MCP filter; MCP follows `tools` (deviations 128, 135 and 136). `maxTurns` and `fallback` were removed, with no turn limit and no backward compatibility for old keys, which are ignored like any unknown key (deviations 132, 133, 140 and 141). Every departure from this plan is listed in `docs/deviations.md`.
 
 ## 1. Research conclusions that fix the design
 
@@ -10,7 +10,7 @@ These are the decisions the research settles, plus the product decisions taken d
 
 | Topic | Decision | Why (report) |
 |---|---|---|
-| Spawning | In-process `createAgentSession` per agent, behind the adapter. Subprocess (`pi --mode rpc`) stays possible behind the same contract, not built in MVP. | Pi maps `@earendil-works/pi-coding-agent` imports to its own copy, several sessions run concurrently, in-process gives steer/abort/usage/context directly. The whole ecosystem converged on this. (`pi-sdk-sessions-cost.md` §1-2, `existing-subagent-extensions.md` §5.1) |
+| Spawning | In-process `createAgentSession` per agent, behind the adapter. Subprocess (`pi --mode rpc`) stays possible behind the same contract, not built in MVP. Now: built in 0.3 as F16 and removed (deviation 134). | Pi maps `@earendil-works/pi-coding-agent` imports to its own copy, several sessions run concurrently, in-process gives steer/abort/usage/context directly. The whole ecosystem converged on this. (`pi-sdk-sessions-cost.md` §1-2, `existing-subagent-extensions.md` §5.1) |
 | Persistence | One agent = one ordinary pi JSONL session file under `<parent session dir>/<parent>/agents/`, with `parentSession` set and a sidecar manifest (status, depth, batch, predecessor/successor). | Shows up nested in `/resume`, gives "closed is final" an on-disk meaning, and lets the viewer read the file after close. (`pi-sdk-sessions-cost.md` §3) |
 | Completion | `agent_settled`, never `agent_end`. Empty output is a failure. | `agent_end` fires before retries and compaction; several packages shipped false "done" reports. (`existing-subagent-extensions.md` §5.11) |
 | Waking the caller | Single membership-based wake per batch. Child callers: `session.followUp()` on their `AgentSession`. Main session: `pi.sendUserMessage` when idle, held in an outbox while mid-turn. Path lives in the adapter. | `sendMessage({triggerTurn})` skips `before_agent_start` and busts the main session cache (open pi issues #5581, #10267). (`existing-subagent-extensions.md` §5.3-5.4) |
@@ -20,7 +20,7 @@ These are the decisions the research settles, plus the product decisions taken d
 | Prompts | The base prompt and the main session prompt are markdown files in the package (`prompts/`). The main session prompt replaces pi's default preamble at runtime when the extension loads, with the sections pi drops on override rebuilt from the structured options. Nothing is written to `~/.pi/agent`. | Product decision: prompts are versioned with the code and edited as files. Pi has no install hook, and a global `SYSTEM.md` would change every pi session, not only those with the extension. (`docs/deviations.md`) |
 | Where orchestration knowledge lives | Only the main session prompt holds orchestration rules. An agent allowed to spawn learns how from its `run_agent` tool description, generated per agent at spawn from its `subagents` list. | Product decision. Tool descriptions are frozen at spawn, so this is cache-safe, and each agent sees only what it may do. |
 | Model selection | Each agent file fixes `model` as `name[:thinking]`, the only place its thinking level is set; without a suffix the agent inherits the main session's thinking level. A caller may pass a per-call `model` override only when the user explicitly named a model or thinking level for that task. The harness resolves names against credentialed providers only, tolerates misspellings, picks the newest version when none is given, and refuses with a ranked candidate list when matches span families or nothing matches; the main session then asks the user and reuses the answer. The resolved `provider/id:thinking` is echoed everywhere the agent is shown. | Product decision. Pi's own matcher is a substring search in string order and offers no typo tolerance or version preference. Guessing a family silently changes cost. (`docs/design/agent-and-model-selection.md`) |
-| Agent set | Three role agents with `subagents: []` (`explorer`, `implementer`, `reviewer`) plus `general`, a fallback with every tool and `subagents: [explorer, reviewer]`, listed separately as usable only when no role agent fits the work. | Product decision; the fallback rule is about the work, so naming a model never selects the general agent over a role agent. |
+| Agent set | Three role agents with `subagents: []` (`explorer`, `implementer`, `reviewer`) plus `general`, a fallback with every tool and `subagents: [explorer, reviewer]`, listed separately as usable only when no role agent fits the work. | Product decision; the fallback rule is about the work, so naming a model never selects the general agent over a role agent. Now: there is no `fallback` flag; every agent is listed the same way and `general`'s description says to use it only when no other agent fits (`docs/deviations.md` entry 133). |
 | Prompt cache | Freeze system prompt, tool set and tool order at spawn. All later input is appended messages (steer, followUp). Never change model, thinking level or earlier messages mid-agent. Child cache warming off by default. | Mid-conversation prompt or tool changes keep the cache on only about 18 models. (`pi-sdk-sessions-cost.md` §7) |
 | Views | Overlay via `ctx.ui.custom(factory, { overlay: true })` using pi's exported `AssistantMessageComponent`, `ToolExecutionComponent`, `Markdown`, `Loader`, so an agent transcript looks exactly like the main session, including Ctrl+O tool detail. Scrolling through pi's `ScrollView` with mouse wheel in fullscreen mode; keyboard only in regular mode. Progress widget via `setWidget`. Footer segment via `setStatus`. Collapsible component is ours; pi has none. The widget cannot take focus, so `/agents <id>` is the entry point and an unknown id only warns. | No API swaps the main transcript for another view. Plain-text tool results and keyboard-only windowing were rejected in review. (`pi-extension-api.md` §4, §7) |
 | System prompt record | Capture `before_provider_request` on the child's first request and persist it as a custom entry in the child session. `before_agent_start` gives the structured sections for the collapsible view. | Only the provider payload records what every extension actually sent. (`pi-extension-api.md` §3) |
@@ -47,6 +47,8 @@ pi-extensions/                # one pi package: shared core plus one folder per 
       pi-tools.ts             # converts our ToolSpec and tool results to and from pi's tool shapes
       pi-models.ts            # resolves model names against pi's model registry through the resolver's catalog
       pi-child.ts             # AgentRuntime: child SDK sessions, their settings, UI context and events
+      pi-tokens.ts            # pi's token estimate and context measure
+      messages.ts             # message text helpers shared by the child runtime and the session reader
       main-prompt.ts          # rebuilds the sections pi drops when the preamble is replaced
       model-resolver.ts       # pure name → provider/id:thinking resolution over a plain catalog
       route.ts                # formats a routed message for a child
@@ -59,29 +61,30 @@ pi-extensions/                # one pi package: shared core plus one folder per 
       settings.ts             # generic settings helpers: read a JSON file, validate against a schema, apply a patch
       paths.ts                # per-session data directory next to the session file
     test/                     # mirrors core/; helpers/fakes.ts holds the fakes every extension's tests share
-      adapter/                # the only tests allowed to import pi (conformance, host, UI, main prompt, resolver)
+      adapter/                # the only tests allowed to import pi (conformance, host, UI, main prompt, resolver, pi-child, pi-scope, pi-tokens, session-file); live.ts builds a real runtime for the live suites
       manager/  helpers/
   extensions/
     subagents/
       src/
         index.ts              # single entry: root, settings, plugin list, createPiExtension
         plugins.ts            # the plugin list, next to the entry
-        model/                # types.ts (records, registry, service map), events.ts, settings.ts (schema, defaults), paths.ts, plugin.ts
+        model/                # types.ts (records, registry, service map), events.ts, settings.ts (schema, defaults), paths.ts, plugin.ts, frontmatter.ts, context-limit.ts
         plugins/
           agent-definitions/  # loads agent .md files, base prompt, main session prompt
-          run-agent/          # run_agent tool, batches, wake, result contract
+          run-agent/          # run_agent tool, batches, wake, result contract; worktree.ts for per-agent git worktrees
           agent-status/       # agent_status tool
           agent-registry/     # in-memory tree of agents, manifests, lifecycle state, busy signal
-          limits/             # per-agent context budget + handoff trigger
+          limits/             # per-agent context limit + handoff trigger; context-step.ts decides each turn
           usage-report/       # publishes every agent's usage on the `spending:usage` channel
           progress-widget/    # rows below the editor
-          agent-view/         # overlay transcript of one agent
+          agent-view/         # overlay transcript of one agent; mode-store.ts keeps the focus/verbose mode
           agent-list-view/    # overlay list of all agents
           handoff/            # handoff file schema, writer prompt, successor spawn
+          notifications/      # terminal notifications when main batches settle, agents fail or ask
         components/
-          collapsible.ts  agent-row.ts  agent-list.ts  system-prompt-block.ts
-      test/                   # mirrors src/; helpers/harness.ts builds the manager over the core fakes
-        model/  plugins/  components/
+          collapsible.ts  agent-row.ts  agent-list.ts  system-prompt-block.ts  context-breakdown.ts
+      test/                   # mirrors src/; helpers/harness.ts builds the manager over the core fakes, helpers/live.ts the real runtime
+        model/  plugins/  components/  live/  helpers/
       agents/                 # shipped agent definitions (.md)
       prompts/
         base-system-prompt.md
@@ -117,9 +120,9 @@ Goal: the main session, a cheap coordinator, can delegate work to one or more ba
 
 **F1 Agent definitions**
 - Value: users and the team add agents by dropping a markdown file.
-- Scope: loader for `~/.pi/agent/agents/*.md` and `.pi/agents/*.md` with project-over-user precedence; frontmatter schema (`name`, `description`, `model` as `name[:thinking]` (an exact `provider/id` or a name the harness resolves at spawn) or `inherit[:thinking]`, with no separate `thinking` field (a file that has one fails to load and is told to use the model suffix), `fallback`, `tools`, `skills`, `prompt`, `input`, `output`, `maxTurns`, and the mandatory `limit` and `subagents`); `subagents` names must exist, must not include the agent itself and must not form a cycle; base system prompt + per-agent additions assembled with `appendSystemPromptOverride`, never a full override (a full override drops pi's tools and rules sections); validation errors shown with `notify`.
+- Scope: loader for `~/.pi/agent/agents/*.md` and `.pi/agents/*.md` with project-over-user precedence; frontmatter schema (`name`, `description`, `model` as `name[:thinking]` (an exact `provider/id` or a name the harness resolves at spawn) or `inherit[:thinking]`, with no separate `thinking` field (a file that has one fails to load and is told to use the model suffix), `fallback`, `tools`, `skills`, `prompt`, `input`, `output`, `maxTurns`, and the mandatory `limit` and `subagents`); `subagents` names must exist, must not include the agent itself and must not form a cycle; base system prompt + per-agent additions assembled with `appendSystemPromptOverride`, never a full override (a full override drops pi's tools and rules sections); validation errors shown with `notify`. The field list here is superseded: the frontmatter fields are declared in `extensions/subagents/src/model/frontmatter.ts`, and `input` and `output` are no longer fields (`docs/deviations.md` entries 114 to 117), nor are `maxTurns`, `fallback` and `runtime` (entries 132 to 134).
 - Main session prompt: `prompts/main-session.md` replaces pi's default preamble in the main session at runtime (`before_agent_start`, `customPrompt`), and the `tools`, `rules` and `docs` sections that a custom preamble drops are rebuilt from the structured prompt options. It holds every orchestration rule. Agents never get orchestration rules in their system prompt: an agent allowed to spawn learns how from its `run_agent` description, built per agent at spawn by `describeRunAgent(allowedAgents, limits)` (allowed agents with descriptions and limits, depth, concurrency and budget rules, result contract). The main session uses the same builder with every loaded agent. Both prompt files live in the package; there are no prompt path settings.
-- Ships with three role agents, `explorer` (read-only search in large repos, returns file list + findings), `implementer` (edits, returns diff summary) and `reviewer` (read-only, returns findings), all with `subagents: []`, plus `general`, a fallback (`fallback: true`) for work no role agent fits, with every built-in tool and `subagents: [explorer, reviewer]`. `run_agent` lists fallback agents in a separate block "only when no agent above fits the work". Prompts are a separate task after the loader exists.
+- Ships with three role agents, `explorer` (read-only search in large repos, returns file list + findings), `implementer` (edits, returns diff summary) and `reviewer` (read-only, returns findings), all with `subagents: []`, plus `general`, a fallback (`fallback: true`) for work no role agent fits, with every built-in tool and `subagents: [explorer, reviewer]`. `run_agent` lists fallback agents in a separate block "only when no agent above fits the work". Prompts are a separate task after the loader exists. Now: there is no `fallback` field and `run_agent` lists every agent in one block; `general`'s description says to use it only when no other agent fits (`docs/deviations.md` entry 133).
 - Plugins: `agent-definitions`.
 - Tests: frontmatter parsing, precedence, invalid files, prompt assembly snapshot.
 
@@ -198,7 +201,7 @@ Goal: the main session, a cheap coordinator, can delegate work to one or more ba
 
 **F15 Context breakdown view** per agent (system prompt, tools, skills, messages, free space) with the budget line, green/yellow/red by percent.
 
-**F16 Subprocess isolation option** behind the adapter (`pi --mode rpc`) for agents that must survive a crash or need CPU isolation; selectable per agent definition.
+**F16 Subprocess isolation option** behind the adapter (`pi --mode rpc`) for agents that must survive a crash or need CPU isolation; selectable per agent definition. Built and then removed on the product owner's decision: agents run in-process only (`docs/deviations.md` entry 134).
 
 **F17 Compatibility**: tintinweb event-bus protocol (`subagents:rpc:spawn|stop|consume|ping`, `subagents:completed|failed`) so `@tintinweb/pi-tasks` works on top of us; accept Claude Code frontmatter fields where they map.
 
@@ -211,6 +214,7 @@ Goal: the main session, a cheap coordinator, can delegate work to one or more ba
 - Scope: children do not have MCP tools today: pi's MCP built-in is installed through the session's `extensionFactories`, and the child loader passes only our own child factory (docs/deviations.md entry 9). So the first part of F20 is to load pi's MCP built-in in child sessions next to our factory; the filtering below depends on it. Pi names MCP tools `mcp__<server>__<tool>` and lists them next to the built-in tools; a child session created with a `tools` list keeps only the MCP tools that match an entry starting with `mcp__` and drops them all when the list has none (`core/sdk.d.ts`, `core/mcp-servers.d.ts`). The agent file gets an `mcp` frontmatter field: a list of `mcp__<server>` namespaces or `mcp__<server>__<tool>` names the agent may use, empty by default, so an agent without the field gets no MCP tools. The loader validates the field (list of strings with the `mcp__` prefix) and the harness passes the resolved names together with the agent's `tools` at spawn, frozen like the rest of the tool set so the cache stays stable. The main session keeps pi's own MCP configuration untouched. `run_agent` describes which MCP tools each agent has so the orchestrator can pick the agent that has the tool a task needs. Pi's `mcp_servers_change` event is only informational for us; servers that connect after spawn do not reach a running agent.
 - Plugins: `agent-definitions` (field), `run-agent` (spawn), `agent-view` (the tools section already lists what was sent).
 - Tests: a child session loads pi's MCP built-in; loader accepts and rejects the field; spawn passes the filtered names; an agent without the field gets no MCP tools; the `run_agent` description names them.
+- Now: the product owner dropped per-agent MCP filtering. There is no `mcp` field; an agent with any tool loads pi's MCP, codemode and tool search built-ins and gets every MCP tool, `tools: []` loads none of them and can neither see nor call an MCP tool, the `run_agent` description lists no MCP tools, and agents honour `pi --no-mcp` (`docs/deviations.md` entries 128, 135 and 136).
 
 ## 4. Team streams and parallelism
 
@@ -228,7 +232,7 @@ Dependencies: F4 and F5 need the registry's event shape from F2, so the registry
 
 Settled during the 0.1 review:
 
-1. **Agent set.** Four shipped agents: `explorer`, `implementer`, `reviewer` and the `general` fallback (see the Agent set row in section 1).
+1. **Agent set.** Four shipped agents: `explorer`, `implementer`, `reviewer` and the `general` fallback (see the Agent set row in section 1). Now: `general`'s description says so; no flag (entry 133).
 2. **Nesting in MVP.** Nesting (F10) ships in 0.1 with default depth 3, because the `general` agent may start explorers and reviewers.
 3. **Mandatory frontmatter.** `limit` and `subagents` are required in every agent file; an empty list means no subagents.
 4. **Model and thinking override.** Allowed for every agent, only when the user deliberately asks, with typo-tolerant resolution and newest-version default (see the Model selection row).
@@ -250,7 +254,7 @@ Still open, the plan proceeds on the stated assumption:
 - Pi shipped 1.0.0 and 1.1.0 within a week with 48 breaking-change sections in the changelog. The adapter plus conformance test is the mitigation; budget a day per pi release.
 - Cache-safe waking of the main session rests on `sendUserMessage` behaving as the type suggests when idle. The spike verifies it; if it fails, the fallback is an outbox flushed on the user's next prompt.
 - `ScrollView` and mouse events only exist in fullscreen TUI mode. Regular mode is keyboard only, and was not tested.
-- In-process children share the process: an OOM or crash in one agent takes the session down. F16 is the escape hatch.
+- In-process children share the process: an OOM or crash in one agent takes the session down. F16 is the escape hatch. Now: F16 was removed (`docs/deviations.md` entry 134), so this risk is accepted.
 - Typo-tolerant model resolution can match an unintended family. The resolver refuses when matches span families and echoes the resolved model everywhere, so a wrong pick is visible before spend accrues. Pi's catalog has no release dates, so "newest" compares version numbers in the id only.
 - Nesting and the budget handoff have only been exercised through the fake runtime and unit tests, not against a real pi session.
-- Agents get no MCP tools and share one model runtime, so providers registered by other extensions cannot be used by agents until a fresh runtime with provider replay is added.
+- In-process agents share one model runtime, so providers registered by other extensions cannot be used by them until a fresh runtime with provider replay is added. MCP tools reach every agent with tools; `tools: []` loads no MCP and can neither see nor call an MCP tool (F20 as reshaped by docs/deviations.md entries 128 and 136).

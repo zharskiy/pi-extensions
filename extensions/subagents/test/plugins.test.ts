@@ -3,7 +3,7 @@ import { plugins } from "../src/plugins.ts";
 import { createHarness } from "./helpers/harness.ts";
 
 describe("subagents plugin set", () => {
-  it("enables the release 0.2 plugin set and reports everything it adds to pi", () => {
+  it("enables the release 0.3 plugin set and reports everything it adds to pi", () => {
     const harness = createHarness(plugins);
     const report = harness.manager.report();
 
@@ -12,6 +12,7 @@ describe("subagents plugin set", () => {
       "agent-definitions",
       "handoff",
       "run-agent",
+      "notifications",
       "usage-report",
       "agent-status",
       "limits",

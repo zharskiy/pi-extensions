@@ -7,6 +7,7 @@ import {
   type AgentStatusParams,
   agentStatusPlugin,
 } from "../../../src/plugins/agent-status/index.ts";
+import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
@@ -25,6 +26,18 @@ const setup = () => {
 };
 
 describe("agent_status", () => {
+  it("names the model next to the agent", async () => {
+    const harness = setup();
+
+    await harness.runAgent.execute({ agents: [{ agent: "explorer", task: "one" }] }, { update: () => {} });
+    await flush();
+
+    const registry = harness.services.require("registry");
+    const [record] = registry.list();
+
+    expect(snapshotLine(snapshotOf(record, Date.now()))).toContain(`(explorer, ${record.model}) running`);
+  });
+
   it("returns a snapshot for one or several agents in one call", async () => {
     const harness = setup();
 
@@ -88,6 +101,7 @@ describe("agent_status", () => {
         "successorId",
         "tokens",
         "toolCalls",
+        "worktree",
       ].sort(),
     );
     expect(result.details?.agents).toHaveLength(2);

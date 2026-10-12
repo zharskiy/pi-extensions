@@ -1,5 +1,5 @@
 import { elapsedOf, formatElapsed, formatTokens, singleLine, truncate } from "../../components/agent-row.ts";
-import type { AgentRecord } from "../../model/types.ts";
+import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
 
 export type AgentSnapshot = {
   id: string;
@@ -20,6 +20,7 @@ export type AgentSnapshot = {
   predecessorId?: string;
   successorId?: string;
   requestedId?: string;
+  worktree?: Worktree;
 };
 
 export const LAST_LINE_CHARS = 160;
@@ -72,6 +73,7 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   predecessorId: record.predecessorId,
   successorId: record.successorId,
   requestedId: requestedId === record.id ? undefined : requestedId,
+  worktree: record.worktree,
 });
 
 const chainText = (snapshot: AgentSnapshot) => {
@@ -103,6 +105,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
     snapshot.error ? `error: ${snapshot.error}` : undefined,
     snapshot.resultPath ? `result: ${snapshot.resultPath}` : undefined,
     snapshot.handoffPath ? `handoff: ${snapshot.handoffPath}` : undefined,
+    snapshot.worktree ? `worktree: ${worktreeText(snapshot.worktree)}` : undefined,
   ].filter((part): part is string => part !== undefined);
 
   const lines = extras.map((extra) => `  ${extra}`);

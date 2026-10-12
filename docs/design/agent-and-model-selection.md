@@ -78,7 +78,7 @@ There is no "right" haiku without either guessing or asking. Pi's guessing rule 
 Two background facts apply to every option.
 
 - **Prompt cache.** The child's model is fixed at spawn and never changes mid-agent, so a per-call override cannot break the child's cache. The main session's cache is only at risk if the `run_agent` definition changes between turns. An optional schema property is static. Listing each agent's default model in the description is static per session. Listing the catalog in the description is not: it changes with `pi update --models`, and it would add 100+ lines. Candidates must therefore go in tool results, which are appended, never in the description.
-- **Budget.** The budget already caps at the model's window (`src/plugins/limits/budget.ts:3-9`), so a model with a smaller window is handled. Thinking level is clamped to the model by pi.
+- **Context limit.** The effective limit already caps at the model's window (`src/model/context-limit.ts`), so a model with a smaller window is handled. Thinking level is clamped to the model by pi.
 
 ### (a) No per-call override
 

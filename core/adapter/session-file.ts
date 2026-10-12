@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { PromptRecord, PromptSection, PromptTool, SessionRecord, TranscriptItem } from "./contract.ts";
+import { contentParts, messageText } from "./messages.ts";
+import { contextTokensOf, type RawUsage } from "./pi-tokens.ts";
 
 export const promptRecordEntry = (namespace: string) => `${namespace}:prompt-record`;
 
@@ -15,6 +17,8 @@ type RawMessage = {
   toolName?: string;
   isError?: boolean;
   customType?: string;
+  stopReason?: string;
+  usage?: RawUsage;
 };
 
 type RawEntry = {
@@ -33,17 +37,6 @@ export type PromptRecordData = {
   guidelines?: string[];
   providerPayload?: unknown;
   model?: string;
-};
-
-const textOf = (content: string | ContentPart[] | undefined) => {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  return (content ?? [])
-    .filter((part) => part.type === "text")
-    .map((part) => part.text ?? "")
-    .join("\n");
 };
 
 type Replay = { sections: Map<string, string>; tools: Map<string, PromptTool> };
@@ -76,7 +69,7 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
     return {
       kind: "custom",
       customType: entry.customType ?? "custom",
-      text: textOf(entry.content),
+      text: messageText(entry.content),
       raw: {
         role: "custom",
         customType: entry.customType ?? "custom",
@@ -95,7 +88,7 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
   }
 
   if (message.role === "user") {
-    return { kind: "user", text: textOf(message.content) };
+    return { kind: "user", text: messageText(message.content) };
   }
 
   if (message.role === "toolResult") {
@@ -103,7 +96,7 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
       kind: "tool",
       toolName: message.toolName ?? "tool",
       toolCallId: message.toolCallId ?? "",
-      text: textOf(message.content),
+      text: messageText(message.content),
       isError: message.isError === true,
       raw: message,
     };
@@ -113,7 +106,7 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
     return undefined;
   }
 
-  const parts = Array.isArray(message.content) ? message.content : [];
+  const parts: ContentPart[] = contentParts(message.content);
 
   const thinking = parts
     .filter((part) => part.type === "thinking")
@@ -126,11 +119,24 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
 
   return {
     kind: "assistant",
-    text: textOf(message.content),
+    text: messageText(message.content),
     thinking: thinking || undefined,
     toolCalls,
     raw: message,
   };
+};
+
+const measuredContext = (message: RawMessage | undefined) => {
+  const usage = message?.role === "assistant" ? message.usage : undefined;
+  const failed = message?.stopReason === "aborted" || message?.stopReason === "error";
+
+  if (!usage || failed) {
+    return undefined;
+  }
+
+  const tokens = contextTokensOf(usage);
+
+  return tokens > 0 ? tokens : undefined;
 };
 
 export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord => {
@@ -171,7 +177,13 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 
   const items = entries.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
 
-  return { prompt, items };
+  const contextTokens = entries
+    .filter((entry) => entry.type === "message")
+    .map((entry) => measuredContext(entry.message))
+    .filter((tokens) => tokens !== undefined)
+    .at(-1);
+
+  return { prompt, items, contextTokens };
 };
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
