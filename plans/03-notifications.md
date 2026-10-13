@@ -2,13 +2,13 @@
 
 Implements D5 and UX spec §8/§9. Depends on plan 01 §F (`Host.onDialog`, `HostUi.onKeyPress`, fake drivers `dialog()`/`pressKey()`/`keyListeners`) and §G (`BUSY_CHANNEL = "pi:busy"`); both must be merged first. This plan only uses the `BUSY_CHANNEL` constant and writes `pi:busy` in docs.
 
-Review resolution: Reviewed 2026-10-14: findings 7, 23, 32 applied; decisions P1 (no BEL on auto), P2 (idleDelayMs 20 000).
+Review resolution: Reviewed 2026-10-14: findings 7, 23, 32 applied; decisions P1 (no BEL on auto), P2 (idleDelayMs 20 000). Revised 2026-10-14 (fourth pass): agents never ask the user (decisions, fourth pass; spec §2 "Agents never ask"), so every dialog this extension sees is a main-session dialog; the forwarded-dialog wording is gone.
 
 ## 1. Goal and behaviour
 
 New extension `extensions/notifications/` (namespace `pi-notifications`): one terminal notification when pi waits for the user after the work is done (main settled, no busy source, no keystroke for `idleDelayMs`), and one when a dialog waits unanswered (`dialogDelayMs`). TUI only. The subagents `notifications` plugin, its setting and the `session:closing` bus event go. Nothing per agent, batch or tool.
 
-Texts (exact): `pi is waiting for your input`; `pi needs your input: <title>` (a dialog with no title: `pi needs your input`). `<title>` is pi's `ui_prompt_start.title` as is. For a dialog forwarded from an agent that title is already `<agent> › <description> asks: <title>` (spec §3 "Forwarded dialog titles", built by plan 04), so the notification reads `pi needs your input: explorer › Map the auth module asks: Allow bash?`. This is intended: the agent's name and description tell the user which dialog waits. The extension does not strip or re-prefix it.
+Texts (exact): `pi is waiting for your input`; `pi needs your input: <title>` (a dialog with no title: `pi needs your input`). `<title>` is pi's `ui_prompt_start.title` as is, e.g. `pi needs your input: Switch to a new session?` (the confirmation `/session-handoff` shows while agents run). Only the main session opens dialogs: an agent's dialogs resolve to their denial defaults inside the child and never reach the main UI (spec §2 "Agents never ask"), so there is no per-agent dialog notification.
 
 Channels (`channel` setting): `auto` = OSC 9 `\x1b]9;<message>\x07`, or on rxvt (`TERM`/`TERM_PROGRAM` matches `/rxvt/i`) OSC 777 `\x1b]777;notify;pi;<message>\x07`, with no leading BEL (the trailing `\x07` only terminates the OSC string); `bell` = BEL only; `off` = the extension does nothing at all (no key listener, no timers). `auto` rings no bell because the idle notification also fires after ordinary replies the user is reading, and a bell every time is noise. Terminals without OSC 9/777 support get nothing on `auto`, as with Claude Code; `bell` is their fallback.
 
@@ -40,7 +40,7 @@ Derived states: **quiet** (`!pending`), **held** (`pending`, `sources` non-empty
 | `idleTimer` fires | `active && pending && sources.size === 0 && !dialog && host.isIdle()` | `pending = false`; `send(IDLE_TEXT)`; otherwise nothing (`pending` kept, so a dialog end or a busy clear re-arms) |
 | `dialogTimer` fires | `active && dialog && !dialog.fired` | `dialog.fired = true`; `send(dialogText(dialog.title))` |
 
-`armIdle()` = clear `idleTimer`, then `idleTimer = later(fire, settings.idleDelayMs)` (full delay each time). `armDialog()` = same with `dialogDelayMs`, so the dialog timer runs from the later of the dialog start and the last keystroke. `send(text)` = `host.ui.terminalNotify(text, channel)` (channel is `auto` or `bell` here). Busy bookkeeping runs even when inactive (cheap; the subscription is made at boot so the registry's `session_start` publish is heard). Repeated `busy: true` from one source is one entry; `busy: false` from an unknown source does nothing. Nested dialogs are folded into the outer one by pi, so a forwarded agent dialog shown while the `/agents` overlay (`custom`) is open does not notify (known limitation; the user is at the keyboard).
+`armIdle()` = clear `idleTimer`, then `idleTimer = later(fire, settings.idleDelayMs)` (full delay each time). `armDialog()` = same with `dialogDelayMs`, so the dialog timer runs from the later of the dialog start and the last keystroke. `send(text)` = `host.ui.terminalNotify(text, channel)` (channel is `auto` or `bell` here). Busy bookkeeping runs even when inactive (cheap; the subscription is made at boot so the registry's `session_start` publish is heard). Repeated `busy: true` from one source is one entry; `busy: false` from an unknown source does nothing. Nested dialogs are folded into the outer one by pi, so a dialog opened while the `/agents` overlay (`custom`) is open does not notify (known limitation; the user is at the keyboard).
 
 ### Adapter contract change (required)
 
@@ -106,7 +106,7 @@ A pi extension that tells you, through your terminal, when pi is waiting for you
 
 - When the main session finishes its work and you have not touched the keyboard for 20 seconds, it sends one notification: `pi is waiting for your input`. Each finished run notifies at most once; a key press, a new run or a busy extension cancels it.
 - While background agents run (any extension that reports on the busy channel `pi:busy`, such as subagents), the notification waits. When the agents finish, the main session usually starts a new run to read their results; the notification comes 20 seconds after that run ends, once.
-- When a dialog waits for an answer (a confirmation, a choice, a text field, including permission prompts forwarded from agents), it sends `pi needs your input: <dialog title>` after 6 seconds without a key press. Each key press restarts the 6 seconds; answering or closing the dialog cancels it. Each dialog notifies at most once. Overlays such as `/agents` never notify.
+- When a dialog waits for an answer (a confirmation, a choice or a text field of the main session; agents never ask), it sends `pi needs your input: <dialog title>` after 6 seconds without a key press. Each key press restarts the 6 seconds; answering or closing the dialog cancels it. Each dialog notifies at most once. Overlays such as `/agents` never notify.
 - Nothing is sent per agent, per batch or per tool.
 - Active only in the interactive TUI; `--mode rpc`, `--mode json` and `-p` write nothing.
 
@@ -198,7 +198,7 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 - Active only in `tui` mode and when `channel` is not `off`; otherwise it registers no key listener and arms no timer. `pi-notifications.json` is read at session start; nothing is persisted, timers are unref'd and cleared on shutdown.
 - Idle notification: `Host.onIdle` (pi's `agent_settled`, once per run) marks the settle pending and, when no source is on the busy channel (`pi:busy`, kept as a set of source names like session-limits), arms an `idleDelayMs` timer. `Host.onAgentStart`, any key (`HostUi.onKeyPress`, observed without consuming) and a busy source appearing cancel it; the last busy source clearing or a dialog ending re-arms it with the full delay while the settle is still pending. At fire time it checks again (pending, no busy source, no dialog, `isIdle()`), sends `pi is waiting for your input` and clears the pending settle, so a settle notifies at most once.
 - Agents and the wake: subagents holds the busy channel while any agent is open. Agents finishing while main is idle arm the timer, but the outbox's wake starts a run through a visible user line at once, which cancels it; that run's settle arms it again. One notification follows the finished work.
-- Dialog notification: `Host.onDialog` (pi's `ui_prompt_start`/`ui_prompt_end`, outermost dialog only, agents' forwarded dialogs included; `custom` overlays ignored). `dialogDelayMs` after the later of the dialog start and the last key it sends `pi needs your input: <title>`, at most once per dialog; the dialog ending cancels it.
+- Dialog notification: `Host.onDialog` (pi's `ui_prompt_start`/`ui_prompt_end`, outermost dialog only, main-session dialogs only since agents never open one; `custom` overlays ignored). `dialogDelayMs` after the later of the dialog start and the last key it sends `pi needs your input: <title>`, at most once per dialog; the dialog ending cancels it.
 - Output: `HostUi.terminalNotify(message, channel)` with `auto` (OSC 9/777 only, no BEL: the idle notification follows ordinary replies too, and a bell each time is noise) or `bell`.
 ```
 
@@ -212,7 +212,7 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 6. `runner.batchSettled`: its only caller was the deleted plugin. Remove it from `AgentRunner` (`model/types.ts:138`), `runner.ts:153-157` and the returned object (`:932`), and delete `describe("batchSettled")` in `test/plugins/run-agent/run-agent.test.ts:507-525`.
 7. `extensions/subagents/README.md`:
    - Line 7: drop `terminal notifications, ` from the 0.3.0 sentence.
-   - Replace the "Terminal notifications: …" bullet with: "- Notifications are not part of this extension: the notifications extension in this repository (`extensions/notifications/`) sends one terminal notification when pi waits for your input after the agents are done, and one when a dialog, including a permission prompt forwarded from an agent, waits unanswered. It waits for agents through the busy channel this extension reports on (`pi:busy`, source `pi-subagents`)."
+   - Replace the "Terminal notifications: …" bullet with: "- Notifications are not part of this extension: the notifications extension in this repository (`extensions/notifications/`) sends one terminal notification when pi waits for your input after the agents are done, and one when a dialog of the main session waits unanswered (agents never ask). It waits for agents through the busy channel this extension reports on (`pi:busy`, source `pi-subagents`)."
    - Settings "Other keys": delete `` `notifications` (true; `false` turns terminal notifications off), ``.
 8. Docs that plan 01 §G already rewrites for `pi:busy` (session-limits README, subagents README busy bullet) need no further change here.
 
@@ -221,7 +221,7 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 Sequence when the user is away and agents run in the background:
 
 1. Main run settles → `onIdle`: `pending = true`; the registry has `pi-subagents` busy, so **held** (no timer).
-2. Agents work. A forwarded dialog would notify on its own after `dialogDelayMs`.
+2. Agents work. They never open a dialog; only a main-session dialog would notify, on its own, after `dialogDelayMs`.
 3. The last agent closes → registry `agent:changed` → `pi:busy { source: "pi-subagents", busy: false }` → sources empty, still pending → **armed** (20 s).
 4. `batch:settled` → outbox → `sendHiddenMessage(..., "2 agents finished")` → idle path → `sendUserMessage` → pi `agent_start` → `onAgentStart`: `pending = false`, timer cleared (**quiet**).
 5. Wake run settles → `onIdle` → **armed** → 20 s without a key → `pi is waiting for your input`, once.
@@ -245,7 +245,7 @@ Other events in spec §8's "must not notify" table need no code: the extension l
 - [ ] Ask something short, switch to another app at once: one desktop notification `pi is waiting for your input` about 3 s after the reply, with no bell sound or flash; nothing more after a minute.
 - [ ] Same, but press any key within 3 s: nothing. Scrolling with the mouse wheel alone does not cancel.
 - [ ] Ask the main session to run two background agents and leave: nothing at the main reply, nothing while they run; the `2 agents finished` line starts a run; one notification 3 s after that reply.
-- [ ] A dialog that waits (with agents running, `/session-handoff` asks to confirm): notification `pi needs your input: <title>` with the dialog's title as pi shows it, after 2 s; a permission prompt forwarded from an agent reads `pi needs your input: <agent> › <description> asks: <title>`; pressing `↓` repeatedly keeps deferring it; answering within 2 s sends nothing.
+- [ ] A dialog that waits (with agents running, `/session-handoff` asks to confirm): notification `pi needs your input: <title>` with the dialog's title as pi shows it, after 2 s; an agent whose extension asks a confirmation sends nothing (the agent gets the denial at once); pressing `↓` repeatedly keeps deferring it; answering within 2 s sends nothing.
 - [ ] `/agents` left open for 10 s: nothing.
 - [ ] `"channel": "bell"` + `/reload`: bell only (sound, flash or tab mark per terminal settings), no desktop notification; Apple Terminal with `auto` shows nothing, with `bell` rings. `"channel": "off"`: nothing.
 - [ ] `"channel": "loud"`: one warning at session start, defaults used.

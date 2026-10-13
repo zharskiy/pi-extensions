@@ -10,6 +10,8 @@ Every blocker and should-fix below was applied to the plans on the same day; eac
 - P4: the `tools` service is `{ list(), add() }` (finding 29).
 - P5: the panel window keeps its top row when the selection clears (finding 41).
 - P6: `Esc` in the list cancels a pending stop-all and closes (declared-deviation push-back accepted).
+
+Fourth pass (2026-10-14): agents never ask the user (`decisions.md`, fourth pass). Dialog forwarding, the prompt queue, the record's `attention` field and every `needs input` surface are removed, so finding 23 and the `03 §1` forwarded-dialog row of the accepted-limitations table are moot; the rest of this file describes the plans as reviewed.
 - Finding 18: `core/manager/format.ts` holds `formatTokens` and `formatDuration`; footer and working-indicator import them.
 - Finding 28: no completion lines for agents interrupted by a session switch.
 - Finding 42: documented in the subagents README; no behaviour change.
@@ -100,7 +102,7 @@ Everything else in spec §3–§9 maps to a plan step: block header phases, rows
 | 06 §2 | `/agents` completion lists only visible agents | accept |
 | 02 §2 | Repeated `agent_start` keeps the clock (today restarts it) | accept (spec §7 asks for it) |
 | 02 §2 | Working row jitter on each hide/show | accept (D7) |
-| 03 §1 | A forwarded dialog shown while `/agents` is open does not notify | accept |
+| 03 §1 | A forwarded dialog shown while `/agents` is open does not notify | accept (moot after the fourth pass: agents open no dialogs; the same holds for a main-session dialog opened over the overlay) |
 
 ## 3. Incorrect claims about pi or the codebase, and rule violations
 

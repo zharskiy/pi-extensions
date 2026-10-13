@@ -1,6 +1,6 @@
 # UX spec: Claude-alike subagents
 
-Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`). Revised 2026-10-14 (third pass): the `/agents` list keeps the agent tree in both of its sections (`Running`, `Completed (n)`; no `Needs input` section); agents are named by `<agent> › <description>` (§2 Identity); one padding rule set for every surface (§2 "Padding and margins", from `research/padding.md`); a shorter agent view hint.
+Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`). Revised 2026-10-14 (third pass): the `/agents` list keeps the agent tree in both of its sections (`Running`, `Completed (n)`; no `Needs input` section); agents are named by `<agent> › <description>` (§2 Identity); one padding rule set for every surface (§2 "Padding and margins", from `research/padding.md`); a shorter agent view hint. Revised 2026-10-14 (fourth pass): agents never ask the user for input; a child's dialogs resolve at once to their denial defaults and its `notify` is a no-op, so dialog forwarding, the `needs input` status and the record's `attention` field are gone (§2 Agents never ask, decisions D2, D3, D5).
 
 Single source of truth for what the user sees and does. Follows `plans/research/decisions.md` (D1–D7); where this file is more precise, it wins. Strings in code spans are exact. Timings are in ms with their setting name. Mockups are 80 columns wide and draw the padding of §2 "Padding and margins" (a leading space is `PAD` or pi's `outputPad`; no text line reaches the last column; only `─` rules are 80 wide); `provider/model:high` stands for any model label. Nothing here names a provider or a model.
 
@@ -28,8 +28,6 @@ State words, glyphs and theme tokens for every `AgentRecord.state` (theme tokens
 | `stopped` | `stopped` | `was stopped` | `■` | `muted` |
 | `handoff` | `handed off` | `handed off` | `↪` | `warning` |
 
-Attention (a forwarded dialog waits): the glyph stays the state's glyph; the status word is `needs input` in `warning`, and it replaces the elapsed/tokens stats wherever stats are shown.
-
 Spinner: the ten braille frames `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, painted `accent`. The frame is `floor(now / 100) % 10` at render time, so every surface shows the same frame and no surface keeps a frame counter. Surfaces that need to animate while pi is otherwise idle run a shared ticker (`agentsTickMs`, fixed 100 ms, not a setting) while any record is `running` or `grace`; 1000 ms while only `queued` or closed rows are on screen; none when nothing is on screen.
 
 Shared formatters (`formatTokens` and `formatDuration` live in `core/manager/format.ts` so the footer and the working indicator share them too; the subagents module re-exports them; the duplicates in `footer/src/render.ts` and `components/agent-row.ts` go):
@@ -42,7 +40,7 @@ Shared formatters (`formatTokens` and `formatDuration` live in `core/manager/for
 - Separator inside stats: ` · ` (space, middle dot, space).
 - Truncation: `…` as the last visible cell, measured in display columns, never in UTF-16 units.
 
-Identity: what the user sees about an agent is its agent definition name (`record.agent`, e.g. `explorer`, with ` #2` for a later chain link), its description, its model, its state and its stats. The name and the description appear together everywhere an agent is named: transcript rows `explorer (Map the auth module)`, panel and list rows, the agent view header `explorer › Map the auth module`, forwarded dialog titles `explorer › Map the auth module asks: <title>`; completion lines use the description alone. The model label is shown on the transcript row (§3, `dim`) and on the agent view header's second line (§6), not on panel or list rows. The hex id (`explorer-3f2a9c1b7d0e`) is a handle for commands, not a label: it appears only on the agent view header (`id <id>` on its second line, the link ids of its chain line) and in command and status lines (`/agents <id>`, `Status unavailable · /agents <id>`, the `message_agent <id> …` call line, child `notify` lines `<id> (<agent>): <message>`), plus the model-facing task message `Task from <caller> (agent id <id>): …` that the view shows unchanged as its first transcript item.
+Identity: what the user sees about an agent is its agent definition name (`record.agent`, e.g. `explorer`, with ` #2` for a later chain link), its description, its model, its state and its stats. The name and the description appear together everywhere an agent is named: transcript rows `explorer (Map the auth module)`, panel and list rows, the agent view header `explorer › Map the auth module`; completion lines use the description alone. The model label is shown on the transcript row (§3, `dim`) and on the agent view header's second line (§6), not on panel or list rows. The hex id (`explorer-3f2a9c1b7d0e`) is a handle for commands, not a label: it appears only on the agent view header (`id <id>` on its second line, the link ids of its chain line) and in command and status lines (`/agents <id>`, `Status unavailable · /agents <id>`, the `message_agent <id> …` call line), plus the model-facing task message `Task from <caller> (agent id <id>): …` that the view shows unchanged as its first transcript item.
 
 ### Padding and margins
 
@@ -57,6 +55,10 @@ Every surface follows one set of margins, so no text is glued to a display edge 
 - Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block and the completion lines are cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
 
 `PAD`, `innerWidth(width)` and `alignRight(left, right, cols)` live in `extensions/subagents/src/components/format.ts` (plan 04) next to `truncateCols` and `padEndCols`; the panel, the list and the view import them.
+
+### Agents never ask
+
+Only the main session is interactive. A child's `confirm` resolves `false`, its `select` and `input` resolve `undefined`, all at once and without showing anything, and its `notify` does nothing (`core/adapter/pi-child.ts` `childUiContext`). An agent that needs a decision states it in its result. No state, word, colour or row variant signals a waiting dialog; there is no `needs input` anywhere. The main session's own dialogs are unchanged; they are the only dialogs §8 notifies about.
 
 ## 3. Surface A: main transcript
 
@@ -87,7 +89,6 @@ Rows, one per agent of the batch, tree-connected under the header with `├─ `
 | `running`, no turn ended yet, no tool started | `Initializing…` | `muted` |
 | `running`, `wait: false` | `Running in the background` | `muted` |
 | `running`, `wait: true` | `Running · 4 tool uses · 12.3k tokens` (live) | `muted` |
-| attention (any open state) | `Needs input: <dialog title>` | `warning` |
 | `grace` | `Stopping…` | `warning` |
 | `done` | `Done · 4 tool uses · 12.3k tokens · 1m 5s` | `Done` `success`, rest `dim` |
 | `failed` | `Failed: <first line of error>` | `error` |
@@ -126,11 +127,6 @@ In both cases the dim completion lines (above) have already appeared as each age
 
 - `message_agent` call line `message_agent <id> <first 60 chars>` and its default-rendered result (`Message delivered to <id> (steer).` and the error strings) stay.
 - `agent_status` call line and result stay.
-- `Esc` on a forwarded dialog denies that one call. Child `notify` lines keep `<id> (<agent>): <message>`.
-
-### Forwarded dialog titles
-
-A dialog forwarded from an agent is titled `<agent> › <description> asks: <title>` (e.g. `explorer › Map the auth module asks: Run npm test?`; ` #2` after the name for a later chain link), replacing `<id> (<agent>) asks: <title>`: the user knows agents by name and description, not by id (§2 Identity). The description is cut at 60 columns with `…`. The notification extension shows this title as is (`pi needs your input: explorer › Map the auth module asks: Run npm test?`).
 
 ### Mockups
 
@@ -148,14 +144,14 @@ Batch of 3 just launched (`wait: false`):
 
 One leading space = pi's `outputPad` (1 by default) in every transcript mockup.
 
-Same batch, one done and one needing input (the completion line is a separate entry below the block):
+Same batch, one done (the completion line is a separate entry below the block):
 
 ```
  3 background agents launched (← to manage)
  ├─ explorer (Map the auth module)
  │  Done · 4 tool uses · 12.3k tokens · 1m 5s
  ├─ worker (Fix the login redirect)
- │  Needs input: Run npm test?
+ │  Running in the background
  └─ reviewer (Review the diff of PR 5)
     Running in the background
 
@@ -200,7 +196,7 @@ A widget below the editor (`belowEditor`), replacing the progress widget. No hea
 - `name`: `record.agent`, `text` (`muted` on closed rows), with ` #2` for chain links after the first; `(+N)` (`dim`) is the number of open descendants of this agent; omitted when 0. The name column is padded to the widest visible name, capped at 24 columns, then two spaces.
 - `description` (`muted`): always the agent's description, so two agents of the same kind stay distinguishable (deviation: Claude replaces it with the latest progress summary; we keep the description and put the activity in the stats column).
 - `activity`: while `running`, the latest activity when known, shown as the first part of the stats: the last top-level tool name (`grep`, `bash`, `codemode`, …) or, when the last event was an assistant message, the word `writing`. It is `dim` like the stats and separated with ` · `. The record gains `activity?: { kind: "tool" | "text"; text: string; at: number }`; its `text` is the tool name or the first line of the assistant text (used by the agent view header later, not by the row).
-- `stats`, right-aligned to `PAD + W` (ending one column before the last): `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `needs input` (`warning`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
+- `stats`, right-aligned to `PAD + W` (ending one column before the last): `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
 
 Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are pointer (2), tree, glyph (2), name column, two spaces, and two spaces before the stats. The description gets the rest. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description is cut with `…` to fit. A correct line ends at `PAD + W` (79 columns at width 80); the last column stays blank, and the adapter's hard cut at `width` is only a safety net.
 
@@ -306,7 +302,7 @@ A full-screen overlay (`openOverlay`, width `100%`, max height `100%`). `/agents
 
 ```
 (blank)
- Agents · 3 running · 1 needs input · 3 done
+ Agents · 3 running · 3 done
 (blank)
  Running
 <rows: open roots, each with its descendants in tree order>
@@ -321,8 +317,8 @@ A full-screen overlay (`openOverlay`, width `100%`, max height `100%`). `/agents
 ```
 
 - Every text line starts at `PAD` and is cut at `inner` (§2 "Padding and margins"); rows put their pointer gutter at `PAD`, under the first letter of the section headers, and their glyphs two columns in.
-- Title `Agents` bold; subtitle (`dim`) ` · 3 running · 1 needs input · 3 done`: `running` counts every open record (queued, running, grace, including the ones that need input), `needs input` counts the open records waiting on a dialog and is shown only when above 0, `done` counts the closed records listed (in either section; not only the roots). A zero part is omitted (`Agents · 3 running`). With no rows at all the body is one `muted` line `No agents running` and no subtitle.
-- Two sections, headers bold: `Running` and `Completed (n)`, where `n` counts the closed roots. An empty section is not shown; one blank line between sections. There is no `Needs input` section: an agent waiting on a dialog stays in its tree position and its row shows `needs input` (`warning`) in the stats column, as the panel row does (§4).
+- Title `Agents` bold; subtitle (`dim`) ` · 3 running · 3 done`: `running` counts every open record (queued, running, grace), `done` counts the closed records listed (in either section; not only the roots). A zero part is omitted (`Agents · 3 running`). With no rows at all the body is one `muted` line `No agents running` and no subtitle.
+- Two sections, headers bold: `Running` and `Completed (n)`, where `n` counts the closed roots. An empty section is not shown; one blank line between sections. There is no third section: every agent is either running or completed (agents never wait on the user, §2).
 - The list shows the agent structure everywhere: a subagent is always under the agent that started it, in both sections. A root is a record whose caller is `main` or not in the registry; an open record whose caller is closed also counts as a root (rare: a caller normally outlives its children).
 - `Running`: every open root, in tree order (callers first, children under them, siblings by `createdAt`) with the panel's connectors, with all its listed descendants under it, open or closed. A closed descendant renders as a closed row (`muted` name, state word and duration in the stats column) and keeps its tree position.
 - `Completed (n)`: the closed roots, newest `endedAt` first, each followed by its closed descendants in tree order.
@@ -355,16 +351,16 @@ Hint line (`dim`, at `PAD`, 72 columns): `↑/↓ to select · enter to view · 
 
 ### Mockup
 
-A closed child under a running parent, a child that needs input in its tree position, and a completed root with its child; one leading space = `PAD`, every row 79 columns at width 80:
+A closed child under a running parent, a running child in its tree position, and a completed root with its child; one leading space = `PAD`, every row 79 columns at width 80:
 
 ```
 
- Agents · 3 running · 1 needs input · 3 done
+ Agents · 3 running · 3 done
 
  Running
    ⠹ explorer     Map the auth module             grep · 1m 5s · ↓ 12.3k tokens
  › ⠹ worker (+1)  Fix the login redirect         bash · 2m 10s · ↓ 30.1k tokens
-   ├─ ⠹ explorer     Find callers of login                          needs input
+   ├─ ⠹ explorer     Find callers of login           read · 12s · ↓ 1.1k tokens
    └─ ✓ explorer     Find callers of parseDate                       done · 45s
 
  Completed (1)
@@ -383,7 +379,7 @@ A closed child under a running parent, a child that needs input in its tree posi
 
 The overlay's top row is blank (§2 "Padding and margins"). Then the header lines, top to bottom, each at `PAD` and cut at `inner`, then a `dim` rule of `─` across the full width (edge to edge; rules are not inset):
 
-1. `<glyph> <agent>[ #n] › <description>` (like Claude Code's `Explore › Map the auth module`): glyph in the state token (coloured, unlike today); agent name (`record.agent`) bold, with ` #n` for a chain link after the first (`explorer #2 › …`); ` › ` and the description plain `text`. With attention: ` · needs input: <title>` (`warning`) appended. The description is cut with `…` so the line fits `inner` (at least 8 columns of it; when even that does not fit, the attention suffix is cut too).
+1. `<glyph> <agent>[ #n] › <description>` (like Claude Code's `Explore › Map the auth module`): glyph in the state token (coloured, unlike today); agent name (`record.agent`) bold, with ` #n` for a chain link after the first (`explorer #2 › …`); ` › ` and the description plain `text`. The description is cut with `…` so the line fits `inner` (at least 8 columns of it; when even that does not fit, the line is cut at `inner`).
 2. `<state word> · <model> · id <id>` (`dim`): state word from section 2 (`queued`, `running`, `stopping`, `done`, `failed`, `stopped`, `handed off`); the model label or `model n/a`; the hex id, the handle `/agents <id>` takes. Apart from the chain line (5), whose link ids open those links with `/agents <id>`, and the task message, this is the only place in the view that shows an id.
 3. `4 tool uses · 12.3k tokens · 1m 5s · 23% ctx` (`dim`); live while open; `23% ctx` omitted when unknown.
 4. Optional, `failed`: `error: <first line of error>` (`error`). Optional, `handoff`: `handoff: <path>[ (invalid: <reasons>)]` (`warning`).
@@ -545,7 +541,7 @@ Clock: starts at the `agent_start` that begins a run (the previous run has settl
 
 A wake-triggered run is a run like any other: the indicator appears at its `agent_start` with a fresh clock and verb, in phase `waiting`, the moment the model's turn starts. `run_agent` with `wait: true` is a tool execution of the main session, so the indicator shows `Verb… (run_agent · 1m 5s · esc to interrupt)` for the whole batch.
 
-Nothing from child sessions affects the indicator: no child event, child tool, child dialog, child notify, agent close, batch settle or busy-channel change may change the phase, the message, the clock or the visibility. The plan states and tests this.
+Nothing from child sessions affects the indicator: no child event, child tool, agent close, batch settle or busy-channel change may change the phase, the message, the clock or the visibility. The plan states and tests this.
 
 ## 8. Surface F: notifications
 
@@ -555,7 +551,7 @@ A new global extension `extensions/notifications/`. TUI mode only. Channels: `au
 |---|---|---|---|
 | Main session settled (`onIdle`) with no source on the busy channel | `idleDelayMs` (default 20 000; deviation from Claude's 60 000 by decision D5, raised from 10 000 after the review because the notification also follows replies the user is only reading) with no keystroke since the settle | any keystroke; a new run starting; a busy source appearing | `pi is waiting for your input` |
 | Busy channel empties while the session is idle (agents finished, no wake yet) | the same timer, armed then; the wake normally starts a run first, whose settle re-arms it | same | same |
-| A dialog opens (`ui_prompt_start`, including agents' forwarded dialogs) | `dialogDelayMs` (default 6 000) since the later of the dialog's start and the last keystroke; each keystroke restarts it | `ui_prompt_end`; closing the session | `pi needs your input: <title>` |
+| A main-session dialog opens (`ui_prompt_start`) | `dialogDelayMs` (default 6 000) since the later of the dialog's start and the last keystroke; each keystroke restarts it | `ui_prompt_end`; closing the session | `pi needs your input: <title>` |
 
 Rules: once per settle (a settle that fired never fires again); evaluated at fire time (idle, no busy source, no dialog open, no keystroke since the settle); keystrokes are observed through `onTerminalInput` regardless of focus. The busy channel is the renamed `session-limits:busy` in `core/manager/channels.ts` (new neutral name `pi:busy`, same payload); subagents publishes on it while any agent is open, so the idle notification waits for agents.
 
@@ -569,8 +565,8 @@ Events that must not notify:
 | A batch settles, a wake is delivered | the model's reply follows; the next settle notifies |
 | A tool starts or ends, in main or in an agent | noise |
 | The main turn ends, before the delay | the user is likely present |
-| A child `notify` line, a `/agents` action, a stop, a worktree cleanup | user-initiated or informational |
-| A forwarded dialog answered within 6 s, or any dialog while the user types | the user is present |
+| A `/agents` action, a stop, a worktree cleanup | user-initiated or informational |
+| A dialog answered within 6 s, or any dialog while the user types | the user is present |
 | Session shutdown, `rpc`, `print` or `json` modes | no terminal to notify |
 
 ## 9. Settings
@@ -598,7 +594,7 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Unlimited panel rows: replaced by the 5-row window with markers (D2).
 - `run_agent` result rendered as fixed-width 120 agent rows with a frozen spinner: replaced by the block of section 3 (D1).
 - Wake as a visible user message with full results inline: hidden custom message, plus a one-line `↳ 3 agents finished` user line only when the session was idle (D1, adapter plan §C).
-- `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Completed (n)`, both in tree order, with `needs input` shown on the row (D3).
+- `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Completed (n)`, both in tree order (D3).
 - `/agents` `/` filter and its input line: removed, the list is short-lived (D3).
 - `X` then `y` stop-all confirmation: replaced by `X` twice within 3 s (D3).
 - List closing before the view opens: list and view share one overlay (D3).
@@ -607,9 +603,9 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Agent view focus/verbose mode, `v`, and `pi-subagents-view.json`: removed (D4).
 - Agent view header led by the hex id: the header leads with `<agent> › <description>`; the id moves to the dim second line (§2 Identity).
 - `↑/↓ to scroll` in the agent view hint: the position indicator shows scrolling (§6 Hint line).
-- Forwarded dialog title `<id> (<agent>) asks: <title>`: replaced by `<agent> › <description> asks: <title>` (§3).
+- Forwarded agent dialogs (`<id> (<agent>) asks: <title>`, one serial queue in the main UI), child `notify` lines `<id> (<agent>): <message>`, the `needs input` status on rows, the `Needs input:` status line and the record's `attention` field: removed; a child's dialogs resolve to their denial defaults and its `notify` does nothing (§2 Agents never ask, D2).
 - Agent view message box, delivery status line and `route` from the UI: the user never types into an agent (D4, goal 2).
-- Subagents `notifications` plugin, the `notifications` setting, per-batch / per-failure / per-dialog terminal notifications: replaced by the global notifications extension (D5).
+- Subagents `notifications` plugin, the `notifications` setting, per-batch / per-failure / per-agent-dialog terminal notifications: replaced by the global notifications extension (D5).
 - Busy channel name `session-limits:busy`: renamed `pi:busy` (D5).
 - `formatTokens` duplicate in `footer/src/render.ts`, `REFRESH_MS` 300 in `components/refresh.ts`: replaced by the shared formatters and `renderThrottleMs`.
 - Working indicator always visible during text streaming and its `75s` elapsed: replaced by phases and the shared duration formatter (D6).
@@ -620,4 +616,4 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 2. Panel markers: resolved. `↑ N more` / `↓ N more` stay separate lines; clarity over height.
 3. Idle delay: resolved at `idleDelayMs` 20 000 after the review (10 000 before). The user asked to be told promptly when the work is done; the keystroke cancel covers a user who is typing, and `auto` sends no bell, so a notification after a reply the user is reading is a quiet banner. The setting exists for people who want it faster or slower.
 4. Activity versus description: resolved. The description always stays; the activity is the first part of the stats column (section 4).
-5. Identity: resolved (§2 Identity, from `research/claude-code-agent-identity.md`). Agents are named by `<agent> › <description>` in the view header and forwarded dialogs, and same-agent batches name the agent in the block header. Unchanged on purpose: the `Task from <caller> (agent id <id>): …` user message in the view, the default `message_agent` rendering, and `Status unavailable · /agents <id>`.
+5. Identity: resolved (§2 Identity, from `research/claude-code-agent-identity.md`). Agents are named by `<agent> › <description>` in the view header, and same-agent batches name the agent in the block header. Unchanged on purpose: the `Task from <caller> (agent id <id>): …` user message in the view, the default `message_agent` rendering, and `Status unavailable · /agents <id>`.

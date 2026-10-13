@@ -5,7 +5,7 @@ Branch `plans/claude-ux`. These documents are the complete design and implementa
 ## Goals
 
 1. The main session feels like Claude Code with background subagents: the prompt is always free, agents are visible but quiet, and finishing work is one calm line, not a wall of text.
-2. The user never types into an agent. The main session is the orchestrator; corrections go through the model (`message_agent`).
+2. The user never types into an agent, and an agent never asks the user: only the main session is interactive. The main session is the orchestrator; corrections go through the model (`message_agent`).
 3. One desktop notification when the work is done, none per agent.
 4. The working indicator shows work (waiting for the model, thinking, running tools), not output.
 5. The agent view shows an agent's task and transcript, plus the first request the model received as one text block collapsed by default (`r`); codemode calls read like they do in the main session.
@@ -19,10 +19,10 @@ Read in this order. Each later document assumes the earlier ones.
 | `research/decisions.md` | The product decisions (D1–D7) the spec and the plans follow. | final |
 | `00-ux-spec.md` | The single source of truth for what the user sees and does: screens, exact strings, keys, colours, timings, settings, removed features. | final |
 | `research/shared-modules.md` | Module names, signatures and ownership shared between the feature plans. | final |
-| `01-adapter-foundations.md` | Platform work in `core/adapter` and `core/manager` (A–H): turn phases, editor key hooks, hidden messages and entry renderers, richer tool rendering and pi's codemode renderers in the agent view, dialog and key events, busy channel rename. | final |
+| `01-adapter-foundations.md` | Platform work in `core/adapter` and `core/manager` (A–H): turn phases, editor key hooks, hidden messages and entry renderers, richer tool rendering and pi's codemode renderers in the agent view, dialog and key events, busy channel rename, child dialogs fixed to their denial defaults (§I.4). | final |
 | `02-working-indicator.md` | The working-indicator extension on phases. | final |
 | `03-notifications.md` | The new global `notifications` extension; removal of per-agent notifications from subagents. | final |
-| `04-main-transcript.md` | The `run_agent` block, completion lines, the wake, the `activity` field, shared formatters. | final |
+| `04-main-transcript.md` | The `run_agent` block, completion lines, the wake, the `activity` field, shared formatters, removal of dialog forwarding and `attention`. | final |
 | `05-agent-panel.md` | The panel below the editor, keyboard selection, footer status, row/tree/refresh modules. | final |
 | `06-list-and-agent-view.md` | The `/agents` list and the simplified agent view in one overlay; codemode rendering. | final |
 | `research/review-findings.md` | The cross-plan review: findings and their resolution. | final |
@@ -32,12 +32,13 @@ Read in this order. Each later document assumes the earlier ones.
 
 ## What changes, in one screen
 
-- Main transcript: `run_agent` renders as `3 background agents launched (← to manage)` with one tree row per agent and a live status line (a batch of one agent kind is named: `3 background explorer agents launched`); forwarded dialogs read `explorer › Map the auth module asks: <title>`; each agent that closes adds one dim line (`✓ Agent "Map the auth module" finished · 1m 5s`); the batch results reach the model as a hidden message (plus a short `↳ 3 agents finished` user line when the session was idle).
+- Main transcript: `run_agent` renders as `3 background agents launched (← to manage)` with one tree row per agent and a live status line (a batch of one agent kind is named: `3 background explorer agents launched`); each agent that closes adds one dim line (`✓ Agent "Map the auth module" finished · 1m 5s`); the batch results reach the model as a hidden message (plus a short `↳ 3 agents finished` user line when the session was idle).
 - Panel below the editor: Claude-style rows (`⠹ explorer  Map the auth module   grep · 1m 5s · ↓ 12.3k tokens`), at most 5 visible with `↑ N more`/`↓ N more`, tree order with `(+N)`; `←` on an empty editor selects a row, `Enter` opens it, `x` stops or clears, `Esc` deselects; done rows leave after 10 s, failed ones after 30 s; the footer shows `3 agents`, then `/agents to see agents` for 30 s.
-- `/agents`: `Running` and `Completed (n)` sections, each in tree order with every subagent under its caller (an agent that needs input keeps its place and says so on its row); `Enter` opens the agent view inside the same overlay, `Esc` returns; `X` twice stops all; closed rows leave after 30 s.
+- `/agents`: `Running` and `Completed (n)` sections, each in tree order with every subagent under its caller; `Enter` opens the agent view inside the same overlay, `Esc` returns; `X` twice stops all; closed rows leave after 30 s.
 - Agent view: header `⠹ explorer › Map the auth module` with `running · <model> · id <id>` under it, a collapsed `▸ Request · 912 lines` line (`r` shows the literal first provider request, pretty-printed, collapsed by default), transcript starting with the task, `Ctrl+O` tool detail, `x` stop, `Esc` back or close; the hint reads `esc to close · x to stop · r request · ctrl+o tool detail`. Context breakdown, per-section prompt collapsibles, focus/verbose mode and the message box are gone. Codemode renders with pi's own renderer.
+- Agents never ask: a child's `confirm`/`select`/`input` resolve at once to their denial defaults and its `notify` does nothing; dialog forwarding, the record's `attention` field and every `needs input` surface are gone (decisions, fourth pass).
 - Working indicator: visible while waiting, thinking, streaming tool arguments and running tools (`Pondering… (bash · 12s · esc to interrupt)`); hidden while the assistant's text streams; child sessions never touch it.
-- Notifications: a new extension sends `pi is waiting for your input` 20 s after the session settles with no agent running and no keystroke since, and `pi needs your input: <title>` 6 s after a dialog opens. A desktop notification without a bell on `auto`; nothing per agent.
+- Notifications: a new extension sends `pi is waiting for your input` 20 s after the session settles with no agent running and no keystroke since, and `pi needs your input: <title>` 6 s after a main-session dialog opens. A desktop notification without a bell on `auto`; nothing per agent.
 
 ## Integration order
 

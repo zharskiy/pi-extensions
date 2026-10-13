@@ -109,7 +109,7 @@ Repo identity: `id` (`explorer-3f2a9c1b7d0e`), `agent` (definition name), `descr
 4. Progress text: Claude replaces the description with a 30 s model-written summary at an extra model call per agent per tick; keeping the description plus tool-name activity (current spec) is the cheap option.
 5. Optional middle path for 4: show `activity.text` in the view header only, never in the panel, so rows stay distinguishable by description.
 6. `message_agent` call line and `Status unavailable · /agents <id>`: option to render `agent "description"` instead of the raw id, matching Claude's rule that ids are internal.
-7. Forwarded dialogs from agents: append `· from the <agent> agent` to the dialog title (bin `XY`).
+7. Forwarded dialogs from agents: append `· from the <agent> agent` to the dialog title (bin `XY`). (Moot after the decisions' fourth pass, 2026-10-14: agents never ask the user, so no agent dialog reaches the main session.)
 8. `Task from <caller> (agent id <id>)`: the id there is model-facing; option to hide the parenthesis when rendering for the user, keeping it in the model's copy.
 
 ## Not verified
