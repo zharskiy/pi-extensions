@@ -30,13 +30,13 @@ export const parseDefinition = (
 ): { definition?: AgentDefinition; errors: string[]; warnings: string[] } => {
   const { data, body } = parseFrontmatter(source);
   const results = FRONTMATTER_FIELDS.map((spec) => ({ spec, result: readField(spec, data[spec.key]) }));
-  const unknown = Object.keys(data).filter((key) => !FIELD_KEYS.has(key));
+  const unknownFields = Object.keys(data).filter((key) => !FIELD_KEYS.has(key));
 
   const errors = definedText(results.map(({ result }) => result.error));
   const warnings = definedText(results.map(({ result }) => result.warning));
 
-  if (unknown.length > 0) {
-    warnings.push(`unknown field(s) ignored: ${unknown.join(", ")}`);
+  if (unknownFields.length > 0) {
+    warnings.push(`unknown field(s) ignored: ${unknownFields.join(", ")}`);
   }
 
   if (errors.length > 0) {
@@ -56,16 +56,16 @@ const referenceErrors = (definitions: Map<string, AgentDefinition>): DefinitionE
 
   definitions.forEach((definition) => {
     const listed = definition.subagents === ALL ? [] : definition.subagents;
-    const unknown = listed.filter((name) => name !== definition.name && !definitions.has(name));
+    const unknownAgents = listed.filter((name) => name !== definition.name && !definitions.has(name));
 
     if (listed.includes(definition.name)) {
       errors.push({ path: definition.path, message: "subagents must not include the agent itself" });
     }
 
-    if (unknown.length > 0) {
+    if (unknownAgents.length > 0) {
       errors.push({
         path: definition.path,
-        message: `subagents names unknown or invalid agent(s): ${unknown.join(", ")}`,
+        message: `subagents names unknown or invalid agent(s): ${unknownAgents.join(", ")}`,
       });
     }
   });
