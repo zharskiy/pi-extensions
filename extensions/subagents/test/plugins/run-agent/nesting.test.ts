@@ -7,7 +7,7 @@ import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentStatusPlugin];
 
@@ -121,15 +121,15 @@ describe("nested agents", () => {
     expect(child.wakes).toHaveLength(1);
     expect(child.wakes[0]).toContain("a is in src/a.ts");
     expect(child.wakes[0]).toContain("b looks fine");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     host.settle();
     child.finish("fixed it");
     await flush();
 
     expect(registry.get(record.id)?.state).toBe("done");
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("fixed it");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("fixed it");
     expect(child.wakes).toHaveLength(1);
   });
 
@@ -180,7 +180,7 @@ describe("nested agents", () => {
     await flush();
 
     expect(registry.get(record.id)?.state).toBe("done");
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
   });
 
   it("releases a waiting child's slot while it blocks on a batch with wait", async () => {

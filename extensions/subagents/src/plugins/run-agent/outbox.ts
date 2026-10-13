@@ -1,29 +1,33 @@
+export type OutboxItem = { batchId: string; text: string; agents: number };
+
 type CallerChannel = {
   isBusy(): boolean;
-  deliver(text: string): void;
+  deliver(items: OutboxItem[]): void;
   onIdle(handler: () => void): void;
 };
 
 export type Outbox = {
-  post(text: string): void;
+  post(item: OutboxItem): void;
   pending(): number;
-  clear(): string[];
+  clear(): OutboxItem[];
 };
 
+export const joinTexts = (items: OutboxItem[]) => items.map((item) => item.text).join("\n\n---\n\n");
+
 export const createOutbox = (channel: CallerChannel): Outbox => {
-  const held: string[] = [];
+  const held: OutboxItem[] = [];
 
   const flush = () => {
     if (held.length > 0) {
-      channel.deliver(held.splice(0).join("\n\n---\n\n"));
+      channel.deliver(held.splice(0));
     }
   };
 
   channel.onIdle(flush);
 
   return {
-    post: (text) => {
-      held.push(text);
+    post: (item) => {
+      held.push(item);
 
       if (!channel.isBusy()) {
         flush();

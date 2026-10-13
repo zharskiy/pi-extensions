@@ -10,7 +10,7 @@ import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { VALID_HANDOFF } from "../../helpers/handoff.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const WIDE_AGENT = [
   "---",
@@ -115,8 +115,8 @@ describe("limits plugin", () => {
     child.finish(record.handoffPath);
 
     expect(services.require("registry").get(record.id)?.state).toBe("handoff");
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain(`Handoff file: ${record.handoffPath}`);
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain(`Handoff file: ${record.handoffPath}`);
   });
 
   it("closes the agent as handoff with the validation errors when the handoff file is invalid", async () => {
@@ -136,7 +136,7 @@ describe("limits plugin", () => {
       resultText: VALID_HANDOFF.replace("partial", "done"),
     });
     expect(closed?.successorId).toBeUndefined();
-    expect(host.sent[0]).toContain(
+    expect(wakeTexts(host)[0]).toContain(
       `Handoff file: ${record.handoffPath} (invalid: Status must be one of partial, blocked)`,
     );
   });

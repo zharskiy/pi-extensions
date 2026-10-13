@@ -1,19 +1,18 @@
-import type { ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
-import { agentRow } from "../../components/agent-row.ts";
+import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,
   type AgentRegistry,
-  chainTerminal,
   grantText,
   isNone,
   MAIN_CALLER,
 } from "../../model/types.ts";
+import { type RunAgentDetails, renderBlock, renderRunningHeader } from "./render.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
 export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
 
-export type RunAgentDetails = { batchId?: string; ids: string[] };
+export type { RunAgentDetails } from "./render.ts";
 
 export type MessageAgentParams = { id: string; message: string };
 
@@ -21,6 +20,7 @@ type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
   onRendered?: (batchId: string, invalidate: () => void) => void;
+  now?: () => number;
 };
 
 type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
@@ -140,72 +140,76 @@ const messageAgentParameters = {
   additionalProperties: false,
 };
 
-const renderRows = (deps: ToolDeps, details: RunAgentDetails | undefined, theme: ThemeLike) => {
-  const now = Date.now();
-
-  return (details?.ids ?? [])
-    .map((id) => deps.registry.get(id))
-    .filter((record) => record !== undefined)
-    .map((record) => agentRow(chainTerminal(deps.registry, record), now, 0, theme, 120))
-    .join("\n");
-};
-
 export const runAgentTool = (
   deps: ToolDeps,
   description: string,
   callerId: string = MAIN_CALLER,
-): ToolSpec<RunAgentParams, RunAgentDetails> => ({
-  name: "run_agent",
-  label: "Run agent",
-  description,
-  promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
-  parameters: runAgentParameters,
-  execute: async (params, ctx) => {
-    const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
+): ToolSpec<RunAgentParams, RunAgentDetails> => {
+  const now = deps.now ?? Date.now;
 
-    const details: RunAgentDetails = {
-      batchId: started.batchId,
-      ids: started.records.map((record) => record.id),
-    };
+  return {
+    name: "run_agent",
+    label: "Run agent",
+    description,
+    promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
+    parameters: runAgentParameters,
+    renderShell: "self",
+    execute: async (params, ctx) => {
+      const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
 
-    if (params.wait !== true) {
-      const list = started.records
-        .map((record) => `- ${record.id} (${record.agent}, ${record.model ?? "model n/a"})`)
-        .join("\n");
-      const text = `Started batch ${started.batchId}:\n${list}\nYou will be woken once when all agents are done. End your turn now.`;
+      const details: RunAgentDetails = {
+        batchId: started.batchId,
+        ids: started.records.map((record) => record.id),
+        agents: started.records.map((record) => ({
+          id: record.id,
+          agent: record.agent,
+          description: record.description,
+          model: record.model,
+        })),
+      };
 
-      return { text, details };
-    }
+      ctx.update("", details);
 
-    const onAbort = () => {
-      details.ids.forEach((id) => {
-        void deps.runner.stop(id, { immediate: true });
+      if (params.wait !== true) {
+        const list = started.records
+          .map((record) => `- ${record.id} (${record.agent}, ${record.model ?? "model n/a"})`)
+          .join("\n");
+        const text = `Started batch ${started.batchId}:\n${list}\nYou will be woken once when all agents are done. End your turn now.`;
+
+        return { text, details };
+      }
+
+      const onAbort = () => {
+        details.ids.forEach((id) => {
+          void deps.runner.stop(id, { immediate: true });
+        });
+      };
+
+      ctx.signal?.addEventListener("abort", onAbort, { once: true });
+
+      await started.settled;
+
+      ctx.signal?.removeEventListener("abort", onAbort);
+
+      return { text: deps.runner.batchText(started.batchId), details };
+    },
+    renderCall: (params, theme, state) => (state.isPartial ? renderRunningHeader(params, theme, now()) : ""),
+    renderResult: (result, state, theme) => {
+      if (result.details?.batchId) {
+        deps.onRendered?.(result.details.batchId, state.invalidate);
+      }
+
+      return renderBlock({
+        params: state.args as RunAgentParams | undefined,
+        result,
+        state,
+        registry: deps.registry,
+        theme,
+        now: now(),
       });
-    };
-
-    ctx.signal?.addEventListener("abort", onAbort, { once: true });
-
-    await started.settled;
-
-    ctx.signal?.removeEventListener("abort", onAbort);
-
-    return { text: deps.runner.batchText(started.batchId), details };
-  },
-  renderCall: (params, theme) => {
-    const names = (params.agents ?? []).map((item) => item.agent).join(", ");
-
-    return `${theme.bold("run_agent")} ${theme.fg("muted", names)}`;
-  },
-  renderResult: (result, state, theme) => {
-    const details = result.details;
-
-    if (details?.batchId) {
-      deps.onRendered?.(details.batchId, state.invalidate);
-    }
-
-    return renderRows(deps, details, theme) || result.text;
-  },
-});
+    },
+  };
+};
 
 export const messageAgentTool = (
   deps: ToolDeps,

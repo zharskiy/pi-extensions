@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeLive, sessionHeader } from "../../../../core/test/adapter/live.ts";
+import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
 const TINY_TASK = "Reply with the single word OK. Do not call any tool.";
@@ -30,6 +31,6 @@ describeLive("live run_agent", () => {
     expect(record?.resultText).toContain("OK");
     expect(live.usage.get(id)?.cost.total ?? 0).toBeGreaterThan(0);
     expect(sessionHeader(record?.sessionFile ?? "")?.parentSession).toBe(live.host.info.file);
-    expect(live.host.sent[0]).toContain(id);
+    expect(wakeTexts(live.host)[0]).toContain(id);
   });
 });

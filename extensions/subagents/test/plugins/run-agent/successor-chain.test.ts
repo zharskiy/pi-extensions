@@ -15,7 +15,7 @@ import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const handoffText = (status: string) =>
   [
@@ -98,7 +98,7 @@ describe("successor chain", () => {
       callerId: first.callerId,
       batchId: first.batchId,
     });
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     const task = runtime.child(second).task ?? "";
 
@@ -113,15 +113,15 @@ describe("successor chain", () => {
 
     expect(current(third)).toMatchObject({ state: "running", chainIndex: 3, predecessorId: second });
     expect(runtime.child(third).messages).toEqual([]);
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     runtime.child(third).emit({ type: "tool_start", toolName: "read" });
     runtime.child(third).finish("final answer: tokens refresh in src/auth.ts");
     await flush();
 
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
 
-    const wake = host.sent[0];
+    const wake = wakeTexts(host)[0];
 
     expect(wake).toContain("finished: 1 done.");
     expect(wake).toContain(`## ${third} (explorer) - done`);
@@ -175,7 +175,7 @@ describe("successor chain", () => {
     expect(child.messages).toEqual([]);
     expect(current(first.id)).toMatchObject({ state: "done", handoffRequested: false });
     expect(registry.list()).toHaveLength(1);
-    expect(host.sent[0]).toContain("finished: 1 done.");
+    expect(wakeTexts(host)[0]).toContain("finished: 1 done.");
   });
 
   it("closes a link as handoff without a successor when the handoff says blocked", async () => {
@@ -184,21 +184,21 @@ describe("successor chain", () => {
     expect(await handOff(first.id, "blocked")).toBeUndefined();
     expect(current(first.id).state).toBe("handoff");
     expect(registry.list()).toHaveLength(1);
-    expect(host.sent[0]).toContain(`Handoff file: ${first.handoffPath}`);
+    expect(wakeTexts(host)[0]).toContain(`Handoff file: ${first.handoffPath}`);
   });
 
   it("closes the last link as handoff when the chain length cap is reached", async () => {
     const { first, current, handOff, registry, host } = await setup({ maxChainLength: 2 });
     const second = (await handOff(first.id)) as string;
 
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
     expect(await handOff(second)).toBeUndefined();
     expect(current(second).state).toBe("handoff");
     expect(registry.list()).toHaveLength(2);
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("finished: 1 handoff.");
-    expect(host.sent[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
-    expect(host.sent[0]).toContain(`Handoff file: ${current(second).handoffPath}`);
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("finished: 1 handoff.");
+    expect(wakeTexts(host)[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
+    expect(wakeTexts(host)[0]).toContain(`Handoff file: ${current(second).handoffPath}`);
   });
 
   it("never continues after a user stop during link 2 and wakes once", async () => {
@@ -210,9 +210,9 @@ describe("successor chain", () => {
 
     expect(current(second).state).toBe("stopped");
     expect(registry.list()).toHaveLength(2);
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("finished: 1 stopped.");
-    expect(host.sent[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("finished: 1 stopped.");
+    expect(wakeTexts(host)[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
   });
 
   it("never continues when a partial handoff is written during the grace period", async () => {
@@ -229,7 +229,7 @@ describe("successor chain", () => {
 
     expect(current(first.id).state).toBe("handoff");
     expect(registry.list()).toHaveLength(1);
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
 
     await host.shutdown("quit");
   });

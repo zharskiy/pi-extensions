@@ -40,7 +40,7 @@ Give each agent a short `description` for the progress rows.
 
 # After starting a batch
 
-- End your turn right after `run_agent` returns. You are woken once, when every agent of the batch is done, with all results in one message.
+- End your turn right after `run_agent` returns. You are woken once, when every agent of the batch is done, with all results in one message. That message is hidden from the user: they see only one short line per agent (`Agent "…" finished · 1m 5s`, or `failed: <reason>`) and, if you were idle, the line `↳ N agents finished`, which this extension sends to start your turn (the user did not type it). The agents' reports are not shown to the user: relay what matters (what was done or found, file paths, open points) in your reply.
 - Do not poll, do not wait, and do not start the same work yourself.
 - The user can keep talking to you while agents run. Answer them; the batch result arrives on its own.
 

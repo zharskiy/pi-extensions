@@ -6,11 +6,11 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import { createOutbox } from "../../../src/plugins/run-agent/outbox.ts";
+import { createOutbox, joinTexts, type OutboxItem } from "../../../src/plugins/run-agent/outbox.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import { createSemaphore } from "../../../src/plugins/run-agent/semaphore.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness, PACKAGE_ROOT } from "../../helpers/harness.ts";
+import { createHarness, PACKAGE_ROOT, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = (overrides = {}) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
@@ -39,6 +39,7 @@ describe("run_agent batches", () => {
     const result = await run(tasks(3));
 
     expect(result.text).toContain("Started batch");
+    expect(result.details?.agents).toHaveLength(3);
     expect(runtime.children).toHaveLength(3);
 
     host.settle();
@@ -46,14 +47,20 @@ describe("run_agent batches", () => {
     runtime.children[0].finish("first result");
     runtime.children[1].finish("second result");
 
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     runtime.children[2].finish("third result");
 
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("finished: 3 done");
-    expect(host.sent[0]).toContain("first result");
-    expect(host.sent[0]).toContain("third result");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("finished: 3 done");
+    expect(wakeTexts(host)[0]).toContain("first result");
+    expect(wakeTexts(host)[0]).toContain("third result");
+    expect(host.hidden[0]).toMatchObject({
+      message: { customType: "pi-subagents:wake" },
+      visible: "↳ 3 agents finished",
+      delivery: "nextTurn",
+    });
+    expect(host.sent).toEqual([]);
     expect(registry.list().every((record) => record.state === "done")).toBe(true);
 
     await flush();
@@ -71,9 +78,11 @@ describe("run_agent batches", () => {
     runtime.children[1].finish("", { stopReason: "error", error: "rate limited" });
     runtime.children[2].finish("ok three");
 
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("2 done, 1 failed");
-    expect(host.sent[0]).toMatch(/explorer-\w+ \(explorer\) - failed\nTask: task 1\nFailed: rate limited/);
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("2 done, 1 failed");
+    expect(wakeTexts(host)[0]).toMatch(
+      /explorer-\w+ \(explorer\) - failed\nTask: task 1\nFailed: rate limited/,
+    );
   });
 
   it("treats an empty final answer and an aborted run as failures", async () => {
@@ -91,7 +100,7 @@ describe("run_agent batches", () => {
       ["failed", "agent finished with an empty result"],
       ["failed", "aborted"],
     ]);
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
   });
 
   it("passes small results inline and large ones as a file path", async () => {
@@ -106,29 +115,41 @@ describe("run_agent batches", () => {
 
     const [small, big] = registry.list();
 
-    expect(host.sent[0]).toContain("\n\nsmall");
-    expect(host.sent[0]).not.toContain(large);
-    expect(host.sent[0]).toContain(`Result file: ${big.resultPath} (500 chars)`);
+    expect(wakeTexts(host)[0]).toContain("\n\nsmall");
+    expect(wakeTexts(host)[0]).not.toContain(large);
+    expect(wakeTexts(host)[0]).toContain(`Result file: ${big.resultPath} (500 chars)`);
     expect(readFileSync(big.resultPath ?? "", "utf8")).toBe(`${large}\n`);
     expect(existsSync(small.resultPath ?? "")).toBe(true);
   });
 
-  it("defers the wake while the caller is mid-turn and delivers it on idle", async () => {
+  it("joins a busy turn as a hidden follow-up with no visible line", async () => {
     const { run, runtime, host } = setup();
 
     await run(tasks(1));
 
     runtime.children[0].finish("done while busy");
 
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("done while busy");
+    expect(host.hidden[0].delivery).toBe("followUp");
     expect(host.sent).toEqual([]);
 
     host.settle();
 
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("done while busy");
+    expect(host.hidden).toHaveLength(1);
   });
 
-  it("merges batches that finish during one busy turn into a single wake", async () => {
+  it("names a single finished agent in the singular", async () => {
+    const { run, runtime, host } = setup();
+
+    await run(tasks(1));
+    host.settle();
+    runtime.children[0].finish("one");
+
+    expect(host.hidden.map((entry) => entry.visible)).toEqual(["↳ 1 agent finished"]);
+  });
+
+  it("sends each batch that settles during a busy turn as its own hidden follow-up", async () => {
     const { run, runtime, host } = setup();
 
     await run(tasks(1));
@@ -137,11 +158,13 @@ describe("run_agent batches", () => {
     runtime.children[0].finish("batch one");
     runtime.children[1].finish("batch two");
 
-    host.settle();
-
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("batch one");
-    expect(host.sent[0]).toContain("batch two");
+    expect(wakeTexts(host)).toHaveLength(2);
+    expect(wakeTexts(host)[0]).toContain("batch one");
+    expect(wakeTexts(host)[1]).toContain("batch two");
+    expect(host.hidden.map((entry) => entry.delivery)).toEqual(["followUp", "followUp"]);
+    expect(
+      host.hidden.map((entry) => (entry.message.details as { batches: string[] }).batches.length),
+    ).toEqual([1, 1]);
   });
 
   it("caps concurrency with the semaphore and starts queued agents as slots free up", async () => {
@@ -163,8 +186,8 @@ describe("run_agent batches", () => {
     await flush();
     runtime.children[3].finish("d");
 
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("4 done");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("4 done");
   });
 
   it("returns results directly and sends no wake when wait is true", async () => {
@@ -178,7 +201,7 @@ describe("run_agent batches", () => {
     const result = await pending;
 
     expect(result.text).toContain("waited result");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
     expect(services.require("registry").list()[0].state).toBe("done");
   });
 
@@ -200,7 +223,7 @@ describe("run_agent batches", () => {
     host.settle();
 
     expect(registry.list()[0]).toMatchObject({ state: "failed", error: "spawn failed: no auth" });
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
   });
 
   it("gives each agent its own directory under the parent session, a manifest and the composed task", async () => {
@@ -293,6 +316,54 @@ describe("run_agent batches", () => {
     ]);
   });
 
+  it("records the last tool name as activity on tool_start", async () => {
+    const { run, runtime, registry } = setup();
+
+    await run(tasks(1));
+    runtime.children[0].emit({ type: "tool_start", toolName: "grep" });
+
+    const record = registry.list()[0];
+
+    expect(record.activity).toEqual({ kind: "tool", text: "grep", at: expect.any(Number) });
+    expect(record.toolCalls).toBe(1);
+  });
+
+  it("records the first line of an assistant message as text activity", async () => {
+    const { run, runtime, registry } = setup();
+
+    await run(tasks(1));
+
+    const emit = (text: string) =>
+      runtime.children[0].emit({ type: "assistant_message", text, stopReason: "toolUse", toolCalls: 1 });
+
+    emit("Looking at auth.\nMore");
+
+    expect(registry.list()[0].activity).toEqual({
+      kind: "text",
+      text: "Looking at auth.",
+      at: expect.any(Number),
+    });
+
+    emit("   ");
+
+    expect(registry.list()[0].activity?.text).toBe("Looking at auth.");
+  });
+
+  it("emits agent:changed for activity", async () => {
+    const { run, runtime, bus } = setup();
+
+    await run(tasks(1));
+
+    const seen: (string | undefined)[] = [];
+
+    bus.on("agent:changed", (record) => {
+      seen.push(record.activity?.text);
+    });
+    runtime.children[0].emit({ type: "tool_start", toolName: "bash" });
+
+    expect(seen).toEqual(["bash"]);
+  });
+
   it("spawns children without a dialog forwarder", async () => {
     const { run, runtime, host } = setup();
 
@@ -300,6 +371,30 @@ describe("run_agent batches", () => {
 
     expect(runtime.children[0].spec).not.toHaveProperty("prompts");
     expect(host.confirmations).toEqual([]);
+  });
+
+  it("exposes run_agent, message_agent and agent_status through the tools service", () => {
+    const withStatus = createHarness([
+      agentRegistryPlugin,
+      agentDefinitionsPlugin,
+      runAgentPlugin,
+      agentStatusPlugin,
+    ]);
+    const without = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin]);
+    const tools = withStatus.services.require("tools");
+    const listed = tools.list();
+
+    expect(listed.map((spec) => spec.name)).toEqual(["run_agent", "message_agent", "agent_status"]);
+    expect(
+      without.services
+        .require("tools")
+        .list()
+        .map((spec) => spec.name),
+    ).toEqual(["run_agent", "message_agent"]);
+
+    listed.pop();
+
+    expect(tools.list()).toHaveLength(3);
   });
 
   it("marks running agents failed on shutdown and never wakes for them", async () => {
@@ -314,7 +409,7 @@ describe("run_agent batches", () => {
       "interrupted: session reload",
     ]);
     expect(runtime.children.every((child) => child.aborted && child.disposed)).toBe(true);
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
   });
 });
 
@@ -466,30 +561,33 @@ describe("semaphore", () => {
 });
 
 describe("outbox", () => {
+  const item = (text: string) => ({ batchId: `b-${text}`, text, agents: 1 });
+
   it("delivers at once when idle and holds while busy", () => {
-    const delivered: string[] = [];
+    const delivered: OutboxItem[][] = [];
     let busy = false;
     let idleHandler = () => {};
 
     const outbox = createOutbox({
       isBusy: () => busy,
-      deliver: (text) => delivered.push(text),
+      deliver: (items) => delivered.push(items),
       onIdle: (handler) => {
         idleHandler = handler;
       },
     });
 
-    outbox.post("one");
+    outbox.post(item("one"));
 
     busy = true;
-    outbox.post("two");
-    outbox.post("three");
+    outbox.post(item("two"));
+    outbox.post(item("three"));
 
-    expect(delivered).toEqual(["one"]);
+    expect(delivered).toEqual([[item("one")]]);
 
     idleHandler();
 
-    expect(delivered).toEqual(["one", "two\n\n---\n\nthree"]);
+    expect(delivered).toEqual([[item("one")], [item("two"), item("three")]]);
+    expect(joinTexts(delivered[1])).toBe("two\n\n---\n\nthree");
   });
 });
 

@@ -12,6 +12,7 @@ import {
   splitModelRequest,
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
+import { firstLine } from "../../components/format.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -30,7 +31,7 @@ import {
   subagentNames,
 } from "../../model/types.ts";
 import { resolutionError } from "./model-text.ts";
-import { createOutbox, type Outbox } from "./outbox.ts";
+import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
 import { batchMessage, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
@@ -164,7 +165,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    callerOutbox(batch.callerId)?.post(batchText(batch.id));
+    callerOutbox(batch.callerId)?.post({
+      batchId: batch.id,
+      text: batchText(batch.id),
+      agents: terminals.length,
+    });
   };
 
   const stopChildrenOf = (record: AgentRecord) => {
@@ -243,8 +248,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     live.outbox ??= createOutbox({
       isBusy: () => live.turn !== "idle",
-      deliver: (text) => {
-        void resume(callerId, (child) => child.wake(text));
+      deliver: (items) => {
+        void resume(callerId, (child) => child.wake(joinTexts(items)));
       },
       onIdle: (handler) => {
         live.idleHandlers.push(handler);
@@ -335,7 +340,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const batch = batches.get(record.batchId);
 
     if (validation.status === "partial" && slot && batch && canContinue(record)) {
-      return continueChain(record, text, { ...slot, undelivered: live.outbox?.clear() }, batch);
+      return continueChain(
+        record,
+        text,
+        { ...slot, undelivered: live.outbox?.clear().map((item) => item.text) },
+        batch,
+      );
     }
 
     return deps.registry.close(record.id, { state: "handoff", resultText: text });
@@ -496,13 +506,17 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
       if (event.text.trim()) {
         live.lastText = event.text;
+        deps.registry.update(id, { activity: { kind: "text", text: firstLine(event.text), at: Date.now() } });
       }
 
       return;
     }
 
     if (event.type === "tool_start") {
-      deps.registry.update(id, { toolCalls: record.toolCalls + 1 });
+      deps.registry.update(id, {
+        toolCalls: record.toolCalls + 1,
+        activity: { kind: "tool", text: event.toolName, at: Date.now() },
+      });
       return;
     }
 

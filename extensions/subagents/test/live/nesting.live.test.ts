@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeLive, LIVE_TIMEOUT_MS, quiet, sessionLines } from "../../../../core/test/adapter/live.ts";
+import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
 const SECRET = randomUUID().slice(0, 8);
@@ -51,8 +52,8 @@ describeLive("live nested agents", () => {
     expect(explorer?.depth).toBe((general?.depth ?? 0) + 1);
     expect(explorer?.state).toBe("done");
     expect(wakes).toHaveLength(1);
-    expect(live.host.sent).toHaveLength(1);
-    expect(live.host.sent[0]).toContain(generalId);
-    expect(live.host.sent[0]).not.toContain(explorerId);
+    expect(wakeTexts(live.host)).toHaveLength(1);
+    expect(wakeTexts(live.host)[0]).toContain(generalId);
+    expect(wakeTexts(live.host)[0]).not.toContain(explorerId);
   });
 });

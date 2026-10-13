@@ -1,0 +1,259 @@
+import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
+import {
+  displayWidth,
+  elapsedOf,
+  firstLine,
+  formatDuration,
+  formatTokens,
+  formatToolUses,
+  SEP,
+  singleLine,
+  truncateCols,
+} from "../../components/format.ts";
+import { spinnerFrame } from "../../components/spinner.ts";
+import {
+  type AgentRecord,
+  type AgentRegistry,
+  chainLinks,
+  chainTerminal,
+  isClosed,
+  type WorktreeCleanup,
+} from "../../model/types.ts";
+import { chainTotals } from "./result.ts";
+import type { RunAgentParams } from "./tools.ts";
+
+export type RunAgentDetails = {
+  batchId?: string;
+  ids: string[];
+  agents: { id: string; agent: string; description: string; model?: string }[];
+};
+
+export type BlockInput = {
+  params: RunAgentParams | undefined;
+  result?: ToolResult<RunAgentDetails>;
+  state: ToolRenderState;
+  registry: Pick<AgentRegistry, "get" | "batch">;
+  theme: ThemeLike;
+  now: number;
+};
+
+export const BLOCK_WIDTH = 100;
+
+const CONTINUATION = 3;
+
+const MODEL_MIN_BUDGET = 20;
+
+const DESCRIPTION_MIN = 8;
+
+const agentsWord = (n: number) => (n === 1 ? "agent" : "agents");
+
+export const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
+  const first = agents[0]?.agent;
+
+  if (!first || agents.some((entry) => entry.agent !== first)) {
+    return undefined;
+  }
+
+  return first;
+};
+
+const namedAgents = (agents: { agent?: string }[], n: number) => {
+  const kind = sharedAgent(agents);
+
+  return kind ? `${kind} ${agentsWord(n)}` : agentsWord(n);
+};
+
+export const renderRunningHeader = (
+  params: Partial<RunAgentParams> | undefined,
+  theme: ThemeLike,
+  now: number,
+): string => {
+  const agents = (params?.agents ?? []) as { agent?: string }[];
+  const n = agents.length;
+  const spinner = theme.fg("accent", spinnerFrame(now));
+
+  if (n === 0) {
+    return `${spinner} Running agents…`;
+  }
+
+  return `${spinner} Running ${theme.bold(String(n))} ${namedAgents(agents, n)}…`;
+};
+
+const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
+  removed: () => "worktree removed",
+  "branch kept": (branch) => `branch ${branch} kept`,
+  kept: () => "worktree kept",
+};
+
+const cleanupText = (record: AgentRecord) => {
+  const cleanup = record.worktree?.cleanup;
+
+  return isClosed(record.state) && cleanup && record.worktree
+    ? CLEANUP_TEXT[cleanup](record.worktree.branch)
+    : undefined;
+};
+
+const statsOf = (totals: AgentRecord, now: number, withDuration: boolean) =>
+  [
+    formatToolUses(totals.toolCalls),
+    totals.tokens > 0 ? `${formatTokens(totals.tokens)} tokens` : undefined,
+    withDuration ? formatDuration(elapsedOf(totals, now)) : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(SEP);
+
+type Status = { lead: string; leadToken: Parameters<ThemeLike["fg"]>[0]; rest?: string; restToken?: "dim" };
+
+const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now: number): Status => {
+  const stats = statsOf(totals, now, true);
+
+  if (terminal.state === "queued") {
+    return { lead: "Queued", leadToken: "muted" };
+  }
+
+  if (terminal.state === "running") {
+    if (terminal.turns === 0 && terminal.toolCalls === 0 && !terminal.activity) {
+      return { lead: "Initializing…", leadToken: "muted" };
+    }
+
+    return wait
+      ? { lead: ["Running", statsOf(totals, now, false)].join(SEP), leadToken: "muted" }
+      : { lead: "Running in the background", leadToken: "muted" };
+  }
+
+  if (terminal.state === "grace") {
+    return { lead: "Stopping…", leadToken: "warning" };
+  }
+
+  if (terminal.state === "done") {
+    return { lead: "Done", leadToken: "success", rest: `${SEP}${stats}`, restToken: "dim" };
+  }
+
+  if (terminal.state === "failed") {
+    return { lead: `Failed: ${firstLine(terminal.error ?? "unknown error")}`, leadToken: "error" };
+  }
+
+  if (terminal.state === "stopped") {
+    return { lead: `Stopped${SEP}${stats}`, leadToken: "muted" };
+  }
+
+  return { lead: `Handed off${SEP}${stats}`, leadToken: "warning" };
+};
+
+const statusLine = (
+  terminal: AgentRecord,
+  totals: AgentRecord,
+  wait: boolean,
+  theme: ThemeLike,
+  now: number,
+) => {
+  const status = statusOf(terminal, totals, wait, now);
+  const cleanup = cleanupText(terminal);
+  const suffix = cleanup ? `${SEP}${cleanup}` : "";
+  const budget = BLOCK_WIDTH - CONTINUATION - displayWidth(suffix);
+  const lead = truncateCols(status.lead, budget);
+  const rest = status.rest ? truncateCols(status.rest, Math.max(0, budget - displayWidth(lead))) : "";
+  const painted = `${theme.fg(status.leadToken, lead)}${rest ? theme.fg(status.restToken ?? "dim", rest) : ""}`;
+
+  return suffix ? `${painted}${theme.fg("dim", suffix)}` : painted;
+};
+
+const nameLine = (
+  connector: string,
+  name: string,
+  description: string,
+  model: string | undefined,
+  theme: ThemeLike,
+) => {
+  const head = `${connector}${name} (`;
+  const fullTail = model ? `)${SEP}${model}` : ")";
+  const budgetWith = BLOCK_WIDTH - displayWidth(head) - displayWidth(fullTail);
+  const keepModel = model !== undefined && budgetWith >= MODEL_MIN_BUDGET;
+  const tail = keepModel ? fullTail : ")";
+  const budget = Math.max(DESCRIPTION_MIN, BLOCK_WIDTH - displayWidth(head) - displayWidth(tail));
+  const cut = truncateCols(singleLine(description), budget);
+  const modelPart = keepModel ? theme.fg("dim", `${SEP}${model}`) : "";
+
+  return `${connector}${theme.bold(name)} ${theme.fg("muted", `(${cut})`)}${modelPart}`;
+};
+
+const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean) => {
+  const { registry, theme, now } = input;
+
+  return details.agents.flatMap((entry, index) => {
+    const last = index === details.agents.length - 1;
+    const connector = last ? "└─ " : "├─ ";
+    const continuation = last ? "   " : "│  ";
+    const record = registry.get(entry.id);
+
+    if (!record) {
+      return [
+        nameLine(connector, entry.agent, entry.description, entry.model, theme),
+        `${continuation}${theme.fg("dim", `Status unavailable${SEP}/agents ${entry.id}`)}`,
+      ];
+    }
+
+    const terminal = chainTerminal(registry, record);
+    const totals = chainTotals(chainLinks(registry, terminal));
+    const name = `${terminal.agent}${terminal.chainIndex > 1 ? ` #${terminal.chainIndex}` : ""}`;
+
+    return [
+      nameLine(connector, name, terminal.description, terminal.model ?? entry.model, theme),
+      `${continuation}${statusLine(terminal, totals, wait, theme, now)}`,
+    ];
+  });
+};
+
+const errorBlock = (result: ToolResult<RunAgentDetails>, expanded: boolean, theme: ThemeLike) => {
+  const header = theme.fg("error", `✗ No agents started: ${firstLine(result.text)}`);
+
+  if (!expanded) {
+    return header;
+  }
+
+  return [header, ...result.text.split("\n").map((line) => `   ${line}`)].join("\n");
+};
+
+const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean) => {
+  const { theme, registry } = input;
+  const n = details.agents.length;
+  const named = namedAgents(details.agents, n);
+  const count = theme.bold(String(n));
+
+  if (wait) {
+    return `${count} ${named} finished`;
+  }
+
+  const open =
+    details.batchId !== undefined &&
+    registry.batch(details.batchId).some((record) => !isClosed(record.state));
+
+  return `${count} background ${named} launched${open ? ` ${theme.fg("dim", "(← to manage)")}` : ""}`;
+};
+
+export const renderBlock = (input: BlockInput): string => {
+  const { result, state, theme } = input;
+
+  if (!result) {
+    return "";
+  }
+
+  const details = result.details;
+
+  if ((state.isError || result.isError) && !details?.batchId) {
+    return errorBlock(result, state.expanded, theme);
+  }
+
+  if (!details?.agents) {
+    return state.isPartial ? "" : result.text;
+  }
+
+  const wait = input.params?.wait === true;
+  const rows = agentRows(input, details, wait);
+
+  if (state.isPartial) {
+    return rows.join("\n");
+  }
+
+  return [finalHeader(input, details, wait), ...rows].join("\n");
+};

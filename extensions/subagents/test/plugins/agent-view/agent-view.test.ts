@@ -22,7 +22,7 @@ import { createAgentView } from "../../../src/plugins/agent-view/view.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
 
@@ -508,8 +508,8 @@ describe("agent view", () => {
 
     expect(harness.services.require("registry").get(record.id)?.state).toBe("stopped");
     expect(harness.runtime.child(record.id).aborted).toBe(true);
-    expect(harness.host.sent).toHaveLength(1);
-    expect(harness.host.sent[0]).toContain(`${record.id} (explorer) - stopped`);
+    expect(wakeTexts(harness.host)).toHaveLength(1);
+    expect(wakeTexts(harness.host)[0]).toContain(`${record.id} (explorer) - stopped`);
   });
 
   it("only notifies for unknown agents and opens nothing", async () => {

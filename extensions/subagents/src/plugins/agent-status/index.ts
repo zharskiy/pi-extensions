@@ -63,10 +63,13 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
 
 export const agentStatusPlugin: Plugin = {
   id: "agent-status",
-  requires: ["agent-registry"],
+  requires: ["agent-registry", "run-agent"],
   enable: ({ host, services }) => {
     const registry = services.require("registry");
-    host.registerTool(statusTool({ registry }));
+    const mainTool = statusTool({ registry });
+
+    host.registerTool(mainTool);
+    services.require("tools").add(mainTool as unknown as AnyToolSpec);
 
     services.provide("agentStatus", {
       toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId }),

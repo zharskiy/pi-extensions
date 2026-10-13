@@ -15,7 +15,7 @@ import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Settings } from "../../src/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/tools.ts";
 import { plugins } from "../../src/plugins.ts";
-import { PACKAGE_ROOT, startPlugins, tempDir } from "./harness.ts";
+import { PACKAGE_ROOT, startPlugins, tempDir, wakeTexts } from "./harness.ts";
 
 type AgentPatch = { from: string; fields?: Record<string, string> };
 
@@ -111,7 +111,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
   };
 
   const waitForWakes = (count: number, timeoutMs = LIVE_TIMEOUT_MS) =>
-    waitUntil(() => host.sent.length >= count, timeoutMs, `${count} wake(s) of the main session`);
+    waitUntil(() => wakeTexts(host).length >= count, timeoutMs, `${count} wake(s) of the main session`);
 
   const close = async () => {
     try {
