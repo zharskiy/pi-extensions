@@ -96,6 +96,13 @@ export const liveAgentModel = () => {
   return `${provider}/${modelId}${thinking ? `:${thinking}` : ""}`;
 };
 
+/** The live model from `PI_LIVE_MODEL` as pi's catalog entry, plus its thinking suffix. */
+export const liveModel = () => {
+  const { model, thinking } = liveState();
+
+  return { model, thinking };
+};
+
 export const realContextMarkers = () =>
   CONTEXT_FILES.map((name) => join(liveState().realAgentDir, name))
     .filter((path) => existsSync(path))

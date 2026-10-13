@@ -184,6 +184,20 @@ describe("pi adapter conformance", () => {
     expect(invalidate).toBeTypeOf("function");
   });
 
+  it("keeps the sendMessage delivery options the wake relies on", () => {
+    type Options = NonNullable<Parameters<pi.ExtensionAPI["sendMessage"]>[1]>;
+    const options: Options[] = [{ deliverAs: "nextTurn" }, { deliverAs: "followUp", triggerTurn: true }];
+    const hidden: Parameters<pi.ExtensionAPI["sendMessage"]>[0] = {
+      customType: "wake",
+      content: "text",
+      display: false,
+      details: undefined,
+    };
+
+    expect(options).toHaveLength(2);
+    expect(hidden.display).toBe(false);
+  });
+
   it("emits ui_prompt events around every blocking dialog", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
     const seen: unknown[] = [];

@@ -16,6 +16,7 @@ import type {
   SessionControl,
   SessionInfo,
   ShutdownReason,
+  ThemeLike,
   ToolSpec,
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
@@ -24,7 +25,7 @@ import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createUi, type HostState } from "./pi-ui.ts";
+import { createUi, type HostState, padLines, themeLike } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -315,6 +316,38 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       }
 
       pi.sendUserMessage(text, { deliverAs: "followUp" });
+    },
+    sendHiddenMessage: (message, visible) => {
+      const ctx = state.ctx;
+
+      if (!ctx) {
+        return;
+      }
+
+      const custom = {
+        customType: message.customType,
+        content: message.text,
+        display: false,
+        details: message.details,
+      };
+
+      if (!ctx.isIdle()) {
+        pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+        return;
+      }
+
+      pi.sendMessage(custom, { deliverAs: "nextTurn" });
+      pi.sendUserMessage(visible);
+    },
+    registerEntryRenderer: <T>(
+      customType: string,
+      render: (data: T, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined,
+    ) => {
+      pi.registerEntryRenderer<T>(customType, (entry, { expanded }, theme) => {
+        const lines = render(entry.data as T, { expanded }, themeLike(theme));
+
+        return lines ? padLines(lines, pi.getSettings().outputPad ?? 1) : undefined;
+      });
     },
     dispatchCommand: (name, args) => {
       if (!state.ctx) {

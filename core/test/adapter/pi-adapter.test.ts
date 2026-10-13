@@ -1,4 +1,6 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
+import type { EntryRenderer, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 
@@ -28,6 +30,9 @@ const fakePi = () => {
   const handlers = new Map<string, Handler[]>();
   const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
   const sent: { text: string; options?: unknown }[] = [];
+  const calls: { call: "sendMessage" | "sendUserMessage"; message: unknown; options?: unknown }[] = [];
+  const entryRenderers = new Map<string, EntryRenderer>();
+  const settings: { outputPad?: 0 | 1 } = { outputPad: 1 };
   const listeners = new Map<string, ((data: unknown) => void)[]>();
 
   const pi = {
@@ -39,7 +44,15 @@ const fakePi = () => {
     },
     sendUserMessage: (text: string, options?: unknown) => {
       sent.push({ text, options });
+      calls.push({ call: "sendUserMessage", message: text, options });
     },
+    sendMessage: (message: unknown, options?: unknown) => {
+      calls.push({ call: "sendMessage", message, options });
+    },
+    registerEntryRenderer: (customType: string, renderer: EntryRenderer) => {
+      entryRenderers.set(customType, renderer);
+    },
+    getSettings: () => settings,
     events: {
       emit: (channel: string, data: unknown) => {
         listeners.get(channel)?.forEach((listener) => {
@@ -56,7 +69,7 @@ const fakePi = () => {
   const fire = (event: string, ctx: unknown, payload: unknown = {}) =>
     Promise.all((handlers.get(event) ?? []).map((handler) => handler(payload, ctx)));
 
-  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent };
+  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls, entryRenderers, settings };
 };
 
 describe("pi adapter", () => {
@@ -269,6 +282,92 @@ describe("pi adapter", () => {
     expect(seeded).toEqual([
       { message: { customType: "t", content: "hello", display: true }, options: { triggerTurn: false } },
     ]);
+  });
+
+  it("sends a hidden follow-up while busy", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, {});
+
+    await fire("session_start", fakeCtx("tui", false));
+
+    host.sendHiddenMessage(
+      { customType: "wake", text: "results", details: { batch: 1 } },
+      "↳ 1 agent finished",
+    );
+
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: { customType: "wake", content: "results", display: false, details: { batch: 1 } },
+        options: { deliverAs: "followUp", triggerTurn: true },
+      },
+    ]);
+  });
+
+  it("parks a hidden next-turn message and starts the turn with the visible line when idle", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, {});
+
+    await fire("session_start", fakeCtx("tui", true));
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" }, "↳ 2 agents finished");
+
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: { customType: "wake", content: "results", display: false, details: undefined },
+        options: { deliverAs: "nextTurn" },
+      },
+      { call: "sendUserMessage", message: "↳ 2 agents finished", options: undefined },
+    ]);
+  });
+
+  it("sends nothing without a live session", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, {});
+
+    host.sendHiddenMessage({ customType: "wake", text: "early" }, "early");
+
+    await fire("session_start", fakeCtx("tui"));
+    await fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+    host.sendHiddenMessage({ customType: "wake", text: "late" }, "late");
+
+    expect(calls).toEqual([]);
+  });
+
+  it("renders entry lines indented by outputPad and cut at width - 2 * outputPad, and hides on undefined", () => {
+    const { pi, entryRenderers, settings } = fakePi();
+    const host = createPiHost(pi, {});
+    const theme = { fg: (_token: string, text: string) => text, bold: (text: string) => text } as never;
+    const long = "y".repeat(100);
+
+    host.registerEntryRenderer<{ text?: string }>("line", (data, { expanded }) =>
+      data.text === undefined ? undefined : [`${data.text}${expanded ? "!" : ""}`],
+    );
+
+    const render = (data: unknown, expanded = false) =>
+      entryRenderers.get("line")?.(
+        { type: "custom", customType: "line", data } as never,
+        { expanded },
+        theme,
+      );
+
+    const padded = (render({ text: long })?.render(40) ?? []).map(stripVTControlCharacters);
+
+    settings.outputPad = 0;
+
+    const flush = (render({ text: long })?.render(40) ?? []).map(stripVTControlCharacters);
+    const expanded = render({ text: "a" }, true)?.render(40);
+
+    expect(padded).toHaveLength(1);
+    expect(padded[0]?.startsWith(" y")).toBe(true);
+    expect(visibleWidth(padded[0] ?? "")).toBe(39);
+    expect(padded[0]?.endsWith("…")).toBe(true);
+    expect(flush[0]?.startsWith("y")).toBe(true);
+    expect(visibleWidth(flush[0] ?? "")).toBe(40);
+    expect(expanded).toEqual(["a!"]);
+    expect(render({})).toBeUndefined();
   });
 
   it("forwards dialog start and end with kind and title", async () => {

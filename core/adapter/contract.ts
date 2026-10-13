@@ -225,6 +225,9 @@ export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
 
+/** A message for the model that the user does not see. `details` is persisted with the custom_message entry. */
+export type HiddenMessage = { customType: string; text: string; details?: unknown };
+
 export type Host = {
   readonly ui: HostUi;
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
@@ -237,6 +240,18 @@ export type Host = {
   onCompact(handler: () => void): void;
   isIdle(): boolean;
   sendUserMessage(text: string): void;
+  /**
+   * Delivers `message` to the model without rendering it. While a run is active it is queued as a hidden follow-up of
+   * that run. When idle it is parked for the next turn and `visible` (a short user-role line, rendered as a user
+   * message) starts that turn, so the main prompt replacement (`setMainPrompt`) applies. `visible` is required: without
+   * a live session nothing is sent.
+   */
+  sendHiddenMessage(message: HiddenMessage, visible: string): void;
+  /** Register a renderer for custom entries (`appendEntry`). `undefined` hides the entry. The adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (never wraps). */
+  registerEntryRenderer<T>(
+    customType: string,
+    render: (data: T, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined,
+  ): void;
   dispatchCommand(name: string, args?: string): void;
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;

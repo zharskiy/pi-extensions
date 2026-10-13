@@ -10,6 +10,7 @@ import {
   type EditorKeyHandler,
   emptyUsage,
   type FooterRender,
+  type HiddenMessage,
   type Host,
   type InputPane,
   type KeyPress,
@@ -38,6 +39,8 @@ import { type CatalogModel, type ModelPreferences, resolveModel } from "../../ad
 
 export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text };
 
+type EntryRender = (data: unknown, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined;
+
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
 export type FakeHost = Host & {
@@ -47,6 +50,11 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
+  /** `sendHiddenMessage` calls; `delivery` is `nextTurn` when the host was idle (then `visible` started the turn), else `followUp`. */
+  hidden: { message: HiddenMessage; visible: string; delivery: "followUp" | "nextTurn" }[];
+  entryRenderers: Map<string, EntryRender>;
+  /** Runs the renderer registered for `customType` with `plainTheme`; the adapter's outputPad indent is not applied. */
+  renderEntry(customType: string, data: unknown, expanded?: boolean): string[] | undefined;
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
@@ -147,6 +155,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     entries: [],
     files: new Map(),
     sent: [],
+    hidden: [],
+    entryRenderers: new Map(),
+    renderEntry: (customType, data, expanded = false) => {
+      const render = host.entryRenderers.get(customType);
+
+      if (!render) {
+        throw new Error(`no entry renderer for ${customType}`);
+      }
+
+      return render(data, { expanded }, plainTheme);
+    },
     dispatched: [],
     published: [],
     notices: [],
@@ -339,6 +358,20 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       host.sent.push(text);
+    },
+    sendHiddenMessage: (message, visible) => {
+      if (stale) {
+        return;
+      }
+
+      host.hidden.push({
+        message: structuredClone(message),
+        visible,
+        delivery: host.idle ? "nextTurn" : "followUp",
+      });
+    },
+    registerEntryRenderer: (customType, render) => {
+      host.entryRenderers.set(customType, render as EntryRender);
     },
     dispatchCommand: (name, args) => {
       host.dispatched.push(args ? `${name} ${args}` : name);

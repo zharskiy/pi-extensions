@@ -30,7 +30,7 @@ pi-extensions/
 │   │   ├── format.ts            # shared duration (and later token) formatters
 │   │   └── settings.ts / settle.ts  # settings, timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
-│       ├── adapter/             # adapter tests, live.ts, render-theme.ts
+│       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts
 │       ├── manager/
 │       └── helpers/fakes.ts     # fake host, runtime and child session
 ├── extensions/
@@ -113,7 +113,7 @@ usage-report/       # reports agent usage to the spending channel
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
-- `*.live.test.ts` (in `extensions/subagents/test/live/`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
+- `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
 - Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
 - No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
 
