@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
-import { treeRow } from "./agent-row.ts";
+import { treeRow } from "./legacy-row.ts";
 
 type AgentGroup = "working" | "attention" | "done" | "failed" | "closed";
 

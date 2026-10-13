@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
-import { agentRow, finishSummary, progressText, treeRow, truncate } from "../../src/components/agent-row.ts";
+import { nameColumn, type RowInput, renderRow } from "../../src/components/agent-row.ts";
+import { displayWidth } from "../../src/components/format.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 
-const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
+const rec = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   id: "explorer-1a2b",
   agent: "explorer",
-  description: "find the auth handler",
+  description: "Map the auth module",
   callerId: "main",
   depth: 2,
   batchId: "b-1",
@@ -14,10 +16,9 @@ const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   state: "running",
   createdAt: 0,
   startedAt: 0,
-  turns: 3,
-  toolCalls: 12,
-  tokens: 86_400,
-  context: { tokens: 40_000, window: 200_000, percent: 20 },
+  turns: 0,
+  toolCalls: 0,
+  tokens: 0,
   lastText: "",
   handoffPath: "/x/handoff.md",
   dir: "/x",
@@ -27,55 +28,212 @@ const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   ...patch,
 });
 
-describe("agent row formatting", () => {
-  it("summarises a finished agent in one line", () => {
-    expect(finishSummary(record({ state: "done", endedAt: 73_000 }), 99_000)).toBe(
-      "Done (12 tool calls · 86.4k tokens · 1m 13s)",
-    );
-    expect(finishSummary(record({ state: "failed", error: "rate limited", endedAt: 5_000 }), 9_000)).toBe(
-      "Failed: rate limited (12 tool calls · 86.4k tokens · 5s)",
-    );
+const row = (record: AgentRecord, patch: Partial<RowInput> = {}): RowInput => ({
+  record,
+  depth: 0,
+  last: true,
+  ancestorsContinue: [],
+  openDescendants: 0,
+  selected: false,
+  ...patch,
+});
+
+type Case = { name: string; input: RowInput; now: number; nameCols: number; width: number; expected: string };
+
+const grepping = rec({ tokens: 12_300, activity: { kind: "tool", text: "grep", at: 0 } });
+const queued = rec({ agent: "worker", description: "Rename parseDate callers", state: "queued" });
+const done = rec({ state: "done", endedAt: 65_000 });
+const failed = rec({
+  agent: "worker",
+  description: "Fix the login redirect",
+  state: "failed",
+  endedAt: 130_000,
+});
+const grace = rec({ agent: "worker", description: "Fix the login redirect", state: "grace" });
+const chained = rec({ chainIndex: 2, tokens: 30_100, activity: { kind: "tool", text: "bash", at: 0 } });
+const child = rec({
+  description: "Find callers of login",
+  tokens: 1_100,
+  activity: { kind: "tool", text: "read", at: 0 },
+});
+const reviewer = rec({
+  agent: "reviewer",
+  description: "Review the diff of PR 5",
+  tokens: 8_200,
+  activity: { kind: "text", text: "Looking at the diff", at: 0 },
+});
+
+const cases: Case[] = [
+  {
+    name: "renders a running row with activity, elapsed and tokens at 80 columns",
+    input: row(grepping),
+    now: 65_000,
+    nameCols: 8,
+    width: 80,
+    expected: "   ⠋ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens",
+  },
+  {
+    name: "cuts the description before dropping stats",
+    input: row(grepping),
+    now: 65_000,
+    nameCols: 8,
+    width: 60,
+    expected: "   ⠋ explorer  Map the auth…  grep · 1m 5s · ↓ 12.3k tokens",
+  },
+  {
+    name: "drops the activity, then the tokens, when the description would fall below 12 columns",
+    input: row(grepping),
+    now: 65_000,
+    nameCols: 8,
+    width: 40,
+    expected: "   ⠋ explorer  Map the auth mod…  1m 5s",
+  },
+  {
+    name: "drops the elapsed too and keeps the description",
+    input: row(grepping),
+    now: 65_000,
+    nameCols: 8,
+    width: 30,
+    expected: "   ⠋ explorer  Map the auth …",
+  },
+  {
+    name: "shows queued as the status word",
+    input: row(queued),
+    now: 65_000,
+    nameCols: 6,
+    width: 80,
+    expected: "   ○ worker  Rename parseDate callers                                    queued",
+  },
+  {
+    name: "keeps the status word on a narrow row",
+    input: row(queued),
+    now: 65_000,
+    nameCols: 6,
+    width: 30,
+    expected: "   ○ worker  Rename …  queued",
+  },
+  {
+    name: "shows done with the duration",
+    input: row(done),
+    now: 99_000,
+    nameCols: 8,
+    width: 80,
+    expected: "   ✓ explorer  Map the auth module                                 done · 1m 5s",
+  },
+  {
+    name: "omits the description and pads the name when fewer than 8 columns remain",
+    input: row(done),
+    now: 99_000,
+    nameCols: 8,
+    width: 30,
+    expected: "   ✓ explorer    done · 1m 5s",
+  },
+  {
+    name: "marks the selected row with the pointer",
+    input: row(failed, { selected: true }),
+    now: 200_000,
+    nameCols: 6,
+    width: 80,
+    expected: " › ✗ worker  Fix the login redirect                             failed · 2m 10s",
+  },
+  {
+    name: "shows stopping during grace",
+    input: row(grace),
+    now: 130_000,
+    nameCols: 6,
+    width: 80,
+    expected: "   ◐ worker  Fix the login redirect                                    stopping",
+  },
+  {
+    name: "appends the chain index to the name",
+    input: row(chained),
+    now: 130_000,
+    nameCols: 11,
+    width: 80,
+    expected: "   ⠋ explorer #2  Map the auth module            bash · 2m 10s · ↓ 30.1k tokens",
+  },
+  {
+    name: "draws the connector of a last child",
+    input: row(child, { depth: 1, last: true }),
+    now: 12_000,
+    nameCols: 13,
+    width: 80,
+    expected: "   └─ ⠋ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens",
+  },
+  {
+    name: "draws continuation bars for deeper rows",
+    input: row(child, { depth: 2, last: false, ancestorsContinue: [true] }),
+    now: 12_000,
+    nameCols: 13,
+    width: 80,
+    expected: "   │  ├─ ⠋ explorer       Find callers of login      read · 12s · ↓ 1.1k tokens",
+  },
+  {
+    name: "shows open descendants and writing",
+    input: row(reviewer, { openDescendants: 1, selected: true }),
+    now: 45_000,
+    nameCols: 13,
+    width: 80,
+    expected: " › ⠋ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens",
+  },
+  {
+    name: "omits zero tokens",
+    input: row(rec()),
+    now: 3_000,
+    nameCols: 8,
+    width: 80,
+    expected: "   ⠋ explorer  Map the auth module                                           3s",
+  },
+];
+
+const hasStats = (line: string) => !line.endsWith("…");
+
+describe("agent row", () => {
+  it.each(cases)("$name", ({ input, now, nameCols, width, expected }) => {
+    const line = renderRow(input, now, width, plainTheme, nameCols);
+
+    expect(line).toBe(expected);
+    expect(line.startsWith(" ")).toBe(true);
+
+    if (hasStats(expected)) {
+      expect(displayWidth(line)).toBe(width - 1);
+    }
   });
 
-  it("shows live progress with context use while running", () => {
-    expect(progressText(record(), 45_000)).toBe("12 tool calls · 86.4k tokens · 45s · 20% ctx");
-    expect(progressText(record({ state: "queued" }), 1_000)).toBe("queued");
+  it("ends every line before the last column", () => {
+    cases.forEach(({ input, now, nameCols }) => {
+      [80, 60, 40, 30, 20].forEach((width) => {
+        const line = renderRow(input, now, width, plainTheme, nameCols);
+
+        expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+        expect(line.startsWith(" ")).toBe(true);
+      });
+    });
   });
 
-  it("renders one line with icon, id, description and detail", () => {
-    expect(agentRow(record(), 45_000, 0, plainTheme, 120)).toBe(
-      "⠋ explorer-1a2b · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx",
-    );
-    expect(agentRow(record({ state: "done", endedAt: 73_000 }), 80_000, 0, plainTheme, 120)).toBe(
-      "✓ explorer-1a2b · find the auth handler · Done (12 tool calls · 86.4k tokens · 1m 13s)",
-    );
+  it("paints the parts with the theme tokens", () => {
+    const recording: ThemeLike = { fg: (token, text) => `<${token}>${text}`, bold: (text) => text };
+    const line = renderRow(row(failed, { selected: true }), 200_000, 80, recording, 6);
+
+    expect(line).toContain("<accent>›");
+    expect(line).toContain("<error>✗");
+    expect(line).toContain("<muted>worker");
+    expect(line).toContain("<error>failed");
+    expect(line).toContain("<dim>2m 10s");
   });
 
-  it("shows the model the agent runs on after its id", () => {
-    expect(agentRow(record({ model: "acme/model-a:low" }), 45_000, 0, plainTheme, 120)).toBe(
-      "⠋ explorer-1a2b (acme/model-a:low) · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx",
-    );
+  it("measures the name column over names, chain suffixes and counts, capped at 24", () => {
+    const first = { record: rec(), openDescendants: 0 };
+    const second = { record: rec({ chainIndex: 2 }), openDescendants: 3 };
+    const third = { record: rec({ agent: "a".repeat(40) }), openDescendants: 0 };
+
+    expect(nameColumn([])).toBe(0);
+    expect(nameColumn([first])).toBe(8);
+    expect(nameColumn([first, second])).toBe(16);
+    expect(nameColumn([first, second, third])).toBe(24);
   });
 
-  it("truncates long descriptions to the width", () => {
-    const line = agentRow(record({ description: "a".repeat(200) }), 45_000, 0, plainTheme, 80);
-
-    expect(line).toContain("…");
-    expect(line.length).toBeLessThanOrEqual(82);
-    expect(truncate("abcdef", 4)).toBe("abc…");
-  });
-
-  it("shows the chain index after the id of a successor", () => {
-    expect(agentRow(record({ chainIndex: 3 }), 45_000, 0, plainTheme, 120)).toBe(
-      "⠋ explorer-1a2b #3 · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx",
-    );
-  });
-
-  it("indents nested agents and shows the grace countdown", () => {
-    expect(
-      treeRow(record({ depth: 3, state: "grace", graceEndsAt: 50_000 }), 45_000, 0, plainTheme, 140),
-    ).toBe(
-      "  ◐ explorer-1a2b · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx · stopping in 5s",
-    );
+  it("collapses whitespace in the description", () => {
+    expect(renderRow(row(rec({ description: "a\n  b" })), 3_000, 80, plainTheme, 8)).toContain("a b");
   });
 });

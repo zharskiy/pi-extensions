@@ -72,7 +72,7 @@ export const progressWidgetPlugin: Plugin = {
     };
 
     const throttled = createThrottle(refresh, () => settings.renderThrottleMs);
-    const off = bus.on("agent:changed", () => throttled());
+    const off = bus.on("agent:changed", () => throttled.call());
 
     return () => {
       off();

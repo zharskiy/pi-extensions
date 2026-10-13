@@ -60,6 +60,28 @@ describe("subagents settings", () => {
     expect(defaultSettings()).not.toHaveProperty("notifications");
   });
 
+  it("defaults the panel lingers and the agents hint", () => {
+    expect(defaultSettings()).toMatchObject({
+      doneLingerMs: 10_000,
+      failedLingerMs: 30_000,
+      agentsHintMs: 30_000,
+    });
+  });
+
+  it("rejects doneLingerMs and agentsHintMs outside 0–3600000", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, { doneLingerMs: -1, agentsHintMs: 3_600_001 });
+
+    const loaded = loadSettings(agentDir, cwd, false);
+
+    expect(loaded.settings).toMatchObject({ doneLingerMs: 10_000, agentsHintMs: 30_000 });
+    expect(loaded.errors).toEqual([
+      `${userFile}: doneLingerMs must be a number between 0 and 3600000`,
+      `${userFile}: agentsHintMs must be a number between 0 and 3600000`,
+    ]);
+  });
+
   it("merges defaults, the user file and a trusted project file, project last", () => {
     const { agentDir, cwd, userFile, projectFile } = dirs();
 

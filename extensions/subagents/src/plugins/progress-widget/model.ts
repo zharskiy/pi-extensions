@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { treeRow } from "../../components/agent-row.ts";
+import { treeRow } from "../../components/legacy-row.ts";
 import type { Settings } from "../../model/settings.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 

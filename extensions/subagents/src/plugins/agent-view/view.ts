@@ -6,7 +6,6 @@ import type {
   ThemeLike,
   ViewComponent,
 } from "../../../../../core/adapter/contract.ts";
-import { chainLabel, finishSummary, progressText, stateIcon, truncate } from "../../components/agent-row.ts";
 import {
   type CollapsibleSection,
   renderSections,
@@ -15,6 +14,7 @@ import {
 } from "../../components/collapsible.ts";
 import { contextBreakdown, renderBreakdown } from "../../components/context-breakdown.ts";
 import { scrollHint, stopHint } from "../../components/hints.ts";
+import { chainLabel, finishSummary, progressText, stateIcon, truncate } from "../../components/legacy-row.ts";
 import { promptSections } from "../../components/system-prompt-block.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
 import { type AgentRecord, isClosed, type RouteResult, worktreeText } from "../../model/types.ts";

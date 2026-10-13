@@ -8,8 +8,8 @@ import {
   resolveSelection,
   selectedRecord,
 } from "../../components/agent-list.ts";
-import { truncate } from "../../components/agent-row.ts";
 import { scrollHint, stopHint } from "../../components/hints.ts";
+import { truncate } from "../../components/legacy-row.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 
 type ListDeps = {

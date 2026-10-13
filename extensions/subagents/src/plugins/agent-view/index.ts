@@ -170,7 +170,12 @@ export const agentViewPlugin: Plugin = {
             stop: () => (services.has("runner") ? services.require("runner").stop(id) : undefined),
             send: (text) => send(id, text),
             subscribe: (onChange) =>
-              watchAgents(bus, { relevant: (record) => inChain(record, id), ticking, onChange }),
+              watchAgents(bus, {
+                relevant: (record) => inChain(record, id),
+                tickMs: () => (ticking() ? 1_000 : undefined),
+                throttleMs: () => settings.renderThrottleMs,
+                onChange,
+              }),
           },
           api,
         ),

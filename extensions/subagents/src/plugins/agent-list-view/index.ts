@@ -6,13 +6,14 @@ import { createAgentListView } from "./view.ts";
 export const agentListViewPlugin: Plugin = {
   id: "agent-list-view",
   requires: ["agent-registry", "agent-view"],
-  enable: ({ host, bus, services }) => {
+  enable: ({ host, bus, services, settings }) => {
     const registry = services.require("registry");
 
     const subscribe = (onChange: () => void) =>
       watchAgents(bus, {
         relevant: () => true,
-        ticking: () => registry.list().some((record) => !isClosed(record.state)),
+        tickMs: () => (registry.list().some((record) => !isClosed(record.state)) ? 1_000 : undefined),
+        throttleMs: () => settings.renderThrottleMs,
         onChange,
       });
 
