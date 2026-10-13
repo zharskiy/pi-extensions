@@ -241,10 +241,12 @@ export type Host = {
   isIdle(): boolean;
   sendUserMessage(text: string): void;
   /**
-   * Delivers `message` to the model without rendering it. While a run is active it is queued as a hidden follow-up of
-   * that run. When idle it is parked for the next turn and `visible` (a short user-role line, rendered as a user
-   * message) starts that turn, so the main prompt replacement (`setMainPrompt`) applies. `visible` is required: without
-   * a live session nothing is sent.
+   * Delivers `message` to the model without rendering it. A follow-up is used only while an agent run is active
+   * (between pi's `agent_start` and `agent_settled`): it is then queued as a hidden follow-up of that run. When idle it
+   * is parked for the next turn and `visible` (a short user-role line, rendered as a user message) starts that turn,
+   * so the main prompt replacement (`setMainPrompt`) applies. When pi is busy without a run (compaction, a branch
+   * summary), the message is held and delivered the idle way once pi is idle. `visible` is required: without a live
+   * session nothing is sent, and held messages are dropped at session shutdown.
    */
   sendHiddenMessage(message: HiddenMessage, visible: string): void;
   /** Register a renderer for custom entries (`appendEntry`). `undefined` hides the entry. The adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (never wraps). */

@@ -50,8 +50,13 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
-  /** `sendHiddenMessage` calls; `delivery` is `nextTurn` when the host was idle (then `visible` started the turn), else `followUp`. */
+  /**
+   * Delivered `sendHiddenMessage` calls, mirroring the adapter: `followUp` while a run is active (`idle` false),
+   * `nextTurn` when idle (then `visible` started the turn). While `compacting` with no run the call is held in
+   * `heldHidden` and delivered as `nextTurn` by `finishCompacting()` or `settle()`.
+   */
   hidden: { message: HiddenMessage; visible: string; delivery: "followUp" | "nextTurn" }[];
+  heldHidden: { message: HiddenMessage; visible: string }[];
   entryRenderers: Map<string, EntryRender>;
   /** Runs the renderer registered for `customType` with `plainTheme`; the adapter's outputPad indent is not applied. */
   renderEntry(customType: string, data: unknown, expanded?: boolean): string[] | undefined;
@@ -69,7 +74,10 @@ export type FakeHost = Host & {
   editorCapture?: EditorKeyHandler;
   pressEmptyLeft(): boolean;
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
+  /** `idle` false models an active agent run; `compacting` models pi busy without a run (`isIdle()` is false). */
   idle: boolean;
+  compacting: boolean;
+  finishCompacting(): void;
   usage: UsageTotals;
   info: SessionInfo;
   confirmations: { title: string; message: string }[];
@@ -149,6 +157,16 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const sessionFile = (file: string | undefined): FakeSessionFile =>
     file ? (host.files.get(file) as FakeSessionFile) : host;
 
+  const deliverHeldHidden = () => {
+    if (!host.idle || host.compacting) {
+      return;
+    }
+
+    host.heldHidden.splice(0).forEach(({ message, visible }) => {
+      host.hidden.push({ message, visible, delivery: "nextTurn" });
+    });
+  };
+
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
@@ -156,6 +174,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     files: new Map(),
     sent: [],
     hidden: [],
+    heldHidden: [],
     entryRenderers: new Map(),
     renderEntry: (customType, data, expanded = false) => {
       const render = host.entryRenderers.get(customType);
@@ -201,6 +220,11 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       return outcome;
     },
     idle: true,
+    compacting: false,
+    finishCompacting: () => {
+      host.compacting = false;
+      deliverHeldHidden();
+    },
     usage: emptyUsage(),
     confirmations: [],
     confirmAnswer: true,
@@ -351,7 +375,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     onCompact: (handler) => {
       compactHandlers.push(handler);
     },
-    isIdle: () => started && host.idle,
+    isIdle: () => started && host.idle && !host.compacting,
     sendUserMessage: (text) => {
       if (stale) {
         return;
@@ -364,11 +388,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         return;
       }
 
-      host.hidden.push({
-        message: structuredClone(message),
-        visible,
-        delivery: host.idle ? "nextTurn" : "followUp",
-      });
+      if (!host.idle) {
+        host.hidden.push({ message: structuredClone(message), visible, delivery: "followUp" });
+        return;
+      }
+
+      if (host.compacting) {
+        host.heldHidden.push({ message: structuredClone(message), visible });
+        return;
+      }
+
+      host.hidden.push({ message: structuredClone(message), visible, delivery: "nextTurn" });
     },
     registerEntryRenderer: (customType, render) => {
       host.entryRenderers.set(customType, render as EntryRender);
@@ -444,6 +474,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     settle: () => {
       host.idle = true;
+      deliverHeldHidden();
       settling = true;
 
       idleHandlers.forEach((handler) => {
@@ -469,6 +500,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     shutdown: async (reason = "quit") => {
       host.currentPhase = { phase: "idle", detail: { running: 0 } };
+      host.heldHidden.length = 0;
 
       await shutdownHandlers.reduce<Promise<void>>(
         (chain, handler) => chain.then(() => handler(reason)),

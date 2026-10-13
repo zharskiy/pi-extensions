@@ -5,11 +5,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
-import { editorKeyPress } from "./pi-ui.ts";
+import { editorKeyPress } from "./pi-keys.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
 type EditorHooks = { frame?: EditorFrame; emptyLeft: Set<() => void>; capture?: EditorKeyHandler };
+
+/** pi-tui `Editor` private state (editor.d.ts) that takes a key before the cursor bindings: jump mode and bracketed paste. */
+type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
 class HostEditor extends CustomEditor {
   private readonly keys: KeybindingsManager;
@@ -62,6 +65,12 @@ class HostEditor extends CustomEditor {
     });
   }
 
+  private pendingKeyState() {
+    const pending = this as unknown as EditorPending;
+
+    return pending.jumpMode !== null || pending.isInPaste;
+  }
+
   handleInput(data: string) {
     const capture = this.hooks.capture;
 
@@ -77,6 +86,7 @@ class HostEditor extends CustomEditor {
 
     if (
       this.hooks.emptyLeft.size > 0 &&
+      !this.pendingKeyState() &&
       this.keys.matches(data, "tui.editor.cursorLeft") &&
       this.getText() === "" &&
       !this.isShowingAutocomplete()

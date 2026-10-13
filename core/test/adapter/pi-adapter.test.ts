@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type { EntryRenderer, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -284,11 +284,12 @@ describe("pi adapter", () => {
     ]);
   });
 
-  it("sends a hidden follow-up while busy", async () => {
+  it("sends a hidden follow-up while a run is active", async () => {
     const { pi, fire, calls } = fakePi();
     const host = createPiHost(pi, {});
 
     await fire("session_start", fakeCtx("tui", false));
+    await fire("agent_start", fakeCtx("tui", false));
 
     host.sendHiddenMessage(
       { customType: "wake", text: "results", details: { batch: 1 } },
@@ -320,6 +321,67 @@ describe("pi adapter", () => {
       },
       { call: "sendUserMessage", message: "↳ 2 agents finished", options: undefined },
     ]);
+  });
+
+  it("holds a hidden message while pi is busy without a run and delivers it the idle way once idle", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { pi, fire, calls } = fakePi();
+      const host = createPiHost(pi, {});
+      let idle = false;
+      const ctx = { ...fakeCtx("tui"), isIdle: () => idle };
+
+      await fire("session_start", ctx);
+
+      host.sendHiddenMessage({ customType: "wake", text: "compacting" }, "↳ 1 agent finished");
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(calls).toEqual([]);
+
+      idle = true;
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(calls).toEqual([
+        {
+          call: "sendMessage",
+          message: { customType: "wake", content: "compacting", display: false, details: undefined },
+          options: { deliverAs: "nextTurn" },
+        },
+        { call: "sendUserMessage", message: "↳ 1 agent finished", options: undefined },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("delivers a message held before a run starts when that run settles", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { pi, fire, calls } = fakePi();
+      const host = createPiHost(pi, {});
+      let idle = false;
+      const ctx = { ...fakeCtx("tui"), isIdle: () => idle };
+
+      await fire("session_start", ctx);
+
+      host.sendHiddenMessage({ customType: "wake", text: "early" }, "↳ 1 agent finished");
+      await fire("agent_start", ctx);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(calls).toEqual([]);
+
+      idle = true;
+      await fire("agent_settled", ctx);
+
+      expect(calls.map((call) => [call.call, call.options])).toEqual([
+        ["sendMessage", { deliverAs: "nextTurn" }],
+        ["sendUserMessage", undefined],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends nothing without a live session", async () => {
@@ -368,6 +430,20 @@ describe("pi adapter", () => {
     expect(visibleWidth(flush[0] ?? "")).toBe(40);
     expect(expanded).toEqual(["a!"]);
     expect(render({})).toBeUndefined();
+  });
+
+  it("splits entry lines containing a newline into separately padded lines", () => {
+    const { pi, entryRenderers } = fakePi();
+    const host = createPiHost(pi, {});
+    const theme = { fg: (_token: string, text: string) => text, bold: (text: string) => text } as never;
+
+    host.registerEntryRenderer("multi", () => ["a\nb"]);
+
+    const lines = entryRenderers
+      .get("multi")?.({ type: "custom", customType: "multi", data: {} } as never, { expanded: false }, theme)
+      ?.render(20);
+
+    expect(lines).toEqual([" a", " b"]);
   });
 
   it("forwards dialog start and end with kind and title", async () => {

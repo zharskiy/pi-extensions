@@ -1,6 +1,6 @@
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, type TUI, visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EditorFrame, KeyPress } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor-frame.ts";
 
@@ -198,6 +198,48 @@ describe("createEditorHooks", () => {
 
     expect(fired).toBe(1);
     expect(hooked.getCursor()).toEqual(before);
+  });
+
+  it("lets left reach the editor while autocomplete is open", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorLeft(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory);
+
+    vi.spyOn(hooked, "isShowingAutocomplete").mockReturnValue(true);
+
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
+
+    try {
+      hooked.handleInput(LEFT);
+
+      expect(fired).toBe(0);
+      expect(reached).toHaveBeenCalledWith(LEFT);
+    } finally {
+      reached.mockRestore();
+    }
+  });
+
+  it("lets left reach the editor while it waits for a jump target", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorLeft(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory);
+    const pending = hooked as unknown as { jumpMode: "forward" | "backward" | null };
+
+    pending.jumpMode = "forward";
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(0);
+    expect(pending.jumpMode).toBeNull();
   });
 
   it("routes keys to the capture, swallows consumed ones and lets a released key reach the editor", () => {

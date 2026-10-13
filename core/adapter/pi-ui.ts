@@ -16,7 +16,6 @@ import {
   type ExtensionFactory,
   getMarkdownTheme,
   keyText,
-  type Theme,
   ToolExecutionComponent,
   type ToolRenderers,
   UserMessageComponent,
@@ -30,7 +29,6 @@ import {
   type Keybinding,
   matchesKey,
   ScrollView,
-  Text,
   type TUI,
   type TuiMouseEvent,
   truncateToWidth,
@@ -48,55 +46,15 @@ import type {
   TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
+import { themeLike } from "./pi-components.ts";
 import { createEditorHooks } from "./pi-editor-frame.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
+import { keyPressWith } from "./pi-keys.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
-export const themeLike = (theme: Theme): ThemeLike => ({
-  fg: (token, text) => theme.fg(token, text),
-  bold: (text) => theme.bold(text),
-});
-
-type KeyMatchers = {
-  isToolsToggle(data: string): boolean;
-  isUp(data: string): boolean;
-  isDown(data: string): boolean;
-};
-
-const KEY_NAMES = [
-  ["pageUp", Key.pageUp],
-  ["pageDown", Key.pageDown],
-  ["home", Key.home],
-  ["end", Key.end],
-  ["enter", Key.enter],
-  ["escape", Key.escape],
-  ["space", Key.space],
-  ["tab", Key.tab],
-] as const;
-
-const keyPressWith = (data: string, matchers: KeyMatchers): KeyPress => {
-  if (matchers.isToolsToggle(data)) {
-    return { name: "toggleTools", raw: data };
-  }
-
-  if (matchers.isUp(data)) {
-    return { name: "up", raw: data };
-  }
-
-  if (matchers.isDown(data)) {
-    return { name: "down", raw: data };
-  }
-
-  const match = KEY_NAMES.find(([, key]) => matchesKey(data, key));
-
-  if (match) {
-    return { name: match[0], raw: data };
-  }
-
-  return { name: "other", char: data.length === 1 ? data : undefined, raw: data };
-};
+export { editorKeyPress } from "./pi-keys.ts";
 
 const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPress =>
   keyPressWith(data, {
@@ -104,63 +62,6 @@ const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPr
     isUp: (input) => matchesKey(input, Key.up),
     isDown: (input) => matchesKey(input, Key.down),
   });
-
-type KeyMatcher = { matches(data: string, binding: string): boolean };
-
-/** The key as the focused editor sees it: `up`/`down` through pi's `tui.editor.cursorUp/Down` bindings, `toggleTools` through `app.tools.expand`, the rest by `Key.*`. */
-export const editorKeyPress = (data: string, keys: KeyMatcher): KeyPress =>
-  keyPressWith(data, {
-    isToolsToggle: (input) => keys.matches(input, "app.tools.expand"),
-    isUp: (input) => keys.matches(input, "tui.editor.cursorUp"),
-    isDown: (input) => keys.matches(input, "tui.editor.cursorDown"),
-  });
-
-export const textComponent = (previous: unknown, text: string): Component => {
-  if (previous instanceof Text) {
-    previous.setText(text);
-    return previous;
-  }
-
-  return new Text(text, 0, 0);
-};
-
-class PaddedLines implements Component {
-  private lines: string[];
-  private outputPad: number;
-
-  constructor(lines: string[], outputPad: number) {
-    this.lines = lines;
-    this.outputPad = outputPad;
-  }
-
-  set(lines: string[], outputPad: number) {
-    this.lines = lines;
-    this.outputPad = outputPad;
-  }
-
-  render(width: number): string[] {
-    const pad = " ".repeat(this.outputPad);
-    const inner = Math.max(1, width - 2 * this.outputPad);
-
-    return this.lines.map((line) => pad + truncateToWidth(line, inner, "…"));
-  }
-
-  invalidate() {}
-}
-
-/**
- * A component drawing `lines` as given: each starts at column `outputPad` and is cut at `width - 2 * outputPad`
- * with `…`, never wrapped, so the last `outputPad` columns stay blank (spec §2 "Padding and margins").
- * Reuses `previous` when it is one.
- */
-export const padLines = (lines: string[], outputPad: number, previous?: unknown): Component => {
-  if (previous instanceof PaddedLines) {
-    previous.set(lines, outputPad);
-    return previous;
-  }
-
-  return new PaddedLines(lines, outputPad);
-};
 
 const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
 
@@ -201,7 +102,7 @@ export const capturePiRenderers = (
           },
         } as unknown as ExtensionAPI;
 
-        void factory()(stub);
+        Promise.resolve(factory()(stub)).catch(() => {});
 
         if (!captured?.renderCall && !captured?.renderResult) {
           return [];

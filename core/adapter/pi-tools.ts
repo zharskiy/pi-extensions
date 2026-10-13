@@ -2,7 +2,7 @@ import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi
 import type { Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ToolRenderState, ToolResult, ToolSpec } from "./contract.ts";
-import { padLines, textComponent, themeLike } from "./pi-ui.ts";
+import { padLines, textComponent, themeLike } from "./pi-components.ts";
 
 const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],

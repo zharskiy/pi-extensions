@@ -12,6 +12,8 @@ pi-extensions/
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts / pi-tools.ts   # pi TUI components, tool wrapping
+│   │   ├── pi-components.ts     # themeLike, textComponent, padLines (imports only contract types)
+│   │   ├── pi-keys.ts           # KeyPress naming, editorKeyPress (imports only contract types)
 │   │   ├── pi-editor-frame.ts   # editor subclass: optional EditorFrame, empty-← hook, key capture
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters

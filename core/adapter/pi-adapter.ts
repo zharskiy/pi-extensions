@@ -21,11 +21,12 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
+import { padLines, themeLike } from "./pi-components.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createUi, type HostState, padLines, themeLike } from "./pi-ui.ts";
+import { createUi, type HostState } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -73,6 +74,11 @@ const liveCtx = (state: HostState) => {
   return state.ctx;
 };
 
+type HiddenCustom = { customType: string; content: string; display: false; details: unknown };
+
+/** How often held hidden messages check whether pi went idle (compaction or a branch summary without a run). */
+const HELD_POLL_MS = 100;
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
@@ -84,6 +90,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
+  let runActive = false;
+  const held: { custom: HiddenCustom; visible: string }[] = [];
+  let heldTimer: ReturnType<typeof setTimeout> | undefined;
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -105,8 +114,36 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   };
 
+  const deliverIdle = (custom: HiddenCustom, visible: string) => {
+    pi.sendMessage(custom, { deliverAs: "nextTurn" });
+    pi.sendUserMessage(visible);
+  };
+
+  const stopHeldPoll = () => {
+    clearTimeout(heldTimer);
+    heldTimer = undefined;
+  };
+
+  const deliverHeld = () => {
+    stopHeldPoll();
+
+    if (!state.ctx || runActive || held.length === 0) {
+      return;
+    }
+
+    if (!state.ctx.isIdle()) {
+      heldTimer = setTimeout(deliverHeld, HELD_POLL_MS);
+      return;
+    }
+
+    held.splice(0).forEach(({ custom, visible }) => {
+      deliverIdle(custom, visible);
+    });
+  };
+
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
+    runActive = false;
 
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
@@ -121,6 +158,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     const errors: unknown[] = [];
 
     phaseState = initialPhase();
+    runActive = false;
+    held.length = 0;
+    stopHeldPoll();
 
     await shutdownHandlers.reduce<Promise<void>>(
       (chain, handler) =>
@@ -151,6 +191,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("agent_start", (_event, ctx) => {
     capture(ctx);
+    runActive = true;
+    stopHeldPoll();
 
     agentStartHandlers.forEach((handler) => {
       handler();
@@ -233,6 +275,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("agent_settled", (_event, ctx) => {
     capture(ctx);
+    runActive = false;
+    deliverHeld();
 
     idleHandlers.forEach((handler) => {
       handler();
@@ -324,20 +368,25 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
         return;
       }
 
-      const custom = {
+      const custom: HiddenCustom = {
         customType: message.customType,
         content: message.text,
         display: false,
         details: message.details,
       };
 
-      if (!ctx.isIdle()) {
+      if (runActive) {
         pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
         return;
       }
 
-      pi.sendMessage(custom, { deliverAs: "nextTurn" });
-      pi.sendUserMessage(visible);
+      if (!ctx.isIdle()) {
+        held.push({ custom, visible });
+        heldTimer ??= setTimeout(deliverHeld, HELD_POLL_MS);
+        return;
+      }
+
+      deliverIdle(custom, visible);
     },
     registerEntryRenderer: <T>(
       customType: string,
