@@ -1,5 +1,7 @@
 # UX spec: Claude-alike subagents
 
+Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`).
+
 Single source of truth for what the user sees and does. Follows `plans/research/decisions.md` (D1–D7); where this file is more precise, it wins. Strings in code spans are exact. Timings are in ms with their setting name. Mockups are 80 columns wide; `provider/model:high` stands for any model label. Nothing here names a provider or a model.
 
 ## 1. Principles
@@ -30,7 +32,7 @@ Attention (a forwarded dialog waits): the glyph stays the state's glyph; the sta
 
 Spinner: the ten braille frames `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, painted `accent`. The frame is `floor(now / 100) % 10` at render time, so every surface shows the same frame and no surface keeps a frame counter. Surfaces that need to animate while pi is otherwise idle run a shared ticker (`agentsTickMs`, fixed 100 ms, not a setting) while any record is `running` or `grace`; 1000 ms while only `queued` or closed rows are on screen; none when nothing is on screen.
 
-Shared formatters (one module, used by every surface; the duplicates in `footer/src/render.ts` and `components/agent-row.ts` go):
+Shared formatters (`formatTokens` and `formatDuration` live in `core/manager/format.ts` so the footer and the working indicator share them too; the subagents module re-exports them; the duplicates in `footer/src/render.ts` and `components/agent-row.ts` go):
 
 - Tokens: `842`, `12.3k`, `1.2M` (one decimal from 1 000 up). With unit: `12.3k tokens`. A zero count is omitted wherever it is optional.
 - Durations: `3s`, `1m 2s`, `1h 2m` (below one minute seconds only; below one hour minutes and seconds; from one hour hours and minutes). Never `75s`.
@@ -44,7 +46,7 @@ Shared formatters (one module, used by every surface; the duplicates in `footer/
 
 ### `run_agent` block
 
-One block per `run_agent` call. The tool call line is the header; the tool result is the rows. The block uses pi's plain shell (`renderShell: "self"`, no coloured box, no `(ctrl+o to expand)` hint). It re-renders through the stored `invalidate` at most every `renderThrottleMs` (default 250) after an `agent:changed` of its batch, and on every pi render while the main session is busy. It never schedules its own timer.
+One block per `run_agent` call. The tool call line is the header; the tool result is the rows. The block uses pi's plain shell (`renderShell: "self"`, no coloured box, no `(ctrl+o to expand)` hint). It re-renders through the stored `invalidate` at most every `renderThrottleMs` (default 250) after an `agent:changed` of its batch. It never schedules its own timer, and pi caches a tool block between invalidations, so the spinner in the header advances only on agent events (deviation: a frozen spinner between events is accepted; the panel below the editor animates).
 
 Header phases:
 
@@ -96,11 +98,11 @@ Details after the text, each ` · `-joined: duration (always); `2 sessions` for 
 The batch text for the model always travels as a hidden custom message (`display: false`; see `plans/01-adapter-foundations.md` §C, `Host.sendHiddenMessage`). What the user sees depends on whether the main session is busy when the batch settles:
 
 - Main session busy (the model is mid-run): the hidden message joins the run as a follow-up. The user sees nothing new; the model's reply simply takes the results into account.
-- Main session idle: a run can only start safely through a visible user message, so one short user-role line starts the turn: `3 agents finished` (`1 agent finished` singular; several batches held in the outbox are counted together). It renders as a user message (pi's user-message box; that is the only way to start a turn with the main prompt intact), and the hidden results message follows it for the model. Then the working indicator (section 7) and the model's reply.
+- Main session idle: a run can only start safely through a visible user message, so one short user-role line starts the turn: `↳ 3 agents finished` (`↳ 1 agent finished` singular; several batches held in the outbox are counted together). The leading `↳` marks it as a system note inside the user-message box. It renders as a user message (pi's user-message box; that is the only way to start a turn with the main prompt intact), and the hidden results message follows it for the model. Then the working indicator (section 7) and the model's reply.
 
 In both cases the dim completion lines (above) have already appeared as each agent closed, and the `run_agent` block's header has lost `(↓ to manage)`.
 
-(deviation: Claude shows no user line at all; pi has no other safe way to start a run from idle. The line is short and names only the count so it reads as a system note, not as pasted results.)
+(deviation: Claude shows no user line at all; pi has no other safe way to start a run from idle. The line is short, starts with `↳` and names only the count so it reads as a system note, not as pasted results.)
 
 ### Unchanged
 
@@ -177,7 +179,7 @@ Column rule, from the full width `W`: fixed parts are pointer (2), tree, glyph (
 
 ### Window and markers
 
-- At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The window scrolls by one row to keep the selected row visible; with nothing selected it shows the first 5.
+- At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The window scrolls by the minimum to keep the selected row visible. When the selection clears, the window keeps its top row (clamped to the row count); it never jumps back to the first row on its own.
 - The hint line (below the rows and markers) exists only while a row is selected.
 - `(+N)` on a visible row tells the user that rows under it exist even when they are scrolled out.
 
@@ -303,7 +305,7 @@ Closed records stay listed for `lingerMs` (default 30 000) after `endedAt`, then
 | `Enter` | Open the selected agent's view inside this overlay (section 6). |
 | `x` | Open row: stop (grace); grace row: close now; closed row: clear it from the list. |
 | `X` | Stop all: first press shows the feedback `Press X again to stop all agents`; a second `X` within `stopAllConfirmMs` (fixed 3 000) stops every open agent (each enters grace) and clears the feedback. With no open agent the feedback is `No running agents`. Any other key cancels the pending confirmation. |
-| `Esc` | Close the overlay. |
+| `Esc` | Close the overlay (a pending stop-all confirmation is cancelled as well). |
 
 Feedback line: `warning` for `Press X again to stop all agents`, `muted` for `No running agents`; shown above the hint line for 3 000 ms (the confirmation window) or 2 000 ms (`No running agents`), then removed.
 
@@ -447,17 +449,17 @@ Nothing from child sessions affects the indicator: no child event, child tool, c
 
 ## 8. Surface F: notifications
 
-A new global extension `extensions/notifications/`. TUI mode only. Channels: `auto` (BEL then OSC 9; on rxvt BEL then OSC 777 with title `pi`), `bell` (BEL only), `off`. One text per notification, no title except where OSC 777 requires one.
+A new global extension `extensions/notifications/`. TUI mode only. Channels: `auto` (OSC 9; on rxvt OSC 777 with title `pi`; no bell, so terminals without OSC 9/777 support show nothing, as Claude Code does), `bell` (BEL only, the fallback for such terminals), `off`. One text per notification, no title except where OSC 777 requires one.
 
 | Trigger | Timer | Cancelled by | Text |
 |---|---|---|---|
-| Main session settled (`onIdle`) with no source on the busy channel | `idleDelayMs` (default 10 000; deviation from Claude's 60 000 by decision D5) with no keystroke since the settle | any keystroke; a new run starting; a busy source appearing | `pi is waiting for your input` |
+| Main session settled (`onIdle`) with no source on the busy channel | `idleDelayMs` (default 20 000; deviation from Claude's 60 000 by decision D5, raised from 10 000 after the review because the notification also follows replies the user is only reading) with no keystroke since the settle | any keystroke; a new run starting; a busy source appearing | `pi is waiting for your input` |
 | Busy channel empties while the session is idle (agents finished, no wake yet) | the same timer, armed then; the wake normally starts a run first, whose settle re-arms it | same | same |
 | A dialog opens (`ui_prompt_start`, including agents' forwarded dialogs) | `dialogDelayMs` (default 6 000) since the later of the dialog's start and the last keystroke; each keystroke restarts it | `ui_prompt_end`; closing the session | `pi needs your input: <title>` |
 
 Rules: once per settle (a settle that fired never fires again); evaluated at fire time (idle, no busy source, no dialog open, no keystroke since the settle); keystrokes are observed through `onTerminalInput` regardless of focus. The busy channel is the renamed `session-limits:busy` in `core/manager/channels.ts` (new neutral name `pi:busy`, same payload); subagents publishes on it while any agent is open, so the idle notification waits for agents.
 
-Settings file `pi-notifications.json` (user `<agentDir>`, project `<cwd>/.pi/` when trusted): `channel` (`"auto"` | `"bell"` | `"off"`, default `"auto"`), `idleDelayMs` (default 10 000, range 0–600 000), `dialogDelayMs` (default 6 000, range 0–600 000).
+Settings file `pi-notifications.json` (user `<agentDir>`, project `<cwd>/.pi/` when trusted): `channel` (`"auto"` | `"bell"` | `"off"`, default `"auto"`), `idleDelayMs` (default 20 000, range 0–600 000), `dialogDelayMs` (default 6 000, range 0–600 000).
 
 Events that must not notify:
 
@@ -483,7 +485,7 @@ Events that must not notify:
 | `stopGraceSeconds` | `pi-subagents.json` | unchanged | 60 | 0–3 600 |
 | `notifications` | `pi-subagents.json` | removed | — | — |
 | `channel` | `pi-notifications.json` | new | `"auto"` | `auto` / `bell` / `off` |
-| `idleDelayMs` | `pi-notifications.json` | new | 10 000 | 0–600 000 |
+| `idleDelayMs` | `pi-notifications.json` | new | 20 000 | 0–600 000 |
 | `dialogDelayMs` | `pi-notifications.json` | new | 6 000 | 0–600 000 |
 
 Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 000 ms; `VERB_MS` 8 000; indicator rewrite 1 000 ms; `stopAllConfirmMs` 3 000; `No running agents` feedback 2 000 ms.
@@ -495,7 +497,7 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Creation-order rows and indent-only nesting: replaced by tree order with connectors and `(+N)` (D2).
 - Unlimited panel rows: replaced by the 5-row window with markers (D2).
 - `run_agent` result rendered as fixed-width 120 agent rows with a frozen spinner: replaced by the block of section 3 (D1).
-- Wake as a visible user message with full results inline: hidden custom message, plus a one-line `3 agents finished` user line only when the session was idle (D1, adapter plan §C).
+- Wake as a visible user message with full results inline: hidden custom message, plus a one-line `↳ 3 agents finished` user line only when the session was idle (D1, adapter plan §C).
 - `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Needs input / Completed (n)` (D3).
 - `/agents` `/` filter and its input line: removed, the list is short-lived (D3).
 - `X` then `y` stop-all confirmation: replaced by `X` twice within 3 s (D3).
@@ -513,5 +515,5 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 
 1. Model label: resolved. The transcript row names the model (` · <model>` dim, section 3); the panel and the list do not. The README sentence about "the progress row" changes to "the start block".
 2. Panel markers: resolved. `↑ N more` / `↓ N more` stay separate lines; clarity over height.
-3. Idle delay: resolved at `idleDelayMs` 10 000. The user asked to be told promptly when the work is done; the keystroke cancel covers a user who is typing. The setting exists for people who find it noisy.
+3. Idle delay: resolved at `idleDelayMs` 20 000 after the review (10 000 before). The user asked to be told promptly when the work is done; the keystroke cancel covers a user who is typing, and `auto` sends no bell, so a notification after a reply the user is reading is a quiet banner. The setting exists for people who want it faster or slower.
 4. Activity versus description: resolved. The description always stays; the activity is the first part of the stats column (section 4).

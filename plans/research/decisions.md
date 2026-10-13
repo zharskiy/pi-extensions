@@ -1,6 +1,6 @@
 # Product decisions for the Claude-alike subagent UX
 
-Decided by the orchestrator on 2026-10-13 after the four research reports in this folder. The UX spec (`plans/00-ux-spec.md`) turns these into exact screens, strings, keys and timings; the implementation plans follow the spec. Where the spec and this file disagree, the spec wins (it is later and more precise).
+Decided by the orchestrator on 2026-10-13 after the four research reports in this folder. Revised 2026-10-14 after the review (`review-findings.md`): D5's `auto` channel sends no bell and `idleDelayMs` is 20 s; D1's idle wake carries a `↳ N agents finished` user line (pi cannot start a run from idle without a visible user message, see plan 01 §C). The UX spec (`plans/00-ux-spec.md`) turns these into exact screens, strings, keys and timings; the implementation plans follow the spec. Where the spec and this file disagree, the spec wins (it is later and more precise).
 
 ## Goals
 
