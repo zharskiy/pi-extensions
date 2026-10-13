@@ -65,7 +65,7 @@ export type FakeHost = Host & {
   tool<P, D>(name: string): ToolSpec<P, D>;
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
-  turnStart(): void;
+  agentStart(): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
@@ -86,7 +86,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const idleHandlers: (() => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
-  const turnStartHandlers: (() => void)[] = [];
+  const agentStartHandlers: (() => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -203,11 +203,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       setEditorFrame: (frame) => {
         if (host.foreignEditor) {
-          return false;
+          return;
         }
 
         host.editorFrame = frame;
-        return true;
       },
       setFooter: (render) => {
         host.footer = render;
@@ -364,13 +363,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     workingIndicators: [],
     workingMessages: [],
-    onTurnStart: (handler) => {
-      turnStartHandlers.push(handler);
+    onAgentStart: (handler) => {
+      agentStartHandlers.push(handler);
     },
-    turnStart: () => {
+    agentStart: () => {
       host.idle = false;
 
-      turnStartHandlers.forEach((handler) => {
+      agentStartHandlers.forEach((handler) => {
         handler();
       });
     },

@@ -5,7 +5,7 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session, inside the main session's process, optionally in their own git worktree, with a context breakdown per agent, terminal notifications and MCP for every agent with tools; what they spend is reported to spending.
 - [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
 - [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
-- [working-indicator](extensions/working-indicator/README.md): pi's working line as a spinner, a playful verb and the elapsed time of the current turn.
+- [working-indicator](extensions/working-indicator/README.md): pi's working line as a spinner, a playful verb and the elapsed time of the current prompt.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 - [composer](extensions/composer/README.md): the input box drawn with a rounded border in the editor's colour and a chevron prompt.
 - [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.

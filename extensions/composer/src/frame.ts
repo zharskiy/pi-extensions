@@ -1,60 +1,37 @@
-import type { EditorFrame } from "../../../core/adapter/contract.ts";
+import type { EditorFrame, EditorLayout } from "../../../core/adapter/contract.ts";
 
-const BOX = { topLeft: "╭", topRight: "╮", bottomLeft: "╰", bottomRight: "╯", pipe: "│", rule: "─" };
+export const CHEVRON = "❯";
 
-const LEFT = 2;
-const RIGHT = 2;
+const RULE = "─";
 const MIN_CONTENT = 8;
 
 const ESC = String.fromCharCode(27);
-const ANSI = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
-const ALL_RULE = /^─+$/;
-const SCROLL_HINT = /^─+ [↑↓] \d+ more /;
 
-export const isRule = (line: string) => {
-  if (!line.startsWith(BOX.rule) && !line.startsWith(ESC)) {
-    return false;
-  }
+export const createFrame = (): EditorFrame => {
+  const chrome = CHEVRON.length + 1;
+  const gutterSpace = " ".repeat(chrome);
+  const tail = RULE.repeat(chrome);
 
-  const plain = line.replace(ANSI, "");
+  const decorate = (lines: string[], { bottom, scrolled }: EditorLayout, paint: (text: string) => string) => {
+    if (bottom < 1) {
+      return lines;
+    }
 
-  return ALL_RULE.test(plain) || SCROLL_HINT.test(plain);
-};
-
-const boldWhite = (text: string) => `${ESC}[1m${ESC}[38;2;255;255;255m${text}${ESC}[39m${ESC}[22m`;
-
-export const createFrame = (chevron: string): EditorFrame => {
-  const gutter = chevron.length + 1;
-  const chrome = LEFT + gutter + RIGHT;
-  const leftCap = BOX.rule.repeat(LEFT - 1 + gutter);
-  const rightCap = BOX.rule.repeat(RIGHT - 1);
-  const gutterSpace = " ".repeat(gutter);
-  const outside = " ".repeat(LEFT);
-  const prompt = `${boldWhite(chevron)} `;
-
-  const decorate = (lines: string[], paint: (text: string) => string) => {
-    const pipe = paint(BOX.pipe);
-    const top = { open: paint(BOX.topLeft + leftCap), close: paint(rightCap + BOX.topRight) };
-    const bottom = { open: paint(BOX.bottomLeft + leftCap), close: paint(rightCap + BOX.bottomRight) };
-    const first = lines.findIndex((line) => !isRule(line));
-    const last = first < 0 ? -1 : lines.findIndex((line, index) => index > first && isRule(line));
+    const extension = paint(tail);
+    const lead = scrolled ? gutterSpace : `${ESC}[1m${paint(CHEVRON)}${ESC}[22m `;
 
     return lines.map((line, index) => {
-      if (last >= 0 && index > last) {
-        return outside + line;
+      if (index === 0 || index === bottom) {
+        return line + extension;
       }
 
-      if (index === last) {
-        return bottom.open + line + bottom.close;
+      if (index > bottom) {
+        return gutterSpace + line;
       }
 
-      if (first < 0 || index < first) {
-        return top.open + line + top.close;
-      }
-
-      return `${pipe} ${index === first ? prompt : gutterSpace}${line} ${pipe}`;
+      return (index === 1 ? lead : gutterSpace) + line;
     });
   };
 
-  return { chrome, minWidth: chrome + MIN_CONTENT, decorate };
+  return { chrome, left: chrome, minWidth: chrome + MIN_CONTENT, decorate };
 };

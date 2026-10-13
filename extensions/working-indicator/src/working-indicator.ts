@@ -6,7 +6,9 @@ export const VERB_MS = 8000;
 
 export const TICK_MS = 1000;
 
-export const SPINNERS = {
+const INTERRUPT_BINDING = "app.interrupt";
+
+const SPINNERS = {
   braille: { frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], intervalMs: 80 },
   dots: { frames: ["∴", "∷", "∵", "∷"], intervalMs: 200 },
   bar: { frames: ["·|·", "·/·", "·—·", "·\\·"], intervalMs: 200 },
@@ -78,8 +80,8 @@ export const VERBS = [
 
 const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
 
-export const workingMessage = (verb: string, elapsedMs: number) =>
-  `${verb}… (${Math.floor(elapsedMs / 1000)}s · esc to interrupt)`;
+export const workingMessage = (verb: string, elapsedMs: number, interruptKey: string) =>
+  `${verb}… (${Math.floor(elapsedMs / 1000)}s · ${interruptKey} to interrupt)`;
 
 export const createWorkingIndicator = (host: Host) => {
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -98,6 +100,7 @@ export const createWorkingIndicator = (host: Host) => {
     stop();
 
     const startedAt = Date.now();
+    const interruptKey = host.ui.keyText(INTERRUPT_BINDING);
     let verb = pickVerb();
     let nextVerbAt = VERB_MS;
 
@@ -109,7 +112,7 @@ export const createWorkingIndicator = (host: Host) => {
         nextVerbAt = elapsedMs + VERB_MS;
       }
 
-      host.ui.setWorkingMessage(workingMessage(verb, elapsedMs));
+      host.ui.setWorkingMessage(workingMessage(verb, elapsedMs, interruptKey));
     };
 
     tick();
@@ -117,24 +120,19 @@ export const createWorkingIndicator = (host: Host) => {
     timer.unref?.();
   };
 
-  host.onSessionStart((info) => {
-    if (info.mode !== "tui") {
-      return;
-    }
-
+  host.onSessionStart(() => {
     host.ui.setWorkingIndicator(spinner);
   });
 
-  host.onTurnStart(() => {
+  host.onAgentStart(() => {
     if (host.session().mode !== "tui") {
       return;
     }
 
-    host.ui.setWorkingIndicator(spinner);
     start();
   });
 
-  host.onTurnEnd(() => {
+  host.onIdle(() => {
     stop();
   });
 

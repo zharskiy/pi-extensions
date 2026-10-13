@@ -4,17 +4,19 @@ import type { HostUi } from "./contract.ts";
 
 type EditorInput = Pick<HostUi, "onEditorSubmit" | "mapCommandCompletion" | "submitEditor">;
 
-type FocusTracking = TUI & { getFocusedComponent?(): Component | null };
+type FocusedTui = TUI & { getFocusedComponent(): Component | null };
+
+type Submittable = Component & { getText?(): string; onSubmit?(text: string): void };
 
 const CAPTURE_KEY = "pi-editor-input";
 
 const nextMacrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const captureTui = (ctx: ExtensionContext) => {
-  let captured: FocusTracking | undefined;
+  let captured: FocusedTui | undefined;
 
   ctx.ui.setWidget(CAPTURE_KEY, (tui) => {
-    captured = tui;
+    captured = tui as FocusedTui;
 
     return { render: () => [], invalidate: () => {} };
   });
@@ -75,13 +77,13 @@ export const createEditorInput = (tuiCtx: () => ExtensionContext | undefined): E
 
     ctx.ui.setEditorText(text);
 
-    const editor = captureTui(ctx)?.getFocusedComponent?.();
+    const editor = captureTui(ctx)?.getFocusedComponent() as Submittable | null | undefined;
 
-    if (!editor?.handleInput) {
+    if (editor?.getText?.() !== text || !editor.onSubmit) {
       return false;
     }
 
-    editor.handleInput("\r");
+    editor.onSubmit(text);
 
     return true;
   },

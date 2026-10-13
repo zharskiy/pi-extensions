@@ -1,14 +1,12 @@
 import type { Host } from "../../../core/adapter/contract.ts";
 
-export const ALIASES: Record<string, string> = {
-  "/continue": "/resume",
-  "/clear": "/new",
-  "/exit": "/quit",
-};
+const ALIASES = new Map([
+  ["/continue", "/resume"],
+  ["/clear", "/new"],
+  ["/exit", "/quit"],
+]);
 
-const targets = new Map(Object.entries(ALIASES));
-
-const targetOf = (text: string) => targets.get(text.trim());
+const targetOf = (text: string) => ALIASES.get(text.trim());
 
 export const createCommandAliases = (host: Host) => {
   host.onSessionStart(() => {
@@ -16,7 +14,7 @@ export const createCommandAliases = (host: Host) => {
     host.ui.mapCommandCompletion(targetOf);
   });
 
-  targets.forEach((target, alias) => {
+  ALIASES.forEach((target, alias) => {
     host.registerCommand(alias.slice(1), {
       description: `Alias for ${target}`,
       run: async () => {

@@ -54,6 +54,26 @@ describe("setFooter", () => {
     ).toEqual(["main v", "01234…"]);
   });
 
+  it("paints the ellipsis with the current theme on each render", () => {
+    const { installed, setFooter, tui } = fakeFooter("tui");
+    const theme = { fg: (_token: string, text: string) => text };
+
+    setFooter(() => ["0123456789"]);
+
+    const component = installed.at(-1)?.(tui, theme, {
+      getGitBranch: () => null,
+      getExtensionStatuses: () => new Map(),
+      onBranchChange: () => () => {},
+    });
+
+    theme.fg = (_token, text) => `\x1b[2m${text}\x1b[0m`;
+
+    const [line = ""] = component?.render(6) ?? [];
+
+    expect(line).toContain("\x1b[2m…");
+    expect(line.replace(ANSI, "")).toBe("01234…");
+  });
+
   it("re-renders on branch changes and refresh, and unsubscribes on dispose", () => {
     const { setFooter, mount, tui, branchListeners } = fakeFooter("tui");
     const handle = setFooter(() => []);
@@ -88,7 +108,7 @@ describe("footerHost", () => {
       ctx: {
         model: { name: "test-model", contextWindow: 200_000, reasoning: true, id: "x" },
         getContextUsage: () => ({ tokens: 1_000, contextWindow: 200_000, percent: 0.5 }),
-        sessionManager: { getSessionName: () => "refactor" },
+        sessionManager: { getSessionName: () => "refactor", getLeafId: () => "leaf-1" },
       } as unknown as ExtensionContext,
     };
     const host = footerHost({ getThinkingLevel: () => "high" }, state);
@@ -103,5 +123,42 @@ describe("footerHost", () => {
     expect(host.context()).toEqual({ tokens: null, window: 0, percent: null });
     expect(host.model()).toBeUndefined();
     expect(host.sessionName()).toBeUndefined();
+    expect(host.thinkingLevel()).toBe("off");
+  });
+
+  it("prefers the context's thinking level", () => {
+    const state: HostState = {
+      ctx: { thinkingLevel: "low", sessionManager: {} } as unknown as ExtensionContext,
+    };
+
+    expect(footerHost({ getThinkingLevel: () => "high" }, state).thinkingLevel()).toBe("low");
+  });
+
+  it("reuses the context usage until the leaf or the model changes", () => {
+    const session = { leaf: "leaf-1", calls: 0 };
+    const ctx = {
+      model: { name: "a", contextWindow: 100, reasoning: false },
+      getContextUsage: () => {
+        session.calls += 1;
+        return { tokens: session.calls, contextWindow: 100, percent: 1 };
+      },
+      sessionManager: { getLeafId: () => session.leaf },
+    };
+    const host = footerHost({ getThinkingLevel: () => "off" }, { ctx: ctx as unknown as ExtensionContext });
+
+    host.context();
+
+    expect(host.context().tokens).toBe(1);
+    expect(session.calls).toBe(1);
+
+    session.leaf = "leaf-2";
+
+    expect(host.context().tokens).toBe(2);
+
+    ctx.model = { ...ctx.model };
+
+    expect(host.context().tokens).toBe(3);
+    expect(host.context().tokens).toBe(3);
+    expect(session.calls).toBe(3);
   });
 });

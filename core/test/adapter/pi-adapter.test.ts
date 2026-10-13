@@ -60,20 +60,22 @@ const fakePi = () => {
 };
 
 describe("pi adapter", () => {
-  it("forwards session start, turn end and idle with the run mode", async () => {
+  it("forwards session start, agent start, turn end and idle with the run mode", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, {});
     const seen: string[] = [];
 
     host.onSessionStart((info) => seen.push(`start ${info.file} ${info.mode}`));
+    host.onAgentStart(() => seen.push("agent"));
     host.onTurnEnd((context) => seen.push(`turn ${context.tokens}/${context.window} ${context.percent}%`));
     host.onIdle(() => seen.push("idle"));
 
     await fire("session_start", fakeCtx("print"));
+    await fire("agent_start", fakeCtx("tui"));
     await fire("turn_end", fakeCtx("rpc"));
     await fire("agent_settled", fakeCtx("tui"));
 
-    expect(seen).toEqual(["start /sessions/s1.jsonl print", "turn 1000/100000 1%", "idle"]);
+    expect(seen).toEqual(["start /sessions/s1.jsonl print", "agent", "turn 1000/100000 1%", "idle"]);
     expect(host.session().mode).toBe("tui");
   });
 

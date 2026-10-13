@@ -5,13 +5,21 @@ import { createEditorInput } from "../../adapter/pi-editor-input.ts";
 
 type Captured = (tui: unknown, theme: unknown) => unknown;
 
-const fakeContext = (mode = "tui", focused: { handleInput?(data: string): void } | null = null) => {
+type Focused = {
+  handleInput?(data: string): void;
+  getText?(): string;
+  getValue?(): string;
+  onSubmit?(text: string): void;
+};
+
+const fakeContext = (mode = "tui", focused: Focused | null = null) => {
   const record = {
     texts: [] as string[],
     widgets: [] as (string | undefined)[],
     factories: [] as AutocompleteProviderFactory[],
     inputs: [] as ((data: string) => unknown)[],
     editorText: "",
+    editorReads: 0,
   };
 
   const ctx = {
@@ -21,7 +29,10 @@ const fakeContext = (mode = "tui", focused: { handleInput?(data: string): void }
         record.inputs.push(handler);
         return () => {};
       },
-      getEditorText: () => record.editorText,
+      getEditorText: () => {
+        record.editorReads += 1;
+        return record.editorText;
+      },
       setEditorText: (text: string) => {
         record.texts.push(text);
       },
@@ -70,6 +81,17 @@ describe("onEditorSubmit", () => {
     expect(record.texts).toEqual(["/new"]);
   });
 
+  it("reads the editor text only on the submit key", () => {
+    const { record, input } = fakeContext();
+
+    input.onEditorSubmit(() => undefined);
+    record.inputs[0]("a");
+    record.inputs[0]("\u001b[A");
+    record.inputs[0]("\r");
+
+    expect(record.editorReads).toBe(1);
+  });
+
   it("does nothing outside tui mode", () => {
     const { record, input } = fakeContext("rpc");
 
@@ -95,24 +117,61 @@ describe("mapCommandCompletion", () => {
     expect(applied).toEqual(["new", "model", "clear"]);
     expect(wrapped.shouldTriggerFileCompletion).toBeUndefined();
   });
+
+  it("passes triggers, suggestions and file completion through bound to the inner provider", async () => {
+    const { record, input } = fakeContext();
+    const sentinel = { items: [], prefix: "@" };
+
+    const provider: AutocompleteProvider = {
+      triggerCharacters: ["@"],
+      getSuggestions: async () => sentinel,
+      applyCompletion: (lines, cursorLine, cursorCol) => ({ lines, cursorLine, cursorCol }),
+      shouldTriggerFileCompletion() {
+        return this === provider;
+      },
+    };
+
+    input.mapCommandCompletion(() => undefined);
+
+    const wrapped = record.factories[0](provider);
+
+    expect(wrapped.triggerCharacters).toEqual(["@"]);
+    expect(await wrapped.getSuggestions(["@"], 0, 1, { signal: new AbortController().signal })).toBe(
+      sentinel,
+    );
+    expect(wrapped.shouldTriggerFileCompletion?.(["@"], 0, 1)).toBe(true);
+  });
 });
 
 describe("submitEditor", () => {
-  it("sets the text and feeds enter to the focused component without leaving a widget", async () => {
-    const keys: string[] = [];
-    const { record, input } = fakeContext("tui", { handleInput: (data) => keys.push(data) });
+  it("sets the text and submits it through the focused editor without leaving a widget", async () => {
+    const submitted: string[] = [];
+
+    const { record, input } = fakeContext("tui", {
+      getText: () => record.texts.at(-1) ?? "",
+      onSubmit: (text) => submitted.push(text),
+    });
 
     expect(await input.submitEditor("/new")).toBe(true);
     expect(record.texts).toEqual(["/new"]);
-    expect(keys).toEqual(["\r"]);
-    expect(record.widgets).toEqual(["pi-editor-input", undefined]);
+    expect(submitted).toEqual(["/new"]);
+    expect(record.widgets.at(-1)).toBeUndefined();
   });
 
-  it("fails when no focused component takes input or outside tui mode", async () => {
+  it("fails when the focused component is not the editor or outside tui mode", async () => {
+    const keys: string[] = [];
     const { input } = fakeContext("tui", null);
     const { input: rpc } = fakeContext("rpc");
 
+    const { record, input: inputLike } = fakeContext("tui", {
+      handleInput: (data) => keys.push(data),
+      getValue: () => "/new",
+    });
+
     expect(await input.submitEditor("/new")).toBe(false);
     expect(await rpc.submitEditor("/new")).toBe(false);
+    expect(await inputLike.submitEditor("/new")).toBe(false);
+    expect(keys).toEqual([]);
+    expect(record.texts).toEqual(["/new"]);
   });
 });

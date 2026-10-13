@@ -31,7 +31,7 @@ export type FooterState = {
   cycleKey: string;
   cwd: string;
   sessionName: string | undefined;
-  totals: SpendingTotals;
+  totals: SpendingTotals | undefined;
 };
 
 const paint = (color: string, text: string) => `${color}${text}${RESET}`;
@@ -105,11 +105,11 @@ export const statsLine = (
   theme: ThemeLike,
   context: ContextSnapshot,
   model: ModelInfo | undefined,
-  mainCost: number,
+  mainCost: number | undefined,
 ) =>
   [
     contextTokens(theme, context),
-    paint(COLORS.gold, formatCost(mainCost)),
+    ...(mainCost === undefined ? [] : [paint(COLORS.gold, formatCost(mainCost))]),
     paint(COLORS.cyan, modelText(context, model)),
   ].join(theme.fg("dim", DOT));
 
@@ -123,6 +123,7 @@ export const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
     paint(COLORS.green, formatTokens(tokens)),
     theme.fg("dim", " / "),
     paint(COLORS.gold, formatCost(cost)),
+    ...(totals.subscription ? [theme.fg("dim", " (sub)")] : []),
   ].join("");
 };
 
@@ -161,8 +162,8 @@ export const statusLine = (statuses: ReadonlyMap<string, string>) => {
 export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterData) => {
   const status = statusLine(data.statuses);
   const lines = [
-    statsLine(theme, state.context, state.model, state.totals.main.cost),
-    sessionLine(theme, state.totals),
+    statsLine(theme, state.context, state.model, state.totals?.main.cost),
+    ...(state.totals ? [sessionLine(theme, state.totals)] : []),
     placeLine(theme, state.cwd, state.sessionName),
     ...(data.branch ? [branchLine(data.branch)] : []),
     modeLine(theme, state.model, state.thinking, state.cycleKey),

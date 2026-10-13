@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
 import { createComposer } from "../src/composer.ts";
+import { CHEVRON } from "../src/frame.ts";
+
+const layout = { bottom: 2, scrolled: false };
+const ESC = String.fromCharCode(27);
+const plain = (text: string) => text;
 
 describe("composer", () => {
-  it("frames the editor on session start", () => {
+  it("sets the frame on session start", () => {
     const host = createFakeHost();
 
     createComposer(host);
@@ -12,7 +17,9 @@ describe("composer", () => {
 
     host.start();
 
-    expect(host.editorFrame?.decorate(["──", "ab", "──"], (text) => text)).toHaveLength(3);
+    expect(host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1]?.startsWith(`${ESC}[1m`)).toBe(
+      true,
+    );
   });
 
   it("leaves an editor another extension set alone", () => {
@@ -25,12 +32,12 @@ describe("composer", () => {
     expect(host.editorFrame).toBeUndefined();
   });
 
-  it("uses the given chevron", () => {
+  it("uses the chevron constant", () => {
     const host = createFakeHost();
 
-    createComposer(host, ">");
+    createComposer(host);
     host.start();
 
-    expect(host.editorFrame?.decorate(["──", "ab", "──"], (text) => text)[1]).toContain(">");
+    expect(host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1]).toContain(CHEVRON);
   });
 });

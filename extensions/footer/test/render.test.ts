@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { SPENDING_STATUS_KEY } from "../../../core/manager/channels.ts";
+import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import {
   type FooterState,
@@ -23,6 +23,12 @@ const tokenTheme: ThemeLike = { fg: (token, text) => `<${token}>${text}`, bold: 
 
 const model = { name: "test-model", contextWindow: 1_000_000, reasoning: true };
 
+const totals: SpendingTotals = {
+  main: { cost: 4, tokens: 150_000 },
+  sources: [{ source: "agents", cost: 0.42, tokens: 12_400 }],
+  subscription: false,
+};
+
 const state = (patch: Partial<FooterState> = {}): FooterState => ({
   context: { tokens: 150_100, window: 1_000_000, percent: 15 },
   model,
@@ -30,10 +36,7 @@ const state = (patch: Partial<FooterState> = {}): FooterState => ({
   cycleKey: "shift+tab",
   cwd: "/work/my-project",
   sessionName: undefined,
-  totals: {
-    main: { cost: 4, tokens: 150_000 },
-    sources: [{ source: "agents", cost: 0.42, tokens: 12_400 }],
-  },
+  totals,
   ...patch,
 });
 
@@ -95,8 +98,19 @@ describe("line builders", () => {
   });
 
   it("adds every source to the session total", () => {
-    expect(plain(sessionLine(plainTheme, state().totals))).toBe(
-      "Session total (agents included): 162.4k / $4.42",
+    expect(plain(sessionLine(plainTheme, totals))).toBe("Session total (agents included): 162.4k / $4.42");
+  });
+
+  it("marks subscription sessions on the session total", () => {
+    const sub = { ...totals, subscription: true };
+
+    expect(plain(sessionLine(plainTheme, sub))).toBe("Session total (agents included): 162.4k / $4.42 (sub)");
+    expect(sessionLine(tokenTheme, sub)).toContain("<dim> (sub)");
+  });
+
+  it("leaves the cost out of the stats line when it is unknown", () => {
+    expect(plain(statsLine(plainTheme, state().context, model, undefined))).toBe(
+      "150.1k · test-model (1M context)",
     );
   });
 
@@ -150,6 +164,15 @@ describe("renderFooter", () => {
       "  ▶▶ thinking high (shift+tab to cycle)",
       "",
       "  busy",
+      "",
+    ]);
+  });
+
+  it("hides the cost and the session total until spending publishes", () => {
+    expect(render({ totals: undefined })).toEqual([
+      "  150.1k · test-model (1M context)",
+      "  my-project",
+      "  ▶▶ thinking high (shift+tab to cycle)",
       "",
     ]);
   });

@@ -70,7 +70,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const idleHandlers: (() => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
-  const turnStartHandlers: (() => void)[] = [];
+  const agentStartHandlers: (() => void)[] = [];
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -118,10 +118,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
   });
 
-  pi.on("turn_start", (_event, ctx) => {
+  pi.on("agent_start", (_event, ctx) => {
     capture(ctx);
 
-    turnStartHandlers.forEach((handler) => {
+    agentStartHandlers.forEach((handler) => {
       handler();
     });
   });
@@ -237,8 +237,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     readEntries,
     sessionUsage: (file) => sumUsage(entriesOf(file)),
     session: () => sessionInfo(liveCtx(state)),
-    onTurnStart: (handler) => {
-      turnStartHandlers.push(handler);
+    onAgentStart: (handler) => {
+      agentStartHandlers.push(handler);
     },
     ...footerHost(pi, state),
   };

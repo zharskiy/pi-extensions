@@ -49,13 +49,11 @@ export const SPENDING_STATUS_KEY = "pi-spending";
 
 export const TOTALS_CHANNEL = "spending:totals";
 
-export const TOTALS_REQUEST_CHANNEL = "spending:totals:request";
-
 type Spend = { cost: number; tokens: number };
 
 export type SourceSpend = Spend & { source: string };
 
-export type SpendingTotals = { main: Spend; sources: SourceSpend[] };
+export type SpendingTotals = { main: Spend; sources: SourceSpend[]; subscription: boolean };
 
 const isSpend = (value: unknown): value is Spend =>
   isRecord(value) && isAmount(value.cost) && isAmount(value.tokens);
@@ -64,7 +62,12 @@ const isSourceSpend = (value: unknown): value is SourceSpend =>
   isRecord(value) && isLabel(value.source) && isSpend(value);
 
 export const parseTotals = (data: unknown): SpendingTotals | undefined => {
-  if (!isRecord(data) || !isSpend(data.main) || !Array.isArray(data.sources)) {
+  if (
+    !isRecord(data) ||
+    !isSpend(data.main) ||
+    !Array.isArray(data.sources) ||
+    typeof data.subscription !== "boolean"
+  ) {
     return undefined;
   }
 
@@ -75,5 +78,6 @@ export const parseTotals = (data: unknown): SpendingTotals | undefined => {
   return {
     main: { cost: data.main.cost, tokens: data.main.tokens },
     sources: data.sources.map(({ source, cost, tokens }) => ({ source, cost, tokens })),
+    subscription: data.subscription,
   };
 };

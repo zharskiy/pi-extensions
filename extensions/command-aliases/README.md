@@ -6,7 +6,7 @@ A pi extension that gives friendlier names to built-in commands: `/continue` run
 
 - Each alias is listed as a command (`Alias for /resume`) and completes in the slash menu like any other command.
 - pi runs its built-in commands in the editor's submit path, before extension commands, so an alias is turned into its target three ways, in this order:
-  1. When the submit key is pressed and the editor holds exactly an alias (surrounding whitespace ignored), the editor text is swapped for the target before pi handles the key. An alias followed by arguments is left alone.
+  1. When the submit key is pressed and the editor holds exactly an alias (surrounding whitespace ignored), the editor text is swapped for the target before pi handles the key. An alias followed by arguments is not rewritten; the alias command then runs the target and ignores the arguments.
   2. Picking an alias in the slash autocomplete inserts the target instead.
   3. If the alias command still runs, it waits one tick, puts the target in the editor and submits it again through the focused editor. When the editor cannot be reached the target stays in the editor and an error says `Could not run /resume`; press Enter to run it.
 - The rewriting works in tui mode only. In other modes the alias commands are registered but can only report the error.

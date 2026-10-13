@@ -52,6 +52,14 @@ describe("command aliases", () => {
     expect(host.notices).toEqual([]);
   });
 
+  it("ignores arguments and submits the target", async () => {
+    const host = setup();
+
+    await host.runCommand("continue", "foo");
+
+    expect(host.editorSubmissions).toEqual(["/resume"]);
+  });
+
   it("reports an error when the editor cannot be reached", async () => {
     const host = setup();
 

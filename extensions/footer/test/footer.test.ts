@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOTALS_CHANNEL, TOTALS_REQUEST_CHANNEL } from "../../../core/manager/channels.ts";
+import { TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createFooter } from "../src/footer.ts";
 
@@ -19,19 +19,16 @@ const setup = () => {
       line.replace(ANSI, ""),
     );
 
-  const requests = () => host.published.filter((entry) => entry.channel === TOTALS_REQUEST_CHANNEL).length;
-
-  return { host, lines, requests };
+  return { host, lines };
 };
 
 describe("footer", () => {
-  it("installs the footer and requests the totals on session start", () => {
-    const { lines, requests } = setup();
+  it("installs the footer and hides the cost figures until spending publishes", () => {
+    const { host, lines } = setup();
 
-    expect(requests()).toBe(1);
+    expect(host.published).toEqual([]);
     expect(lines()).toEqual([
-      "  50.0k · $0.00 · test-model (200k context)",
-      "  Session total (agents included): 0 / $0.00",
+      "  50.0k · test-model (200k context)",
       "  my-project",
       "  main",
       "  ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
@@ -45,6 +42,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, {
       main: { cost: 1.5, tokens: 40_000 },
       sources: [{ source: "agents", cost: 0.5, tokens: 10_000 }],
+      subscription: false,
     });
 
     expect(host.footerRefreshes).toBe(1);
@@ -57,20 +55,21 @@ describe("footer", () => {
   it("ignores malformed totals", () => {
     const { host, lines } = setup();
 
-    host.emit(TOTALS_CHANNEL, { main: { cost: -1, tokens: 0 }, sources: [] });
-    host.emit(TOTALS_CHANNEL, { main: { cost: 1, tokens: 0 }, sources: [{ cost: 1, tokens: 0 }] });
+    host.emit(TOTALS_CHANNEL, { main: { cost: -1, tokens: 0 }, sources: [], subscription: false });
+    host.emit(TOTALS_CHANNEL, {
+      main: { cost: 1, tokens: 0 },
+      sources: [{ cost: 1, tokens: 0 }],
+      subscription: false,
+    });
+    host.emit(TOTALS_CHANNEL, { main: { cost: 1, tokens: 0 }, sources: [] });
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines()[1]).toBe("  Session total (agents included): 0 / $0.00");
+    expect(lines().slice(0, 2)).toEqual(["  50.0k · test-model (200k context)", "  my-project"]);
   });
 
-  it("requests the totals on turn end and refreshes on idle", () => {
-    const { host, requests } = setup();
-
-    host.turnEnd({ tokens: 1, window: 2 });
-
-    expect(requests()).toBe(2);
+  it("refreshes on idle", () => {
+    const { host } = setup();
 
     host.settle();
 
@@ -84,7 +83,7 @@ describe("footer", () => {
     host.thinking = "high";
     host.sessionTitle = "refactor";
 
-    expect(lines()).toContain("  190.0k · $0.00 · test-model (200k context)");
+    expect(lines()).toContain("  190.0k · test-model (200k context)");
     expect(lines()).toContain("  my-project • refactor");
     expect(lines()).toContain("  ▶▶ thinking high (<app.thinking.cycle> to cycle)");
   });

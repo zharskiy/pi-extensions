@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  parseTotals,
-  TOTALS_CHANNEL,
-  TOTALS_REQUEST_CHANNEL,
-  USAGE_CHANNEL,
-} from "../../../core/manager/channels.ts";
+import { parseTotals, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, usageOf } from "../../../core/test/helpers/fakes.ts";
 import { USAGE_ENTRY } from "../src/ledger.ts";
 import { createSpending } from "../src/spending.ts";
@@ -235,7 +230,7 @@ describe("spending", () => {
   it("publishes the totals with chargeable tokens on every refresh", () => {
     const { host, report, lastTotals } = setup();
 
-    expect(lastTotals()).toEqual({ main: { cost: 0, tokens: 0 }, sources: [] });
+    expect(lastTotals()).toEqual({ main: { cost: 0, tokens: 0 }, sources: [], subscription: false });
 
     host.usage = usageOf(1, 1000);
     report("agents", "a1", 0.5);
@@ -243,24 +238,42 @@ describe("spending", () => {
     expect(lastTotals()).toEqual({
       main: { cost: 1, tokens: 3000 },
       sources: [{ source: "agents", cost: 0.5, tokens: 300 }],
+      subscription: false,
     });
     expect(parseTotals(lastTotals())).toEqual(lastTotals());
   });
 
-  it("publishes the totals when asked, until its shutdown", async () => {
+  it("publishes the totals on turn end", () => {
     const { host, lastTotals } = setup();
     const published = () => host.published.filter((entry) => entry.channel === TOTALS_CHANNEL).length;
 
     host.usage = usageOf(2);
-    host.emit(TOTALS_REQUEST_CHANNEL, {});
+    host.turnEnd({ tokens: 1, window: 2 });
 
     expect(published()).toBe(2);
-    expect(lastTotals()).toEqual({ main: { cost: 2, tokens: 300 }, sources: [] });
+    expect(lastTotals()).toEqual({ main: { cost: 2, tokens: 300 }, sources: [], subscription: false });
+  });
 
-    await host.shutdown();
-    host.emit(TOTALS_REQUEST_CHANNEL, {});
+  it("marks subscription sessions in the published totals", () => {
+    const { lastTotals } = setup(true);
 
-    expect(published()).toBe(2);
+    expect(lastTotals()).toEqual({ main: { cost: 0, tokens: 0 }, sources: [], subscription: true });
+  });
+
+  it("counts cache writes and ignores pi's own token total", () => {
+    const { host, lastTotals } = setup();
+
+    host.usage = {
+      input: 10,
+      output: 20,
+      cacheRead: 30,
+      cacheWrite: 40,
+      totalTokens: 7,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 },
+    };
+    host.settle();
+
+    expect(lastTotals()).toEqual({ main: { cost: 0.5, tokens: 100 }, sources: [], subscription: false });
   });
 
   it("keeps the main tokens across a handoff switch", () => {
@@ -277,6 +290,6 @@ describe("spending", () => {
     next.usage = usageOf(0.25, 100);
     next.settle();
 
-    expect(lastTotals()).toEqual({ main: { cost: 1.25, tokens: 3800 }, sources: [] });
+    expect(lastTotals()).toEqual({ main: { cost: 1.25, tokens: 3800 }, sources: [], subscription: false });
   });
 });

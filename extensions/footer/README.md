@@ -19,13 +19,13 @@ feature-branch
 - Line 3: the current folder name, plus the session name when one is set.
 - Line 4: the git branch, only inside a repository.
 - Line 5: the thinking level and the key that cycles it, or `thinking unavailable` for models without reasoning.
-- Then, after a blank line, the status texts other extensions set, sorted by key, whitespace collapsed, on one line. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it.
+- Then, after a blank line, the status texts other extensions set, sorted by key, whitespace collapsed, on one line. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it, its ` (sub)` marker included.
 - The block is indented by `PAD` (2 spaces) and followed by `PAD_BOTTOM` (1) blank lines; both are constants at the top of `src/render.ts`. Every line is cut to the terminal width with a dim `…`.
 - Active only in tui mode; elsewhere it does nothing.
 
 ## Where the figures come from
 
-Cost and token figures come only from the spending extension, over the `spending:totals` channel: the footer asks for them with `spending:totals:request` on session start and on every turn end, and keeps the last payload. Without spending installed the cost figures stay at zero. Context, model, thinking level, session name, branch and statuses are read live from pi on each render; the footer re-renders when the totals arrive, when the session goes idle and when the git branch changes.
+Cost and token figures come only from the spending extension, over the `spending:totals` channel: spending publishes them on session start, every turn end, every accepted report and idle, and the footer keeps the last payload. pi sets up every extension before it starts the session, so the footer hears the first publish whatever the load order. Until spending publishes (or without spending installed) the main cost on line 1 and the whole of line 2 are hidden. Line 2 ends with a dim ` (sub)` when pi reports a subscription for the model. Context, model, thinking level, session name, branch and statuses are read live from pi on each render (the context usage is recomputed only when the session leaf or the model changes); the footer re-renders when the totals arrive, when the session goes idle and when the git branch changes.
 
 ## Layout
 

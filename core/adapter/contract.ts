@@ -115,10 +115,13 @@ export type WidgetHandle = { refresh(): void };
 
 export type WorkingIndicator = { frames: string[]; intervalMs: number };
 
+export type EditorLayout = { bottom: number; scrolled: boolean };
+
 export type EditorFrame = {
   chrome: number;
+  left: number;
   minWidth: number;
-  decorate(lines: string[], paint: (text: string) => string): string[];
+  decorate(lines: string[], layout: EditorLayout, paint: (text: string) => string): string[];
 };
 
 export type HostUi = {
@@ -136,7 +139,7 @@ export type HostUi = {
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
   mapCommandCompletion(map: (command: string) => string | undefined): void;
   submitEditor(text: string): Promise<boolean>;
-  setEditorFrame(frame: EditorFrame | undefined): boolean;
+  setEditorFrame(frame: EditorFrame | undefined): void;
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
 };
@@ -188,7 +191,7 @@ export type Host = {
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
-  onTurnStart(handler: () => void): void;
+  onAgentStart(handler: () => void): void;
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;
   thinkingLevel(): string;
