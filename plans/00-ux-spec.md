@@ -93,9 +93,14 @@ Details after the text, each ` · `-joined: duration (always); `2 sessions` for 
 
 ### The wake
 
-Preferred (D1): a custom message with `display: false`, `triggerTurn: true`, `deliverAs: "followUp"`. The user sees no new transcript entry for the wake. What the user sees in order: the dim completion lines as agents close, then the working indicator (section 7) when the model's turn starts, then the model's reply. The `run_agent` block's header has lost `(↓ to manage)` by then.
+The batch text for the model always travels as a hidden custom message (`display: false`; see `plans/01-adapter-foundations.md` §C, `Host.sendHiddenMessage`). What the user sees depends on whether the main session is busy when the batch settles:
 
-Fallback (if the main-prompt caveat cannot be solved safely): keep `sendUserMessage` and register a markdown transformer that replaces the whole user-message text with one line `↳ 3 agents finished · results delivered to the model` (`1 agent finished` singular). The user-message box stays; its content is that single line.
+- Main session busy (the model is mid-run): the hidden message joins the run as a follow-up. The user sees nothing new; the model's reply simply takes the results into account.
+- Main session idle: a run can only start safely through a visible user message, so one short user-role line starts the turn: `3 agents finished` (`1 agent finished` singular; several batches held in the outbox are counted together). It renders as a user message (pi's user-message box; that is the only way to start a turn with the main prompt intact), and the hidden results message follows it for the model. Then the working indicator (section 7) and the model's reply.
+
+In both cases the dim completion lines (above) have already appeared as each agent closed, and the `run_agent` block's header has lost `(↓ to manage)`.
+
+(deviation: Claude shows no user line at all; pi has no other safe way to start a run from idle. The line is short and names only the count so it reads as a system note, not as pasted results.)
 
 ### Unchanged
 
@@ -490,7 +495,7 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Creation-order rows and indent-only nesting: replaced by tree order with connectors and `(+N)` (D2).
 - Unlimited panel rows: replaced by the 5-row window with markers (D2).
 - `run_agent` result rendered as fixed-width 120 agent rows with a frozen spinner: replaced by the block of section 3 (D1).
-- Wake as a visible user message with full results inline: hidden custom message, or one-line fallback (D1).
+- Wake as a visible user message with full results inline: hidden custom message, plus a one-line `3 agents finished` user line only when the session was idle (D1, adapter plan §C).
 - `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Needs input / Completed (n)` (D3).
 - `/agents` `/` filter and its input line: removed, the list is short-lived (D3).
 - `X` then `y` stop-all confirmation: replaced by `X` twice within 3 s (D3).
