@@ -44,9 +44,8 @@ pi-extensions/
 │   │   │   │                    #   agent-schema, context-limit
 │   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and padding,
 │   │   │   │                    #   spinner.ts, state-text.ts, agent-row, tree.ts (tree order,
-│   │   │   │                    #   connectors, open descendants), legacy-row, agent-list,
-│   │   │   │                    #   collapsible, context-breakdown,
-│   │   │   │                    #   system-prompt-block, refresh.ts throttle/ticker, hints.ts)
+│   │   │   │                    #   connectors, open descendants), request-block (the agent
+│   │   │   │                    #   view's Request block), refresh.ts throttle/ticker)
 │   │   │   └── plugins/         # one folder per feature, see below
 │   │   ├── agents/              # bundled agent definitions (*.md)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
@@ -104,8 +103,8 @@ run-agent/          # runner.ts, tools.ts (run_agent, message_agent), render.ts 
                     #   task.ts (task text), outbox.ts, result.ts, model-text.ts,
                     #   semaphore.ts, handoff.ts (handoff template and schema service)
 agent-status/       # status tool and snapshots
-agent-view/         # /agents command view, view-mode store
-agent-list-view/    # agent list overlay
+agent-view/         # /agents overlay: index (command, service), overlay.ts (list/view host),
+                    #   list.ts + list-model.ts (tree sections), view.ts, loader.ts
 agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel

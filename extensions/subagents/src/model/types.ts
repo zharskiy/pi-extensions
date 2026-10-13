@@ -150,17 +150,12 @@ type AgentStatusService = {
 export type AgentViewOrigin = "list" | "panel" | "command";
 
 export type AgentViewService = {
-  open(id: string, options?: { from: AgentViewOrigin }): Promise<void>;
-};
-
-type AgentListService = {
-  open(): Promise<void>;
+  open(id: string, options: { from: AgentViewOrigin }): Promise<void>;
 };
 
 export type ServiceMap = {
   registry: AgentRegistry;
   agentView: AgentViewService;
-  agentList: AgentListService;
   definitions: AgentDefinitions;
   runner: AgentRunner;
   handoff: HandoffService;

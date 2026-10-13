@@ -1,6 +1,5 @@
 import type { Plugin } from "./model/plugin.ts";
 import { agentDefinitionsPlugin } from "./plugins/agent-definitions/index.ts";
-import { agentListViewPlugin } from "./plugins/agent-list-view/index.ts";
 import { agentPanelPlugin } from "./plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "./plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "./plugins/agent-status/index.ts";
@@ -18,5 +17,4 @@ export const plugins: Plugin[] = [
   limitsPlugin,
   agentPanelPlugin,
   agentViewPlugin,
-  agentListViewPlugin,
 ];

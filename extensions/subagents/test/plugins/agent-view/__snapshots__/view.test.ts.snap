@@ -1,0 +1,75 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`agent view > renders the transcript with pi's message and tool components 1`] = `
+"
+ Task from main (agent id explorer-cb2e):
+ List the files in /repo/agents.
+
+
+
+ ls /repo/agents
+
+ explorer.md
+ implementer.md
+ reviewer.md
+
+
+ Reading the explorer definition.
+
+
+ read /repo/agents/explorer.md
+
+
+ Three files: explorer.md, implementer.md, reviewer.md."
+`;
+
+exports[`agent view codemode and nested tools > renders codemode calls with pi's renderer 1`] = `
+" codemode
+ const hits = await tools.grep({ pattern: "login", path: "src" });
+ const file = await tools.read({ path: hits[0].path });
+ return file.slice(0, 200);
+
+ ✓ grep {"pattern":"login","path":"src"} 120ms
+ ✓ read {"path":"src/auth/login.ts"} 40ms
+
+ export const login = async (req: Request) => {
+   const session = await sessions.open(req);
+   if (!session) return redirect();
+   await audit(session);
+   return session;
+ ... (3 more lines,  to expand)
+
+
+
+ grep /session/ in src/auth"
+`;
+
+exports[`agent view request block > renders the expanded request as plain indented text 1`] = `
+[
+  " <dim>▾ Request · 24 lines</>",
+  "   {",
+  "     "model": "provider/model",",
+  "     "system": "You are explorer…",",
+  "     "tools": [",
+  "       {",
+  "         "name": "read",",
+  "         "description": "Read a file.",",
+  "         "parameters": {",
+  "           "type": "object",",
+  "           "properties": {",
+  "             "path": {",
+  "               "type": "string"",
+  "             }",
+  "           }",
+  "         }",
+  "       }",
+  "     ],",
+  "     "messages": [",
+  "       {",
+  "         "role": "user",",
+  "         "content": "Task from main (agent id explorer-1): Map the auth module"",
+  "       }",
+  "     ]",
+  "   }",
+]
+`;
