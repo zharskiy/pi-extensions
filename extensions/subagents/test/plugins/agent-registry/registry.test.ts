@@ -60,4 +60,14 @@ describe("agent registry", () => {
 
     expect(registry.create(newAgent(dir)).id).toBe("explorer-bbbb");
   });
+
+  it("draws agent ids from six random bytes", () => {
+    const registry = createRegistry({
+      bus: createBus<BusEvents>(),
+      handoffPath: (id) => `/tmp/${id}-handoff.md`,
+      writeManifest: () => {},
+    });
+
+    expect(registry.create(newAgent(tempDir())).id).toMatch(/^explorer-[0-9a-f]{12}$/);
+  });
 });

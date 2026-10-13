@@ -31,7 +31,7 @@ afterEach(() => {
   fixedBytes.value = undefined;
 });
 
-const BRANCH = /^pi-agents\/isolated-[0-9a-f]{4}-[0-9a-z]+$/;
+const BRANCH = /^pi-agents\/isolated-[0-9a-f]{12}-[0-9a-z]+$/;
 
 const REPOSITORY_OVERRIDES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX"];
 

@@ -113,6 +113,17 @@ export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 
 export type WidgetHandle = { refresh(): void };
 
+export type WorkingIndicator = { frames: string[]; intervalMs: number };
+
+export type EditorLayout = { bottom: number; scrolled: boolean };
+
+export type EditorFrame = {
+  chrome: number;
+  left: number;
+  minWidth: number;
+  decorate(lines: string[], layout: EditorLayout, paint: (text: string) => string): string[];
+};
+
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
@@ -123,6 +134,14 @@ export type HostUi = {
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(title: string, body: string): void;
+  setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
+  setWorkingMessage(text: string | undefined): void;
+  onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
+  mapCommandCompletion(map: (command: string) => string | undefined): void;
+  submitEditor(text: string): Promise<boolean>;
+  setEditorFrame(frame: EditorFrame | undefined): void;
+  setFooter(render: FooterRender | undefined): WidgetHandle;
+  keyText(binding: string): string;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -172,6 +191,11 @@ export type Host = {
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
+  onAgentStart(handler: () => void): void;
+  context(): ContextSnapshot;
+  model(): ModelInfo | undefined;
+  thinkingLevel(): string;
+  sessionName(): string | undefined;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";
@@ -321,3 +345,9 @@ export const addUsage = (left: UsageTotals, right: UsageTotals): UsageTotals => 
     total: left.cost.total + right.cost.total,
   },
 });
+
+export type FooterData = { branch: string | null; statuses: ReadonlyMap<string, string> };
+
+export type FooterRender = (width: number, theme: ThemeLike, data: FooterData) => string[];
+
+export type ModelInfo = { name: string; contextWindow: number; reasoning: boolean };

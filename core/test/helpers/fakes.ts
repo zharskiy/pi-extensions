@@ -4,10 +4,13 @@ import {
   type ChildSession,
   type CommandSpec,
   type ContextSnapshot,
+  type EditorFrame,
   emptyUsage,
+  type FooterRender,
   type Host,
   type InputPane,
   type MessageDelivery,
+  type ModelInfo,
   type NewSessionOptions,
   type OverlayFactory,
   type RoutedMessage,
@@ -20,6 +23,7 @@ import {
   type ThemeLike,
   type ToolSpec,
   type UsageTotals,
+  type WorkingIndicator,
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
 
@@ -42,6 +46,8 @@ export type FakeHost = Host & {
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
   widgetRefreshes: number;
   overlays: OverlayFactory[];
+  editorFrame?: EditorFrame;
+  foreignEditor: boolean;
   idle: boolean;
   usage: UsageTotals;
   info: SessionInfo;
@@ -57,6 +63,19 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
+  workingIndicators: (WorkingIndicator | undefined)[];
+  workingMessages: (string | undefined)[];
+  agentStart(): void;
+  submitRewrites: ((text: string) => string | undefined)[];
+  completionMaps: ((command: string) => string | undefined)[];
+  editorSubmissions: string[];
+  editorReachable: boolean;
+  footer?: FooterRender;
+  footerRefreshes: number;
+  contextUsage: ContextSnapshot;
+  activeModel?: ModelInfo;
+  thinking: string;
+  sessionTitle?: string;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -67,6 +86,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const idleHandlers: (() => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const agentStartHandlers: (() => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -108,12 +128,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     widgets: new Map(),
     widgetRefreshes: 0,
     overlays: [],
+    foreignEditor: false,
     idle: true,
     usage: emptyUsage(),
     confirmations: [],
     confirmAnswer: true,
     newSessions: [],
     newSessionResult: true,
+    submitRewrites: [],
+    completionMaps: [],
+    editorSubmissions: [],
+    editorReachable: true,
     info: {
       id: "main-session",
       file: undefined,
@@ -155,6 +180,43 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       terminalNotify: (title, body) => {
         host.terminalNotices.push({ title, body });
       },
+      setWorkingIndicator: (indicator) => {
+        host.workingIndicators.push(indicator);
+      },
+      setWorkingMessage: (text) => {
+        host.workingMessages.push(text);
+      },
+      onEditorSubmit: (rewrite) => {
+        host.submitRewrites.push(rewrite);
+
+        return () => {
+          host.submitRewrites = host.submitRewrites.filter((entry) => entry !== rewrite);
+        };
+      },
+      mapCommandCompletion: (map) => {
+        host.completionMaps.push(map);
+      },
+      submitEditor: async (text) => {
+        host.editorSubmissions.push(text);
+
+        return host.editorReachable;
+      },
+      setEditorFrame: (frame) => {
+        if (host.foreignEditor) {
+          return;
+        }
+
+        host.editorFrame = frame;
+      },
+      setFooter: (render) => {
+        host.footer = render;
+        return {
+          refresh: () => {
+            host.footerRefreshes += 1;
+          },
+        };
+      },
+      keyText: (binding) => `<${binding}>`,
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -299,6 +361,25 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       return spec as unknown as ToolSpec<P, D>;
     },
+    workingIndicators: [],
+    workingMessages: [],
+    onAgentStart: (handler) => {
+      agentStartHandlers.push(handler);
+    },
+    agentStart: () => {
+      host.idle = false;
+
+      agentStartHandlers.forEach((handler) => {
+        handler();
+      });
+    },
+    footerRefreshes: 0,
+    contextUsage: { tokens: null, window: 0, percent: null },
+    thinking: "off",
+    context: () => host.contextUsage,
+    model: () => host.activeModel,
+    thinkingLevel: () => host.thinking,
+    sessionName: () => host.sessionTitle,
   };
 
   return host;

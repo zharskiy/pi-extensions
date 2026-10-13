@@ -12,7 +12,7 @@ type RegistryOptions = {
   writeManifest?: (record: AgentRecord) => void;
 };
 
-const randomAgentId = (agent: string) => `${agent}-${randomBytes(2).toString("hex")}`;
+const randomAgentId = (agent: string) => `${agent}-${randomBytes(6).toString("hex")}`;
 
 const writeManifestFile = (record: AgentRecord) => {
   mkdirSync(record.dir, { recursive: true });

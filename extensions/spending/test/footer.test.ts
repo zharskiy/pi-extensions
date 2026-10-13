@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { footerText } from "../src/footer.ts";
 
 describe("footer", () => {
-  it("formats costs in dollars with three decimals and adds up the shown parts", () => {
+  it("formats costs in dollars with three decimals and rounds the raw total", () => {
     const text = footerText({
       main: 0.1004,
       sources: [{ source: "agents", cost: 0.1004 }],
       subscription: false,
     });
 
-    expect(text).toBe("main $0.100 · agents $0.100 · total $0.200");
+    expect(text).toBe("main $0.100 · agents $0.100 · total $0.201");
   });
 
   it("shows main, the source and the total", () => {

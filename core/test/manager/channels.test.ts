@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBusySignal, parseUsageReport } from "../../manager/channels.ts";
+import { parseBusySignal, parseTotals, parseUsageReport } from "../../manager/channels.ts";
 import { usageOf } from "../helpers/fakes.ts";
 
 describe("parseBusySignal", () => {
@@ -34,5 +34,47 @@ describe("parseUsageReport", () => {
     expect(
       parseUsageReport({ source: "agents", id: "a1", usage: { ...usageOf(0.1), totalTokens: Number.NaN } }),
     ).toBeUndefined();
+  });
+});
+
+describe("parseTotals", () => {
+  it("accepts main and per-source cost and tokens", () => {
+    const totals = {
+      main: { cost: 1, tokens: 10 },
+      sources: [{ source: "agents", cost: 0.5, tokens: 5 }],
+      subscription: false,
+    };
+
+    expect(parseTotals({ ...totals, extra: true })).toEqual(totals);
+    expect(parseTotals({ main: { cost: 0, tokens: 0 }, sources: [], subscription: true })).toEqual({
+      main: { cost: 0, tokens: 0 },
+      sources: [],
+      subscription: true,
+    });
+  });
+
+  it("ignores malformed payloads", () => {
+    expect(parseTotals(undefined)).toBeUndefined();
+    expect(parseTotals({ main: { cost: 1 }, sources: [], subscription: false })).toBeUndefined();
+    expect(parseTotals({ main: { cost: -1, tokens: 0 }, sources: [], subscription: false })).toBeUndefined();
+    expect(parseTotals({ main: { cost: 1, tokens: 0 }, subscription: false })).toBeUndefined();
+    expect(
+      parseTotals({
+        main: { cost: 1, tokens: 0 },
+        sources: [{ source: "", cost: 1, tokens: 0 }],
+        subscription: false,
+      }),
+    ).toBeUndefined();
+    expect(
+      parseTotals({ main: { cost: 1, tokens: 0 }, sources: [null], subscription: false }),
+    ).toBeUndefined();
+  });
+
+  it("requires a boolean subscription flag", () => {
+    const totals = { main: { cost: 1, tokens: 0 }, sources: [] };
+
+    expect(parseTotals(totals)).toBeUndefined();
+    expect(parseTotals({ ...totals, subscription: "yes" })).toBeUndefined();
+    expect(parseTotals({ ...totals, subscription: 1 })).toBeUndefined();
   });
 });

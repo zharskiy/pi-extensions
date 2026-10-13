@@ -17,6 +17,7 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
+import { footerHost } from "./pi-footer.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState } from "./pi-ui.ts";
@@ -26,13 +27,18 @@ import { contextOf, sumUsage } from "./usage.ts";
 export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
   pi.getCommands().some((command) => command.sourceInfo.path === "builtin:mcp");
 
+const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
+  model !== undefined &&
+  modelRegistry.isUsingOAuth(model) &&
+  modelRegistry.getProvider(model.provider)?.auth.oauth?.isSubscription === true;
+
 const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
   file: ctx.sessionManager.getSessionFile(),
   cwd: ctx.cwd,
   agentDir: getAgentDir(),
   projectTrusted: ctx.isProjectTrusted(),
-  subscription: ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false,
+  subscription: onSubscription(ctx),
   mode: ctx.mode,
 });
 
@@ -69,6 +75,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const idleHandlers: (() => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const agentStartHandlers: (() => void)[] = [];
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -114,6 +121,14 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     if (mainPrompt) {
       replaceMainPrompt(event.systemPromptOptions, mainPrompt);
     }
+  });
+
+  pi.on("agent_start", (_event, ctx) => {
+    capture(ctx);
+
+    agentStartHandlers.forEach((handler) => {
+      handler();
+    });
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -227,6 +242,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     readEntries,
     sessionUsage: (file) => sumUsage(entriesOf(file)),
     session: () => sessionInfo(liveCtx(state)),
+    onAgentStart: (handler) => {
+      agentStartHandlers.push(handler);
+    },
+    ...footerHost(pi, state),
   };
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { USAGE_CHANNEL } from "../../../core/manager/channels.ts";
+import { parseTotals, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, usageOf } from "../../../core/test/helpers/fakes.ts";
 import { USAGE_ENTRY } from "../src/ledger.ts";
 import { createSpending } from "../src/spending.ts";
@@ -19,7 +19,9 @@ const setup = (subscription = false) => {
 
   const usageEntries = () => host.entries.filter((entry) => entry.customType === USAGE_ENTRY);
 
-  return { host, report, usageEntries };
+  const lastTotals = () => host.published.filter((entry) => entry.channel === TOTALS_CHANNEL).at(-1)?.data;
+
+  return { host, report, usageEntries, lastTotals };
 };
 
 describe("spending", () => {
@@ -79,9 +81,10 @@ describe("spending", () => {
     expect(host.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.100 · total $2.100");
   });
 
-  it("persists changed figures on idle, not on every event", () => {
+  it("persists changed figures on idle, not on every event while busy", () => {
     const { host, report, usageEntries } = setup();
 
+    host.agentStart();
     report("agents", "a1", 0.1);
     report("agents", "a1", 0.2);
 
@@ -223,5 +226,151 @@ describe("spending", () => {
     resumed.start();
 
     expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.600 · total $0.600");
+  });
+
+  it("publishes the totals with chargeable tokens on every refresh", () => {
+    const { host, report, lastTotals } = setup();
+
+    expect(lastTotals()).toEqual({ main: { cost: 0, tokens: 0 }, sources: [], subscription: false });
+
+    host.usage = usageOf(1, 1000);
+    report("agents", "a1", 0.5);
+
+    expect(lastTotals()).toEqual({
+      main: { cost: 1, tokens: 3000 },
+      sources: [{ source: "agents", cost: 0.5, tokens: 300 }],
+      subscription: false,
+    });
+    expect(parseTotals(lastTotals())).toEqual(lastTotals());
+  });
+
+  it("publishes the totals on turn end", () => {
+    const { host, lastTotals } = setup();
+    const published = () => host.published.filter((entry) => entry.channel === TOTALS_CHANNEL).length;
+
+    host.usage = usageOf(2);
+    host.turnEnd({ tokens: 1, window: 2 });
+
+    expect(published()).toBe(2);
+    expect(lastTotals()).toEqual({ main: { cost: 2, tokens: 300 }, sources: [], subscription: false });
+  });
+
+  it("marks subscription sessions in the published totals", () => {
+    const { lastTotals } = setup(true);
+
+    expect(lastTotals()).toEqual({ main: { cost: 0, tokens: 0 }, sources: [], subscription: true });
+  });
+
+  it("counts cache writes and ignores pi's own token total", () => {
+    const { host, lastTotals } = setup();
+
+    host.usage = {
+      input: 10,
+      output: 20,
+      cacheRead: 30,
+      cacheWrite: 40,
+      totalTokens: 7,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 },
+    };
+    host.settle();
+
+    expect(lastTotals()).toEqual({ main: { cost: 0.5, tokens: 100 }, sources: [], subscription: false });
+  });
+
+  it("keeps the main tokens across a handoff switch", () => {
+    const previous = {
+      entries: [{ customType: "pi-spending:main-tokens-offset", data: 500 }],
+      usage: usageOf(1, 1000),
+    };
+    const next = createFakeHost();
+    const lastTotals = () => next.published.filter((entry) => entry.channel === TOTALS_CHANNEL).at(-1)?.data;
+
+    next.files.set("/sessions/previous.jsonl", previous);
+    createSpending(next);
+    next.start("/sessions/previous.jsonl");
+    next.usage = usageOf(0.25, 100);
+    next.settle();
+
+    expect(lastTotals()).toEqual({ main: { cost: 1.25, tokens: 3800 }, sources: [], subscription: false });
+  });
+
+  it("persists a report that arrives while the main session is idle at once", () => {
+    const { report, usageEntries } = setup();
+
+    report("agents", "a1", 0.1);
+
+    expect(usageEntries().map((entry) => entry.data)).toEqual([
+      { source: "agents", id: "a1", usage: usageOf(0.1) },
+    ]);
+  });
+
+  it("refreshes the footer after a compaction", () => {
+    const { host, report } = setup();
+
+    report("agents", "a1", 0.3);
+    host.usage = usageOf(1);
+    host.compact();
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.300 · total $1.300");
+  });
+
+  it("inherits once when the session starts twice with the same parent, also after resuming", () => {
+    const parent = {
+      entries: [{ customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.4) } }],
+      usage: usageOf(1),
+    };
+    const fork = createFakeHost();
+
+    fork.files.set("/sessions/parent.jsonl", parent);
+    createSpending(fork);
+    fork.start("/sessions/parent.jsonl");
+    fork.start("/sessions/parent.jsonl");
+
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.400 · total $1.400");
+    expect(fork.entries.filter((entry) => entry.customType === MAIN_OFFSET_ENTRY)).toHaveLength(1);
+
+    const resumed = createFakeHost();
+
+    resumed.entries.push(...fork.entries);
+    createSpending(resumed);
+    resumed.start();
+
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.400 · total $1.400");
+  });
+
+  it("falls back to the session's own entries and warns when the parent cannot be read", () => {
+    const host = createFakeHost();
+
+    host.entries.push(
+      { customType: MAIN_OFFSET_ENTRY, data: 0.5 },
+      { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.2) } },
+    );
+    createSpending(host);
+    host.start("/sessions/missing.jsonl");
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $0.500 · agents $0.200 · total $0.700");
+    expect(host.notices).toEqual([
+      {
+        message: "spending: could not read the parent session missing.jsonl; totals cover this session only",
+        level: "warning",
+      },
+    ]);
+  });
+
+  it("treats a corrupted offset entry as zero", () => {
+    const host = createFakeHost();
+
+    host.entries.push(
+      { customType: MAIN_OFFSET_ENTRY, data: 0.5 },
+      { customType: MAIN_OFFSET_ENTRY, data: "broken" },
+      { customType: "pi-spending:main-tokens-offset", data: Number.NaN },
+      { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.2) } },
+    );
+    host.usage = usageOf(1);
+    createSpending(host);
+    host.start();
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.200 · total $1.200");
+    expect(host.published.at(-1)?.data).toMatchObject({ main: { cost: 1, tokens: 300 } });
   });
 });

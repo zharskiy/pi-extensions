@@ -1,7 +1,5 @@
 type SourceCost = { source: string; cost: number };
 
-const rounded = (usd: number) => Number(usd.toFixed(3));
-
 const formatCost = (usd: number) => `$${usd.toFixed(3)}`;
 
 export const footerText = ({
@@ -18,7 +16,7 @@ export const footerText = ({
   }
 
   const suffix = subscription ? " (sub)" : "";
-  const total = sources.reduce((sum, entry) => sum + rounded(entry.cost), rounded(main));
+  const total = sources.reduce((sum, entry) => sum + entry.cost, main);
 
   const parts = [
     `main ${formatCost(main)}`,
