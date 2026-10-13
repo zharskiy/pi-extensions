@@ -79,4 +79,26 @@ describe("ledger", () => {
     expect(ledger.persist()).toBe(1);
     expect(store.data()).toEqual([{ source: "agents", id: "a2", usage: usageOf(0.2) }]);
   });
+
+  it("keeps a figure only when neither cost nor tokens go down", () => {
+    const ledger = createLedger(createStore().append);
+
+    ledger.record({ source: "agents", id: "a1", usage: usageOf(0.5, 100) });
+
+    expect(ledger.record({ source: "agents", id: "a1", usage: usageOf(0.1, 200) })).toBe(false);
+    expect(ledger.record({ source: "agents", id: "a1", usage: usageOf(0.6, 50) })).toBe(false);
+    expect(costs(ledger)).toEqual([["agents", 0.5]]);
+    expect(ledger.record({ source: "agents", id: "a1", usage: usageOf(0.5, 200) })).toBe(true);
+  });
+
+  it("treats only the continuation source's marker as a continuation", () => {
+    const ledger = createLedger(createStore().append);
+
+    ledger.absorb([
+      { source: "agents", id: "a1", usage: usageOf(0.1) },
+      { source: "agents", id: "continuation", usage: usageOf(0.2) },
+    ]);
+
+    expect(costs(ledger)).toEqual([["agents", 0.3]]);
+  });
 });

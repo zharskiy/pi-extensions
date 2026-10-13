@@ -27,13 +27,18 @@ import { contextOf, sumUsage } from "./usage.ts";
 export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
   pi.getCommands().some((command) => command.sourceInfo.path === "builtin:mcp");
 
+const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
+  model !== undefined &&
+  modelRegistry.isUsingOAuth(model) &&
+  modelRegistry.getProvider(model.provider)?.auth.oauth?.isSubscription === true;
+
 const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
   file: ctx.sessionManager.getSessionFile(),
   cwd: ctx.cwd,
   agentDir: getAgentDir(),
   projectTrusted: ctx.isProjectTrusted(),
-  subscription: ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false,
+  subscription: onSubscription(ctx),
   mode: ctx.mode,
 });
 

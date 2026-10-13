@@ -81,9 +81,10 @@ describe("spending", () => {
     expect(host.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.100 · total $2.100");
   });
 
-  it("persists changed figures on idle, not on every event", () => {
+  it("persists changed figures on idle, not on every event while busy", () => {
     const { host, report, usageEntries } = setup();
 
+    host.agentStart();
     report("agents", "a1", 0.1);
     report("agents", "a1", 0.2);
 
@@ -291,5 +292,85 @@ describe("spending", () => {
     next.settle();
 
     expect(lastTotals()).toEqual({ main: { cost: 1.25, tokens: 3800 }, sources: [], subscription: false });
+  });
+
+  it("persists a report that arrives while the main session is idle at once", () => {
+    const { report, usageEntries } = setup();
+
+    report("agents", "a1", 0.1);
+
+    expect(usageEntries().map((entry) => entry.data)).toEqual([
+      { source: "agents", id: "a1", usage: usageOf(0.1) },
+    ]);
+  });
+
+  it("refreshes the footer after a compaction", () => {
+    const { host, report } = setup();
+
+    report("agents", "a1", 0.3);
+    host.usage = usageOf(1);
+    host.compact();
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.300 · total $1.300");
+  });
+
+  it("inherits once when the session starts twice with the same parent, also after resuming", () => {
+    const parent = {
+      entries: [{ customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.4) } }],
+      usage: usageOf(1),
+    };
+    const fork = createFakeHost();
+
+    fork.files.set("/sessions/parent.jsonl", parent);
+    createSpending(fork);
+    fork.start("/sessions/parent.jsonl");
+    fork.start("/sessions/parent.jsonl");
+
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.400 · total $1.400");
+    expect(fork.entries.filter((entry) => entry.customType === MAIN_OFFSET_ENTRY)).toHaveLength(1);
+
+    const resumed = createFakeHost();
+
+    resumed.entries.push(...fork.entries);
+    createSpending(resumed);
+    resumed.start();
+
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.400 · total $1.400");
+  });
+
+  it("falls back to the session's own entries and warns when the parent cannot be read", () => {
+    const host = createFakeHost();
+
+    host.entries.push(
+      { customType: MAIN_OFFSET_ENTRY, data: 0.5 },
+      { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.2) } },
+    );
+    createSpending(host);
+    host.start("/sessions/missing.jsonl");
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $0.500 · agents $0.200 · total $0.700");
+    expect(host.notices).toEqual([
+      {
+        message: "spending: could not read the parent session missing.jsonl; totals cover this session only",
+        level: "warning",
+      },
+    ]);
+  });
+
+  it("treats a corrupted offset entry as zero", () => {
+    const host = createFakeHost();
+
+    host.entries.push(
+      { customType: MAIN_OFFSET_ENTRY, data: 0.5 },
+      { customType: MAIN_OFFSET_ENTRY, data: "broken" },
+      { customType: "pi-spending:main-tokens-offset", data: Number.NaN },
+      { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.2) } },
+    );
+    host.usage = usageOf(1);
+    createSpending(host);
+    host.start();
+
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.200 · total $1.200");
+    expect(host.published.at(-1)?.data).toMatchObject({ main: { cost: 1, tokens: 300 } });
   });
 });

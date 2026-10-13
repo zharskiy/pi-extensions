@@ -16,8 +16,14 @@ const isAhead = (candidate: UsageTotals, current: UsageTotals | undefined) => {
     return true;
   }
 
-  return candidate.cost.total > current.cost.total || candidate.totalTokens > current.totalTokens;
+  const cost = candidate.cost.total - current.cost.total;
+  const tokens = candidate.totalTokens - current.totalTokens;
+
+  return cost >= 0 && tokens >= 0 && (cost > 0 || tokens > 0);
 };
+
+const isMarker = ({ source, id }: UsageReport) =>
+  source === CONTINUATION_MARKER.source && id === CONTINUATION_MARKER.id;
 
 const keyOf = (source: string, id: string) => JSON.stringify([source, id]);
 
@@ -54,7 +60,7 @@ export const createLedger = (append: (customType: string, data: unknown) => void
     const reports = entries
       .map(parseUsageReport)
       .filter((report): report is UsageReport => report !== undefined);
-    const own = reports.slice(reports.findLastIndex((report) => report.id === CONTINUATION_MARKER.id) + 1);
+    const own = reports.slice(reports.findLastIndex(isMarker) + 1);
 
     own.forEach((report) => {
       keep({ ...report, id: idPrefix + report.id });

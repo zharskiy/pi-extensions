@@ -19,24 +19,57 @@ const chargeable = (usage: UsageTotals) => usage.input + usage.output + usage.ca
 
 export const createSpending = (host: Host) => {
   let closed = false;
+  let started = false;
   let costOffset = 0;
   let tokensOffset = 0;
 
   const ledger = createLedger((customType, data) => host.appendEntry(customType, data));
 
-  const lastOffset = (customType: string, file?: string) =>
-    host.readEntries<number>(customType, file).at(-1) ?? 0;
+  const lastOffset = (customType: string, file?: string) => {
+    const value = host.readEntries<unknown>(customType, file).at(-1);
+
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  };
+
+  const resume = () => {
+    costOffset = lastOffset(MAIN_OFFSET_ENTRY);
+    tokensOffset = lastOffset(MAIN_TOKENS_OFFSET_ENTRY);
+    ledger.restore(host.readEntries(USAGE_ENTRY));
+  };
+
+  const readParent = (parent: string) => {
+    try {
+      return {
+        usage: host.sessionUsage(parent),
+        cost: lastOffset(MAIN_OFFSET_ENTRY, parent),
+        tokens: lastOffset(MAIN_TOKENS_OFFSET_ENTRY, parent),
+        reports: host.readEntries(USAGE_ENTRY, parent),
+      };
+    } catch {
+      return undefined;
+    }
+  };
 
   const inherit = (parent: string) => {
-    const parentUsage = host.sessionUsage(parent);
+    const previous = readParent(parent);
+
+    if (!previous) {
+      host.ui.notify(
+        `spending: could not read the parent session ${basename(parent)}; totals cover this session only`,
+        "warning",
+      );
+      resume();
+      return;
+    }
+
     const own = host.sessionUsage();
 
-    costOffset = lastOffset(MAIN_OFFSET_ENTRY, parent) + parentUsage.cost.total - own.cost.total;
-    tokensOffset = lastOffset(MAIN_TOKENS_OFFSET_ENTRY, parent) + chargeable(parentUsage) - chargeable(own);
+    costOffset = previous.cost + previous.usage.cost.total - own.cost.total;
+    tokensOffset = previous.tokens + chargeable(previous.usage) - chargeable(own);
     host.appendEntry(MAIN_OFFSET_ENTRY, costOffset);
     host.appendEntry(MAIN_TOKENS_OFFSET_ENTRY, tokensOffset);
     host.appendEntry(USAGE_ENTRY, CONTINUATION_MARKER);
-    ledger.absorb(host.readEntries(USAGE_ENTRY, parent), `${basename(parent)}/`);
+    ledger.absorb(previous.reports, `${basename(parent)}/`);
     ledger.persist();
   };
 
@@ -69,22 +102,33 @@ export const createSpending = (host: Host) => {
       return;
     }
 
+    if (host.isIdle()) {
+      ledger.persist();
+    }
+
     refresh();
   });
 
   host.onSessionStart((_info, parent) => {
+    if (started) {
+      refresh();
+      return;
+    }
+
+    started = true;
+
     if (parent) {
       inherit(parent);
     } else {
-      costOffset = lastOffset(MAIN_OFFSET_ENTRY);
-      tokensOffset = lastOffset(MAIN_TOKENS_OFFSET_ENTRY);
-      ledger.restore(host.readEntries(USAGE_ENTRY));
+      resume();
     }
 
     refresh();
   });
 
   host.onTurnEnd(refresh);
+
+  host.onCompact(refresh);
 
   host.onIdle(() => {
     ledger.persist();

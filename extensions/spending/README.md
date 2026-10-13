@@ -6,11 +6,11 @@ It knows nothing about agents or any other extension. Extensions that spend mone
 
 ## What it does
 
-- A footer segment `main $x · agents $y · total $z`. `main` is pi's own accounting of the main session; each reporting source gets its own figure, named by the source's label (the subagents extension reports as `agents`); `total` is the sum. With several sources each is listed: `main $x · agents $y · jobs $w · total $z`. Sessions on a subscription get a ` (sub)` suffix.
-- The segment is hidden while every source total is zero. `total` is the sum of the displayed (3-decimal) figures, so the footer always adds up.
-- The figures are refreshed on every report, on every turn end and whenever the session goes idle.
-- Reported figures are written to the session file as custom entries of type `pi-spending:usage`: on idle and on shutdown, and only for figures that changed since the last write. A resumed session restores them, so it shows the same totals.
-- The totals cover the session's whole lineage: compaction and `/tree` navigation keep every entry in the session file, and a `/fork`, `/clone` or handoff switch (see session-limits) inherits the totals of the session it came from (the parent's agent figures are copied in under ids prefixed with the parent session file name, so a new agent can never clash with a parent agent, and its main spend is kept as a `pi-spending:main-offset` entry). Only a plain `/new` starts again at zero. A fork of a session without a file (`pi --no-session`) has no parent file to read and starts from the copied messages only.
+- A footer segment `main $x · agents $y · total $z`. `main` is pi's own accounting of the main session; each reporting source gets its own figure, named by the source's label (the subagents extension reports as `agents`); `total` is the sum. With several sources each is listed: `main $x · agents $y · jobs $w · total $z`. Sessions on a subscription get a ` (sub)` suffix: pi reports OAuth sign-in for the main model and the provider marks that sign-in as a subscription, the same check pi's own footer makes.
+- The segment is hidden while every source total is zero. `total` is the raw sum rounded to three decimals, so it can differ from the sum of the displayed figures by a thousandth.
+- The figures are refreshed on every report, on every turn end, after every compaction and whenever the session goes idle.
+- Reported figures are written to the session file as custom entries of type `pi-spending:usage`: at once when a report arrives while the main session is idle, otherwise on the next idle, and on shutdown; only figures that changed since the last write are written. A resumed session restores them, so it shows the same totals.
+- The totals cover the session's whole lineage: compaction and `/tree` navigation keep every entry in the session file, and a `/fork`, `/clone` or handoff switch (see session-limits) inherits the totals of the session it came from (the parent's agent figures are copied in under ids prefixed with the parent session file name, so a new agent can never clash with a parent agent, and its main spend is kept as a `pi-spending:main-offset` entry). Only a plain `/new` starts again at zero. Without a session file (`pi --no-session`) there is no parent file to read: a fork starts from the copied messages only, and a handoff switch starts from zero, since session-limits passes no parent then. A parent file that cannot be read is treated the same way: the session keeps only its own entries and a warning is shown.
 
 ## Usage channel
 
@@ -21,7 +21,7 @@ pi.events.emit("spending:usage", { source: "agents", id: "a1b2", usage });
 ```
 
 - `source` is a short non-empty display label of the reporting extension, shown in the footer. `id` is a non-empty string unique within the source for the whole session, earlier runs of a resumed session included, one per thing that spends (an agent, a job); the subagents extension sends the agent id, which is unique within the session's agents folder.
-- `usage` is the absolute running total for that id so far, not an increment: `{ input, output, cacheRead, cacheWrite, totalTokens, cost: { input, output, cacheRead, cacheWrite, total } }`, all non-negative numbers. Reports are idempotent: the extension keeps the highest figure per `source`/`id` (higher cost or more tokens) and ignores lower or repeated ones, so sending the same total twice is harmless.
+- `usage` is the absolute running total for that id so far, not an increment: `{ input, output, cacheRead, cacheWrite, totalTokens, cost: { input, output, cacheRead, cacheWrite, total } }`, all non-negative numbers. Reports are idempotent: the extension replaces the figure per `source`/`id` only when neither cost nor tokens go down and at least one goes up, and ignores every other report, so sending the same total twice is harmless.
 - Other payloads are ignored.
 - Report only spend that pi does not already count in the main session: anything that ends up in the main session's own messages is part of `main`.
 - Nothing is imported from this extension; when it is not installed the reports simply go unheard.
@@ -35,9 +35,9 @@ Spending also publishes what it adds up, for extensions that show it themselves 
 pi.events.on("spending:totals", (totals) => {}); // { main: { cost, tokens }, sources: [{ source, cost, tokens }], subscription }
 ```
 
-- The totals are published on every refresh: session start, each accepted report, every turn end and idle. pi sets up every extension before it starts the session, so a listener hears the session-start publish whatever the load order.
-- `tokens` are chargeable tokens: `input + output + cacheRead + cacheWrite`. Main tokens carry over a fork or handoff like main cost, through a `pi-spending:main-tokens-offset` entry. A parent session forked before that entry existed has none, so main tokens leave out what its own parents spent, while main cost stays correct; every session forked from now on writes the entry, so new chains count fully.
-- `subscription` is true when pi reports a subscription for the model (the segment's ` (sub)` suffix).
+- The totals are published on every refresh: session start, each accepted report, every turn end, every compaction and idle. pi sets up every extension before it starts the session, so a listener hears the session-start publish whatever the load order.
+- `tokens` are chargeable tokens: `input + output + cacheRead + cacheWrite`. The subagents extension's own views count an agent's tokens as `input + output + cacheWrite`, without cache reads, so their per-agent figures do not add up to the agents tokens here. Main tokens carry over a fork or handoff like main cost, through a `pi-spending:main-tokens-offset` entry. A parent session forked before that entry existed has none, so main tokens leave out what its own parents spent, while main cost stays correct; every session forked from now on writes the entry, so new chains count fully.
+- `subscription` is true when pi reports a subscription sign-in for the main model (the segment's ` (sub)` suffix).
 - The footer segment keeps the status key `pi-spending`, exported as `SPENDING_STATUS_KEY` from `core/manager/channels.ts`, so an extension that shows the totals itself can leave the segment out.
 
 ## Layout

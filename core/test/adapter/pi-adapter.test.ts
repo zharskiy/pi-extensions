@@ -115,13 +115,21 @@ describe("pi adapter", () => {
     expect(() => host.session()).toThrow("no live pi session");
   });
 
-  it("takes the subscription flag only from pi's OAuth check", async () => {
+  it("takes the subscription flag from pi's OAuth check and the provider's subscription mark", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, {});
+    const registry = (isSubscription?: boolean) => ({
+      isUsingOAuth: () => true,
+      getProvider: () => ({ auth: { oauth: { isSubscription } } }),
+    });
 
-    await fire("session_start", { ...fakeCtx("tui"), modelRegistry: { isUsingOAuth: () => true } });
+    await fire("session_start", { ...fakeCtx("tui"), modelRegistry: registry(true) });
 
     expect(host.session().subscription).toBe(true);
+
+    await fire("session_start", { ...fakeCtx("tui"), modelRegistry: registry() });
+
+    expect(host.session().subscription).toBe(false);
 
     await fire("session_start", { ...fakeCtx("tui"), model: undefined });
 
