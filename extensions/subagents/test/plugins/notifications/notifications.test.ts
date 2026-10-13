@@ -50,7 +50,7 @@ describe("notifications", () => {
     await finish(second, "Looks fine.");
 
     expect(host.terminalNotices).toEqual([
-      { title: "pi-subagents: explorer done, reviewer done", body: "Auth lives in src/auth.ts." },
+      { title: `pi-subagents: ${first.id} done, ${second.id} done`, body: "Auth lives in src/auth.ts." },
     ]);
   });
 
@@ -71,7 +71,7 @@ describe("notifications", () => {
 
     expect(host.terminalNotices).toHaveLength(2);
     expect(host.terminalNotices[1]).toEqual({
-      title: "pi-subagents: explorer failed, explorer failed",
+      title: `pi-subagents: ${first.id} failed, ${second.id} failed`,
       body: "rate limited",
     });
   });
@@ -112,7 +112,7 @@ describe("notifications", () => {
     await finish(parent, "Waiting for the explorer.");
     await finish(parent, "Fixed.");
 
-    expect(host.terminalNotices).toEqual([{ title: "pi-subagents: general done", body: "Fixed." }]);
+    expect(host.terminalNotices).toEqual([{ title: `pi-subagents: ${parent.id} done`, body: "Fixed." }]);
   });
 
   it("stays silent with notifications off and while the session shuts down", async () => {

@@ -1,13 +1,12 @@
 import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../core/adapter/contract.ts";
-import { type AgentFrontmatter, ALL, type Grant } from "./frontmatter.ts";
+import type { HandoffValidation } from "../../../../core/manager/handoff.ts";
+import { type AgentFrontmatter, ALL, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
 
 export type AgentState = "queued" | "running" | "grace" | "done" | "failed" | "stopped" | "handoff";
 
-export const CLOSED_STATES: ReadonlySet<AgentState> = new Set(["done", "failed", "stopped", "handoff"]);
-
-export const isClosed = (state: AgentState) => CLOSED_STATES.has(state);
+export const isClosed = (state: AgentState) => state !== "queued" && state !== "running" && state !== "grace";
 
 export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord => {
   const successor = record.successorId ? registry.get(record.successorId) : undefined;
@@ -28,14 +27,27 @@ export type AttentionKind = "confirm" | "select" | "input";
 
 export type Attention = { kind: AttentionKind; title: string; since: number };
 
-export type Worktree = { path: string; branch: string; cwd: string };
+export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 
-export const worktreeText = (worktree: Worktree) => `${worktree.path} (branch ${worktree.branch})`;
+export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
+
+export const worktreeText = (worktree: Worktree) => {
+  const checkout = `${worktree.path} (branch ${worktree.branch})`;
+
+  if (worktree.cleanup === "removed") {
+    return "removed";
+  }
+
+  if (worktree.cleanup === "branch kept") {
+    return `removed; branch ${worktree.branch} kept`;
+  }
+
+  return worktree.cleanup === "kept" ? `kept: ${checkout}` : checkout;
+};
 
 export type AgentRecord = {
   id: string;
   agent: string;
-  task: string;
   description: string;
   callerId: string;
   depth: number;
@@ -91,7 +103,6 @@ export type DefinitionError = { path: string; message: string };
 
 export type NewAgent = {
   agent: string;
-  task: string;
   description: string;
   callerId: string;
   depth: number;
@@ -101,6 +112,7 @@ export type NewAgent = {
   model?: string;
   chainIndex?: number;
   predecessorId?: string;
+  worktree?: Worktree;
 };
 
 export type AgentRegistry = {
@@ -115,9 +127,6 @@ export type AgentRegistry = {
 export type AgentDefinitions = {
   get(name: string): AgentDefinition | undefined;
   list(): AgentDefinition[];
-  errors(): ReadonlyArray<DefinitionError>;
-  reload(): void;
-  mainPrompt(): string;
   promptAppend(definition: AgentDefinition): string[];
 };
 
@@ -132,22 +141,20 @@ export type AgentRunner = {
   abort(id: string, reason: string): Promise<void>;
 };
 
-export type HandoffValidation = { ok: true; status: string } | { ok: false; errors: string[] };
-
 export type HandoffService = {
   instruction(path: string): string;
   validate(text: string): HandoffValidation;
 };
 
-export type AgentStatusService = {
+type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
-export type AgentViewService = {
+type AgentViewService = {
   open(id: string): Promise<void>;
 };
 
-export type AgentListService = {
+type AgentListService = {
   open(): Promise<void>;
 };
 

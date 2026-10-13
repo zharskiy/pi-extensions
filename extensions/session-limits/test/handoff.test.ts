@@ -1,17 +1,14 @@
-import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../core/adapter/contract.ts";
-import { HANDOFF_SECTIONS, handoffPath, instructionFor, seedText, validateHandoff } from "../src/handoff.ts";
+import { handoffPath, seedText, validateMainHandoff } from "../src/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",
-  dir: "/sessions",
   cwd: "/project",
   agentDir: "/agent",
   projectTrusted: false,
-  hasUI: true,
   subscription: false,
   mode: "tui",
   ...patch,
@@ -32,13 +29,10 @@ const complete = {
 };
 
 describe("handoffPath", () => {
-  it("sits in the folder named after the session file", () => {
-    expect(handoffPath(info({ file: "/sessions/main.jsonl" }))).toBe("/sessions/main/main-handoff.md");
-  });
-
-  it("falls back to the tmp dir without a session file", () => {
-    expect(handoffPath(info({}))).toBe(join(tmpdir(), "pi-session-limits", "s1", "main-handoff.md"));
-    expect(handoffPath(undefined)).toBe(join(tmpdir(), "pi-session-limits", "no-session", "main-handoff.md"));
+  it("sits under the OS temp dir, named after the session id", () => {
+    expect(handoffPath(info({ file: "/sessions/main.jsonl" }))).toBe(
+      join(tmpdir(), "pi-session-limits", "s1-handoff.md"),
+    );
   });
 });
 
@@ -52,46 +46,17 @@ describe("seedText", () => {
   });
 });
 
-describe("instructionFor", () => {
-  it("puts the path into every placeholder of the shipped template", () => {
-    const template = readFileSync(resolve(import.meta.dirname, "..", "prompts", "handoff.md"), "utf8");
-    const text = instructionFor(template, "/s/main/main-handoff.md");
-
-    expect(text).toContain("/s/main/main-handoff.md");
-    expect(text).not.toContain("{{path}}");
-    HANDOFF_SECTIONS.forEach((section) => {
-      expect(text).toContain(`## ${section}`);
-    });
-  });
-});
-
-describe("validateHandoff", () => {
-  it("accepts the six sections in order with a known status", () => {
-    expect(validateHandoff(handoff(complete))).toEqual({ ok: true, status: "partial" });
-    expect(validateHandoff(handoff({ ...complete, Status: "**Done**" }))).toEqual({
+describe("validateMainHandoff", () => {
+  it("accepts done, partial and blocked", () => {
+    expect(validateMainHandoff(handoff(complete))).toEqual({ ok: true, status: "partial" });
+    expect(validateMainHandoff(handoff({ ...complete, Status: "**Done**" }))).toEqual({
       ok: true,
       status: "done",
     });
   });
 
-  it("reports missing, empty and misordered sections", () => {
-    const { Next: _next, ...withoutNext } = complete;
-
-    expect(validateHandoff(handoff(withoutNext))).toEqual({ ok: false, errors: ["missing sections: Next"] });
-    expect(validateHandoff(handoff({ ...complete, Blocker: "" }))).toEqual({
-      ok: false,
-      errors: ["empty sections: Blocker"],
-    });
-
-    const { Status, ...rest } = complete;
-    const result = validateHandoff(handoff({ ...rest, Status }));
-
-    expect(result.ok).toBe(false);
-    expect(result.ok ? [] : result.errors[0]).toContain("must appear in this order");
-  });
-
   it("rejects an unknown status", () => {
-    expect(validateHandoff(handoff({ ...complete, Status: "almost" }))).toEqual({
+    expect(validateMainHandoff(handoff({ ...complete, Status: "almost" }))).toEqual({
       ok: false,
       errors: ["Status must be one of done, partial, blocked"],
     });

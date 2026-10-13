@@ -1,6 +1,7 @@
 import type { InputPane, KeyPress, OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import {
   emptyListText,
+  type ListEntry,
   listEntries,
   moveSelection,
   renderList,
@@ -8,30 +9,17 @@ import {
   selectedRecord,
 } from "../../components/agent-list.ts";
 import { truncate } from "../../components/agent-row.ts";
+import { scrollHint, stopHint } from "../../components/hints.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 
-export const FRAME_MS = 120;
-
-export type ListDeps = {
+type ListDeps = {
   records(): AgentRecord[];
   open(id: string): void;
   stop(id: string): Promise<unknown> | undefined;
   subscribe(onChange: () => void): () => void;
-  now?: () => number;
-};
-
-const SCROLL_KEYS = "PgUp/PgDn Home/End scroll";
-
-const stopHint = (record: AgentRecord | undefined) => {
-  if (!record || isClosed(record.state)) {
-    return undefined;
-  }
-
-  return record.state === "grace" ? "x again closes now" : "x stop";
 };
 
 export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewComponent => {
-  const now = deps.now ?? Date.now;
   const scroll = api.createScroll();
   let records = deps.records();
   let selectedId: string | undefined;
@@ -40,9 +28,25 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
   let pendingStopAll = 0;
   let notice: string | undefined;
   let revealSelection = true;
+  let frame = 0;
+  let closed = false;
 
   const reload = () => {
+    if (closed) {
+      return;
+    }
+
     records = deps.records();
+    frame += 1;
+    api.requestRender();
+  };
+
+  const fail = (error: unknown) => {
+    if (closed) {
+      return;
+    }
+
+    notice = `stop failed: ${(error as Error).message}`;
     api.requestRender();
   };
 
@@ -52,7 +56,7 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
 
   const openRecords = () => records.filter((record) => !isClosed(record.state));
 
-  const hintText = () => {
+  const hintText = (list: ListEntry[]) => {
     if (pendingStopAll > 0) {
       return api.theme.fg(
         "warning",
@@ -63,24 +67,24 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
     if (filterInput) {
       return api.theme.fg(
         "dim",
-        `Filter: type a name, id or state · ↑/↓ select · Enter keep filter · Esc clear filter · ${SCROLL_KEYS}`,
+        `Filter: type a name, id or state · ↑/↓ select · Enter keep filter · Esc clear filter · ${scrollHint(api.wheelScrolling)}`,
       );
     }
 
     const parts = [
       "↑/↓ select",
       "Enter open",
-      stopHint(selectedRecord(entries(), selectedId)),
+      stopHint(selectedRecord(list, selectedId)),
       "X stop all",
       "/ filter",
       filter ? "Esc clear filter" : "Esc close",
-      SCROLL_KEYS,
+      scrollHint(api.wheelScrolling),
     ];
 
     return api.theme.fg("dim", parts.filter((part) => part !== undefined).join(" · "));
   };
 
-  const footerLines = (width: number) => {
+  const footerLines = (width: number, list: ListEntry[]) => {
     const lines: string[] = [];
 
     if (filterInput) {
@@ -95,7 +99,7 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
       lines.push(api.theme.fg("warning", truncate(notice, width)));
     }
 
-    lines.push(hintText());
+    lines.push(hintText(list));
 
     return lines;
   };
@@ -107,15 +111,12 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
     return [`${api.theme.bold("Agents")}${summary}`, api.theme.fg("dim", "─".repeat(Math.max(0, width)))];
   };
 
-  const bodyWindow = (width: number, height: number) => {
-    const list = entries();
-
+  const bodyWindow = (list: ListEntry[], width: number, height: number) => {
     if (list.length === 0) {
       return scroll.window([api.theme.fg("dim", emptyListText(records.length, filter))], height);
     }
 
-    const frame = Math.floor(now() / FRAME_MS);
-    const rendered = renderList(list, selectedId, now(), frame, api.theme, width);
+    const rendered = renderList(list, selectedId, Date.now(), frame, api.theme, width);
     const window = scroll.window(rendered.lines, height);
     const row = rendered.selectedRow;
 
@@ -137,18 +138,24 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
   };
 
   const render = (width: number) => {
+    const list = entries();
     const header = headerLines(width);
-    const footer = footerLines(width);
+    const footer = footerLines(width, list);
     const height = Math.max(3, api.rows() - header.length - footer.length);
 
-    const window = bodyWindow(width, height);
+    const window = bodyWindow(list, width, height);
     const padding = Array.from({ length: height - window.length }, () => "");
 
     return header.concat(window, padding, footer);
   };
 
-  const close = () => {
+  const dispose = () => {
+    closed = true;
     unsubscribe();
+  };
+
+  const close = () => {
+    dispose();
     api.close();
   };
 
@@ -177,7 +184,7 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
 
     selectedId = record.id;
 
-    void Promise.resolve(deps.stop(record.id)).then(reload);
+    void Promise.resolve(deps.stop(record.id)).then(reload).catch(fail);
   };
 
   const askStopAll = () => {
@@ -194,7 +201,7 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
   const stopAll = () => {
     const stops = openRecords().map((record) => deps.stop(record.id));
 
-    void Promise.all(stops).then(reload);
+    void Promise.all(stops).then(reload).catch(fail);
   };
 
   const clearFilter = () => {
@@ -297,6 +304,6 @@ export const createAgentListView = (deps: ListDeps, api: OverlayApi): ViewCompon
     handleWheel: (lines) => {
       scroll.scrollBy(lines);
     },
-    dispose: unsubscribe,
+    dispose,
   };
 };

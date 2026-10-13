@@ -1,7 +1,7 @@
 import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
 import { type AgentRecord, type AgentState, isClosed } from "../model/types.ts";
 
-export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 const STATE_ICONS: Record<Exclude<AgentState, "running">, string> = {
   queued: "○",
@@ -50,8 +50,6 @@ export const formatElapsed = (ms: number) => {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
 
-export const formatCost = (usd: number) => `$${usd.toFixed(3)}`;
-
 export const elapsedOf = (record: AgentRecord, now: number) => {
   const start = record.startedAt ?? record.createdAt;
   const end = record.endedAt ?? now;
@@ -67,9 +65,9 @@ export const stateIcon = (state: AgentState, frame: number) => {
   return STATE_ICONS[state];
 };
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-export const statsText = (record: AgentRecord, now: number) =>
+const statsText = (record: AgentRecord, now: number) =>
   [
     plural(record.toolCalls, "tool call"),
     `${formatTokens(record.tokens)} tokens`,
@@ -133,18 +131,22 @@ export const attentionText = (record: AgentRecord) => {
   return `needs input: ${singleLine(record.attention.title)}`;
 };
 
-export const graceCountdown = (record: AgentRecord, now: number) => {
+export const graceSecondsLeft = (record: AgentRecord, now: number) => {
+  if (record.state !== "grace" || record.graceEndsAt === undefined) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
+};
+
+const graceCountdown = (record: AgentRecord, now: number) => {
   if (record.state !== "grace") {
     return undefined;
   }
 
-  if (record.graceEndsAt === undefined) {
-    return "stopping · answering";
-  }
+  const seconds = graceSecondsLeft(record, now);
 
-  const seconds = Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
-
-  return `stopping in ${seconds}s`;
+  return seconds === undefined ? "stopping · answering" : `stopping in ${seconds}s`;
 };
 
 export const agentRow = (

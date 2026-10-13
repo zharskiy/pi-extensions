@@ -4,12 +4,13 @@ import { describe, expect, it } from "vitest";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
+import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { createOutbox } from "../../../src/plugins/run-agent/outbox.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import { createSemaphore } from "../../../src/plugins/run-agent/semaphore.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, PACKAGE_ROOT } from "../../helpers/harness.ts";
 
 const setup = (overrides = {}) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
@@ -233,7 +234,7 @@ describe("run_agent batches", () => {
       join(dir, "tracker.md"),
       `---\nname: tracker\ndescription: Files issues.\nlimit: 50000\ntools: read, ls\nskills: all\nsubagents: []\n---\n`,
     );
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([{ agent: "tracker", task: "file it" }]);
 
@@ -248,7 +249,7 @@ describe("run_agent batches", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "open.md"), `---\nname: open\n${header}tools: all\nskills: all\n---\n`);
     writeFileSync(join(dir, "closed.md"), `---\nname: closed\n${header}tools: []\nskills: []\n---\n`);
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([
       { agent: "open", task: "a" },
@@ -277,7 +278,7 @@ describe("run_agent batches", () => {
       writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\n${header}skills: ${skills}\n---\n`);
     });
 
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([
       { agent: "named", task: "a" },
@@ -327,7 +328,7 @@ describe("allowed subagents", () => {
 
     mkdirSync(userAgentsDir, { recursive: true });
     writeFileSync(join(userAgentsDir, "lead.md"), LEAD_AGENT);
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([{ agent: "lead", task: "coordinate" }]);
 
@@ -352,7 +353,7 @@ describe("allowed subagents", () => {
   it("rejects an agent outside the caller's subagents list before starting anything", async () => {
     const { lead, runner, runtime } = await setupLead();
     const spawn = (agent: string) =>
-      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, callerDepth: 1, wait: false });
+      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
 
     expect(() => spawn("reviewer")).toThrow(
       "agent(s) not allowed for this caller: reviewer. Allowed: explorer",
@@ -378,7 +379,6 @@ describe("allowed subagents", () => {
     expect(() =>
       runner.startBatch([{ agent: "reviewer", task: "x" }], {
         callerId: explorer.id,
-        callerDepth: 1,
         wait: false,
       }),
     ).toThrow("agent(s) not allowed for this caller: reviewer. Allowed: none");
@@ -396,14 +396,14 @@ describe("allowed subagents", () => {
         "description: Lead.",
       ),
     );
-    harness.services.require("definitions").reload();
+    harness.host.start();
 
     await harness.run([{ agent: "lead", task: "coordinate" }]);
 
     const lead = harness.registry.list()[0];
     const runner = harness.services.require("runner") as Runner;
     const spawn = (agent: string) =>
-      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, callerDepth: 1, wait: false });
+      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
 
     expect(() => spawn("lead")).toThrow(
       "agent(s) not allowed for this caller: lead. Allowed: explorer, general, implementer, reviewer",
@@ -437,15 +437,22 @@ describe("semaphore", () => {
     await flush();
 
     expect(third).toBe(false);
-    expect(semaphore.active()).toBe(2);
-    expect(semaphore.waiting()).toBe(1);
 
     releases[0]();
     releases[0]();
     await flush();
 
     expect(third).toBe(true);
-    expect(semaphore.active()).toBe(2);
+
+    let fourth = false;
+
+    void semaphore.acquire().then(() => {
+      fourth = true;
+    });
+
+    await flush();
+
+    expect(fourth).toBe(false);
   });
 });
 
@@ -474,5 +481,45 @@ describe("outbox", () => {
     idleHandler();
 
     expect(delivered).toEqual(["one", "two\n\n---\n\nthree"]);
+  });
+});
+
+describe("main session prompt", () => {
+  const prompt = (file: string) => readFileSync(join(PACKAGE_ROOT, "prompts", file), "utf8").trim();
+
+  it("adds the agent_status section only when that plugin is on", () => {
+    const withStatus = createHarness([
+      agentRegistryPlugin,
+      agentDefinitionsPlugin,
+      runAgentPlugin,
+      agentStatusPlugin,
+    ]);
+    const without = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin]);
+
+    expect(withStatus.host.mainPrompt).toBe(
+      `${prompt("main-session.md")}\n\n${prompt("main-session-agent-status.md")}`,
+    );
+    expect(without.host.mainPrompt).toBe(prompt("main-session.md"));
+    expect(without.host.mainPrompt).not.toContain("agent_status");
+  });
+});
+
+describe("batchSettled", () => {
+  it("stays true for a batch once all of its agents are closed", async () => {
+    const { run, runtime, services, registry } = setup();
+
+    await run(tasks(2));
+
+    const runner = services.require("runner") as Runner;
+    const { batchId } = registry.list()[0];
+
+    runtime.children[0].finish("one");
+
+    expect(runner.batchSettled(batchId)).toBe(false);
+
+    runtime.children[1].finish("two");
+
+    expect(runner.batchSettled(batchId)).toBe(true);
+    expect(runner.batchSettled("b-unknown")).toBe(false);
   });
 });

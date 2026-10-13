@@ -1,15 +1,20 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
+import { createHandoff } from "./handoff.ts";
 import { createOutbox } from "./outbox.ts";
 import { childPromptsFor, createPromptQueue } from "./prompts.ts";
 import { createRunner } from "./runner.ts";
 import { describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
 
+const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
+
 export const runAgentPlugin: Plugin = {
   id: "run-agent",
   requires: ["agent-registry", "agent-definitions"],
-  enable: ({ host, runtime, bus, settings, services }) => {
+  enable: ({ host, runtime, bus, settings, services, root }) => {
     const registry = services.require("registry");
     const definitions = services.require("definitions");
 
@@ -37,10 +42,9 @@ export const runAgentPlugin: Plugin = {
       });
 
       const childDeps = { runner, registry };
-      const caller = { id: record.id, depth: record.depth };
 
       const tools: AnyToolSpec[] = [
-        runAgentTool(childDeps, description, caller),
+        runAgentTool(childDeps, description, record.id),
         messageAgentTool(childDeps, record.id),
       ];
 
@@ -52,6 +56,7 @@ export const runAgentPlugin: Plugin = {
     };
 
     const promptQueue = createPromptQueue();
+    const handoff = createHandoff(root);
 
     const runner = createRunner({
       registry,
@@ -61,12 +66,13 @@ export const runAgentPlugin: Plugin = {
       definitions,
       outbox,
       session: () => host.session(),
-      handoff: () => (services.has("handoff") ? services.require("handoff") : undefined),
+      handoff,
       toolsFor: childTools,
       promptsFor: (record) => childPromptsFor({ ui: host.ui, registry, queue: promptQueue }, record),
     });
 
     services.provide("runner", runner);
+    services.provide("handoff", handoff);
 
     const invalidators = new Map<string, () => void>();
     let pendingRender: ReturnType<typeof setTimeout> | undefined;
@@ -122,9 +128,15 @@ export const runAgentPlugin: Plugin = {
       host.registerTool(runAgentTool(toolDeps, description));
     };
 
+    const mainPrompt = readPrompt(root, "main-session.md");
+    const statusPrompt = readPrompt(root, "main-session-agent-status.md");
+
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));
-    host.onSessionStart(registerRunAgent);
+    host.onSessionStart(() => {
+      registerRunAgent();
+      host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
+    });
 
     host.onSessionShutdown(async (reason) => {
       outbox.clear();

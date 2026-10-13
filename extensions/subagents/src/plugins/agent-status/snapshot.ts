@@ -1,4 +1,12 @@
-import { elapsedOf, formatElapsed, formatTokens, singleLine, truncate } from "../../components/agent-row.ts";
+import {
+  elapsedOf,
+  formatElapsed,
+  formatTokens,
+  graceSecondsLeft,
+  plural,
+  singleLine,
+  truncate,
+} from "../../components/agent-row.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
 
 export type AgentSnapshot = {
@@ -23,26 +31,16 @@ export type AgentSnapshot = {
   worktree?: Worktree;
 };
 
-export const LAST_LINE_CHARS = 160;
-
-export const lastLineOf = (text: string) => {
+const lastLineOf = (text: string) => {
   const lines = text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
 
-  return truncate(singleLine(lines.at(-1) ?? ""), LAST_LINE_CHARS);
+  return truncate(singleLine(lines.at(-1) ?? ""), 160);
 };
 
-export const graceSecondsLeft = (record: AgentRecord, now: number) => {
-  if (record.state !== "grace" || record.graceEndsAt === undefined) {
-    return undefined;
-  }
-
-  return Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
-};
-
-export const stateLabel = (snapshot: AgentSnapshot) => {
+const stateLabel = (snapshot: AgentSnapshot) => {
   if (snapshot.state !== "grace") {
     return snapshot.state;
   }
@@ -94,13 +92,12 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
     `${name} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
     formatElapsed(snapshot.elapsedMs),
     `${formatTokens(snapshot.tokens)} tokens`,
-    `${snapshot.toolCalls} tool calls`,
+    plural(snapshot.toolCalls, "tool call"),
     percent,
   ];
 
   const extras = [
     chainText(snapshot),
-    snapshot.successorId ? `continued by: ${snapshot.successorId}` : undefined,
     snapshot.lastLine ? `last: ${snapshot.lastLine}` : undefined,
     snapshot.error ? `error: ${snapshot.error}` : undefined,
     snapshot.resultPath ? `result: ${snapshot.resultPath}` : undefined,

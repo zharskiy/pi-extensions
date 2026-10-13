@@ -74,7 +74,7 @@ describe("agent_status", () => {
     expect(snapshot).toMatchObject({
       id: first.id,
       agent: "explorer",
-      model: "openai/gpt-6-luna:low",
+      model: first.model,
       state: "running",
       tokens: 2_000,
       toolCalls: 1,
@@ -106,8 +106,9 @@ describe("agent_status", () => {
     );
     expect(result.details?.agents).toHaveLength(2);
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
-    expect(result.text).toContain(`${first.id} (explorer, openai/gpt-6-luna:low) running`);
+    expect(result.text).toContain(`${first.id} (explorer, ${first.model}) running`);
     expect(result.text).toContain("ctx 15%");
+    expect(result.text).toContain(" · 1 tool call · ctx 15%");
     expect(result.text).toContain("ghost-0000: unknown agent");
 
     harness.host.settle();
@@ -135,11 +136,39 @@ describe("agent_status", () => {
 
     expect(result.details?.agents[0]).toMatchObject({ state: "grace", graceSecondsLeft: 45 });
     expect(result.text).toContain(
-      `${record.id} (explorer, openai/gpt-6-luna:low) grace (closes in 45s unless messaged)`,
+      `${record.id} (explorer, ${record.model}) grace (closes in 45s unless messaged)`,
     );
 
     await harness.host.shutdown("quit");
     vi.useRealTimers();
+  });
+
+  it("reports a chain once when several of its ids are asked for", async () => {
+    const harness = setup();
+    const registry = harness.services.require("registry");
+
+    const link = (chainIndex: number) =>
+      registry.create({
+        agent: "explorer",
+        description: "t",
+        callerId: "main",
+        depth: 2,
+        batchId: "b-1",
+        dir: harness.root,
+        contextLimit: 100_000,
+        chainIndex,
+      });
+
+    const first = link(1);
+    const second = link(2);
+
+    registry.update(first.id, { successorId: second.id });
+    registry.update(second.id, { predecessorId: first.id });
+
+    const result = await harness.status.execute({ ids: [first.id, second.id] }, { update: () => {} });
+
+    expect(result.details?.agents.map((agent) => agent.id)).toEqual([second.id]);
+    expect(result.text.split("\n")[0]).toMatch(new RegExp(`^${first.id} → ${second.id} `));
   });
 
   it("lists every agent when no ids are given", async () => {

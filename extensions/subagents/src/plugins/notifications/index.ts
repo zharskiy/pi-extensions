@@ -1,24 +1,24 @@
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, type Attention, isClosed, MAIN_CALLER } from "../../model/types.ts";
 
-export const TITLE_PREFIX = "pi-subagents";
+const TITLE_PREFIX = "pi-subagents";
 
-export const MAX_NAMED = 3;
+const MAX_NAMED = 3;
 
-export const firstLine = (text: string | undefined) =>
+const firstLine = (text: string | undefined) =>
   (text ?? "")
     .split("\n")
     .map((line) => line.trim())
     .find(Boolean) ?? "";
 
-export const batchTitle = (terminals: AgentRecord[]) => {
-  const named = terminals.slice(0, MAX_NAMED).map((record) => `${record.agent} ${record.state}`);
+const batchTitle = (terminals: AgentRecord[]) => {
+  const named = terminals.slice(0, MAX_NAMED).map((record) => `${record.id} ${record.state}`);
   const more = terminals.length > MAX_NAMED ? [`+${terminals.length - MAX_NAMED} more`] : [];
 
   return `${TITLE_PREFIX}: ${named.concat(more).join(", ")}`;
 };
 
-export const batchBody = (terminals: AgentRecord[]) => {
+const batchBody = (terminals: AgentRecord[]) => {
   const done = terminals.find((record) => record.state === "done" && firstLine(record.resultText));
 
   if (done) {
@@ -45,10 +45,6 @@ export const notificationsPlugin: Plugin = {
 
       host.ui.terminalNotify(title, body);
     };
-
-    host.onSessionStart(() => {
-      quiet = false;
-    });
 
     const offClosing = bus.on("session:closing", () => {
       quiet = true;

@@ -1,4 +1,4 @@
-import { type ModelChoice, type ModelResolution, splitModelRequest } from "./contract.ts";
+import type { ModelChoice, ModelResolution } from "./contract.ts";
 
 export type CatalogModel = {
   provider: string;
@@ -35,15 +35,15 @@ const DATE_TOKEN = /^\d{8}$/;
 
 const NUMBER_TOKEN = /^\d+$/;
 
-export const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-export const tokensOf = (text: string) =>
+const tokensOf = (text: string) =>
   text
     .toLowerCase()
     .split(/[^a-z0-9]+|(?<=[a-z])(?=[0-9])|(?<=[0-9])(?=[a-z])/)
     .filter(Boolean);
 
-export const editDistance = (left: string, right: string) => {
+const editDistance = (left: string, right: string) => {
   const rows = Array.from({ length: left.length + 1 }, (_, row) =>
     Array.from({ length: right.length + 1 }, (_, column) => (row === 0 ? column : column === 0 ? row : 0)),
   );
@@ -90,7 +90,7 @@ const versionOf = (model: CatalogModel) =>
 
 const isDated = (model: CatalogModel) => tokensOf(model.id).some((token) => DATE_TOKEN.test(token));
 
-export const compareVersions = (left: number[], right: number[]): number => {
+const compareVersions = (left: number[], right: number[]): number => {
   const length = Math.max(left.length, right.length);
   const index = Array.from({ length }, (_, position) => position).find(
     (position) => (left[position] ?? -1) !== (right[position] ?? -1),
@@ -149,7 +149,7 @@ const fuzzyScore = (query: string, model: CatalogModel) => {
   return Math.max(tokenScore, wholeScore);
 };
 
-export const matchModel = (query: string, model: CatalogModel): Match => {
+const matchModel = (query: string, model: CatalogModel): Match => {
   const wanted = normalise(query);
   const id = normalise(model.id);
 
@@ -254,7 +254,6 @@ const fromExact = (
   request: string,
   matches: CatalogModel[],
   preferences: ModelPreferences,
-  thinking: string | undefined,
 ): ModelResolution => {
   const usable = matches.filter((model) => model.authenticated);
 
@@ -266,7 +265,7 @@ const fromExact = (
     .map((model): Match => ({ model, tier: 3, score: 1 }))
     .sort(compareMatches(preferences));
 
-  return { kind: "resolved", request, model: choiceOf(ranked[0].model), thinking };
+  return { kind: "resolved", request, model: choiceOf(ranked[0].model) };
 };
 
 const scopeOf = (name: string, catalog: CatalogModel[]) => {
@@ -313,40 +312,23 @@ export const resolveModel = (
   catalog: CatalogModel[],
   preferences: ModelPreferences = {},
 ): ModelResolution => {
-  const trimmed = request.trim();
-  const whole = exactMatches(trimmed, catalog);
+  const exact = exactMatches(request, catalog);
 
-  if (whole.length > 0) {
-    return fromExact(trimmed, whole, preferences, undefined);
+  if (exact.length > 0) {
+    return fromExact(request, exact, preferences);
   }
 
-  const parsed = splitModelRequest(trimmed);
-
-  if (parsed.error) {
-    return { kind: "invalid", request: trimmed, error: parsed.error };
-  }
-
-  if (parsed.name.length === 0) {
-    return { kind: "invalid", request: trimmed, error: `model "${trimmed}" has no name` };
-  }
-
-  const named = exactMatches(parsed.name, catalog);
-
-  if (named.length > 0) {
-    return fromExact(trimmed, named, preferences, parsed.thinking);
-  }
-
-  const scope = scopeOf(parsed.name, catalog);
+  const scope = scopeOf(request, catalog);
 
   if (scope.provider && !scope.pool.some((model) => model.authenticated)) {
-    return noCredentials(trimmed, [scope.provider]);
+    return noCredentials(request, [scope.provider]);
   }
 
   const matches = scope.pool.map((model) => matchModel(scope.query, model)).filter((match) => match.tier > 0);
   const usable = matches.filter((match) => match.model.authenticated);
 
   if (usable.length === 0) {
-    return unknownResult(trimmed, scope.query, scope.pool, matches);
+    return unknownResult(request, scope.query, scope.pool, matches);
   }
 
   const topTier = Math.max(...usable.map((match) => match.tier));
@@ -374,15 +356,14 @@ export const resolveModel = (
   if (contenders.length > 1) {
     return {
       kind: "ambiguous",
-      request: trimmed,
+      request,
       candidates: contenders.slice(0, MAX_CANDIDATES).map((members) => choiceOf(members[0].model)),
     };
   }
 
   return {
     kind: "resolved",
-    request: trimmed,
+    request,
     model: choiceOf(contenders[0][0].model),
-    thinking: parsed.thinking,
   };
 };

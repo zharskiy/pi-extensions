@@ -1,29 +1,24 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { KeyPress, OverlayApi, SessionRecord } from "../../../../../core/adapter/contract.ts";
-import {
-  createScrollPane,
-  createTranscriptPane,
-  initRenderTheme,
-} from "../../../../../core/adapter/pi-ui.ts";
+import { createScrollPane, createTranscriptPane } from "../../../../../core/adapter/pi-ui.ts";
 import {
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
 } from "../../../../../core/adapter/session-file.ts";
+import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { renderSections, setAllCollapsed } from "../../../src/components/collapsible.ts";
 import { promptSections } from "../../../src/components/system-prompt-block.ts";
-import { agentsDirFor, NAMESPACE } from "../../../src/model/paths.ts";
+import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord, RouteResult } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin, COMMAND, REFRESH_MS } from "../../../src/plugins/agent-view/index.ts";
-import { VIEW_STATE_FILE } from "../../../src/plugins/agent-view/mode-store.ts";
+import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createAgentView } from "../../../src/plugins/agent-view/view.ts";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
@@ -50,10 +45,9 @@ const fakeApi = (rows = 200) => {
       state.closed = true;
     },
     requestRender,
-    toolsExpanded: false,
     toolsKey: "ctrl+o",
     wheelScrolling: true,
-    createTranscript: () => createTranscriptPane({ requestRender } as never, "/repo", false),
+    createTranscript: () => createTranscriptPane({ requestRender } as never, "/repo"),
     createScroll: () => createScrollPane(requestRender),
     createInput: createFakeInputPane,
   };
@@ -122,7 +116,7 @@ const setup = () => {
   ]);
 
   const openView = async (args: string, rows = 200) => {
-    await harness.host.runCommand(COMMAND, args);
+    await harness.host.runCommand("agents", args);
 
     const factory = harness.host.overlays.at(-1);
 
@@ -148,7 +142,6 @@ const closedAgent = (harness: ReturnType<typeof setup>) => {
 
   const record = registry.create({
     agent: "explorer",
-    task: "t",
     description: "t",
     callerId: "main",
     depth: 2,
@@ -162,6 +155,11 @@ const closedAgent = (harness: ReturnType<typeof setup>) => {
   return record;
 };
 
+const viewDefaults = {
+  context: { softRatio: 0.8, reserveTokens: 0, estimate: (text: string) => Math.ceil(text.length / 4) },
+  modes: { read: () => "focus" as const, write: () => {} },
+};
+
 const viewOf = (session: SessionRecord, rows: number) => {
   const { api, state } = fakeApi(rows);
   let current = session;
@@ -172,6 +170,7 @@ const viewOf = (session: SessionRecord, rows: number) => {
 
   const view = createAgentView(
     {
+      ...viewDefaults,
       load: () => ({ record, session: current }),
       stop: () => undefined,
       send: async () => ({ ok: true, delivery: "steer" }),
@@ -218,6 +217,7 @@ describe("agent view", () => {
 
     const view = createAgentView(
       {
+        ...viewDefaults,
         load: () => ({ record, session }),
         stop: () => undefined,
         send: async () => ({ ok: true, delivery: "steer" }),
@@ -270,7 +270,7 @@ describe("agent view", () => {
     const { view } = await harness.openView(record.id);
     const lines = plain(view.render(100));
 
-    expect(lines[0]).toBe(`✓ ${record.id} (explorer) · done · openai/gpt-6-luna:low`);
+    expect(lines[0]).toBe(`✓ ${record.id} (explorer) · done · ${record.model}`);
     expect(lines[4]).toBe("Effective prompt");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
     expect(lines.at(-1)).toMatch(/^Esc close · ctrl\+o tool detail · PgUp\/PgDn Home\/End wheel scroll/);
@@ -369,6 +369,42 @@ describe("agent view", () => {
     expect(visible()).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
   });
 
+  it("starts a fresh transcript when the view follows a successor with another session file", () => {
+    const { api } = fakeApi(40);
+    const full = readSessionFile(FIXTURE, RECORD_ENTRY);
+    const head = { ...full, items: full.items.slice(0, 2) };
+    const tail = { ...full, items: full.items.slice(-2) };
+    const harness = setup();
+    const first = closedAgent(harness);
+    let current = { record: first, session: head };
+    let changed = () => {};
+
+    const view = createAgentView(
+      {
+        ...viewDefaults,
+        load: () => current,
+        stop: () => undefined,
+        send: async () => ({ ok: true, delivery: "steer" }),
+        subscribe: (onChange) => {
+          changed = onChange;
+          return () => {};
+        },
+      },
+      api,
+    );
+
+    const body = (lines: string[]) => plain(lines).slice(1).join("\n");
+    const before = body(view.render(100));
+
+    current = { record: { ...first, sessionFile: "/other.jsonl" }, session: tail };
+    changed();
+
+    const after = body(view.render(100));
+
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(body(viewOf(tail, 40).view.render(100)));
+  });
+
   it("enters grace on the first x and closes on the second, notifying the caller once", async () => {
     const harness = setup();
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
@@ -402,7 +438,7 @@ describe("agent view", () => {
   it("only notifies for unknown agents and opens nothing", async () => {
     const harness = setup();
 
-    await harness.host.runCommand(COMMAND, "ghost-0000");
+    await harness.host.runCommand("agents", "ghost-0000");
 
     expect(harness.host.overlays).toEqual([]);
     expect(harness.host.notices).toHaveLength(1);
@@ -442,6 +478,7 @@ const openViewWith = (record: AgentRecord, send: (text: string) => Promise<Route
 
   const view = createAgentView(
     {
+      ...viewDefaults,
       load: () => ({ record, session: readSessionFile(FIXTURE, RECORD_ENTRY) }),
       stop: () => undefined,
       send: (text) => {
@@ -603,6 +640,7 @@ describe("agent view input focus", () => {
 
     const view = createAgentView(
       {
+        ...viewDefaults,
         load: () => ({ record, session: readSessionFile(FIXTURE, RECORD_ENTRY) }),
         stop: () => undefined,
         send: async () => ({ ok: true, delivery: "steer" }),
@@ -650,19 +688,12 @@ const handoffText = [
   "none",
 ].join("\n");
 
-const waitForRefresh = () => new Promise<void>((done) => setTimeout(done, REFRESH_MS + 50));
+const waitForRefresh = () => new Promise<void>((done) => setTimeout(done, 350));
 
 describe("agent view successor chain", () => {
   it("follows the opened link to its live successor and stops the successor", async () => {
     const harness = createHarness(
-      [
-        agentRegistryPlugin,
-        agentDefinitionsPlugin,
-        handoffPlugin,
-        runAgentPlugin,
-        limitsPlugin,
-        agentViewPlugin,
-      ],
+      [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentViewPlugin],
       { stopGraceSeconds: 0 },
     );
     const registry = harness.services.require("registry");
@@ -677,7 +708,7 @@ describe("agent view successor chain", () => {
 
     const first = registry.list()[0] as AgentRecord;
 
-    await harness.host.runCommand(COMMAND, first.id);
+    await harness.host.runCommand("agents", first.id);
 
     const factory = harness.host.overlays.at(-1);
 
@@ -790,7 +821,7 @@ describe("agent view context breakdown", () => {
   const openFromManifest = async (manifest: Record<string, unknown>) => {
     const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
     const id = String(manifest.id);
-    const dir = join(agentsDirFor(harness.host.session()), id);
+    const dir = join(agentsDirFor(harness.host.info), id);
     const file = join(dir, "session.jsonl");
 
     mkdirSync(dir, { recursive: true });
@@ -801,7 +832,7 @@ describe("agent view context breakdown", () => {
     );
     harness.runtime.sessions.set(file, readSessionFile(FIXTURE, RECORD_ENTRY));
 
-    await harness.host.runCommand(COMMAND, id);
+    await harness.host.runCommand("agents", id);
 
     const view = harness.host.overlays.at(-1)?.(fakeApi(200).api);
 
@@ -842,7 +873,8 @@ describe("agent view context breakdown", () => {
 });
 
 describe("agent view modes", () => {
-  const stateFile = (harness: ReturnType<typeof setup>) => join(harness.host.info.agentDir, VIEW_STATE_FILE);
+  const stateFile = (harness: ReturnType<typeof setup>) =>
+    join(harness.host.info.agentDir, "pi-subagents-view.json");
 
   const storedMode = (harness: ReturnType<typeof setup>) =>
     JSON.parse(readFileSync(stateFile(harness), "utf8")).mode;
@@ -942,9 +974,10 @@ describe("agent view worktree", () => {
     const harness = setup();
     const record = closedAgent(harness);
     const worktree = {
-      path: "/agents/explorer-1/worktree",
-      branch: "pi-agents/explorer-1",
-      cwd: "/agents/x",
+      path: "/project/.pi/worktrees/explorer-1-abc",
+      branch: "pi-agents/explorer-1-abc",
+      base: "0123abc",
+      cwd: "/project/.pi/worktrees/explorer-1-abc",
     };
 
     harness.services.require("registry").update(record.id, { worktree });
@@ -952,7 +985,133 @@ describe("agent view worktree", () => {
     const { view } = await harness.openView(record.id);
     const lines = plain(view.render(100));
 
-    expect(lines[2]).toBe("worktree: /agents/explorer-1/worktree (branch pi-agents/explorer-1)");
+    expect(lines[2]).toBe(
+      "worktree: /project/.pi/worktrees/explorer-1-abc (branch pi-agents/explorer-1-abc)",
+    );
     expect(lines[5]).toBe("Effective prompt");
+  });
+});
+
+describe("agent view refresh", () => {
+  it("does not parse the session file again while its size and time are unchanged", async () => {
+    const harness = setup();
+    const record = closedAgent(harness);
+    const readSession = vi.spyOn(harness.runtime, "readSession");
+    const registry = harness.services.require("registry");
+    const { view } = await harness.openView(record.id);
+
+    view.render(100);
+    registry.update(record.id, { tokens: 1 });
+    await waitForRefresh();
+    registry.update(record.id, { tokens: 2 });
+    await waitForRefresh();
+    view.render(100);
+
+    expect(readSession).toHaveBeenCalledTimes(1);
+
+    writeFileSync(String(record.sessionFile), "{}\n");
+    registry.update(record.id, { tokens: 3 });
+    await waitForRefresh();
+
+    expect(readSession).toHaveBeenCalledTimes(2);
+
+    view.dispose?.();
+  });
+
+  it("never reloads after close, and reports a failed stop", async () => {
+    const harness = setup();
+    const record = { ...closedAgent(harness), state: "running" as const };
+    const { api, state } = fakeApi(60);
+    let loads = 0;
+    let finishStop: () => void = () => {};
+
+    const stops = [
+      () => Promise.reject(new Error("runner gone")),
+      () =>
+        new Promise<void>((done) => {
+          finishStop = done;
+        }),
+    ];
+
+    const view = createAgentView(
+      {
+        ...viewDefaults,
+        load: () => {
+          loads += 1;
+          return { record, session: readSessionFile(FIXTURE, RECORD_ENTRY) };
+        },
+        stop: () => stops.shift()?.(),
+        send: async () => ({ ok: true, delivery: "steer" }),
+        subscribe: () => () => {},
+      },
+      api,
+    );
+
+    view.handleKey(key("other", "x"));
+    await flush();
+
+    expect(plain(view.render(100))).toContain("stop failed: runner gone");
+
+    view.handleKey(key("other", "x"));
+    view.handleKey(key("escape"));
+    finishStop();
+    await flush();
+
+    expect(state.closed).toBe(true);
+    expect(loads).toBe(1);
+  });
+});
+
+describe("agent view past sessions", () => {
+  const writeManifest = (harness: ReturnType<typeof setup>, manifest: Record<string, unknown>) => {
+    const dir = join(agentsDirFor(harness.host.info), String(manifest.id));
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, MANIFEST_FILE),
+      typeof manifest.raw === "string" ? manifest.raw : JSON.stringify(manifest),
+    );
+
+    return dir;
+  };
+
+  it("follows a chain of an earlier session to its last link", async () => {
+    const harness = setup();
+    const file = join(harness.root, "old-2.jsonl");
+
+    writeFileSync(file, "");
+    harness.runtime.sessions.set(file, readSessionFile(FIXTURE, RECORD_ENTRY));
+    writeManifest(harness, {
+      id: "explorer-old1",
+      agent: "explorer",
+      description: "old",
+      state: "handoff",
+      successorId: "explorer-old2",
+    });
+    writeManifest(harness, {
+      id: "explorer-old2",
+      agent: "explorer",
+      description: "old",
+      state: "done",
+      chainIndex: 2,
+      predecessorId: "explorer-old1",
+      sessionFile: file,
+    });
+
+    const { view } = await harness.openView("explorer-old1");
+    const lines = plain(view.render(200));
+
+    expect(lines[0]).toContain("explorer-old2 #2");
+    expect(lines.at(-1)).toContain("opened explorer-old1, following the chain");
+  });
+
+  it("reports a corrupt manifest instead of throwing", async () => {
+    const harness = setup();
+
+    writeManifest(harness, { id: "explorer-bad", raw: "{ broken" });
+    await harness.host.runCommand("agents", "explorer-bad");
+
+    expect(harness.host.overlays).toEqual([]);
+    expect(harness.host.notices.at(-1)?.message).toContain('cannot read manifest of "explorer-bad"');
   });
 });

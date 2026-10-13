@@ -6,10 +6,10 @@ export const messageText = (content: unknown) => {
   }
 
   return contentParts(content)
-    .filter((part) => part?.type === "text")
-    .map((part) => String(part.text ?? ""))
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
     .join("\n");
 };
 
 export const toolCallCount = (content: unknown) =>
-  contentParts(content).filter((part) => part?.type === "toolCall").length;
+  contentParts(content).filter((part) => part.type === "toolCall").length;

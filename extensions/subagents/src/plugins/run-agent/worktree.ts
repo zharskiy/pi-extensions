@@ -1,17 +1,9 @@
 import { execFile } from "node:child_process";
-import { join, resolve } from "node:path";
-import type { Worktree } from "../../model/types.ts";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import type { Worktree, WorktreeCleanup } from "../../model/types.ts";
 
-export const WORKTREE_DIR = "worktree";
-
-export const BRANCH_PREFIX = "pi-agents/";
-
-export type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
-
-export type Worktrees = {
-  create(cwd: string, agentDir: string, branch: string): Promise<WorktreeResult>;
-  remove(cwd: string, worktree: Worktree): Promise<boolean>;
-};
+type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
 
 type GitResult = { ok: true; output: string } | { ok: false; error: string };
 
@@ -20,7 +12,7 @@ const REPOSITORY_OVERRIDES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT
 const gitEnv = () =>
   Object.fromEntries(Object.entries(process.env).filter(([key]) => !REPOSITORY_OVERRIDES.includes(key)));
 
-export const runGit = (cwd: string, args: string[]) =>
+const runGit = (cwd: string, args: string[]) =>
   new Promise<GitResult>((done) => {
     execFile("git", ["-C", cwd, ...args], { env: gitEnv() }, (error, stdout, stderr) => {
       if (error) {
@@ -32,39 +24,58 @@ export const runGit = (cwd: string, args: string[]) =>
     });
   });
 
-export const worktreeBranch = (agentId: string, token: string) => `${BRANCH_PREFIX}${agentId}-${token}`;
+const ignoreWorktrees = (root: string) => {
+  const file = join(root, ".gitignore");
 
-export const createWorktree = async (
-  cwd: string,
-  agentDir: string,
-  branch: string,
-): Promise<WorktreeResult> => {
-  const prefix = await runGit(cwd, ["rev-parse", "--show-prefix"]);
+  if (!existsSync(file)) {
+    mkdirSync(root, { recursive: true });
+    writeFileSync(file, "*\n");
+  }
+};
 
-  if (!prefix.ok) {
-    return { ok: false, error: `${cwd} is not inside a git repository: ${prefix.error}` };
+export const createWorktree = async (cwd: string, agentId: string): Promise<WorktreeResult> => {
+  const head = await runGit(cwd, ["rev-parse", "HEAD", "--show-prefix"]);
+
+  if (!head.ok) {
+    return { ok: false, error: head.error };
   }
 
-  const path = join(agentDir, WORKTREE_DIR);
-  const added = await runGit(cwd, ["worktree", "add", "-b", branch, path, "HEAD"]);
+  const [base, prefix = ""] = head.output.split("\n");
+  const root = join(cwd, ".pi", "worktrees");
+  const name = `${agentId}-${Date.now().toString(36)}`;
+  const path = join(root, name);
+  const branch = `pi-agents/${name}`;
+
+  try {
+    ignoreWorktrees(root);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+
+  const added = await runGit(cwd, ["worktree", "add", "-b", branch, path, base]);
 
   if (!added.ok) {
     return { ok: false, error: `git worktree add failed: ${added.error}` };
   }
 
-  return { ok: true, worktree: { path, branch, cwd: resolve(path, prefix.output) } };
+  return { ok: true, worktree: { path, branch, base, cwd: resolve(path, prefix) } };
 };
 
-export const removeWorktree = async (cwd: string, worktree: Worktree) => {
-  const removed = await runGit(cwd, ["worktree", "remove", "--force", worktree.path]);
+export const removeWorktree = async (worktree: Worktree): Promise<WorktreeCleanup> => {
+  const repo = dirname(worktree.path);
+  const removed = await runGit(repo, ["worktree", "remove", worktree.path]);
 
   if (!removed.ok) {
-    return false;
+    return "kept";
   }
 
-  const deleted = await runGit(cwd, ["branch", "-D", worktree.branch]);
+  const tip = await runGit(repo, ["rev-parse", worktree.branch]);
 
-  return deleted.ok;
+  if (!tip.ok || tip.output !== worktree.base) {
+    return "branch kept";
+  }
+
+  const deleted = await runGit(repo, ["branch", "-D", worktree.branch]);
+
+  return deleted.ok ? "removed" : "branch kept";
 };
-
-export const gitWorktrees: Worktrees = { create: createWorktree, remove: removeWorktree };

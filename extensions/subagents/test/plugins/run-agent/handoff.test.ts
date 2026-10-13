@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
-import { validateHandoff } from "../../../src/plugins/handoff/schema.ts";
+import { createHandoff } from "../../../src/plugins/run-agent/handoff.ts";
 import { VALID_HANDOFF } from "../../helpers/handoff.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { PACKAGE_ROOT } from "../../helpers/harness.ts";
+
+const { instruction, validate: validateHandoff } = createHandoff(PACKAGE_ROOT);
 
 describe("handoff schema", () => {
   it("accepts the documented schema", () => {
@@ -40,8 +41,7 @@ describe("handoff schema", () => {
   });
 
   it("fills the handoff instruction with the target path", () => {
-    const harness = createHarness([handoffPlugin]);
-    const text = harness.services.require("handoff").instruction("/tmp/x/handoff.md");
+    const text = instruction("/tmp/x/handoff.md");
 
     expect(text).toContain("/tmp/x/handoff.md");
     expect(text).not.toContain("{{path}}");

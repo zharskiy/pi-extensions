@@ -1,4 +1,4 @@
-Your context limit is used up. Stop the current work now and write a handoff file to:
+You have reached your context limit. Stop the current work now and write a handoff file to:
 
 {{path}}
 

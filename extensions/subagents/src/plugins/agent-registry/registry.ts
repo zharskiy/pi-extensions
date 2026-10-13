@@ -1,22 +1,22 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Bus } from "../../model/events.ts";
+import { MANIFEST_FILE } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../../model/types.ts";
 
-export const MANIFEST_FILE = "manifest.json";
-
-export type RegistryOptions = {
+type RegistryOptions = {
   bus: Bus;
-  now?: () => number;
+  handoffPath: (agentId: string) => string;
   newId?: (agent: string) => string;
   writeManifest?: (record: AgentRecord) => void;
 };
 
-export const randomAgentId = (agent: string) => `${agent}-${randomBytes(2).toString("hex")}`;
+const randomAgentId = (agent: string) => `${agent}-${randomBytes(2).toString("hex")}`;
 
-export const writeManifestFile = (record: AgentRecord) => {
+const writeManifestFile = (record: AgentRecord) => {
   mkdirSync(record.dir, { recursive: true });
+  mkdirSync(dirname(record.handoffPath), { recursive: true });
 
   const manifest = {
     id: record.id,
@@ -45,15 +45,22 @@ export const writeManifestFile = (record: AgentRecord) => {
 };
 
 export const createRegistry = (options: RegistryOptions): AgentRegistry => {
-  const now = options.now ?? Date.now;
   const newId = options.newId ?? randomAgentId;
   const writeManifest = options.writeManifest ?? writeManifestFile;
   const records = new Map<string, AgentRecord>();
 
-  const uniqueId = (agent: string): string => {
+  const uniqueId = (agent: string, dir: string): string => {
     const id = newId(agent);
 
-    return records.has(id) ? uniqueId(agent) : id;
+    return records.has(id) || existsSync(join(dir, id)) ? uniqueId(agent, dir) : id;
+  };
+
+  const persist = (record: AgentRecord) => {
+    try {
+      writeManifest(record);
+    } catch (error) {
+      record.error ??= `manifest not written: ${(error as Error).message}`;
+    }
   };
 
   const require = (id: string) => {
@@ -67,7 +74,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
   };
 
   const create = (input: NewAgent) => {
-    const id = uniqueId(input.agent);
+    const id = uniqueId(input.agent, input.dir);
     const dir = join(input.dir, id);
 
     const record: AgentRecord = {
@@ -76,18 +83,18 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       dir,
       chainIndex: input.chainIndex ?? 1,
       state: "queued",
-      createdAt: now(),
+      createdAt: Date.now(),
       turns: 0,
       toolCalls: 0,
       tokens: 0,
       lastText: "",
-      handoffPath: join(dir, "handoff.md"),
+      handoffPath: options.handoffPath(id),
       handoffRequested: false,
       version: 0,
     };
 
     records.set(id, record);
-    writeManifest(record);
+    persist(record);
     options.bus.emit("agent:changed", record);
 
     return record;
@@ -101,7 +108,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     Object.assign(record, patch, { version: record.version + 1 });
 
     if (manifestChanged) {
-      writeManifest(record);
+      persist(record);
     }
 
     options.bus.emit("agent:changed", record);
@@ -116,8 +123,8 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       return record;
     }
 
-    Object.assign(record, patch, { endedAt: patch.endedAt ?? now(), version: record.version + 1 });
-    writeManifest(record);
+    Object.assign(record, patch, { endedAt: Date.now(), version: record.version + 1 });
+    persist(record);
     options.bus.emit("agent:changed", record);
     options.bus.emit("agent:closed", record);
 
@@ -128,17 +135,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     create,
     get: (id) => records.get(id),
     list: () => Array.from(records.values()),
-    batch: (batchId) => {
-      const members: AgentRecord[] = [];
-
-      records.forEach((record) => {
-        if (record.batchId === batchId) {
-          members.push(record);
-        }
-      });
-
-      return members;
-    },
+    batch: (batchId) => Array.from(records.values()).filter((record) => record.batchId === batchId),
     update,
     close,
   };

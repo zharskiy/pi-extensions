@@ -29,29 +29,27 @@ import {
   MAIN_CALLER,
   type RouteResult,
   subagentNames,
-  type Worktree,
 } from "../../model/types.ts";
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, type Outbox } from "./outbox.ts";
+import { createPlacer } from "./placement.ts";
 import { batchMessage, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
-import { gitWorktrees, type Worktrees, worktreeBranch } from "./worktree.ts";
+import { composeTask } from "./task.ts";
 
-export type ModelPlan = { model: string; thinking: string; label: string };
+type ModelPlan = { model: string; thinking: string; label: string };
 
-export type RunnerDeps = {
+type RunnerDeps = {
   registry: AgentRegistry;
   runtime: AgentRuntime;
   bus: Bus;
   settings: Settings;
   definitions: AgentDefinitions;
   outbox: Outbox;
-  session: () => SessionInfo | undefined;
-  handoff: () => HandoffService | undefined;
-  toolsFor?: (record: AgentRecord) => AnyToolSpec[];
-  promptsFor?: (record: AgentRecord) => ChildPrompts;
-  worktrees?: Worktrees;
-  now?: () => number;
+  session: () => SessionInfo;
+  handoff: HandoffService;
+  toolsFor: (record: AgentRecord) => AnyToolSpec[];
+  promptsFor: (record: AgentRecord) => ChildPrompts;
 };
 
 export type BatchItem = {
@@ -62,16 +60,15 @@ export type BatchItem = {
   model?: string;
 };
 
-export type BatchOptions = { callerId: string; callerDepth: number; wait: boolean };
+type BatchOptions = { callerId: string; wait: boolean };
 
-export type StartedBatch = { batchId: string; records: AgentRecord[]; settled: Promise<AgentRecord[]> };
+type StartedBatch = { batchId: string; records: AgentRecord[]; settled: Promise<AgentRecord[]> };
 
 export type Runner = AgentRunner & {
   startBatch(items: BatchItem[], options: BatchOptions): StartedBatch;
   batchText(batchId: string): string;
   stop(id: string, options?: { immediate?: boolean }): Promise<boolean>;
   shutdown(reason: string): Promise<void>;
-  live(id: string): ChildSession | undefined;
 };
 
 type Batch = {
@@ -79,16 +76,14 @@ type Batch = {
   ids: string[];
   callerId: string;
   wait: boolean;
-  woken: boolean;
   resolve: (records: AgentRecord[]) => void;
 };
 
-type LaunchSlot = { item: BatchItem; plan: ModelPlan };
-
-type Placement = { cwd: string; created?: Worktree } | { error: string };
+type LaunchSlot = { item: BatchItem; plan: ModelPlan; undelivered?: string[] };
 
 type Live = {
   child?: ChildSession;
+  spawning?: Promise<ChildSession | undefined>;
   lastStopReason?: StopReason;
   lastToolCalls: number;
   lastError?: string;
@@ -99,53 +94,28 @@ type Live = {
   release?: () => void;
   graceTimer?: ReturnType<typeof setTimeout>;
   answering: boolean;
-  inFlight: boolean;
+  turn: "idle" | "waiting" | "running";
   outbox?: Outbox;
   idleHandlers: (() => void)[];
 };
 
-const FAILED_STOP_REASONS: ReadonlySet<StopReason> = new Set(["error", "aborted"]);
+const failedStop = (reason: StopReason | undefined) => reason === "error" || reason === "aborted";
 
 const ABORT_WAIT_MS = 5_000;
 
-export const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
-
-export const composeTask = (record: AgentRecord, item: BatchItem, predecessor?: AgentRecord) => {
-  const files = predecessor ? [predecessor.handoffPath].concat(item.files ?? []) : (item.files ?? []);
-  const lines = [`Task from ${record.callerId} (agent id ${record.id}):`];
-
-  if (predecessor) {
-    lines.push(
-      `You continue the work of agent ${predecessor.id} as link ${record.chainIndex} of its chain; it reached its context limit and wrote a handoff file.`,
-      `Read the handoff file at ${predecessor.handoffPath} first, then carry on from its Next section without redoing the work it reports as done.`,
-      "",
-      "Original task:",
-    );
-  }
-
-  lines.push(item.task);
-
-  if (files.length > 0) {
-    lines.push("", "Input files:");
-
-    files.forEach((file) => {
-      lines.push(`- ${file}`);
-    });
-  }
-
-  return lines.join("\n");
-};
+const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
-  const now = deps.now ?? Date.now;
-  const worktrees = deps.worktrees ?? gitWorktrees;
+  const { place, release } = createPlacer(deps.registry);
   const semaphore = createSemaphore(() => deps.settings.maxConcurrent);
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
   const launches = new Map<string, LaunchSlot>();
   const userStopped = new Set<string>();
+  const releasing = new Set<string>();
+  const teardowns = new Map<string, Promise<void>>();
   let shuttingDown = false;
 
   const liveOf = (id: string) => {
@@ -160,7 +130,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       lastToolCalls: 0,
       pending: [],
       answering: false,
-      inFlight: false,
+      turn: "idle",
       idleHandlers: [],
     };
 
@@ -169,48 +139,36 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return created;
   };
 
-  const batchText = (batchId: string) => {
-    const records = deps.registry.batch(batchId);
-
-    return batchMessage(batchId, records, deps.settings.inlineResultChars, now());
-  };
+  const batchText = (batchId: string) =>
+    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars, Date.now());
 
   const settledTerminals = (batch: Batch) => {
     const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
 
-    return records.every((entry) => isClosed(entry.state))
-      ? records.filter((entry) => !entry.successorId)
-      : undefined;
+    const settled = records.every((entry) => isClosed(entry.state) && !releasing.has(entry.id));
+
+    return settled ? records.filter((entry) => !entry.successorId) : undefined;
   };
 
   const batchSettled = (batchId: string) => {
-    const batch = batches.get(batchId);
+    const records = deps.registry.batch(batchId);
 
-    return batch !== undefined && settledTerminals(batch) !== undefined;
+    return records.length > 0 && records.every((record) => isClosed(record.state));
   };
 
   const checkBatch = (record: AgentRecord) => {
     const batch = batches.get(record.batchId);
+    const terminals = batch && settledTerminals(batch);
 
-    if (!batch || batch.woken || shuttingDown) {
+    if (!batch || !terminals) {
       return;
     }
 
-    const terminals = settledTerminals(batch);
-
-    if (!terminals) {
-      return;
-    }
-
-    batch.woken = true;
+    batches.delete(batch.id);
     batch.resolve(terminals);
     deps.bus.emit("batch:settled", { batchId: batch.id, callerId: batch.callerId, terminals });
 
-    if (batch.wait) {
-      return;
-    }
-
-    if (shuttingDown) {
+    if (batch.wait || shuttingDown) {
       return;
     }
 
@@ -226,13 +184,27 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       });
   };
 
-  deps.bus.on("agent:closed", (record) => {
+  const onClosed = (record: AgentRecord) => {
+    if (record.worktree && !record.successorId) {
+      releasing.add(record.id);
+    }
+
     checkBatch(record);
-    stopChildrenOf(record);
-  });
+    launches.delete(record.id);
+    userStopped.delete(record.id);
+
+    if (!shuttingDown) {
+      stopChildrenOf(record);
+    }
+  };
+
+  deps.bus.on("agent:closed", onClosed);
 
   const hasOpenBatches = (callerId: string) =>
-    Array.from(batches.values()).some((batch) => batch.callerId === callerId && !batch.woken && !batch.wait);
+    Array.from(batches.values()).some((batch) => batch.callerId === callerId && !batch.wait);
+
+  const sendHeld = (live: Live, child: ChildSession) =>
+    Promise.all(live.pending.splice(0).map((message) => child.send(message, "steer")));
 
   const resume = async (id: string, deliver: (child: ChildSession) => Promise<void>) => {
     const live = lives.get(id);
@@ -241,7 +213,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    live.inFlight = true;
+    live.turn = "waiting";
 
     const release = await semaphore.acquire();
     const record = deps.registry.get(id);
@@ -249,16 +221,20 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     if (!record || isClosed(record.state) || shuttingDown || !child) {
       release();
-      live.inFlight = false;
+      live.turn = "idle";
       return;
     }
 
     live.release = release;
+    live.turn = "running";
 
-    await deliver(child).catch(async (error: unknown) => {
+    try {
+      await deliver(child);
+      await sendHeld(live, child);
+    } catch (error) {
       deps.registry.close(id, { state: "failed", error: `wake failed: ${(error as Error).message}` });
       await releaseLive(id);
-    });
+    }
   };
 
   const callerOutbox = (callerId: string): Outbox | undefined => {
@@ -274,7 +250,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     live.outbox ??= createOutbox({
-      isBusy: () => live.inFlight,
+      isBusy: () => live.turn !== "idle",
       deliver: (text) => {
         void resume(callerId, (child) => child.wake(text));
       },
@@ -301,19 +277,15 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     });
   };
 
-  const releaseLive = async (id: string) => {
-    const live = lives.get(id);
-
-    if (!live) {
-      return;
-    }
-
+  const disposeLive = async (id: string, live: Live) => {
     live.unsubscribe?.();
-    live.inFlight = false;
+    live.turn = "idle";
     live.outbox?.clear();
     releaseSlot(live);
 
-    const child = live.child;
+    lives.delete(id);
+
+    const child = await live.spawning;
 
     live.child = undefined;
 
@@ -323,7 +295,31 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
   };
 
-  const finishHandoff = (record: AgentRecord) => {
+  const teardown = async (id: string) => {
+    const live = lives.get(id);
+
+    if (live) {
+      await disposeLive(id, live);
+    }
+
+    const record = deps.registry.get(id);
+
+    if (record?.worktree && releasing.has(id)) {
+      await release(record, record.worktree);
+      releasing.delete(id);
+      checkBatch(record);
+    }
+  };
+
+  const releaseLive = (id: string) => {
+    const running = teardowns.get(id) ?? teardown(id).finally(() => teardowns.delete(id));
+
+    teardowns.set(id, running);
+
+    return running;
+  };
+
+  const finishHandoff = (record: AgentRecord, live: Live) => {
     const text = readText(record.handoffPath);
 
     if (text === undefined) {
@@ -333,7 +329,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       });
     }
 
-    const validation = deps.handoff()?.validate(text) ?? { ok: true as const, status: "unknown" };
+    const validation = deps.handoff.validate(text);
 
     if (!validation.ok) {
       return deps.registry.close(record.id, {
@@ -346,24 +342,22 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const slot = launches.get(record.id);
     const batch = batches.get(record.batchId);
 
-    if (validation.status === "partial" && slot && batch && canContinue(record, batch)) {
-      return continueChain(record, text, slot, batch);
+    if (validation.status === "partial" && slot && batch && canContinue(record)) {
+      return continueChain(record, text, { ...slot, undelivered: live.outbox?.clear() }, batch);
     }
 
     return deps.registry.close(record.id, { state: "handoff", resultText: text });
   };
 
-  const canContinue = (record: AgentRecord, batch: Batch) =>
+  const canContinue = (record: AgentRecord) =>
     record.chainIndex < deps.settings.maxChainLength &&
     record.state !== "grace" &&
     !userStopped.has(record.id) &&
-    !shuttingDown &&
-    !batch.woken;
+    !shuttingDown;
 
   const continueChain = (record: AgentRecord, text: string, slot: LaunchSlot, batch: Batch) => {
     const successor = deps.registry.create({
       agent: record.agent,
-      task: record.task,
       description: record.description,
       callerId: record.callerId,
       depth: record.depth,
@@ -373,6 +367,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       model: record.model,
       chainIndex: record.chainIndex + 1,
       predecessorId: record.id,
+      worktree: record.worktree,
     });
 
     launches.set(successor.id, slot);
@@ -385,7 +380,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       successorId: successor.id,
     });
 
-    void launch(successor, slot.item, slot.plan);
+    void launch(successor, slot);
 
     return closed;
   };
@@ -396,14 +391,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (record.handoffRequested) {
-      finishHandoff(record);
+      finishHandoff(record, live);
       return;
     }
 
     const text = (live.child?.lastText() || live.lastText).trim();
-    const failedStop = live.lastStopReason !== undefined && FAILED_STOP_REASONS.has(live.lastStopReason);
-
-    if (aborted || failedStop) {
+    if (aborted || failedStop(live.lastStopReason)) {
       deps.registry.close(record.id, {
         state: "failed",
         error:
@@ -424,11 +417,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const clearGrace = (live: Live | undefined) => {
-    if (live?.graceTimer) {
-      clearTimeout(live.graceTimer);
-    }
-
     if (live) {
+      clearTimeout(live.graceTimer);
       live.graceTimer = undefined;
     }
   };
@@ -460,12 +450,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const graceMs = deps.settings.stopGraceSeconds * 1_000;
 
-    deps.registry.update(id, { graceEndsAt: now() + graceMs });
+    deps.registry.update(id, { graceEndsAt: Date.now() + graceMs });
     live.graceTimer = setTimeout(() => void expireGrace(id), graceMs);
   };
 
   const settleGrace = (record: AgentRecord, live: Live) => {
     live.answering = false;
+    releaseSlot(live);
 
     const handoffWritten = record.handoffRequested && existsSync(record.handoffPath);
 
@@ -499,9 +490,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       }
 
       const continuing =
-        live.lastToolCalls > 0 &&
-        live.lastStopReason !== undefined &&
-        !FAILED_STOP_REASONS.has(live.lastStopReason);
+        live.lastToolCalls > 0 && live.lastStopReason !== undefined && !failedStop(live.lastStopReason);
 
       deps.bus.emit("agent:turn", { id, context: event.context, turns, continuing });
 
@@ -526,7 +515,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (event.type === "settled") {
-      live.inFlight = false;
+      if (live.turn === "running") {
+        live.turn = "idle";
+      }
 
       if (live.child) {
         deps.bus.emit("agent:usage", { id, usage: live.child.ownUsage() });
@@ -553,127 +544,98 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
   };
 
-  const place = async (record: AgentRecord, definition: AgentDefinition): Promise<Placement> => {
-    const sessionCwd = deps.session()?.cwd ?? process.cwd();
-
-    if (!definition.worktree) {
-      return { cwd: sessionCwd };
-    }
-
-    const inherited = record.predecessorId ? deps.registry.get(record.predecessorId)?.worktree : undefined;
-
-    if (inherited) {
-      deps.registry.update(record.id, { worktree: inherited });
-      return { cwd: inherited.cwd };
-    }
-
-    const created = await worktrees.create(
-      sessionCwd,
-      record.dir,
-      worktreeBranch(record.id, now().toString(36)),
-    );
-
-    if (!created.ok) {
-      return { error: `worktree failed: ${created.error}` };
-    }
-
-    deps.registry.update(record.id, { worktree: created.worktree });
-
-    return { cwd: created.worktree.cwd, created: created.worktree };
-  };
-
-  const discardWorktree = async (record: AgentRecord, worktree: Worktree) => {
-    const sessionCwd = deps.session()?.cwd ?? process.cwd();
-    const removed = await worktrees.remove(sessionCwd, worktree);
-
-    if (removed) {
-      deps.registry.update(record.id, { worktree: undefined });
-    }
-  };
-
-  const launch = async (record: AgentRecord, item: BatchItem, plan: ModelPlan) => {
+  const launch = async (record: AgentRecord, slot: LaunchSlot) => {
     const live = liveOf(record.id);
-    const release = await semaphore.acquire();
 
-    live.release = release;
+    live.release = await semaphore.acquire();
 
     const current = deps.registry.get(record.id);
 
     if (!current || isClosed(current.state) || shuttingDown) {
-      release();
+      releaseSlot(live);
+      await releaseLive(record.id);
       return;
     }
 
+    const session = deps.session();
     const definition = deps.definitions.get(record.agent);
 
     if (!definition) {
       deps.registry.close(record.id, { state: "failed", error: `unknown agent "${record.agent}"` });
-      release();
+      await releaseLive(record.id);
       return;
     }
 
-    const placement = await place(record, definition);
+    const placement = await place(record, definition, session.cwd);
 
     if ("error" in placement) {
       deps.registry.close(record.id, { state: "failed", error: placement.error });
-      release();
+      await releaseLive(record.id);
       return;
     }
 
     const placed = deps.registry.get(record.id);
 
     if (!placed || isClosed(placed.state) || shuttingDown) {
-      release();
-
-      if (placement.created) {
-        await discardWorktree(record, placement.created);
-      }
-
+      await releaseLive(record.id);
       return;
     }
 
-    try {
-      const child = await deps.runtime.spawn({
+    live.spawning = deps.runtime
+      .spawn({
         id: record.id,
         cwd: placement.cwd,
         sessionDir: record.dir,
-        parentSessionFile: deps.session()?.file,
-        model: plan.model,
-        thinking: plan.thinking,
+        parentSessionFile: session.file,
+        model: slot.plan.model,
+        thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
-        customTools: deps.toolsFor?.(record) ?? [],
-        prompts: deps.promptsFor?.(record),
+        customTools: deps.toolsFor(record),
+        prompts: deps.promptsFor(record),
         skills: allowlist(definition.skills),
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
+      })
+      .catch((error: unknown) => {
+        deps.registry.close(record.id, {
+          state: "failed",
+          error: `spawn failed: ${(error as Error).message}`,
+        });
+        return undefined;
       });
 
-      live.child = child;
-      live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, event));
+    const child = await live.spawning;
 
-      const afterSpawn = deps.registry.get(record.id);
+    if (!child || lives.get(record.id) !== live) {
+      await releaseLive(record.id);
+      return;
+    }
 
-      if (!afterSpawn || isClosed(afterSpawn.state)) {
-        await releaseLive(record.id);
-        return;
-      }
+    live.child = child;
+    live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, event));
 
-      deps.registry.update(record.id, {
-        state: "running",
-        startedAt: now(),
-        sessionFile: child.sessionFile,
-      });
+    const afterSpawn = deps.registry.get(record.id);
 
-      const predecessor = record.predecessorId ? deps.registry.get(record.predecessorId) : undefined;
+    if (!afterSpawn || isClosed(afterSpawn.state)) {
+      await releaseLive(record.id);
+      return;
+    }
 
-      live.inFlight = true;
-      child.start(composeTask(record, item, predecessor));
+    deps.registry.update(record.id, {
+      state: "running",
+      startedAt: Date.now(),
+      sessionFile: child.sessionFile,
+    });
 
-      const held = live.pending.splice(0);
+    const predecessor = record.predecessorId ? deps.registry.get(record.predecessorId) : undefined;
 
-      await Promise.all(held.map((message) => child.send(message, "steer")));
+    live.turn = "running";
+
+    try {
+      child.start(composeTask(record, slot.item, predecessor, slot.undelivered));
+      await sendHeld(live, child);
     } catch (error) {
-      deps.registry.close(record.id, { state: "failed", error: `spawn failed: ${(error as Error).message}` });
+      deps.registry.close(record.id, { state: "failed", error: `start failed: ${(error as Error).message}` });
       await releaseLive(record.id);
     }
   };
@@ -692,8 +654,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return { error: resolutionError(item.agent, resolution) };
     }
 
-    const thinking =
-      resolution.thinking ?? override?.thinking ?? definition.thinking ?? deps.runtime.defaultThinking();
+    const thinking = override?.thinking ?? definition.thinking ?? deps.runtime.defaultThinking();
 
     return { model: resolution.model.ref, thinking, label: `${resolution.model.ref}:${thinking}` };
   };
@@ -717,10 +678,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const startBatch: Runner["startBatch"] = (items, options) => {
-    if (items.length === 0) {
-      throw new Error("run_agent needs at least one agent");
-    }
-
     const unknown = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
 
     if (unknown.length > 0) {
@@ -743,7 +700,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       );
     }
 
-    const depth = options.callerDepth + 1;
+    const depth = (deps.registry.get(options.callerId)?.depth ?? 1) + 1;
 
     if (depth > deps.settings.maxDepth) {
       throw new Error(`maximum agent depth ${deps.settings.maxDepth} reached`);
@@ -756,8 +713,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       throw new Error(`${modelErrors.map((plan) => plan.error).join("\n\n")}\n\nNothing was started.`);
     }
 
-    const plans = planned as ModelPlan[];
-
+    const slots = (planned as ModelPlan[]).map((plan, index): LaunchSlot => ({ item: items[index], plan }));
     const batchId = newBatchId();
     const dir = agentsDirFor(deps.session());
 
@@ -767,22 +723,21 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       resolve = done;
     });
 
-    const records = items.map((item, index) => {
-      const definition = deps.definitions.get(item.agent) as AgentDefinition;
+    const records = slots.map((slot) => {
+      const { item, plan } = slot;
 
       const record = deps.registry.create({
         agent: item.agent,
-        task: item.task,
         description: item.description ?? item.task,
         callerId: options.callerId,
         depth,
         batchId,
         dir,
-        contextLimit: definition.limit,
-        model: plans[index].label,
+        contextLimit: (deps.definitions.get(item.agent) as AgentDefinition).limit,
+        model: plan.label,
       });
 
-      launches.set(record.id, { item, plan: plans[index] });
+      launches.set(record.id, slot);
 
       return record;
     });
@@ -792,12 +747,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       ids: records.map((record) => record.id),
       callerId: options.callerId,
       wait: options.wait,
-      woken: false,
       resolve,
     });
 
     records.forEach((record, index) => {
-      void launch(record, items[index], plans[index]);
+      void launch(record, slots[index]);
     });
 
     if (!options.wait || options.callerId === MAIN_CALLER) {
@@ -811,8 +765,17 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     const resumed = settled.then(async (done) => {
-      if (caller) {
-        caller.release = await semaphore.acquire();
+      if (!caller || shuttingDown) {
+        return done;
+      }
+
+      const release = await semaphore.acquire();
+      const record = deps.registry.get(options.callerId);
+
+      if (!record || isClosed(record.state) || shuttingDown) {
+        release();
+      } else {
+        caller.release = release;
       }
 
       return done;
@@ -822,12 +785,17 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const stopNow = async (record: AgentRecord) => {
-    const child = lives.get(record.id)?.child;
+    const live = lives.get(record.id);
+    const child = live?.child;
+    const waitingForSlot = live !== undefined && !child && !live.release;
 
     closeStopped(record, "stopped by the user");
 
     if (child) {
       await abortChild(child);
+    }
+
+    if (child || waitingForSlot) {
       await releaseLive(record.id);
     }
 
@@ -893,26 +861,23 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const live = liveOf(id);
 
-    if (record.state === "queued" || !live.child) {
+    if (record.state === "queued" || !live.child || live.turn === "waiting") {
       live.pending.push(message);
       return { ok: true, delivery: "held" };
     }
 
-    if (record.state !== "grace" && !live.inFlight) {
-      void resume(id, (child) => child.send(message, "followUp"));
-      return { ok: true, delivery: "followUp" };
+    if (record.state === "grace") {
+      clearGrace(live);
+      live.answering = true;
+      deps.registry.update(id, { graceEndsAt: undefined });
     }
 
-    if (record.state !== "grace") {
+    if (live.turn === "running") {
       await live.child.send(message, "steer");
       return { ok: true, delivery: "steer" };
     }
 
-    clearGrace(live);
-    live.answering = true;
-    deps.registry.update(id, { graceEndsAt: undefined });
-
-    await live.child.send(message, "followUp");
+    void resume(id, (child) => child.send(message, "followUp"));
 
     return { ok: true, delivery: "followUp" };
   };
@@ -933,7 +898,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const shutdown = async (reason: string) => {
     shuttingDown = true;
 
-    deps.bus.emit("session:closing", { reason });
+    deps.bus.emit("session:closing", undefined);
 
     const open = deps.registry.list().filter((record) => !isClosed(record.state));
 
@@ -957,6 +922,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         await releaseLive(record.id);
       }),
     );
+
+    await Promise.all(Array.from(releasing, releaseLive));
   };
 
   return {
@@ -967,6 +934,5 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     route,
     abort,
     shutdown,
-    live: (id) => lives.get(id)?.child,
   };
 };

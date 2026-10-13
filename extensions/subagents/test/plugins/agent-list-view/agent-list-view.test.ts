@@ -1,13 +1,14 @@
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import type { KeyPress, OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
-import { createScrollPane, initRenderTheme } from "../../../../../core/adapter/pi-ui.ts";
+import { createScrollPane } from "../../../../../core/adapter/pi-ui.ts";
+import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { createFakeInputPane, flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { NewAgent } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentListViewPlugin } from "../../../src/plugins/agent-list-view/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin, COMMAND } from "../../../src/plugins/agent-view/index.ts";
+import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
@@ -36,7 +37,6 @@ const fakeApi = (rows: number) => {
       state.closed = true;
     },
     requestRender: () => {},
-    toolsExpanded: false,
     toolsKey: "ctrl+o",
     wheelScrolling: true,
     createTranscript: () => ({ sync: () => {}, setToolsExpanded: () => {}, render: () => [] }),
@@ -49,7 +49,6 @@ const fakeApi = (rows: number) => {
 
 const newAgent = (root: string, patch: Partial<NewAgent> = {}): NewAgent => ({
   agent: "explorer",
-  task: "t",
   description: "look around",
   callerId: "main",
   depth: 2,
@@ -71,7 +70,7 @@ const setup = () => {
   const registry = harness.services.require("registry");
 
   const openList = async (rows = 40) => {
-    await harness.host.runCommand(COMMAND, "");
+    await harness.host.runCommand("agents", "");
     await flush();
 
     const factory = harness.host.overlays.at(-1);

@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  contextLevel,
-  type HandoffInput,
-  handoffStep,
-  MAX_INSTRUCTIONS,
-  percentOf,
-  retryInstruction,
-  segmentFor,
-  shouldRequest,
-} from "../src/thresholds.ts";
+import { contextLevel, handoffStep, retryInstruction, segmentFor, shouldRequest } from "../src/thresholds.ts";
 
 const ratios = { softRatio: 0.6, hardRatio: 0.75 };
 
 const at = (tokens: number | null, window = 100_000) => ({ tokens, window });
+
+type HandoffInput = Parameters<typeof handoffStep>[0];
 
 const input = (patch: Partial<HandoffInput>): HandoffInput => ({
   phase: "requested",
@@ -34,7 +27,6 @@ describe("contextLevel", () => {
   it("is unknown without tokens or window", () => {
     expect(contextLevel(at(null), ratios)).toBe("unknown");
     expect(contextLevel(at(80_000, 0), ratios)).toBe("unknown");
-    expect(percentOf(at(null))).toBeNull();
   });
 
   it("skips the soft stage when the soft ratio is above the hard ratio", () => {
@@ -70,7 +62,7 @@ describe("handoffStep", () => {
     expect(handoffStep(input({ settled: false }))).toBe("none");
     expect(handoffStep(input({}))).toBe("resend");
     expect(handoffStep(input({ file: { kind: "invalid", errors: ["x"] } }))).toBe("resend");
-    expect(handoffStep(input({ instructions: MAX_INSTRUCTIONS }))).toBe("give-up");
+    expect(handoffStep(input({ instructions: 2 }))).toBe("give-up");
   });
 });
 
@@ -83,14 +75,15 @@ describe("segmentFor", () => {
     });
   });
 
-  it("is red in every pending phase and names the command when stuck", () => {
+  it("is red in the pending phases, amber while waiting, and names the command when stuck", () => {
     expect(segmentFor(at(78_000), "requested", ratios, "session-handoff")).toEqual({
       token: "error",
       text: "ctx 78% · writing handoff",
     });
-    expect(segmentFor(at(78_000), "waiting", ratios, "session-handoff")?.text).toBe(
-      "ctx 78% · handoff waits for running work",
-    );
+    expect(segmentFor(at(78_000), "waiting", ratios, "session-handoff")).toEqual({
+      token: "warning",
+      text: "ctx 78% · handoff waits for running work",
+    });
     expect(segmentFor(at(null), "switching", ratios, "session-handoff")?.text).toBe(
       "ctx · switching session",
     );

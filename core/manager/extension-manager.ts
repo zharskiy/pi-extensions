@@ -2,33 +2,20 @@ import type { AgentRuntime, Host } from "../adapter/contract.ts";
 import { type Bus, createBus, type EventMap } from "./bus.ts";
 import type { Disable, Plugin, Services } from "./plugin.ts";
 
-export type Contribution = {
-  plugin: string;
-  kind: "tool" | "command" | "prompt-section" | "main-prompt";
-  name: string;
-};
-
-export type ManagerReport = {
-  enabled: ReadonlyArray<string>;
-  skipped: ReadonlyArray<{ id: string; reason: string }>;
-  contributions: ReadonlyArray<Contribution>;
-};
-
-export type ExtensionManager<E extends EventMap, S> = {
+type ExtensionManager<E extends EventMap, S> = {
   bus: Bus<E>;
   services: Services<S>;
-  report(): ManagerReport;
   disableAll(): Promise<void>;
 };
 
-export type ManagerOptions<E extends EventMap, S, C> = {
+type ManagerOptions<E extends EventMap, S, C> = {
   host: Host;
   runtime: AgentRuntime;
   settings: C;
   plugins: Plugin<E, S, C>[];
   root: string;
-  disabled?: Iterable<string>;
-  onError?: (error: unknown) => void;
+  disabled: Iterable<string>;
+  onError: (error: unknown) => void;
 };
 
 const createServices = <S>(): Services<S> => {
@@ -49,30 +36,9 @@ const createServices = <S>(): Services<S> => {
   };
 };
 
-const recordingHost = (host: Host, plugin: string, contributions: Contribution[]): Host => ({
-  ...host,
-  ui: host.ui,
-  registerTool: (spec) => {
-    contributions.push({ plugin, kind: "tool", name: spec.name });
-    host.registerTool(spec);
-  },
-  registerCommand: (name, spec) => {
-    contributions.push({ plugin, kind: "command", name });
-    host.registerCommand(name, spec);
-  },
-  setPromptSection: (name, text) => {
-    contributions.push({ plugin, kind: "prompt-section", name });
-    host.setPromptSection(name, text);
-  },
-  setMainPrompt: (text) => {
-    contributions.push({ plugin, kind: "main-prompt", name: "main-session" });
-    host.setMainPrompt(text);
-  },
-});
-
 type Node = { id: string; requires?: string[] };
 
-export const orderPlugins = <P extends Node>(plugins: P[]): P[] => {
+const orderPlugins = <P extends Node>(plugins: P[]): P[] => {
   const byId = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const ordered: P[] = [];
   const visiting = new Set<string>();
@@ -105,32 +71,27 @@ export const orderPlugins = <P extends Node>(plugins: P[]): P[] => {
 export const createExtensionManager = <E extends EventMap, S, C>(
   options: ManagerOptions<E, S, C>,
 ): ExtensionManager<E, S> => {
-  const onError = options.onError ?? (() => {});
-  const bus = createBus<E>(onError);
+  const bus = createBus<E>(options.onError);
   const services = createServices<S>();
-  const contributions: Contribution[] = [];
   const enabled: string[] = [];
-  const skipped: { id: string; reason: string }[] = [];
+  const skipped: string[] = [];
   const disables: Disable[] = [];
-  const disabledIds = new Set(options.disabled ?? []);
+  const disabledIds = new Set(options.disabled);
 
   orderPlugins(options.plugins).forEach((plugin) => {
     if (disabledIds.has(plugin.id)) {
-      skipped.push({ id: plugin.id, reason: "disabled in settings" });
       return;
     }
 
     const missing = (plugin.requires ?? []).filter((id) => !enabled.includes(id));
 
     if (missing.length > 0) {
-      skipped.push({ id: plugin.id, reason: `requires ${missing.join(", ")}` });
+      skipped.push(`${plugin.id} (needs ${missing.join(", ")})`);
       return;
     }
 
-    const host = recordingHost(options.host, plugin.id, contributions);
-
     const disable = plugin.enable({
-      host,
+      host: options.host,
       runtime: options.runtime,
       bus,
       settings: options.settings,
@@ -145,6 +106,15 @@ export const createExtensionManager = <E extends EventMap, S, C>(
     }
   });
 
+  if (skipped.length > 0) {
+    options.host.onSessionStart(() => {
+      options.host.ui.notify(
+        `plugins skipped because a plugin they need is off: ${skipped.join(", ")}`,
+        "warning",
+      );
+    });
+  }
+
   const disableAll = async () => {
     const pending = disables.splice(0).reverse();
 
@@ -154,7 +124,7 @@ export const createExtensionManager = <E extends EventMap, S, C>(
           try {
             await disable();
           } catch (error) {
-            onError(error);
+            options.onError(error);
           }
         }),
       Promise.resolve(),
@@ -164,11 +134,6 @@ export const createExtensionManager = <E extends EventMap, S, C>(
   return {
     bus,
     services,
-    report: () => ({
-      enabled: Array.from(enabled),
-      skipped: Array.from(skipped),
-      contributions: Array.from(contributions),
-    }),
     disableAll,
   };
 };

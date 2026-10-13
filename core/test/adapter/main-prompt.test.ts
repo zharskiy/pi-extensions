@@ -2,7 +2,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getPackageDir, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { RESTORED_SECTIONS, replaceMainPrompt, restoredSections } from "../../adapter/main-prompt.ts";
+import { replaceMainPrompt } from "../../adapter/main-prompt.ts";
+
+const RESTORED_SECTIONS = ["tools", "rules", "docs"] as const;
 
 type BuildSections = (options: NormalizedBuildSystemPromptOptions) => Record<string, string>;
 
@@ -12,8 +14,6 @@ const loadPiSections = async (): Promise<BuildSections> => {
 
   return module.buildSystemPromptSections;
 };
-
-const unwrap = (name: string, text: string) => text.replace(`<${name}>\n`, "").replace(`\n</${name}>`, "");
 
 const optionsWith = (
   patch: Partial<NormalizedBuildSystemPromptOptions>,
@@ -41,10 +41,13 @@ describe("main session prompt replacement", () => {
     const buildSystemPromptSections = await loadPiSections();
     const options = optionsWith(patch);
     const expected = buildSystemPromptSections(options);
-    const restored = restoredSections(options);
+
+    replaceMainPrompt(options, "# Main session");
+
+    const replaced = buildSystemPromptSections(options);
 
     RESTORED_SECTIONS.forEach((name) => {
-      expect(restored[name]).toBe(unwrap(name, expected[name] ?? ""));
+      expect(replaced[name]).toBe(expected[name]);
     });
   });
 

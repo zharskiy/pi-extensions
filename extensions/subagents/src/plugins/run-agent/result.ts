@@ -3,30 +3,22 @@ import { join } from "node:path";
 import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 
-export const RESULT_FILE = "result.md";
-
-export const PREVIEW_CHARS = 300;
-
-export type StoredResult = { resultText: string; resultPath: string };
+type StoredResult = { resultText: string; resultPath?: string; error?: string };
 
 export const storeResult = (record: AgentRecord, text: string): StoredResult => {
-  const resultPath = join(record.dir, RESULT_FILE);
+  const resultPath = join(record.dir, "result.md");
 
-  mkdirSync(record.dir, { recursive: true });
-  writeFileSync(resultPath, text.endsWith("\n") ? text : `${text}\n`);
+  try {
+    mkdirSync(record.dir, { recursive: true });
+    writeFileSync(resultPath, text.endsWith("\n") ? text : `${text}\n`);
 
-  return { resultText: text, resultPath };
-};
-
-export const shouldInline = (record: AgentRecord, inlineLimit: number) => {
-  if (record.state === "handoff") {
-    return false;
+    return { resultText: text, resultPath };
+  } catch (error) {
+    return { resultText: text, error: `result file not written: ${(error as Error).message}` };
   }
-
-  return (record.resultText ?? "").length <= inlineLimit;
 };
 
-export const chainTotals = (links: AgentRecord[]): AgentRecord => {
+const chainTotals = (links: AgentRecord[]): AgentRecord => {
   const first = links[0];
   const last = links[links.length - 1];
 
@@ -39,18 +31,15 @@ export const chainTotals = (links: AgentRecord[]): AgentRecord => {
   };
 };
 
-export const chainLine = (links: AgentRecord[]) =>
+const chainLine = (links: AgentRecord[]) =>
   `Chain: ${links.map((link) => link.id).join(" → ")} (${links.length} sessions)`;
 
-export const resultEntry = (
-  record: AgentRecord,
-  inlineLimit: number,
-  now: number,
-  links: AgentRecord[] = [record],
-) => {
-  const header = `## ${record.id} (${record.agent}) - ${record.state}`;
+const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, links: AgentRecord[]) => {
   const chained = links.length > 1;
-  const lines = [header, `Task: ${truncate(singleLine(record.description), 200)}`];
+  const lines = [
+    `## ${record.id} (${record.agent}) - ${record.state}`,
+    `Task: ${truncate(singleLine(record.description), 200)}`,
+  ];
 
   if (chained) {
     lines.push(chainLine(links));
@@ -74,21 +63,23 @@ export const resultEntry = (
     return lines.join("\n");
   }
 
-  if (shouldInline(record, inlineLimit)) {
-    lines.push("", record.resultText ?? "");
+  const text = record.resultText ?? "";
+
+  if (!record.resultPath || text.length <= inlineLimit) {
+    lines.push("", text);
 
     return lines.join("\n");
   }
 
-  const size = (record.resultText ?? "").length;
-  const preview = truncate(singleLine(record.resultText ?? ""), PREVIEW_CHARS);
-
-  lines.push(`Result file: ${record.resultPath} (${size} chars)`, `Preview: ${preview}`);
+  lines.push(
+    `Result file: ${record.resultPath} (${text.length} chars)`,
+    `Preview: ${truncate(singleLine(text), 300)}`,
+  );
 
   return lines.join("\n");
 };
 
-export const countByState = (records: AgentRecord[]) => {
+const countByState = (records: AgentRecord[]) => {
   const counts = records.reduce<Record<string, number>>((tally, record) => {
     tally[record.state] = (tally[record.state] ?? 0) + 1;
     return tally;

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
+import { calculateContextTokens } from "@earendil-works/pi-coding-agent";
 import type { PromptRecord, PromptSection, PromptTool, SessionRecord, TranscriptItem } from "./contract.ts";
 import { contentParts, messageText } from "./messages.ts";
-import { contextTokensOf, type RawUsage } from "./pi-tokens.ts";
 
 export const promptRecordEntry = (namespace: string) => `${namespace}:prompt-record`;
 
@@ -18,7 +18,7 @@ type RawMessage = {
   isError?: boolean;
   customType?: string;
   stopReason?: string;
-  usage?: RawUsage;
+  usage?: Parameters<typeof calculateContextTokens>[0];
 };
 
 type RawEntry = {
@@ -32,7 +32,7 @@ type RawEntry = {
   message?: RawMessage;
 };
 
-export type PromptRecordData = {
+type PromptRecordData = {
   skills?: { name: string; description: string }[];
   guidelines?: string[];
   providerPayload?: unknown;
@@ -134,13 +134,13 @@ const measuredContext = (message: RawMessage | undefined) => {
     return undefined;
   }
 
-  const tokens = contextTokensOf(usage);
+  const tokens = calculateContextTokens(usage);
 
   return tokens > 0 ? tokens : undefined;
 };
 
-export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord => {
-  const entries = lines
+const parseEntries = (lines: readonly string[]): RawEntry[] =>
+  lines
     .filter((line) => line.trim().length > 0)
     .map((line) => {
       try {
@@ -150,6 +150,13 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
       }
     })
     .filter((entry): entry is RawEntry => entry !== undefined);
+
+const readLines = (file: string) => readFileSync(file, "utf8").split("\n");
+
+export const readSessionEntries = (file: string): unknown[] => parseEntries(readLines(file));
+
+export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord => {
+  const entries = parseEntries(lines);
 
   const replay: Replay = { sections: new Map(), tools: new Map() };
 
@@ -187,4 +194,4 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 };
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
-  parseSessionLines(readFileSync(file, "utf8").split("\n"), recordEntry);
+  parseSessionLines(readLines(file), recordEntry);

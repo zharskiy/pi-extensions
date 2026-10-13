@@ -6,14 +6,12 @@ type Handler = (event: unknown, ctx: unknown) => unknown;
 
 const fakeCtx = (mode: string, idle = true) => ({
   mode,
-  hasUI: mode === "tui",
   cwd: "/project",
   model: { contextWindow: 200_000 },
   modelRegistry: { isUsingOAuth: () => false },
   sessionManager: {
     getSessionId: () => "s1",
     getSessionFile: () => "/sessions/s1.jsonl",
-    getSessionDir: () => "/sessions",
   },
   isProjectTrusted: () => true,
   isIdle: () => idle,
@@ -64,7 +62,7 @@ const fakePi = () => {
 describe("pi adapter", () => {
   it("forwards session start, turn end and idle with the run mode", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
     const seen: string[] = [];
 
     host.onSessionStart((info) => seen.push(`start ${info.file} ${info.mode}`));
@@ -76,23 +74,61 @@ describe("pi adapter", () => {
     await fire("agent_settled", fakeCtx("tui"));
 
     expect(seen).toEqual(["start /sessions/s1.jsonl print", "turn 1000/100000 1%", "idle"]);
-    expect(host.session()?.mode).toBe("tui");
+    expect(host.session().mode).toBe("tui");
   });
 
-  it("reports context usage only with a live session", async () => {
+  it("passes the parent session file to start handlers only for a session created from another one", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
+    const seen: (string | undefined)[] = [];
+    const withHeader = (parentSession?: string) => {
+      const ctx = fakeCtx("tui");
 
-    expect(host.contextUsage()).toBeUndefined();
+      return { ...ctx, sessionManager: { ...ctx.sessionManager, getHeader: () => ({ parentSession }) } };
+    };
 
-    await fire("session_start", fakeCtx("tui"));
+    host.onSessionStart((_info, parent) => seen.push(parent));
 
-    expect(host.contextUsage()).toEqual({ tokens: 1_000, window: 100_000, percent: 1 });
+    await fire("session_start", withHeader("/sessions/forked.jsonl"), { reason: "fork" });
+    await fire("session_start", withHeader("/sessions/handoff.jsonl"), { reason: "new" });
+    await fire("session_start", withHeader(), { reason: "new", previousSessionFile: "/sessions/old.jsonl" });
+    await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "resume" });
+    await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "startup" });
+    await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "reload" });
+
+    expect(seen).toEqual([
+      "/sessions/forked.jsonl",
+      "/sessions/handoff.jsonl",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("throws when asked for the session before session_start", () => {
+    const { pi } = fakePi();
+    const host = createPiHost(pi, {});
+
+    expect(() => host.session()).toThrow("no live pi session");
+  });
+
+  it("takes the subscription flag only from pi's OAuth check", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, {});
+
+    await fire("session_start", { ...fakeCtx("tui"), modelRegistry: { isUsingOAuth: () => true } });
+
+    expect(host.session().subscription).toBe(true);
+
+    await fire("session_start", { ...fakeCtx("tui"), model: undefined });
+
+    expect(host.session().subscription).toBe(false);
   });
 
   it("sends follow-ups while busy and dispatches commands as prompts", async () => {
     const { pi, fire, sent } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
 
     host.dispatchCommand("ignored");
 
@@ -110,7 +146,7 @@ describe("pi adapter", () => {
 
   it("seeds the new session with a displayed message that triggers no turn", async () => {
     const { pi, commands } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
     const seeded: unknown[] = [];
     const calls: unknown[] = [];
     const received: string[] = [];
@@ -151,7 +187,7 @@ describe("pi adapter", () => {
 
   it("subscribes to pi's event bus and publishes only with a live session", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
     const received: unknown[] = [];
 
     host.subscribe("channel", (data) => received.push(data));
@@ -166,7 +202,7 @@ describe("pi adapter", () => {
 
   it("styles text with pi's theme and falls back to plain text without a session", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
 
     expect(host.ui.style("warning", "ctx")).toBe("ctx");
 
@@ -177,11 +213,11 @@ describe("pi adapter", () => {
 
   it("is not idle without a live session and runs shutdown handlers before the session goes stale", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
     const seen: unknown[] = [];
 
     host.onSessionShutdown((reason) => {
-      seen.push(reason, host.session()?.id);
+      seen.push(reason, host.session().id);
     });
 
     expect(host.isIdle()).toBe(false);
@@ -194,12 +230,12 @@ describe("pi adapter", () => {
 
     expect(seen).toEqual(["new", "s1"]);
     expect(host.isIdle()).toBe(false);
-    expect(host.session()).toBeUndefined();
+    expect(() => host.session()).toThrow("no live pi session");
   });
 
   it("runs shutdown handlers one after another in registration order", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, { stale: false });
+    const host = createPiHost(pi, {});
     const seen: string[] = [];
 
     host.onSessionShutdown(async () => {
@@ -216,6 +252,26 @@ describe("pi adapter", () => {
     await fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
 
     expect(seen).toEqual(["first start", "first end", "second"]);
+  });
+
+  it("runs every shutdown handler and goes stale even when one throws, then rethrows the error", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, {});
+    const seen: string[] = [];
+
+    host.onSessionShutdown(async () => {
+      throw new Error("boom");
+    });
+
+    host.onSessionShutdown(() => {
+      seen.push("second");
+    });
+
+    await fire("session_start", fakeCtx("tui"));
+
+    await expect(fire("session_shutdown", fakeCtx("tui"), { reason: "quit" })).rejects.toThrow("boom");
+    expect(seen).toEqual(["second"]);
+    expect(() => host.session()).toThrow("no live pi session");
   });
 });
 

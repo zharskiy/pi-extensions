@@ -5,8 +5,6 @@ import {
   type NormalizedBuildSystemPromptOptions,
 } from "@earendil-works/pi-coding-agent";
 
-export const RESTORED_SECTIONS = ["tools", "rules", "docs"] as const;
-
 const toolsSection = (declaredTools: string[], toolSnippets: Record<string, string>) => {
   const visible = declaredTools.filter((name) => Boolean(toolSnippets[name]));
   const list =
@@ -63,19 +61,14 @@ const docsSection =
 - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
 - Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
 
-export const restoredSections = (options: NormalizedBuildSystemPromptOptions): Record<string, string> => {
+export const replaceMainPrompt = (options: NormalizedBuildSystemPromptOptions, prompt: string) => {
   const declaredTools = options.selectedTools.filter((name) => !options.hiddenTools.includes(name));
 
-  return {
+  options.customPrompt = prompt;
+  options.sections = {
     tools: toolsSection(declaredTools, options.toolSnippets),
     rules: rulesSection(declaredTools, options.toolGuidelines, options.promptGuidelines),
     docs: docsSection(),
+    ...options.sections,
   };
-};
-
-export const replaceMainPrompt = (options: NormalizedBuildSystemPromptOptions, prompt: string) => {
-  const restored = restoredSections(options);
-
-  options.customPrompt = prompt;
-  options.sections = { ...restored, ...options.sections };
 };

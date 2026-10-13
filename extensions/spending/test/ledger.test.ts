@@ -1,58 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { usageOf } from "../../../core/test/helpers/fakes.ts";
-import { createLedger, isAhead, parseUsageReport, USAGE_ENTRY } from "../src/ledger.ts";
+import { createLedger, USAGE_ENTRY } from "../src/ledger.ts";
 
 const createStore = () => {
   const entries: { customType: string; data: unknown }[] = [];
 
-  return {
-    entries,
-    append: (customType: string, data: unknown) => {
-      entries.push({ customType, data: structuredClone(data) });
-    },
-    read: <T>(customType: string) =>
-      entries.filter((entry) => entry.customType === customType).map((entry) => entry.data as T),
+  const append = (customType: string, data: unknown) => {
+    entries.push({ customType, data: structuredClone(data) });
   };
+
+  return { entries, append, data: () => entries.map((entry) => entry.data) };
 };
 
 const costs = (ledger: ReturnType<typeof createLedger>) =>
   ledger.totals().map(({ source, usage }) => [source, Number(usage.cost.total.toFixed(6))]);
 
-describe("parseUsageReport", () => {
-  it("accepts a source, an id and complete usage totals", () => {
-    const report = { source: "agents", id: "a1", usage: usageOf(0.1) };
-
-    expect(parseUsageReport(report)).toEqual(report);
-  });
-
-  it("ignores malformed payloads", () => {
-    const { cost: _cost, ...withoutCost } = usageOf(0.1);
-
-    expect(parseUsageReport(undefined)).toBeUndefined();
-    expect(parseUsageReport("agents")).toBeUndefined();
-    expect(parseUsageReport({ source: "", id: "a1", usage: usageOf(0.1) })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: 7, usage: usageOf(0.1) })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: "a1", usage: withoutCost })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: "a1", usage: usageOf(-1) })).toBeUndefined();
-    expect(
-      parseUsageReport({ source: "agents", id: "a1", usage: { ...usageOf(0.1), totalTokens: Number.NaN } }),
-    ).toBeUndefined();
-  });
-});
-
-describe("isAhead", () => {
-  it("is ahead when cost or tokens grew", () => {
-    expect(isAhead(usageOf(0.1), undefined)).toBe(true);
-    expect(isAhead(usageOf(0.2), usageOf(0.1))).toBe(true);
-    expect(isAhead(usageOf(0.1, 200), usageOf(0.1, 100))).toBe(true);
-    expect(isAhead(usageOf(0.1), usageOf(0.1))).toBe(false);
-    expect(isAhead(usageOf(0.05), usageOf(0.1))).toBe(false);
-  });
-});
-
 describe("ledger", () => {
   it("keeps the highest figure per id and sums ids per source", () => {
-    const ledger = createLedger(createStore());
+    const ledger = createLedger(createStore().append);
 
     expect(ledger.record({ source: "agents", id: "a1", usage: usageOf(0.1) })).toBe(true);
     expect(ledger.record({ source: "agents", id: "a1", usage: usageOf(0.05) })).toBe(false);
@@ -68,7 +33,7 @@ describe("ledger", () => {
 
   it("persists only figures that changed since the last persist", () => {
     const store = createStore();
-    const ledger = createLedger(store);
+    const ledger = createLedger(store.append);
 
     ledger.record({ source: "agents", id: "a1", usage: usageOf(0.1) });
     ledger.record({ source: "agents", id: "a2", usage: usageOf(0.2) });
@@ -85,7 +50,7 @@ describe("ledger", () => {
 
   it("restores the highest persisted figure per id without persisting it again", () => {
     const store = createStore();
-    const first = createLedger(store);
+    const first = createLedger(store.append);
 
     first.record({ source: "agents", id: "a1", usage: usageOf(0.1) });
     first.persist();
@@ -93,21 +58,25 @@ describe("ledger", () => {
     first.persist();
     store.append(USAGE_ENTRY, { source: "agents", id: "broken" });
 
-    const second = createLedger(store);
+    const second = createLedger(store.append);
 
-    second.restore();
+    second.restore(store.data());
 
     expect(costs(second)).toEqual([["agents", 0.3]]);
     expect(second.persist()).toBe(0);
   });
 
-  it("forgets everything on clear", () => {
-    const ledger = createLedger(createStore());
+  it("persists absorbed figures it has not persisted yet", () => {
+    const store = createStore();
+    const ledger = createLedger(store.append);
 
-    ledger.record({ source: "agents", id: "a1", usage: usageOf(0.1) });
-    ledger.clear();
+    ledger.restore([{ source: "agents", id: "a1", usage: usageOf(0.1) }]);
+    ledger.absorb([
+      { source: "agents", id: "a1", usage: usageOf(0.1) },
+      { source: "agents", id: "a2", usage: usageOf(0.2) },
+    ]);
 
-    expect(ledger.totals()).toEqual([]);
-    expect(ledger.persist()).toBe(0);
+    expect(ledger.persist()).toBe(1);
+    expect(store.data()).toEqual([{ source: "agents", id: "a2", usage: usageOf(0.2) }]);
   });
 });

@@ -14,7 +14,6 @@ import type { AgentRecord } from "../../src/model/types.ts";
 const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
   id: "explorer-1a2b",
   agent: "explorer",
-  task: "find the auth handler",
   description: "find the auth handler",
   callerId: "main",
   depth: 2,
@@ -74,8 +73,8 @@ describe("agent row formatting", () => {
   });
 
   it("shows the model the agent runs on after its id", () => {
-    expect(agentRow(record({ model: "openai/gpt-6-luna:low" }), 45_000, 0, plainTheme, 120)).toBe(
-      "⠋ explorer-1a2b (openai/gpt-6-luna:low) · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx",
+    expect(agentRow(record({ model: "acme/model-a:low" }), 45_000, 0, plainTheme, 120)).toBe(
+      "⠋ explorer-1a2b (acme/model-a:low) · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx",
     );
   });
 

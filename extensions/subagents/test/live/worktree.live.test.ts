@@ -31,7 +31,7 @@ describeLive("live worktree agent", () => {
     await live?.close();
   });
 
-  it("writes the file in its own worktree on a pi-agents branch, not in the main checkout", async () => {
+  it("writes the file in its own worktree under .pi/worktrees and keeps the uncommitted worktree when done", async () => {
     const id = await live.run(
       "implementer-worktree",
       "Use the write tool once to create the file hello.txt in your current working directory with the word hi as its content, then reply with the single word DONE.",
@@ -44,6 +44,8 @@ describeLive("live worktree agent", () => {
 
     expect(record?.state).toBe("done");
     expect(worktree?.branch).toMatch(/^pi-agents\//);
+    expect(worktree?.path.startsWith(join(live.project, ".pi", "worktrees"))).toBe(true);
+    expect(worktree?.cleanup).toBe("kept");
     expect(existsSync(join(worktree?.cwd ?? "", "hello.txt"))).toBe(true);
     expect(git(worktree?.path ?? "", ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(worktree?.branch);
     expect(git(live.project, ["branch", "--list", worktree?.branch ?? ""])).toContain(worktree?.branch);

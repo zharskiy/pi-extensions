@@ -1,9 +1,9 @@
 import type { PromptRecord, ThemeLike, TranscriptItem } from "../../../../core/adapter/contract.ts";
 import { formatTokens } from "./agent-row.ts";
 
-export type LimitTone = "success" | "warning" | "error";
+type LimitTone = "success" | "warning" | "error";
 
-export type BreakdownRow = {
+type BreakdownRow = {
   label: string;
   tokens: number;
   estimated: boolean;
@@ -11,7 +11,7 @@ export type BreakdownRow = {
   depth: number;
 };
 
-export type ContextBreakdown = {
+type ContextBreakdown = {
   rows: BreakdownRow[];
   limit: number;
   window: number;
@@ -30,9 +30,9 @@ export type BreakdownInput = {
   estimate(text: string): number;
 };
 
-export const SKILLS_SECTION = "skills";
+const SKILLS_SECTION = "skills";
 
-export const ESTIMATE_MARK = "~";
+const ESTIMATE_MARK = "~";
 
 const BAR_CELLS = 20;
 
@@ -148,7 +148,7 @@ export const limitLineText = (breakdown: ContextBreakdown) => {
   return `${limit} (${share}% of the model window ${formatTokens(breakdown.window)})`;
 };
 
-export const breakdownTitle = (breakdown: ContextBreakdown, hideHint: string) => {
+const breakdownTitle = (breakdown: ContextBreakdown, hideHint: string) => {
   const source = breakdown.measured ? "used is measured" : "nothing measured yet";
 
   return `Context · ${ESTIMATE_MARK} marks estimates (characters / 4), ${source} · ${hideHint}`;

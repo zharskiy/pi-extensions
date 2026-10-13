@@ -1,21 +1,11 @@
-export type CostBreakdown = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  total: number;
-};
-
 export type UsageTotals = {
   input: number;
   output: number;
   cacheRead: number;
   cacheWrite: number;
   totalTokens: number;
-  cost: CostBreakdown;
+  cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 };
-
-export type JsonSchema = Record<string, unknown>;
 
 export type ThemeToken = "accent" | "muted" | "dim" | "success" | "warning" | "error" | "text";
 
@@ -30,53 +20,43 @@ export type ToolResult<D = unknown> = {
   isError?: boolean;
 };
 
-export type ToolCallContext = {
-  signal?: AbortSignal;
-  update(text: string): void;
-};
-
-export type ToolRenderState = {
-  expanded: boolean;
-  isPartial: boolean;
-  invalidate(): void;
-};
-
 export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   name: string;
   label: string;
   description: string;
   promptSnippet?: string;
-  promptGuidelines?: string[];
-  parameters: JsonSchema;
-  execute(params: P, ctx: ToolCallContext): Promise<ToolResult<D>>;
+  parameters: Record<string, unknown>;
+  execute(params: P, ctx: { signal?: AbortSignal; update(text: string): void }): Promise<ToolResult<D>>;
   renderCall?(params: P, theme: ThemeLike): string;
-  renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): string;
+  renderResult?(
+    result: ToolResult<D>,
+    state: { expanded: boolean; invalidate(): void },
+    theme: ThemeLike,
+  ): string;
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;
 
-export type CompletionItem = { value: string; label: string };
-
-export type KeyName =
-  | "up"
-  | "down"
-  | "pageUp"
-  | "pageDown"
-  | "home"
-  | "end"
-  | "enter"
-  | "escape"
-  | "space"
-  | "tab"
-  | "toggleTools"
-  | "other";
-
-export type KeyPress = { name: KeyName; char?: string; raw?: string };
-
-export type InputOutcome = "submitted" | "cancelled" | "changed";
+export type KeyPress = {
+  name:
+    | "up"
+    | "down"
+    | "pageUp"
+    | "pageDown"
+    | "home"
+    | "end"
+    | "enter"
+    | "escape"
+    | "space"
+    | "tab"
+    | "toggleTools"
+    | "other";
+  char?: string;
+  raw?: string;
+};
 
 export type InputPane = {
-  feed(key: KeyPress): InputOutcome;
+  feed(key: KeyPress): "submitted" | "cancelled" | "changed";
   value(): string;
   setValue(value: string): void;
   setFocused(focused: boolean): void;
@@ -108,15 +88,13 @@ export type TranscriptPane = {
   render(width: number): string[];
 };
 
-export type ScrollState = { top: number; height: number; total: number; following: boolean };
-
 export type ScrollPane = {
   window(lines: string[], height: number): string[];
   scrollBy(lines: number): void;
   scrollTo(top: number): void;
   scrollToStart(): void;
   scrollToEnd(): void;
-  state(): ScrollState;
+  state(): { top: number; height: number; total: number; following: boolean };
 };
 
 export type OverlayApi = {
@@ -124,7 +102,6 @@ export type OverlayApi = {
   rows(): number;
   close(): void;
   requestRender(): void;
-  toolsExpanded: boolean;
   toolsKey: string;
   wheelScrolling: boolean;
   createTranscript(): TranscriptPane;
@@ -155,11 +132,9 @@ export type RunMode = "tui" | "rpc" | "print" | "json";
 export type SessionInfo = {
   id: string;
   file?: string;
-  dir: string;
   cwd: string;
   agentDir: string;
   projectTrusted: boolean;
-  hasUI: boolean;
   subscription: boolean;
   mode: RunMode;
 };
@@ -174,7 +149,7 @@ export type SessionControl = {
 
 export type CommandSpec = {
   description: string;
-  complete?(prefix: string): CompletionItem[] | null;
+  complete?(prefix: string): { value: string; label: string }[] | null;
   run(args: string, control: SessionControl): Promise<void> | void;
 };
 
@@ -182,28 +157,26 @@ export type Host = {
   readonly ui: HostUi;
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
   registerCommand(name: string, spec: CommandSpec): void;
-  setPromptSection(name: string, text: string): void;
   setMainPrompt(text: string): void;
-  onSessionStart(handler: (info: SessionInfo) => void): void;
+  onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: () => void): void;
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
+  onCompact(handler: () => void): void;
   isIdle(): boolean;
-  contextUsage(): ContextSnapshot | undefined;
   sendUserMessage(text: string): void;
   dispatchCommand(name: string, args?: string): void;
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;
   appendEntry(customType: string, data: unknown): void;
-  readEntries<T>(customType: string): T[];
-  sessionUsage(): UsageTotals;
-  session(): SessionInfo | undefined;
+  readEntries<T>(customType: string, file?: string): T[];
+  sessionUsage(file?: string): UsageTotals;
+  session(): SessionInfo;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";
 
 export type ChildEvent =
-  | { type: "turn_start" }
   | { type: "turn_end"; context: ContextSnapshot }
   | {
       type: "assistant_message";
@@ -213,8 +186,6 @@ export type ChildEvent =
       errorMessage?: string;
     }
   | { type: "tool_start"; toolName: string }
-  | { type: "tool_end"; toolName: string; isError: boolean }
-  | { type: "compaction_blocked" }
   | { type: "settled"; aborted: boolean };
 
 export type MessageDelivery = "steer" | "followUp";
@@ -224,14 +195,11 @@ export type RoutedMessage = { sender: string; text: string };
 export type ChildSession = {
   readonly id: string;
   readonly sessionFile: string | undefined;
-  readonly modelLabel: string;
-  readonly contextWindow: number;
   start(task: string): void;
   subscribe(listener: (event: ChildEvent) => void): () => void;
   send(message: RoutedMessage, delivery: MessageDelivery): Promise<void>;
   abort(): Promise<void>;
   dispose(): Promise<void>;
-  context(): ContextSnapshot;
   ownUsage(): UsageTotals;
   lastText(): string;
   wake(text: string): Promise<void>;
@@ -249,13 +217,13 @@ export type SpawnSpec = {
   cwd: string;
   sessionDir: string;
   parentSessionFile?: string;
-  model?: string;
-  thinking?: string;
+  model: string;
+  thinking: string;
   tools?: string[];
   skills?: string[];
   promptAppend: string[];
   reserveTokens: number;
-  customTools?: AnyToolSpec[];
+  customTools: AnyToolSpec[];
   prompts?: ChildPrompts;
 };
 
@@ -278,11 +246,9 @@ export type SessionRecord = {
   contextTokens?: number;
 };
 
-export const THINKING_LEVELS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const THINKING_LEVELS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-export type ModelRequest = { name: string; thinking?: string; error?: string };
-
-export const splitModelRequest = (request: string): ModelRequest => {
+export const splitModelRequest = (request: string): { name: string; thinking?: string; error?: string } => {
   const trimmed = request.trim();
   const colon = trimmed.lastIndexOf(":");
 
@@ -314,7 +280,7 @@ export type ModelChoice = {
 };
 
 export type ModelResolution =
-  | { kind: "resolved"; request: string; model: ModelChoice; thinking?: string }
+  | { kind: "resolved"; request: string; model: ModelChoice }
   | { kind: "ambiguous"; request: string; candidates: ModelChoice[] }
   | {
       kind: "unknown";

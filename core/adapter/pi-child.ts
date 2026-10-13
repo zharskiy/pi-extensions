@@ -1,6 +1,5 @@
 import { isAbsolute, resolve, sep } from "node:path";
 import {
-  type AgentSession,
   createAgentSession,
   createCodemodeExtension,
   createMcpExtension,
@@ -10,6 +9,7 @@ import {
   type ExtensionContext,
   type ExtensionFactory,
   type ExtensionUIContext,
+  estimateTokens,
   getAgentDir,
   type InlineExtension,
   ModelRuntime,
@@ -20,13 +20,10 @@ import {
 import { settleWithin } from "../manager/settle.ts";
 import type {
   AgentRuntime,
-  AnyToolSpec,
   ChildEvent,
   ChildPrompts,
   ChildSession,
-  ContextSnapshot,
   MessageDelivery,
-  ModelResolution,
   SpawnSpec,
   StopReason,
   UsageTotals,
@@ -34,11 +31,10 @@ import type {
 import { messageText, toolCallCount } from "./messages.ts";
 import { resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
-import { estimateTextTokens } from "./pi-tokens.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { formatRoutedMessage } from "./route.ts";
 import { promptRecordEntry, readSessionFile } from "./session-file.ts";
-import { sumOwnUsage } from "./usage.ts";
+import { contextOf, sumUsage } from "./usage.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
@@ -46,27 +42,13 @@ type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
 export type SkillFile = { name: string; path: string };
 
-export type ParentTool = { name: string; path: string };
-
 export type ParentSource = {
-  ctx(): ExtensionContext | undefined;
+  ctx(): ExtensionContext;
   settings(): Settings;
   thinking(): string;
-  skillFiles?(): SkillFile[];
-  activeTools?(): ParentTool[];
-  mcpDisabled?(): boolean;
-};
-
-export type ChildOptions = {
-  namespace: string;
-  exclude: readonly string[];
-};
-
-const snapshotContext = (session: AgentSession): ContextSnapshot => {
-  const usage = session.getContextUsage();
-  const window = usage?.contextWindow ?? session.model?.contextWindow ?? 0;
-
-  return { tokens: usage?.tokens ?? null, window, percent: usage?.percent ?? null };
+  skillFiles(): SkillFile[];
+  activeTools(): { name: string; path: string }[];
+  mcpDisabled(): boolean;
 };
 
 export const childSettings = (snapshot: Settings, reserveTokens: number): Settings => ({
@@ -76,22 +58,13 @@ export const childSettings = (snapshot: Settings, reserveTokens: number): Settin
 });
 
 export const createChildExtension =
-  (
-    agentId: string,
-    emit: (event: ChildEvent) => void,
-    modelLabel: string,
-    recordEntry: string,
-  ): ExtensionFactory =>
+  (agentId: string, modelLabel: string, recordEntry: string): ExtensionFactory =>
   (pi) => {
     let recorded = false;
     let skills: { name: string; description: string }[] = [];
     let guidelines: string[] = [];
 
-    pi.on("session_before_compact", () => {
-      emit({ type: "compaction_blocked" });
-
-      return { cancel: true };
-    });
+    pi.on("session_before_compact", () => ({ cancel: true }));
 
     pi.on("before_agent_start", (event) => {
       skills = event.systemPromptOptions.skills.map((skill) => ({
@@ -173,17 +146,11 @@ const wantsMcp = (tools: readonly string[] | undefined) => tools === undefined |
 export const childToolNames = (
   tools: string[] | undefined,
   customNames: string[],
-  mainTools: () => string[] | undefined,
-): string[] | undefined => {
-  const base = tools ?? mainTools();
-
-  if (!base) {
-    return undefined;
-  }
-
+  mainTools: () => string[],
+) => {
   const mcp = wantsMcp(tools) ? MCP_TOOLS : [];
 
-  return Array.from(new Set([...base, ...mcp, ...customNames]));
+  return Array.from(new Set([...(tools ?? mainTools()), ...mcp, ...customNames]));
 };
 
 const mcpExtensions = (tools: readonly string[] | undefined, mcpDisabled: boolean): InlineExtension[] => {
@@ -204,28 +171,21 @@ const mcpExtensions = (tools: readonly string[] | undefined, mcpDisabled: boolea
 const isExcluded = (exclude: readonly string[], path: string) =>
   isAbsolute(path) && exclude.some((dir) => resolve(path).startsWith(`${resolve(dir)}${sep}`));
 
-export const pickSkillFiles = (available: SkillFile[], wanted?: readonly string[]) =>
+const pickSkillFiles = (available: SkillFile[], wanted: readonly string[] | undefined) =>
   available.filter((skill) => !wanted || wanted.includes(skill.name)).map((skill) => skill.path);
 
-export const createPiRuntime = (parent: ParentSource, options: ChildOptions): AgentRuntime => {
+export const createPiRuntime = (
+  parent: ParentSource,
+  options: { namespace: string; exclude: readonly string[] },
+): AgentRuntime => {
   const recordEntry = promptRecordEntry(options.namespace);
   const defaultProvider = () => (parent.settings() as { defaultProvider?: string }).defaultProvider;
 
   const mainTools = () =>
     parent
-      .activeTools?.()
+      .activeTools()
       .filter((tool) => !isMcpTool(tool.name) && !isExcluded(options.exclude, tool.path))
       .map((tool) => tool.name);
-
-  const mainSkillFiles = (wanted?: readonly string[]) => {
-    const available = parent.skillFiles?.();
-
-    if (!available && !wanted) {
-      return undefined;
-    }
-
-    return pickSkillFiles(available ?? [], wanted);
-  };
 
   let modelRuntime: Promise<ModelRuntime> | undefined;
 
@@ -237,11 +197,6 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
 
   const spawn = async (spec: SpawnSpec): Promise<ChildSession> => {
     const ctx = parent.ctx();
-
-    if (!ctx) {
-      throw new Error("no active pi session to spawn from");
-    }
-
     const { resolution, model } = resolveFromCatalog(ctx, spec.model, defaultProvider());
 
     if (resolution.kind !== "resolved" || !model) {
@@ -250,11 +205,12 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
 
     const modelLabel = `${model.provider}/${model.id}`;
     const listeners = new Set<(event: ChildEvent) => void>();
-    let settled = false;
+    let running = false;
+    let disposed = false;
 
     const emit = (event: ChildEvent) => {
       if (event.type === "settled") {
-        settled = true;
+        running = false;
       }
 
       listeners.forEach((listener) => {
@@ -262,22 +218,19 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       });
     };
 
-    const snapshot = parent.settings();
-    const projectTrusted = ctx.isProjectTrusted();
-
-    const settingsManager = SettingsManager.inMemory(childSettings(snapshot, spec.reserveTokens), {
-      projectTrusted,
+    const settingsManager = SettingsManager.inMemory(childSettings(parent.settings(), spec.reserveTokens), {
+      projectTrusted: ctx.isProjectTrusted(),
     });
 
     const agentDir = getAgentDir();
     const wantedSkills = spec.skills ? new Set(spec.skills) : undefined;
-    const skillFiles = mainSkillFiles(spec.skills);
 
     const loader = new DefaultResourceLoader({
       cwd: spec.cwd,
       agentDir,
       settingsManager,
-      ...(skillFiles ? { noSkills: true, additionalSkillPaths: skillFiles } : {}),
+      noSkills: true,
+      additionalSkillPaths: pickSkillFiles(parent.skillFiles(), spec.skills),
       appendSystemPromptOverride: (base) => [...base, ...spec.promptAppend],
       skillsOverride: wantedSkills
         ? (current) => ({
@@ -295,9 +248,9 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
         {
           name: `${options.namespace}-child`,
           hidden: true,
-          factory: createChildExtension(spec.id, emit, modelLabel, recordEntry),
+          factory: createChildExtension(spec.id, modelLabel, recordEntry),
         },
-        ...mcpExtensions(spec.tools, parent.mcpDisabled?.() ?? false),
+        ...mcpExtensions(spec.tools, parent.mcpDisabled()),
       ],
     });
 
@@ -309,40 +262,49 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       parentSession: spec.parentSessionFile,
     });
 
-    const thinking = (spec.thinking ?? parent.thinking()) as never;
-    const customTools: AnyToolSpec[] = spec.customTools ?? [];
-
     const { session } = await childScope.run(scope, async () =>
       createAgentSession({
         cwd: spec.cwd,
         agentDir,
         modelRuntime: await sharedModelRuntime(),
         model,
-        thinkingLevel: thinking,
+        thinkingLevel: spec.thinking as never,
         resourceLoader: loader,
         settingsManager,
         sessionManager,
         tools: childToolNames(
           spec.tools,
-          customTools.map((tool) => tool.name),
+          spec.customTools.map((tool) => tool.name),
           mainTools,
         ),
-        customTools: customTools.map((tool) => toPiTool(tool)),
+        customTools: spec.customTools.map((tool) => toPiTool(tool)),
       }),
     );
 
-    await childScope.run(scope, () =>
-      session.bindExtensions({ mode: "print", uiContext: childUiContext(ctx.ui.theme, spec.prompts) }),
-    );
+    const dispose = async () => {
+      disposed = true;
+
+      await settleWithin(
+        session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }),
+        SHUTDOWN_TIMEOUT_MS,
+      );
+
+      session.dispose();
+      listeners.clear();
+    };
+
+    try {
+      await childScope.run(scope, () =>
+        session.bindExtensions({ mode: "print", uiContext: childUiContext(ctx.ui.theme, spec.prompts) }),
+      );
+    } catch (error) {
+      await dispose();
+      throw error;
+    }
 
     session.subscribe((event) => {
-      if (event.type === "turn_start") {
-        emit({ type: "turn_start" });
-        return;
-      }
-
       if (event.type === "turn_end") {
-        emit({ type: "turn_end", context: snapshotContext(session) });
+        emit({ type: "turn_end", context: contextOf(session) });
         return;
       }
 
@@ -365,18 +327,20 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
         return;
       }
 
-      if (event.type === "tool_execution_end" && !event.parentToolCallId) {
-        emit({ type: "tool_end", toolName: event.toolName, isError: event.isError });
-        return;
-      }
-
       if (event.type === "agent_settled") {
+        if (!event.aborted && !disposed && session.pendingMessageCount > 0) {
+          const { steering, followUp } = session.clearQueue();
+
+          prompt([...steering, ...followUp].join("\n\n"));
+          return;
+        }
+
         emit({ type: "settled", aborted: event.aborted });
       }
     });
 
     const failStart = (error: unknown) => {
-      if (settled) {
+      if (!running) {
         return;
       }
 
@@ -390,9 +354,18 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       emit({ type: "settled", aborted: false });
     };
 
+    const prompt = (text: string) => {
+      running = true;
+      session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
+    };
+
     const deliver = async (text: string, delivery: MessageDelivery) => {
-      if (!session.isStreaming) {
-        session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
+      if (disposed) {
+        return;
+      }
+
+      if (!running && !session.isStreaming) {
+        prompt(text);
         return;
       }
 
@@ -404,27 +377,12 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       await session.followUp(text, undefined, { source: "extension" });
     };
 
-    const dispose = async () => {
-      const runner = session.extensionRunner;
-
-      if (runner?.hasHandlers("session_shutdown")) {
-        await settleWithin(runner.emit({ type: "session_shutdown", reason: "quit" }), SHUTDOWN_TIMEOUT_MS);
-      }
-
-      session.dispose();
-      listeners.clear();
-    };
-
     return {
       id: spec.id,
       get sessionFile() {
         return session.sessionFile;
       },
-      modelLabel,
-      contextWindow: model.contextWindow,
-      start: (task) => {
-        session.prompt(task, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
-      },
+      start: prompt,
       subscribe: (listener) => {
         listeners.add(listener);
 
@@ -436,27 +394,16 @@ export const createPiRuntime = (parent: ParentSource, options: ChildOptions): Ag
       wake: (text) => deliver(text, "followUp"),
       abort: () => session.abort(),
       dispose,
-      context: () => snapshotContext(session),
-      ownUsage: (): UsageTotals => sumOwnUsage(session.sessionManager.getEntries()),
+      ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),
       lastText: () => session.getLastAssistantText() ?? "",
     };
-  };
-
-  const resolveModel = (request: string | undefined): ModelResolution => {
-    const ctx = parent.ctx();
-
-    if (!ctx) {
-      return { kind: "invalid", request: request ?? "inherit", error: "no active pi session" };
-    }
-
-    return resolveFromCatalog(ctx, request, defaultProvider()).resolution;
   };
 
   return {
     spawn,
     readSession: (file) => readSessionFile(file, recordEntry),
-    resolveModel,
+    resolveModel: (request) => resolveFromCatalog(parent.ctx(), request, defaultProvider()).resolution,
     defaultThinking: () => parent.thinking(),
-    estimateTokens: estimateTextTokens,
+    estimateTokens: (text) => estimateTokens({ role: "user", content: text, timestamp: 0 }),
   };
 };

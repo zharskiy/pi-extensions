@@ -1,6 +1,6 @@
 {
   "name": "pi-extensions-mz",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session, main session limits that hand the conversation over to a new session before its context fills up, and a spending footer with the session's total cost including subagents.",
   "type": "module",
   "license": "MIT",
@@ -14,8 +14,15 @@
   "files": [
     "core/adapter",
     "core/manager",
-    "extensions",
-    "README.md"
+    "extensions/*/src/**",
+    "extensions/*/prompts/**",
+    "extensions/subagents/agents",
+    "extensions/*/README.md",
+    "README.md",
+    "LICENSE",
+    "ARCHITECTURE.md",
+    "STRUCTURE.md",
+    "AGENTS.md"
   ],
   "pi": {
     "extensions": [
@@ -33,16 +40,12 @@
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@earendil-works/pi-agent-core": "1.1.0",
-    "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
     "@earendil-works/pi-tui": "1.1.0",
     "@types/node": "^24.0.0",
@@ -51,6 +54,6 @@
     "vitest": "5.0.3"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19.0"
   }
 }

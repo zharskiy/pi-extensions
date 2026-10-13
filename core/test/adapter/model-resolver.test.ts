@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { splitModelRequest } from "../../adapter/contract.ts";
-import {
-  type CatalogModel,
-  compareVersions,
-  editDistance,
-  resolveModel,
-} from "../../adapter/model-resolver.ts";
+import { type CatalogModel, resolveModel } from "../../adapter/model-resolver.ts";
 import { catalogModel } from "../helpers/fakes.ts";
 
 const catalog: CatalogModel[] = [
@@ -25,9 +20,7 @@ const catalog: CatalogModel[] = [
 const resolvedRef = (request: string, models = catalog, preferences = {}) => {
   const resolution = resolveModel(request, models, preferences);
 
-  return resolution.kind === "resolved"
-    ? `${resolution.model.ref}${resolution.thinking ? `:${resolution.thinking}` : ""}`
-    : resolution.kind;
+  return resolution.kind === "resolved" ? resolution.model.ref : resolution.kind;
 };
 
 describe("model request parsing", () => {
@@ -36,14 +29,6 @@ describe("model request parsing", () => {
     expect(splitModelRequest("x/claude-v1:0")).toEqual({ name: "x/claude-v1:0" });
     expect(splitModelRequest(":high")).toEqual({ name: "", thinking: "high" });
     expect(splitModelRequest("haiku:hgih").error).toContain('invalid thinking level "hgih"');
-  });
-
-  it("measures transpositions as one edit and compares versions numerically", () => {
-    expect(editDistance("hiaku", "haiku")).toBe(1);
-    expect(editDistance("sonnet", "sonet")).toBe(1);
-    expect(compareVersions([10], [6, 1])).toBeGreaterThan(0);
-    expect(compareVersions([6, 1], [6])).toBeGreaterThan(0);
-    expect(compareVersions([4, 5], [4, 5])).toBe(0);
   });
 });
 
@@ -69,16 +54,6 @@ describe("model resolution", () => {
 
   it("prefers the undated alias over a dated snapshot of the same version", () => {
     expect(resolvedRef("haiku-4-5")).toBe("anthropic/claude-haiku-4-5");
-  });
-
-  it("carries a thinking suffix and rejects an invalid one", () => {
-    expect(resolvedRef("gpt-sol-6.1:high")).toBe("openai/gpt-6.1-sol:high");
-    expect(resolvedRef("anthropic/claude-haiku-5-5:low")).toBe("anthropic/claude-haiku-5-5:low");
-
-    const invalid = resolveModel("haiku:extreme", catalog);
-
-    expect(invalid).toMatchObject({ kind: "invalid" });
-    expect(invalid.kind === "invalid" && invalid.error).toContain('invalid thinking level "extreme"');
   });
 
   it("returns ranked candidates instead of guessing across model families", () => {

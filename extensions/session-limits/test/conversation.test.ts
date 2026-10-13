@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunMode } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
-import { conversationOnly, isConversation } from "../src/conversation.ts";
+import { conversationOnly } from "../src/conversation.ts";
 
 const setup = (mode: RunMode) => {
   const fake = createFakeHost({ mode });
@@ -26,10 +26,6 @@ describe("conversationOnly", () => {
     await tui.fake.runCommand("session-handoff");
 
     expect(tui.seen).toEqual(["start tui", "turn 1000", "idle", "command"]);
-    expect(tui.host.isIdle()).toBe(true);
-    expect(tui.host.session()?.mode).toBe("tui");
-    expect(isConversation(tui.host.session())).toBe(true);
-    expect(isConversation({ ...tui.fake.info, mode: "rpc" })).toBe(true);
   });
 
   it("ignores every session event and command in print and json runs", async () => {
@@ -44,10 +40,8 @@ describe("conversationOnly", () => {
       }),
     );
 
-    runs.forEach(({ host, seen }) => {
+    runs.forEach(({ seen }) => {
       expect(seen).toEqual([]);
-      expect(host.isIdle()).toBe(false);
-      expect(host.session()).toBeUndefined();
     });
   });
 });

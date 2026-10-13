@@ -5,9 +5,8 @@ import type { StopReason, ToolSpec } from "../../../../../core/adapter/contract.
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { handoffPlugin } from "../../../src/plugins/handoff/index.ts";
 import { contextStep } from "../../../src/plugins/limits/context-step.ts";
-import { LIMITS_SENDER, limitsPlugin } from "../../../src/plugins/limits/index.ts";
+import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { VALID_HANDOFF } from "../../helpers/handoff.ts";
@@ -27,7 +26,7 @@ const WIDE_AGENT = [
 
 const setup = async (overrides = {}, agent = "explorer") => {
   const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, handoffPlugin, runAgentPlugin, limitsPlugin],
+    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
     overrides,
   );
 
@@ -36,7 +35,7 @@ const setup = async (overrides = {}, agent = "explorer") => {
 
     mkdirSync(userAgentsDir, { recursive: true });
     writeFileSync(join(userAgentsDir, "wide.md"), WIDE_AGENT);
-    harness.services.require("definitions").reload();
+    harness.host.start();
   }
 
   await harness.host
@@ -65,7 +64,6 @@ describe("context limit steps", () => {
       warned: false,
       handoffRequested: false,
       turnsSinceHandoff: 0,
-      maxTurnsAfterHandoff: 3,
     };
 
     expect(contextStep({ ...base, tokens: 79_999 })).toBe("none");
@@ -91,7 +89,7 @@ describe("limits plugin", () => {
     await turn(81_000);
 
     expect(child.messages).toHaveLength(1);
-    expect(child.messages[0].message.sender).toBe(LIMITS_SENDER);
+    expect(child.messages[0].message.sender).toBe("pi-subagents");
     expect(child.messages[0].message.text).toContain("Context limit warning");
     expect(child.messages[0].delivery).toBe("steer");
 

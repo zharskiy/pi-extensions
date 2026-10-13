@@ -1,15 +1,21 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import type { SessionRecord } from "../../../../../core/adapter/contract.ts";
+import { watchAgents } from "../../components/refresh.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
-import { agentsDirFor } from "../../model/paths.ts";
+import { agentsDirFor, handoffPathFor, MANIFEST_FILE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { type AgentRecord, chainLinks, chainTerminal, type RouteResult } from "../../model/types.ts";
+import {
+  type AgentRecord,
+  chainLinks,
+  chainTerminal,
+  isClosed,
+  type RouteResult,
+} from "../../model/types.ts";
 import { createModeStore, viewStatePath } from "./mode-store.ts";
 import { createAgentView, type ViewData } from "./view.ts";
 
-export const COMMAND = "agents";
-
-export const REFRESH_MS = 300;
+type CachedSession = { file: string; size: number; mtimeMs: number; session: SessionRecord };
 
 export const agentViewPlugin: Plugin = {
   id: "agent-view",
@@ -25,7 +31,8 @@ export const agentViewPlugin: Plugin = {
     };
 
     const fromManifest = (id: string): AgentRecord | undefined => {
-      const path = join(agentsDirFor(host.session()), id, "manifest.json");
+      const dir = join(agentsDirFor(host.session()), id);
+      const path = join(dir, MANIFEST_FILE);
 
       if (!existsSync(path)) {
         return undefined;
@@ -42,34 +49,66 @@ export const agentViewPlugin: Plugin = {
         contextLimit: definedLimit(manifest.agent),
         chainIndex: 1,
         version: 0,
-        handoffPath: join(agentsDirFor(host.session()), id, "handoff.md"),
-        dir: join(agentsDirFor(host.session()), id),
-        task: manifest.description ?? "",
+        handoffPath: handoffPathFor(host.session(), id),
+        dir,
         ...manifest,
       } as AgentRecord;
     };
 
-    const findRecord = (id: string) => registry.get(id) ?? fromManifest(id);
+    const pastTerminal = (record: AgentRecord): AgentRecord => {
+      const successor = record.successorId ? fromManifest(record.successorId) : undefined;
 
-    const followChain = (id: string) => {
-      const live = registry.get(id);
-
-      return live ? chainTerminal(registry, live) : (fromManifest(id) as AgentRecord);
+      return successor ? pastTerminal(successor) : record;
     };
 
-    const load = (id: string): ViewData => {
-      const record = followChain(id);
-      const openedId = record.id === id ? undefined : id;
+    const findTerminal = (id: string) => {
+      const live = registry.get(id);
 
-      if (!record.sessionFile || !existsSync(record.sessionFile)) {
-        return { record, openedId, error: "session file not written yet" };
+      if (live) {
+        return chainTerminal(registry, live);
       }
 
-      try {
-        return { record, openedId, session: runtime.readSession(record.sessionFile) };
-      } catch (error) {
-        return { record, openedId, error: `cannot read session: ${(error as Error).message}` };
-      }
+      const past = fromManifest(id);
+
+      return past ? pastTerminal(past) : undefined;
+    };
+
+    const createLoader = (id: string, found: AgentRecord) => {
+      let cached: CachedSession | undefined;
+
+      const readSession = (file: string) => {
+        const stat = statSync(file, { throwIfNoEntry: false });
+
+        if (!stat) {
+          return undefined;
+        }
+
+        if (cached?.file === file && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+          return cached.session;
+        }
+
+        const session = runtime.readSession(file);
+
+        cached = { file, size: stat.size, mtimeMs: stat.mtimeMs, session };
+
+        return session;
+      };
+
+      return (): ViewData => {
+        const live = registry.get(id);
+        const record = live ? chainTerminal(registry, live) : found;
+        const openedId = record.id === id ? undefined : id;
+
+        try {
+          const session = record.sessionFile ? readSession(record.sessionFile) : undefined;
+
+          return session
+            ? { record, openedId, session }
+            : { record, openedId, error: "session file not written yet" };
+        } catch (error) {
+          return { record, openedId, error: `cannot read session: ${(error as Error).message}` };
+        }
+      };
     };
 
     const inChain = (record: AgentRecord, id: string) =>
@@ -83,19 +122,45 @@ export const agentViewPlugin: Plugin = {
       return services.require("runner").route(id, { sender: "user", text });
     };
 
+    const terminalOrNotice = (id: string) => {
+      try {
+        const terminal = findTerminal(id);
+
+        if (!terminal) {
+          host.ui.notify(`pi-subagents: unknown agent "${id}"`, "warning");
+        }
+
+        return terminal;
+      } catch (error) {
+        host.ui.notify(
+          `pi-subagents: cannot read manifest of "${id}": ${(error as Error).message}`,
+          "warning",
+        );
+
+        return undefined;
+      }
+    };
+
     const open = async (id: string) => {
-      if (!findRecord(id)) {
-        host.ui.notify(`pi-subagents: unknown agent "${id}"`, "warning");
+      const terminal = terminalOrNotice(id);
+
+      if (!terminal) {
         return;
       }
 
-      const agentDir = host.session()?.agentDir;
-      const modes = agentDir ? createModeStore(viewStatePath(agentDir)) : undefined;
+      const modes = createModeStore(viewStatePath(host.session().agentDir));
+      const load = createLoader(id, terminal);
+
+      const ticking = () => {
+        const live = registry.get(id);
+
+        return live !== undefined && !isClosed(chainTerminal(registry, live).state);
+      };
 
       await host.ui.openOverlay((api) =>
         createAgentView(
           {
-            load: () => load(id),
+            load,
             modes,
             context: {
               softRatio: settings.softContextRatio,
@@ -104,28 +169,8 @@ export const agentViewPlugin: Plugin = {
             },
             stop: () => (services.has("runner") ? services.require("runner").stop(id) : undefined),
             send: (text) => send(id, text),
-            subscribe: (onChange) => {
-              let timer: ReturnType<typeof setTimeout> | undefined;
-
-              const off = bus.on("agent:changed", (record) => {
-                if (timer || !inChain(record, id)) {
-                  return;
-                }
-
-                timer = setTimeout(() => {
-                  timer = undefined;
-                  onChange();
-                }, REFRESH_MS);
-              });
-
-              return () => {
-                off();
-
-                if (timer) {
-                  clearTimeout(timer);
-                }
-              };
-            },
+            subscribe: (onChange) =>
+              watchAgents(bus, { relevant: (record) => inChain(record, id), ticking, onChange }),
           },
           api,
         ),
@@ -137,7 +182,7 @@ export const agentViewPlugin: Plugin = {
     const label = (record: AgentRecord) =>
       `${record.id} · ${record.state} · ${record.description}`.slice(0, 100);
 
-    host.registerCommand(COMMAND, {
+    host.registerCommand("agents", {
       description: "Open an agent's view: effective prompt and transcript. Usage: /agents [id]",
       complete: (prefix) =>
         registry
@@ -172,7 +217,5 @@ export const agentViewPlugin: Plugin = {
         }
       },
     });
-
-    return undefined;
   },
 };

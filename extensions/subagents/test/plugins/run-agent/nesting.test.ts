@@ -203,6 +203,88 @@ describe("nested agents", () => {
     expect(result.text).toContain("found a");
   });
 
+  it("does not keep a slot for a waiting caller that closed before its batch settled", async () => {
+    const { startGeneral, runMain, registry, runtime, services } = setup({ maxConcurrent: 1 });
+    const { record, child } = await startGeneral();
+
+    void childTool<RunAgentParams>(child, "run_agent").execute(
+      { agents: [{ agent: "explorer", task: "find a" }], wait: true },
+      { update: () => {} },
+    );
+    await flush();
+
+    await (services.require("runner") as Runner).stop(record.id, { immediate: true });
+    await flush();
+
+    expect(registry.list().map((entry) => entry.state)).toEqual(["stopped", "stopped"]);
+
+    await runMain([{ agent: "explorer", task: "later" }]);
+
+    expect(registry.list()[2].state).toBe("running");
+    expect(runtime.children).toHaveLength(3);
+  });
+
+  it("resolves a waiting caller's batch when the session shuts down", async () => {
+    const { startGeneral, host } = setup();
+    const { child } = await startGeneral();
+
+    const pending = childTool<RunAgentParams>(child, "run_agent").execute(
+      { agents: [{ agent: "explorer", task: "find a" }], wait: true },
+      { update: () => {} },
+    );
+    await flush();
+
+    await host.shutdown("quit");
+
+    expect((await pending).text).toContain("finished: 1 failed");
+  });
+
+  it("records nested agents as interrupted, not stopped by the user, at shutdown", async () => {
+    const { startGeneral, spawnFrom, registry, host } = setup();
+    const { child } = await startGeneral();
+
+    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    await host.shutdown("quit");
+
+    expect(registry.list().map((entry) => [entry.state, entry.error])).toEqual([
+      ["failed", "interrupted: session quit"],
+      ["failed", "interrupted: session quit"],
+    ]);
+  });
+
+  it("holds messages while an idle caller waits for a slot and delivers them with its turn", async () => {
+    const { startGeneral, spawnFrom, registry, runtime, host } = setup({ maxConcurrent: 1 });
+    const { record, child } = await startGeneral();
+    const message = host.tool<{ id: string; message: string }, { delivery?: string }>("message_agent");
+    const send = (text: string) => message.execute({ id: record.id, message: text }, { update: () => {} });
+
+    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    child.finish("waiting for the explorer");
+    await flush();
+
+    const explorer = registry.list()[1];
+
+    expect(registry.get(explorer.id)?.state).toBe("running");
+    expect((await send("first")).details?.delivery).toBe("followUp");
+    expect((await send("second")).details?.delivery).toBe("held");
+    expect(child.messages).toEqual([]);
+
+    runtime.child(explorer.id).finish("found a");
+    await flush();
+
+    expect(child.messages.map((entry) => [entry.message.text, entry.delivery])).toEqual([
+      ["first", "followUp"],
+      ["second", "steer"],
+    ]);
+    expect(child.wakes).toEqual([]);
+
+    child.finish("read the messages");
+    await flush();
+
+    expect(child.wakes).toHaveLength(1);
+    expect(child.wakes[0]).toContain("found a");
+  });
+
   it("lets a child message only the agents it started", async () => {
     const { startGeneral, spawnFrom, registry, runMain } = setup();
     const { child } = await startGeneral();

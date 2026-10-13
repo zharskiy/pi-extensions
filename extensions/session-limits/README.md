@@ -6,9 +6,9 @@ It knows nothing about other extensions. Extensions that run work in the backgro
 
 ## What it does
 
-- Below `softRatio` of the model's context window nothing is shown. From `softRatio` (60% by default) a footer segment in the warning colour says `ctx 62% · handoff at 75%`.
-- At the first turn end at or above `hardRatio` (75%) the extension sends one user message (a follow-up while the session is busy) asking the model to write a handoff file with its write tool to `<session file without .jsonl>/main-handoff.md` (sessions without a file use `<tmpdir>/pi-session-limits/<session id>/main-handoff.md`). The template is `prompts/handoff.md`: six sections `Status` (done, partial or blocked), `Outcome`, `Evidence`, `Blocker`, `Next`, `Files touched`. The segment turns to the error colour: `writing handoff`.
-- The file is judged when the session settles. A file that is missing, unchanged since the request, or invalid gets exactly one resend with the problems listed; a second failure gives one warning naming the path, and the segment says `handoff failed, run /session-handoff`.
+- Below `softRatio` of the model's context window nothing is shown. From `softRatio` (60% by default) a footer segment in the warning colour says `ctx 62% · handoff at 75%` (the percentage is rounded down). The segment disappears when the token usage is unknown, for example right after a compaction until the next reply.
+- At the first turn end at or above `hardRatio` (75%) the extension sends one user message (a follow-up while the session is busy) asking the model to write a handoff file with its write tool to `<OS temp dir>/pi-session-limits/<session id>-handoff.md`, so it needs no cleanup. The template is `prompts/handoff.md`: six sections `Status` (done, partial or blocked), `Outcome`, `Evidence`, `Blocker`, `Next`, `Files touched`. The segment turns to the error colour: `writing handoff`. While the switch is held for running work (below) it uses the warning colour; only writing, switching and failed use the error colour.
+- The file is judged when the session settles. A file that is missing, unchanged since the request, or invalid gets exactly one resend with the problems listed; a second failure gives one warning naming the path, and the segment says `handoff failed, run /session-handoff`. The same happens when a switch was started but its command never ran: at the next idle or turn end the segment says `handoff failed, run /session-handoff` instead of staying on `switching`.
 - With a valid file and the session idle, the extension runs `/session-handoff`, which opens a new session linked to the old one (`/resume` shows the link) and seeds it with a displayed message of type `pi-session-limits-handoff`: a short preface naming the previous session file, then the handoff. No turn is started; your next message goes to the new session.
 - If you kept talking after the file was written, the file is out of date: the extension asks for one fresh handoff instead of switching, and switches on the next settle with the newer file.
 - While any source reports running work the segment says `handoff waits for running work` and the switch is held. When the last source reports idle and the session stays idle (no turn within a second), the switch runs; if a turn follows (for example background results arriving), that counts as new activity and a fresh handoff is requested first. A source that stays busy holds the automatic switch indefinitely; `/session-handoff` (with its confirmation) is the manual escape.
@@ -17,7 +17,7 @@ It knows nothing about other extensions. Extensions that run work in the backgro
 
 ## Command
 
-`/session-handoff` switches to a new session from the current handoff file. Run it by hand after the automatic attempt gave up and the file is fixed. If a source reports running work, it asks first: "Work reported by pi-subagents is still running and will be ended by the switch. Switch anyway?"
+`/session-handoff` switches to a new session from the current handoff file. Run it by hand after the automatic attempt gave up and the file is fixed. A second `/session-handoff` while a switch is already running is ignored. If a source reports running work, it asks first: "Work reported by pi-subagents is still running and will be ended by the switch. Switch anyway?"
 
 ## Settings
 
@@ -30,7 +30,9 @@ Optional JSON in `~/.pi/agent/pi-session-limits.json`, and in `.pi/pi-session-li
 }
 ```
 
-Both are fractions of the model's context window, numbers above 0 and at most 1. An invalid value is reported once as a warning and ignored. A soft ratio above the hard ratio skips the warning stage. The files are read again at every session start.
+Both are fractions of the model's context window, numbers above 0 and at most 1. An invalid value is reported once per extension instance (so again in each new session) as a warning and ignored. A soft ratio at or above the hard ratio skips the warning stage; this includes setting only `hardRatio` below the default soft ratio. Both files are read once, at session start (`/reload` or a new session applies changes).
+
+A model context window of 0, or unknown token usage, disables the extension for that moment: no handoff is requested and the footer segment is cleared.
 
 ## Busy channel
 
@@ -49,4 +51,4 @@ pi.events.emit("session-limits:busy", { source: "my-extension", busy: false });
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/conversation.ts` limits the extension to the conversational modes (`tui`, `rpc`). `src/limits.ts` holds the flow, `src/thresholds.ts` the pure decisions, `src/handoff.ts` the path, seed and validator, `src/settings.ts` the settings files. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/conversation.ts` limits the extension to the conversational modes (`tui`, `rpc`). `src/limits.ts` holds the flow, `src/thresholds.ts` the pure decisions, `src/handoff.ts` the path and seed, `src/settings.ts` the settings files. The handoff sections and validator and the busy channel name are shared in `core/manager/handoff.ts` and `core/manager/channels.ts`. Tests are under `test/`.

@@ -13,7 +13,7 @@ const PINNED_PI_VERSION = "1.1.0";
 
 type Handler = (event: unknown) => unknown;
 
-const unknown = () => undefined;
+const noMainTools = () => [];
 
 const offlineModel = {
   id: "offline",
@@ -137,26 +137,19 @@ describe("pi adapter conformance", () => {
     });
   });
 
-  it("cancels every compaction attempt inside a child and reports it", () => {
-    const events: string[] = [];
+  it("cancels every compaction attempt inside a child", () => {
     const { api, fire } = fakeExtensionApi();
 
-    createChildExtension(
-      "a1",
-      (event) => events.push(event.type),
-      "openai/x",
-      promptRecordEntry("test-ext"),
-    )(api as never);
+    createChildExtension("a1", "acme/x", promptRecordEntry("test-ext"))(api as never);
 
     expect(fire("session_before_compact", { reason: "threshold" })).toEqual([{ cancel: true }]);
     expect(fire("session_before_compact", { reason: "overflow" })).toEqual([{ cancel: true }]);
-    expect(events).toEqual(["compaction_blocked", "compaction_blocked"]);
   });
 
   it("records the first provider request once as the prompt record", () => {
     const { api, entries, fire } = fakeExtensionApi();
 
-    createChildExtension("a1", () => {}, "openai/x", promptRecordEntry("test-ext"))(api as never);
+    createChildExtension("a1", "acme/x", promptRecordEntry("test-ext"))(api as never);
 
     fire("before_agent_start", {
       systemPromptOptions: {
@@ -173,7 +166,7 @@ describe("pi adapter conformance", () => {
         customType: "test-ext:prompt-record",
         data: {
           agentId: "a1",
-          model: "openai/x",
+          model: "acme/x",
           skills: [{ name: "s", description: "d" }],
           guidelines: ["g1", "g2"],
           providerPayload: { model: "x", n: 1 },
@@ -187,7 +180,7 @@ describe("pi adapter conformance", () => {
       vi.unstubAllEnvs();
     });
 
-    const sessionTools = async (tools: string[] | undefined) => {
+    const sessionTools = async (tools: string[]) => {
       const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
 
       vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -233,20 +226,9 @@ describe("pi adapter conformance", () => {
     ];
 
     it("keeps the named tools and every MCP tool, including tools registered after the start", async () => {
-      const { names } = await sessionTools(childToolNames(["read"], [], unknown));
+      const { names } = await sessionTools(childToolNames(["read"], [], noMainTools));
 
       expect(names).toEqual([...LATE_MCP, "read"]);
-    });
-
-    it("keeps every tool when no list is passed, the fallback without a main session source", async () => {
-      const tools = childToolNames(undefined, [], unknown);
-      const { names, active } = await sessionTools(tools);
-
-      expect(tools).toBeUndefined();
-      expect(names).toEqual(
-        expect.arrayContaining(["read", "bash", "edit", "write", "web_fetch", ...LATE_MCP]),
-      );
-      expect(active).toEqual(expect.arrayContaining(["read", "bash", "edit", "write", "web_fetch"]));
     });
 
     it("keeps the main session's tools and every MCP tool for tools: all", async () => {
@@ -256,14 +238,14 @@ describe("pi adapter conformance", () => {
     });
 
     it("keeps no tool at all for tools: []", async () => {
-      const { names, active } = await sessionTools(childToolNames([], [], unknown));
+      const { names, active } = await sessionTools(childToolNames([], [], noMainTools));
 
       expect(names).toEqual([]);
       expect(active).toEqual([]);
     });
 
     it("keeps a third-party extension's MCP tools registered but inactive for tools: [] with agent tools", async () => {
-      const tools = childToolNames([], ["web_fetch"], unknown);
+      const tools = childToolNames([], ["web_fetch"], noMainTools);
       const { names, active } = await sessionTools(tools);
 
       expect(tools).toEqual(["web_fetch"]);
@@ -341,7 +323,7 @@ describe("pi adapter conformance", () => {
       const codemode = await piModule("extensions/codemode/tool.js");
       const search = await piModule("extensions/tool-search/tool.js");
       const mcpTools = await piModule("extensions/mcp/tools.js");
-      const added = (childToolNames(["read"], [], unknown) ?? []).filter((name) => name !== "read");
+      const added = childToolNames(["read"], [], noMainTools).filter((name) => name !== "read");
       const serverTool = mcpTools.createMcpToolName("fixture", "code");
 
       expect(added.filter((name) => !name.includes("*")).toSorted()).toEqual(

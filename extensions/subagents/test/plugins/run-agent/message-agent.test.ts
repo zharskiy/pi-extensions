@@ -45,16 +45,68 @@ describe("message_agent", () => {
     ]);
   });
 
-  it("uses followUp while the agent is in the stop grace state", async () => {
-    const { registry, runtime, send } = await setup();
+  it("answers a message in the stop grace period with a follow-up turn", async () => {
+    const { registry, runtime, send, services, host } = await setup();
     const [record] = registry.list();
 
-    registry.update(record.id, { state: "grace" });
+    await services.require("runner").stop(record.id);
+
+    expect(registry.get(record.id)?.state).toBe("grace");
 
     const result = await send(record.id, "what did you find so far?");
 
+    await flush();
+
     expect(result.details?.delivery).toBe("followUp");
     expect(runtime.child(record.id).messages[0].delivery).toBe("followUp");
+
+    await host.shutdown();
+  });
+
+  it("runs a grace answer only once a slot is free and releases the slot when it settles", async () => {
+    const { registry, runtime, send, services, host } = await setup(1);
+    const [first, second] = registry.list();
+
+    host.settle();
+    await services.require("runner").stop(first.id);
+    await flush();
+
+    expect(registry.get(second.id)?.state).toBe("running");
+
+    const result = await send(first.id, "what did you find so far?");
+
+    await flush();
+
+    expect(result.details?.delivery).toBe("followUp");
+    expect(runtime.child(first.id).messages).toEqual([]);
+
+    runtime.child(second.id).finish("second result");
+    await flush();
+
+    expect(runtime.child(first.id).messages.map((entry) => entry.delivery)).toEqual(["followUp"]);
+
+    await send(first.id, "and the tests?");
+
+    expect(runtime.child(first.id).messages.map((entry) => entry.delivery)).toEqual(["followUp", "steer"]);
+
+    runtime.child(first.id).finish("the handler lives in src/auth.ts");
+    await flush();
+
+    expect(registry.get(first.id)?.state).toBe("grace");
+
+    await services.require("runner").stop(first.id);
+    await flush();
+
+    expect(host.sent).toHaveLength(1);
+
+    await host
+      .tool<RunAgentParams, unknown>("run_agent")
+      .execute({ agents: [{ agent: "explorer", task: "three" }] }, { update: () => {} });
+    await flush();
+
+    expect(registry.list()[2].state).toBe("running");
+
+    await host.shutdown();
   });
 
   it("holds messages for a queued agent and steers them right after it starts", async () => {
@@ -96,7 +148,6 @@ describe("message_agent", () => {
 
     const grandchild = registry.create({
       agent: "explorer",
-      task: "nested",
       description: "nested",
       callerId: record.id,
       depth: 3,

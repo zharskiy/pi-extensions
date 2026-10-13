@@ -1,17 +1,17 @@
+import { BUSY_CHANNEL } from "../../../../../core/manager/channels.ts";
+import { handoffPathFor } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, isClosed } from "../../model/types.ts";
 import { createRegistry } from "./registry.ts";
 
-export const BUSY_CHANNEL = "session-limits:busy";
-
-export const BUSY_SOURCE = "pi-subagents";
+const BUSY_SOURCE = "pi-subagents";
 
 const hasOpenAgents = (registry: AgentRegistry) => registry.list().some((record) => !isClosed(record.state));
 
 export const agentRegistryPlugin: Plugin = {
   id: "agent-registry",
   enable: ({ host, bus, services }) => {
-    const registry = createRegistry({ bus });
+    const registry = createRegistry({ bus, handoffPath: (id) => handoffPathFor(host.session(), id) });
     let busy = false;
 
     const publish = (next: boolean) => {

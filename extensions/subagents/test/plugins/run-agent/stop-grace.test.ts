@@ -220,10 +220,13 @@ describe("stop grace period", () => {
 
     await runner.stop(id);
     await send(id, "keep going");
-    await runner.abort(id, "turn limit of 5 exceeded");
+    await runner.abort(id, "context hard limit reached before the handoff was finished");
     await flush();
 
-    expect(registry.get(id)).toMatchObject({ state: "failed", error: "turn limit of 5 exceeded" });
+    expect(registry.get(id)).toMatchObject({
+      state: "failed",
+      error: "context hard limit reached before the handoff was finished",
+    });
     expect(runtime.child(id).disposed).toBe(true);
     expect(host.sent).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);

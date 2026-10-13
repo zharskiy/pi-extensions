@@ -1,10 +1,6 @@
-export type Release = () => void;
+type Release = () => void;
 
-export type Semaphore = {
-  acquire(): Promise<Release>;
-  active(): number;
-  waiting(): number;
-};
+type Semaphore = { acquire(): Promise<Release> };
 
 export const createSemaphore = (limit: () => number): Semaphore => {
   let active = 0;
@@ -45,5 +41,5 @@ export const createSemaphore = (limit: () => number): Semaphore => {
       pump();
     });
 
-  return { acquire, active: () => active, waiting: () => queue.length };
+  return { acquire };
 };

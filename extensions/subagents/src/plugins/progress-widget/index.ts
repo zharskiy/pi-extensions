@@ -1,20 +1,21 @@
+import { createThrottle } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
-import { createClosedRowCache, createThrottle, visibleRecords, widgetLines } from "./model.ts";
+import { createClosedRowCache, visibleRecords, widgetLines } from "./model.ts";
 
-export const WIDGET_KEY = "pi-subagents-progress";
+const WIDGET_KEY = "pi-subagents-progress";
 
-export const TICK_MS = 1_000;
+const TICK_MS = 1_000;
 
 export const progressWidgetPlugin: Plugin = {
   id: "progress-widget",
   requires: ["agent-registry"],
   enable: ({ host, bus, settings, services }) => {
     const registry = services.require("registry");
-    let shown = false;
     let ticker: ReturnType<typeof setInterval> | undefined;
     let handle: { refresh(): void } | undefined;
     let shownSignature = "";
+    let frame = 0;
     const rowCache = createClosedRowCache();
 
     const visible = () => visibleRecords(registry.list(), Date.now(), settings);
@@ -30,10 +31,7 @@ export const progressWidgetPlugin: Plugin = {
     };
 
     const stopTicker = () => {
-      if (ticker) {
-        clearInterval(ticker);
-      }
-
+      clearInterval(ticker);
       ticker = undefined;
     };
 
@@ -43,11 +41,10 @@ export const progressWidgetPlugin: Plugin = {
       rowCache.prune(rows);
 
       if (rows.length === 0) {
-        if (shown) {
+        if (handle) {
           host.ui.setWidget(WIDGET_KEY, undefined);
         }
 
-        shown = false;
         shownSignature = "";
         handle = undefined;
         stopTicker();
@@ -55,12 +52,10 @@ export const progressWidgetPlugin: Plugin = {
         return;
       }
 
-      if (!shown) {
+      if (!handle) {
         handle = host.ui.setWidget(WIDGET_KEY, (width, theme) =>
-          widgetLines(visible(), Date.now(), theme, width, rowCache),
+          widgetLines(visible(), Date.now(), frame, theme, width, rowCache),
         );
-        shown = true;
-        shownSignature = "";
       }
 
       ticker ??= setInterval(refresh, TICK_MS);
@@ -72,27 +67,17 @@ export const progressWidgetPlugin: Plugin = {
       }
 
       shownSignature = signature ?? "";
-      handle?.refresh();
+      frame += 1;
+      handle.refresh();
     };
 
     const throttled = createThrottle(refresh, () => settings.renderThrottleMs);
     const off = bus.on("agent:changed", () => throttled());
 
-    host.onSessionStart(() => {
-      shown = false;
-      throttled();
-    });
-
     return () => {
       off();
       throttled.cancel();
       stopTicker();
-
-      if (shown) {
-        host.ui.setWidget(WIDGET_KEY, undefined);
-      }
-
-      shown = false;
     };
   },
 };

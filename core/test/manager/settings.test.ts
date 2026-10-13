@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  applySettings,
   parseSettings,
   projectSettingsPath,
   readSettingsFile,
@@ -66,12 +65,5 @@ describe("settings helpers", () => {
     writeFileSync(user, "{ nope");
 
     expect(readSettingsFile(schema, user).errors[0]).toContain(user);
-  });
-
-  it("applies a patch in place", () => {
-    const settings: Example = { count: 1, ratio: 0.5, names: [] };
-
-    expect(applySettings(settings, { count: 4 })).toBe(settings);
-    expect(settings.count).toBe(4);
   });
 });

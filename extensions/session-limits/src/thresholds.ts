@@ -4,20 +4,16 @@ type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
 export const MAX_INSTRUCTIONS = 2;
 
-export type ContextLevel = "unknown" | "normal" | "soft" | "hard";
+type ContextLevel = "unknown" | "normal" | "soft" | "hard";
 
 export type Phase = "watching" | "requested" | "waiting" | "switching" | "stuck";
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
-export type HandoffStep = "none" | "wait" | "switch" | "resend" | "give-up";
-
 export type Ratios = { softRatio: number; hardRatio: number };
 
-export type Segment = { token: ThemeToken; text: string };
-
-export const percentOf = (context: ContextTokens) =>
-  context.tokens === null || context.window <= 0 ? null : Math.round((context.tokens / context.window) * 100);
+const percentOf = (context: ContextTokens) =>
+  context.tokens === null || context.window <= 0 ? null : Math.floor((context.tokens * 100) / context.window);
 
 export const contextLevel = (context: ContextTokens, ratios: Ratios): ContextLevel => {
   if (context.tokens === null || context.window <= 0) {
@@ -35,7 +31,7 @@ export const shouldRequest = (phase: Phase, level: ContextLevel) => phase === "w
 
 export const isPending = (phase: Phase) => phase === "requested" || phase === "waiting";
 
-export type HandoffInput = {
+type HandoffInput = {
   phase: Phase;
   file: HandoffFile;
   busy: boolean;
@@ -43,7 +39,7 @@ export type HandoffInput = {
   instructions: number;
 };
 
-export const handoffStep = (input: HandoffInput): HandoffStep => {
+export const handoffStep = (input: HandoffInput) => {
   if (!isPending(input.phase)) {
     return "none";
   }
@@ -59,7 +55,7 @@ export const handoffStep = (input: HandoffInput): HandoffStep => {
   return input.instructions < MAX_INSTRUCTIONS ? "resend" : "give-up";
 };
 
-export const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
+const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
   requested: "writing handoff",
   waiting: "handoff waits for running work",
   switching: "switching session",
@@ -71,13 +67,16 @@ export const segmentFor = (
   phase: Phase,
   ratios: Ratios,
   command: string,
-): Segment | undefined => {
+): { token: ThemeToken; text: string } | undefined => {
   const percent = percentOf(context);
 
   if (phase !== "watching") {
     const shown = percent === null ? "ctx" : `ctx ${percent}%`;
 
-    return { token: "error", text: `${shown} · ${pendingLabels(command)[phase]}` };
+    return {
+      token: phase === "waiting" ? "warning" : "error",
+      text: `${shown} · ${pendingLabels(command)[phase]}`,
+    };
   }
 
   const level = contextLevel(context, ratios);

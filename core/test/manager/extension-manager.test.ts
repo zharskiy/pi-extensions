@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createExtensionManager, orderPlugins } from "../../manager/extension-manager.ts";
+import { createExtensionManager } from "../../manager/extension-manager.ts";
 import type { Plugin } from "../../manager/plugin.ts";
 import { createFakeHost, createFakeRuntime } from "../helpers/fakes.ts";
 
@@ -40,19 +40,24 @@ const managerOf = (plugins: TestPlugin[], disabled: string[] = []) => {
 };
 
 describe("extension manager", () => {
-  it("orders plugins by their requirements", () => {
-    const ordered = orderPlugins([stub("c", ["b"]), stub("b", ["a"]), stub("a")]);
+  it("enables plugins in the order of their requirements", () => {
+    const log: string[] = [];
 
-    expect(ordered.map((plugin) => plugin.id)).toEqual(["a", "b", "c"]);
+    managerOf([stub("c", ["b"], log), stub("b", ["a"], log), stub("a", [], log)]);
+
+    expect(log).toEqual(["enable a", "enable b", "enable c"]);
   });
 
   it("skips disabled plugins and the plugins that need them, and disables in reverse order", async () => {
     const log: string[] = [];
     const some = managerOf([stub("a", [], log), stub("b", ["a"], log), stub("c", [], log)], ["a"]);
 
-    expect(some.manager.report().skipped).toEqual([
-      { id: "a", reason: "disabled in settings" },
-      { id: "b", reason: "requires a" },
+    expect(some.host.notices).toEqual([]);
+
+    some.host.start();
+
+    expect(some.host.notices).toEqual([
+      { message: "plugins skipped because a plugin they need is off: b (needs a)", level: "warning" },
     ]);
 
     const all = managerOf([stub("x", [], log), stub("y", ["x"], log)]);
@@ -63,10 +68,10 @@ describe("extension manager", () => {
   });
 
   it("rejects dependency cycles", () => {
-    expect(() => orderPlugins([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
+    expect(() => managerOf([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
   });
 
-  it("hands each plugin the typed bus, services, settings and root, and records what it adds", () => {
+  it("hands each plugin the host, typed bus, services, settings and root", () => {
     const seen: string[] = [];
 
     const provider: TestPlugin = {
@@ -104,12 +109,8 @@ describe("extension manager", () => {
     manager.bus.emit("ping", { from: "test" });
 
     expect(seen).toEqual(["test /ext", "ping from test #1"]);
-    expect(manager.report().enabled).toEqual(["provider", "consumer"]);
-    expect(manager.report().contributions).toEqual([
-      { plugin: "consumer", kind: "command", name: "hello" },
-      { plugin: "consumer", kind: "tool", name: "greet" },
-    ]);
     expect([...host.commands.keys()]).toEqual(["hello"]);
+    expect([...host.tools.keys()]).toEqual(["greet"]);
     expect(manager.services.has("counter")).toBe(true);
   });
 

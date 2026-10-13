@@ -21,11 +21,10 @@ const CHILD_DESCRIPTION =
 const defaultIds = ({ registry, callerId }: StatusScope) =>
   registry
     .list()
-    .filter((record) => callerId === undefined || record.callerId === callerId)
-    .filter((record) => !record.successorId)
+    .filter((record) => (callerId === undefined || record.callerId === callerId) && !record.successorId)
     .map((record) => record.id);
 
-export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
+const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
   name: "agent_status",
   label: "Agent status",
   description: scope.callerId === undefined ? MAIN_DESCRIPTION : CHILD_DESCRIPTION,
@@ -46,7 +45,8 @@ export const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, Agen
       .map((id) => ({ id, record: scope.registry.get(id) }))
       .flatMap(({ id, record }) =>
         record ? [snapshotOf(chainTerminal(scope.registry, record), now, id)] : [],
-      );
+      )
+      .filter((snapshot, index, all) => all.findIndex((other) => other.id === snapshot.id) === index);
 
     const lines = agents.map(snapshotLine);
 
@@ -71,7 +71,5 @@ export const agentStatusPlugin: Plugin = {
     services.provide("agentStatus", {
       toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId }),
     });
-
-    return undefined;
   },
 };

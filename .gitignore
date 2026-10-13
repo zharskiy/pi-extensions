@@ -1,6 +1,3 @@
 node_modules/
-.vitest/
-*.log
 .DS_Store
-scratch/
-node_modules
+.claude/

@@ -7,7 +7,7 @@ export type Services<S> = {
   has(key: keyof S): boolean;
 };
 
-export type PluginContext<E extends EventMap, S, C> = {
+type PluginContext<E extends EventMap, S, C> = {
   host: Host;
   runtime: AgentRuntime;
   bus: Bus<E>;
