@@ -7,6 +7,7 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
+import { ASSISTANT_DELTA_TYPES, deltaEvent } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const PINNED_PI_VERSION = "1.1.0";
@@ -114,6 +115,13 @@ describe("pi adapter conformance", () => {
 
     expect(required.filter((name) => !(name in pi))).toEqual([]);
     expect(requiredTui.filter((name) => !(name in tui))).toEqual([]);
+  });
+
+  it("fires message_update only with assistantMessageEvent types the phase reducer knows", () => {
+    const known =
+      ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][];
+
+    expect(known.filter((type) => deltaEvent(type) === undefined)).toEqual([]);
   });
 
   it("exposes the model registry methods the model resolver reads", () => {

@@ -13,6 +13,8 @@ import {
   type ModelInfo,
   type NewSessionOptions,
   type OverlayFactory,
+  type Phase,
+  type PhaseDetail,
   type RoutedMessage,
   type SessionControl,
   type SessionInfo,
@@ -65,7 +67,11 @@ export type FakeHost = Host & {
   tool<P, D>(name: string): ToolSpec<P, D>;
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
+  workingVisibility: boolean[];
   agentStart(): void;
+  phases: { phase: Phase; detail: PhaseDetail }[];
+  currentPhase: { phase: Phase; detail: PhaseDetail };
+  setPhase(phase: Phase, detail?: PhaseDetail): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
@@ -87,6 +93,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -185,6 +192,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       setWorkingMessage: (text) => {
         host.workingMessages.push(text);
+      },
+      setWorkingVisible: (visible) => {
+        host.workingVisibility.push(visible);
       },
       onEditorSubmit: (rewrite) => {
         host.submitRewrites.push(rewrite);
@@ -328,6 +338,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       });
 
       settling = false;
+      host.setPhase("idle");
 
       deferred.splice(0).forEach(({ name, args }) => {
         void host.runCommand(name, args);
@@ -344,6 +355,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       await spec.run(args, control);
     },
     shutdown: async (reason = "quit") => {
+      host.currentPhase = { phase: "idle", detail: { running: 0 } };
+
       await shutdownHandlers.reduce<Promise<void>>(
         (chain, handler) => chain.then(() => handler(reason)),
         Promise.resolve(),
@@ -363,6 +376,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     workingIndicators: [],
     workingMessages: [],
+    workingVisibility: [],
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
     },
@@ -371,6 +385,32 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       agentStartHandlers.forEach((handler) => {
         handler();
+      });
+
+      host.setPhase("waiting");
+    },
+    phases: [],
+    currentPhase: { phase: "idle", detail: { running: 0 } },
+    onPhase: (handler) => {
+      phaseHandlers.push(handler);
+    },
+    phase: () => host.currentPhase,
+    setPhase: (phase, detail = { running: 0 }) => {
+      const current = host.currentPhase;
+
+      if (
+        current.phase === phase &&
+        current.detail.toolName === detail.toolName &&
+        current.detail.running === detail.running
+      ) {
+        return;
+      }
+
+      host.currentPhase = { phase, detail };
+      host.phases.push({ phase, detail });
+
+      phaseHandlers.forEach((handler) => {
+        handler(phase, detail);
       });
     },
     footerRefreshes: 0,

@@ -10,6 +10,8 @@ import type {
   CommandSpec,
   ContextSnapshot,
   Host,
+  Phase,
+  PhaseDetail,
   SessionControl,
   SessionInfo,
   ShutdownReason,
@@ -18,6 +20,7 @@ import type {
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
 import { footerHost } from "./pi-footer.ts";
+import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState } from "./pi-ui.ts";
@@ -76,9 +79,27 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  let phaseState = initialPhase();
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
+  };
+
+  const applyPhase = (event: PhaseEvent) => {
+    const next = reducePhase(phaseState, event);
+
+    if (next === phaseState) {
+      return;
+    }
+
+    phaseState = next;
+
+    const detail = detailOf(next);
+
+    phaseHandlers.forEach((handler) => {
+      handler(next.phase, detail);
+    });
   };
 
   pi.on("session_start", (event, ctx) => {
@@ -95,6 +116,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_shutdown", async (event) => {
     const errors: unknown[] = [];
+
+    phaseState = initialPhase();
 
     await shutdownHandlers.reduce<Promise<void>>(
       (chain, handler) =>
@@ -129,6 +152,62 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     agentStartHandlers.forEach((handler) => {
       handler();
     });
+
+    applyPhase({ type: "agent_start" });
+  });
+
+  pi.on("turn_start", (_event, ctx) => {
+    capture(ctx);
+    applyPhase({ type: "turn_start" });
+  });
+
+  pi.on("message_update", (event, ctx) => {
+    capture(ctx);
+
+    if (event.message.role !== "assistant") {
+      return;
+    }
+
+    const delta = deltaEvent(event.assistantMessageEvent.type);
+
+    if (delta) {
+      applyPhase(delta);
+    }
+  });
+
+  pi.on("message_end", (event, ctx) => {
+    capture(ctx);
+
+    if (event.message.role !== "assistant") {
+      return;
+    }
+
+    applyPhase({ type: "message_end" });
+  });
+
+  pi.on("tool_execution_start", (event, ctx) => {
+    capture(ctx);
+
+    if (event.parentToolCallId !== undefined) {
+      return;
+    }
+
+    applyPhase({ type: "tool_start", id: event.toolCallId, name: event.toolName });
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    capture(ctx);
+
+    if (event.parentToolCallId !== undefined) {
+      return;
+    }
+
+    applyPhase({ type: "tool_end", id: event.toolCallId });
+  });
+
+  pi.on("agent_end", (_event, ctx) => {
+    capture(ctx);
+    applyPhase({ type: "agent_end" });
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -155,6 +234,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     idleHandlers.forEach((handler) => {
       handler();
     });
+
+    applyPhase({ type: "agent_settled" });
   });
 
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
@@ -245,6 +326,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
     },
+    onPhase: (handler) => {
+      phaseHandlers.push(handler);
+    },
+    phase: () =>
+      state.ctx
+        ? { phase: phaseState.phase, detail: detailOf(phaseState) }
+        : { phase: "idle", detail: { running: 0 } },
     ...footerHost(pi, state),
   };
 };

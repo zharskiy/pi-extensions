@@ -136,6 +136,8 @@ export type HostUi = {
   terminalNotify(title: string, body: string): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
+  /** Show or hide pi's working row (spinner + message); tui only. `false` clears the row at once; `true` shows it again at once while a run is active (pi's `isStreaming`), with the last `setWorkingMessage` text, and otherwise at the next `turn_start`. */
+  setWorkingVisible(visible: boolean): void;
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
   mapCommandCompletion(map: (command: string) => string | undefined): void;
   submitEditor(text: string): Promise<boolean>;
@@ -172,6 +174,12 @@ export type CommandSpec = {
   run(args: string, control: SessionControl): Promise<void> | void;
 };
 
+/** What the main session is doing right now, derived from pi's turn events (see pi-phase.ts). */
+export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "idle";
+
+/** `toolName` is the most recently started top-level tool still running; `running` counts them. Both are 0/unset outside `tool`. */
+export type PhaseDetail = { toolName?: string; running: number };
+
 export type Host = {
   readonly ui: HostUi;
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
@@ -192,6 +200,10 @@ export type Host = {
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
   onAgentStart(handler: () => void): void;
+  /** Fires on every phase or detail change. `idle` fires once per settled run, after the `onIdle` handlers. Nothing fires at session start. */
+  onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
+  /** Current phase; `idle` without a live session. */
+  phase(): { phase: Phase; detail: PhaseDetail };
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;
   thinkingLevel(): string;

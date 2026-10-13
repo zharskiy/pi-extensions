@@ -79,6 +79,81 @@ describe("pi adapter", () => {
     expect(host.session().mode).toBe("tui");
   });
 
+  it("emits phases from pi events and idle after the idle handlers", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, {});
+    const seen: string[] = [];
+    const ctx = fakeCtx("tui");
+    const assistant = (type: string) => ({ message: { role: "assistant" }, assistantMessageEvent: { type } });
+
+    host.onIdle(() => seen.push("idle handler"));
+    host.onPhase((phase, detail) =>
+      seen.push(detail.toolName ? `${phase} ${detail.toolName} ${detail.running}` : phase),
+    );
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+    await fire("turn_start", ctx);
+    await fire("message_update", ctx, {
+      message: { role: "user" },
+      assistantMessageEvent: { type: "text_delta" },
+    });
+    await fire("message_update", ctx, assistant("text_delta"));
+    await fire("message_update", ctx, assistant("text_delta"));
+    await fire("message_end", ctx, { message: { role: "user" } });
+    await fire("message_end", ctx, { message: { role: "assistant" } });
+    await fire("tool_execution_start", ctx, { toolCallId: "t1", toolName: "codemode" });
+    await fire("tool_execution_start", ctx, { toolCallId: "n1", toolName: "bash", parentToolCallId: "t1" });
+    await fire("tool_execution_end", ctx, { toolCallId: "n1", toolName: "bash", parentToolCallId: "t1" });
+    await fire("tool_execution_end", ctx, { toolCallId: "t1", toolName: "codemode" });
+    await fire("agent_end", ctx);
+    await fire("agent_settled", ctx, { aborted: false });
+
+    expect(seen).toEqual([
+      "waiting",
+      "writing",
+      "waiting",
+      "tool codemode 1",
+      "waiting",
+      "idle handler",
+      "idle",
+    ]);
+    expect(host.phase()).toEqual({ phase: "idle", detail: { running: 0 } });
+  });
+
+  it("reports the current phase while a run is active", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, {});
+    const ctx = fakeCtx("tui");
+
+    expect(host.phase()).toEqual({ phase: "idle", detail: { running: 0 } });
+
+    await fire("agent_start", ctx);
+    await fire("tool_execution_start", ctx, { toolCallId: "t1", toolName: "bash" });
+
+    expect(host.phase()).toEqual({ phase: "tool", detail: { toolName: "bash", running: 1 } });
+  });
+
+  it("resets the phase on shutdown without emitting", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, {});
+    const seen: string[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onPhase((phase) => seen.push(phase));
+    host.onSessionShutdown(() => {
+      seen.push(`shutdown ${host.phase().phase}`);
+    });
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+    await fire("tool_execution_start", ctx, { toolCallId: "t1", toolName: "bash" });
+    await fire("session_shutdown", ctx, { reason: "quit" });
+
+    expect(seen).toEqual(["waiting", "tool", "shutdown idle"]);
+    expect(host.phase()).toEqual({ phase: "idle", detail: { running: 0 } });
+  });
+
   it("passes the parent session file to start handlers only for a session created from another one", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, {});

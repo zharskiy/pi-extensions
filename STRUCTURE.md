@@ -16,6 +16,7 @@ pi-extensions/
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
+│   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
 │   │   ├── pi-working.ts        # working indicator and message (HostUi)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
