@@ -252,7 +252,7 @@ Existing `test/plugins/run-agent/run-agent.test.ts` `"starts agents in the backg
 
 ### Agents never ask: dialog forwarding removed
 
-Spec §2 "Agents never ask", decisions (fourth pass): only the main session is interactive. Today `src/plugins/run-agent/prompts.ts` forwards every child `confirm`/`select`/`input` to the main UI with the title `<id> (<agent>) asks: <title>`, serialises them in one prompt queue, forwards `notify` as `<id> (<agent>): <message>`, and sets `AgentRecord.attention` while a dialog waits. All of it goes. With no forwarder installed the child's UI context resolves `confirm` to `false`, `select` and `input` to `undefined`, and `notify` does nothing (plan 01 §I.4, which lands in this same step so the build stays green). Exact deletion list (from `grep -rn attention core extensions` and `grep -rn ChildPrompts core extensions` at `4b73fe9`):
+Spec §2 "Agents never ask", decisions (fourth pass): only the main session is interactive. Today `src/plugins/run-agent/prompts.ts` forwards every child `confirm`/`select`/`input` to the main UI with the title `<id> (<agent>) asks: <title>`, serialises them in one prompt queue, forwards `notify` as `<id> (<agent>): <message>`, and sets `AgentRecord.attention` while a dialog waits. All of it goes. The child binds no UI context (`bindExtensions({ mode: "print" })`, pi's no-op UI: `confirm` resolves `false`, `select` and `input` `undefined`, `notify` does nothing, `ctx.hasUI` is false; plan 01 §I.4, which lands in this same step so the build stays green). Exact deletion list (from `grep -rn attention core extensions` and `grep -rn ChildPrompts core extensions` at `4b73fe9`):
 
 Source (`extensions/subagents/`):
 
@@ -265,7 +265,9 @@ Source (`extensions/subagents/`):
 - `src/components/agent-list.ts`: `groupOf` drops `|| record.attention` (26), so only `grace` records land in the `attention` group until plan 06 replaces the file.
 - `src/plugins/notifications/index.ts` (the `Attention` import, the `asked` map and the `agent:changed` listener): already deleted with the whole plugin by plan 03 §4 (integration step 3, before this plan).
 
-Core (plan 01 §I.4): `ChildPrompts` and `SpawnSpec.prompts` in `core/adapter/contract.ts`; the `prompts` parameter of `childUiContext` in `core/adapter/pi-child.ts`; the forwarding test in `core/test/adapter/pi-child.test.ts`, replaced by the denial-defaults test.
+Core (plan 01 §I.4): `ChildPrompts` and `SpawnSpec.prompts` in `core/adapter/contract.ts`; `silentUi` and `childUiContext` in `core/adapter/pi-child.ts`; the three `childUiContext` tests in `core/test/adapter/pi-child.test.ts`, replaced by one spawn test asserting `bindExtensions` receives no `uiContext`.
+
+Agent prompt: add this bullet to `extensions/subagents/prompts/base-system-prompt.md` right after the intro paragraph (line 3), as the first bullet of the list: `- Nobody can approve anything while you run: confirmations are refused at once. If a tool call is blocked for lack of approval, do not retry it or work around it; finish what you can and list the blocked step in your result.` It stops retry loops and gate-dodging and routes the need to the caller through the result contract (`research/subagent-input.md` §4).
 
 Tests (`extensions/subagents/test/`):
 
@@ -276,6 +278,8 @@ Tests (`extensions/subagents/test/`):
 - `plugins/agent-view/agent-view.test.ts` `"shows the chain index, chain links and a pending question"`: renamed `"shows the chain index and chain links"`; the record loses `attention` and the expected line loses ` · needs input: Allow rm -rf build?`.
 
 Docs: `ARCHITECTURE.md` step 4 (text in plan 01 §I.4); `STRUCTURE.md` drops `prompts.ts (forwarded dialogs), ` from the `run-agent/` line; the subagents README bullet that begins "When an agent asks for a confirmation" is replaced (§9).
+
+Prompt test, `test/plugins/agent-definitions/agent-definitions.test.ts` in `describe("prompt assembly")`: `"tells the agent that approvals are refused"` reads the shipped `prompts/base-system-prompt.md` (from `root`, as `agentDefinitionsPlugin` does), runs it through `assemblePromptAppend` with a parsed definition, and asserts the first element contains `Nobody can approve anything while you run: confirmations are refused at once.` and `list the blocked step in your result`.
 
 New test, `test/plugins/run-agent/run-agent.test.ts` in `describe("run_agent batches")`: `"spawns children without a dialog forwarder"` (after `execute`, `runtime.child(id).spec` has no `prompts` key and `host.confirmations` stays empty). The denial values themselves are asserted in `core/test/adapter/pi-child.test.ts` (plan 01 §I.4).
 
@@ -391,7 +395,7 @@ No code change in `src/model/settings.ts` (`renderThrottleMs` 250, 0–10 000). 
 
 Replace the bullet "When an agent asks for a confirmation, a choice or a text …" with:
 
-- `Agents never ask you anything: only the main session is interactive. When an agent asks for a confirmation, a choice or a text (for example a permission dialog of another extension loaded in it), it gets the denial at once (no, no choice, no text) and nothing appears in the main session; its notifications are dropped. An agent that needs a decision says so in its result, and the main session takes it from there.`
+- `Agents never ask you anything: only the main session is interactive. Extensions loaded in an agent see no UI (`ctx.hasUI` is false): a confirmation, a choice or a text request (for example a permission gate of another extension) gets the denial at once (no, no choice, no text) and nothing appears in the main session; its notifications are dropped. An agent that needs a decision says so in its result, and the main session takes it from there.`
 
 Replace in the model bullet: "is shown in the start message, the progress row, `agent_status` and the agent's manifest" → "is shown in the start block, `agent_status`, the agent view header and the agent's manifest".
 

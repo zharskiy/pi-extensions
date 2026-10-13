@@ -58,7 +58,7 @@ Every surface follows one set of margins, so no text is glued to a display edge 
 
 ### Agents never ask
 
-Only the main session is interactive. A child's `confirm` resolves `false`, its `select` and `input` resolve `undefined`, all at once and without showing anything, and its `notify` does nothing (`core/adapter/pi-child.ts` `childUiContext`). An agent that needs a decision states it in its result. No state, word, colour or row variant signals a waiting dialog; there is no `needs input` anywhere. The main session's own dialogs are unchanged; they are the only dialogs §8 notifies about.
+Only the main session is interactive. A child's `confirm` resolves `false`, its `select` and `input` resolve `undefined`, all at once and without showing anything, and its `notify` does nothing, because the child binds no UI context (pi's no-op UI: `ctx.hasUI` is false, no `ui_prompt_*` events), so extensions take their headless branch (`core/adapter/pi-child.ts` binds `bindExtensions({ mode: "print" })` with no `uiContext`). The agent prompt tells the model that approvals are refused and blocked steps go in its result. An agent that needs a decision states it in its result. No state, word, colour or row variant signals a waiting dialog; there is no `needs input` anywhere. The main session's own dialogs are unchanged; they are the only dialogs §8 notifies about.
 
 ## 3. Surface A: main transcript
 

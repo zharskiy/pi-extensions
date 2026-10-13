@@ -27,6 +27,7 @@ Read in this order. Each later document assumes the earlier ones.
 | `06-list-and-agent-view.md` | The `/agents` list and the simplified agent view in one overlay; codemode rendering. | final |
 | `research/review-findings.md` | The cross-plan review: findings and their resolution. | final |
 | `research/padding.md` | The padding audit and the rule set spec §2 "Padding and margins" adopts; its per-plan change list has been applied. | reference |
+| `research/subagent-input.md` | Why agents never ask and why children bind no UI; the fourth-pass decision follows it. | reference |
 | `research/claude-code-agent-identity.md` | How Claude Code names agents and what it shows per surface; the identity decisions in spec §2 follow it. | reference |
 | `research/*.md` (others) | Research: Claude Code behaviour (agents UX; indicator and notifications), the current UI audit, pi 1.1.0 API capabilities. | reference |
 
