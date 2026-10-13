@@ -49,11 +49,11 @@ Tests `test/components/tree.test.ts` (fixture builder `rec({ id, callerId, creat
 - `"honours a roots predicate"`: `roots = r => r.id === "a1"` → `a1` at depth 0 after `a`'s subtree, not under it.
 - `"returns an empty list for no records"`.
 
-### 2.2 `src/components/agent-row.ts` (rewrite; delete `formatTokens`, `formatElapsed`, `plural`, `truncate`, `finishSummary`, `progressText`, `agentRow`, `treeRow`, `stateIcon`, `graceSecondsLeft`, `attentionText`, `chainLabel`)
+### 2.2 `src/components/agent-row.ts` (rewrite; plan 04 already removed `SPINNER_FRAMES`, `STATE_ICONS`, `STATE_COLORS`, `formatTokens`, `formatElapsed`, `elapsedOf`, `singleLine`, `plural` and moved `elapsedOf` to `format.ts`; this plan deletes what plan 04 kept: `stateIcon`, `finishSummary`, `progressText`, `truncate`, `chainLabel`, `attentionText`, `graceSecondsLeft`, `agentRow`, `treeRow`)
 
 ```ts
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { displayWidth, formatDuration, formatTokens, padEndCols, SEP, truncateCols } from "./format.ts";
+import { displayWidth, elapsedOf, formatDuration, formatTokens, padEndCols, SEP, truncateCols } from "./format.ts";
 import { stateGlyph, stateToken, stateWord } from "./state-text.ts";
 import type { TreeRow } from "./tree.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
@@ -63,9 +63,10 @@ export const NAME_COLS_MAX = 24;
 export type RowInput = TreeRow & { selected: boolean };
 export const rowName = (row: Pick<TreeRow, "record" | "openDescendants">): string;   // `explorer`, `explorer #2`, `reviewer (+1)`, `explorer #2 (+1)`
 export const nameColumn = (rows: Pick<TreeRow, "record" | "openDescendants">[]): number;  // max displayWidth(rowName), capped at 24; 0 for no rows
-export const elapsedOf = (record: AgentRecord, now: number): number;   // (endedAt ?? now) - (startedAt ?? createdAt)
 export const renderRow = (input: RowInput, now: number, width: number, theme: ThemeLike, nameCols: number): string;
 ```
+
+`elapsedOf(record, now)` = `(endedAt ?? now) - (startedAt ?? createdAt)` is plan 04's, in `format.ts`; not redefined here.
 
 Deviation: the contract says `nameColumn(records: AgentRecord[])`, but `(+N)` is a tree fact, so it takes `{ record, openDescendants }[]` (a `TreeRow[]` works as is). Plan 06 calls it with its tree rows. The panel measures the column over every lifecycle-visible row (not just the 5 in the window) so columns do not shift while scrolling.
 
@@ -321,7 +322,7 @@ Prerequisites: plan 01 §B merged (`onEmptyEditorDown`, `captureEditorKeys`, fak
 
 1. `model/settings.ts` + settings test; README settings paragraph. `npm run check`.
 2. `components/tree.ts` + `test/components/tree.test.ts`.
-3. `components/agent-row.ts` rewrite + `test/components/agent-row.test.ts` rewrite (the old tests go entirely). Grep for the deleted exports (`formatTokens`, `formatElapsed`, `treeRow`, `agentRow`, `finishSummary`, `progressText`, `graceSecondsLeft`, `stateIcon`, `truncate`, `plural`, `elapsedOf`, `attentionText`, `chainLabel`, `singleLine`) in `src/` and `test/`: `components/agent-list.ts`, `agent-view/view.ts`, `agent-status/`, `run-agent/tools.ts` and their tests may use some; for each, either switch to plan 04's `format.ts` equivalents (`formatTokens`, `formatDuration`) or, for `treeRow`/`agentRow` in the list and view, keep a thin local copy until plan 06 deletes those files. Do not leave the old exports in `agent-row.ts`.
+3. `components/agent-row.ts` rewrite + `test/components/agent-row.test.ts` rewrite (the old tests go entirely). Grep for the exports this plan deletes (`treeRow`, `agentRow`, `finishSummary`, `progressText`, `graceSecondsLeft`, `stateIcon`, `truncate`, `attentionText`, `chainLabel`) in `src/` and `test/`: `components/agent-list.ts` (`treeRow`), `agent-view/view.ts` and `run-agent/result.ts` (`truncate`: replace with a local character cut, as plan 04 §6 says `truncateCols` is wrong for model text) and their tests. For `treeRow` in the list and view, move a thin copy of today's `treeRow`/`agentRow` into `components/agent-list.ts` (plan 06 deletes it) so the list keeps rendering until then. Do not leave the old exports in `agent-row.ts`.
 4. `components/refresh.ts` rewrite + tests; the two call-site adaptations (§2.3). `npm run check`.
 5. `plugins/agent-panel/model.ts` + `model.test.ts`; `keys.ts` + `keys.test.ts`.
 6. `plugins/agent-panel/index.ts` (widget, refresh, keys, footer status); `src/plugins.ts`; delete `plugins/progress-widget/` and `test/plugins/progress-widget/`; `agent-panel.test.ts`. `npm run check`.
