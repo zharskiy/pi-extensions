@@ -5,6 +5,7 @@ import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DialogKind } from "../../adapter/contract.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { ASSISTANT_DELTA_TYPES, deltaEvent } from "../../adapter/pi-phase.ts";
@@ -111,7 +112,15 @@ describe("pi adapter conformance", () => {
       "getReadmePath",
     ];
 
-    const requiredTui = ["Container", "Key", "matchesKey", "ScrollView", "Text", "truncateToWidth"];
+    const requiredTui = [
+      "Container",
+      "isKeyRelease",
+      "Key",
+      "matchesKey",
+      "ScrollView",
+      "Text",
+      "truncateToWidth",
+    ];
 
     expect(required.filter((name) => !(name in pi))).toEqual([]);
     expect(requiredTui.filter((name) => !(name in tui))).toEqual([]);
@@ -122,6 +131,77 @@ describe("pi adapter conformance", () => {
       ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][];
 
     expect(known.filter((type) => deltaEvent(type) === undefined)).toEqual([]);
+  });
+
+  it("names the dialog kinds the contract forwards", () => {
+    const kinds: pi.UIPromptKind[] = [
+      "select",
+      "confirm",
+      "input",
+      "editor",
+      "custom",
+    ] satisfies DialogKind[];
+    const contract: DialogKind[] = kinds;
+
+    expect(contract).toHaveLength(5);
+  });
+
+  it("emits ui_prompt events around every blocking dialog", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+    const seen: unknown[] = [];
+    let answer: boolean | undefined;
+
+    vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+    const settingsManager = pi.SettingsManager.inMemory({});
+
+    const loader = new pi.DefaultResourceLoader({
+      cwd: dir,
+      agentDir: dir,
+      settingsManager,
+      extensionFactories: [
+        {
+          name: "asker",
+          factory: (api) => {
+            api.on("ui_prompt_start", (event) => {
+              seen.push(event);
+            });
+            api.on("ui_prompt_end", (event) => {
+              seen.push(event);
+            });
+            api.on("session_start", async (_event, ctx) => {
+              answer = await ctx.ui.confirm("Allow bash?", "rm -rf build");
+            });
+          },
+        },
+      ],
+    });
+
+    await loader.reload();
+
+    const { session } = await pi.createAgentSession({
+      cwd: dir,
+      agentDir: dir,
+      modelRuntime: await pi.ModelRuntime.create(),
+      model: offlineModel as never,
+      resourceLoader: loader,
+      settingsManager,
+      sessionManager: pi.SessionManager.inMemory(dir),
+    });
+
+    const uiContext = { confirm: async () => true } as unknown as pi.ExtensionUIContext;
+
+    await session.bindExtensions({ mode: "print", uiContext });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    session.dispose();
+    vi.unstubAllEnvs();
+
+    expect(answer).toBe(true);
+    expect(seen).toEqual([
+      { type: "ui_prompt_start", reason: "ui_prompt", kind: "confirm", title: "Allow bash?" },
+      { type: "ui_prompt_end", reason: "ui_prompt", kind: "confirm", title: "Allow bash?" },
+    ]);
   });
 
   it("exposes the model registry methods the model resolver reads", () => {

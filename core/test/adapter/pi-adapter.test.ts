@@ -270,6 +270,36 @@ describe("pi adapter", () => {
     ]);
   });
 
+  it("forwards dialog start and end with kind and title", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, {});
+    const seen: unknown[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onDialog((event) => seen.push(event));
+
+    await fire("session_start", ctx);
+    await fire("ui_prompt_start", ctx, {
+      type: "ui_prompt_start",
+      reason: "ui_prompt",
+      kind: "confirm",
+      title: "Allow?",
+    });
+    await fire("ui_prompt_end", ctx, {
+      type: "ui_prompt_end",
+      reason: "ui_prompt",
+      kind: "confirm",
+      title: "Allow?",
+    });
+    await fire("ui_prompt_start", ctx, { type: "ui_prompt_start", reason: "ui_prompt", kind: "custom" });
+
+    expect(seen).toEqual([
+      { phase: "start", kind: "confirm", title: "Allow?" },
+      { phase: "end", kind: "confirm", title: "Allow?" },
+      { phase: "start", kind: "custom", title: undefined },
+    ]);
+  });
+
   it("subscribes to pi's event bus and publishes only with a live session", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, {});

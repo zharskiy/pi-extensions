@@ -69,6 +69,61 @@ describe("createInputPane focus", () => {
   });
 });
 
+const keyContext = (mode: string) => {
+  const inputs: ((data: string) => unknown)[] = [];
+  const removed: number[] = [];
+  const state: HostState = {
+    ctx: {
+      mode,
+      ui: {
+        onTerminalInput: (handler: (data: string) => unknown) => {
+          inputs.push(handler);
+          return () => {
+            removed.push(inputs.indexOf(handler));
+          };
+        },
+      },
+    } as unknown as ExtensionContext,
+  };
+
+  return { ui: createUi(state, { write: () => {} }, {}), inputs, removed };
+};
+
+describe("onKeyPress", () => {
+  it("onKeyPress calls the listener for keys, skips SGR and X10 mouse reports and key releases, and never consumes", () => {
+    const { ui, inputs, removed } = keyContext("tui");
+    let presses = 0;
+
+    const off = ui.onKeyPress(() => {
+      presses += 1;
+    });
+
+    const results = ["a", `${ESC}[A`, `${ESC}[<0;10;5M`, `${ESC}[M abc`, `${ESC}[97;1:3u`, "\r"].map((data) =>
+      inputs[0]?.(data),
+    );
+
+    off();
+
+    expect(inputs).toHaveLength(1);
+    expect(presses).toBe(3);
+    expect(results).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+    expect(removed).toEqual([0]);
+  });
+
+  it("onKeyPress is a no-op outside tui", () => {
+    const silent = ["rpc", "print", "json"].map((mode) => {
+      const { ui, inputs } = keyContext(mode);
+      const off = ui.onKeyPress(() => {});
+
+      off();
+
+      return inputs.length;
+    });
+
+    expect(silent).toEqual([0, 0, 0]);
+  });
+});
+
 const captured = (mode: string, env = {}) => {
   const writes: string[] = [];
   const state: HostState = { ctx: { mode } as unknown as ExtensionContext };

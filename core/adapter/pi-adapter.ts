@@ -9,6 +9,7 @@ import type {
   AgentRuntime,
   CommandSpec,
   ContextSnapshot,
+  DialogEvent,
   Host,
   Phase,
   PhaseDetail,
@@ -80,6 +81,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
   const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
 
   const capture = (ctx: ExtensionContext) => {
@@ -238,6 +240,22 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     applyPhase({ type: "agent_settled" });
   });
 
+  pi.on("ui_prompt_start", (event, ctx) => {
+    capture(ctx);
+
+    dialogHandlers.forEach((handler) => {
+      handler({ phase: "start", kind: event.kind, title: event.title });
+    });
+  });
+
+  pi.on("ui_prompt_end", (event, ctx) => {
+    capture(ctx);
+
+    dialogHandlers.forEach((handler) => {
+      handler({ phase: "end", kind: event.kind, title: event.title });
+    });
+  });
+
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
     pi.registerTool(toPiTool(spec, capture));
   };
@@ -333,6 +351,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       state.ctx
         ? { phase: phaseState.phase, detail: detailOf(phaseState) }
         : { phase: "idle", detail: { running: 0 } },
+    onDialog: (handler) => {
+      dialogHandlers.push(handler);
+    },
     ...footerHost(pi, state),
   };
 };

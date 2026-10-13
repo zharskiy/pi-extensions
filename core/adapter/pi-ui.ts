@@ -20,6 +20,7 @@ import {
   type Component,
   Container,
   Input,
+  isKeyRelease,
   Key,
   type Keybinding,
   matchesKey,
@@ -456,5 +457,13 @@ export const createUi = (
     setEditorFrame: createEditorFrame(tuiCtx),
     setFooter: createFooterSetter(tuiCtx, themeLike),
     keyText: (binding) => keyText(binding as Keybinding),
+    onKeyPress: (listener) =>
+      tuiCtx()?.ui.onTerminalInput((data) => {
+        if (!isKeyRelease(data) && !data.startsWith("\x1b[<") && !data.startsWith("\x1b[M")) {
+          listener();
+        }
+
+        return undefined;
+      }) ?? (() => {}),
   };
 };

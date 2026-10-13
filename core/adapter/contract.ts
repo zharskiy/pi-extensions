@@ -144,6 +144,8 @@ export type HostUi = {
   setEditorFrame(frame: EditorFrame | undefined): void;
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
+  /** Calls `listener` on every keyboard input chunk (mouse reports and key-release events excluded) without consuming it. tui only. Returns an unsubscribe function. */
+  onKeyPress(listener: () => void): () => void;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -180,6 +182,10 @@ export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "
 /** `toolName` is the most recently started top-level tool still running; `running` counts them. Both are 0/unset outside `tool`. */
 export type PhaseDetail = { toolName?: string; running: number };
 
+export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
+
+export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
+
 export type Host = {
   readonly ui: HostUi;
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
@@ -204,6 +210,8 @@ export type Host = {
   onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
   /** Current phase; `idle` without a live session. */
   phase(): { phase: Phase; detail: PhaseDetail };
+  /** pi's ui_prompt_start/ui_prompt_end: one outer dialog at a time, nested dialogs are folded into it. Overlays opened with openOverlay report kind "custom". */
+  onDialog(handler: (event: DialogEvent) => void): void;
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;
   thinkingLevel(): string;

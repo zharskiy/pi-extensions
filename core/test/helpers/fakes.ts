@@ -4,6 +4,8 @@ import {
   type ChildSession,
   type CommandSpec,
   type ContextSnapshot,
+  type DialogEvent,
+  type DialogKind,
   type EditorFrame,
   emptyUsage,
   type FooterRender,
@@ -82,6 +84,9 @@ export type FakeHost = Host & {
   activeModel?: ModelInfo;
   thinking: string;
   sessionTitle?: string;
+  keyListeners: Set<() => void>;
+  pressKey(): void;
+  dialog(phase: DialogEvent["phase"], kind: DialogKind, title?: string): void;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -94,6 +99,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
   const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -227,6 +233,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         };
       },
       keyText: (binding) => `<${binding}>`,
+      onKeyPress: (listener) => {
+        const entry = () => listener();
+
+        host.keyListeners.add(entry);
+
+        return () => {
+          host.keyListeners.delete(entry);
+        };
+      },
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -420,6 +435,20 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
+    keyListeners: new Set(),
+    pressKey: () => {
+      Array.from(host.keyListeners).forEach((listener) => {
+        listener();
+      });
+    },
+    onDialog: (handler) => {
+      dialogHandlers.push(handler);
+    },
+    dialog: (phase, kind, title) => {
+      dialogHandlers.forEach((handler) => {
+        handler({ phase, kind, title });
+      });
+    },
   };
 
   return host;

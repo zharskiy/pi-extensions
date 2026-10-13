@@ -24,6 +24,7 @@ Host behaviour worth knowing:
 - pi builds a fresh extension instance and event bus for every session (`/new`, `/resume`, `/fork`, `/reload`) and fires `session_start` once per instance, except in RPC mode where it fires twice. State therefore starts empty in each instance: handlers that only reset state at session start and unsubscribe handles at shutdown are not needed. Settings are the exception below.
 - `onIdle` is pi's `agent_settled`; `onTurnEnd` passes a `ContextSnapshot` (tokens, window, percent).
 - `onPhase` is computed by `pi-phase.ts` from `turn_start`, `message_update`, `message_end`, `tool_execution_*` (top-level only), `agent_end`, `agent_settled`; `idle` fires after `onIdle`.
+- `onDialog` is pi's `ui_prompt_start/end` (outermost dialog only; overlays are `custom`). `HostUi.onKeyPress` observes terminal input without consuming it.
 - `sendUserMessage` delivers immediately when idle, otherwise as a pi follow-up.
 - `setMainPrompt` replaces pi's default prompt in `before_agent_start` and re-adds the `tools`, `rules` and `docs` sections pi would otherwise drop (`main-prompt.ts`). Only the subagents `run-agent` plugin calls it, so the main prompt is replaced only when that plugin is enabled.
 - `ToolSpec` and overlay/widget factories are plain-text contracts; the adapter converts them to pi tools and TUI components. UI calls degrade to no-ops outside TUI mode.
