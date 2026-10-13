@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { USAGE_CHANNEL } from "../../../core/manager/channels.ts";
+import {
+  parseTotals,
+  TOTALS_CHANNEL,
+  TOTALS_REQUEST_CHANNEL,
+  USAGE_CHANNEL,
+} from "../../../core/manager/channels.ts";
 import { createFakeHost, usageOf } from "../../../core/test/helpers/fakes.ts";
 import { USAGE_ENTRY } from "../src/ledger.ts";
 import { createSpending } from "../src/spending.ts";
@@ -19,7 +24,9 @@ const setup = (subscription = false) => {
 
   const usageEntries = () => host.entries.filter((entry) => entry.customType === USAGE_ENTRY);
 
-  return { host, report, usageEntries };
+  const lastTotals = () => host.published.filter((entry) => entry.channel === TOTALS_CHANNEL).at(-1)?.data;
+
+  return { host, report, usageEntries, lastTotals };
 };
 
 describe("spending", () => {
@@ -223,5 +230,53 @@ describe("spending", () => {
     resumed.start();
 
     expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.600 · total $0.600");
+  });
+
+  it("publishes the totals with chargeable tokens on every refresh", () => {
+    const { host, report, lastTotals } = setup();
+
+    expect(lastTotals()).toEqual({ main: { cost: 0, tokens: 0 }, sources: [] });
+
+    host.usage = usageOf(1, 1000);
+    report("agents", "a1", 0.5);
+
+    expect(lastTotals()).toEqual({
+      main: { cost: 1, tokens: 3000 },
+      sources: [{ source: "agents", cost: 0.5, tokens: 300 }],
+    });
+    expect(parseTotals(lastTotals())).toEqual(lastTotals());
+  });
+
+  it("publishes the totals when asked, until its shutdown", async () => {
+    const { host, lastTotals } = setup();
+    const published = () => host.published.filter((entry) => entry.channel === TOTALS_CHANNEL).length;
+
+    host.usage = usageOf(2);
+    host.emit(TOTALS_REQUEST_CHANNEL, {});
+
+    expect(published()).toBe(2);
+    expect(lastTotals()).toEqual({ main: { cost: 2, tokens: 300 }, sources: [] });
+
+    await host.shutdown();
+    host.emit(TOTALS_REQUEST_CHANNEL, {});
+
+    expect(published()).toBe(2);
+  });
+
+  it("keeps the main tokens across a handoff switch", () => {
+    const previous = {
+      entries: [{ customType: "pi-spending:main-tokens-offset", data: 500 }],
+      usage: usageOf(1, 1000),
+    };
+    const next = createFakeHost();
+    const lastTotals = () => next.published.filter((entry) => entry.channel === TOTALS_CHANNEL).at(-1)?.data;
+
+    next.files.set("/sessions/previous.jsonl", previous);
+    createSpending(next);
+    next.start("/sessions/previous.jsonl");
+    next.usage = usageOf(0.25, 100);
+    next.settle();
+
+    expect(lastTotals()).toEqual({ main: { cost: 1.25, tokens: 3800 }, sources: [] });
   });
 });

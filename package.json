@@ -12,7 +12,8 @@
     "spending",
     "working-indicator",
     "command-aliases",
-    "composer"
+    "composer",
+    "footer"
   ],
   "files": [
     "core/adapter",
@@ -34,7 +35,8 @@
       "./extensions/spending/src/index.ts",
       "./extensions/working-indicator/src/index.ts",
       "./extensions/command-aliases/src/index.ts",
-      "./extensions/composer/src/index.ts"
+      "./extensions/composer/src/index.ts",
+      "./extensions/footer/src/index.ts"
     ]
   },
   "scripts": {

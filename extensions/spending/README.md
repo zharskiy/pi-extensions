@@ -27,6 +27,19 @@ pi.events.emit("spending:usage", { source: "agents", id: "a1b2", usage });
 - Nothing is imported from this extension; when it is not installed the reports simply go unheard.
 - Reports are accepted until this extension's own shutdown. pi shuts extensions down one at a time in load order and the session goes read-only for an extension once its shutdown handler returns, so an extension that reports its final figures while shutting down must be listed before spending in `pi.extensions` (the subagents extension is).
 
+## Totals channel
+
+Spending also publishes what it adds up, for extensions that show it themselves (the footer extension in this repository):
+
+```ts
+pi.events.on("spending:totals", (totals) => {});        // { main: { cost, tokens }, sources: [{ source, cost, tokens }] }
+pi.events.emit("spending:totals:request", {});          // asks for the current totals at once
+```
+
+- The totals are published on every refresh (each accepted report, session start and idle) and on every request, so a listener that loads after spending still gets them.
+- `tokens` are chargeable tokens: `input + output + cacheRead + cacheWrite`. Main tokens carry over a fork or handoff like main cost, through a `pi-spending:main-tokens-offset` entry.
+- The footer segment keeps the status key `pi-spending`, exported as `SPENDING_STATUS_KEY` from `core/manager/channels.ts`, so an extension that shows the totals itself can leave the segment out.
+
 ## Layout
 
 `src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/spending.ts` wires the channel, the footer and persistence, `src/ledger.ts` keeps the high-water figures and parses reports, `src/footer.ts` formats the segment. The channel name and report parser are shared in `core/manager/channels.ts`. Tests are under `test/`.

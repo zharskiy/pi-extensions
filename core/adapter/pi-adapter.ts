@@ -17,6 +17,7 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
+import { footerHost } from "./pi-footer.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState } from "./pi-ui.ts";
@@ -239,6 +240,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onTurnStart: (handler) => {
       turnStartHandlers.push(handler);
     },
+    ...footerHost(pi, state),
   };
 };
 

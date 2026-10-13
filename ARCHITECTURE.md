@@ -5,7 +5,7 @@ How the three extensions work at runtime. Folder layout is in `STRUCTURE.md`.
 ## Layers and dependency rules
 
 - `core/adapter` is the only code that imports pi (`@earendil-works/*`, `typebox`). It exposes `contract.ts`: `Host` (the main session as seen by an extension) and `AgentRuntime` (spawning and reading agent sessions).
-- `core/manager` is pi-free shared infrastructure: plugin manager, typed bus, settings parsing, `settleWithin`, and the cross-extension contract: `handoff.ts` (handoff sections, `HandoffValidation`, `validateHandoff`) and `channels.ts` (the `session-limits:busy` and `spending:usage` channel names, payload types and parsers). Channel names and the handoff format live only there; extensions and subagents plugins import them from there, never from each other.
+- `core/manager` is pi-free shared infrastructure: plugin manager, typed bus, settings parsing, `settleWithin`, and the cross-extension contract: `handoff.ts` (handoff sections, `HandoffValidation`, `validateHandoff`) and `channels.ts` (the `session-limits:busy`, `spending:usage` and `spending:totals` channel names, payload types and parsers). Channel names and the handoff format live only there; extensions and subagents plugins import them from there, never from each other.
 - Extensions import only `contract.ts` and `core/manager`. Each extension's `src/index.ts` is the single file allowed to import `pi-adapter.ts`.
 - Extensions never import each other; they talk over pi's shared event bus (`Host.publish/subscribe`). Plugins inside an extension never import another plugin's folder; they share code through `src/model` and `src/components` and talk through the manager.
 - No provider knowledge: no code or prompt names a model provider or a model id. Pi resolves providers, credentials and models; the harness passes `provider/id[:thinking]` strings through. The only exceptions are configuration: the shipped agent files name their `model`, and the subagents README lists those models. Cost is pi's own usage and cost figures.
@@ -111,6 +111,13 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - The ledger keeps the latest report per `(source, id)` (monotonic: totals never go down), sums per source, and shows `main $x · agents $y · total $z` (plus `(sub)` when pi reports OAuth for the model) in the footer once any source is above zero; total is the sum of the displayed parts.
 - Persistence: changed reports are appended as `pi-spending:usage` custom entries in the main session file on idle and shutdown, and replayed on session start (resume). Reports that arrive after spending's own shutdown are ignored.
 - Lineage: totals cover the whole session lineage. Compaction and `/tree` only append to the same file, and `sumUsage` reads every entry of every branch. When a session is created from another one (`/fork`, `/clone` or a handoff switch; `parent` set) spending appends a `pi-spending:main-offset` entry (the parent's main cost, its own last offset plus all its entries, minus the usage of the entries copied into the new session), so main = last offset + `sumUsage` of the new session's entries; it also appends a continuation marker report, absorbs every parent `pi-spending:usage` report under an id prefixed with the parent file name (so new agents cannot collide with parent agent ids) and persists them into the new session at once; restore ignores reports before the last marker, so resumed sessions and chains of forks and handoffs keep the totals. Only a plain `/new` starts at zero; a handoff switch keeps the totals, since it continues the same work in a new session. A fork of a session without a file (`--no-session`) has no parent file to read and starts from the copied entries only.
+- Totals: on every refresh, and whenever anything publishes on `spending:totals:request`, spending publishes `spending:totals { main: { cost, tokens }, sources: [{ source, cost, tokens }] }`. Tokens are chargeable tokens (`input + output + cacheRead + cacheWrite`); main tokens carry over a fork or handoff through a `pi-spending:main-tokens-offset` entry, like main cost.
+
+## Footer
+
+- Replaces pi's footer (`HostUi.setFooter`, tui only) with a padded block: context tokens (warning above 70 %, error above 90 %), main cost, model name and window; the session total (main plus every spending source); folder and session name; git branch; thinking level with the `app.thinking.cycle` key; then the other extensions' status texts, without spending's own `pi-spending` status (`SPENDING_STATUS_KEY`), whose figures the block already shows.
+- Cost and tokens come only from `spending:totals`: the footer requests them on session start and turn end and keeps the last payload, so a render reads only cheap live values (`Host.context()`, `model()`, `thinkingLevel()`, `sessionName()`). Without spending the cost figures stay at zero.
+- The adapter (`core/adapter/pi-footer.ts`) truncates every line to the width, re-renders on git branch changes and on `refresh()`, and drops the branch subscription when pi disposes the footer.
 
 ## Working-indicator
 
@@ -136,7 +143,7 @@ Every file the extensions write lives under pi's agent dir or session dir (`~/.p
 - `<agents dir>/<id>/`: `manifest.json` (rewritten on state or worktree change), the child pi session `.jsonl` (with `parentSession` and the prompt record), `result.md`.
 - `<OS temp dir>/pi-session-limits/<session id>-handoff.md` (main) and `<OS temp dir>/pi-subagents/<session id>/<agent id>-handoff.md` (agents): handoff files.
 - `<cwd>/.pi/worktrees/<id>-<stamp>/`: a worktree agent's checkout, removed when its chain ends unless git refuses (uncommitted changes); its branch stays only if it moved past `base`. `.pi/worktrees/.gitignore` keeps them out of `git status`.
-- Main session file: `pi-spending:usage` and `pi-spending:main-offset` entries; the new session's seed message after a handoff.
+- Main session file: `pi-spending:usage`, `pi-spending:main-offset` and `pi-spending:main-tokens-offset` entries; the new session's seed message after a handoff.
 - `<agentDir>`: `pi-subagents.json`, `pi-session-limits.json`, `pi-subagents-view.json`, `agents/*.md`. `<cwd>/.pi/`: the same settings files and `agents/*.md` (trusted projects only).
 - Registry, batches, ledger totals and limit phases live in memory and are lost on reload.
 

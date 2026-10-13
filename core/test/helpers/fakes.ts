@@ -6,9 +6,11 @@ import {
   type ContextSnapshot,
   type EditorFrame,
   emptyUsage,
+  type FooterRender,
   type Host,
   type InputPane,
   type MessageDelivery,
+  type ModelInfo,
   type NewSessionOptions,
   type OverlayFactory,
   type RoutedMessage,
@@ -68,6 +70,12 @@ export type FakeHost = Host & {
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
   editorReachable: boolean;
+  footer?: FooterRender;
+  footerRefreshes: number;
+  contextUsage: ContextSnapshot;
+  activeModel?: ModelInfo;
+  thinking: string;
+  sessionTitle?: string;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -201,6 +209,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         host.editorFrame = frame;
         return true;
       },
+      setFooter: (render) => {
+        host.footer = render;
+        return {
+          refresh: () => {
+            host.footerRefreshes += 1;
+          },
+        };
+      },
+      keyText: (binding) => `<${binding}>`,
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -357,6 +374,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         handler();
       });
     },
+    footerRefreshes: 0,
+    contextUsage: { tokens: null, window: 0, percent: null },
+    thinking: "off",
+    context: () => host.contextUsage,
+    model: () => host.activeModel,
+    thinkingLevel: () => host.thinking,
+    sessionName: () => host.sessionTitle,
   };
 
   return host;

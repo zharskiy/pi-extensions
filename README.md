@@ -8,6 +8,7 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [working-indicator](extensions/working-indicator/README.md): pi's working line as a spinner, a playful verb and the elapsed time of the current turn.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 - [composer](extensions/composer/README.md): the input box drawn with a rounded border in the editor's colour and a chevron prompt.
+- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
 
 ## Install
 
@@ -25,6 +26,7 @@ pi -e ./pi-extensions/extensions/spending/src/index.ts
 pi -e ./pi-extensions/extensions/working-indicator/src/index.ts
 pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
 pi -e ./pi-extensions/extensions/composer/src/index.ts
+pi -e ./pi-extensions/extensions/footer/src/index.ts
 ```
 
 ## Update
