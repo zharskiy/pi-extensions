@@ -29,6 +29,7 @@ import {
   type SpawnSpec,
   type StopReason,
   type ThemeLike,
+  type ToolRender,
   type ToolRenderState,
   type ToolResult,
   type ToolSpec,
@@ -73,6 +74,7 @@ export type FakeHost = Host & {
   emptyLeftHandlers: Set<() => void>;
   editorCapture?: EditorKeyHandler;
   pressEmptyLeft(): boolean;
+  /** Feeds `key` to the editor capture; a `left` the capture does not consume reaches the empty-editor hooks (the fake editor is empty). */
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   /** `idle` false models an active agent run; `compacting` models pi busy without a run (`isIdle()` is false). */
   idle: boolean;
@@ -92,10 +94,20 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
-  /** Renders a registered tool's call and/or result with `plainTheme` and a default render state (`args` = `call`, `isError` from `result`, `outputPad` 1); `state` overrides any field. */
+  /**
+   * Renders a registered tool's call and/or result with `plainTheme` and a default render state (`args` = `call`,
+   * `isError` from `result`, `outputPad` 1); `state` overrides any field. A width-function render is resolved like the adapter
+   * does: with `width` (default 80) minus `outputPad` on both sides for `renderShell: "self"`, with `width` otherwise. The
+   * adapter's indent and cut are not applied.
+   */
   renderTool(
     name: string,
-    input: { call?: unknown; result?: ToolResult<unknown>; state?: Partial<ToolRenderState> },
+    input: {
+      call?: unknown;
+      result?: ToolResult<unknown>;
+      state?: Partial<ToolRenderState>;
+      width?: number;
+    },
   ): { call?: string; result?: string; state: ToolRenderState };
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
@@ -206,15 +218,14 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     pressEditorKey: (key) => {
       const capture = host.editorCapture;
-
-      if (!capture) {
-        return "editor";
-      }
-
-      const outcome = capture(key);
+      const outcome = capture ? capture(key) : "editor";
 
       if (outcome === "release" && host.editorCapture === capture) {
         host.editorCapture = undefined;
+      }
+
+      if (outcome !== "consumed" && key.name === "left") {
+        host.pressEmptyLeft();
       }
 
       return outcome;
@@ -519,7 +530,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       return spec as unknown as ToolSpec<P, D>;
     },
-    renderTool: (name, { call, result, state: overrides }) => {
+    renderTool: (name, { call, result, state: overrides, width = 80 }) => {
       const spec = host.tool<unknown, unknown>(name);
       const state: ToolRenderState = {
         toolCallId: "call-1",
@@ -533,9 +544,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         ...overrides,
       };
 
+      const inner = spec.renderShell === "self" ? Math.max(1, width - 2 * state.outputPad) : width;
+      const resolve = (render: ToolRender | undefined) =>
+        typeof render === "function" ? render(inner) : render;
+
       return {
-        call: call === undefined ? undefined : spec.renderCall?.(call, plainTheme, state),
-        result: result === undefined ? undefined : spec.renderResult?.(result, state, plainTheme),
+        call: call === undefined ? undefined : resolve(spec.renderCall?.(call, plainTheme, state)),
+        result: result === undefined ? undefined : resolve(spec.renderResult?.(result, state, plainTheme)),
         state,
       };
     },

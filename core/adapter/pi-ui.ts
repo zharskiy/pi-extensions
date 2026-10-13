@@ -41,7 +41,6 @@ import type {
   NotifyChannel,
   OverlayFactory,
   ScrollPane,
-  ThemeLike,
   TranscriptItem,
   TranscriptPane,
   WidgetHandle,

@@ -56,7 +56,8 @@ const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {
   const running = (id: string) => registry.update(id, { state: "running", startedAt: Date.now() });
   const widget = () => host.widgets.get(WIDGET);
   const lines = (width = 80, theme: ThemeLike = plainTheme) => widget()?.(width, theme) ?? [];
-  const key = (name: "up" | "down" | "enter" | "escape" | "tab") => host.pressEditorKey({ name });
+  const key = (name: "up" | "down" | "left" | "right" | "enter" | "escape" | "tab") =>
+    host.pressEditorKey({ name });
   const type = (char: string) => host.pressEditorKey({ name: "other", char });
 
   return { ...harness, ...stub, registry, newAgent, running, widget, lines, key, type };
@@ -208,6 +209,32 @@ describe("agent panel", () => {
 
     expect(pointed(lines)).toEqual([]);
     expect(lines).not.toContain(HINT);
+    expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("left on a selected row is consumed and does not move the selection", () => {
+    const panel = setup();
+
+    Array.from({ length: 3 }, () => panel.newAgent());
+    panel.host.pressEmptyLeft();
+    panel.key("down");
+
+    const before = panel.lines();
+
+    expect(panel.key("left")).toBe("consumed");
+    expect(panel.lines()).toEqual(before);
+    expect(pointed(panel.lines())).toHaveLength(1);
+    expect(panel.host.editorCapture).toBeDefined();
+  });
+
+  it("right on a selected row deselects and releases the capture", () => {
+    const panel = setup();
+
+    panel.newAgent();
+    panel.host.pressEmptyLeft();
+
+    expect(panel.key("right")).toBe("release");
+    expect(pointed(panel.lines())).toEqual([]);
     expect(panel.host.editorCapture).toBeUndefined();
   });
 

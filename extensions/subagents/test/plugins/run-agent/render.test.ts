@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ThemeLike, ToolResult } from "../../../../../core/adapter/contract.ts";
+import type { ThemeLike, ToolRender, ToolResult } from "../../../../../core/adapter/contract.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { displayWidth } from "../../../src/components/format.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
@@ -84,31 +84,43 @@ const launched = async (harness: Harness, agents: Agent[]) => {
   return pending;
 };
 
+const resolve = (render: ToolRender | undefined, width = BLOCK_WIDTH) =>
+  typeof render === "function" ? render(width) : (render ?? "");
+
 const renderResult = (
   harness: Harness,
   result: ToolResult<RunAgentDetails>,
   params: RunAgentParams,
   state: { isPartial?: boolean; expanded?: boolean; isError?: boolean; invalidate?: () => void } = {},
   theme: ThemeLike = plainTheme,
+  width = BLOCK_WIDTH,
 ) =>
-  harness.tool.renderResult?.(
-    result,
-    {
-      toolCallId: "call-1",
-      expanded: false,
-      isPartial: false,
-      executionStarted: true,
-      isError: result.isError ?? false,
-      args: params,
-      outputPad: 1,
-      invalidate: () => {},
-      ...state,
-    },
-    theme,
-  ) ?? "";
+  resolve(
+    harness.tool.renderResult?.(
+      result,
+      {
+        toolCallId: "call-1",
+        expanded: false,
+        isPartial: false,
+        executionStarted: true,
+        isError: result.isError ?? false,
+        args: params,
+        outputPad: 1,
+        invalidate: () => {},
+        ...state,
+      },
+      theme,
+    ),
+    width,
+  );
 
-const renderCall = (harness: Harness, params: Partial<RunAgentParams>, isPartial: boolean) =>
-  harness.tool.renderCall?.(params as RunAgentParams, plainTheme, {
+const renderCall = (
+  harness: Harness,
+  params: Partial<RunAgentParams>,
+  isPartial: boolean,
+  theme: ThemeLike = plainTheme,
+) =>
+  harness.tool.renderCall?.(params as RunAgentParams, theme, {
     toolCallId: "call-1",
     expanded: false,
     isPartial,
@@ -120,6 +132,11 @@ const renderCall = (harness: Harness, params: Partial<RunAgentParams>, isPartial
   });
 
 const lines = (text: string) => text.split("\n");
+
+const tagged: ThemeLike = {
+  fg: (token, text) => `<${token}>${text}</${token}>`,
+  bold: (text) => `<b>${text}</b>`,
+};
 
 const ids = (harness: Harness) => harness.registry.list().map((record) => record.id);
 
@@ -352,11 +369,13 @@ describe("run_agent block", () => {
       agents: [{ id: "a-1", agent: name, description: "d".repeat(120), model: "fake/model:high" }],
     };
     const crowded = lines(
-      rebuilt.renderResult?.(
-        { text: "", details },
-        { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [] } },
-        plainTheme,
-      ) ?? "",
+      resolve(
+        rebuilt.renderResult?.(
+          { text: "", details },
+          { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [] } },
+          plainTheme,
+        ),
+      ),
     )[1];
 
     expect(crowded.endsWith("…)")).toBe(true);
@@ -406,7 +425,7 @@ describe("run_agent block", () => {
         { id: "reviewer-123", agent: "reviewer", description: "Review the diff of PR 5" },
       ],
     };
-    const text =
+    const text = resolve(
       tool.renderResult?.(
         { text: "Started batch", details },
         {
@@ -420,7 +439,8 @@ describe("run_agent block", () => {
           invalidate: () => {},
         },
         plainTheme,
-      ) ?? "";
+      ),
+    );
 
     expect(lines(text).slice(0, 3)).toEqual([
       "3 background agents launched",
@@ -464,6 +484,45 @@ describe("run_agent block", () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
+  it("registers no invalidate for a settled batch or an unknown batch", async () => {
+    const harness = withWorker({ renderThrottleMs: 50 });
+    const main = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+
+    harness.host.idle = false;
+
+    const first = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
+    const second = await main.execute({ agents: [THREE[1]] }, { update: () => {} });
+
+    await flush();
+
+    const settled = vi.fn();
+    const redrawn = vi.fn();
+    const other = vi.fn();
+    const unknown = vi.fn();
+    const render = (result: ToolResult<unknown>, invalidate: () => void) =>
+      harness.host.renderTool("run_agent", { call: { agents: [THREE[0]] }, result, state: { invalidate } });
+
+    vi.useFakeTimers();
+    render(first, settled);
+    render(second, other);
+    harness.runtime.children[0].finish("done");
+
+    expect(settled).toHaveBeenCalledTimes(1);
+
+    render(first, redrawn);
+    render({ text: "Started batch", details: { batchId: "b-unknown", ids: [], agents: [] } }, unknown);
+
+    const [, b] = ids(harness);
+
+    patch(harness, b, { turns: 1 });
+    vi.advanceTimersByTime(60);
+
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(redrawn).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+    expect(settled).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps invalidating other batches when one stored invalidate throws", async () => {
     const harness = withWorker({ renderThrottleMs: 50 });
     const main = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
@@ -505,5 +564,161 @@ describe("run_agent block", () => {
 
     expect(broken).toHaveBeenCalledTimes(1);
     expect(working).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("run_agent block colours", () => {
+  it("paints the header: spinner accent, count bold, hint dim", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, THREE);
+
+    expect(renderCall(harness, { agents: THREE }, true, tagged)).toBe(
+      "<accent>⠹</accent> Running <b>3</b> agents…",
+    );
+    expect(lines(renderResult(harness, result, { agents: THREE }, {}, tagged))[0]).toBe(
+      "<b>3</b> background agents launched <dim>(← to manage)</dim>",
+    );
+    expect(lines(renderResult(harness, result, { agents: THREE, wait: true }, {}, tagged))[0]).toBe(
+      "<b>3</b> agents finished",
+    );
+    expect(renderResult(harness, { isError: true, text: "bad\nmore" }, { agents: THREE }, {}, tagged)).toBe(
+      "<error>✗ No agents started: bad</error>",
+    );
+  });
+
+  it("paints the name line: agent bold, description muted, model dim", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, [THREE[0]]);
+    const model = harness.registry.list()[0].model;
+
+    expect(lines(renderResult(harness, result, { agents: [THREE[0]] }, {}, tagged))[1]).toBe(
+      `└─ <b>explorer</b> <muted>(Map the auth module)</muted><dim> · ${model}</dim>`,
+    );
+  });
+
+  it("paints every status line in its state token", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(0);
+
+    const harness = withWorker({ maxConcurrent: 1 });
+    const result = await launched(harness, THREE);
+    const [first, second, third] = ids(harness);
+    const statusOf = (index: number, wait = false) =>
+      lines(renderResult(harness, result, { agents: THREE, wait }, {}, tagged))[2 + index * 2].slice(3);
+    const closed = (id: string, values: Partial<AgentRecord>) => {
+      patch(harness, id, { startedAt: 0, ...values });
+      harness.registry.close(id, { state: "done", ...values });
+      patch(harness, id, { ...values });
+    };
+
+    expect(statusOf(2)).toBe("<muted>Queued</muted>");
+    expect(statusOf(0)).toBe("<muted>Initializing…</muted>");
+
+    patch(harness, first, { toolCalls: 4, tokens: 12_345, turns: 2 });
+
+    expect(statusOf(0)).toBe("<muted>Running in the background</muted>");
+    expect(statusOf(0, true)).toBe("<muted>Running · 4 tool uses · 12.3k tokens</muted>");
+
+    patch(harness, first, { state: "grace" });
+
+    expect(statusOf(0)).toBe("<warning>Stopping…</warning>");
+
+    closed(second, { state: "done", toolCalls: 4, tokens: 12_345, endedAt: 65_000 });
+    expect(statusOf(1)).toBe("<success>Done</success><dim> · 4 tool uses · 12.3k tokens · 1m 5s</dim>");
+
+    closed(second, { state: "failed", error: "tests failed twice\nstack" });
+    expect(statusOf(1)).toBe("<error>Failed: tests failed twice</error>");
+
+    closed(second, { state: "stopped", toolCalls: 0, tokens: 0, endedAt: 3_000 });
+    expect(statusOf(1)).toBe("<muted>Stopped · 0 tool uses · 3s</muted>");
+
+    closed(second, { state: "handoff", toolCalls: 4, tokens: 12_345, endedAt: 3_720_000 });
+    expect(statusOf(1)).toBe("<warning>Handed off · 4 tool uses · 12.3k tokens · 1h 2m</warning>");
+
+    closed(third, { state: "done", toolCalls: 1, tokens: 0, endedAt: 1_000 });
+    patch(harness, third, {
+      worktree: { path: "/w", branch: "pi-agents/x-1", base: "abc", cwd: "/w", cleanup: "removed" },
+    });
+
+    expect(statusOf(2)).toBe(
+      "<success>Done</success><dim> · 1 tool use · 1s</dim><dim> · worktree removed</dim>",
+    );
+  });
+
+  it("paints Status unavailable dim", () => {
+    const harness = setup();
+    const registry = createRegistry({ bus: harness.bus, handoffPath: (id: string) => id });
+    const tool = runAgentTool({ runner: harness.runner, registry, now: () => NOW }, "run agents");
+    const details: RunAgentDetails = {
+      batchId: "b-old",
+      ids: ["explorer-abc"],
+      agents: [{ id: "explorer-abc", agent: "explorer", description: "Map the auth module" }],
+    };
+    const text = resolve(
+      tool.renderResult?.(
+        { text: "Started batch", details },
+        { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [THREE[0]] } },
+        tagged,
+      ),
+    );
+
+    expect(lines(text)[2]).toBe("   <dim>Status unavailable · /agents explorer-abc</dim>");
+  });
+});
+
+describe("run_agent block width", () => {
+  const forty = `${"d".repeat(39)}e`;
+
+  it("keeps the description and the whole model at width 80 and at width 120", async () => {
+    const harness = withWorker();
+    const agents = [item("explorer", forty)];
+    const result = await launched(harness, agents);
+    const model = harness.registry.list()[0].model as string;
+    const at = (width: number) =>
+      lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
+
+    expect(at(80)).toBe(`└─ explorer (${forty}) · ${model}`);
+    expect(displayWidth(at(80))).toBeLessThanOrEqual(78);
+    expect(at(120)).toBe(`└─ explorer (${forty}) · ${model}`);
+  });
+
+  it("cuts the description, never the model, against the real width and drops the model when it does not fit", async () => {
+    const harness = withWorker();
+    const agents = [item("explorer", "d".repeat(60))];
+    const result = await launched(harness, agents);
+    const model = harness.registry.list()[0].model as string;
+    const at = (width: number) =>
+      lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
+
+    expect(at(80).endsWith(`…) · ${model}`)).toBe(true);
+    expect(displayWidth(at(80))).toBe(78);
+    expect(at(120)).toBe(`└─ explorer (${"d".repeat(60)}) · ${model}`);
+    expect(at(50)).not.toContain(model);
+    expect(at(50).endsWith("…)")).toBe(true);
+    expect(displayWidth(at(50))).toBeLessThanOrEqual(48);
+    expect(displayWidth(at(200))).toBeLessThanOrEqual(BLOCK_WIDTH);
+  });
+
+  it("wraps an expanded long error at the real width instead of cutting it", () => {
+    const harness = setup();
+    const error = `unknown agent(s): ${"x".repeat(150)}`;
+    const result = { isError: true, text: error };
+    const rendered = lines(
+      harness.host.renderTool("run_agent", {
+        call: { agents: [item("x", "y")] },
+        result,
+        state: { expanded: true },
+        width: 80,
+      }).result ?? "",
+    );
+    const body = rendered.slice(1);
+
+    expect(body.length).toBeGreaterThan(2);
+    body.forEach((line) => {
+      expect(line.startsWith("   ")).toBe(true);
+      expect(displayWidth(line)).toBeLessThanOrEqual(78);
+      expect(line).not.toContain("…");
+    });
+    expect(body.map((line) => line.slice(3)).join("")).toBe(error);
   });
 });

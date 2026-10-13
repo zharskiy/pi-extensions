@@ -1,5 +1,6 @@
 import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
 import {
+  charWidth,
   displayWidth,
   elapsedOf,
   firstLine,
@@ -37,7 +38,11 @@ export type BlockInput = {
   now: number;
 };
 
+/** The widest the block draws; a narrower render width shrinks every budget. */
 export const BLOCK_WIDTH = 100;
+
+/** The render width a block uses: the width pi gives (minus `outputPad` on both sides), at most `BLOCK_WIDTH`. */
+export const blockWidth = (width: number) => Math.max(1, Math.min(width, BLOCK_WIDTH));
 
 const CONTINUATION = 3;
 
@@ -146,11 +151,12 @@ const statusLine = (
   wait: boolean,
   theme: ThemeLike,
   now: number,
+  width: number,
 ) => {
   const status = statusOf(terminal, totals, wait, now);
   const cleanup = cleanupText(terminal);
   const suffix = cleanup ? `${SEP}${cleanup}` : "";
-  const budget = BLOCK_WIDTH - CONTINUATION - displayWidth(suffix);
+  const budget = width - CONTINUATION - displayWidth(suffix);
   const lead = truncateCols(status.lead, budget);
   const rest = status.rest ? truncateCols(status.rest, Math.max(0, budget - displayWidth(lead))) : "";
   const painted = `${theme.fg(status.leadToken, lead)}${rest ? theme.fg(status.restToken ?? "dim", rest) : ""}`;
@@ -164,20 +170,21 @@ const nameLine = (
   description: string,
   model: string | undefined,
   theme: ThemeLike,
+  width: number,
 ) => {
   const head = `${connector}${name} (`;
   const fullTail = model ? `)${SEP}${model}` : ")";
-  const budgetWith = BLOCK_WIDTH - displayWidth(head) - displayWidth(fullTail);
+  const budgetWith = width - displayWidth(head) - displayWidth(fullTail);
   const keepModel = model !== undefined && budgetWith >= MODEL_MIN_BUDGET;
   const tail = keepModel ? fullTail : ")";
-  const budget = Math.max(DESCRIPTION_MIN, BLOCK_WIDTH - displayWidth(head) - displayWidth(tail));
+  const budget = Math.max(DESCRIPTION_MIN, width - displayWidth(head) - displayWidth(tail));
   const cut = truncateCols(singleLine(description), budget);
   const modelPart = keepModel ? theme.fg("dim", `${SEP}${model}`) : "";
 
   return `${connector}${theme.bold(name)} ${theme.fg("muted", `(${cut})`)}${modelPart}`;
 };
 
-const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean) => {
+const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
   const { registry, theme, now } = input;
 
   return details.agents.flatMap((entry, index) => {
@@ -188,7 +195,7 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean) =
 
     if (!record) {
       return [
-        nameLine(connector, entry.agent, entry.description, entry.model, theme),
+        nameLine(connector, entry.agent, entry.description, entry.model, theme, width),
         `${continuation}${theme.fg("dim", `Status unavailable${SEP}/agents ${entry.id}`)}`,
       ];
     }
@@ -198,20 +205,51 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean) =
     const name = `${terminal.agent}${terminal.chainIndex > 1 ? ` #${terminal.chainIndex}` : ""}`;
 
     return [
-      nameLine(connector, name, terminal.description, terminal.model ?? entry.model, theme),
-      `${continuation}${statusLine(terminal, totals, wait, theme, now)}`,
+      nameLine(connector, name, terminal.description, terminal.model ?? entry.model, theme, width),
+      `${continuation}${statusLine(terminal, totals, wait, theme, now, width)}`,
     ];
   });
 };
 
-const errorBlock = (result: ToolResult<RunAgentDetails>, expanded: boolean, theme: ThemeLike) => {
+const ERROR_INDENT = "   ";
+
+/** Cuts `line` into pieces of at most `cols` columns (never fewer than one character per piece). */
+const wrapCols = (line: string, cols: number): string[] =>
+  Array.from(line).reduce<{ lines: string[]; used: number }>(
+    (acc, char) => {
+      const width = charWidth(char);
+
+      if (acc.used + width > cols && acc.used > 0) {
+        acc.lines.push(char);
+
+        return { lines: acc.lines, used: width };
+      }
+
+      acc.lines[acc.lines.length - 1] += char;
+
+      return { lines: acc.lines, used: acc.used + width };
+    },
+    { lines: [""], used: 0 },
+  ).lines;
+
+const errorBlock = (
+  result: ToolResult<RunAgentDetails>,
+  expanded: boolean,
+  theme: ThemeLike,
+  width: number,
+) => {
   const header = theme.fg("error", `✗ No agents started: ${firstLine(result.text)}`);
 
   if (!expanded) {
     return header;
   }
 
-  return [header, ...result.text.split("\n").map((line) => `   ${line}`)].join("\n");
+  const cols = Math.max(1, width - ERROR_INDENT.length);
+  const body = result.text
+    .split("\n")
+    .flatMap((line) => wrapCols(line, cols).map((piece) => `${ERROR_INDENT}${piece}`));
+
+  return [header, ...body].join("\n");
 };
 
 const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean) => {
@@ -231,8 +269,10 @@ const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean)
   return `${count} background ${named} launched${open ? ` ${theme.fg("dim", "(← to manage)")}` : ""}`;
 };
 
-export const renderBlock = (input: BlockInput): string => {
+/** Header and rows (rows only while partial, or the error header) at `width`, the render width pi gives the block (bounded by `BLOCK_WIDTH`). */
+export const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
   const { result, state, theme } = input;
+  const width = blockWidth(renderWidth);
 
   if (!result) {
     return "";
@@ -241,7 +281,7 @@ export const renderBlock = (input: BlockInput): string => {
   const details = result.details;
 
   if ((state.isError || result.isError) && !details?.batchId) {
-    return errorBlock(result, state.expanded, theme);
+    return errorBlock(result, state.expanded, theme, width);
   }
 
   if (!details?.agents) {
@@ -249,7 +289,7 @@ export const renderBlock = (input: BlockInput): string => {
   }
 
   const wait = input.params?.wait === true;
-  const rows = agentRows(input, details, wait);
+  const rows = agentRows(input, details, wait, width);
 
   if (state.isPartial) {
     return rows.join("\n");
@@ -257,3 +297,9 @@ export const renderBlock = (input: BlockInput): string => {
 
   return [finalHeader(input, details, wait), ...rows].join("\n");
 };
+
+/** The block as a function of the render width, for `ToolSpec.renderResult` (the adapter calls it on every render). */
+export const renderBlock =
+  (input: BlockInput) =>
+  (width: number): string =>
+    renderBlockAt(input, width);

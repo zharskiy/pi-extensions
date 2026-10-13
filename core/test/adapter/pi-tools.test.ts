@@ -206,4 +206,35 @@ describe("toPiTool render state", () => {
     expect(empty).toEqual([]);
     expect(boxed).toBeInstanceOf(Text);
   });
+
+  it("calls a width-function render with the width minus outputPad on both sides on every render", () => {
+    const widths: number[] = [];
+    const spec: ToolSpec<unknown, unknown> = {
+      ...baseSpec,
+      renderShell: "self",
+      renderResult: () => (width) => {
+        widths.push(width);
+        return width < 50 ? "" : `head\n${"y".repeat(width + 5)}`;
+      },
+    };
+    const component = piTool(spec).renderResult(piResult("x"), options, theme, context({ outputPad: 1 }));
+
+    const wide = component.render(80).map(stripVTControlCharacters);
+    const narrow = component.render(40);
+    const flush = piTool(spec)
+      .renderResult(piResult("x"), options, theme, context({ outputPad: 0 }))
+      .render(60);
+    const boxed = piTool({ ...spec, renderShell: "default" })
+      .renderResult(piResult("x"), options, theme, context())
+      .render(60)
+      .map(stripVTControlCharacters);
+
+    expect(widths).toEqual([78, 38, 60, 60]);
+    expect(wide[0]).toBe(" head");
+    expect(visibleWidth(wide[1] ?? "")).toBe(79);
+    expect(wide[1]?.endsWith("…")).toBe(true);
+    expect(narrow).toEqual([]);
+    expect(flush).toHaveLength(2);
+    expect(boxed[0]?.trimEnd()).toBe("head");
+  });
 });

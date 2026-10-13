@@ -1,7 +1,7 @@
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ToolRenderState, ToolResult, ToolSpec } from "./contract.ts";
+import type { ToolRender, ToolRenderState, ToolResult, ToolSpec } from "./contract.ts";
 import { padLines, textComponent, themeLike } from "./pi-components.ts";
 
 const toPiResult = (result: ToolResult) => ({
@@ -52,10 +52,19 @@ const renderState = (context: RenderContext): ToolRenderState => ({
   invalidate: context.invalidate,
 });
 
-const shellComponent = (shell: ToolSpec["renderShell"], context: RenderContext, text: string): Component =>
-  shell === "self"
-    ? padLines(text === "" ? [] : text.split("\n"), context.outputPad ?? 1, context.lastComponent)
-    : textComponent(context.lastComponent, text);
+const shellComponent = (
+  shell: ToolSpec["renderShell"],
+  context: RenderContext,
+  text: ToolRender,
+): Component => {
+  if (shell !== "self") {
+    return textComponent(context.lastComponent, text);
+  }
+
+  const lines = typeof text === "function" ? text : text === "" ? [] : text.split("\n");
+
+  return padLines(lines, context.outputPad ?? 1, context.lastComponent);
+};
 
 export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionContext) => void = () => {}) =>
   ({

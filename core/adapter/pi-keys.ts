@@ -5,6 +5,8 @@ export type KeyMatchers = {
   isToolsToggle(data: string): boolean;
   isUp(data: string): boolean;
   isDown(data: string): boolean;
+  isLeft?(data: string): boolean;
+  isRight?(data: string): boolean;
 };
 
 const KEY_NAMES = [
@@ -31,6 +33,14 @@ export const keyPressWith = (data: string, matchers: KeyMatchers): KeyPress => {
     return { name: "down", raw: data };
   }
 
+  if (matchers.isLeft?.(data)) {
+    return { name: "left", raw: data };
+  }
+
+  if (matchers.isRight?.(data)) {
+    return { name: "right", raw: data };
+  }
+
   const match = KEY_NAMES.find(([, key]) => matchesKey(data, key));
 
   if (match) {
@@ -42,10 +52,12 @@ export const keyPressWith = (data: string, matchers: KeyMatchers): KeyPress => {
 
 type KeyMatcher = { matches(data: string, binding: string): boolean };
 
-/** The key as the focused editor sees it: `up`/`down` through pi's `tui.editor.cursorUp/Down` bindings, `toggleTools` through `app.tools.expand`, the rest by `Key.*`. */
+/** The key as the focused editor sees it: `up`/`down`/`left`/`right` through pi's `tui.editor.cursorUp/Down/Left/Right` bindings, `toggleTools` through `app.tools.expand`, the rest by `Key.*`. */
 export const editorKeyPress = (data: string, keys: KeyMatcher): KeyPress =>
   keyPressWith(data, {
     isToolsToggle: (input) => keys.matches(input, "app.tools.expand"),
     isUp: (input) => keys.matches(input, "tui.editor.cursorUp"),
     isDown: (input) => keys.matches(input, "tui.editor.cursorDown"),
+    isLeft: (input) => keys.matches(input, "tui.editor.cursorLeft"),
+    isRight: (input) => keys.matches(input, "tui.editor.cursorRight"),
   });

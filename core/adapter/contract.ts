@@ -38,6 +38,9 @@ export type ToolRenderState = {
   invalidate(): void;
 };
 
+/** What a tool renderer returns: text, or a function of the render width (the component width minus `outputPad` on both sides for `renderShell: "self"`) that the adapter calls on every render. */
+export type ToolRender = string | ((width: number) => string);
+
 export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   name: string;
   label: string;
@@ -50,8 +53,8 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
     params: P,
     ctx: { signal?: AbortSignal; update(text: string, details?: D): void },
   ): Promise<ToolResult<D>>;
-  renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): string;
-  renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): string;
+  renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
+  renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;
@@ -60,6 +63,8 @@ export type KeyPress = {
   name:
     | "up"
     | "down"
+    | "left"
+    | "right"
     | "pageUp"
     | "pageDown"
     | "home"

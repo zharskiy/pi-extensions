@@ -113,6 +113,7 @@ describe("limits plugin", () => {
     mkdirSync(dirname(record.handoffPath), { recursive: true });
     writeFileSync(record.handoffPath, VALID_HANDOFF);
     child.finish(record.handoffPath);
+    await flush();
 
     expect(services.require("registry").get(record.id)?.state).toBe("handoff");
     expect(wakeTexts(host)).toHaveLength(1);
@@ -127,6 +128,7 @@ describe("limits plugin", () => {
     mkdirSync(dirname(record.handoffPath), { recursive: true });
     writeFileSync(record.handoffPath, VALID_HANDOFF.replace("partial", "done"));
     child.finish("wrote it");
+    await flush();
 
     const closed = services.require("registry").get(record.id);
 

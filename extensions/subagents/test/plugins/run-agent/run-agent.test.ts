@@ -50,6 +50,7 @@ describe("run_agent batches", () => {
     expect(wakeTexts(host)).toEqual([]);
 
     runtime.children[2].finish("third result");
+    await flush();
 
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("finished: 3 done");
@@ -77,6 +78,7 @@ describe("run_agent batches", () => {
     runtime.children[0].finish("ok one");
     runtime.children[1].finish("", { stopReason: "error", error: "rate limited" });
     runtime.children[2].finish("ok three");
+    await flush();
 
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("2 done, 1 failed");
@@ -93,6 +95,7 @@ describe("run_agent batches", () => {
 
     runtime.children[0].finish("   ");
     runtime.children[1].finish("partial", { aborted: true });
+    await flush();
 
     const states = registry.list().map((record) => [record.state, record.error]);
 
@@ -112,6 +115,7 @@ describe("run_agent batches", () => {
 
     runtime.children[0].finish("small");
     runtime.children[1].finish(large);
+    await flush();
 
     const [small, big] = registry.list();
 
@@ -128,6 +132,7 @@ describe("run_agent batches", () => {
     await run(tasks(1));
 
     runtime.children[0].finish("done while busy");
+    await flush();
 
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("done while busy");
@@ -145,6 +150,7 @@ describe("run_agent batches", () => {
     await run(tasks(1));
     host.settle();
     runtime.children[0].finish("one");
+    await flush();
 
     expect(host.hidden.map((entry) => entry.visible)).toEqual(["↳ 1 agent finished"]);
   });
@@ -156,7 +162,9 @@ describe("run_agent batches", () => {
     await run(tasks(1));
 
     runtime.children[0].finish("batch one");
+    await flush();
     runtime.children[1].finish("batch two");
+    await flush();
 
     expect(wakeTexts(host)).toHaveLength(2);
     expect(wakeTexts(host)[0]).toContain("batch one");
@@ -165,6 +173,28 @@ describe("run_agent batches", () => {
     expect(
       host.hidden.map((entry) => (entry.message.details as { batches: string[] }).batches.length),
     ).toEqual([1, 1]);
+  });
+
+  it("merges batches that settle in the same tick while idle into one wake", async () => {
+    const { run, runtime, host } = setup();
+
+    await run(tasks(1));
+    await run(tasks(1));
+    host.settle();
+
+    runtime.children[0].finish("batch one");
+    runtime.children[1].finish("batch two");
+
+    expect(host.hidden).toEqual([]);
+
+    await flush();
+
+    expect(host.hidden).toHaveLength(1);
+    expect(host.hidden[0].visible).toBe("↳ 2 agents finished");
+    expect(host.hidden[0].message.text).toContain("batch one");
+    expect(host.hidden[0].message.text).toContain("batch two");
+    expect(host.hidden[0].message.text).toContain("\n\n---\n\n");
+    expect((host.hidden[0].message.details as { batches: string[] }).batches).toHaveLength(2);
   });
 
   it("caps concurrency with the semaphore and starts queued agents as slots free up", async () => {
@@ -185,6 +215,7 @@ describe("run_agent batches", () => {
     runtime.children[2].finish("c");
     await flush();
     runtime.children[3].finish("d");
+    await flush();
 
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("4 done");

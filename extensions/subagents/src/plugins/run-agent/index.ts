@@ -7,12 +7,13 @@ import {
   type AgentDefinition,
   type AgentRecord,
   chainLinks,
+  isClosed,
   MAIN_CALLER,
   subagentNames,
 } from "../../model/types.ts";
 import { CLOSED_ENTRY, type ClosedEntry, closedEntryOf, renderClosedEntry } from "./completion.ts";
 import { createHandoff } from "./handoff.ts";
-import { createOutbox, joinTexts } from "./outbox.ts";
+import { createOutbox, joinTexts, type OutboxItem } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
 import { describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
 
@@ -25,19 +26,35 @@ export const runAgentPlugin: Plugin = {
     const registry = services.require("registry");
     const definitions = services.require("definitions");
 
+    const waking: OutboxItem[] = [];
+
+    const wake = () => {
+      const items = waking.splice(0);
+
+      if (items.length === 0) {
+        return;
+      }
+
+      const agents = items.reduce((sum, item) => sum + item.agents, 0);
+
+      host.sendHiddenMessage(
+        {
+          customType: "pi-subagents:wake",
+          text: joinTexts(items),
+          details: { v: 1, batches: items.map((item) => item.batchId) },
+        },
+        `↳ ${formatAgents(agents)} finished`,
+      );
+    };
+
     const outbox = createOutbox({
       isBusy: () => false,
       deliver: (items) => {
-        const agents = items.reduce((sum, item) => sum + item.agents, 0);
+        if (waking.length === 0) {
+          queueMicrotask(wake);
+        }
 
-        host.sendHiddenMessage(
-          {
-            customType: "pi-subagents:wake",
-            text: joinTexts(items),
-            details: { v: 1, batches: items.map((item) => item.batchId) },
-          },
-          `↳ ${formatAgents(agents)} finished`,
-        );
+        waking.push(...items);
       },
       onIdle: () => {},
     });
@@ -161,7 +178,9 @@ export const runAgentPlugin: Plugin = {
       runner,
       registry,
       onRendered: (batchId: string, invalidate: () => void) => {
-        invalidators.set(batchId, invalidate);
+        if (registry.batch(batchId).some((record) => !isClosed(record.state))) {
+          invalidators.set(batchId, invalidate);
+        }
       },
     };
 
@@ -211,6 +230,7 @@ export const runAgentPlugin: Plugin = {
     host.onSessionShutdown(async (reason) => {
       shuttingDown = true;
       outbox.clear();
+      waking.length = 0;
       await runner.shutdown(`session ${reason}`);
     });
 

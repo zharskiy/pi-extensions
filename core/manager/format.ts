@@ -3,8 +3,10 @@ export const formatTokens = (n: number): string => {
     return `${n}`;
   }
 
-  if (n < 1_000_000) {
-    return `${(n / 1_000).toFixed(1)}k`;
+  const thousands = (n / 1_000).toFixed(1);
+
+  if (Number(thousands) < 1_000) {
+    return `${thousands}k`;
   }
 
   return `${(n / 1_000_000).toFixed(1)}M`;

@@ -8,6 +8,7 @@ describe("shared formatters", () => {
     expect(formatTokens(1_234_567)).toBe("1.2M");
     expect(formatTokens(0)).toBe("0");
     expect(formatTokens(12_345)).toBe("12.3k");
+    expect([999_949, 999_950, 999_999].map(formatTokens)).toEqual(["999.9k", "1.0M", "1.0M"]);
     expect([150_100, 1_000_000, 2_450_000].map(formatTokens)).toEqual(["150.1k", "1.0M", "2.5M"]);
   });
 

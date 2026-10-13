@@ -114,6 +114,18 @@ describe("editorKeyPress", () => {
     ]);
     expect(editorKeyPress("x", keys).char).toBe("x");
   });
+
+  it("editorKeyPress names left and right through the keybindings manager", () => {
+    const map: Record<string, string> = {
+      [`${ESC}[D`]: "tui.editor.cursorLeft",
+      [`${ESC}[C`]: "tui.editor.cursorRight",
+    };
+    const keys = { matches: (data: string, id: string) => map[data] === id };
+
+    expect(editorKeyPress(`${ESC}[D`, keys).name).toBe("left");
+    expect(editorKeyPress(`${ESC}[C`, keys).name).toBe("right");
+    expect(editorKeyPress(`${ESC}[D`, { matches: () => false }).name).toBe("other");
+  });
 });
 
 const keyContext = (mode: string) => {

@@ -199,6 +199,7 @@ describe("successor chain", () => {
     expect(wakeTexts(host)[0]).toContain("finished: 1 handoff.");
     expect(wakeTexts(host)[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
     expect(wakeTexts(host)[0]).toContain(`Handoff file: ${current(second).handoffPath}`);
+    expect(host.hidden.map((entry) => entry.visible)).toEqual(["↳ 1 agent finished"]);
   });
 
   it("never continues after a user stop during link 2 and wakes once", async () => {
