@@ -131,7 +131,7 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 
 ## Footer
 
-- Replaces pi's footer (`HostUi.setFooter`, tui only) with a padded block: context tokens (warning above 70 %, error above 90 %), main cost, model name and window; the session total (main plus every spending source); folder and session name; git branch; thinking level with the `app.thinking.cycle` key; then the other extensions' status texts, without spending's own `pi-spending` status (`SPENDING_STATUS_KEY`), whose figures the block already shows.
+- Replaces pi's footer (`HostUi.setFooter`, tui only) with a block aligned to the composer chevron (`PAD`, empty by default): context tokens (warning above 70 %, error above 90 %), main cost, model name and window; the session total (main plus every spending source); folder and session name; git branch; thinking level with the `app.thinking.cycle` key; then the other extensions' status texts, without spending's own `pi-spending` status (`SPENDING_STATUS_KEY`), whose figures the block already shows.
 - Cost and tokens come only from `spending:totals`: the footer keeps the last payload, so a render reads only cheap live values (`Host.context()`, `model()`, `thinkingLevel()`, `sessionName()`; the adapter memoises `context()` on the session leaf id and the model, as pi's own footer does). Until spending publishes the cost segment and the session-total line are hidden; the session total gets a dim ` (sub)` when `subscription` is set.
 - The adapter (`core/adapter/pi-footer.ts`) truncates every line to the width, re-renders on git branch changes and on `refresh()`, and drops the branch subscription when pi disposes the footer; the dim ellipsis is painted on each render, so it follows theme switches.
 

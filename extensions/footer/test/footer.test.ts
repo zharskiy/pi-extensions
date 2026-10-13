@@ -28,10 +28,10 @@ describe("footer", () => {
 
     expect(host.published).toEqual([]);
     expect(lines()).toEqual([
-      "  50.0k · test-model (200k context)",
-      "  my-project",
-      "  main",
-      "  ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
+      "50.0k · test-model (200k context)",
+      "my-project",
+      "main",
+      "▶▶ thinking medium (<app.thinking.cycle> to cycle)",
       "",
     ]);
   });
@@ -47,8 +47,8 @@ describe("footer", () => {
 
     expect(host.footerRefreshes).toBe(1);
     expect(lines().slice(0, 2)).toEqual([
-      "  50.0k · $1.50 · test-model (200k context)",
-      "  Session total (agents included): 50.0k / $2.00",
+      "50.0k · $1.50 · test-model (200k context)",
+      "Session total (agents included): 50.0k / $2.00",
     ]);
   });
 
@@ -65,7 +65,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines().slice(0, 2)).toEqual(["  50.0k · test-model (200k context)", "  my-project"]);
+    expect(lines().slice(0, 2)).toEqual(["50.0k · test-model (200k context)", "my-project"]);
   });
 
   it("refreshes on idle", () => {
@@ -83,8 +83,8 @@ describe("footer", () => {
     host.thinking = "high";
     host.sessionTitle = "refactor";
 
-    expect(lines()).toContain("  190.0k · test-model (200k context)");
-    expect(lines()).toContain("  my-project • refactor");
-    expect(lines()).toContain("  ▶▶ thinking high (<app.thinking.cycle> to cycle)");
+    expect(lines()).toContain("190.0k · test-model (200k context)");
+    expect(lines()).toContain("my-project • refactor");
+    expect(lines()).toContain("▶▶ thinking high (<app.thinking.cycle> to cycle)");
   });
 });
