@@ -2,6 +2,8 @@
 
 Implements decision D6 and spec `plans/00-ux-spec.md` §7 (Surface E). Builds on plan 01 §A (`Phase`, `PhaseDetail`, `Host.onPhase`, `Host.phase()`, `HostUi.setWorkingVisible`, fake `setPhase`/`workingVisibility`), taken as given. Path aliases as in plan 01: `IM` = `$PCA/modes/interactive/interactive-mode.js`, `AS` = `$PCA/core/agent-session.js`, `TUI` = `node_modules/@earendil-works/pi-tui/dist/tui.js`.
 
+Reviewed 2026-10-14: findings 16, 18 applied.
+
 ## 1. Goal and behaviour
 
 - The working row (spinner + message above the composer) is visible while the main session waits for the model, streams thinking, streams tool-call arguments or runs tools.
@@ -81,7 +83,7 @@ export const workingMessage = (verb: string, elapsedMs: number, interruptKey: st
 
 The tool name appears only in `tool`, and it is `detail.toolName`: the most recently started top-level tool still running (plan 01 reducer). `toolArgs` has no name (spec §7: "same").
 
-`formatDuration` is the shared format from spec §2. Its owner, `extensions/subagents/src/components/format.ts` (plan 04), may not be imported here (extensions never import each other). working-indicator therefore keeps its own copy in `src/format.ts` with identical output (the algorithm of today's `formatElapsed` in `subagents/src/components/agent-row.ts:37-51`). It is a known duplicate, like footer's `formatTokens`: `0s`…`59s`, `1m 0s`…`59m 59s`, `1h 0m`…; seconds floored, negatives clamped to `0s`.
+`formatDuration` is the shared format from spec §2, imported from `core/manager/format.ts` (plan 01 §I item 3), the one copy subagents re-exports and footer uses too. Extensions may import `core/manager` (ARCHITECTURE.md line 9); `test/architecture.test.ts` forbids only extension-to-extension imports, adapter imports other than `contract.ts` (and `pi-adapter.ts` from `src/index.ts`) and cross-plugin imports, so no duplicate is needed. Output: `0s`…`59s`, `1m 0s`…`59m 59s`, `1h 0m`…; seconds floored, negatives clamped to `0s` (the algorithm of today's `formatElapsed` in `subagents/src/components/agent-row.ts:37-51`). If plan 02 lands before plan 04, plan 02 creates `core/manager/format.ts` with `formatDuration` only, and plan 04 adds `formatTokens`.
 
 ### Clock across repeated `agent_start`s
 
@@ -105,18 +107,22 @@ The test (`ignores child sessions, channels and other host events`) proves it at
 Replace plan 01's `setWorkingVisible` comment with:
 `/** Show or hide pi's working row; tui only. Hiding is immediate. Showing is immediate while a run is active, otherwise pi applies it at the next turn_start. The flag persists until set again; pi resets it to true on session switch and reload. */`
 
-### `extensions/working-indicator/src/format.ts` (new)
+### `core/manager/format.ts` (only if plan 04 has not landed)
 
 ```ts
-export const formatDuration = (ms: number): string; // 3s, 1m 2s, 1h 2m; same output as subagents' shared formatter (spec §2)
+export const formatDuration = (ms: number): string; // 3s, 1m 2s, 1h 2m (spec §2)
 ```
 
-The body is today's `formatElapsed` (`Math.max(0, Math.floor(ms / 1000))`, then the under-a-minute and under-an-hour branches).
+The body is today's `formatElapsed` (`Math.max(0, Math.floor(ms / 1000))`, then the under-a-minute and under-an-hour branches). Pi-free; plan 04 later adds `formatTokens` to the same file. If plan 04 landed first, the file exists and this step is skipped.
+
+### `core/test/manager/format.test.ts` (only if plan 02 creates `format.ts`)
+
+`formats durations like the shared formatter`: `3000 → "3s"`, `75000 → "1m 15s"`, `3600000 → "1h 0m"`, `3725000 → "1h 2m"`.
 
 ### `extensions/working-indicator/src/working-indicator.ts`
 
 - Keep `SPINNER`, `SPINNERS`, `spinner`, `VERBS`, `VERB_MS`, `TICK_MS`, `INTERRUPT_BINDING`, `pickVerb`.
-- `workingMessage(verb, elapsedMs, interruptKey, toolName?)` as in §2, importing `formatDuration` from `./format.ts`.
+- `workingMessage(verb, elapsedMs, interruptKey, toolName?)` as in §2, importing `formatDuration` from `core/manager/format.ts` (relative path `../../../core/manager/format.ts`).
 - `createWorkingIndicator(host: Host): void`, with the state and handlers of §2. Internal functions: `message()` (builds the message from `run`, `phase` and `toolName`), `write()` (`setWorkingMessage(message())`), `tick()`, `applyVisibility()`, `begin()` (replaces `start`), `stop()`, `end()`. Import `Phase` from the contract. Remove the `onIdle` subscription. Follow the repository style (no loops, blank lines around `if` blocks, no comments).
 
 ### `extensions/working-indicator/src/index.ts`
@@ -134,7 +140,7 @@ Replace "What it does" with:
 - Only the main session drives it; subagents never show, hide or change it.
 - Active only in `tui` mode; in other modes it does nothing.
 
-Update the example to `⠹ Percolating… (bash · 12s · esc to interrupt)`. In "Layout", add that `src/format.ts` holds the duration formatter (a copy of the subagents one, since extensions do not import each other).
+Update the example to `⠹ Percolating… (bash · 12s · esc to interrupt)`. In "Layout", add that the duration format comes from `core/manager/format.ts`, shared with subagents and footer.
 
 ### `extensions/working-indicator/test/working-indicator.test.ts`
 
@@ -158,7 +164,7 @@ Change:
 
 Add:
 
-12. `formats durations like the shared formatter`: `formatDuration` of `-5, 0, 999, 45_000, 60_000, 73_000, 3_599_000, 3_723_000` → `0s, 0s, 0s, 45s, 1m 0s, 1m 13s, 59m 59s, 1h 2m`.
+12. `formats elapsed times with the shared duration format`: `workingMessage("Musing", 45_000, "esc")` → `"Musing… (45s · esc to interrupt)"`, `workingMessage("Musing", 3_723_000, "esc")` → `"Musing… (1h 2m · esc to interrupt)"`. The formatter's own cases live in `core/test/manager/format.test.ts`.
 13. `switches to minutes after one minute`: 65 ticks → `message(V0, "1m 5s")`; never contains `"65s"`.
 14. `hides while the assistant writes text and shows again when a tool starts`: `agentStart`, `setPhase("writing")` → `workingVisibility` `[false]`; `setPhase("tool", { toolName: "bash", running: 1 })` → `[false, true]`, last message `message(V0, "0s", "bash")`.
 15. `writes the fresh message before showing the row again`: spy on `host.ui.setWorkingMessage` and `host.ui.setWorkingVisible`; after `writing` then `tool`, the last message call's `invocationCallOrder` is lower than the `setWorkingVisible(true)` call's.
@@ -171,11 +177,11 @@ Add:
 22. `ignores phases before a run starts`: `setPhase("writing")`, `setPhase("tool", …)` with no `agentStart` → `workingMessages` and `workingVisibility` `[]`.
 23. `restores the row flag and clears the message on settle`: `agentStart`, `writing`, `settle()` → `workingVisibility` `[false, true]`, last message `undefined`, no message after 3 ticks.
 24. `leaves visibility to pi on shutdown`: `agentStart`, `writing`, `await shutdown()` → `workingVisibility` `[false]`, last message `undefined`, no further messages after 3 ticks.
-25. `ignores child sessions, channels and other host events`: `createFakeRuntime()`, `const child = await runtime.spawn(spec)` (a minimal `SpawnSpec` literal), `agentStart`, `setPhase("tool", { toolName: "run_agent", running: 1 })`. Record the lengths of `workingMessages`, `workingVisibility` and `phases`. Then `child.emit({ type: "tool_start", toolName: "bash" })`, `child.turn({ tokens: 10 })`, `child.finish("done")`, `host.emit(BUSY_CHANNEL, { source: "subagents", busy: false })` (from `core/manager/channels.ts`; plan 03 renames the value, not the constant), `host.turnEnd({ tokens: 10, window: 100 })`, `host.compact()`. Assert the three lengths are unchanged and `host.phase()` is still `tool`/`run_agent`; one tick → `message(V0, "1s", "run_agent")`.
+25. `ignores child sessions, channels and other host events`: `createFakeRuntime()`, `const child = await runtime.spawn(spec)` (a minimal `SpawnSpec` literal), `agentStart`, `setPhase("tool", { toolName: "run_agent", running: 1 })`. Record the lengths of `workingMessages`, `workingVisibility` and `phases`. Then `child.emit({ type: "tool_start", toolName: "bash" })`, `child.turn({ tokens: 10 })`, `child.finish("done")`, `host.emit(BUSY_CHANNEL, { source: "subagents", busy: false })` (from `core/manager/channels.ts`; plan 01 §G renames the value, not the constant), `host.turnEnd({ tokens: 10, window: 100 })`, `host.compact()`. Assert the three lengths are unchanged and `host.phase()` is still `tool`/`run_agent`; one tick → `message(V0, "1s", "run_agent")`.
 
 ### `ARCHITECTURE.md`
 
-Replace the "Working-indicator" section with §4. `STRUCTURE.md`: change the working-indicator `src/` line to `# index, working-indicator, format`.
+Replace the "Working-indicator" section with §4. `STRUCTURE.md`: the working-indicator `src/` line is unchanged; if plan 02 creates `core/manager/format.ts`, add it to the `core/manager` list (`format.ts  # shared duration (and later token) formatters`).
 
 ## 4. ARCHITECTURE.md "Working-indicator" (final text)
 
@@ -183,7 +189,7 @@ Replace the "Working-indicator" section with §4. `STRUCTURE.md`: change the wor
 ## Working-indicator
 
 - Active only in `tui` mode. On session start it sets `HostUi.setWorkingIndicator` to the `SPINNER` frames once; pi keeps them for the whole session, so they are not re-set per run (that would restart the animation). The adapter (`pi-working.ts`) paints them with the theme's accent colour, and the working calls are no-ops outside `tui`.
-- The clock counts the current prompt (one agent run), not a turn. The first `Host.onAgentStart` of a run (skipped outside `tui`, so no interval runs in other modes) records the start, reads pi's `app.interrupt` key once through `HostUi.keyText`, and picks a random verb. Repeated `agent_start`s inside the run (retry, compaction, continuation) are ignored. An unref'd interval rewrites `HostUi.setWorkingMessage` every `TICK_MS`, even while the row is hidden, as `<verb>… (<tool> · <elapsed> · <key> to interrupt)`, picking a new verb every `VERB_MS`. `<tool> · ` appears only in phase `tool` (the most recent top-level tool still running), and `<elapsed>` uses `src/format.ts`, a copy of the subagents duration formatter (`12s`, `1m 5s`).
+- The clock counts the current prompt (one agent run), not a turn. The first `Host.onAgentStart` of a run (skipped outside `tui`, so no interval runs in other modes) records the start, reads pi's `app.interrupt` key once through `HostUi.keyText`, and picks a random verb. Repeated `agent_start`s inside the run (retry, compaction, continuation) are ignored. An unref'd interval rewrites `HostUi.setWorkingMessage` every `TICK_MS`, even while the row is hidden, as `<verb>… (<tool> · <elapsed> · <key> to interrupt)`, picking a new verb every `VERB_MS`. `<tool> · ` appears only in phase `tool` (the most recent top-level tool still running), and `<elapsed>` uses `formatDuration` from `core/manager/format.ts`, the duration format shared with subagents (`12s`, `1m 5s`).
 - Visibility follows `Host.onPhase`: entering `writing` calls `HostUi.setWorkingVisible(false)`, and leaving it writes the message and then calls `setWorkingVisible(true)`. pi re-shows the row at once while a run is active (`isStreaming`), so the row returns as soon as assistant text stops, in the same turn. Only transitions call pi, so a run without text never toggles it. `onPhase("idle")` (after the `onIdle` handlers of `agent_settled`) stops the interval, restores pi's visibility flag if it was hidden, and restores pi's default message. Shutdown stops the interval and clears the message; pi resets the flag itself on session switch and reload.
 - Only the main session drives it: phases come from the main session's pi events, child sessions run in their own `AgentSession` with no-op working UI, and the extension subscribes to no bus or channel. Nothing is persisted.
 ```
@@ -212,7 +218,7 @@ Replace the "Working-indicator" section with §4. `STRUCTURE.md`: change the wor
 Precondition: plan 01 §A has landed (`Phase`, `onPhase`, `phase()`, `setWorkingVisible`, fake `setPhase`/`phases`/`workingVisibility`, `agentStart()` → `waiting`, `settle()` → `idle` after idle handlers).
 
 1. `core/adapter/contract.ts`: correct the `setWorkingVisible` doc comment (§3).
-2. `extensions/working-indicator/src/format.ts`, plus test 12.
+2. `core/manager/format.ts` with `formatDuration` and `core/test/manager/format.test.ts`, only if plan 04 has not created them yet; otherwise nothing.
 3. `src/working-indicator.ts`: `workingMessage` with tool and duration, then the state, handlers and visibility of §2; drop `onIdle`.
 4. Tests 1-25 in `test/working-indicator.test.ts`.
 5. `README.md`, `ARCHITECTURE.md` (§4), `STRUCTURE.md`.

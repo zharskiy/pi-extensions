@@ -1,6 +1,8 @@
 # Plan 06: `/agents` list and agent view (one overlay), codemode rendering
 
-Implements `plans/00-ux-spec.md` §5 (Surface C) and §6 (Surface D), decisions D3, D4, D7. Uses plan 01 §D (`createTranscript({ tools })`, captured codemode/tool_search renderers) and §E (one overlay swapping views, no contract change). Imports, never redefines: plan 04 `components/format.ts`, `components/spinner.ts`, `components/state-text.ts`, the `tools` service and `AgentRecord.activity`; plan 05 `components/agent-row.ts` (`renderRow`, `nameColumn`), `components/tree.ts` (`treeOrder`), `components/refresh.ts` (`watchAgents`). Owns: the `lingerMs` meaning change, `agentView.open(id, { from })`, and the deletions listed in §6.
+Implements `plans/00-ux-spec.md` §5 (Surface C) and §6 (Surface D), decisions D3, D4, D7. Uses plan 01 §D (`createTranscript({ tools })`, captured codemode/tool_search renderers) and §E (one overlay swapping views, no contract change). Imports, never redefines: plan 04 `components/format.ts`, `components/spinner.ts`, `components/state-text.ts`, the `tools` service and `AgentRecord.activity`; plan 05 `components/agent-row.ts` (`renderRow`, `nameColumn`), `components/tree.ts` (`treeOrder`), `components/refresh.ts` (`watchAgents`). Owns: the `lingerMs` meaning change, making `options` of `agentView.open(id, { from })` required (plan 05 adds `AgentViewOrigin` and the optional parameter), and the deletions listed in §6.
+
+Reviewed 2026-10-14: findings 2, 4, 8, 9, 11, 12, 13, 15, 19, 20, 25, 33, 37 applied; decisions P4 (tools service object), P6 (Esc cancels and closes).
 
 ## 1. Goal
 
@@ -33,8 +35,8 @@ Why merge (two lines): the list existed as a separate plugin only to hand a fact
 ### `model/types.ts` (ServiceMap)
 
 ```ts
-export type AgentViewOrigin = "list" | "panel" | "command";
-type AgentViewService = { open(id: string, options: { from: AgentViewOrigin }): Promise<void> };
+export type AgentViewOrigin = "list" | "panel" | "command";   // added by plan 05
+type AgentViewService = { open(id: string, options: { from: AgentViewOrigin }): Promise<void> };  // plan 05's `options?` becomes required
 ```
 
 Remove `AgentListService` and the `agentList` key. `agentView` keeps its key.
@@ -65,7 +67,7 @@ export const createAgentsOverlay = (api: OverlayApi, start: OverlayStart, parts:
 - Completion: the ids of the agents the list currently shows (`visibleRecords(registry.list(), Date.now(), settings.lingerMs, cleared)`), prefix-filtered, label `<id> · <stateWord(state)> · <description>` cut with `truncateCols(…, 100)`. Older agents still open by typed id.
 - Plugin-scope state: `cleared = new Set<string>()` (ids cleared with `x` in the list; per extension instance, independent of the panel's own clearing, survives reopening `/agents`).
 - `parts(api)`: `list` → `createAgentList({ records: () => registry.list(), lingerMs: settings.lingerMs, cleared, stop, watch, ...hooks }, api)`; `view` → `source.find(id)` (try/catch → `undefined`), then `createAgentView({ load: source.loader(id, terminal), from, tools: tools(), reserveTokens: settings.reserveTokens, stop: () => stop(id), watch: viewWatch(id), leave }, api)`.
-- `stop = (id) => services.has("runner") ? services.require("runner").stop(id) : undefined`; `tools = () => services.has("tools") ? services.require("tools") : []` (the `AnyToolSpec[]` plan 04 provides).
+- `stop = (id) => services.has("runner") ? services.require("runner").stop(id) : undefined`; `tools = () => services.has("tools") ? services.require("tools").list() : []` (the service is the object `{ list(): AnyToolSpec[]; add(spec: AnyToolSpec): void }` that plan 04's `run-agent` provides; `agent-status` adds its spec through `add`).
 - `watch(tickMs, onChange)` = `watchAgents(bus, { relevant, tickMs, throttleMs: () => settings.renderThrottleMs, onChange })`; list: `relevant: () => true`; view: `relevant: (record) => chainLinks(registry, record).some((link) => link.id === id)` and `tickMs`: the live chain terminal `running`/`grace` → 100, `queued` → 1000, closed or not live → `undefined`.
 
 ## 3. The list (`list-model.ts`, `list.ts`)
@@ -87,7 +89,7 @@ export const carrySelection = (previousIds: string[], ids: string[], selected: s
 - `Completed (n)`: closed records, flat, newest `endedAt` first. Title `Completed (${rows.length})`.
 - Flat rows are `TreeRow`s with `depth: 0, last: true, ancestorsContinue: []` and `openDescendants` taken from `treeOrder(visible)` (one map by id), so `(+N)` agrees across sections.
 - Empty sections are dropped. Subtitle: `running` = every open visible record, `done` = Completed rows, a zero part omitted, joined with `SEP`.
-- `listHint`: none selected → `esc to close`; open (queued/running) → `↑/↓ to select · enter to view · x to stop · X to stop all · esc to close`; grace → the same with `x to close now`; closed → with `x to clear`.
+- `listHint`: none selected → `esc to close` (declared deviation from the spec's single hint line: only an empty list has no selection, and it has nothing to select, view or stop); open (queued/running) → `↑/↓ to select · enter to view · x to stop · X to stop all · esc to close`; grace → the same with `x to close now`; closed → with `x to clear`.
 - `carrySelection`: keep `selected` if still in `ids`; else the first id after its old index in `previousIds` that is still in `ids`; else the nearest one before it; else `undefined` (spec "moves the selection to the next row, or clears it": cleared only when no row is left).
 - The old `components/agent-list.ts` is deleted, not rewritten (its grouping, filter and `treeRow` rendering are all replaced); `components/hints.ts` is deleted (`stopHint`/`scrollHint` texts are gone from both surfaces; no other user after plan 05 removes the progress widget).
 
@@ -108,7 +110,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent
 - State: `visible`, `sections`, `ids` (selectable, display order), `selectedId` (initial `deps.selected ?? ids[0]`), `scroll = api.createScroll()`, `feedback?: { text; token: "warning" | "muted" }`, `feedbackTimer`, `pendingStopAll = false`, `unwatch`.
 - `reload()`: `visible = visibleRecords(deps.records(), Date.now(), deps.lingerMs, deps.cleared)`, recompute sections and ids, `selectedId = carrySelection(oldIds, ids, selectedId)`, `api.requestRender()`. Runs on `watch` (throttled `agent:changed` plus the shared tick: `tickMs` = 100 while any visible record is `running`/`grace`, 1000 while rows are shown, `undefined` with no rows; the 1 s tick also expires lingering rows).
 - `suspend()`: `unwatch()`. `resume()`: `reload()` and re-`watch`. Created resumed by the host.
-- `render(width)`: title block `[bold("Agents") + dim(subtitle), ""]`; body: for each section a blank line before all but the first, `bold(title)`, then `renderRow({ ...row, selected: row.record.id === selectedId }, now, width, api.theme, nameColumn(visible))` (one name column for the whole list); with no rows the title is `bold("Agents")` and the body is `fg("muted", "No agents running")`. Footer: feedback line (`fg(token, text)`) when set, then `fg("dim", listHint(selected))`. `height = max(1, api.rows() - 2 - footer.length)`; `scroll.window(body, height)`; if the selected line is outside `[top, top + height)` → `scroll.scrollTo(line < top ? max(0, line - 1) : line - height + 1)` and window again (the `- 1` keeps a section header in view); pad to `height`.
+- `render(width)`: title block `[bold("Agents") + dim(subtitle), ""]`; body: for each section a blank line before all but the first, `bold(title)`, then `renderRow({ ...row, selected: row.record.id === selectedId }, now, width, api.theme, nameCols)` with `nameCols = nameColumn(sections.flatMap((section) => section.rows))` computed once per render (plan 05's signature takes tree rows, so `(+N)` is measured; one name column for the whole list). Rows carry plan 05's one-column `PAD` like the panel, so they sit one column right of the section headers (spec §5 mockup); with no rows the title is `bold("Agents")` and the body is `fg("muted", "No agents running")`. Footer: feedback line (`fg(token, text)`) when set, then `fg("dim", listHint(selected))`. `height = max(1, api.rows() - 2 - footer.length)`; `scroll.window(body, height)`; if the selected line is outside `[top, top + height)` → `scroll.scrollTo(line < top ? max(0, line - 1) : line - height + 1)` and window again (the `- 1` keeps a section header in view); pad to `height`.
 - Keys (spec §5):
 
 | key | action |
@@ -120,11 +122,11 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent
 | `enter` | `deps.open(selectedId)` when set |
 | `x` | open → `stop(id)` (queued closes, running enters grace); grace → `stop(id)` (runner closes now); closed → `deps.cleared.add(id)`, `reload()` |
 | `X` | stop-all flow below |
-| `escape` | pending confirmation → cancel only; else `deps.leave()` |
+| `escape` | cancels a pending confirmation (if any), then `deps.leave()` (decision P6) |
 | other (`/`, letters, `tab`, `space`, `toggleTools`) | nothing |
 
-- Stop-all: `X` with no `queued`/`running` visible record → `showFeedback("No running agents", "muted", NO_AGENTS_MS)`. Otherwise, first `X` → `pendingStopAll = true`, `showFeedback("Press X again to stop all agents", "warning", STOP_ALL_CONFIRM_MS)`; second `X` while pending → `stop(id)` for every `queued`/`running` record (grace records are left alone: they are stopping already, and a second stop would close them now), clear feedback and pending. Any other key while pending clears feedback and pending, then (except `Esc`) performs its own action.
-- `showFeedback(text, token, ms)`: clear the old timer, set feedback, `setTimeout(() => { feedback = undefined; pendingStopAll = false; api.requestRender(); }, ms)`. A rejected stop shows `stop failed: <message>` (`warning`, 3000 ms) (kept from today; not in the spec). `dispose()` clears the timer and unwatches; a timer or stop resolving after dispose does nothing (`disposed` flag).
+- Stop-all: `X` with no open visible record (`!visible.some((r) => !isClosed(r.state))`; spec "with no open agent", and `grace` is open) → `showFeedback("No running agents", "muted", NO_AGENTS_MS)`. Otherwise, first `X` → `pendingStopAll = true`, `showFeedback("Press X again to stop all agents", "warning", STOP_ALL_CONFIRM_MS)`; second `X` while pending → `stop(id)` for every `queued`/`running` record (grace records are left alone: they are stopping already, and a second stop would close them now), clear feedback and pending. With only grace records open the second `X` is a no-op: nothing is stopped, and pending and the feedback `Press X again to stop all agents` stay until their timer clears them. Any other key while pending clears feedback and pending, then performs its own action (`Esc` therefore cancels and closes the overlay).
+- `showFeedback(text, token, ms)`: clear the old timer, set feedback, `feedbackTimer = setTimeout(() => { feedback = undefined; pendingStopAll = false; api.requestRender(); }, ms)`, then `feedbackTimer.unref()` (an open overlay must not keep the process alive). A rejected stop shows `stop failed: <message>` (`warning`, 3000 ms) (kept from today; not in the spec). `dispose()` clears the timer and unwatches; a timer or stop resolving after dispose does nothing (`disposed` flag).
 
 ## 4. The agent view (`view.ts`, `loader.ts`)
 
@@ -165,16 +167,16 @@ Header (`headerLines`, spec §6 lines 1–6, then the rule):
 // 1. title (glyph in the state token; no "(agent)", no "continues"/"continued by": the chain line replaces them)
 fg(stateToken(s), stateGlyph(s, now)) + " " + bold(id + (chainIndex > 1 ? ` #${chainIndex}` : ""))
   + ` · ${stateWord(s)} · ${model ?? "model n/a"}`
-  + (open && attention ? fg("warning", ` · needs input: ${oneLine(attention.title)}`) : "")
+  + (open && attention ? fg("warning", ` · needs input: ${singleLine(attention.title)}`) : "")
 // 2. description, no "Task: " prefix
-fg("muted", truncateCols(oneLine(description), width))
+fg("muted", truncateCols(singleLine(description), width))
 // 3. stats, live while open
 fg("dim", [formatToolUses(toolCalls), tokens > 0 ? `${formatTokens(tokens)} tokens` : undefined,
-  formatDuration((endedAt ?? now) - (startedAt ?? createdAt)), formatCtx(ctxPercent)].filter(Boolean).join(SEP))
+  formatDuration(elapsedOf(record, now)), formatCtx(ctxPercent)].filter(Boolean).join(SEP))
 // ctxPercent = ctxTokens / limit * 100, ctxTokens = record.context?.tokens ?? session?.contextTokens,
 // limit = effectiveContextLimit(record.contextLimit, record.context?.window ?? 0, reserveTokens);
 // undefined when ctxTokens is null/undefined or limit <= 0
-// 4. optional (result.ts:55 stores invalid-handoff reasons in `error` too)
+// 4. optional (invalid-handoff reasons are stored in `error` too: runner.ts:338, `error: validation.errors.join("; ")`; result.ts:55 only prints them)
 failed:  fg("error", `error: ${firstLine(error ?? "unknown error")}`)
 handoff: fg("warning", `handoff: ${handoffPath}${error ? ` (invalid: ${error})` : ""}`)
 // 5. optional, chain.length > 1
@@ -185,7 +187,7 @@ fg("dim", `worktree: ${worktreeText(worktree)}`)
 fg("dim", "─".repeat(width))
 ```
 
-`oneLine` = `text.replace(/\s+/g, " ").trim()`, `firstLine` = first line of the text; both local to `view.ts`.
+`singleLine`, `firstLine`, `elapsedOf` and `formatDuration` are imported from `components/format.ts` (plan 04); `view.ts` defines no local text helpers.
 
 Body: `data.error` → one `warning` line with it; else `transcript.render(width)`, or `fg("dim", "(no transcript yet)")` when empty. No `Effective prompt`/`Transcript` titles.
 
@@ -218,6 +220,7 @@ Nothing to implement beyond `createTranscript({ tools: deps.tools })`. Plan 01 �
 | prompt sections | `src/components/system-prompt-block.ts`, `src/components/collapsible.ts` | no other importer (grep) |
 | list grouping/filter | `src/components/agent-list.ts`, `test/components/agent-list.test.ts` | replaced by `list-model.ts` |
 | hints | `src/components/hints.ts` | |
+| row bridge | `src/components/legacy-row.ts`, `test/components/legacy-row.test.ts` | plan 05's temporary copy of today's row helpers; its last importers (`agent-list.ts`, `agent-list-view/`, the old `view.ts`) go in this plan |
 | old list plugin | `src/plugins/agent-list-view/` (both files), `test/plugins/agent-list-view/`, its line in `src/plugins.ts` | |
 | message box | `view.ts`: `api.createInput`, `send`, `deliveryText`, `showRouteResult`, input focus, `Tab` cycle; `index.ts`: `send()` and the `runner.route(id, { sender: "user" })` call | `runner.route` itself stays (`message_agent` uses it) |
 | `/` filter, `X`+`y` | old `agent-list-view/view.ts` | gone with the file |
@@ -237,20 +240,24 @@ Kept on purpose:
 
 ## 8. Docs (final text)
 
-`extensions/subagents/README.md`, "Use". Line 36 keeps its first sentence (the panel, plan 05). Its second sentence (`` `/agents <id>` opens an agent's view… ``), the three sub-bullets after it (prompt sections, message box, context breakdown) and the `/agents` list bullet are replaced by:
+`extensions/subagents/README.md`, "Use". Plan 05 replaces line 36 and its three sub-bullets with its panel bullets. Append these two bullets right after plan 05's panel bullets and delete line 40 (the old `/agents` list bullet):
 
 ```markdown
 - `/agents` opens the agents list over the whole screen: `Running` (open agents, children under the agent that started them), `Needs input` (agents waiting on a dialog) and `Completed (n)` (finished, failed, stopped or handed off, newest first; each stays `lingerMs`, 30 s by default). `↑`/`↓` select, PgUp/PgDn, Home/End and the mouse wheel move faster, `Enter` opens the agent's view in the same overlay, `x` stops the selected agent or clears a finished row, `X` twice within 3 seconds stops every running agent, `Esc` closes.
 - The agent view (`Enter` in the list or on a panel row, or `/agents <id>` for any agent of this session, also from earlier runs and any link of a handoff chain) shows the agent's state, id and model, its description, `N tool uses · tokens · time · N% ctx`, the error or handoff file, the chain and the worktree, then its transcript drawn with pi's own components: codemode scripts with their nested tool calls and output, and nested `run_agent` blocks as in the main session. It opens at the end and follows new output; `↑`, PgUp, Home or the wheel stop following, `End` resumes. Ctrl+O (pi's tools key) toggles tool detail. `x` stops the agent: its turn is aborted and it closes after `stopGraceSeconds` unless its caller messages it first; `x` again closes it now. `Esc` goes back to the list when you came from it, otherwise closes. Worktree agents show `worktree: <path> (branch <branch>)`, and after they finish what became of it (below). To correct an agent, ask the main session; it messages the agent with `message_agent`.
 ```
 
-README settings sentence: replace `` `lingerMs` (30000; how long done rows stay in the widget and list) `` with `` `lingerMs` (30000; how long finished agents stay in the `/agents` list) ``. In the `renderThrottleMs` fragment (rewritten by plan 04), the list and view part reads `` the `/agents` list and the agent view refresh at the same rate `` (drop `refresh every 300 ms`).
+README "Other keys" sentence: plan 05 owns its final text (it already gives `lingerMs` its list meaning and `renderThrottleMs` its scope over every surface); this plan does not edit it.
+
+README line 7: replace its first sentence (`Version 0.3.0 adds …`) with `Version 0.4.0 replaces the progress widget with a panel below the editor, redraws `run_agent` as a start block with one completion line per agent, merges the list and the view into one `/agents` overlay, and moves notifications to the notifications extension.`, and in the third sentence replace `you can message any agent from its view, browse all agents in a list, and answer permission prompts raised inside agents` with `you can browse all agents and open any agent's view with `/agents`, and answer permission prompts raised inside agents` (the message box and the context breakdown are gone).
+
+Root `README.md` line 5 (subagents bullet): drop `with a context breakdown per agent` (plan 03 already dropped `terminal notifications`), so the bullet ends `…optionally in their own git worktree, with MCP for every agent with tools; what they spend is reported to spending.`
 
 `ARCHITECTURE.md`:
 - Plugin list: replace `` `agent-view` [registry] (`/agents`), `agent-list-view` [registry, agent-view] `` with `` `agent-view` [registry] (`/agents`: the list and the agent view in one overlay, the `agentView` service) ``.
 - Run step 5, second sentence → `The entry stays in the session file and runtime.readSession still parses it; no view shows it.` (with backticks around the identifier).
 - Messages bullet: `` `message_agent` (only the agent's caller) routes `[message from <sender>]` text: … `` (drop "and the agent view").
-- "Status, views, notifications": replace the list half of the widget bullet (plan 05 rewrites the panel half) and the agent view bullet with:
+- "Status and views" (title from plan 03; the final bullet list is in plan 04 §9): this plan writes bullets 4 and 5 of that list, appended after plan 05's panel bullet (bullet 3, which already replaced today's widget/list bullet), and replaces today's agent view bullet with bullet 5:
   - `` The `/agents` list re-renders on `agent:changed` (throttled by `renderThrottleMs`) plus the shared ticker; closed rows stay for `lingerMs` or until `x` clears them. ``
   - `` The agent view shares the list's overlay (one `openOverlay`; the host component swaps list and view, `Esc` returns to the list only when the view was opened from it). It reads the agent's session file through `runtime.readSession`, re-parsing only when the file's size or mtime changed, and falls back to `manifest.json` (which stores the final `turns`, `toolCalls` and `tokens`) for agents not in memory. Its transcript renders built-in tools with pi's definitions, `codemode`/`tool_search` with renderers captured from pi's exported extension factories (generic fallback if capture fails), and the subagents tools with the specs passed to `createTranscript({ tools })`. Nothing of the view is persisted. ``
 - Persistence summary: `manifest.json` line → `` `manifest.json` (rewritten on state or worktree change; final counters on close) ``; `<agentDir>` line drops `pi-subagents-view.json`.
@@ -300,7 +307,7 @@ New in `view.test.ts`:
 - `stops following on ↑, PgUp, Home and wheel-up and resumes on End`: open record, 20 rows; for each stop key: append items through `watch` → the new last line is not visible and ` · end to follow` shows; `End` → visible, suffix gone; a further append is visible at once.
 - `renders codemode calls with pi's renderer`: §5 fixture, collapsed assertions and `toMatchSnapshot()`.
 - `expands the codemode script and output with the tools key`: output line 6 visible after `toggleTools`.
-- `renders nested run_agent calls with the extension's renderer`: harness with `runAgentPlugin`; open the view through the service; spy `renderCall` on every spec in `transcripts[0].tools` before rendering; after `render`, the `run_agent` spy was called with `expect.objectContaining({ agents: [{ agent: "explorer", task: "find callers" }] })`, `transcripts[0].tools` names include `run_agent`, `message_agent`, `agent_status`, and the text lacks `"agents": [`.
+- `renders nested run_agent calls with the extension's renderer`: harness `[agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentStatusPlugin, agentViewPlugin]` (`agent_status` reaches the `tools` service through `agentStatusPlugin`); open the view through the service; spy `renderCall` on every spec in `transcripts[0].tools` before rendering; after `render`, the `run_agent` spy was called with `expect.objectContaining({ agents: [{ agent: "explorer", task: "find callers" }] })`, `transcripts[0].tools` names include `run_agent`, `message_agent`, `agent_status`, and the text lacks `"agents": [`.
 - `shows persisted counters for agents known only from their manifest`: manifest `{ toolCalls: 4, tokens: 12_300, turns: 3, startedAt: 0, endedAt: 65_000 }` → `4 tool uses · 12.3k tokens · 1m 5s · 2% ctx`.
 - `shows 0 tool uses for a manifest written before counters were stored`.
 
@@ -323,11 +330,11 @@ New in `view.test.ts`:
 | moves the cursor over headers and opens the selected agent with Enter | changed: `moves over rows, skipping headers, clamped at both ends` (Enter is in `overlay.test.ts`) |
 | stops the selected agent with x and closes it with a second x | survives; hints `x to stop` → `x to close now` |
 | stops every open agent after X and y | changed: `stops every running agent after X twice within 3 s` (fake timers; feedback `Press X again to stop all agents` above the hint; running → grace, queued → stopped, a grace record untouched; feedback gone) |
-| stops nothing after X and any other key | changed: `drops the confirmation after 3 s or on any other key` (X, advance 3001 ms, feedback gone, X shows it again without stopping; X then `down`: feedback gone, selection moved, nothing stopped; X then Esc: overlay still open) |
+| stops nothing after X and any other key | changed: `drops the confirmation after 3 s or on any other key` (X, advance 3001 ms, feedback gone, X shows it again without stopping; X then `down`: feedback gone, selection moved, nothing stopped; X then Esc: feedback gone, nothing stopped, `state.closed` true) |
 | filters rows with / and clears the filter with Esc | replaced by `ignores / and other unbound keys` |
 | keeps the selected row visible while moving through a long list | survives |
 
-New: `says No running agents for 2 s` (only closed rows → muted feedback; gone after 2000 ms); `keeps a closed row for lingerMs, then drops it on the tick` (fake timers; at 29 s present, at 31 s gone); `clears a closed row with x, selects the next row, and keeps it cleared after reopening /agents`; `moves the selection with PgDn, End and the wheel and keeps it visible`; `refreshes when an agent changes` (spawn after opening → row appears after `flush`); `completes /agents with the listed ids only` (an expired and a cleared agent missing from `complete("")`).
+New: `says No running agents for 2 s` (only closed rows → muted feedback; gone after 2000 ms); `leaves grace agents alone on stop-all` (only grace rows: no `No running agents`; X twice stops nothing and the feedback stays `Press X again to stop all agents` until 3 s pass); `clears its timers on dispose` (X, then `dispose()` → `vi.getTimerCount() === 0`; the feedback timer was `unref()`'d, checked with a `setTimeout` recorder through `vi.stubGlobal` as in plan 05's refresh test); `keeps a closed row for lingerMs, then drops it on the tick` (fake timers; at 29 s present, at 31 s gone); `clears a closed row with x, selects the next row, and keeps it cleared after reopening /agents`; `moves the selection with PgDn, End and the wheel and keeps it visible`; `refreshes when an agent changes` (spawn after opening → row appears after `flush`); `completes /agents with the listed ids only` (an expired and a cleared agent missing from `complete("")`).
 
 ### `test/plugins/agent-view/overlay.test.ts` (new)
 
@@ -348,12 +355,12 @@ New: `says No running agents for 2 s` (only closed rows → muted feedback; gone
 
 ## 10. Order of work
 
-Prerequisites: plan 01 §D (`createTranscript({ tools })`, `createTranscriptPane(…, { tools })`, captured renderers); plan 04 (`format.ts`, `spinner.ts`, `state-text.ts`, the `tools` service); plan 05 (`agent-row.ts` `renderRow`/`nameColumn`, `tree.ts`, the new `refresh.ts`). Plan 05's `watchAgents` signature change breaks today's two callers (`agent-view/index.ts`, `agent-list-view/index.ts`): land 05 and 06 in one PR, or have 05 patch the two call sites with `tickMs: () => 1000` until 06 lands.
+Prerequisites: plan 01 §D (`createTranscript({ tools })`, `createTranscriptPane(…, { tools })`, captured renderers); plan 04 (`format.ts`, `spinner.ts`, `state-text.ts`, the `tools` service); plan 05 (`agent-row.ts` `renderRow`/`nameColumn`, `tree.ts`, the new `refresh.ts`). Plan 05's `watchAgents` signature change breaks today's two callers (`agent-view/index.ts`, `agent-list-view/index.ts`); plan 05's bridge stands: it patches both call sites with `tickMs: () => (ticking() ? 1_000 : undefined)` and moves today's row helpers to `components/legacy-row.ts`. Alternatively land 05 and 06 in one PR: no bridge, and `options` is required from the start.
 
 1. `registry.ts` counters + registry test. `npm run test`.
-2. `model/types.ts`: `AgentViewOrigin`, new `AgentViewService`, drop `agentList`.
+2. `model/types.ts`: make `options` of `AgentViewService.open` required (plan 05 added `AgentViewOrigin` and `options?`), drop `agentList`.
 3. `agent-view/loader.ts` (move + `chain`), `view.ts` (rewrite), `list-model.ts`, `list.ts`, `overlay.ts`, `index.ts`.
-4. Delete `mode-store.ts`, `agent-list-view/`, `components/{agent-list,collapsible,context-breakdown,system-prompt-block,hints}.ts`; update `plugins.ts`.
+4. Delete `mode-store.ts`, `agent-list-view/`, `components/{agent-list,collapsible,context-breakdown,system-prompt-block,hints,legacy-row}.ts` (and `test/components/legacy-row.test.ts`); update `plugins.ts`.
 5. Tests: helper, `view.test.ts` (rename and rework), `list-model`, `list`, `overlay`, session-file, plugins; delete the old ones; delete the old snapshot file and record the new one with `npx vitest run extensions/subagents/test/plugins/agent-view -u`, then review the snapshot diff (the transcript snapshot loses only its `Transcript` title; the codemode one is new).
 6. Docs (§8).
 7. `npm run check` (typecheck, biome, unit tests), clean.
@@ -365,8 +372,8 @@ Manual checklist (`pi -e ./extensions/subagents/src/index.ts`, fullscreen and re
 - [ ] An agent using codemode: highlighted script, `✓ grep …` lines, 5-line output with expand hint; Ctrl+O expands everything.
 - [ ] An agent that calls `run_agent`: the nested block looks like the main transcript's.
 - [ ] `↑` stops following (` · end to follow`), `End` resumes; a finished agent shows no suffix and no spinner.
-- [ ] `x` in list and view: grace then close now; `x` on a finished row clears it; `X` shows `Press X again to stop all agents` and the second `X` stops all; with nothing running `No running agents` disappears after 2 s.
+- [ ] `x` in list and view: grace then close now; `x` on a finished row clears it; `X` shows `Press X again to stop all agents` and the second `X` stops all; `X` then `Esc` cancels and closes the list; with nothing running `No running agents` disappears after 2 s.
 - [ ] A finished agent leaves the list after 30 s; `/agents <id>` still opens it, also after `/resume`, with real tool-use and token counts.
 - [ ] No `pi-subagents-view.json` is created under `~/.pi/agent`.
 
-Deviations and clarifications (also in the report): plugin id kept as `agent-view` (merge instead of a new `agent-views` id); the list's wheel and page keys move the selection; the selection falls back to the previous row before clearing; reaching the tail by scrolling resumes following; the view's tick also stats the session file; `stop failed: <msg>` feedback kept; stop-all leaves grace records alone and `Esc` only cancels a pending confirmation; completion lists only listed agents; `worktree: kept: …` keeps today's text.
+Deviations and clarifications (also in the report): plugin id kept as `agent-view` (merge instead of a new `agent-views` id); the list's wheel and page keys move the selection; the selection falls back to the previous row before clearing; reaching the tail by scrolling resumes following; the view's tick also stats the session file; `stop failed: <msg>` feedback kept; stop-all leaves grace records alone (with only grace rows the second `X` is a no-op); an empty list's hint is `esc to close`; list rows carry plan 05's `PAD`; completion lists only listed agents; `worktree: kept: …` keeps today's text.

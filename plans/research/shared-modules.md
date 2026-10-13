@@ -1,5 +1,7 @@
 # Shared modules and ownership between the feature plans
 
+Updated 2026-10-14 after the review (`plans/research/review-findings.md`).
+
 The feature plans (02–06) are written in parallel. To fit together they use these module names and signatures exactly. The owning plan specifies the module in full (file, code, tests); the other plans only import it. If an owner needs to deviate, it says so in its plan and the README index records the change.
 
 ## `extensions/subagents/src/components/format.ts` (owner: plan 04)
@@ -14,9 +16,14 @@ export const formatCtx = (percent: number | undefined): string | undefined; // "
 export const displayWidth = (text: string): number;     // display columns (wide chars = 2, combining = 0, ANSI stripped)
 export const truncateCols = (text: string, cols: number): string; // cut to cols with a trailing "…" (plain text only)
 export const padEndCols = (text: string, cols: number): string;
+export const charWidth = (char: string): number;        // display columns of one code point (0, 1 or 2)
+export const singleLine = (text: string): string;       // whitespace runs collapsed to one space, trimmed
+export const firstLine = (text: string): string;        // first non-empty line, trimmed
+export const elapsedOf = (record: { startedAt?: number; createdAt: number; endedAt?: number }, now: number): number;  // (endedAt ?? now) - (startedAt ?? createdAt)
+export { formatDuration, formatTokens } from "../../../../core/manager/format.ts";   // re-exported, defined in core/manager
 ```
 
-The duplicate `formatTokens` in `extensions/footer/src/render.ts` stays where it is (footer is a separate extension and may not import subagents); plan 04 notes it as a known duplicate. The one in `components/agent-row.ts` goes.
+`formatTokens` and `formatDuration` live in `core/manager/format.ts` (owner: plan 04 step 0; pi-free, tested in `core/test/manager/format.test.ts`), which every extension may import (`ARCHITECTURE.md`); `components/format.ts` re-exports them. The footer (`extensions/footer/src/render.ts` drops its own `formatTokens`) and the working indicator (no `src/format.ts`) import from `core/manager/format.ts`. The copies in `components/agent-row.ts` go. Plans 05 and 06 import `singleLine`, `firstLine`, `elapsedOf` and the formatters from `components/format.ts` and define no local text helpers.
 
 ## `extensions/subagents/src/components/spinner.ts` (owner: plan 04)
 
@@ -52,8 +59,12 @@ export const watchAgents = (bus, options: {
 ```ts
 export type RowInput = { record: AgentRecord; depth: number; last: boolean; ancestorsContinue: boolean[]; openDescendants: number; selected: boolean };
 export const renderRow = (input: RowInput, now: number, width: number, theme: ThemeLike, nameCols: number): string;   // spec §4 row grammar, one line
-export const nameColumn = (records: AgentRecord[]): number;   // widest visible name (+ chain suffix + (+N)), capped at 24
+export const nameColumn = (rows: Pick<TreeRow, "record" | "openDescendants">[]): number;   // widest name (+ chain suffix + (+N)), capped at 24; plan 06 passes sections.flatMap((s) => s.rows)
 ```
+
+Every row starts with a one-column `PAD` (exported), in the panel and in the list.
+
+Bridge (plan 05 creates, plan 06 deletes): before rewriting `agent-row.ts`, plan 05 renames today's file (as plan 04 left it) to `components/legacy-row.ts`, unchanged, for `components/agent-list.ts`, `plugins/agent-list-view/view.ts` and `plugins/agent-view/view.ts` until plan 06 deletes all of them. Landing 05 and 06 in one PR skips the bridge.
 
 ## `extensions/subagents/src/components/tree.ts` (owner: plan 05)
 
@@ -83,7 +94,7 @@ The runner sets it on `tool_start` (kind `tool`, `text` = tool name) and on each
 
 ## Cross-plan contracts
 
-- Plan 04 registers the `run_agent` tool renderers and the completion-line entry renderer, and exposes the `ToolSpec`s through the `tools` service (`run-agent` plugin) so plan 06's agent view can pass them to `createTranscript({ tools })`.
+- Plan 04 registers the `run_agent` tool renderers and the completion-line entry renderer, and exposes the `ToolSpec`s through the `tools` service so plan 06's agent view can pass them to `createTranscript({ tools })`. The service is an object provided by `run-agent`: `tools: { list(): AnyToolSpec[]; add(spec: AnyToolSpec): void }`; `agent-status` calls `add`; plan 06 reads `services.has("tools") ? services.require("tools").list() : []`.
 - Plan 05 provides `agentList`-style access to the panel's selection? No: the panel and the list are independent; both read `registry.list()`.
-- Plan 06 keeps the `agentView.open(id, { from: "list" | "panel" | "command" })` service; plan 05 calls `agentView.open(id, { from: "panel" })` on `Enter`.
-- Plan 03 removes `extensions/subagents/src/plugins/notifications/` and the `notifications` setting; plan 05 removes `progress-widget/`; plan 06 removes `mode-store.ts`, `context-breakdown.ts`, `system-prompt-block.ts`, `collapsible.ts` and the message box.
+- `agentView.open`: plan 05 adds `export type AgentViewOrigin = "list" | "panel" | "command"` and `open(id: string, options?: { from: AgentViewOrigin }): Promise<void>` to `model/types.ts` and calls `agentView.open(id, { from: "panel" })` on `Enter`; plan 06 makes `options` required and implements the `from` semantics.
+- Plan 03 removes `extensions/subagents/src/plugins/notifications/` and the `notifications` setting; plan 05 removes `progress-widget/` and adds the temporary `components/legacy-row.ts`; plan 06 removes `legacy-row.ts`, `mode-store.ts`, `context-breakdown.ts`, `system-prompt-block.ts`, `collapsible.ts` and the message box.

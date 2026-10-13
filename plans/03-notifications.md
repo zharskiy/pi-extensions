@@ -1,14 +1,16 @@
 # Plan 03: the global notifications extension
 
-Implements D5 and UX spec §8/§9. Depends on plan 01 §F (`Host.onDialog`, `HostUi.onKeyPress`, fake drivers `dialog()`/`pressKey()`/`keyListeners`) and §G (`BUSY_CHANNEL = "pi:busy"`); both must be merged first. Spec §8 names the channel `session:busy`; plan 01 §G (later) chose `pi:busy`, and this plan only uses the `BUSY_CHANNEL` constant, writing `pi:busy` in docs.
+Implements D5 and UX spec §8/§9. Depends on plan 01 §F (`Host.onDialog`, `HostUi.onKeyPress`, fake drivers `dialog()`/`pressKey()`/`keyListeners`) and §G (`BUSY_CHANNEL = "pi:busy"`); both must be merged first. This plan only uses the `BUSY_CHANNEL` constant and writes `pi:busy` in docs.
+
+Review resolution: Reviewed 2026-10-14: findings 7, 23, 32 applied; decisions P1 (no BEL on auto), P2 (idleDelayMs 20 000).
 
 ## 1. Goal and behaviour
 
 New extension `extensions/notifications/` (namespace `pi-notifications`): one terminal notification when pi waits for the user after the work is done (main settled, no busy source, no keystroke for `idleDelayMs`), and one when a dialog waits unanswered (`dialogDelayMs`). TUI only. The subagents `notifications` plugin, its setting and the `session:closing` bus event go. Nothing per agent, batch or tool.
 
-Texts (exact): `pi is waiting for your input`; `pi needs your input: <title>` (a dialog with no title: `pi needs your input`).
+Texts (exact): `pi is waiting for your input`; `pi needs your input: <title>` (a dialog with no title: `pi needs your input`). `<title>` is pi's `ui_prompt_start.title` as is. For a dialog forwarded from an agent that title is already `<id> (<agent>) asks: <title>` (spec §3), so the notification reads `pi needs your input: explorer-1 (explorer) asks: Allow bash?`. This is intended: the agent's name tells the user which dialog waits. The extension does not strip or re-prefix it.
 
-Channels (`channel` setting): `auto` = BEL then OSC 9 `\x1b]9;<message>\x07`, or on rxvt (`TERM`/`TERM_PROGRAM` matches `/rxvt/i`) BEL then OSC 777 `\x1b]777;notify;pi;<message>\x07`; `bell` = BEL only; `off` = the extension does nothing at all (no key listener, no timers).
+Channels (`channel` setting): `auto` = OSC 9 `\x1b]9;<message>\x07`, or on rxvt (`TERM`/`TERM_PROGRAM` matches `/rxvt/i`) OSC 777 `\x1b]777;notify;pi;<message>\x07`, with no leading BEL (the trailing `\x07` only terminates the OSC string); `bell` = BEL only; `off` = the extension does nothing at all (no key listener, no timers). `auto` rings no bell because the idle notification also fires after ordinary replies the user is reading, and a bell every time is noise. Terminals without OSC 9/777 support get nothing on `auto`, as with Claude Code; `bell` is their fallback.
 
 ### State machine (`src/notifications.ts`)
 
@@ -42,24 +44,24 @@ Derived states: **quiet** (`!pending`), **held** (`pending`, `sources` non-empty
 
 ### Adapter contract change (required)
 
-Today `terminalNotify(title, body)` always writes BEL + OSC 9/777 and OSC 9 carries `title: body`; neither a bell-only channel nor "one text, title `pi` only on OSC 777" is expressible. The only caller is the subagents plugin removed below, so the signature is replaced, not extended:
+Today `terminalNotify(title, body)` always writes BEL + OSC 9/777 and OSC 9 carries `title: body`; a bell-only channel, a desktop notification without the bell, and "one text, title `pi` only on OSC 777" are all inexpressible. The only caller is the subagents plugin removed below, so the signature is replaced, not extended:
 
 ```ts
 // core/adapter/contract.ts
 export type NotifyChannel = "auto" | "bell";
 // HostUi, replacing terminalNotify(title, body)
-/** tui only. `bell` writes BEL. `auto` writes BEL then a desktop notification with `message`: OSC 9, or OSC 777 titled `pi` when TERM or TERM_PROGRAM names rxvt. Control characters in `message` become spaces. */
+/** tui only. `bell` writes BEL. `auto` writes only a desktop notification with `message`, no BEL: OSC 9, or OSC 777 titled `pi` when TERM or TERM_PROGRAM names rxvt. Control characters in `message` become spaces. */
 terminalNotify(message: string, channel: NotifyChannel): void;
 ```
 
-`core/adapter/pi-ui.ts`: `notificationSequence(message: string, channel: NotifyChannel, env: TerminalEnv = process.env)`: `text = cleanText(message)`; `bell` → `"\x07"`; rxvt → `` `\x07\x1b]777;notify;${OSC_777_TITLE};${text}\x07` `` with `const OSC_777_TITLE = "pi"`; else `` `\x07\x1b]9;${text}\x07` ``. `terminalNotify(message, channel)` keeps today's tui gate and writer (`lastTui.terminal.write`, else stdout).
+`core/adapter/pi-ui.ts`: `notificationSequence(message: string, channel: NotifyChannel, env: TerminalEnv = process.env)`: `text = cleanText(message)`; `bell` → `"\x07"`; rxvt → `` `\x1b]777;notify;${OSC_777_TITLE};${text}\x07` `` with `const OSC_777_TITLE = "pi"`; else `` `\x1b]9;${text}\x07` `` (`auto` never starts with a BEL; the final `\x07` is the OSC terminator). `terminalNotify(message, channel)` keeps today's tui gate and writer (`lastTui.terminal.write`, else stdout).
 
 `core/test/adapter/pi-ui.test.ts`, `describe("terminalNotify")` rewritten:
-- `"writes the bell and one OSC 9 notification in tui mode"`: ghostty env, `("pi is waiting for your input", "auto")` → `[BEL + ESC]9;pi is waiting for your input + BEL]`.
-- `"writes OSC 777 titled pi for rxvt terminals"`: `TERM: "rxvt-unicode-256color"` → `[BEL + ESC]777;notify;pi;pi is waiting for your input + BEL]`.
+- `"writes one OSC 9 notification without a bell in tui mode"`: ghostty env, `("pi is waiting for your input", "auto")` → `[ESC]9;pi is waiting for your input + BEL]` (no BEL before `ESC`; the last BEL is the terminator).
+- `"writes OSC 777 titled pi for rxvt terminals"`: `TERM: "rxvt-unicode-256color"` → `[ESC]777;notify;pi;pi is waiting for your input + BEL]`.
 - `"writes only the bell for the bell channel"`: ghostty and rxvt env → `[BEL]` each.
 - `"writes nothing in rpc, print or json mode, or once the session is stale"`: as today, both channels.
-- `"replaces control characters in the message"`: `notificationSequence("a${ESC}]0;x\nline${BEL}", "auto", {})` → `${BEL}${ESC}]9;a ]0;x line${BEL}`; with `{ TERM_PROGRAM: "urxvt" }` → `${BEL}${ESC}]777;notify;pi;a ]0;x line${BEL}`.
+- `"replaces control characters in the message"`: `notificationSequence("a${ESC}]0;x\nline${BEL}", "auto", {})` → `${ESC}]9;a ]0;x line${BEL}`; with `{ TERM_PROGRAM: "urxvt" }` → `${ESC}]777;notify;pi;a ]0;x line${BEL}`.
 
 `core/test/helpers/fakes.ts`: `terminalNotices: { message: string; channel: NotifyChannel }[]`; `terminalNotify: (message, channel) => host.terminalNotices.push({ message, channel })`.
 
@@ -84,7 +86,7 @@ export default createPiExtension((host) => { createNotifications(host); }, { roo
 ### `extensions/notifications/src/settings.ts`
 
 - `export type Channel = "auto" | "bell" | "off"`; `export type NotificationSettings = { channel: Channel; idleDelayMs: number; dialogDelayMs: number }`.
-- `SETTINGS_FILE = "pi-notifications.json"`; `DEFAULT_SETTINGS = { channel: "auto", idleDelayMs: 10_000, dialogDelayMs: 6_000 }`.
+- `SETTINGS_FILE = "pi-notifications.json"`; `DEFAULT_SETTINGS = { channel: "auto", idleDelayMs: 20_000, dialogDelayMs: 6_000 }`.
 - Schema: `channel: { type: "choice", values: ["auto", "bell", "off"] }`, `idleDelayMs` and `dialogDelayMs`: `{ type: "number", min: 0, max: 600_000 }`.
 - `loadSettings(agentDir, cwd, projectTrusted)`: user file via `readSettingsFile(schema, userSettingsPath(agentDir, SETTINGS_FILE))`, project file only when trusted (`projectSettingsPath`), merged defaults → user → project; returns `{ settings, errors }`. Same shape as `extensions/session-limits/src/settings.ts`.
 - `watchSettings(host): () => NotificationSettings`: copy of session-limits' `watchSettings` (reload on every `onSessionStart`, each distinct error notified once as `pi-notifications settings: <error>`, level `warning`), registered by `createNotifications` before its own `onSessionStart` so settings are loaded when `active` is computed.
@@ -102,15 +104,15 @@ A pi extension that tells you, through your terminal, when pi is waiting for you
 
 ## What it does
 
-- When the main session finishes its work and you have not touched the keyboard for 10 seconds, it sends one notification: `pi is waiting for your input`. Each finished run notifies at most once; a key press, a new run or a busy extension cancels it.
-- While background agents run (any extension that reports on the busy channel `pi:busy`, such as subagents), the notification waits. When the agents finish, the main session usually starts a new run to read their results; the notification comes 10 seconds after that run ends, once.
+- When the main session finishes its work and you have not touched the keyboard for 20 seconds, it sends one notification: `pi is waiting for your input`. Each finished run notifies at most once; a key press, a new run or a busy extension cancels it.
+- While background agents run (any extension that reports on the busy channel `pi:busy`, such as subagents), the notification waits. When the agents finish, the main session usually starts a new run to read their results; the notification comes 20 seconds after that run ends, once.
 - When a dialog waits for an answer (a confirmation, a choice, a text field, including permission prompts forwarded from agents), it sends `pi needs your input: <dialog title>` after 6 seconds without a key press. Each key press restarts the 6 seconds; answering or closing the dialog cancels it. Each dialog notifies at most once. Overlays such as `/agents` never notify.
 - Nothing is sent per agent, per batch or per tool.
 - Active only in the interactive TUI; `--mode rpc`, `--mode json` and `-p` write nothing.
 
 ## Terminals
 
-With the default channel `auto` the extension rings the terminal bell and sends a desktop notification as OSC 9, which iTerm2, WezTerm, Ghostty and kitty document. When `TERM` or `TERM_PROGRAM` names rxvt it sends OSC 777 (title `pi`) instead, for rxvt-unicode with its notify extension. Terminals without support ignore the sequence and only ring the bell; whether the bell sounds, flashes or marks the tab is your terminal's setting. Inside tmux the desktop notification is dropped (no tmux passthrough is used); the bell still reaches tmux, which flags the window. Some terminals show the notification only while their window is not focused.
+With the default channel `auto` the extension sends a desktop notification and rings no bell. iTerm2, WezTerm, Ghostty and kitty show it (they document OSC 9). When `TERM` or `TERM_PROGRAM` names rxvt it sends OSC 777 (title `pi`) instead, for rxvt-unicode with its notify extension. Other terminals, such as Apple Terminal, ignore the sequence, so `auto` shows nothing there. Inside tmux the desktop notification is dropped (no tmux passthrough is used), so `auto` shows nothing there either. The fallback is `"channel": "bell"`: it rings the terminal bell instead, which every terminal handles and tmux turns into a window flag. Whether the bell sounds, flashes or marks the tab is your terminal's setting. Some terminals show the notification only while their window is not focused.
 
 ## Settings
 
@@ -118,12 +120,12 @@ Optional JSON in `~/.pi/agent/pi-notifications.json`, or `.pi/pi-notifications.j
 
     {
       "channel": "auto",
-      "idleDelayMs": 10000,
+      "idleDelayMs": 20000,
       "dialogDelayMs": 6000
     }
 
-- `channel`: `"auto"` (bell and desktop notification), `"bell"` (bell only) or `"off"`.
-- `idleDelayMs`: how long pi waits after the work is done before notifying, 0 to 600000 milliseconds.
+- `channel`: `"auto"` (desktop notification, no bell), `"bell"` (bell only, for terminals without desktop notifications and inside tmux) or `"off"`.
+- `idleDelayMs`: how long pi waits after the work is done before notifying, 0 to 600000 milliseconds (default 20000).
 - `dialogDelayMs`: how long a dialog waits before notifying, 0 to 600000 milliseconds.
 
 Invalid values are reported once as a warning and ignored. The files are read at session start; run `/reload` or start a new session after editing them.
@@ -145,33 +147,34 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 
 | test | steps → assertion |
 |---|---|
-| `fires once after the idle delay when the session settles with no busy source` | settle; advance 9_999 → `[]`; advance 1 → `[IDLE]`; advance 60_000 → still `[IDLE]` |
+| `fires once after the idle delay when the session settles with no busy source` | settle; advance 19_999 → `[]`; advance 1 → `[IDLE]`; advance 60_000 → still `[IDLE]` |
 | `a keystroke after the settle cancels it` | settle; advance 5_000; `pressKey()`; advance 60_000 → `[]` |
-| `a keystroke before the settle does not cancel it` | `pressKey()`; settle; advance 10_000 → `[IDLE]` |
+| `a keystroke before the settle does not cancel it` | `pressKey()`; settle; advance 20_000 → `[IDLE]` |
 | `a new run cancels it` | settle; advance 5_000; `agentStart()`; advance 60_000 → `[]` |
-| `holds while a busy source is set and arms when the last source clears` | busy a/b true; settle; advance 60_000 → `[]`; busy a false; advance 60_000 → `[]`; busy b false; advance 9_999 → `[]`; advance 1 → `[IDLE]` |
-| `a busy source appearing cancels an armed timer` | settle; advance 5_000; busy a true; advance 60_000 → `[]`; busy a false; advance 10_000 → `[IDLE]` |
-| `keeps busy sources by name and treats repeated reports as one` | busy a true twice; settle; busy a false once; advance 10_000 → `[IDLE]` |
+| `holds while a busy source is set and arms when the last source clears` | busy a/b true; settle; advance 60_000 → `[]`; busy a false; advance 60_000 → `[]`; busy b false; advance 19_999 → `[]`; advance 1 → `[IDLE]` |
+| `hears a busy source reported before start` | create the host and `createNotifications(host)`, busy a true, then `host.start()`; settle; advance 60_000 → `[]`; busy a false; advance 20_000 → `[IDLE]` |
+| `a busy source appearing cancels an armed timer` | settle; advance 5_000; busy a true; advance 60_000 → `[]`; busy a false; advance 20_000 → `[IDLE]` |
+| `keeps busy sources by name and treats repeated reports as one` | busy a true twice; settle; busy a false once; advance 20_000 → `[IDLE]` |
 | `ignores busy:false from an unknown source and invalid payloads` | busy a true; settle; busy x false; `emit(BUSY_CHANNEL, { source: "", busy: false })`; advance 60_000 → `[]` |
 | `a busy source clearing after a keystroke does not notify` | busy a true; settle; `pressKey()`; busy a false; advance 60_000 → `[]` |
-| `a wake run between settles does not double-notify` | busy agents true; settle; advance 60_000 → `[]`; busy agents false; advance 2_000; `agentStart()`; advance 30_000 → `[]`; settle; advance 9_999 → `[]`; advance 1 → `[IDLE]`; advance 60_000 → length 1 |
+| `a wake run between settles does not double-notify` | busy agents true; settle; advance 60_000 → `[]`; busy agents false; advance 2_000; `agentStart()`; advance 30_000 → `[]`; settle; advance 19_999 → `[]`; advance 1 → `[IDLE]`; advance 60_000 → length 1 |
 | `notifies a waiting dialog after the dialog delay` | `dialog("start", "confirm", "Allow bash?")`; advance 5_999 → `[]`; advance 1 → `[{ message: "pi needs your input: Allow bash?", channel: "auto" }]` |
 | `each keystroke restarts the dialog timer` | dialog start; advance 5_000; `pressKey()`; advance 5_000 → `[]`; advance 1_000 → length 1 |
 | `the dialog ending cancels it` | dialog start; advance 3_000; `dialog("end", "confirm")`; advance 60_000 → `[]` |
 | `notifies a dialog at most once` | dialog start; advance 6_000 → length 1; `pressKey()`; advance 60_000 → length 1 |
 | `uses the short text for a dialog without a title` | `dialog("start", "input")`; advance 6_000 → `[{ message: "pi needs your input", channel: "auto" }]` |
 | `ignores custom dialogs` | `dialog("start", "custom", "Agents")`; advance 60_000 → `[]` |
-| `skips the idle notification while a dialog is open and arms it when the dialog ends` | settle; advance 2_000; dialog start "confirm" "Allow?"; advance 8_000 → only the dialog notice; `dialog("end", "confirm")`; advance 9_999 → length 1; advance 1 → second notice `IDLE` |
-| `rings only the bell with the bell channel` | file `{ channel: "bell" }`; settle; advance 10_000 → `[{ message: IDLE.message, channel: "bell" }]` |
+| `skips the idle notification while a dialog is open and arms it when the dialog ends` | settle; advance 2_000; dialog start "confirm" "Allow?"; advance 18_000 (the idle timer fires with the dialog open and is skipped) → only the dialog notice; `dialog("end", "confirm")`; advance 19_999 → length 1; advance 1 → second notice `IDLE` |
+| `rings only the bell with the bell channel` | file `{ channel: "bell" }`; settle; advance 20_000 → `[{ message: IDLE.message, channel: "bell" }]` |
 | `sends nothing with the off channel` | file `{ channel: "off" }`; settle; dialog start; advance 60_000 → `[]`; `keyListeners.size === 0` |
 | `does nothing outside tui` | for `rpc`, `print`, `json`: settle; dialog start; advance 60_000 → `[]`, `keyListeners.size === 0` |
 | `sends nothing after shutdown` | settle; dialog start; `await shutdown()`; advance 60_000 → `[]`; `keyListeners.size === 0` |
 | `uses the configured delays` | file `{ idleDelayMs: 0, dialogDelayMs: 1_000 }`; settle; advance 0 → `[IDLE]`; dialog start; advance 1_000 → length 2 |
-| `warns once about invalid settings and keeps the defaults` | file `{ channel: "loud", idleDelayMs: -1 }`; `notices` equals `[{ message: "pi-notifications settings: <file>: channel must be one of \"auto\", \"bell\", \"off\"", level: "warning" }, { …idleDelayMs must be a number between 0 and 600000… }]`; settle; advance 10_000 → `[IDLE]` |
+| `warns once about invalid settings and keeps the defaults` | file `{ channel: "loud", idleDelayMs: -1 }`; `notices` equals `[{ message: "pi-notifications settings: <file>: channel must be one of \"auto\", \"bell\", \"off\"", level: "warning" }, { …idleDelayMs must be a number between 0 and 600000… }]`; settle; advance 20_000 → `[IDLE]` |
 
 ### `extensions/notifications/test/settings.test.ts`
 
-- `has the spec defaults`: `loadSettings` on empty dirs → `{ channel: "auto", idleDelayMs: 10_000, dialogDelayMs: 6_000 }`, no errors.
+- `has the defaults`: `loadSettings` on empty dirs → `{ channel: "auto", idleDelayMs: 20_000, dialogDelayMs: 6_000 }`, no errors.
 - `merges the user file and a trusted project file, project last`: user `{ channel: "bell", idleDelayMs: 1_000 }`, project `{ idleDelayMs: 2_000 }` trusted → `{ channel: "bell", idleDelayMs: 2_000, dialogDelayMs: 6_000 }`.
 - `ignores the project file when the project is not trusted`: same files, untrusted → `idleDelayMs: 1_000`.
 
@@ -182,7 +185,7 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 - `STRUCTURE.md`: tree, after `working-indicator/`: `notifications/ # terminal notification when pi waits for you` with `src/ # index, notifications, settings`, `test/`, `README.md`; drop `notifications/      # completion notifications` from the plugin list; entry points `{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,footer}`.
 - `ARCHITECTURE.md`:
   - Line 3: `seven extensions` → `eight extensions`. "Extension manager" first line: add `notifications` to the list of extensions that wire functions directly.
-  - "Startup and the adapter", the `terminalNotify` bullet becomes: "`terminalNotify(message, channel)` writes BEL, and for `auto` an OSC 9 notification (OSC 777 titled `pi` on rxvt); tui only."
+  - "Startup and the adapter", the `terminalNotify` bullet becomes: "`terminalNotify(message, channel)` writes BEL for `bell`, and for `auto` only an OSC 9 notification (OSC 777 titled `pi` on rxvt), no BEL; tui only."
   - Bus events list: drop `session:closing`. Subagents plugin list: drop `notifications [run-agent], `. Shutdown bullet: drop `` `session:closing` silences notifications, ``.
   - Rename "Status, views, notifications" to "Status and views" and delete its last bullet (`Notifications (terminal escape sequence) fire for …`).
   - Session-limits "Busy sources" bullet: append "The notifications extension reads the same channel to hold its idle notification."
@@ -196,7 +199,7 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 - Idle notification: `Host.onIdle` (pi's `agent_settled`, once per run) marks the settle pending and, when no source is on the busy channel (`pi:busy`, kept as a set of source names like session-limits), arms an `idleDelayMs` timer. `Host.onAgentStart`, any key (`HostUi.onKeyPress`, observed without consuming) and a busy source appearing cancel it; the last busy source clearing or a dialog ending re-arms it with the full delay while the settle is still pending. At fire time it checks again (pending, no busy source, no dialog, `isIdle()`), sends `pi is waiting for your input` and clears the pending settle, so a settle notifies at most once.
 - Agents and the wake: subagents holds the busy channel while any agent is open. Agents finishing while main is idle arm the timer, but the outbox's wake starts a run through a visible user line at once, which cancels it; that run's settle arms it again. One notification follows the finished work.
 - Dialog notification: `Host.onDialog` (pi's `ui_prompt_start`/`ui_prompt_end`, outermost dialog only, agents' forwarded dialogs included; `custom` overlays ignored). `dialogDelayMs` after the later of the dialog start and the last key it sends `pi needs your input: <title>`, at most once per dialog; the dialog ending cancels it.
-- Output: `HostUi.terminalNotify(message, channel)` with `auto` or `bell`.
+- Output: `HostUi.terminalNotify(message, channel)` with `auto` (OSC 9/777 only, no BEL: the idle notification follows ordinary replies too, and a bell each time is noise) or `bell`.
 ```
 
 ## 4. Removal from subagents
@@ -219,9 +222,9 @@ Sequence when the user is away and agents run in the background:
 
 1. Main run settles → `onIdle`: `pending = true`; the registry has `pi-subagents` busy, so **held** (no timer).
 2. Agents work. A forwarded dialog would notify on its own after `dialogDelayMs`.
-3. The last agent closes → registry `agent:changed` → `pi:busy { source: "pi-subagents", busy: false }` → sources empty, still pending → **armed** (10 s).
+3. The last agent closes → registry `agent:changed` → `pi:busy { source: "pi-subagents", busy: false }` → sources empty, still pending → **armed** (20 s).
 4. `batch:settled` → outbox → `sendHiddenMessage(..., "2 agents finished")` → idle path → `sendUserMessage` → pi `agent_start` → `onAgentStart`: `pending = false`, timer cleared (**quiet**).
-5. Wake run settles → `onIdle` → **armed** → 10 s without a key → `pi is waiting for your input`, once.
+5. Wake run settles → `onIdle` → **armed** → 20 s without a key → `pi is waiting for your input`, once.
 
 Covered by the test `a wake run between settles does not double-notify`. If the main session is busy when agents finish, step 3 finds `pending` already false (cleared by the run's `agent_start`), and the hidden follow-up joins the run; its settle notifies once. Known gap: the batch settles only after worktree cleanup, so a `git worktree remove` slower than `idleDelayMs` between steps 3 and 4 would let the idle notification fire just before the wake. Acceptable at the defaults; if it shows up, subagents can keep `busy: true` until the outbox has delivered (subagents plan, not here).
 
@@ -237,16 +240,16 @@ Other events in spec §8's "must not notify" table need no code: the extension l
 6. `package.json`, root `README.md`, `STRUCTURE.md`, `ARCHITECTURE.md`. `npm run check`; `npm pack --dry-run | grep notifications` lists `extensions/notifications/src/*.ts` and `README.md`, no `test/`.
 7. Manual checks below with `~/.pi/agent/pi-notifications.json` = `{ "idleDelayMs": 3000, "dialogDelayMs": 2000 }`, `pi -e ./extensions/notifications/src/index.ts -e ./extensions/subagents/src/index.ts`.
 
-### Manual checklist (iTerm2, WezTerm, Ghostty, kitty; then tmux inside one of them; Apple Terminal for bell only)
+### Manual checklist (iTerm2, WezTerm, Ghostty, kitty; then tmux inside one of them; Apple Terminal with `bell`)
 
-- [ ] Ask something short, switch to another app at once: one desktop notification `pi is waiting for your input` about 3 s after the reply; nothing more after a minute.
+- [ ] Ask something short, switch to another app at once: one desktop notification `pi is waiting for your input` about 3 s after the reply, with no bell sound or flash; nothing more after a minute.
 - [ ] Same, but press any key within 3 s: nothing. Scrolling with the mouse wheel alone does not cancel.
 - [ ] Ask the main session to run two background agents and leave: nothing at the main reply, nothing while they run; the `2 agents finished` line starts a run; one notification 3 s after that reply.
-- [ ] A dialog that waits (with agents running, `/session-handoff` asks to confirm): notification `pi needs your input: <title>` after 2 s; pressing `↓` repeatedly keeps deferring it; answering within 2 s sends nothing.
+- [ ] A dialog that waits (with agents running, `/session-handoff` asks to confirm): notification `pi needs your input: <title>` with the dialog's title as pi shows it, after 2 s; a permission prompt forwarded from an agent reads `pi needs your input: <id> (<agent>) asks: <title>`; pressing `↓` repeatedly keeps deferring it; answering within 2 s sends nothing.
 - [ ] `/agents` left open for 10 s: nothing.
-- [ ] `"channel": "bell"` + `/reload`: bell only (sound, flash or tab mark per terminal settings), no desktop notification. `"channel": "off"`: nothing.
+- [ ] `"channel": "bell"` + `/reload`: bell only (sound, flash or tab mark per terminal settings), no desktop notification; Apple Terminal with `auto` shows nothing, with `bell` rings. `"channel": "off"`: nothing.
 - [ ] `"channel": "loud"`: one warning at session start, defaults used.
 - [ ] `pi -p "hi" | cat -v` and `--mode rpc`: no `^G` or `^[]9` in the output.
-- [ ] tmux: the window gets the bell flag, no desktop notification, no stray characters in the pane.
+- [ ] tmux with `auto`: nothing, no stray characters in the pane; with `"channel": "bell"`: the window gets the bell flag.
 - [ ] `/new` within the 3 s: no notification from the old session.
 - [ ] rxvt-unicode (optional): OSC 777 notification titled `pi`.
