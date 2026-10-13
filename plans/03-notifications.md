@@ -130,14 +130,14 @@ Invalid values are reported once as a warning and ignored. The files are read at
 
 ## Turning it off
 
-Set `"channel": "off"`, or remove `extensions/notifications/src/index.ts` from the pi package's extension list (`pi config`).
+Set `"channel": "off"`, or disable this extension's entry with `pi config` (it configures which package resources load; add `-l` for the current project only).
 
 ## Layout
 
 `src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/notifications.ts` holds the timers and the rules, `src/settings.ts` the settings files, both depending only on `core/adapter/contract.ts` and `core/manager/`. The busy channel name is shared in `core/manager/channels.ts`. Tests are under `test/`.
 ```
 
-(Write the settings block as a fenced `json` block in the real file; it is indented here only to nest it. Check the `pi config` wording against `pi --help` before committing; if pi has no such command, drop the second clause.)
+(Write the settings block as a fenced `json` block in the real file; it is indented here only to nest it. `pi config` is documented in pi's `docs/cli.md`.)
 
 ### `extensions/notifications/test/notifications.test.ts`
 

@@ -455,7 +455,7 @@ A new global extension `extensions/notifications/`. TUI mode only. Channels: `au
 | Busy channel empties while the session is idle (agents finished, no wake yet) | the same timer, armed then; the wake normally starts a run first, whose settle re-arms it | same | same |
 | A dialog opens (`ui_prompt_start`, including agents' forwarded dialogs) | `dialogDelayMs` (default 6 000) since the later of the dialog's start and the last keystroke; each keystroke restarts it | `ui_prompt_end`; closing the session | `pi needs your input: <title>` |
 
-Rules: once per settle (a settle that fired never fires again); evaluated at fire time (idle, no busy source, no dialog open, no keystroke since the settle); keystrokes are observed through `onTerminalInput` regardless of focus. The busy channel is the renamed `session-limits:busy` in `core/manager/channels.ts` (new neutral name `session:busy`, same payload); subagents publishes on it while any agent is open, so the idle notification waits for agents.
+Rules: once per settle (a settle that fired never fires again); evaluated at fire time (idle, no busy source, no dialog open, no keystroke since the settle); keystrokes are observed through `onTerminalInput` regardless of focus. The busy channel is the renamed `session-limits:busy` in `core/manager/channels.ts` (new neutral name `pi:busy`, same payload); subagents publishes on it while any agent is open, so the idle notification waits for agents.
 
 Settings file `pi-notifications.json` (user `<agentDir>`, project `<cwd>/.pi/` when trusted): `channel` (`"auto"` | `"bell"` | `"off"`, default `"auto"`), `idleDelayMs` (default 10 000, range 0–600 000), `dialogDelayMs` (default 6 000, range 0–600 000).
 
@@ -505,7 +505,7 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Agent view focus/verbose mode, `v`, and `pi-subagents-view.json`: removed (D4).
 - Agent view message box, delivery status line and `route` from the UI: the user never types into an agent (D4, goal 2).
 - Subagents `notifications` plugin, the `notifications` setting, per-batch / per-failure / per-dialog terminal notifications: replaced by the global notifications extension (D5).
-- Busy channel name `session-limits:busy`: renamed `session:busy` (D5).
+- Busy channel name `session-limits:busy`: renamed `pi:busy` (D5).
 - `formatTokens` duplicate in `footer/src/render.ts`, `REFRESH_MS` 300 in `components/refresh.ts`: replaced by the shared formatters and `renderThrottleMs`.
 - Working indicator always visible during text streaming and its `75s` elapsed: replaced by phases and the shared duration formatter (D6).
 
