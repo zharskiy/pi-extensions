@@ -32,7 +32,7 @@ onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
 phase(): { phase: Phase; detail: PhaseDetail };
 
 // HostUi addition
-/** Show or hide pi's working row (spinner + message); tui only. The row stays hidden until set back to true. */
+/** Show or hide pi's working row (spinner + message); tui only. `false` clears the row at once; `true` shows it again at once while a run is active (pi's `isStreaming`), with the last `setWorkingMessage` text, and otherwise at the next `turn_start`. */
 setWorkingVisible(visible: boolean): void;
 ```
 
@@ -79,7 +79,7 @@ Edge cases, each a reducer test:
 
 Wiring in `pi-adapter.ts` (`createPiHost`): `let phaseState = initialPhase()`; a local `apply(event)` runs the reducer, and when the object changed calls every `phaseHandlers` entry with `(phaseState.phase, detailOf(phaseState))`. Subscribe `pi.on("turn_start" | "message_update" | "message_end" | "tool_execution_start" | "tool_execution_end" | "agent_end")` (each also calls `capture(ctx)`), extend the existing `agent_start`, `agent_settled` and `session_shutdown` subscriptions (`agent_settled`: idle handlers, then `apply`; `session_shutdown`: reset before the handlers run, no emit). `host.phase()` reads `phaseState`.
 
-`setWorkingVisible` goes into `core/adapter/pi-working.ts` next to `setWorkingMessage`: `tuiCtx()?.ui.setWorkingVisible(visible)` (types.d.ts:62; IM:1819 stores the flag, IM:2762 consults it on `turn_start`, IM:1921 resets it to true on session switch). Because pi only re-shows the row on the next `turn_start`, the extension toggling it per phase gets: hide → immediate (`clearStatusIndicator`, IM:2765), show → on the next `turn_start`. That matches D6 (hidden while text streams; the next model call shows it again). Document this in the contract doc comment.
+`setWorkingVisible` goes into `core/adapter/pi-working.ts` next to `setWorkingMessage`: `tuiCtx()?.ui.setWorkingVisible(visible)` (types.d.ts:62; IM:1819-1829 stores the flag; `false` clears the working row at once; `true` calls `showWorkingStatusIndicator()` at once when `session.isStreaming` (`_isAgentRunActive`, AS:1049-1051, true for the whole run) and no working row is active; IM:2762 consults the flag on `turn_start`; IM:1921 resets it to true on session switch). So the extension toggling it per phase gets: hide → immediate, show → immediate within a run (a new row, so the spinner restarts; the same jitter Claude Code has). Corrected by plan 02 after reading IM:1819-1829; document this in the contract doc comment.
 
 ### Fakes
 
@@ -400,7 +400,7 @@ Sizes: A M (reducer + wiring + fakes + tests), B M (subclass rework + tests), C 
 
 - **Wake prompt drift (C)**: a future pi change could route `nextTurn` messages differently or emit `before_agent_start` for custom messages. Mitigation: the live test asserts byte-identical system prompts and the absence of a reverting patch; `conformance.test.ts` pins pi 1.1.0 and the `sendMessage` option types.
 - **`message_update` cost (A)**: the handler is awaited per token chunk. Mitigation: the reducer returns the same object for no-op deltas and the adapter emits only on change; the reducer test asserts identity.
-- **Working row re-show latency (A)**: pi shows the row again only on `turn_start` (IM:2762). Mitigation: documented in the contract; the extension hides on `writing` and shows on the next `waiting`, which coincides with `turn_start`/`message_end`, so no visible gap beyond pi's own behaviour.
+- **Working row jitter (A)**: every re-show creates a new row (spinner restarts, the editor shifts one line when the row hides). Mitigation: the extension toggles only on `writing` boundaries (plan 02), which is the same jitter Claude Code accepts; `setWorkingVisible(true)` must never run while pi's compaction or retry indicator is active (it would replace it): plan 02 shows only on phase changes, which do not happen between `agent_end` and `agent_settled`.
 - **Editor subclass conflicts (B)**: another extension installing an editor disables frame and hooks. Mitigation: unchanged back-off semantics, hooks return no-op removers, and the composer/panel plans degrade gracefully (panel without keyboard selection).
 - **Esc capture swallowing interrupts (B)**: a buggy extension capture could keep `Esc` from aborting a run. Mitigation: the capture only exists while a row is selected (extension plan), `"release"` on any other key, and the remover is called on disable; test "lets a released key reach the editor".
 - **Codemode renderer capture breaks on a pi upgrade (D)**: the stub assumes the factory only calls `registerTool`. Mitigation: try/catch with fallback to the generic display, a conformance test that runs the real factories against the stub, and the pinned version.
