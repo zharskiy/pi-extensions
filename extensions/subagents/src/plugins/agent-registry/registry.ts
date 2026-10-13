@@ -39,6 +39,9 @@ const writeManifestFile = (record: AgentRecord) => {
     model: record.model,
     worktree: record.worktree,
     contextLimit: record.contextLimit,
+    turns: record.turns,
+    toolCalls: record.toolCalls,
+    tokens: record.tokens,
   };
 
   writeFileSync(join(record.dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
