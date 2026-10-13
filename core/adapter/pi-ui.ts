@@ -39,6 +39,7 @@ import type {
   TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
+import { createEditorFrame } from "./pi-editor-frame.ts";
 
 export const themeLike = (theme: Theme): ThemeLike => ({
   fg: (token, text) => theme.fg(token, text),
@@ -446,5 +447,6 @@ export const createUi = (
 
       stdout.write(sequence);
     },
+    setEditorFrame: createEditorFrame(tuiCtx),
   };
 };

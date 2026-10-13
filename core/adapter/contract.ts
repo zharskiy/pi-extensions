@@ -113,6 +113,12 @@ export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 
 export type WidgetHandle = { refresh(): void };
 
+export type EditorFrame = {
+  chrome: number;
+  minWidth: number;
+  decorate(lines: string[], paint: (text: string) => string): string[];
+};
+
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
@@ -123,6 +129,7 @@ export type HostUi = {
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(title: string, body: string): void;
+  setEditorFrame(frame: EditorFrame | undefined): boolean;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
