@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
-import {
-  agentRow,
-  finishSummary,
-  formatElapsed,
-  formatTokens,
-  progressText,
-  treeRow,
-  truncate,
-} from "../../src/components/agent-row.ts";
+import { agentRow, finishSummary, progressText, treeRow, truncate } from "../../src/components/agent-row.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 
 const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
@@ -36,19 +28,6 @@ const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
 });
 
 describe("agent row formatting", () => {
-  it("formats tokens and elapsed time compactly", () => {
-    expect([formatTokens(950), formatTokens(86_400), formatTokens(1_250_000)]).toEqual([
-      "950",
-      "86.4k",
-      "1.3M",
-    ]);
-    expect([formatElapsed(45_000), formatElapsed(73_000), formatElapsed(3_723_000)]).toEqual([
-      "45s",
-      "1m 13s",
-      "1h 2m",
-    ]);
-  });
-
   it("summarises a finished agent in one line", () => {
     expect(finishSummary(record({ state: "done", endedAt: 73_000 }), 99_000)).toBe(
       "Done (12 tool calls · 86.4k tokens · 1m 13s)",

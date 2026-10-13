@@ -1,5 +1,6 @@
 import type { ContextSnapshot, FooterData, ModelInfo, ThemeLike } from "../../../core/adapter/contract.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
+import { formatTokens } from "../../../core/manager/format.ts";
 
 const PAD = " ";
 
@@ -37,18 +38,6 @@ export type FooterState = {
 const paint = (color: string, text: string) => `${color}${text}${RESET}`;
 
 const paintBold = (color: string, text: string) => `${BOLD}${color}${text}${RESET}`;
-
-export const formatTokens = (count: number) => {
-  if (count < 1000) {
-    return `${count}`;
-  }
-
-  if (count < 1_000_000) {
-    return `${(count / 1000).toFixed(1)}k`;
-  }
-
-  return `${(count / 1_000_000).toFixed(1)}M`;
-};
 
 export const formatCost = (cost: number) => {
   if (cost <= 0) {

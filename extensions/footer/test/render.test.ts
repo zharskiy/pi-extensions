@@ -5,7 +5,6 @@ import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import {
   type FooterState,
   formatCost,
-  formatTokens,
   formatWindow,
   modeLine,
   placeLine,
@@ -44,16 +43,6 @@ const render = (patch: Partial<FooterState> = {}, branch: string | null = null, 
   renderFooter(plainTheme, state(patch), { branch, statuses }).map(plain);
 
 describe("format helpers", () => {
-  it("formats token counts", () => {
-    expect([999, 1000, 150_100, 1_000_000, 2_450_000].map(formatTokens)).toEqual([
-      "999",
-      "1.0k",
-      "150.1k",
-      "1.0M",
-      "2.5M",
-    ]);
-  });
-
   it("formats costs", () => {
     expect([0, -1, 0.004, 0.01, 4, 4.425].map(formatCost)).toEqual([
       "$0.00",

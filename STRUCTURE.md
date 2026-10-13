@@ -27,7 +27,7 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # shared duration (and later token) formatters
+│   │   ├── format.ts            # token and duration formatters
 │   │   └── settings.ts / settle.ts  # settings, timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts
@@ -40,7 +40,8 @@ pi-extensions/
 │   │   │   ├── plugins.ts       # ordered plugin list
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
 │   │   │   │                    #   agent-schema, context-limit
-│   │   │   ├── components/      # pure TUI render helpers (agent-row, agent-list,
+│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and padding,
+│   │   │   │                    #   spinner.ts, state-text.ts, agent-row, agent-list,
 │   │   │   │                    #   collapsible, context-breakdown,
 │   │   │   │                    #   system-prompt-block, refresh.ts throttle/ticker, hints.ts)
 │   │   │   └── plugins/         # one folder per feature, see below

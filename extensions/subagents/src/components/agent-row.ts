@@ -1,77 +1,19 @@
-import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
+import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { type AgentRecord, type AgentState, isClosed } from "../model/types.ts";
+import { elapsedOf, formatDuration, formatTokens, singleLine } from "./format.ts";
+import { SPINNER_FRAMES } from "./spinner.ts";
+import { stateGlyph, stateToken } from "./state-text.ts";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export const stateIcon = (state: AgentState, frame: number) =>
+  state === "running" ? SPINNER_FRAMES[frame % SPINNER_FRAMES.length] : stateGlyph(state, 0);
 
-const STATE_ICONS: Record<Exclude<AgentState, "running">, string> = {
-  queued: "○",
-  grace: "◐",
-  done: "✓",
-  failed: "✗",
-  stopped: "■",
-  handoff: "↪",
-};
-
-const STATE_COLORS: Record<AgentState, ThemeToken> = {
-  queued: "muted",
-  running: "accent",
-  grace: "warning",
-  done: "success",
-  failed: "error",
-  stopped: "muted",
-  handoff: "warning",
-};
-
-export const formatTokens = (count: number) => {
-  if (count < 1_000) {
-    return `${count}`;
-  }
-
-  if (count < 1_000_000) {
-    return `${(count / 1_000).toFixed(1)}k`;
-  }
-
-  return `${(count / 1_000_000).toFixed(1)}M`;
-};
-
-export const formatElapsed = (ms: number) => {
-  const seconds = Math.max(0, Math.floor(ms / 1_000));
-
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-
-  const minutes = Math.floor(seconds / 60);
-
-  if (minutes < 60) {
-    return `${minutes}m ${seconds % 60}s`;
-  }
-
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-};
-
-export const elapsedOf = (record: AgentRecord, now: number) => {
-  const start = record.startedAt ?? record.createdAt;
-  const end = record.endedAt ?? now;
-
-  return end - start;
-};
-
-export const stateIcon = (state: AgentState, frame: number) => {
-  if (state === "running") {
-    return SPINNER_FRAMES[frame % SPINNER_FRAMES.length];
-  }
-
-  return STATE_ICONS[state];
-};
-
-export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const statsText = (record: AgentRecord, now: number) =>
   [
     plural(record.toolCalls, "tool call"),
     `${formatTokens(record.tokens)} tokens`,
-    formatElapsed(elapsedOf(record, now)),
+    formatDuration(elapsedOf(record, now)),
   ].join(" · ");
 
 export const finishSummary = (record: AgentRecord, now: number) => {
@@ -119,8 +61,6 @@ export const truncate = (text: string, width: number) => {
   return `${text.slice(0, Math.max(0, width - 1))}…`;
 };
 
-export const singleLine = (text: string) => text.replace(/\s+/g, " ").trim();
-
 export const chainLabel = (record: AgentRecord) => (record.chainIndex > 1 ? ` #${record.chainIndex}` : "");
 
 export const attentionText = (record: AgentRecord) => {
@@ -131,7 +71,7 @@ export const attentionText = (record: AgentRecord) => {
   return `needs input: ${singleLine(record.attention.title)}`;
 };
 
-export const graceSecondsLeft = (record: AgentRecord, now: number) => {
+const graceSecondsLeft = (record: AgentRecord, now: number) => {
   if (record.state !== "grace" || record.graceEndsAt === undefined) {
     return undefined;
   }
@@ -156,7 +96,7 @@ export const agentRow = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const icon = theme.fg(STATE_COLORS[record.state], stateIcon(record.state, frame));
+  const icon = theme.fg(stateToken(record.state), stateIcon(record.state, frame));
   const detail = isClosed(record.state) ? finishSummary(record, now) : progressText(record, now);
   const description = singleLine(record.description);
   const name = `${record.id}${chainLabel(record)}`;

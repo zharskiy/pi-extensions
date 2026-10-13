@@ -1,13 +1,18 @@
-import {
-  elapsedOf,
-  formatElapsed,
-  formatTokens,
-  graceSecondsLeft,
-  plural,
-  singleLine,
-  truncate,
-} from "../../components/agent-row.ts";
+import { elapsedOf, formatDuration, formatTokens, singleLine } from "../../components/format.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+const cutChars = (text: string, limit: number) =>
+  text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
+
+const graceSecondsLeft = (record: AgentRecord, now: number) => {
+  if (record.state !== "grace" || record.graceEndsAt === undefined) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
+};
 
 export type AgentSnapshot = {
   id: string;
@@ -37,7 +42,7 @@ const lastLineOf = (text: string) => {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  return truncate(singleLine(lines.at(-1) ?? ""), 160);
+  return cutChars(singleLine(lines.at(-1) ?? ""), 160);
 };
 
 const stateLabel = (snapshot: AgentSnapshot) => {
@@ -90,7 +95,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
 
   const parts = [
     `${name} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
-    formatElapsed(snapshot.elapsedMs),
+    formatDuration(snapshot.elapsedMs),
     `${formatTokens(snapshot.tokens)} tokens`,
     plural(snapshot.toolCalls, "tool call"),
     percent,

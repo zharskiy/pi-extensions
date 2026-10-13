@@ -1,7 +1,37 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
+import { elapsedOf, formatDuration, formatTokens, singleLine } from "../../components/format.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+const statsText = (record: AgentRecord, now: number) =>
+  [
+    plural(record.toolCalls, "tool call"),
+    `${formatTokens(record.tokens)} tokens`,
+    formatDuration(elapsedOf(record, now)),
+  ].join(" · ");
+
+const finishSummary = (record: AgentRecord, now: number) => {
+  const stats = statsText(record, now);
+
+  if (record.state === "done") {
+    return `Done (${stats})`;
+  }
+
+  if (record.state === "handoff") {
+    return `Handoff (${stats})`;
+  }
+
+  if (record.state === "stopped") {
+    return `Stopped (${stats})`;
+  }
+
+  return `Failed: ${record.error ?? "unknown error"} (${stats})`;
+};
+
+const cutChars = (text: string, limit: number) =>
+  text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 
 type StoredResult = { resultText: string; resultPath?: string; error?: string };
 
@@ -18,7 +48,7 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
   }
 };
 
-const chainTotals = (links: AgentRecord[]): AgentRecord => {
+export const chainTotals = (links: AgentRecord[]): AgentRecord => {
   const first = links[0];
   const last = links[links.length - 1];
 
@@ -38,7 +68,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, link
   const chained = links.length > 1;
   const lines = [
     `## ${record.id} (${record.agent}) - ${record.state}`,
-    `Task: ${truncate(singleLine(record.description), 200)}`,
+    `Task: ${cutChars(singleLine(record.description), 200)}`,
   ];
 
   if (chained) {
@@ -73,7 +103,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, link
 
   lines.push(
     `Result file: ${record.resultPath} (${text.length} chars)`,
-    `Preview: ${truncate(singleLine(text), 300)}`,
+    `Preview: ${cutChars(singleLine(text), 300)}`,
   );
 
   return lines.join("\n");

@@ -1,5 +1,5 @@
 import type { PromptRecord, ThemeLike, TranscriptItem } from "../../../../core/adapter/contract.ts";
-import { formatTokens } from "./agent-row.ts";
+import { formatTokens } from "./format.ts";
 
 type LimitTone = "success" | "warning" | "error";
 
