@@ -127,6 +127,9 @@ export type HostUi = {
   terminalNotify(title: string, body: string): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
+  onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
+  mapCommandCompletion(map: (command: string) => string | undefined): void;
+  submitEditor(text: string): Promise<boolean>;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };

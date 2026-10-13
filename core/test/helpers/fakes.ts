@@ -61,6 +61,10 @@ export type FakeHost = Host & {
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
   turnStart(): void;
+  submitRewrites: ((text: string) => string | undefined)[];
+  completionMaps: ((command: string) => string | undefined)[];
+  editorSubmissions: string[];
+  editorReachable: boolean;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -119,6 +123,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     confirmAnswer: true,
     newSessions: [],
     newSessionResult: true,
+    submitRewrites: [],
+    completionMaps: [],
+    editorSubmissions: [],
+    editorReachable: true,
     info: {
       id: "main-session",
       file: undefined,
@@ -165,6 +173,21 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       setWorkingMessage: (text) => {
         host.workingMessages.push(text);
+      },
+      onEditorSubmit: (rewrite) => {
+        host.submitRewrites.push(rewrite);
+
+        return () => {
+          host.submitRewrites = host.submitRewrites.filter((entry) => entry !== rewrite);
+        };
+      },
+      mapCommandCompletion: (map) => {
+        host.completionMaps.push(map);
+      },
+      submitEditor: async (text) => {
+        host.editorSubmissions.push(text);
+
+        return host.editorReachable;
       },
     },
     registerTool: (spec) => {

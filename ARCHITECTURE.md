@@ -117,6 +117,12 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - Active only in `tui` mode. On session start and every `Host.onTurnStart` (pi's `turn_start`) it sets `HostUi.setWorkingIndicator` to the `SPINNER` frames; the adapter (`pi-working.ts`) paints them with the theme's accent colour and both working calls are no-ops outside `tui`.
 - On turn start an unref'd interval refreshes `HostUi.setWorkingMessage` every `TICK_MS` with `<verb>… (<seconds>s · esc to interrupt)`, picking a new random verb every `VERB_MS`; turn end and shutdown stop it and restore pi's default message. Nothing is persisted.
 
+## Command-aliases
+
+- `ALIASES` maps an alias to a built-in command (`/continue` -> `/resume`, `/clear` -> `/new`, `/exit` -> `/quit`). pi runs built-ins in the editor's submit path before extension commands, so the alias is rewritten before pi sees it, through three `HostUi` calls implemented in `core/adapter/pi-editor-input.ts`, all no-ops outside tui mode.
+- `onEditorSubmit`: a terminal input listener that, on the `tui.input.submit` key, swaps an editor text that is exactly an alias for its target before the key is processed. `mapCommandCompletion`: wraps the autocomplete provider so picking an alias in the slash menu inserts the target.
+- Each alias is also a registered command. If it still runs, `submitEditor` waits one macrotask, sets the target as editor text and feeds Enter to the TUI's focused component (the TUI is captured through a widget factory that is removed at once); when no component takes input the extension notifies `Could not run <target>`. No state, no files.
+
 ## Persistence summary
 
 Every file the extensions write lives under pi's agent dir or session dir (`~/.pi/agent` by default; the `sessionDir` setting or `--session-dir` moves session data), except handoff files (OS temp dir) and `worktree: true` agents (checkout under `<cwd>/.pi/worktrees/`, git's `pi-agents/...` branch and `.git/worktrees/` metadata).

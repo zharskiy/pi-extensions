@@ -39,6 +39,7 @@ import type {
   TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
+import { createEditorInput } from "./pi-editor-input.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
 export const themeLike = (theme: Theme): ThemeLike => ({
@@ -448,5 +449,6 @@ export const createUi = (
       stdout.write(sequence);
     },
     ...createWorkingUi(tuiCtx),
+    ...createEditorInput(tuiCtx),
   };
 };

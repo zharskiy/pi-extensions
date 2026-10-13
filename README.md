@@ -6,6 +6,7 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
 - [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
 - [working-indicator](extensions/working-indicator/README.md): pi's working line as a spinner, a playful verb and the elapsed time of the current turn.
+- [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 
 ## Install
 
@@ -21,6 +22,7 @@ pi -e ./pi-extensions/extensions/subagents/src/index.ts
 pi -e ./pi-extensions/extensions/session-limits/src/index.ts
 pi -e ./pi-extensions/extensions/spending/src/index.ts
 pi -e ./pi-extensions/extensions/working-indicator/src/index.ts
+pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
 ```
 
 ## Update

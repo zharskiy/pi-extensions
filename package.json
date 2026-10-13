@@ -1,7 +1,7 @@
 {
   "name": "pi-extensions-mz",
   "version": "0.3.0",
-  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session, main session limits that hand the conversation over to a new session before its context fills up, a spending footer with the session's total cost including subagents, and a working line with a spinner, a playful verb and the elapsed turn time.",
+  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session, main session limits that hand the conversation over to a new session before its context fills up, a spending footer with the session's total cost including subagents, a working line with a spinner, a playful verb and the elapsed turn time, and friendlier aliases for built-in commands.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -10,7 +10,8 @@
     "subagents",
     "session-limits",
     "spending",
-    "working-indicator"
+    "working-indicator",
+    "command-aliases"
   ],
   "files": [
     "core/adapter",
@@ -30,7 +31,8 @@
       "./extensions/subagents/src/index.ts",
       "./extensions/session-limits/src/index.ts",
       "./extensions/spending/src/index.ts",
-      "./extensions/working-indicator/src/index.ts"
+      "./extensions/working-indicator/src/index.ts",
+      "./extensions/command-aliases/src/index.ts"
     ]
   },
   "scripts": {
