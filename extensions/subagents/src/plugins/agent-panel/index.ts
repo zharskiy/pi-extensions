@@ -118,18 +118,31 @@ export const agentPanelPlugin: Plugin = {
       handle.refresh();
     };
 
+    const report = (action: string, error: unknown) => {
+      host.ui.notify(
+        `pi-subagents: ${action} failed: ${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    };
+
     const actions: PanelActions = {
       rows,
       state,
       refresh,
       view: (id) => {
         if (services.has("agentView")) {
-          void services.require("agentView").open(id, { from: "panel" });
+          services
+            .require("agentView")
+            .open(id, { from: "panel" })
+            .catch((error: unknown) => report("open", error));
         }
       },
       stop: (id) => {
         if (services.has("runner")) {
-          void services.require("runner").stop(id);
+          services
+            .require("runner")
+            .stop(id)
+            .catch((error: unknown) => report("stop", error));
         }
       },
       release,

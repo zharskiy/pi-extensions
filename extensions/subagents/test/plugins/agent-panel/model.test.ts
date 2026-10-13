@@ -70,6 +70,16 @@ describe("panel rows", () => {
 
     expect(ids(panelRows(records, 40_000, settings, new Set()))).toEqual(["a2", "b"]);
   });
+
+  it("never shows a handed-off link after its successor left", () => {
+    const records = [
+      agentRecord({ id: "a", state: "handoff", endedAt: 0, successorId: "a2" }),
+      agentRecord({ id: "a2", state: "done", endedAt: 5_000, predecessorId: "a", chainIndex: 2 }),
+    ];
+
+    expect(ids(panelRows(records, 16_000, settings, new Set()))).toEqual([]);
+    expect(ids(panelRows(records, 6_000, settings, new Set(["a2"])))).toEqual([]);
+  });
 });
 
 describe("panel window", () => {
@@ -253,6 +263,40 @@ describe("panel window", () => {
     cache(open, 6_000, 80, theme, 8);
 
     expect(calls).toBeGreaterThan(counted);
+  });
+
+  it("prune drops the cached line of a row that left", () => {
+    let calls = 0;
+    const theme: ThemeLike = {
+      fg: (_token, text) => {
+        calls += 1;
+        return text;
+      },
+      bold: (text) => text,
+    };
+    const cache = createClosedRowCache();
+    const input = {
+      record: agentRecord({ id: "c", state: "done", endedAt: 1_000 }),
+      depth: 0,
+      last: true,
+      ancestorsContinue: [],
+      openDescendants: 0,
+      selected: false,
+    };
+
+    cache(input, 5_000, 80, theme, 8);
+    cache.prune([input]);
+
+    const kept = calls;
+
+    cache(input, 5_000, 80, theme, 8);
+
+    expect(calls).toBe(kept);
+
+    cache.prune([]);
+    cache(input, 5_000, 80, theme, 8);
+
+    expect(calls).toBeGreaterThan(kept);
   });
 
   it("returns no lines without rows", () => {

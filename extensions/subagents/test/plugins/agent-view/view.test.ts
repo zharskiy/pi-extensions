@@ -576,8 +576,8 @@ describe("agent view hint", () => {
     const narrow = viewOf(fixture(), { record: agentRecord({ id: "explorer-1" }), width: 40 });
     const hintLine = narrow.lines().at(-2) ?? "";
 
-    expect(hintLine).toBe(" esc to close · x to stop · r request …");
-    expect(displayWidth(hintLine)).toBe(39);
+    expect(hintLine).toBe(" esc to close · x to stop · r request…");
+    expect(displayWidth(hintLine)).toBe(38);
 
     const items = Array.from({ length: 900 }, (_, index) => ({
       kind: "user" as const,

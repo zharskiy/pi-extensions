@@ -98,7 +98,7 @@ export const truncateCols = (text: string, cols: number): string => {
   const fits = ends.findIndex((end) => end > budget);
   const count = fits < 0 ? chars.length : fits;
 
-  return `${chars.slice(0, count).join("")}…`;
+  return `${chars.slice(0, count).join("").trimEnd()}…`;
 };
 
 export const padEndCols = (text: string, cols: number): string =>

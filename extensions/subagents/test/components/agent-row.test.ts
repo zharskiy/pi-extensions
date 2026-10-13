@@ -94,7 +94,15 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 8,
     width: 30,
-    expected: "   ⠋ explorer  Map the auth …",
+    expected: "   ⠋ explorer  Map the auth…",
+  },
+  {
+    name: "drops the activity when the description room would be 10 columns",
+    input: row(grepping),
+    now: 65_000,
+    nameCols: 9,
+    width: 58,
+    expected: "   ⠋ explorer   Map the auth mod…  1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "shows queued as the status word",
@@ -110,7 +118,7 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 6,
     width: 30,
-    expected: "   ○ worker  Rename …  queued",
+    expected: "   ○ worker  Rename…   queued",
   },
   {
     name: "shows done with the duration",
@@ -167,6 +175,14 @@ const cases: Case[] = [
     nameCols: 13,
     width: 80,
     expected: "   │  ├─ ⠋ explorer       Find callers of login      read · 12s · ↓ 1.1k tokens",
+  },
+  {
+    name: "keeps only the name on a deep row too narrow for any stats",
+    input: row(child, { depth: 2, last: false, ancestorsContinue: [true] }),
+    now: 12_000,
+    nameCols: 13,
+    width: 24,
+    expected: "   │  ├─ ⠋ explorer    ",
   },
   {
     name: "shows open descendants and writing",

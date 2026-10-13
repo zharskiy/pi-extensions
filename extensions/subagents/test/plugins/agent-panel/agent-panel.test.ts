@@ -163,6 +163,21 @@ describe("agent panel", () => {
     expect(pointed(lines)).toHaveLength(1);
   });
 
+  it("scrolls the window up to keep the selection visible", () => {
+    const panel = setup();
+
+    Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
+    panel.host.pressEmptyLeft();
+    Array.from({ length: 6 }, () => panel.key("down"));
+    Array.from({ length: 5 }, () => panel.key("up"));
+
+    const lines = panel.lines();
+
+    expect(lines[0]).toBe("   ↑ 1 more");
+    expect(lines[1].startsWith(" › ")).toBe(true);
+    expect(pointed(lines)).toHaveLength(1);
+  });
+
   it("enter opens the agent view from the panel and deselects", () => {
     const panel = setup();
     const record = panel.newAgent();
@@ -195,6 +210,68 @@ describe("agent panel", () => {
 
     expect(panel.widget()).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("x on a done row clears it and keeps the selection on the next row", () => {
+    const panel = setup();
+    const done = panel.newAgent({ description: "finished" });
+
+    panel.registry.close(done.id, { state: "done" });
+    panel.running(panel.newAgent({ description: "second" }).id);
+    panel.host.pressEmptyLeft();
+
+    expect(panel.type("x")).toBe("consumed");
+
+    const lines = panel.lines();
+
+    expect(lines.join("\n")).not.toContain("finished");
+    expect(pointed(lines)).toEqual([expect.stringContaining("second")]);
+    expect(lines).toContain(HINT);
+    expect(panel.host.editorCapture).toBeDefined();
+  });
+
+  it("x on the last row, a done one, moves the selection to the previous row", () => {
+    const panel = setup();
+
+    panel.running(panel.newAgent({ description: "first" }).id);
+
+    const done = panel.newAgent({ description: "finished" });
+
+    panel.registry.close(done.id, { state: "done" });
+    panel.host.pressEmptyLeft();
+    panel.key("down");
+    panel.type("x");
+
+    expect(pointed(panel.lines())).toEqual([expect.stringContaining("first")]);
+    expect(panel.host.editorCapture).toBeDefined();
+  });
+
+  it("releases the capture when the selected row lingered out before the next tick", () => {
+    const panel = setup();
+    const record = panel.newAgent({ description: "finished" });
+
+    panel.registry.close(record.id, { state: "done" });
+    panel.host.pressEmptyLeft();
+    vi.setSystemTime(Date.now() + 10_000);
+
+    expect(panel.key("down")).toBe("release");
+    expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("reports a rejected stop", async () => {
+    const panel = setup();
+    const record = panel.newAgent();
+
+    panel.stop.mockRejectedValueOnce(new Error("runner gone"));
+    panel.running(record.id);
+    panel.host.pressEmptyLeft();
+    panel.type("x");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(panel.host.notices).toContainEqual({
+      message: "pi-subagents: stop failed: runner gone",
+      level: "warning",
+    });
   });
 
   it("a released key clears the selection and reaches the editor", () => {
@@ -334,6 +411,22 @@ describe("agent panel", () => {
 
     expect(idle.lines().join("\n")).not.toContain("finished");
     expect(idle.lines().join("\n")).toContain("waiting");
+  });
+
+  it("ticks once a second with only queued rows", () => {
+    const panel = setup();
+
+    panel.newAgent();
+
+    const list = vi.spyOn(panel.registry, "list");
+
+    vi.advanceTimersByTime(999);
+
+    expect(list).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+
+    expect(list).toHaveBeenCalled();
   });
 
   it("skips the redraw when the panel output is unchanged", () => {
@@ -499,6 +592,19 @@ describe("footer status", () => {
     expect(panel.host.statuses.get(STATUS)).toBe("<dim>/agents to see agents");
 
     vi.advanceTimersByTime(29_999);
+
+    expect(panel.host.statuses.get(STATUS)).toBe("<dim>/agents to see agents");
+
+    vi.advanceTimersByTime(1);
+
+    expect(panel.host.statuses.get(STATUS)).toBeUndefined();
+  });
+
+  it("reads agentsHintMs from the settings", () => {
+    const panel = setup({ settings: { agentsHintMs: 5_000 } });
+
+    panel.registry.close(panel.newAgent().id, { state: "done" });
+    vi.advanceTimersByTime(4_999);
 
     expect(panel.host.statuses.get(STATUS)).toBe("<dim>/agents to see agents");
 

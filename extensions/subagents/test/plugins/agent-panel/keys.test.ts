@@ -6,10 +6,10 @@ import { createPanelState } from "../../../src/plugins/agent-panel/model.ts";
 import { agentRecord } from "../../helpers/records.ts";
 
 const actionsFor = (records: AgentRecord[], options: { view?: boolean; stop?: boolean } = {}) => {
-  const rows = treeOrder(records);
+  const state = createPanelState();
   const actions = {
-    rows: () => rows,
-    state: createPanelState(),
+    rows: () => treeOrder(records.filter((record) => !state.cleared.has(record.id))),
+    state,
     refresh: vi.fn(),
     release: vi.fn(),
     view: options.view === false ? undefined : vi.fn(),
@@ -105,6 +105,64 @@ describe("panel keys", () => {
 
     expect(actions.state.cleared.has("done")).toBe(true);
     expect(actions.stop).toHaveBeenCalledTimes(2);
+  });
+
+  it("x on a closed row clears it and moves the selection to the next row", () => {
+    const actions = actionsFor([
+      agentRecord({ id: "a", createdAt: 1, state: "done", endedAt: 4 }),
+      agentRecord({ id: "b", createdAt: 2 }),
+    ]);
+
+    actions.state.selectedId = "a";
+
+    expect(panelKeyHandler(actions)({ name: "other", char: "x" })).toBe("consumed");
+    expect(actions.state.cleared.has("a")).toBe(true);
+    expect(actions.state.selectedId).toBe("b");
+    expect(actions.release).not.toHaveBeenCalled();
+  });
+
+  it("x on the last closed row clears it and moves the selection to the previous row", () => {
+    const actions = actionsFor([
+      agentRecord({ id: "a", createdAt: 1 }),
+      agentRecord({ id: "b", createdAt: 2, state: "failed", endedAt: 4 }),
+    ]);
+
+    actions.state.selectedId = "b";
+    panelKeyHandler(actions)({ name: "other", char: "x" });
+
+    expect(actions.state.selectedId).toBe("a");
+    expect(actions.release).not.toHaveBeenCalled();
+  });
+
+  it("x on the only closed row clears it, deselects and releases", () => {
+    const actions = actionsFor([agentRecord({ id: "a", state: "done", endedAt: 4 })]);
+
+    actions.state.selectedId = "a";
+
+    expect(panelKeyHandler(actions)({ name: "other", char: "x" })).toBe("consumed");
+    expect(actions.state.selectedId).toBeUndefined();
+    expect(actions.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("x keeps the selection on a running row it stops", () => {
+    const actions = actionsFor(three());
+
+    actions.state.selectedId = "b";
+    panelKeyHandler(actions)({ name: "other", char: "x" });
+
+    expect(actions.stop).toHaveBeenCalledWith("b");
+    expect(actions.state.selectedId).toBe("b");
+    expect(actions.release).not.toHaveBeenCalled();
+  });
+
+  it("releases any key when the selected row is already gone", () => {
+    const actions = actionsFor(three());
+
+    actions.state.selectedId = "gone";
+
+    expect(panelKeyHandler(actions)({ name: "down" })).toBe("release");
+    expect(actions.state.selectedId).toBeUndefined();
+    expect(actions.release).toHaveBeenCalledTimes(1);
   });
 
   it("x does nothing on an open row without the stop action", () => {

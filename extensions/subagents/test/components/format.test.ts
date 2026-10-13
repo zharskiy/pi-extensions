@@ -48,6 +48,7 @@ describe("format helpers", () => {
     expect(truncateCols("Map the auth module", 8)).toBe("Map the…");
     expect(truncateCols("日本語テキスト", 5)).toBe("日本…");
     expect(truncateCols("short", 10)).toBe("short");
+    expect(truncateCols("Map the auth module", 14)).toBe("Map the auth…");
     expect(truncateCols("x", 0)).toBe("");
   });
 

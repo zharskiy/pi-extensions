@@ -105,7 +105,10 @@ const runAgentParameters = {
             type: "string",
             description: "Self-contained task: goal, scope, paths, what the result must contain.",
           },
-          description: { type: "string", description: "Short label (3-8 words) shown in progress rows." },
+          description: {
+            type: "string",
+            description: "Short label (3-8 words); it names the agent in the panel and the transcript.",
+          },
           files: {
             type: "array",
             items: { type: "string" },

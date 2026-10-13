@@ -40,7 +40,10 @@ export const panelRows = (
   cleared: ReadonlySet<string>,
 ): TreeRow[] => {
   const byId = new Map(records.map((record) => [record.id, record]));
-  const visible = records.filter((record) => isVisible(record, now, settings, cleared));
+  const visible = records.filter(
+    (record) =>
+      !(record.successorId && byId.has(record.successorId)) && isVisible(record, now, settings, cleared),
+  );
   const visibleIds = new Set(visible.map((record) => record.id));
   const links = new Map<string, AgentRecord>();
 

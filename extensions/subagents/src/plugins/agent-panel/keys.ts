@@ -33,6 +33,28 @@ const move = (actions: PanelActions, step: 1 | -1) => {
   actions.refresh();
 };
 
+const clear = (actions: PanelActions, before: TreeRow[], id: string) => {
+  const index = before.findIndex((row) => row.record.id === id);
+
+  actions.state.cleared.add(id);
+
+  const remaining = new Set(actions.rows().map((row) => row.record.id));
+  const next =
+    before.slice(index + 1).find((row) => remaining.has(row.record.id)) ??
+    before
+      .slice(0, index)
+      .reverse()
+      .find((row) => remaining.has(row.record.id));
+
+  if (!next) {
+    deselect(actions);
+    return;
+  }
+
+  actions.state.selectedId = next.record.id;
+  actions.refresh();
+};
+
 const stopOrClear = (actions: PanelActions) => {
   const rows = actions.rows();
   const record = rows[selectedIndex(rows, actions.state)]?.record;
@@ -42,8 +64,7 @@ const stopOrClear = (actions: PanelActions) => {
   }
 
   if (isClosed(record.state)) {
-    actions.state.cleared.add(record.id);
-    actions.refresh();
+    clear(actions, rows, record.id);
     return;
   }
 
@@ -53,6 +74,11 @@ const stopOrClear = (actions: PanelActions) => {
 export const panelKeyHandler =
   (actions: PanelActions): EditorKeyHandler =>
   (key) => {
+    if (selectedIndex(actions.rows(), actions.state) < 0) {
+      deselect(actions);
+      return "release";
+    }
+
     if (key.name === "down") {
       move(actions, 1);
       return "consumed";
