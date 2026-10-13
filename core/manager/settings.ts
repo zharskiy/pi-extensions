@@ -7,7 +7,9 @@ type ListRule = { type: "list"; of: string };
 
 type BooleanRule = { type: "boolean" };
 
-type SettingsRule = NumberRule | ListRule | BooleanRule;
+type ChoiceRule = { type: "choice"; values: readonly string[] };
+
+type SettingsRule = NumberRule | ListRule | BooleanRule | ChoiceRule;
 
 export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 
@@ -27,6 +29,10 @@ const isValid = (rule: SettingsRule, value: unknown) => {
     return typeof value === "boolean";
   }
 
+  if (rule.type === "choice") {
+    return typeof value === "string" && rule.values.includes(value);
+  }
+
   return rule.type === "number" ? validNumber(rule, value) : validList(value);
 };
 
@@ -37,6 +43,10 @@ const expectation = (rule: SettingsRule) => {
 
   if (rule.type === "list") {
     return `a list of ${rule.of}`;
+  }
+
+  if (rule.type === "choice") {
+    return `one of ${rule.values.map((value) => `"${value}"`).join(", ")}`;
   }
 
   return rule.minExclusive

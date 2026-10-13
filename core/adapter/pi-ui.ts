@@ -34,6 +34,7 @@ import type {
   HostUi,
   InputPane,
   KeyPress,
+  NotifyChannel,
   OverlayFactory,
   ScrollPane,
   ThemeLike,
@@ -290,15 +291,24 @@ const OSC_777_TERMINALS = /rxvt/i;
 const usesOsc777 = (env: TerminalEnv) =>
   [env.TERM, env.TERM_PROGRAM].some((name) => OSC_777_TERMINALS.test(name ?? ""));
 
-export const notificationSequence = (title: string, body: string, env: TerminalEnv = process.env) => {
-  const heading = cleanText(title).replace(/;/g, ",");
-  const text = cleanText(body);
+const OSC_777_TITLE = "pi";
 
-  if (usesOsc777(env)) {
-    return `\x07\x1b]777;notify;${heading};${text}\x07`;
+export const notificationSequence = (
+  message: string,
+  channel: NotifyChannel,
+  env: TerminalEnv = process.env,
+) => {
+  const text = cleanText(message);
+
+  if (channel === "bell") {
+    return "\x07";
   }
 
-  return `\x07\x1b]9;${text ? `${heading}: ${text}` : heading}\x07`;
+  if (usesOsc777(env)) {
+    return `\x1b]777;notify;${OSC_777_TITLE};${text}\x07`;
+  }
+
+  return `\x1b]9;${text}\x07`;
 };
 
 export const createUi = (
@@ -438,12 +448,12 @@ export const createUi = (
       return ctx.ui.select(title, options);
     },
     style: (token, text) => state.ctx?.ui.theme.fg(token, text) ?? text,
-    terminalNotify: (title, body) => {
+    terminalNotify: (message, channel) => {
       if (!tuiCtx()) {
         return;
       }
 
-      const sequence = notificationSequence(title, body, env);
+      const sequence = notificationSequence(message, channel, env);
 
       if (lastTui) {
         lastTui.terminal.write(sequence);

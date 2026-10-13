@@ -43,6 +43,19 @@ describe("settings helpers", () => {
     expect(parseSettings(schema, { loud: 0 }, "f").patch).toEqual({});
   });
 
+  it("accepts only listed strings for a choice rule", () => {
+    const choice: SettingsSchema<{ mode: string }> = { mode: { type: "choice", values: ["a", "b"] } };
+
+    expect(parseSettings(choice, { mode: "b" }, "f.json").patch).toEqual({ mode: "b" });
+    expect(parseSettings(choice, { mode: "c" }, "f.json").errors).toEqual([
+      'f.json: mode must be one of "a", "b"',
+    ]);
+    expect(parseSettings(choice, { mode: 1 }, "f.json")).toEqual({
+      patch: {},
+      errors: ['f.json: mode must be one of "a", "b"'],
+    });
+  });
+
   it("rejects anything but a JSON object", () => {
     expect(parseSettings(schema, [], "f").errors).toEqual(["f: expected a JSON object"]);
     expect(parseSettings(schema, null, "f").errors).toEqual(["f: expected a JSON object"]);

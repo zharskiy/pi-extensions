@@ -150,12 +150,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return settled ? records.filter((entry) => !entry.successorId) : undefined;
   };
 
-  const batchSettled = (batchId: string) => {
-    const records = deps.registry.batch(batchId);
-
-    return records.length > 0 && records.every((record) => isClosed(record.state));
-  };
-
   const checkBatch = (record: AgentRecord) => {
     const batch = batches.get(record.batchId);
     const terminals = batch && settledTerminals(batch);
@@ -898,8 +892,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const shutdown = async (reason: string) => {
     shuttingDown = true;
 
-    deps.bus.emit("session:closing", undefined);
-
     const open = deps.registry.list().filter((record) => !isClosed(record.state));
 
     open.forEach((record) => {
@@ -929,7 +921,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   return {
     startBatch,
     batchText,
-    batchSettled,
     stop,
     route,
     abort,

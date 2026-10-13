@@ -63,6 +63,10 @@ pi-extensions/
 │   │   ├── src/                 # index, working-indicator
 │   │   ├── test/
 │   │   └── README.md
+│   ├── notifications/           # terminal notification when pi waits for you
+│   │   ├── src/                 # index, notifications, settings
+│   │   ├── test/
+│   │   └── README.md
 │   ├── command-aliases/         # friendlier names for built-in commands
 │   │   ├── src/                 # index, command-aliases (ALIASES)
 │   │   ├── test/
@@ -99,7 +103,6 @@ agent-status/       # status tool and snapshots
 agent-view/         # /agents command view, view-mode store
 agent-list-view/    # agent list overlay
 progress-widget/    # live progress widget below the editor
-notifications/      # completion notifications
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel
 ```
@@ -117,7 +120,7 @@ usage-report/       # reports agent usage to the spending channel
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,command-aliases,composer,footer}/src/index.ts`.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,footer}/src/index.ts`.
 - Development-only: `core/test`, `extensions/*/test`, `test/`, `research/`, `.github/`, config files below.
 
 ### Config files

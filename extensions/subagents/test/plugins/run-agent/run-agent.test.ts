@@ -503,23 +503,3 @@ describe("main session prompt", () => {
     expect(without.host.mainPrompt).not.toContain("agent_status");
   });
 });
-
-describe("batchSettled", () => {
-  it("stays true for a batch once all of its agents are closed", async () => {
-    const { run, runtime, services, registry } = setup();
-
-    await run(tasks(2));
-
-    const runner = services.require("runner") as Runner;
-    const { batchId } = registry.list()[0];
-
-    runtime.children[0].finish("one");
-
-    expect(runner.batchSettled(batchId)).toBe(false);
-
-    runtime.children[1].finish("two");
-
-    expect(runner.batchSettled(batchId)).toBe(true);
-    expect(runner.batchSettled("b-unknown")).toBe(false);
-  });
-});

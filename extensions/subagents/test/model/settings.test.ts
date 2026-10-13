@@ -30,7 +30,7 @@ describe("subagents settings", () => {
       maxConcurrent: 8,
       maxDepth: 5,
       softContextRatio: "big",
-      notifications: "off",
+      stopGraceSeconds: "soon",
       somethingElse: 50_000,
     });
 
@@ -40,7 +40,7 @@ describe("subagents settings", () => {
     expect(loaded.errors).toEqual([
       `${userFile}: maxDepth must be a number between 2 and 4`,
       `${userFile}: softContextRatio must be a number between 0.1 and 1`,
-      `${userFile}: notifications must be true or false`,
+      `${userFile}: stopGraceSeconds must be a number between 0 and 3600`,
     ]);
   });
 
@@ -55,8 +55,9 @@ describe("subagents settings", () => {
     expect(disabledPlugins(agentDir)).toEqual([]);
   });
 
-  it("has notifications on and a chain length of 3 by default", () => {
-    expect(defaultSettings()).toMatchObject({ notifications: true, maxChainLength: 3 });
+  it("has a chain length of 3 by default", () => {
+    expect(defaultSettings()).toMatchObject({ maxChainLength: 3 });
+    expect(defaultSettings()).not.toHaveProperty("notifications");
   });
 
   it("merges defaults, the user file and a trusted project file, project last", () => {

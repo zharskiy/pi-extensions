@@ -18,7 +18,6 @@ export type Settings = {
   renderThrottleMs: number;
   stopGraceSeconds: number;
   maxChainLength: number;
-  notifications: boolean;
   disabledPlugins: string[];
 };
 
@@ -36,7 +35,6 @@ export const defaultSettings = (): Settings => ({
   renderThrottleMs: 250,
   stopGraceSeconds: 60,
   maxChainLength: 3,
-  notifications: true,
   disabledPlugins: [],
 });
 
@@ -54,7 +52,6 @@ const settingsSchema: SettingsSchema<Settings> = {
   renderThrottleMs: range(0, 10_000),
   stopGraceSeconds: range(0, 3_600),
   maxChainLength: range(1, 20),
-  notifications: { type: "boolean" },
   disabledPlugins: { type: "list", of: "plugin ids" },
 };
 

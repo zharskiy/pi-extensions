@@ -14,6 +14,7 @@ import {
   type MessageDelivery,
   type ModelInfo,
   type NewSessionOptions,
+  type NotifyChannel,
   type OverlayFactory,
   type Phase,
   type PhaseDetail,
@@ -45,7 +46,7 @@ export type FakeHost = Host & {
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
-  terminalNotices: { title: string; body: string }[];
+  terminalNotices: { message: string; channel: NotifyChannel }[];
   statuses: Map<string, string | undefined>;
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
   widgetRefreshes: number;
@@ -190,8 +191,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       select: async () => undefined,
       style: (token, text) => `<${token}>${text}`,
-      terminalNotify: (title, body) => {
-        host.terminalNotices.push({ title, body });
+      terminalNotify: (message, channel) => {
+        host.terminalNotices.push({ message, channel });
       },
       setWorkingIndicator: (indicator) => {
         host.workingIndicators.push(indicator);

@@ -135,7 +135,6 @@ export type RouteResult =
   | { ok: false; error: string };
 
 export type AgentRunner = {
-  batchSettled(batchId: string): boolean;
   stop(id: string): Promise<boolean>;
   route(id: string, message: RoutedMessage): Promise<RouteResult>;
   abort(id: string, reason: string): Promise<void>;

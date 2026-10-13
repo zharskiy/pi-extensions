@@ -8,7 +8,6 @@ export type BusEvents = {
   "agent:closed": AgentRecord;
   "agent:usage": { id: string; usage: UsageTotals };
   "batch:settled": { batchId: string; callerId: string; terminals: AgentRecord[] };
-  "session:closing": undefined;
 };
 
 export type Bus = CoreBus<BusEvents>;

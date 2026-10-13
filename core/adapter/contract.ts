@@ -124,6 +124,8 @@ export type EditorFrame = {
   decorate(lines: string[], layout: EditorLayout, paint: (text: string) => string): string[];
 };
 
+export type NotifyChannel = "auto" | "bell";
+
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
@@ -133,7 +135,8 @@ export type HostUi = {
   openOverlay(factory: OverlayFactory): Promise<void>;
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
-  terminalNotify(title: string, body: string): void;
+  /** tui only. `bell` writes BEL. `auto` writes only a desktop notification with `message`, no BEL: OSC 9, or OSC 777 titled `pi` when TERM or TERM_PROGRAM names rxvt. Control characters in `message` become spaces. */
+  terminalNotify(message: string, channel: NotifyChannel): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
   /** Show or hide pi's working row; tui only. Hiding is immediate. Showing is immediate while a run is active, otherwise pi applies it at the next turn_start. The flag persists until set again; pi resets it to true on session switch and reload. */

@@ -1,6 +1,6 @@
 # Architecture
 
-How the seven extensions work at runtime. Folder layout is in `STRUCTURE.md`.
+How the eight extensions work at runtime. Folder layout is in `STRUCTURE.md`.
 
 ## Layers and dependency rules
 
@@ -28,7 +28,7 @@ Host behaviour worth knowing:
 - `sendUserMessage` delivers immediately when idle, otherwise as a pi follow-up.
 - `setMainPrompt` replaces pi's default prompt in `before_agent_start` and re-adds the `tools`, `rules` and `docs` sections pi would otherwise drop (`main-prompt.ts`). Only the subagents `run-agent` plugin calls it, so the main prompt is replaced only when that plugin is enabled.
 - `ToolSpec` and overlay/widget factories are plain-text contracts; the adapter converts them to pi tools and TUI components. UI calls degrade to no-ops outside TUI mode.
-- `terminalNotify` writes an OSC 9 (or OSC 777 on rxvt) escape sequence.
+- `terminalNotify(message, channel)` writes BEL for `bell`, and for `auto` only an OSC 9 notification (OSC 777 titled `pi` on rxvt), no BEL; tui only.
 
 Unit tests use `core/test/helpers/fakes.ts` (fake host, runtime and child session) instead of pi; a few tests (UI and message-agent) import adapter modules that load pi offline (`pi-ui.ts`, `session-file.ts`, `route.ts`), and only `core/test/adapter` tests import pi packages directly. `core/test/adapter` holds conformance tests against pi, offline.
 
@@ -38,11 +38,11 @@ Unit tests use `core/test/helpers/fakes.ts` (fake host, runtime and child sessio
 
 ## Extension manager and plugins
 
-Only subagents uses the manager; session-limits, spending, working-indicator, command-aliases, composer and footer wire a few functions directly in `boot`.
+Only subagents uses the manager; session-limits, spending, working-indicator, notifications, command-aliases, composer and footer wire a few functions directly in `boot`.
 
 - A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host` (the real one), `runtime`, `bus`, `settings`, `services`, `root`.
 - Boot order: plugins are topologically sorted by `requires` (cycles throw). A plugin is skipped silently when listed in `disabledPlugins`, and with one warning at session start when a plugin it requires is off or missing.
-- Plugins communicate two ways: `services` (a typed map; `provide`/`require`/`has`, where `require` throws if the provider is not enabled) and the typed in-process `bus` (`agent:changed`, `agent:turn`, `agent:closed`, `agent:usage`, `batch:settled`, `session:closing`). Bus listener errors are caught and passed to `onError`, which shows a UI error notification.
+- Plugins communicate two ways: `services` (a typed map; `provide`/`require`/`has`, where `require` throws if the provider is not enabled) and the typed in-process `bus` (`agent:changed`, `agent:turn`, `agent:closed`, `agent:usage`, `batch:settled`). Bus listener errors are caught and passed to `onError`, which shows a UI error notification.
 - On every `session_shutdown` the entry calls `disableAll()`, which runs the disable callbacks in reverse order, sequentially; a failing callback goes to `onError` and the rest still run. The adapter's own shutdown handlers are fault tolerant in the same way (see above).
 - `settleWithin(promise, ms)` waits for a promise or a timeout, whichever comes first, and never rejects. It bounds child aborts (5 s) and child extension shutdown (2 s).
 
@@ -50,7 +50,7 @@ Settings: each extension has a JSON file `<agentDir>/<file>` (user) and `<cwd>/.
 
 ## Subagents
 
-Plugins (`src/plugins.ts`; requirements in brackets): `agent-registry` (in-memory records, `manifest.json`), `agent-definitions` (agent `.md` files, agent prompts), `run-agent` [registry, definitions] (runner, tools, outbox, main prompt, and the `handoff` service: template and schema), `notifications` [run-agent], `usage-report` [run-agent], `agent-status` [registry], `limits` [registry, run-agent], `progress-widget` [registry], `agent-view` [registry] (`/agents`), `agent-list-view` [registry, agent-view].
+Plugins (`src/plugins.ts`; requirements in brackets): `agent-registry` (in-memory records, `manifest.json`), `agent-definitions` (agent `.md` files, agent prompts), `run-agent` [registry, definitions] (runner, tools, outbox, main prompt, and the `handoff` service: template and schema), `usage-report` [run-agent], `agent-status` [registry], `limits` [registry, run-agent], `progress-widget` [registry], `agent-view` [registry] (`/agents`), `agent-list-view` [registry, agent-view].
 
 ### Agent definitions and prompts
 
@@ -78,7 +78,7 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 
 - `message_agent` (only the agent's caller) and the agent view route `[message from <sender>]` text: held while queued, steered while a turn is in flight, a follow-up (after re-acquiring a slot) when idle.
 - Stop: a running agent enters `grace`, its turn is aborted and its slot released; a message during grace is answered, otherwise after `stopGraceSeconds` it closes as `stopped` (last text kept as result). A queued agent, a second stop during grace, or `stopGraceSeconds: 0` closes at once.
-- Session shutdown: the outbox is cleared, `session:closing` silences notifications, every open agent closes as `failed (interrupted)` (or `stopped` if in grace), children are aborted and disposed.
+- Session shutdown: the outbox is cleared, every open agent closes as `failed (interrupted)` (or `stopped` if in grace), children are aborted and disposed.
 
 ### Context limits and handoff chains
 
@@ -86,12 +86,11 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - When an agent with a handoff request settles, the runner validates the handoff file (sections Status, Outcome, Evidence, Blocker, Next, Files touched in order; Status `partial` or `blocked`). `partial` within `maxChainLength`, not stopped and not in a settled batch -> a successor record in the same batch (same task, same worktree, task text points at the handoff) and the predecessor closes as `handoff`. Otherwise the agent closes as `handoff`, flagged invalid if the schema failed. A missing file is `failed`.
 - Chains are invisible to the caller: one wake, one result section with a `Chain:` line, and any id of a chain resolves to its last link for status, messages and stop.
 
-### Status, views, notifications
+### Status and views
 
 - `agent_status` reads in-memory records only; it never touches the agent.
 - The progress widget and list view re-render on `agent:changed` (throttled) plus a 1 s ticker while agents run; closed rows linger for `lingerMs`/`failedLingerMs`.
 - The agent view (`/agents [id]`) reads the agent's session file through `runtime.readSession`, falling back to `manifest.json` for agents not in memory. Its focus/verbose mode persists in `<agentDir>/pi-subagents-view.json`.
-- Notifications (terminal escape sequence) fire for a settled main-session batch, a failed agent not already covered by its batch, and a new input request from an agent.
 
 ### Worktrees
 
@@ -102,7 +101,7 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - Active only in `tui` and `rpc` modes (a `Host` wrapper suppresses events otherwise). Thresholds compare main session context tokens to the model window: `softRatio` (0.6) shows a warning footer segment, `hardRatio` (0.75) triggers the handoff.
 - Sequence: turn end at hard level -> send the `prompts/handoff.md` instruction as a user message with the path `<OS temp dir>/pi-session-limits/<session id>-handoff.md` -> on each turn end/idle check whether the file is new (mtime changed) and valid (same six sections, Status `done`, `partial` or `blocked`) -> if valid and no busy source -> dispatch `/session-handoff` -> `newSession({ parentSession, seed })`, seeding the new session with a `pi-session-limits-handoff` custom message holding the handoff.
 - An invalid or missing file after the session settles gets one resend with the errors; after 2 instructions the phase becomes `stuck` and the user runs `/session-handoff` by hand. User activity after the request causes the instruction to be re-sent before switching.
-- Busy sources: any extension can publish `pi:busy { source, busy }`. Subagents publishes it while any agent is open; the switch waits until all sources are idle (then 1 s), and a manual switch asks for confirmation.
+- Busy sources: any extension can publish `pi:busy { source, busy }`. Subagents publishes it while any agent is open; the switch waits until all sources are idle (then 1 s), and a manual switch asks for confirmation. The notifications extension reads the same channel to hold its idle notification.
 - All state is in memory, per extension instance; the only file is the handoff. A pending switch whose `/session-handoff` command never runs ends in the failed phase at the next idle or turn end; a second `/session-handoff` while one runs is ignored. A context window of 0 or unknown token usage turns the extension off for that moment (no request, footer cleared).
 - `Host.onCompact` fires after pi compacts the main session; session-limits uses it to forget its cached context size (pi reports unknown tokens after compaction), which clears the footer segment until the next turn.
 
@@ -121,6 +120,14 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - The clock counts the current prompt (one agent run), not a turn. The first `Host.onAgentStart` of a run (skipped outside `tui`, so no interval runs in other modes) records the start, reads pi's `app.interrupt` key once through `HostUi.keyText`, and picks a random verb. Repeated `agent_start`s inside the run (retry, compaction, continuation) are ignored. An unref'd interval rewrites `HostUi.setWorkingMessage` every `TICK_MS`, even while the row is hidden, as `<verb>… (<tool> · <elapsed> · <key> to interrupt)`, picking a new verb every `VERB_MS`. `<tool> · ` appears only in phase `tool` (the most recent top-level tool still running), and `<elapsed>` uses `formatDuration` from `core/manager/format.ts`, the duration format shared with subagents (`12s`, `1m 5s`).
 - Visibility follows `Host.onPhase`: entering `writing` calls `HostUi.setWorkingVisible(false)`, and leaving it writes the message and then calls `setWorkingVisible(true)`. pi re-shows the row at once while a run is active (`isStreaming`), so the row returns as soon as assistant text stops, in the same turn. Only transitions call pi, so a run without text never toggles it. `onPhase("idle")` (after the `onIdle` handlers of `agent_settled`) stops the interval, restores pi's visibility flag if it was hidden, and restores pi's default message. Shutdown stops the interval and clears the message; pi resets the flag itself on session switch and reload.
 - Only the main session drives it: phases come from the main session's pi events, child sessions run in their own `AgentSession` with no-op working UI, and the extension subscribes to no bus or channel. Nothing is persisted.
+
+## Notifications
+
+- Active only in `tui` mode and when `channel` is not `off`; otherwise it registers no key listener and arms no timer. `pi-notifications.json` is read at session start; nothing is persisted, timers are unref'd and cleared on shutdown.
+- Idle notification: `Host.onIdle` (pi's `agent_settled`, once per run) marks the settle pending and, when no source is on the busy channel (`pi:busy`, kept as a set of source names like session-limits), arms an `idleDelayMs` timer. `Host.onAgentStart`, any key (`HostUi.onKeyPress`, observed without consuming) and a busy source appearing cancel it; the last busy source clearing or a dialog ending re-arms it with the full delay while the settle is still pending. At fire time it checks again (pending, no busy source, no dialog, `isIdle()`), sends `pi is waiting for your input` and clears the pending settle, so a settle notifies at most once.
+- Agents and the wake: subagents holds the busy channel while any agent is open. Agents finishing while main is idle arm the timer, but the outbox's wake starts a run through a visible user line at once, which cancels it; that run's settle arms it again. One notification follows the finished work.
+- Dialog notification: `Host.onDialog` (pi's `ui_prompt_start`/`ui_prompt_end`, outermost dialog only, main-session dialogs only since agents never open one; `custom` overlays ignored). `dialogDelayMs` after the later of the dialog start and the last key it sends `pi needs your input: <title>`, at most once per dialog; the dialog ending cancels it.
+- Output: `HostUi.terminalNotify(message, channel)` with `auto` (OSC 9/777 only, no BEL: the idle notification follows ordinary replies too, and a bell each time is noise) or `bell`.
 
 ## Command-aliases
 
@@ -148,7 +155,7 @@ Every file the extensions write lives under pi's agent dir or session dir (`~/.p
 - `<OS temp dir>/pi-session-limits/<session id>-handoff.md` (main) and `<OS temp dir>/pi-subagents/<session id>/<agent id>-handoff.md` (agents): handoff files.
 - `<cwd>/.pi/worktrees/<id>-<stamp>/`: a worktree agent's checkout, removed when its chain ends unless git refuses (uncommitted changes); its branch stays only if it moved past `base`. `.pi/worktrees/.gitignore` keeps them out of `git status`.
 - Main session file: `pi-spending:usage`, `pi-spending:main-offset` and `pi-spending:main-tokens-offset` entries; the new session's seed message after a handoff.
-- `<agentDir>`: `pi-subagents.json`, `pi-session-limits.json`, `pi-subagents-view.json`, `agents/*.md`. `<cwd>/.pi/`: the same settings files and `agents/*.md` (trusted projects only).
+- `<agentDir>`: `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-subagents-view.json`, `agents/*.md`. `<cwd>/.pi/`: the same settings files and `agents/*.md` (trusted projects only).
 - Registry, batches, ledger totals and limit phases live in memory and are lost on reload.
 
 ## Cross-cutting

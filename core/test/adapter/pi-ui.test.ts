@@ -133,27 +133,39 @@ const captured = (mode: string, env = {}) => {
 };
 
 describe("terminalNotify", () => {
-  it("writes the bell and one OSC 9 notification in tui mode", () => {
+  it("writes one OSC 9 notification without a bell in tui mode", () => {
     const { ui, writes } = captured("tui", { TERM: "xterm-ghostty", TERM_PROGRAM: "ghostty" });
 
-    ui.terminalNotify("pi-subagents: scout done", "Found three files");
+    ui.terminalNotify("pi is waiting for your input", "auto");
 
-    expect(writes).toEqual([`${BEL}${ESC}]9;pi-subagents: scout done: Found three files${BEL}`]);
+    expect(writes).toEqual([`${ESC}]9;pi is waiting for your input${BEL}`]);
   });
 
-  it("writes OSC 777 instead of OSC 9 for rxvt terminals", () => {
+  it("writes OSC 777 titled pi for rxvt terminals", () => {
     const { ui, writes } = captured("tui", { TERM: "rxvt-unicode-256color" });
 
-    ui.terminalNotify("pi-subagents: scout done", "Found three files");
+    ui.terminalNotify("pi is waiting for your input", "auto");
 
-    expect(writes).toEqual([`${BEL}${ESC}]777;notify;pi-subagents: scout done;Found three files${BEL}`]);
+    expect(writes).toEqual([`${ESC}]777;notify;pi;pi is waiting for your input${BEL}`]);
+  });
+
+  it("writes only the bell for the bell channel", () => {
+    const ghostty = captured("tui", { TERM: "xterm-ghostty", TERM_PROGRAM: "ghostty" });
+    const rxvt = captured("tui", { TERM: "rxvt-unicode-256color" });
+
+    ghostty.ui.terminalNotify("pi is waiting for your input", "bell");
+    rxvt.ui.terminalNotify("pi is waiting for your input", "bell");
+
+    expect(ghostty.writes).toEqual([BEL]);
+    expect(rxvt.writes).toEqual([BEL]);
   });
 
   it("writes nothing in rpc, print or json mode, or once the session is stale", () => {
     const silent = ["rpc", "print", "json"].map((mode) => {
       const { ui, writes } = captured(mode);
 
-      ui.terminalNotify("title", "body");
+      ui.terminalNotify("message", "auto");
+      ui.terminalNotify("message", "bell");
 
       return writes.length;
     });
@@ -161,19 +173,19 @@ describe("terminalNotify", () => {
     const stale = captured("tui");
 
     stale.state.ctx = undefined;
-    stale.ui.terminalNotify("title", "body");
+    stale.ui.terminalNotify("message", "auto");
+    stale.ui.terminalNotify("message", "bell");
 
     expect(silent).toEqual([0, 0, 0]);
     expect(stale.writes).toEqual([]);
   });
 
-  it("strips control characters and keeps the title free of separators", () => {
-    const title = `a;b${ESC}]0;x`;
-    const body = `line one${BEL}\nline two`;
+  it("replaces control characters in the message", () => {
+    const message = `a${ESC}]0;x\nline${BEL}`;
 
-    expect(notificationSequence(title, body, {})).toBe(`${BEL}${ESC}]9;a,b ]0,x: line one line two${BEL}`);
-    expect(notificationSequence(title, body, { TERM_PROGRAM: "urxvt" })).toBe(
-      `${BEL}${ESC}]777;notify;a,b ]0,x;line one line two${BEL}`,
+    expect(notificationSequence(message, "auto", {})).toBe(`${ESC}]9;a ]0;x line${BEL}`);
+    expect(notificationSequence(message, "auto", { TERM_PROGRAM: "urxvt" })).toBe(
+      `${ESC}]777;notify;pi;a ]0;x line${BEL}`,
     );
   });
 });
