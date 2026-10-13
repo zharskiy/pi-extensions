@@ -7,7 +7,7 @@ import {
   promptRecordEntry,
   readSessionFile,
 } from "../../../../../core/adapter/session-file.ts";
-import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
+import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { displayWidth } from "../../../src/components/format.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
@@ -30,6 +30,7 @@ const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
 const RECORD_ENTRY = promptRecordEntry(NAMESPACE);
 
 initRenderTheme();
+initRenderKeys();
 
 const views: ViewComponent[] = [];
 
@@ -476,6 +477,13 @@ describe("agent view header", () => {
 
     expect(painted[0]).toBe(" <success>✓</> <b>explorer</b> › Map the auth module");
     expect(painted[1]).toBe(" <dim>done · provider/model · id explorer-1</>");
+  });
+
+  it("keeps the glyph colour and the bold name when line 1 is cut below 8 columns of description", () => {
+    const record = base({ state: "done", endedAt: 0 });
+
+    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b> ›…");
+    expect(header(record, recordingTheme, 8)[0]).toBe(" <success>✓</> <b>exp…</b>");
   });
 
   it("names the agent and the description on line 1 and the id only on line 2", () => {
@@ -991,7 +999,7 @@ describe("agent view codemode and nested tools", () => {
     expect(all.some((entry) => entry.startsWith(' ✓ read {"path":"src/auth/login.ts"}'))).toBe(true);
     expect(text).toContain("export const login = async (req: Request) => {");
     expect(text).toContain("  return session;");
-    expect(text).toContain("more lines");
+    expect(text).toMatch(/more lines, ctrl\+o to expand/);
     expect(text).not.toContain("};\n");
     expect(text).not.toContain("Script completed");
     expect(text).not.toContain('"code":');

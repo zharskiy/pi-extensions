@@ -37,7 +37,7 @@ exports[`agent view codemode and nested tools > renders codemode calls with pi's
    if (!session) return redirect();
    await audit(session);
    return session;
- ... (3 more lines,  to expand)
+ ... (3 more lines, ctrl+o to expand)
 
 
 

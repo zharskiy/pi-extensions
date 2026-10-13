@@ -101,6 +101,29 @@ export const truncateCols = (text: string, cols: number): string => {
   return `${chars.slice(0, count).join("").trimEnd()}…`;
 };
 
+type Painted = readonly [text: string, paint: (text: string) => string];
+
+/** Cuts the joined texts at `cols` like `truncateCols`, then paints what is left of each part with its own paint. */
+export const truncatePainted = (parts: readonly Painted[], cols: number): string => {
+  const cut = truncateCols(parts.map(([text]) => text).join(""), cols);
+  const starts = parts.reduce<number[]>(
+    (acc, [text]) => {
+      acc.push((acc.at(-1) ?? 0) + text.length);
+
+      return acc;
+    },
+    [0],
+  );
+
+  return parts
+    .map(([, paint], index) => {
+      const piece = cut.slice(starts[index], starts[index + 1]);
+
+      return piece ? paint(piece) : "";
+    })
+    .join("");
+};
+
 export const padEndCols = (text: string, cols: number): string =>
   text + " ".repeat(Math.max(0, cols - displayWidth(text)));
 

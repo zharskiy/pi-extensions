@@ -8,7 +8,7 @@ import { type AgentRecord, type AgentViewOrigin, chainLinks } from "../../model/
 import { createAgentList } from "./list.ts";
 import { listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
-import { createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
+import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
 import { createAgentView } from "./view.ts";
 
 export const agentViewPlugin: Plugin = {
@@ -94,8 +94,26 @@ export const agentViewPlugin: Plugin = {
       },
     });
 
+    let active: AgentsOverlay | undefined;
+
     const openOverlay = (start: OverlayStart) =>
-      host.ui.openOverlay((api) => createAgentsOverlay(api, start, partsFor(api)));
+      host.ui.openOverlay((outer) => {
+        const api: OverlayApi = {
+          ...outer,
+          close: () => {
+            if (active === overlay) {
+              active = undefined;
+            }
+
+            outer.close();
+          },
+        };
+        const overlay = createAgentsOverlay(api, start, partsFor(api));
+
+        active = overlay;
+
+        return overlay;
+      });
 
     const terminalOrNotice = (id: string) => {
       try {
@@ -146,5 +164,9 @@ export const agentViewPlugin: Plugin = {
         await openOverlay({ kind: "list" });
       },
     });
+
+    return () => {
+      active?.close();
+    };
   },
 };

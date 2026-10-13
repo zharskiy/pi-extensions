@@ -1,6 +1,6 @@
 import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../core/adapter/contract.ts";
 import { nameColumn, renderRow } from "../../components/agent-row.ts";
-import { innerWidth, PAD, truncateCols } from "../../components/format.ts";
+import { innerWidth, PAD, truncateCols, truncatePainted } from "../../components/format.ts";
 import type { TreeRow } from "../../components/tree.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 import {
@@ -119,15 +119,17 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
 
   const titleLine = (inner: number) => {
     const theme = api.theme;
-    const sub = subtitle(visible);
-    const full = `Agents${sub}`;
-    const cut = truncateCols(full, inner);
 
-    if (cut !== full) {
-      return PAD + theme.bold(cut);
-    }
-
-    return PAD + theme.bold("Agents") + (sub ? theme.fg("dim", sub) : "");
+    return (
+      PAD +
+      truncatePainted(
+        [
+          ["Agents", (text) => theme.bold(text)],
+          [subtitle(visible), (text) => theme.fg("dim", text)],
+        ],
+        inner,
+      )
+    );
   };
 
   const bodyLines = (width: number, inner: number) => {

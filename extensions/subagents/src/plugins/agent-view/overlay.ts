@@ -15,11 +15,13 @@ export type OverlayParts = {
 
 const EMPTY: ViewComponent = { render: () => [], handleKey: () => {} };
 
+export type AgentsOverlay = ViewComponent & { close(): void };
+
 export const createAgentsOverlay = (
   api: OverlayApi,
   start: OverlayStart,
   parts: OverlayParts,
-): ViewComponent => {
+): AgentsOverlay => {
   let list: ListComponent | undefined;
   let current: ViewComponent = EMPTY;
   let disposed = false;
@@ -92,5 +94,6 @@ export const createAgentsOverlay = (
       current.handleWheel?.(lines);
     },
     dispose,
+    close,
   };
 };

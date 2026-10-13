@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { agentsDirFor, MANIFEST_FILE } from "../../../src/model/paths.ts";
@@ -19,6 +19,8 @@ afterEach(() => {
   views.splice(0).forEach((view) => {
     view.dispose?.();
   });
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 const setup = () => {
@@ -179,6 +181,65 @@ describe("agents overlay", () => {
 
     expect(harness.host.overlays).toEqual([]);
     expect(harness.host.notices.at(-1)?.message).toContain('cannot read manifest of "explorer-bad"');
+  });
+
+  it("closes and disposes an open overlay when the session shuts down", async () => {
+    vi.useFakeTimers();
+
+    const harness = setup();
+    const subscriptions = new Set<() => void>();
+    const on = harness.bus.on;
+
+    vi.spyOn(harness.bus, "on").mockImplementation(((event, listener) => {
+      const off = on(event, listener);
+      const tracked = () => {
+        subscriptions.delete(tracked);
+        off();
+      };
+
+      subscriptions.add(tracked);
+
+      return tracked;
+    }) as typeof on);
+
+    harness.create("job", 1);
+
+    const { api, state } = fakeOverlayApi(40);
+    let overlay: ViewComponent | undefined;
+
+    harness.host.ui.openOverlay = (factory) =>
+      new Promise<void>((resolve) => {
+        overlay = factory({
+          ...api,
+          close: () => {
+            api.close();
+            resolve();
+          },
+        });
+      });
+
+    let settled = false;
+    const opened = harness.host.runCommand("agents", "").then(() => {
+      settled = true;
+    });
+
+    overlay?.render(100);
+    overlay?.handleKey(key("enter"));
+    overlay?.render(100);
+
+    expect(subscriptions.size).toBeGreaterThan(0);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    harness.host.onSessionShutdown(() => harness.manager.disableAll());
+    await harness.host.shutdown();
+
+    expect(state.closed).toBe(true);
+    expect(subscriptions.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    await opened;
+
+    expect(settled).toBe(true);
   });
 
   it("disposes the hidden list and the view when the overlay closes", async () => {

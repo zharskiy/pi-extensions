@@ -19,6 +19,7 @@ import {
   SEP,
   singleLine,
   truncateCols,
+  truncatePainted,
 } from "../../components/format.ts";
 import { requestLineCount, requestLines } from "../../components/request-block.ts";
 import { stateGlyph, stateToken, stateWord } from "../../components/state-text.ts";
@@ -54,7 +55,18 @@ const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: nu
   const room = inner - displayWidth(prefix);
 
   if (room < MIN_DESCRIPTION) {
-    return PAD + truncateCols(prefix + description, inner);
+    return (
+      PAD +
+      truncatePainted(
+        [
+          [glyph, (text) => theme.fg(stateToken(record.state), text)],
+          [" ", (text) => text],
+          [name, (text) => theme.bold(text)],
+          [` › ${description}`, (text) => text],
+        ],
+        inner,
+      )
+    );
   }
 
   return `${PAD}${theme.fg(stateToken(record.state), glyph)} ${theme.bold(name)} › ${truncateCols(description, room)}`;

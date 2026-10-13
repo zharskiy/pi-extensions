@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ViewComponent } from "../../../../../core/adapter/contract.ts";
+import type { ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { displayWidth } from "../../../src/components/format.ts";
@@ -10,7 +10,7 @@ import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
-import { char, fakeOverlayApi, key, plain } from "../../helpers/overlay.ts";
+import { char, fakeOverlayApi, key, plain, recordingTheme } from "../../helpers/overlay.ts";
 
 initRenderTheme();
 
@@ -65,7 +65,7 @@ const setup = () => {
     registry.update(id, { endedAt });
   };
 
-  const openList = async (rows = 40, width = 100) => {
+  const openList = async (rows = 40, width = 100, theme?: ThemeLike) => {
     await harness.host.runCommand("agents", "");
 
     const factory = harness.host.overlays.at(-1);
@@ -74,7 +74,7 @@ const setup = () => {
       throw new Error("no overlay opened");
     }
 
-    const { api, state } = fakeOverlayApi(rows);
+    const { api, state } = fakeOverlayApi(rows, theme);
     const view = factory(api);
 
     views.push(view);
@@ -107,6 +107,17 @@ describe("agents list", () => {
     expect(lines()).toContain(" No agents running");
     expect(lines().at(-2)).toBe(" esc to close");
     expect(lines().at(-1)).toBe("");
+  });
+
+  it("keeps Agents bold and the subtitle dim when the title is cut", async () => {
+    const harness = setup();
+
+    harness.create({ createdAt: 1 });
+    harness.create({ createdAt: 2 });
+
+    const { lines } = await harness.openList(40, 14, recordingTheme);
+
+    expect(lines()[1]).toBe(" <b>Agents</b><dim> · 2…</>");
   });
 
   it("shows the sections, headers, rows and subtitle", async () => {
