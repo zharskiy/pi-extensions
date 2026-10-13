@@ -147,8 +147,10 @@ type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
-type AgentViewService = {
-  open(id: string): Promise<void>;
+export type AgentViewOrigin = "list" | "panel" | "command";
+
+export type AgentViewService = {
+  open(id: string, options?: { from: AgentViewOrigin }): Promise<void>;
 };
 
 type AgentListService = {

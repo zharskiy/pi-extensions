@@ -43,7 +43,8 @@ pi-extensions/
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
 │   │   │   │                    #   agent-schema, context-limit
 │   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and padding,
-│   │   │   │                    #   spinner.ts, state-text.ts, agent-row, agent-list,
+│   │   │   │                    #   spinner.ts, state-text.ts, agent-row, tree.ts (tree order,
+│   │   │   │                    #   connectors, open descendants), legacy-row, agent-list,
 │   │   │   │                    #   collapsible, context-breakdown,
 │   │   │   │                    #   system-prompt-block, refresh.ts throttle/ticker, hints.ts)
 │   │   │   └── plugins/         # one folder per feature, see below
@@ -105,7 +106,7 @@ run-agent/          # runner.ts, tools.ts (run_agent, message_agent), render.ts 
 agent-status/       # status tool and snapshots
 agent-view/         # /agents command view, view-mode store
 agent-list-view/    # agent list overlay
-progress-widget/    # live progress widget below the editor
+agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel
 ```
