@@ -1,6 +1,6 @@
 # Architecture
 
-How the three extensions work at runtime. Folder layout is in `STRUCTURE.md`.
+How the seven extensions work at runtime. Folder layout is in `STRUCTURE.md`.
 
 ## Layers and dependency rules
 
@@ -36,7 +36,7 @@ Unit tests use `core/test/helpers/fakes.ts` (fake host, runtime and child sessio
 
 ## Extension manager and plugins
 
-Only subagents uses the manager; session-limits and spending wire a few functions directly in `boot`.
+Only subagents uses the manager; session-limits, spending, working-indicator, command-aliases, composer and footer wire a few functions directly in `boot`.
 
 - A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host` (the real one), `runtime`, `bus`, `settings`, `services`, `root`.
 - Boot order: plugins are topologically sorted by `requires` (cycles throw). A plugin is skipped silently when listed in `disabledPlugins`, and with one warning at session start when a plugin it requires is off or missing.
@@ -113,12 +113,6 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - Lineage: totals cover the whole session lineage. Compaction and `/tree` only append to the same file, and `sumUsage` reads every entry of every branch. When a session is created from another one (`/fork`, `/clone` or a handoff switch; `parent` set) spending appends a `pi-spending:main-offset` entry (the parent's main cost, its own last offset plus all its entries, minus the usage of the entries copied into the new session), so main = last offset + `sumUsage` of the new session's entries; it also appends a continuation marker report, absorbs every parent `pi-spending:usage` report under an id prefixed with the parent file name (so new agents cannot collide with parent agent ids) and persists them into the new session at once; restore ignores reports before the last marker, so resumed sessions and chains of forks and handoffs keep the totals. Only a plain `/new` starts at zero; a handoff switch keeps the totals, since it continues the same work in a new session. A fork of a session without a file (`--no-session`) has no parent file to read and starts from the copied entries only.
 - Totals: on every refresh, and whenever anything publishes on `spending:totals:request`, spending publishes `spending:totals { main: { cost, tokens }, sources: [{ source, cost, tokens }] }`. Tokens are chargeable tokens (`input + output + cacheRead + cacheWrite`); main tokens carry over a fork or handoff through a `pi-spending:main-tokens-offset` entry, like main cost.
 
-## Footer
-
-- Replaces pi's footer (`HostUi.setFooter`, tui only) with a padded block: context tokens (warning above 70 %, error above 90 %), main cost, model name and window; the session total (main plus every spending source); folder and session name; git branch; thinking level with the `app.thinking.cycle` key; then the other extensions' status texts, without spending's own `pi-spending` status (`SPENDING_STATUS_KEY`), whose figures the block already shows.
-- Cost and tokens come only from `spending:totals`: the footer requests them on session start and turn end and keeps the last payload, so a render reads only cheap live values (`Host.context()`, `model()`, `thinkingLevel()`, `sessionName()`). Without spending the cost figures stay at zero.
-- The adapter (`core/adapter/pi-footer.ts`) truncates every line to the width, re-renders on git branch changes and on `refresh()`, and drops the branch subscription when pi disposes the footer.
-
 ## Working-indicator
 
 - Active only in `tui` mode. On session start and every `Host.onTurnStart` (pi's `turn_start`) it sets `HostUi.setWorkingIndicator` to the `SPINNER` frames; the adapter (`pi-working.ts`) paints them with the theme's accent colour and both working calls are no-ops outside `tui`.
@@ -134,6 +128,12 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 
 - On session start composer hands `host.ui.setEditorFrame(frame)` a pure `EditorFrame` (`chrome`, `minWidth`, `decorate(lines, paint)`). The adapter (`core/adapter/pi-editor-frame.ts`) installs a `CustomEditor` subclass through `ctx.ui.setEditorComponent`, only in `tui` mode and only when no other extension has set an editor (`getEditorComponent()`).
 - The subclass renders pi's editor `chrome` columns narrower and passes the lines and the editor's live `borderColor` to `decorate`; below `minWidth` it renders the plain editor. `decorate` treats lines that are all `─` or a `─ ↑ N more` scroll hint (after stripping SGR codes) as rules: rules before the first content line get the top corners, the first rule after it the bottom corners, content lines get pipes and the chevron gutter, and everything below the box (autocomplete) is indented.
+
+## Footer
+
+- Replaces pi's footer (`HostUi.setFooter`, tui only) with a padded block: context tokens (warning above 70 %, error above 90 %), main cost, model name and window; the session total (main plus every spending source); folder and session name; git branch; thinking level with the `app.thinking.cycle` key; then the other extensions' status texts, without spending's own `pi-spending` status (`SPENDING_STATUS_KEY`), whose figures the block already shows.
+- Cost and tokens come only from `spending:totals`: the footer requests them on session start and turn end and keeps the last payload, so a render reads only cheap live values (`Host.context()`, `model()`, `thinkingLevel()`, `sessionName()`). Without spending the cost figures stay at zero.
+- The adapter (`core/adapter/pi-footer.ts`) truncates every line to the width, re-renders on git branch changes and on `refresh()`, and drops the branch subscription when pi disposes the footer.
 
 ## Persistence summary
 
