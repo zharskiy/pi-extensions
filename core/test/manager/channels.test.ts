@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseBusySignal, parseTotals, parseUsageReport } from "../../manager/channels.ts";
+import { BUSY_CHANNEL, parseBusySignal, parseTotals, parseUsageReport } from "../../manager/channels.ts";
 import { usageOf } from "../helpers/fakes.ts";
 
 describe("parseBusySignal", () => {
+  it("names the channel pi:busy", () => {
+    expect(BUSY_CHANNEL).toBe("pi:busy");
+  });
+
   it("accepts a source name and a busy flag only", () => {
     expect(parseBusySignal({ source: "pi-subagents", busy: true })).toEqual({
       source: "pi-subagents",

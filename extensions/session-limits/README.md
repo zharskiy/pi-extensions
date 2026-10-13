@@ -39,8 +39,8 @@ A model context window of 0, or unknown token usage, disables the extension for 
 Any extension can hold the switch while its work runs by emitting on pi's event bus:
 
 ```ts
-pi.events.emit("session-limits:busy", { source: "my-extension", busy: true });
-pi.events.emit("session-limits:busy", { source: "my-extension", busy: false });
+pi.events.emit("pi:busy", { source: "my-extension", busy: true });
+pi.events.emit("pi:busy", { source: "my-extension", busy: false });
 ```
 
 - `source` is a non-empty string naming the extension; it is shown to the user in the confirmation of `/session-handoff`. `busy` is a boolean. Other payloads are ignored.
@@ -48,6 +48,7 @@ pi.events.emit("session-limits:busy", { source: "my-extension", busy: false });
 - Send `busy: true` when work starts and `busy: false` when the last piece ends; repeated signals are harmless. The set starts empty in every session (pi creates a new extension instance per session), so a source that is busy when a session starts must announce it after session start, for example in its own `session_start` handler.
 - The switch ends the old session, so work that is still running when the user confirms a manual switch gets pi's normal `session_shutdown` with reason `new`.
 - Nothing is imported from this extension; when it is not installed the signals simply go unheard.
+- Changed: the channel was named `session-limits:busy`; publishers using that literal name must switch to `pi:busy`.
 
 ## Layout
 
