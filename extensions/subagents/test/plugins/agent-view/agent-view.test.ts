@@ -47,7 +47,8 @@ const fakeApi = (rows = 200) => {
     requestRender,
     toolsKey: "ctrl+o",
     wheelScrolling: true,
-    createTranscript: () => createTranscriptPane({ requestRender } as never, "/repo"),
+    createTranscript: (options) =>
+      createTranscriptPane({ requestRender } as never, "/repo", { tools: options?.tools }),
     createScroll: () => createScrollPane(requestRender),
     createInput: createFakeInputPane,
   };
@@ -284,6 +285,82 @@ describe("agent view", () => {
     const transcript = lines.slice(lines.indexOf("Transcript"), -1);
 
     expect(transcript.join("\n").trimEnd()).toMatchSnapshot();
+  });
+
+  it("renders a codemode call with pi's own codemode renderer, collapsed and expanded", () => {
+    const fixture = readSessionFile(FIXTURE, RECORD_ENTRY);
+    const code = [
+      'const hits = await tools.grep({ pattern: "login", path: "src" });',
+      "const file = await tools.read({ path: hits[0].path });",
+      "return file.slice(0, 200);",
+    ].join("\n");
+    const output = Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join("\n");
+    const session: SessionRecord = {
+      ...fixture,
+      items: [
+        ...fixture.items,
+        {
+          kind: "assistant",
+          text: "",
+          toolCalls: [{ name: "codemode", args: { code } }],
+          raw: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "cm1", name: "codemode", arguments: { code } }],
+            stopReason: "toolUse",
+            timestamp: 0,
+          },
+        },
+        {
+          kind: "tool",
+          toolName: "codemode",
+          toolCallId: "cm1",
+          text: output,
+          isError: false,
+          raw: {
+            role: "toolResult",
+            toolCallId: "cm1",
+            toolName: "codemode",
+            content: [
+              { type: "text", text: "Script completed\nWall time 0.2 seconds\nOutput:\n" },
+              { type: "text", text: output },
+            ],
+            details: {
+              calls: [
+                {
+                  id: "n1",
+                  name: "grep",
+                  args: '{"pattern":"login","path":"src"}',
+                  status: "ok",
+                  durationMs: 100,
+                },
+                { id: "n2", name: "read", args: '{"path":"src/auth/login.ts"}', status: "ok", durationMs: 4 },
+              ],
+            },
+            isError: false,
+          },
+        },
+      ],
+    };
+    const { view } = viewOf(session, 400);
+    const codemodeBlock = (lines: string[]) =>
+      lines
+        .slice(
+          lines.findIndex((line) => line.trim() === "codemode"),
+          -1,
+        )
+        .join("\n")
+        .trimEnd();
+
+    const collapsed = codemodeBlock(plain(view.render(100)));
+
+    view.handleKey(key("toggleTools"));
+
+    const expanded = codemodeBlock(plain(view.render(100)));
+
+    expect(collapsed).toContain("✓ grep");
+    expect(collapsed).not.toContain("line 8");
+    expect(expanded).toContain("line 8");
+    expect({ collapsed, expanded }).toMatchSnapshot();
   });
 
   it("toggles tool detail with the tools-expand key", async () => {

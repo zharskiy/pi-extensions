@@ -20,19 +20,38 @@ export type ToolResult<D = unknown> = {
   isError?: boolean;
 };
 
+/** Render-time facts pi passes to tool renderers (ToolRenderContext in pi). */
+export type ToolRenderState = {
+  toolCallId: string;
+  expanded: boolean;
+  /** True while the call streams or the result is partial. */
+  isPartial: boolean;
+  executionStarted: boolean;
+  isError: boolean;
+  /** The call's arguments as pi parsed them (pi's `ToolRenderContext.args`, shared by the call and result renders of one call); the tool's params type, `unknown` here because the state is not generic. */
+  args: unknown;
+  /** Set only on the final result. */
+  durationMs?: number;
+  /** pi's horizontal transcript padding (`ToolRenderContext.outputPad`, 0 or 1, default 1). A `renderShell: "self"` block is not padded by pi; the adapter applies it, the renderer may read it. */
+  outputPad: number;
+  /** Re-render this call later (safe after the tool returned, until the transcript is rebuilt). */
+  invalidate(): void;
+};
+
 export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   name: string;
   label: string;
   description: string;
   promptSnippet?: string;
   parameters: Record<string, unknown>;
-  execute(params: P, ctx: { signal?: AbortSignal; update(text: string): void }): Promise<ToolResult<D>>;
-  renderCall?(params: P, theme: ThemeLike): string;
-  renderResult?(
-    result: ToolResult<D>,
-    state: { expanded: boolean; invalidate(): void },
-    theme: ThemeLike,
-  ): string;
+  /** "self" drops pi's coloured box so the renderer owns the whole row; the adapter indents each line by pi's `outputPad` and cuts it at `width - 2 * outputPad` (never wraps). Default "default". */
+  renderShell?: "default" | "self";
+  execute(
+    params: P,
+    ctx: { signal?: AbortSignal; update(text: string, details?: D): void },
+  ): Promise<ToolResult<D>>;
+  renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): string;
+  renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): string;
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;
@@ -104,7 +123,8 @@ export type OverlayApi = {
   requestRender(): void;
   toolsKey: string;
   wheelScrolling: boolean;
-  createTranscript(): TranscriptPane;
+  /** `tools` render with their own `renderCall`/`renderResult` (after pi's built-ins, before codemode and tool_search). */
+  createTranscript(options?: { tools?: AnyToolSpec[] }): TranscriptPane;
   createScroll(): ScrollPane;
   createInput(placeholder: string): InputPane;
 };

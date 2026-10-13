@@ -28,6 +28,8 @@ import {
   type SpawnSpec,
   type StopReason,
   type ThemeLike,
+  type ToolRenderState,
+  type ToolResult,
   type ToolSpec,
   type UsageTotals,
   type WorkingIndicator,
@@ -74,6 +76,11 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
+  /** Renders a registered tool's call and/or result with `plainTheme` and a default render state (`args` = `call`, `isError` from `result`, `outputPad` 1); `state` overrides any field. */
+  renderTool(
+    name: string,
+    input: { call?: unknown; result?: ToolResult<unknown>; state?: Partial<ToolRenderState> },
+  ): { call?: string; result?: string; state: ToolRenderState };
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
@@ -446,6 +453,26 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       return spec as unknown as ToolSpec<P, D>;
+    },
+    renderTool: (name, { call, result, state: overrides }) => {
+      const spec = host.tool<unknown, unknown>(name);
+      const state: ToolRenderState = {
+        toolCallId: "call-1",
+        expanded: false,
+        isPartial: false,
+        executionStarted: true,
+        isError: result?.isError ?? false,
+        args: call,
+        outputPad: 1,
+        invalidate: () => {},
+        ...overrides,
+      };
+
+      return {
+        call: call === undefined ? undefined : spec.renderCall?.(call, plainTheme, state),
+        result: result === undefined ? undefined : spec.renderResult?.(result, state, plainTheme),
+        state,
+      };
     },
     workingIndicators: [],
     workingMessages: [],

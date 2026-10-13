@@ -1,13 +1,23 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  createCodemodeExtension,
+  createToolSearchExtension,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
+import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
 import {
+  capturePiRenderers,
   createInputPane,
+  createTranscriptPane,
   createUi,
   editorKeyPress,
   type HostState,
   notificationSequence,
 } from "../../adapter/pi-ui.ts";
+import { initRenderTheme } from "./render-theme.ts";
+
+initRenderTheme();
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
@@ -224,5 +234,122 @@ describe("terminalNotify", () => {
     expect(notificationSequence(message, "auto", { TERM_PROGRAM: "urxvt" })).toBe(
       `${ESC}]777;notify;pi;a ]0;x line${BEL}`,
     );
+  });
+});
+
+const tui = { requestRender: () => {} } as never;
+
+const assistantCall = (name: string, args: unknown, id = "call-1"): TranscriptItem => ({
+  kind: "assistant",
+  text: "",
+  toolCalls: [{ name, args }],
+  raw: {
+    role: "assistant",
+    content: [{ type: "toolCall", id, name, arguments: args }],
+    stopReason: "toolUse",
+    timestamp: 0,
+  },
+});
+
+const toolResult = (name: string, text: string, details?: unknown, id = "call-1"): TranscriptItem => ({
+  kind: "tool",
+  toolName: name,
+  toolCallId: id,
+  text,
+  isError: false,
+  raw: {
+    role: "toolResult",
+    toolCallId: id,
+    toolName: name,
+    content: [{ type: "text", text }],
+    details,
+    isError: false,
+  },
+});
+
+describe("pi renderers in the transcript pane", () => {
+  it("captures codemode and tool_search renderers from pi's factories", () => {
+    const captured = capturePiRenderers({
+      codemode: createCodemodeExtension,
+      tool_search: createToolSearchExtension,
+    });
+
+    expect(captured.codemode?.renderCall).toBeTypeOf("function");
+    expect(captured.codemode?.renderResult).toBeTypeOf("function");
+    expect(captured.tool_search?.renderCall).toBeUndefined();
+  });
+
+  it("falls back to the generic display when a factory throws", () => {
+    const captured = capturePiRenderers({
+      broken: () => {
+        throw new Error("boom");
+      },
+      silent: () => () => {},
+    });
+
+    expect(captured).toEqual({});
+
+    const pane = createTranscriptPane(tui, "/repo", { piRenderers: captured });
+
+    pane.sync([assistantCall("broken", { a: 1 }), toolResult("broken", "raw output")]);
+
+    const text = visibleText(pane.render(80));
+
+    expect(text).toContain("broken");
+    expect(text).toContain('"a": 1');
+    expect(text).toContain("raw output");
+  });
+
+  it("renders a codemode call with pi's renderer in the transcript pane", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+    const code = 'const hits = await tools.grep({ pattern: "login" });\nreturn hits;';
+
+    pane.sync([
+      assistantCall("codemode", { code }),
+      toolResult("codemode", "src/auth/login.ts", {
+        calls: [{ id: "n1", name: "grep", args: "{}", status: "ok", durationMs: 12 }],
+      }),
+    ]);
+
+    const text = visibleText(pane.render(80));
+
+    expect(text).toContain("codemode");
+    expect(text).toContain("tools.grep");
+    expect(text).toContain("✓ grep {} 12ms");
+    expect(text).toContain("src/auth/login.ts");
+    expect(text).not.toContain('"code"');
+  });
+
+  it("renders custom specs passed to createTranscript with their own renderers", () => {
+    const spec = {
+      name: "run_agent",
+      label: "Run agent",
+      description: "run",
+      parameters: {},
+      execute: async () => ({ text: "" }),
+      renderCall: () => "RUN-AGENT-ROW",
+      renderResult: (result: { text: string }) => `RESULT ${result.text}`,
+    } as unknown as AnyToolSpec;
+    const pane = createTranscriptPane(tui, "/repo", { tools: [spec] });
+
+    pane.sync([assistantCall("run_agent", { agents: [] }), toolResult("run_agent", "ids")]);
+
+    const text = visibleText(pane.render(80));
+
+    expect(text).toContain("RUN-AGENT-ROW");
+    expect(text).toContain("RESULT ids");
+    expect(text).not.toContain('"agents"');
+  });
+
+  it("keeps the raw fallback for unknown tools", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([assistantCall("mystery", { q: "x" }), toolResult("mystery", "found it")]);
+
+    const text = visibleText(pane.render(80));
+
+    expect(text).toContain("mystery");
+    expect(text).toContain('"q": "x"');
+    expect(text).toContain("found it");
   });
 });

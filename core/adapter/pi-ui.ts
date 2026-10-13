@@ -2,18 +2,23 @@ import {
   AssistantMessageComponent,
   CustomMessageComponent,
   createBashToolDefinition,
+  createCodemodeExtension,
   createEditToolDefinition,
   createFindToolDefinition,
   createGrepToolDefinition,
   createLsToolDefinition,
   createPowerShellToolDefinition,
   createReadToolDefinition,
+  createToolSearchExtension,
   createWriteToolDefinition,
+  type ExtensionAPI,
   type ExtensionContext,
+  type ExtensionFactory,
   getMarkdownTheme,
   keyText,
   type Theme,
   ToolExecutionComponent,
+  type ToolRenderers,
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -31,6 +36,7 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import type {
+  AnyToolSpec,
   HostUi,
   InputPane,
   KeyPress,
@@ -45,6 +51,7 @@ import type {
 import { createEditorHooks } from "./pi-editor-frame.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
+import { toPiTool } from "./pi-tools.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
 export const themeLike = (theme: Theme): ThemeLike => ({
@@ -117,6 +124,44 @@ export const textComponent = (previous: unknown, text: string): Component => {
   return new Text(text, 0, 0);
 };
 
+class PaddedLines implements Component {
+  private lines: string[];
+  private outputPad: number;
+
+  constructor(lines: string[], outputPad: number) {
+    this.lines = lines;
+    this.outputPad = outputPad;
+  }
+
+  set(lines: string[], outputPad: number) {
+    this.lines = lines;
+    this.outputPad = outputPad;
+  }
+
+  render(width: number): string[] {
+    const pad = " ".repeat(this.outputPad);
+    const inner = Math.max(1, width - 2 * this.outputPad);
+
+    return this.lines.map((line) => pad + truncateToWidth(line, inner, "…"));
+  }
+
+  invalidate() {}
+}
+
+/**
+ * A component drawing `lines` as given: each starts at column `outputPad` and is cut at `width - 2 * outputPad`
+ * with `…`, never wrapped, so the last `outputPad` columns stay blank (spec §2 "Padding and margins").
+ * Reuses `previous` when it is one.
+ */
+export const padLines = (lines: string[], outputPad: number, previous?: unknown): Component => {
+  if (previous instanceof PaddedLines) {
+    previous.set(lines, outputPad);
+    return previous;
+  }
+
+  return new PaddedLines(lines, outputPad);
+};
+
 const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
 
 export type HostState = { ctx?: ExtensionContext };
@@ -138,17 +183,86 @@ type RawAssistant = { content: RawToolCall[]; stopReason: string; errorMessage?:
 
 type Expandable = Component & { setExpanded(expanded: boolean): void };
 
-export const createTranscriptPane = (tui: TUI, cwd: string): TranscriptPane => {
+/**
+ * Runs each pi extension factory against a stub that only records `registerTool` and keeps the renderers of the
+ * registered tool. A factory that throws or registers no renderer yields no entry, so the tool keeps pi's generic
+ * display.
+ */
+export const capturePiRenderers = (
+  factories: Record<string, () => ExtensionFactory>,
+): Record<string, ToolRenderers> =>
+  Object.fromEntries(
+    Object.entries(factories).flatMap(([name, factory]) => {
+      try {
+        let captured: ToolRenderers | undefined;
+        const stub = {
+          registerTool: (definition: ToolRenderers) => {
+            captured = definition;
+          },
+        } as unknown as ExtensionAPI;
+
+        void factory()(stub);
+
+        if (!captured?.renderCall && !captured?.renderResult) {
+          return [];
+        }
+
+        const { renderShell, renderCall, renderResult } = captured;
+
+        return [[name, { renderShell, renderCall, renderResult }]];
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+let piRenderers: Record<string, ToolRenderers> | undefined;
+
+const defaultPiRenderers = () => {
+  piRenderers ??= capturePiRenderers({
+    codemode: createCodemodeExtension,
+    tool_search: createToolSearchExtension,
+  });
+
+  return piRenderers;
+};
+
+export type TranscriptPaneOptions = { tools?: AnyToolSpec[]; piRenderers?: Record<string, ToolRenderers> };
+
+export const createTranscriptPane = (
+  tui: TUI,
+  cwd: string,
+  options: TranscriptPaneOptions = {},
+): TranscriptPane => {
   const container = new Container();
   const pendingTools = new Map<string, ToolExecutionComponent>();
   const definitions = new Map<string, object | undefined>();
   const expandables: Expandable[] = [];
+  const renderers = options.piRenderers ?? defaultPiRenderers();
   let toolsExpanded = false;
   let synced = 0;
 
+  const resolveDefinition = (name: string): object | undefined => {
+    const builtin = toolDefinitionFactories[name];
+
+    if (builtin) {
+      return builtin(cwd);
+    }
+
+    const spec = options.tools?.find((tool) => tool.name === name);
+
+    if (spec) {
+      const { renderShell, renderCall, renderResult } = toPiTool(spec);
+
+      return { renderShell, renderCall, renderResult };
+    }
+
+    return renderers[name];
+  };
+
   const definitionFor = (name: string) => {
     if (!definitions.has(name)) {
-      definitions.set(name, toolDefinitionFactories[name]?.(cwd));
+      definitions.set(name, resolveDefinition(name));
     }
 
     return definitions.get(name);
@@ -410,7 +524,7 @@ export const createUi = (
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
           wheelScrolling: tui.mode === "fullscreen",
-          createTranscript: () => createTranscriptPane(tui, cwd),
+          createTranscript: (options) => createTranscriptPane(tui, cwd, { tools: options?.tools }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
           createInput: createInputPane,
         });

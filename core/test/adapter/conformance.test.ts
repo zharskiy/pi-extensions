@@ -5,10 +5,11 @@ import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DialogKind } from "../../adapter/contract.ts";
+import type { DialogKind, ToolRenderState } from "../../adapter/contract.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { ASSISTANT_DELTA_TYPES, deltaEvent } from "../../adapter/pi-phase.ts";
+import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const PINNED_PI_VERSION = "1.1.0";
@@ -144,6 +145,43 @@ describe("pi adapter conformance", () => {
     const contract: DialogKind[] = kinds;
 
     expect(contract).toHaveLength(5);
+  });
+
+  it("exports the codemode and tool_search factories as ExtensionFactory producers", () => {
+    const factories: (() => pi.ExtensionFactory)[] = [
+      pi.createCodemodeExtension,
+      pi.createToolSearchExtension,
+    ];
+    const registered: string[] = [];
+    const stub = {
+      registerTool: (definition: { name: string }) => {
+        registered.push(definition.name);
+      },
+    } as unknown as pi.ExtensionAPI;
+
+    factories.forEach((factory) => {
+      void factory()(stub);
+    });
+
+    expect(registered).toEqual(["codemode", "tool_search"]);
+  });
+
+  it("ToolRenderContext carries the fields the contract forwards", () => {
+    type Forwarded = Exclude<keyof ToolRenderState, "invalidate">;
+    const picked = (context: PiToolRenderContext): Pick<ToolRenderState, Forwarded> => ({
+      toolCallId: context.toolCallId,
+      expanded: context.expanded,
+      isPartial: context.isPartial,
+      executionStarted: context.executionStarted,
+      isError: context.isError,
+      args: context.args,
+      durationMs: context.durationMs,
+      outputPad: context.outputPad,
+    });
+    const invalidate: ToolRenderState["invalidate"] = (() => {}) satisfies PiToolRenderContext["invalidate"];
+
+    expect(picked).toBeTypeOf("function");
+    expect(invalidate).toBeTypeOf("function");
   });
 
   it("emits ui_prompt events around every blocking dialog", async () => {

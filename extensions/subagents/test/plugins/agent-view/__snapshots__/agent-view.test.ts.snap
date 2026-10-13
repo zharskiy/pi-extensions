@@ -1,5 +1,40 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`agent view > renders a codemode call with pi's own codemode renderer, collapsed and expanded 1`] = `
+{
+  "collapsed": " codemode
+ const hits = await tools.grep({ pattern: "login", path: "src" });
+ const file = await tools.read({ path: hits[0].path });
+ return file.slice(0, 200);
+
+ ✓ grep {"pattern":"login","path":"src"} 100ms
+ ✓ read {"path":"src/auth/login.ts"} 4ms
+
+ line 1
+ line 2
+ line 3
+ line 4
+ line 5
+ ... (3 more lines,  to expand)",
+  "expanded": " codemode
+ const hits = await tools.grep({ pattern: "login", path: "src" });
+ const file = await tools.read({ path: hits[0].path });
+ return file.slice(0, 200);
+
+ ✓ grep {"pattern":"login","path":"src"} 100ms
+ ✓ read {"path":"src/auth/login.ts"} 4ms
+
+ line 1
+ line 2
+ line 3
+ line 4
+ line 5
+ line 6
+ line 7
+ line 8",
+}
+`;
+
 exports[`agent view > renders the transcript with pi's message and tool components 1`] = `
 "Transcript
 

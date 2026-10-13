@@ -29,6 +29,7 @@ Host behaviour worth knowing:
 - `sendUserMessage` delivers immediately when idle, otherwise as a pi follow-up.
 - `setMainPrompt` replaces pi's default prompt in `before_agent_start` and re-adds the `tools`, `rules` and `docs` sections pi would otherwise drop (`main-prompt.ts`). Only the subagents `run-agent` plugin calls it, so the main prompt is replaced only when that plugin is enabled.
 - `ToolSpec` and overlay/widget factories are plain-text contracts; the adapter converts them to pi tools and TUI components. UI calls degrade to no-ops outside TUI mode.
+- `ToolSpec` renderers receive `ToolRenderState` (pi's render context: `toolCallId`, `expanded`, `isPartial`, `executionStarted`, `isError`, `args`, `durationMs`, `outputPad`, `invalidate`) and may set `renderShell: "self"` (the adapter then indents each line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…`, never wrapping, since pi pads only its own box); the `ToolResult` a `renderResult` receives carries `isError`; `update(text, details)` forwards details to partial renders.
 - `terminalNotify(message, channel)` writes BEL for `bell`, and for `auto` only an OSC 9 notification (OSC 777 titled `pi` on rxvt), no BEL; tui only.
 
 Unit tests use `core/test/helpers/fakes.ts` (fake host, runtime and child session) instead of pi; a few tests (UI and message-agent) import adapter modules that load pi offline (`pi-ui.ts`, `session-file.ts`, `route.ts`), and only `core/test/adapter` tests import pi packages directly. `core/test/adapter` holds conformance tests against pi, offline.
@@ -91,7 +92,7 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 
 - `agent_status` reads in-memory records only; it never touches the agent.
 - The progress widget and list view re-render on `agent:changed` (throttled) plus a 1 s ticker while agents run; closed rows linger for `lingerMs`/`failedLingerMs`.
-- The agent view (`/agents [id]`) reads the agent's session file through `runtime.readSession`, falling back to `manifest.json` for agents not in memory. Its focus/verbose mode persists in `<agentDir>/pi-subagents-view.json`.
+- The agent view (`/agents [id]`) reads the agent's session file through `runtime.readSession`, falling back to `manifest.json` for agents not in memory. The agent view transcript renders built-in tools with pi's definitions, `codemode`/`tool_search` with renderers captured from pi's exported extension factories (generic fallback if capture fails), and the subagents tools with the specs passed to `createTranscript({ tools })`. Its focus/verbose mode persists in `<agentDir>/pi-subagents-view.json`.
 
 ### Worktrees
 
