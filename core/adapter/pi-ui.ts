@@ -21,6 +21,7 @@ import {
   Container,
   Input,
   Key,
+  type Keybinding,
   matchesKey,
   ScrollView,
   Text,
@@ -39,6 +40,7 @@ import type {
   TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
+import { createFooterSetter } from "./pi-footer.ts";
 
 export const themeLike = (theme: Theme): ThemeLike => ({
   fg: (token, text) => theme.fg(token, text),
@@ -446,5 +448,7 @@ export const createUi = (
 
       stdout.write(sequence);
     },
+    setFooter: createFooterSetter(tuiCtx, themeLike),
+    keyText: (binding) => keyText(binding as Keybinding),
   };
 };

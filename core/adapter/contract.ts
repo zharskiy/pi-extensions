@@ -123,6 +123,8 @@ export type HostUi = {
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(title: string, body: string): void;
+  setFooter(render: FooterRender | undefined): WidgetHandle;
+  keyText(binding: string): string;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -172,6 +174,10 @@ export type Host = {
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
+  context(): ContextSnapshot;
+  model(): ModelInfo | undefined;
+  thinkingLevel(): string;
+  sessionName(): string | undefined;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";
@@ -321,3 +327,9 @@ export const addUsage = (left: UsageTotals, right: UsageTotals): UsageTotals => 
     total: left.cost.total + right.cost.total,
   },
 });
+
+export type FooterData = { branch: string | null; statuses: ReadonlyMap<string, string> };
+
+export type FooterRender = (width: number, theme: ThemeLike, data: FooterData) => string[];
+
+export type ModelInfo = { name: string; contextWindow: number; reasoning: boolean };
