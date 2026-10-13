@@ -74,7 +74,7 @@ describe("per-call model override", () => {
     expect(runtime.children[0].spec).toMatchObject({ model: "fake/model", thinking: "medium" });
   });
 
-  it("takes the thinking level from a name:level in the frontmatter or the model parameter, parsed once", async () => {
+  it("takes the thinking level from a provider/id:level in the frontmatter or the per-call model override", async () => {
     const { run, runtime, host } = setup();
     const dir = join(host.info.agentDir, "agents");
 
@@ -95,9 +95,6 @@ describe("per-call model override", () => {
       ["acme/model-a", "minimal"],
       ["acme/model-a", "xhigh"],
     ]);
-    await expect(run([{ agent: "tuned", task: "c", model: "acme/model-a:high:low" }])).rejects.toThrow(
-      /model "acme\/model-a:high"/,
-    );
   });
 
   it("starts nothing and lists the candidates when one item's model is ambiguous", async () => {

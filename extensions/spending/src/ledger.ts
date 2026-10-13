@@ -3,7 +3,11 @@ import { parseUsageReport, type UsageReport } from "../../../core/manager/channe
 
 export const USAGE_ENTRY = "pi-spending:usage";
 
-export const FORK_MARKER: UsageReport = { source: "fork", id: "fork", usage: emptyUsage() };
+export const CONTINUATION_MARKER: UsageReport = {
+  source: "continuation",
+  id: "continuation",
+  usage: emptyUsage(),
+};
 
 type SourceTotal = { source: string; usage: UsageTotals };
 
@@ -50,9 +54,9 @@ export const createLedger = (append: (customType: string, data: unknown) => void
     const reports = entries
       .map(parseUsageReport)
       .filter((report): report is UsageReport => report !== undefined);
-    const afterFork = reports.slice(reports.findLastIndex((report) => report.id === FORK_MARKER.id) + 1);
+    const own = reports.slice(reports.findLastIndex((report) => report.id === CONTINUATION_MARKER.id) + 1);
 
-    afterFork.forEach((report) => {
+    own.forEach((report) => {
       keep({ ...report, id: idPrefix + report.id });
     });
   };

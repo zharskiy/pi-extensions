@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { join, resolve } from "node:path";
-import type { Worktree } from "../../model/types.ts";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import type { Worktree, WorktreeCleanup } from "../../model/types.ts";
 
 type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
 
@@ -23,36 +24,58 @@ const runGit = (cwd: string, args: string[]) =>
     });
   });
 
-export const createWorktree = async (
-  cwd: string,
-  agentDir: string,
-  agentId: string,
-): Promise<WorktreeResult> => {
-  const prefix = await runGit(cwd, ["rev-parse", "--show-prefix"]);
+const ignoreWorktrees = (root: string) => {
+  const file = join(root, ".gitignore");
 
-  if (!prefix.ok) {
-    return { ok: false, error: `${cwd} is not inside a git repository: ${prefix.error}` };
+  if (!existsSync(file)) {
+    mkdirSync(root, { recursive: true });
+    writeFileSync(file, "*\n");
+  }
+};
+
+export const createWorktree = async (cwd: string, agentId: string): Promise<WorktreeResult> => {
+  const head = await runGit(cwd, ["rev-parse", "HEAD", "--show-prefix"]);
+
+  if (!head.ok) {
+    return { ok: false, error: head.error };
   }
 
-  const path = join(agentDir, "worktree");
-  const branch = `pi-agents/${agentId}-${Date.now().toString(36)}`;
-  const added = await runGit(cwd, ["worktree", "add", "-b", branch, path, "HEAD"]);
+  const [base, prefix = ""] = head.output.split("\n");
+  const root = join(cwd, ".pi", "worktrees");
+  const name = `${agentId}-${Date.now().toString(36)}`;
+  const path = join(root, name);
+  const branch = `pi-agents/${name}`;
+
+  try {
+    ignoreWorktrees(root);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+
+  const added = await runGit(cwd, ["worktree", "add", "-b", branch, path, base]);
 
   if (!added.ok) {
     return { ok: false, error: `git worktree add failed: ${added.error}` };
   }
 
-  return { ok: true, worktree: { path, branch, cwd: resolve(path, prefix.output) } };
+  return { ok: true, worktree: { path, branch, base, cwd: resolve(path, prefix) } };
 };
 
-export const removeWorktree = async (cwd: string, worktree: Worktree) => {
-  const removed = await runGit(cwd, ["worktree", "remove", "--force", worktree.path]);
+export const removeWorktree = async (worktree: Worktree): Promise<WorktreeCleanup> => {
+  const repo = dirname(worktree.path);
+  const removed = await runGit(repo, ["worktree", "remove", worktree.path]);
 
   if (!removed.ok) {
-    return false;
+    return "kept";
   }
 
-  const deleted = await runGit(cwd, ["branch", "-D", worktree.branch]);
+  const tip = await runGit(repo, ["rev-parse", worktree.branch]);
 
-  return deleted.ok;
+  if (!tip.ok || tip.output !== worktree.base) {
+    return "branch kept";
+  }
+
+  const deleted = await runGit(repo, ["branch", "-D", worktree.branch]);
+
+  return deleted.ok ? "removed" : "branch kept";
 };

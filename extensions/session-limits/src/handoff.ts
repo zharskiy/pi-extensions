@@ -1,14 +1,12 @@
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SessionInfo } from "../../../core/adapter/contract.ts";
 import { validateHandoff } from "../../../core/manager/handoff.ts";
-import { sessionDataDir } from "../../../core/manager/paths.ts";
-
-const HANDOFF_FILE = "main-handoff.md";
 
 const HANDOFF_STATUSES = ["done", "partial", "blocked"] as const;
 
 export const handoffPath = (info: SessionInfo) =>
-  join(sessionDataDir(info, "pi-session-limits"), HANDOFF_FILE);
+  join(tmpdir(), "pi-session-limits", `${info.id}-handoff.md`);
 
 export const seedText = (previousSession: string | undefined, handoff: string) => {
   const source = previousSession ? `the previous session ${previousSession}` : "the previous session";

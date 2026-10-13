@@ -41,7 +41,7 @@ PI_LIVE_MODEL=provider/id:low npm run test:live   # real agents, local only, cos
 ## Layout
 
 - `core/adapter/`: the shared pi adapter, the only code that imports pi. `contract.ts` is the interface every extension depends on; `pi-adapter.ts` exports `createPiExtension(boot, { root, namespace, childExclude })`. It knows nothing about any extension: each entry point passes its root, its namespace for custom entries and the source directories child sessions must not load.
-- `core/manager/`: the shared plugin manager (ordering, typed bus, services), generic over each extension's event map, service map and settings, plus settings file helpers, session data paths and the handoff format and channel names the extensions share.
+- `core/manager/`: the shared plugin manager (ordering, typed bus, services), generic over each extension's event map, service map and settings, plus settings file helpers and the handoff format and channel names the extensions share.
 - `core/test/`: mirrors `core/`; `core/test/helpers/fakes.ts` holds the fake host, runtime and child shared by every extension's tests, and only `core/test/adapter/` tests import pi.
 - `extensions/<name>/{src,test,prompts}`: one folder per extension, with its own README. `src/index.ts` is the single entry that connects the extension's parts; `package.json` lists every entry file under `pi.extensions`.
 - Outside `core/adapter` code imports only `core/adapter/contract.ts` and the shared `core/manager/` modules; each extension's `src/index.ts` may also import `core/adapter/pi-adapter.ts`. `core/` never imports from `extensions/`.

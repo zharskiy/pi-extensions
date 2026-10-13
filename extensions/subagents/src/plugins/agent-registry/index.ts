@@ -1,4 +1,5 @@
 import { BUSY_CHANNEL } from "../../../../../core/manager/channels.ts";
+import { handoffPathFor } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, isClosed } from "../../model/types.ts";
 import { createRegistry } from "./registry.ts";
@@ -10,7 +11,7 @@ const hasOpenAgents = (registry: AgentRegistry) => registry.list().some((record)
 export const agentRegistryPlugin: Plugin = {
   id: "agent-registry",
   enable: ({ host, bus, services }) => {
-    const registry = createRegistry({ bus });
+    const registry = createRegistry({ bus, handoffPath: (id) => handoffPathFor(host.session(), id) });
     let busy = false;
 
     const publish = (next: boolean) => {

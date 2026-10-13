@@ -28,6 +28,7 @@ describe("agent registry", () => {
 
     const registry = createRegistry({
       bus,
+      handoffPath: (id) => `/tmp/${id}-handoff.md`,
       writeManifest: () => {
         throw new Error("disk full");
       },
@@ -51,7 +52,11 @@ describe("agent registry", () => {
 
     mkdirSync(join(dir, "explorer-aaaa"));
 
-    const registry = createRegistry({ bus: createBus<BusEvents>(), newId: () => ids.shift() ?? "" });
+    const registry = createRegistry({
+      bus: createBus<BusEvents>(),
+      handoffPath: (id) => `/tmp/${id}-handoff.md`,
+      newId: () => ids.shift() ?? "",
+    });
 
     expect(registry.create(newAgent(dir)).id).toBe("explorer-bbbb");
   });

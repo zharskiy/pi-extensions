@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../core/adapter/contract.ts";
 import { handoffPath, seedText, validateMainHandoff } from "../src/handoff.ts";
@@ -27,12 +29,10 @@ const complete = {
 };
 
 describe("handoffPath", () => {
-  it("sits in the folder named after the session file", () => {
-    expect(handoffPath(info({ file: "/sessions/main.jsonl" }))).toBe("/sessions/main/main-handoff.md");
-  });
-
-  it("falls back to pi's agent dir without a session file", () => {
-    expect(handoffPath(info({}))).toBe("/agent/pi-session-limits/s1/main-handoff.md");
+  it("sits under the OS temp dir, named after the session id", () => {
+    expect(handoffPath(info({ file: "/sessions/main.jsonl" }))).toBe(
+      join(tmpdir(), "pi-session-limits", "s1-handoff.md"),
+    );
   });
 });
 

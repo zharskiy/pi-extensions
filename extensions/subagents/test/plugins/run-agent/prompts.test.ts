@@ -33,7 +33,12 @@ const createTestRegistry = () => {
     return `${agent}-${String(count).padStart(4, "0")}`;
   };
 
-  const registry = createRegistry({ bus, writeManifest: () => {}, newId });
+  const registry = createRegistry({
+    bus,
+    handoffPath: (id) => `/tmp/${id}-handoff.md`,
+    writeManifest: () => {},
+    newId,
+  });
 
   const spawn = (agent: string) =>
     registry.create({

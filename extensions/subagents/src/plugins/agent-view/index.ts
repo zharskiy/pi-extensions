@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { SessionRecord } from "../../../../../core/adapter/contract.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
-import { agentsDirFor, MANIFEST_FILE } from "../../model/paths.ts";
+import { agentsDirFor, handoffPathFor, MANIFEST_FILE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import {
   type AgentRecord,
@@ -49,7 +49,7 @@ export const agentViewPlugin: Plugin = {
         contextLimit: definedLimit(manifest.agent),
         chainIndex: 1,
         version: 0,
-        handoffPath: join(dir, "handoff.md"),
+        handoffPath: handoffPathFor(host.session(), id),
         dir,
         ...manifest,
       } as AgentRecord;

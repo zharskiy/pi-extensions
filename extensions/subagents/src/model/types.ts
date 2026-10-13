@@ -27,9 +27,23 @@ export type AttentionKind = "confirm" | "select" | "input";
 
 export type Attention = { kind: AttentionKind; title: string; since: number };
 
-export type Worktree = { path: string; branch: string; cwd: string };
+export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 
-export const worktreeText = (worktree: Worktree) => `${worktree.path} (branch ${worktree.branch})`;
+export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
+
+export const worktreeText = (worktree: Worktree) => {
+  const checkout = `${worktree.path} (branch ${worktree.branch})`;
+
+  if (worktree.cleanup === "removed") {
+    return "removed";
+  }
+
+  if (worktree.cleanup === "branch kept") {
+    return `removed; branch ${worktree.branch} kept`;
+  }
+
+  return worktree.cleanup === "kept" ? `kept: ${checkout}` : checkout;
+};
 
 export type AgentRecord = {
   id: string;
@@ -98,6 +112,7 @@ export type NewAgent = {
   model?: string;
   chainIndex?: number;
   predecessorId?: string;
+  worktree?: Worktree;
 };
 
 export type AgentRegistry = {

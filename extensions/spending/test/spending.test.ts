@@ -164,6 +164,28 @@ describe("spending", () => {
     expect(resumed.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.500 · total $2.750");
   });
 
+  it("keeps the totals across a handoff switch (new session with a parent)", () => {
+    const previous = {
+      entries: [
+        { customType: MAIN_OFFSET_ENTRY, data: 0.5 },
+        { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageOf(0.4) } },
+      ],
+      usage: usageOf(1.5),
+    };
+    const next = createFakeHost();
+
+    next.files.set("/sessions/previous.jsonl", previous);
+    createSpending(next);
+    next.start("/sessions/previous.jsonl");
+
+    expect(next.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.400 · total $2.400");
+
+    next.usage = usageOf(0.25);
+    next.emit(USAGE_CHANNEL, { source: "agents", id: "a1", usage: usageOf(0.1) });
+
+    expect(next.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.500 · total $2.750");
+  });
+
   it("carries inherited totals into a fork of a fork", () => {
     const fork = { entries: [{ customType: MAIN_OFFSET_ENTRY, data: 1.5 }], usage: usageOf(0.75) };
     const grandchild = createFakeHost();

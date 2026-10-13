@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import type { Host } from "../../../core/adapter/contract.ts";
 import { parseUsageReport, USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { footerText } from "./footer.ts";
-import { createLedger, FORK_MARKER, USAGE_ENTRY } from "./ledger.ts";
+import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 
 const STATUS_KEY = "pi-spending";
 
@@ -19,7 +19,7 @@ export const createSpending = (host: Host) => {
 
   const inherit = (parent: string) => {
     host.appendEntry(MAIN_OFFSET_ENTRY, mainCost(parent) - host.sessionUsage().cost.total);
-    host.appendEntry(USAGE_ENTRY, FORK_MARKER);
+    host.appendEntry(USAGE_ENTRY, CONTINUATION_MARKER);
     ledger.absorb(host.readEntries(USAGE_ENTRY, parent), `${basename(parent)}/`);
     ledger.persist();
   };
@@ -48,9 +48,9 @@ export const createSpending = (host: Host) => {
     refresh();
   });
 
-  host.onSessionStart((_info, forkedFrom) => {
-    if (forkedFrom) {
-      inherit(forkedFrom);
+  host.onSessionStart((_info, parent) => {
+    if (parent) {
+      inherit(parent);
     } else {
       ledger.restore(host.readEntries(USAGE_ENTRY));
     }

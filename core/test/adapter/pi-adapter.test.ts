@@ -77,27 +77,33 @@ describe("pi adapter", () => {
     expect(host.session().mode).toBe("tui");
   });
 
-  it("passes the parent session file to start handlers only for a fork", async () => {
+  it("passes the parent session file to start handlers only for a session created from another one", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, {});
     const seen: (string | undefined)[] = [];
+    const withHeader = (parentSession?: string) => {
+      const ctx = fakeCtx("tui");
 
-    host.onSessionStart((_info, forkedFrom) => seen.push(forkedFrom));
+      return { ...ctx, sessionManager: { ...ctx.sessionManager, getHeader: () => ({ parentSession }) } };
+    };
 
-    await fire("session_start", fakeCtx("tui"), {
-      reason: "fork",
-      previousSessionFile: "/sessions/parent.jsonl",
-    });
-    await fire("session_start", fakeCtx("tui"), {
-      reason: "new",
-      previousSessionFile: "/sessions/old.jsonl",
-    });
-    await fire("session_start", fakeCtx("tui"), {
-      reason: "resume",
-      previousSessionFile: "/sessions/old.jsonl",
-    });
+    host.onSessionStart((_info, parent) => seen.push(parent));
 
-    expect(seen).toEqual(["/sessions/parent.jsonl", undefined, undefined]);
+    await fire("session_start", withHeader("/sessions/forked.jsonl"), { reason: "fork" });
+    await fire("session_start", withHeader("/sessions/handoff.jsonl"), { reason: "new" });
+    await fire("session_start", withHeader(), { reason: "new", previousSessionFile: "/sessions/old.jsonl" });
+    await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "resume" });
+    await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "startup" });
+    await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "reload" });
+
+    expect(seen).toEqual([
+      "/sessions/forked.jsonl",
+      "/sessions/handoff.jsonl",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 
   it("throws when asked for the session before session_start", () => {

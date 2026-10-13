@@ -1,10 +1,26 @@
-import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { basename, dirname, join, resolve } from "node:path";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flushTimers as flush } from "../../../core/test/helpers/fakes.ts";
 import { createLimits } from "../src/limits.ts";
+
+const created: string[] = [];
+
+const tempRoot = () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-session-limits-"));
+
+  created.push(root, join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`));
+
+  return root;
+};
+
+afterAll(() => {
+  created.forEach((path) => {
+    rmSync(path, { recursive: true, force: true });
+  });
+});
 
 const RATIOS = { softRatio: 0.6, hardRatio: 0.75 };
 
@@ -37,11 +53,11 @@ const HANDOFF_TYPE = "pi-session-limits-handoff";
 const RELEASE_MS = 1_000;
 
 const setup = (releaseDelayMs = 0) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-session-limits-"));
+  const root = tempRoot();
   const file = join(root, "sessions", "main.jsonl");
 
   const host = createFakeHost({
-    id: "main-session",
+    id: basename(root),
     file,
     cwd: join(root, "project"),
     agentDir: join(root, "agent"),
@@ -52,7 +68,7 @@ const setup = (releaseDelayMs = 0) => {
 
   host.start();
 
-  const handoffPath = join(root, "sessions", "main", "main-handoff.md");
+  const handoffPath = join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`);
 
   const writeHandoff = (text: string) => {
     mkdirSync(dirname(handoffPath), { recursive: true });
@@ -407,10 +423,10 @@ describe("session limits", () => {
   });
 
   it("keeps a busy signal that a source announced in its own session start", () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-session-limits-"));
+    const root = tempRoot();
 
     const host = createFakeHost({
-      id: "main-session",
+      id: basename(root),
       file: join(root, "sessions", "main.jsonl"),
       cwd: join(root, "project"),
       agentDir: join(root, "agent"),
@@ -423,8 +439,10 @@ describe("session limits", () => {
 
     host.start();
     host.turnEnd({ tokens: 76_000, window: 100_000 });
-    mkdirSync(join(root, "sessions", "main"), { recursive: true });
-    writeFileSync(join(root, "sessions", "main", "main-handoff.md"), VALID_HANDOFF);
+    const handoffPath = join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`);
+
+    mkdirSync(dirname(handoffPath), { recursive: true });
+    writeFileSync(handoffPath, VALID_HANDOFF);
     host.settle();
 
     expect(host.dispatched).toEqual([]);

@@ -83,6 +83,7 @@ type LaunchSlot = { item: BatchItem; plan: ModelPlan; undelivered?: string[] };
 
 type Live = {
   child?: ChildSession;
+  spawning?: Promise<ChildSession | undefined>;
   lastStopReason?: StopReason;
   lastToolCalls: number;
   lastError?: string;
@@ -107,12 +108,14 @@ const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
-  const { place, discardWorktree } = createPlacer(deps.registry);
+  const { place, release } = createPlacer(deps.registry);
   const semaphore = createSemaphore(() => deps.settings.maxConcurrent);
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
   const launches = new Map<string, LaunchSlot>();
   const userStopped = new Set<string>();
+  const releasing = new Set<string>();
+  const teardowns = new Map<string, Promise<void>>();
   let shuttingDown = false;
 
   const liveOf = (id: string) => {
@@ -142,9 +145,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const settledTerminals = (batch: Batch) => {
     const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
 
-    return records.every((entry) => isClosed(entry.state))
-      ? records.filter((entry) => !entry.successorId)
-      : undefined;
+    const settled = records.every((entry) => isClosed(entry.state) && !releasing.has(entry.id));
+
+    return settled ? records.filter((entry) => !entry.successorId) : undefined;
   };
 
   const batchSettled = (batchId: string) => {
@@ -182,6 +185,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const onClosed = (record: AgentRecord) => {
+    if (record.worktree && !record.successorId) {
+      releasing.add(record.id);
+    }
+
     checkBatch(record);
     launches.delete(record.id);
     userStopped.delete(record.id);
@@ -270,27 +277,46 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     });
   };
 
-  const releaseLive = async (id: string) => {
-    const live = lives.get(id);
-
-    if (!live) {
-      return;
-    }
-
+  const disposeLive = async (id: string, live: Live) => {
     live.unsubscribe?.();
     live.turn = "idle";
     live.outbox?.clear();
     releaseSlot(live);
 
-    const child = live.child;
+    lives.delete(id);
+
+    const child = await live.spawning;
 
     live.child = undefined;
-    lives.delete(id);
 
     if (child) {
       deps.bus.emit("agent:usage", { id, usage: child.ownUsage() });
       await child.dispose().catch(() => undefined);
     }
+  };
+
+  const teardown = async (id: string) => {
+    const live = lives.get(id);
+
+    if (live) {
+      await disposeLive(id, live);
+    }
+
+    const record = deps.registry.get(id);
+
+    if (record?.worktree && releasing.has(id)) {
+      await release(record, record.worktree);
+      releasing.delete(id);
+      checkBatch(record);
+    }
+  };
+
+  const releaseLive = (id: string) => {
+    const running = teardowns.get(id) ?? teardown(id).finally(() => teardowns.delete(id));
+
+    teardowns.set(id, running);
+
+    return running;
   };
 
   const finishHandoff = (record: AgentRecord, live: Live) => {
@@ -341,6 +367,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       model: record.model,
       chainIndex: record.chainIndex + 1,
       predecessorId: record.id,
+      worktree: record.worktree,
     });
 
     launches.set(successor.id, slot);
@@ -525,6 +552,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const current = deps.registry.get(record.id);
 
     if (!current || isClosed(current.state) || shuttingDown) {
+      releaseSlot(live);
       await releaseLive(record.id);
       return;
     }
@@ -546,22 +574,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const abandon = async () => {
-      await releaseLive(record.id);
-
-      if (placement.created) {
-        await discardWorktree(record, placement.created, session.cwd);
-      }
-    };
-
     const placed = deps.registry.get(record.id);
 
     if (!placed || isClosed(placed.state) || shuttingDown) {
-      await abandon();
+      await releaseLive(record.id);
       return;
     }
 
-    const child = await deps.runtime
+    live.spawning = deps.runtime
       .spawn({
         id: record.id,
         cwd: placement.cwd,
@@ -584,8 +604,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         return undefined;
       });
 
-    if (!child) {
-      await abandon();
+    const child = await live.spawning;
+
+    if (!child || lives.get(record.id) !== live) {
+      await releaseLive(record.id);
       return;
     }
 
@@ -595,7 +617,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const afterSpawn = deps.registry.get(record.id);
 
     if (!afterSpawn || isClosed(afterSpawn.state)) {
-      await abandon();
+      await releaseLive(record.id);
       return;
     }
 
@@ -763,12 +785,17 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const stopNow = async (record: AgentRecord) => {
-    const child = lives.get(record.id)?.child;
+    const live = lives.get(record.id);
+    const child = live?.child;
+    const waitingForSlot = live !== undefined && !child && !live.release;
 
     closeStopped(record, "stopped by the user");
 
     if (child) {
       await abortChild(child);
+    }
+
+    if (child || waitingForSlot) {
       await releaseLive(record.id);
     }
 
@@ -895,6 +922,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         await releaseLive(record.id);
       }),
     );
+
+    await Promise.all(Array.from(releasing, releaseLive));
   };
 
   return {

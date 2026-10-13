@@ -16,9 +16,9 @@ export const conversationOnly = (host: Host): Host => {
   return {
     ...host,
     onSessionStart: (handler) => {
-      host.onSessionStart((info, forkedFrom) => {
+      host.onSessionStart((info, parent) => {
         if (CONVERSATIONAL.has(info.mode)) {
-          handler(info, forkedFrom);
+          handler(info, parent);
         }
       });
     },

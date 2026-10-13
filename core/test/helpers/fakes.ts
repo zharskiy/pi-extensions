@@ -49,7 +49,7 @@ export type FakeHost = Host & {
   confirmAnswer: boolean | ((title: string, message: string) => boolean);
   newSessions: NewSessionOptions[];
   newSessionResult: boolean | Error;
-  start(forkedFrom?: string): void;
+  start(parent?: string): void;
   turnEnd(context: { tokens: number | null; window: number; percent?: number | null }): void;
   compact(): void;
   settle(): void;
@@ -62,7 +62,7 @@ export type FakeHost = Host & {
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
-  const startHandlers: ((info: SessionInfo, forkedFrom?: string) => void)[] = [];
+  const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
@@ -235,12 +235,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       return host.info;
     },
-    start: (forkedFrom) => {
+    start: (parent) => {
       started = true;
       stale = false;
 
       startHandlers.forEach((handler) => {
-        handler(host.info, forkedFrom);
+        handler(host.info, parent);
       });
     },
     turnEnd: (turn) => {

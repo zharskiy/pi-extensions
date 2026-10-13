@@ -1,10 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { afterAll } from "vitest";
 import type { AgentRuntime } from "../../../../core/adapter/contract.ts";
 import { createExtensionManager } from "../../../../core/manager/extension-manager.ts";
 import { createFakeHost, createFakeRuntime, type FakeHost } from "../../../../core/test/helpers/fakes.ts";
+import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Plugin } from "../../src/model/plugin.ts";
 import { defaultSettings, type Settings } from "../../src/model/settings.ts";
 
@@ -32,6 +33,8 @@ export const startPlugins = <R extends AgentRuntime>(
   plugins: Plugin[],
   overrides: Partial<Settings> = {},
 ) => {
+  created.push(join(tmpdir(), NAMESPACE, host.info.id));
+
   const settings = { ...defaultSettings(), renderThrottleMs: 0, ...overrides };
   const errors: unknown[] = [];
 
@@ -54,7 +57,7 @@ export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = 
   const root = tempDir();
 
   const host = createFakeHost({
-    id: "main-session",
+    id: basename(root),
     file: join(root, "sessions", "main.jsonl"),
     cwd: join(root, "project"),
     agentDir: join(root, "agent"),

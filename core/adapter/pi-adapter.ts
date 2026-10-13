@@ -64,7 +64,7 @@ const liveCtx = (state: HostState) => {
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
-  const startHandlers: ((info: SessionInfo, forkedFrom?: string) => void)[] = [];
+  const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: (() => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
@@ -78,10 +78,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     capture(ctx);
 
     const info = sessionInfo(ctx);
-    const forkedFrom = event.reason === "fork" ? event.previousSessionFile : undefined;
+    const created = event.reason === "new" || event.reason === "fork";
+    const parent = created ? ctx.sessionManager.getHeader()?.parentSession : undefined;
 
     startHandlers.forEach((handler) => {
-      handler(info, forkedFrom);
+      handler(info, parent);
     });
   });
 

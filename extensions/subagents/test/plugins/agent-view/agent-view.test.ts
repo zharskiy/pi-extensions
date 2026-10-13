@@ -974,9 +974,10 @@ describe("agent view worktree", () => {
     const harness = setup();
     const record = closedAgent(harness);
     const worktree = {
-      path: "/agents/explorer-1/worktree",
-      branch: "pi-agents/explorer-1",
-      cwd: "/agents/x",
+      path: "/project/.pi/worktrees/explorer-1-abc",
+      branch: "pi-agents/explorer-1-abc",
+      base: "0123abc",
+      cwd: "/project/.pi/worktrees/explorer-1-abc",
     };
 
     harness.services.require("registry").update(record.id, { worktree });
@@ -984,7 +985,9 @@ describe("agent view worktree", () => {
     const { view } = await harness.openView(record.id);
     const lines = plain(view.render(100));
 
-    expect(lines[2]).toBe("worktree: /agents/explorer-1/worktree (branch pi-agents/explorer-1)");
+    expect(lines[2]).toBe(
+      "worktree: /project/.pi/worktrees/explorer-1-abc (branch pi-agents/explorer-1-abc)",
+    );
     expect(lines[5]).toBe("Effective prompt");
   });
 });

@@ -1,12 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Bus } from "../../model/events.ts";
 import { MANIFEST_FILE } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../../model/types.ts";
 
 type RegistryOptions = {
   bus: Bus;
+  handoffPath: (agentId: string) => string;
   newId?: (agent: string) => string;
   writeManifest?: (record: AgentRecord) => void;
 };
@@ -15,6 +16,7 @@ const randomAgentId = (agent: string) => `${agent}-${randomBytes(2).toString("he
 
 const writeManifestFile = (record: AgentRecord) => {
   mkdirSync(record.dir, { recursive: true });
+  mkdirSync(dirname(record.handoffPath), { recursive: true });
 
   const manifest = {
     id: record.id,
@@ -86,7 +88,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       toolCalls: 0,
       tokens: 0,
       lastText: "",
-      handoffPath: join(dir, "handoff.md"),
+      handoffPath: options.handoffPath(id),
       handoffRequested: false,
       version: 0,
     };

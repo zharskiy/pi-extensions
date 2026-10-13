@@ -1,9 +1,13 @@
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SessionInfo } from "../../../../core/adapter/contract.ts";
-import { sessionDataDir } from "../../../../core/manager/paths.ts";
 
 export const NAMESPACE = "pi-subagents";
 
 export const MANIFEST_FILE = "manifest.json";
 
-export const agentsDirFor = (info: SessionInfo) => join(sessionDataDir(info, NAMESPACE), "agents");
+export const agentsDirFor = (info: SessionInfo) =>
+  join(info.file ? info.file.replace(/\.jsonl$/, "") : join(info.agentDir, NAMESPACE, info.id), "agents");
+
+export const handoffPathFor = (info: SessionInfo, agentId: string) =>
+  join(tmpdir(), NAMESPACE, info.id, `${agentId}-handoff.md`);

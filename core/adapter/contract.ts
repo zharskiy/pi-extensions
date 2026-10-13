@@ -158,7 +158,7 @@ export type Host = {
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
   registerCommand(name: string, spec: CommandSpec): void;
   setMainPrompt(text: string): void;
-  onSessionStart(handler: (info: SessionInfo, forkedFrom?: string) => void): void;
+  onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: () => void): void;
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;

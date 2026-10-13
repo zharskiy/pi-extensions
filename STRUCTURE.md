@@ -22,7 +22,7 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/usage channel names, payloads, parsers
-│   │   └── settings.ts / paths.ts / settle.ts  # settings, dirs, timeouts
+│   │   └── settings.ts / settle.ts  # settings, timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, live.ts, render-theme.ts
 │       ├── manager/
@@ -54,7 +54,6 @@ pi-extensions/
 │       ├── test/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
-├── docs/review/                 # open review items, file-locations.md (development only)
 ├── research/                    # pi extension API and SDK notes (development only)
 ├── AGENTS.md                    # short guide for coding agents
 ├── ARCHITECTURE.md              # how it works
@@ -97,7 +96,7 @@ usage-report/       # reports agent usage to the spending channel
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
 - Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending}/src/index.ts`.
-- Development-only: `core/test`, `extensions/*/test`, `test/`, `docs/`, `research/`, `.github/`, config files below.
+- Development-only: `core/test`, `extensions/*/test`, `test/`, `research/`, `.github/`, config files below.
 
 ### Config files
 
