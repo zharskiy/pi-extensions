@@ -1,8 +1,8 @@
 # UX spec: Claude-alike subagents
 
-Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`).
+Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`). Revised 2026-10-14 (third pass): the `/agents` list keeps the agent tree in both of its sections (`Running`, `Completed (n)`; no `Needs input` section); agents are named by `<agent> › <description>` (§2 Identity); one padding rule set for every surface (§2 "Padding and margins", from `research/padding.md`); a shorter agent view hint.
 
-Single source of truth for what the user sees and does. Follows `plans/research/decisions.md` (D1–D7); where this file is more precise, it wins. Strings in code spans are exact. Timings are in ms with their setting name. Mockups are 80 columns wide; `provider/model:high` stands for any model label. Nothing here names a provider or a model.
+Single source of truth for what the user sees and does. Follows `plans/research/decisions.md` (D1–D7); where this file is more precise, it wins. Strings in code spans are exact. Timings are in ms with their setting name. Mockups are 80 columns wide and draw the padding of §2 "Padding and margins" (a leading space is `PAD` or pi's `outputPad`; no text line reaches the last column; only `─` rules are 80 wide); `provider/model:high` stands for any model label. Nothing here names a provider or a model.
 
 ## 1. Principles
 
@@ -42,25 +42,43 @@ Shared formatters (`formatTokens` and `formatDuration` live in `core/manager/for
 - Separator inside stats: ` · ` (space, middle dot, space).
 - Truncation: `…` as the last visible cell, measured in display columns, never in UTF-16 units.
 
+Identity: what the user sees about an agent is its agent definition name (`record.agent`, e.g. `explorer`, with ` #2` for a later chain link), its description, its model, its state and its stats. The name and the description appear together everywhere an agent is named: transcript rows `explorer (Map the auth module)`, panel and list rows, the agent view header `explorer › Map the auth module`, forwarded dialog titles `explorer › Map the auth module asks: <title>`; completion lines use the description alone. The model label is shown on the transcript row (§3, `dim`) and on the agent view header's second line (§6), not on panel or list rows. The hex id (`explorer-3f2a9c1b7d0e`) is a handle for commands, not a label: it appears only on the agent view header (`id <id>` on its second line, the link ids of its chain line) and in command and status lines (`/agents <id>`, `Status unavailable · /agents <id>`, the `message_agent <id> …` call line, child `notify` lines `<id> (<agent>): <message>`), plus the model-facing task message `Task from <caller> (agent id <id>): …` that the view shows unchanged as its first transcript item.
+
+### Padding and margins
+
+Every surface follows one set of margins, so no text is glued to a display edge and the surfaces line up with pi's messages, editor and footer.
+
+- Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list, status line and working line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block, the completion lines) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
+- Right margin: the same width on the right. The content width is `inner = width - 2 * PAD` (transcript surfaces: `width - 2 * outputPad`); no text goes past column `width - 1 - PAD` (0-based), so the last column is always blank. Every cut is `truncateCols(text, inner - <prefix>)`, never `truncateCols(text, width)`.
+- What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block or completion line, the chat width pi passes to the component (pi does not pad a self-rendered block or an entry). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
+- Columns inside the pad: column `PAD` holds the pointer gutter of a row (`› ` or two spaces) and the first cell of every line that is not a row: title, section header, feedback, hint, view header, `▸ Request`. Row glyphs and the panel's `↑ N more` / `↓ N more` markers sit at `PAD + 2`, the glyph column. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
+- Rules: `─` rules are chrome, not text, and run the full width, edge to edge, like pi's editor borders and dialogs. Only the agent view has one.
+- Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request` with no blank; the expanded Request block ends with one blank before the transcript (pi's components bring their own spacers). Panel: no blank above (the editor's bottom border separates it), no blanks between rows, markers and hint, and one trailing blank line so the footer never touches the last line.
+- Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block and the completion lines are cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
+
+`PAD`, `innerWidth(width)` and `alignRight(left, right, cols)` live in `extensions/subagents/src/components/format.ts` (plan 04) next to `truncateCols` and `padEndCols`; the panel, the list and the view import them.
+
 ## 3. Surface A: main transcript
 
 ### `run_agent` block
 
-One block per `run_agent` call. The tool call line is the header; the tool result is the rows. The block uses pi's plain shell (`renderShell: "self"`, no coloured box, no `(ctrl+o to expand)` hint). It re-renders through the stored `invalidate` at most every `renderThrottleMs` (default 250) after an `agent:changed` of its batch. It never schedules its own timer, and pi caches a tool block between invalidations, so the spinner in the header advances only on agent events (deviation: a frozen spinner between events is accepted; the panel below the editor animates).
+One block per `run_agent` call. The tool call line is the header; the tool result is the rows. The block uses pi's plain shell (`renderShell: "self"`, no coloured box, no `(ctrl+o to expand)` hint). pi does not pad a self-rendered block; the adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (no wrapping), so the block lines up with pi's messages (§2 "Padding and margins"). It re-renders through the stored `invalidate` at most every `renderThrottleMs` (default 250) after an `agent:changed` of its batch. It never schedules its own timer, and pi caches a tool block between invalidations, so the spinner in the header advances only on agent events (deviation: a frozen spinner between events is accepted; the panel below the editor animates).
 
 Header phases:
 
 | Phase | Header line |
 |---|---|
 | Tool running (`wait: true`, or `wait: false` before it returns) | `⠹ Running 3 agents…` (spinner `accent`, `3` bold, `agents…` `text`); `1 agent…` singular |
-| Returned, `wait: false`, at least one agent still open | `3 background agents launched (↓ to manage)` (`3` bold, hint `dim`) |
+| Returned, `wait: false`, at least one agent still open | `3 background agents launched (← to manage)` (`3` bold, hint `dim`) |
 | Returned, `wait: false`, every agent closed | `3 background agents launched` (deviation: Claude keeps the hint; we drop it because there is nothing left to manage) |
 | Returned, `wait: true` | `3 agents finished` (`3` bold) |
 | Error result (nothing started) | `✗ No agents started: <first line of the error>` (`error`); the full error text when expanded with `Ctrl+O` |
 
+When every agent of the batch has the same agent name, the header names it (as Claude Code does with the agent type): `⠹ Running 3 explorer agents…`, `3 background explorer agents launched (← to manage)`, `3 background explorer agents launched`, `3 explorer agents finished`; singular `⠹ Running 1 explorer agent…`, `1 background explorer agent launched (← to manage)`, `1 explorer agent finished`. The name is plain `text`, the count stays bold. Mixed batches keep the wording of the table. The rows are unchanged: each still reads `<agent> (<description>)` (deviation: Claude drops the type from same-type rows; we keep the name so a row reads the same in every batch). While the arguments still stream the header has no name (`⠹ Running agents…`).
+
 Rows, one per agent of the batch, tree-connected under the header with `├─ ` and `└─ ` (last), continuation `│  ` / `   `:
 
-- Line 1: `├─ explorer (Map the auth module) · provider/model:high` — `explorer` is `record.agent`, bold; with a chain, `explorer #2`; the description in parentheses, `muted`, cut with `…` to the width; then ` · <model>` (`dim`, the resolved `provider/id:thinking` label, dropped first when the width is short). This is the only row that names the model; the panel and the list do not.
+- Line 1: `├─ explorer (Map the auth module) · provider/model:high` — `explorer` is `record.agent`, bold; with a chain, `explorer #2`; the description in parentheses, `muted`, cut with `…` so the line fits `BLOCK_WIDTH` (the adapter's per-line cut at `width - 2 * outputPad` handles narrower terminals); then ` · <model>` (`dim`, the resolved `provider/id:thinking` label, dropped first when the budget is short). Besides the agent view header (§6, line 2), this row is the only place that names the model; the panel and the list rows do not.
 - Line 2 (status line, indented under the name) per state:
 
 | State | Status line | Token |
@@ -91,7 +109,7 @@ A custom transcript entry (`appendEntry`, rendered by a registered entry rendere
 | `stopped` | `■ Agent "Review the diff of PR 5" was stopped · 3m 2s` | `warning` |
 | `handoff` | `↪ Agent "Map the auth module" handed off · 1h 2m` | `warning` |
 
-Details after the text, each ` · `-joined: duration (always); `2 sessions` for a chain (printed once, at the chain's end; links that continue print nothing); `worktree removed` / `branch <branch> kept` / `worktree kept` for worktree agents. The error is its first line, cut at 120 columns with `…`. The description is cut at 60 columns with `…`.
+Details after the text, each ` · `-joined: duration (always); `2 sessions` for a chain (printed once, at the chain's end; links that continue print nothing); `worktree removed` / `branch <branch> kept` / `worktree kept` for worktree agents. The error is its first line, cut at 120 columns with `…`. The description is cut at 60 columns with `…`. Each line is indented by `outputPad` and cut at `width - 2 * outputPad` like the block (never wrapped). pi puts a blank line before every custom entry, so consecutive completion lines are one blank line apart.
 
 ### The wake
 
@@ -100,7 +118,7 @@ The batch text for the model always travels as a hidden custom message (`display
 - Main session busy (the model is mid-run): the hidden message joins the run as a follow-up. The user sees nothing new; the model's reply simply takes the results into account.
 - Main session idle: a run can only start safely through a visible user message, so one short user-role line starts the turn: `↳ 3 agents finished` (`↳ 1 agent finished` singular; several batches held in the outbox are counted together). The leading `↳` marks it as a system note inside the user-message box. It renders as a user message (pi's user-message box; that is the only way to start a turn with the main prompt intact), and the hidden results message follows it for the model. Then the working indicator (section 7) and the model's reply.
 
-In both cases the dim completion lines (above) have already appeared as each agent closed, and the `run_agent` block's header has lost `(↓ to manage)`.
+In both cases the dim completion lines (above) have already appeared as each agent closed, and the `run_agent` block's header has lost `(← to manage)`.
 
 (deviation: Claude shows no user line at all; pi has no other safe way to start a run from idle. The line is short, starts with `↳` and names only the count so it reads as a system note, not as pasted results.)
 
@@ -108,14 +126,18 @@ In both cases the dim completion lines (above) have already appeared as each age
 
 - `message_agent` call line `message_agent <id> <first 60 chars>` and its default-rendered result (`Message delivered to <id> (steer).` and the error strings) stay.
 - `agent_status` call line and result stay.
-- Forwarded dialogs keep the title `<id> (<agent>) asks: <title>`; `Esc` denies that one call. Child `notify` lines keep `<id> (<agent>): <message>`.
+- `Esc` on a forwarded dialog denies that one call. Child `notify` lines keep `<id> (<agent>): <message>`.
+
+### Forwarded dialog titles
+
+A dialog forwarded from an agent is titled `<agent> › <description> asks: <title>` (e.g. `explorer › Map the auth module asks: Run npm test?`; ` #2` after the name for a later chain link), replacing `<id> (<agent>) asks: <title>`: the user knows agents by name and description, not by id (§2 Identity). The description is cut at 60 columns with `…`. The notification extension shows this title as is (`pi needs your input: explorer › Map the auth module asks: Run npm test?`).
 
 ### Mockups
 
 Batch of 3 just launched (`wait: false`):
 
 ```
- 3 background agents launched (↓ to manage)
+ 3 background agents launched (← to manage)
  ├─ explorer (Map the auth module) · provider/model:high
  │  Initializing…
  ├─ worker (Fix the login redirect) · provider/model:medium
@@ -124,10 +146,12 @@ Batch of 3 just launched (`wait: false`):
     Queued
 ```
 
+One leading space = pi's `outputPad` (1 by default) in every transcript mockup.
+
 Same batch, one done and one needing input (the completion line is a separate entry below the block):
 
 ```
- 3 background agents launched (↓ to manage)
+ 3 background agents launched (← to manage)
  ├─ explorer (Map the auth module)
  │  Done · 4 tool uses · 12.3k tokens · 1m 5s
  ├─ worker (Fix the login redirect)
@@ -150,7 +174,9 @@ After everything finished, including the model's reply:
     Done · 12 tool uses · 44.0k tokens · 3m 2s
 
  ✓ Agent "Map the auth module" finished · 1m 5s
+
  ✗ Agent "Fix the login redirect" failed: tests failed twice · 2m 10s
+
  ✓ Agent "Review the diff of PR 5" finished · 3m 2s
 
  The auth module lives in src/auth. The login redirect fix did not land:
@@ -164,23 +190,25 @@ A widget below the editor (`belowEditor`), replacing the progress widget. No hea
 ### Row grammar
 
 ```
-<pointer><tree><glyph> <name>[ (+N)]  <description>   [<activity> · ]<stats>
+<PAD><pointer><tree><glyph> <name>[ (+N)]  <description>  [<activity> · ]<stats>
 ```
 
-- `pointer`: `› ` (`accent`, bold) on the selected row, else two spaces.
+- `PAD`: one column (§2 "Padding and margins").
+- `pointer`: at column `PAD`, `› ` (`accent`, bold) on the selected row, else two spaces; the glyph of a root row is at `PAD + 2`.
 - `tree`: nothing for agents called by `main`; `├─ ` / `└─ ` (`dim`) for children under their caller, with `│  ` / `   ` continuation per level above. Rows are in tree order: callers first, children directly under them, siblings by `createdAt`. A row keeps its place when it closes.
 - `glyph` + space: the state glyph in the state token (spinner while `running`).
 - `name`: `record.agent`, `text` (`muted` on closed rows), with ` #2` for chain links after the first; `(+N)` (`dim`) is the number of open descendants of this agent; omitted when 0. The name column is padded to the widest visible name, capped at 24 columns, then two spaces.
 - `description` (`muted`): always the agent's description, so two agents of the same kind stay distinguishable (deviation: Claude replaces it with the latest progress summary; we keep the description and put the activity in the stats column).
 - `activity`: while `running`, the latest activity when known, shown as the first part of the stats: the last top-level tool name (`grep`, `bash`, `codemode`, …) or, when the last event was an assistant message, the word `writing`. It is `dim` like the stats and separated with ` · `. The record gains `activity?: { kind: "tool" | "text"; text: string; at: number }`; its `text` is the tool name or the first line of the assistant text (used by the agent view header later, not by the row).
-- `stats`, right-aligned to the width: `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `needs input` (`warning`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
+- `stats`, right-aligned to `PAD + W` (ending one column before the last): `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `needs input` (`warning`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
 
-Column rule, from the full width `W`: fixed parts are pointer (2), tree, glyph (2), name column, two spaces, and two spaces before the stats. The description gets the rest. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description is cut with `…` to fit. Each line is finally hard-cut to `W` by the adapter.
+Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are pointer (2), tree, glyph (2), name column, two spaces, and two spaces before the stats. The description gets the rest. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description is cut with `…` to fit. A correct line ends at `PAD + W` (79 columns at width 80); the last column stays blank, and the adapter's hard cut at `width` is only a safety net.
 
 ### Window and markers
 
-- At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The window scrolls by the minimum to keep the selected row visible. When the selection clears, the window keeps its top row (clamped to the row count); it never jumps back to the first row on its own.
-- The hint line (below the rows and markers) exists only while a row is selected.
+- At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The markers start in the glyph column (`PAD + 2`), as Claude Code's do. The window scrolls by the minimum to keep the selected row visible. When the selection clears, the window keeps its top row (clamped to the row count); it never jumps back to the first row on its own.
+- The hint line (below the rows and markers, at `PAD`, cut at `inner`) exists only while a row is selected.
+- One blank line follows the panel's last line, so the footer never touches it; there is no blank above the panel (the editor's bottom border separates it).
 - `(+N)` on a visible row tells the user that rows under it exist even when they are scrolled out.
 
 ### Which rows are visible
@@ -196,12 +224,13 @@ The interception lives in the framed editor's input handler and acts only while 
 
 | Key | Nothing selected | Row selected |
 |---|---|---|
-| `↓` | Editor empty, no autocomplete, panel present: selects the first row. Editor non-empty or panel absent: the editor's own behaviour, nothing new. | Moves to the next row (clamped at the last). |
+| `←` | Editor empty, no autocomplete, panel present: selects the first row. Otherwise the editor's own behaviour (a no-op cursor move on an empty editor; `←` has no history or autocomplete meaning). | Nothing happens (the key is consumed). |
+| `↓` | The editor's own behaviour (history), nothing new. | Moves to the next row (clamped at the last). |
 | `↑` | Editor's own behaviour (history). | Moves to the previous row; on the first row it deselects and focus stays in the editor. |
 | `Enter` | Submits the editor. | Opens the agent view of the selected row (section 6) in an overlay; the selection clears. |
 | `x` | Types `x`. | `running` or `queued`: stops the agent (a running agent enters grace; a queued one closes at once). `grace`: closes it now. Closed: clears the row. |
 | `Esc` | pi's own behaviour (interrupt when busy). | Deselects. The main turn is never interrupted while a row is selected. |
-| any other key | Editor. | The selection clears and the key goes to the editor (it is not swallowed). |
+| any other key | Editor. | The selection clears and the key goes to the editor (it is not swallowed). `→` is such a key: it deselects, and in an empty editor it is a no-op. `Esc` stays the documented deselect key. |
 
 The panel never takes focus; the editor keeps it throughout. A new row appearing or a row leaving does not move the selection unless the selected row left, in which case the selection clears.
 
@@ -217,7 +246,7 @@ Only while a row is selected, `dim`, one line:
 
 ### Footer status
 
-Through `setStatus("pi-subagents", …)`:
+Through `setStatus("pi-subagents", …)`, drawn by the footer extension with its own `PAD`:
 
 - While any record is open (`queued`, `running`, `grace`, any depth): `3 agents` (`accent`), `1 agent` singular.
 - From the moment the last open record closes, for `agentsHintMs` (new, default 30 000): `/agents to see agents` (`dim`).
@@ -229,39 +258,45 @@ Re-render on `agent:changed` throttled by `renderThrottleMs` (default 250), plus
 
 ### Mockups
 
-Two running (one is a worktree agent; the panel does not say so):
+Two running (one is a worktree agent; the panel does not say so); one leading space = `PAD`, the glyph column is `PAD + 2`, the last column stays blank, and the trailing blank line is the panel's own:
 
 ```
-   ⠹ explorer  Map the auth module              grep · 1m 5s · ↓ 12.3k tokens
-   ⠹ worker    Fix the login redirect          bash · 2m 10s · ↓ 30.1k tokens
-```
-
-Seven agents, selection on the fourth, window scrolled:
+   ⠹ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens
+   ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
 
 ```
- ↑ 2 more
-   ⠹ worker     Fix the login redirect         bash · 2m 10s · ↓ 30.1k tokens
- › ⠹ reviewer (+1)  Review the diff of PR 5     writing · 45s · ↓ 8.2k tokens
-   └─ ⠹ explorer  Find callers of login          read · 12s · ↓ 1.1k tokens
-   ○ worker     Rename parseDate callers                                queued
-   ○ explorer   Find every date format in tests                         queued
- ↓ 1 more
+
+Seven agents, selection on the fourth, window scrolled (the name column is measured over all seven rows):
+
+```
+   ↑ 2 more
+   ⠹ worker         Fix the login redirect       bash · 2m 10s · ↓ 30.1k tokens
+ › ⠹ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens
+   └─ ⠹ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens
+   ○ worker         Rename parseDate callers                             queued
+   ○ explorer       Find every date format in tests                      queued
+   ↓ 1 more
  enter to view · x to stop · esc to deselect
+
 ```
 
 One done row (it leaves 10 s after it finished; no countdown is shown):
 
 ```
-   ⠹ worker    Fix the login redirect          bash · 2m 10s · ↓ 30.1k tokens
-   ✓ explorer  Map the auth module                                done · 1m 5s
+   ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
+   ✓ explorer  Map the auth module                                 done · 1m 5s
+
 ```
 
 One failed row, selected, with the hint line:
 
 ```
- › ✗ worker    Fix the login redirect                          failed · 2m 10s
+ › ✗ worker  Fix the login redirect                             failed · 2m 10s
  enter to view · x to clear · esc to deselect
+
 ```
+
+Every row line is 79 columns at width 80 (`PAD + inner`).
 
 ## 5. Surface C: `/agents` list view
 
@@ -270,30 +305,33 @@ A full-screen overlay (`openOverlay`, width `100%`, max height `100%`). `/agents
 ### Layout
 
 ```
-Agents · 3 running · 1 done
 (blank)
-Running
-<rows>
+ Agents · 3 running · 1 needs input · 3 done
 (blank)
-Needs input
-<rows>
+ Running
+<rows: open roots, each with its descendants in tree order>
 (blank)
-Completed (1)
-<rows>
+ Completed (1)
+<rows: closed roots, newest first, each with its descendants in tree order>
 (padding to the height)
-<feedback line, only while shown>
-<hint line>
+(blank, always reserved)
+ <feedback line, only while shown>
+ <hint line>
+(blank)
 ```
 
-- Title `Agents` bold; subtitle ` · 3 running · 1 done` (`dim`): `running` counts every open record (queued, running, grace, needs input), `done` counts the rows in `Completed`. A zero part is omitted (`Agents · 3 running`). With no rows at all the body is one `muted` line `No agents running` and no subtitle.
-- Section headers bold: `Running`, `Needs input`, `Completed (1)`; empty sections are not shown; one blank line between sections.
-- `Running`: open records without attention, in tree order with the panel's tree connectors. `Needs input`: open records with attention, flat. `Completed`: closed records, flat, newest `endedAt` first. A child whose caller is in another section renders at depth 0.
-- Rows reuse the panel row grammar exactly (pointer, glyph, name, `(+N)`, description, right-aligned activity and stats), at the overlay width.
-- Scroll window: the rows between the title block and the hint, page keys as today, wheel in fullscreen TUI mode. The selection is kept visible.
+- Every text line starts at `PAD` and is cut at `inner` (§2 "Padding and margins"); rows put their pointer gutter at `PAD`, under the first letter of the section headers, and their glyphs two columns in.
+- Title `Agents` bold; subtitle (`dim`) ` · 3 running · 1 needs input · 3 done`: `running` counts every open record (queued, running, grace, including the ones that need input), `needs input` counts the open records waiting on a dialog and is shown only when above 0, `done` counts the closed records listed (in either section; not only the roots). A zero part is omitted (`Agents · 3 running`). With no rows at all the body is one `muted` line `No agents running` and no subtitle.
+- Two sections, headers bold: `Running` and `Completed (n)`, where `n` counts the closed roots. An empty section is not shown; one blank line between sections. There is no `Needs input` section: an agent waiting on a dialog stays in its tree position and its row shows `needs input` (`warning`) in the stats column, as the panel row does (§4).
+- The list shows the agent structure everywhere: a subagent is always under the agent that started it, in both sections. A root is a record whose caller is `main` or not in the registry; an open record whose caller is closed also counts as a root (rare: a caller normally outlives its children).
+- `Running`: every open root, in tree order (callers first, children under them, siblings by `createdAt`) with the panel's connectors, with all its listed descendants under it, open or closed. A closed descendant renders as a closed row (`muted` name, state word and duration in the stats column) and keeps its tree position.
+- `Completed (n)`: the closed roots, newest `endedAt` first, each followed by its closed descendants in tree order.
+- Rows reuse the panel row grammar exactly (`PAD`, pointer, tree, glyph, name, `(+N)`, description, right-aligned activity and stats), at the overlay width with the §2 padding; one name column for the whole list.
+- Scroll window: the rows between the title block and the reserved blank above the feedback/hint block, page keys as today, wheel in fullscreen TUI mode. The selection is kept visible.
 
 ### Lifecycle
 
-Closed records stay listed for `lingerMs` (default 30 000) after `endedAt`, then leave. Open records are always listed. Refresh as the panel (`agent:changed` throttled by `renderThrottleMs`, plus the shared ticker). A record that leaves while selected moves the selection to the next row, or clears it.
+Open records are always listed. A closed record under an open root stays listed for `lingerMs` (default 30 000) after its `endedAt`, and for as long as its caller is open; a listed record keeps its callers listed, so the structure is never torn. When a root closes, its whole subtree moves to `Completed` and lingers as one: it leaves `lingerMs` after the root's `endedAt`. Refresh as the panel (`agent:changed` throttled by `renderThrottleMs`, plus the shared ticker). A record that leaves while selected moves the selection to the next row, or clears it.
 
 ### Keys
 
@@ -303,13 +341,13 @@ Closed records stay listed for `lingerMs` (default 30 000) after `endedAt`, then
 | `PgUp` / `PgDn` | Scroll by a page. |
 | `Home` / `End` | First / last row. |
 | `Enter` | Open the selected agent's view inside this overlay (section 6). |
-| `x` | Open row: stop (grace); grace row: close now; closed row: clear it from the list. |
+| `x` | Open row: stop (grace); grace row: close now; closed row: clear it from the list. A closed root in `Completed` is cleared with its whole subtree; a closed child is cleared alone (with its own closed descendants, so no row loses its caller). |
 | `X` | Stop all: first press shows the feedback `Press X again to stop all agents`; a second `X` within `stopAllConfirmMs` (fixed 3 000) stops every open agent (each enters grace) and clears the feedback. With no open agent the feedback is `No running agents`. Any other key cancels the pending confirmation. |
 | `Esc` | Close the overlay (a pending stop-all confirmation is cancelled as well). |
 
 Feedback line: `warning` for `Press X again to stop all agents`, `muted` for `No running agents`; shown above the hint line for 3 000 ms (the confirmation window) or 2 000 ms (`No running agents`), then removed.
 
-Hint line (`dim`): `↑/↓ to select · enter to view · x to stop · X to stop all · esc to close`; with a closed row selected `x to clear`; with a grace row `x to close now`.
+Hint line (`dim`, at `PAD`, 72 columns): `↑/↓ to select · enter to view · x to stop · X to stop all · esc to close`; with a closed row selected `x to clear`; with a grace row `x to close now`. Feedback and hint sit under the reserved blank row and above the overlay's bottom blank row.
 
 ### List and view in one overlay
 
@@ -317,34 +355,36 @@ Hint line (`dim`): `↑/↓ to select · enter to view · x to stop · X to stop
 
 ### Mockup
 
+A closed child under a running parent, a child that needs input in its tree position, and a completed root with its child; one leading space = `PAD`, every row 79 columns at width 80:
+
 ```
-Agents · 4 running · 1 done
 
-Running
-   ⠹ explorer  Map the auth module              grep · 1m 5s · ↓ 12.3k tokens
- › ⠹ worker (+1)  Fix the login redirect      bash · 2m 10s · ↓ 30.1k tokens
-   └─ ⠹ explorer  Find callers of login          read · 12s · ↓ 1.1k tokens
+ Agents · 3 running · 1 needs input · 3 done
 
-Needs input
-   ⠹ reviewer  Review the diff of PR 5                            needs input
+ Running
+   ⠹ explorer     Map the auth module             grep · 1m 5s · ↓ 12.3k tokens
+ › ⠹ worker (+1)  Fix the login redirect         bash · 2m 10s · ↓ 30.1k tokens
+   ├─ ⠹ explorer     Find callers of login                          needs input
+   └─ ✓ explorer     Find callers of parseDate                       done · 45s
 
-Completed (1)
-   ✓ explorer  Find callers of parseDate                           done · 45s
+ Completed (1)
+   ✓ reviewer     Review the diff of PR 5                          done · 3m 2s
+   └─ ✓ explorer     Collect the changed files                       done · 40s
 
 
+ Press X again to stop all agents
+ ↑/↓ to select · enter to view · x to stop · X to stop all · esc to close
 
-Press X again to stop all agents
-↑/↓ to select · enter to view · x to stop · X to stop all · esc to close
 ```
 
 ## 6. Surface D: agent view
 
 ### Header
 
-Lines, top to bottom, then a `dim` rule of `─` across the width:
+The overlay's top row is blank (§2 "Padding and margins"). Then the header lines, top to bottom, each at `PAD` and cut at `inner`, then a `dim` rule of `─` across the full width (edge to edge; rules are not inset):
 
-1. `<glyph> <id>[ #n] · <state word> · <model>` — glyph in the state token (coloured, unlike today); id bold; state word from section 2 (`queued`, `running`, `stopping`, `done`, `failed`, `stopped`, `handed off`); model label or `model n/a`. With attention: ` · needs input: <title>` (`warning`) appended.
-2. `<description>` (`muted`).
+1. `<glyph> <agent>[ #n] › <description>` (like Claude Code's `Explore › Map the auth module`): glyph in the state token (coloured, unlike today); agent name (`record.agent`) bold, with ` #n` for a chain link after the first (`explorer #2 › …`); ` › ` and the description plain `text`. With attention: ` · needs input: <title>` (`warning`) appended. The description is cut with `…` so the line fits `inner` (at least 8 columns of it; when even that does not fit, the attention suffix is cut too).
+2. `<state word> · <model> · id <id>` (`dim`): state word from section 2 (`queued`, `running`, `stopping`, `done`, `failed`, `stopped`, `handed off`); the model label or `model n/a`; the hex id, the handle `/agents <id>` takes. Apart from the chain line (5), whose link ids open those links with `/agents <id>`, and the task message, this is the only place in the view that shows an id.
 3. `4 tool uses · 12.3k tokens · 1m 5s · 23% ctx` (`dim`); live while open; `23% ctx` omitted when unknown.
 4. Optional, `failed`: `error: <first line of error>` (`error`). Optional, `handoff`: `handoff: <path>[ (invalid: <reasons>)]` (`warning`).
 5. Optional chain line (`dim`): `chain: <id> → <id> (2 sessions)`; when the opened id is not the terminal, ` · opened <id>` is appended.
@@ -358,23 +398,46 @@ Lines, top to bottom, then a `dim` rule of `─` across the width:
 - Codemode, collapsed: the title `codemode`, the script syntax-highlighted with its first 10 visual lines and `… (N more lines, ctrl+o to expand)`, then the nested-call list (the last 8 calls, `… (N earlier calls, ctrl+o to expand)` above them), one per line: `<icon> <tool name> <args cut at 80> <duration>`, icons `…` (`warning`, running), `✓` (`success`), `✗` (`error`), `⊘` (`muted`, cancelled), then the output's first 5 visual lines. Expanded: the full script, every nested call, the full output, `Full output: <path>` when codemode truncated it.
 - The task arrives as the user message `Task from <caller> (agent id <id>): …` and routed messages as `[message from <sender>]` user messages, unchanged.
 
+### Task
+
+The task the agent was given is always visible: the header's first line names the agent and its description, and the transcript's first item is the user message `Task from <caller> (agent id <id>): <task>`, rendered with pi's `UserMessageComponent`. Keep both; they are how the user checks what an agent was asked.
+
+### Request
+
+One block at the top of the body, before the first transcript item, so the user can test an agent definition against what the model actually received. It is the literal first provider request: the `providerPayload` of the prompt record (`pi-subagents:prompt-record`), the exact object pi handed to `before_provider_request` on the agent's first model call. Nothing is omitted or truncated: the system prompt, the tool list with schemas and the first messages are all there as the provider received them. Not a breakdown, no sections.
+
+| State | Line (`dim`) |
+|---|---|
+| collapsed (default on every open; never persisted) | `▸ Request · 912 lines` |
+| expanded | `▾ Request · 912 lines`, then the request |
+| agent open, no `providerPayload` yet (the record arrives at the first `before_provider_request`, within the agent's first second) | `▸ Request · not sent yet` |
+| agent closed, no `providerPayload` (manifest-only past agents, session files from before the upgrade) | `▸ Request · not recorded` |
+
+- The count is the number of lines of `JSON.stringify(payload, null, 2)`.
+- Expanded: that pretty-printed JSON as simple text (no syntax highlighting, no colour), every line starting at `PAD + 2` and soft-wrapped at `inner - 2` columns with plain wrapping (continuations at `PAD + 2` too; nothing reaches the last column), then one blank line before the first transcript item.
+- `r` toggles it. Expanding stops following and scrolls to the top (the block begins at line 0), so the request is read from its start. Collapsing scrolls to the tail and resumes following when the agent is open; a closed agent never follows, it only scrolls to the tail.
+- On `not sent yet` and `not recorded`, `r` does nothing; the line still shows.
+- `Ctrl+O` does not affect the block.
+- When the view shows a load error instead of a transcript (`session file not written yet`, `cannot read session: <message>`), the body is only that `warning` line at `PAD`; no Request line is drawn.
+
 ### Scrolling
 
-Opens at the tail. Follows the tail while the agent is open and new content arrives. `↑`, `PgUp`, `Home` or a wheel-up stop following; `End` scrolls to the tail and resumes following. A closed agent neither ticks nor follows.
+Opens at the tail. Follows the tail while the agent is open and new content arrives. `↑`, `PgUp`, `Home`, a wheel-up or expanding the Request block with `r` stop following; `End` (or collapsing the Request block) scrolls to the tail and resumes following. A closed agent neither ticks nor follows.
 
 ### Hint line
 
-One `dim` line at the bottom; the position `12-52/312` is right-aligned on the same line and dropped when it does not fit; when not following, ` · end to follow` is appended to the position.
+One `dim` line at `PAD` near the bottom, under the reserved blank row and above the overlay's bottom blank row (an optional `warning` notice such as `stop failed: <message>` sits between the blank and the hint). The position `12-52/312` is right-aligned on the same line, ending at `inner` (column `width - 2`), and dropped when it does not fit (`alignRight`, §2); when not following, ` · end to follow` is appended to the position. The hint names no scroll keys: the arrows, page keys and wheel are implicit, and the position shows the scrolling.
 
-| Agent | Opened from | Hint |
-|---|---|---|
-| open | panel or `/agents <id>` | `esc to close · x to stop · ctrl+o tool detail · ↑/↓ to scroll` |
-| open | list | `esc to go back · x to stop · ctrl+o tool detail · ↑/↓ to scroll` |
-| grace | any | `x to close now` replaces `x to stop` |
-| closed | panel or `/agents <id>` | `esc to close · ctrl+o tool detail · ↑/↓ to scroll` |
-| closed | list | `esc to go back · ctrl+o tool detail · ↑/↓ to scroll` |
+Parts, in this order, joined with ` · `:
 
-`ctrl+o` is whatever `keyText("app.tools.expand")` returns.
+| Part | Text |
+|---|---|
+| leave | `esc to close` (opened from the panel or `/agents <id>`), `esc to go back` (opened from the list) |
+| stop | `x to stop` (open), `x to close now` (grace); absent when closed |
+| request | `r request` (collapsed), `r hide request` (expanded); absent when there is nothing to show (`not sent yet`, `not recorded`) |
+| tools | `<toolsKey> tool detail` |
+
+Examples: `esc to close · x to stop · r request · ctrl+o tool detail` (57 columns), `esc to go back · r hide request · ctrl+o tool detail`, `esc to close · x to stop · ctrl+o tool detail` (no request yet). `ctrl+o` is whatever `keyText("app.tools.expand")` returns.
 
 ### Keys
 
@@ -384,6 +447,7 @@ One `dim` line at the bottom; the position `12-52/312` is right-aligned on the s
 | `PgUp` / `PgDn` | Scroll one page. |
 | `Home` / `End` | Top (stops following) / tail (resumes following). |
 | `Ctrl+O` | Toggle tool detail. |
+| `r` | Toggle the Request block: expand (stops following, scrolls to the top) / collapse (scrolls to the tail; resumes following when open). Nothing on `not sent yet` / `not recorded`. |
 | `x` | Open: stop (grace); grace: close now; closed: nothing. |
 | `Esc` | Back to the list when opened from it, else close the overlay. |
 | wheel | Scroll (fullscreen TUI only). |
@@ -396,15 +460,19 @@ Transcript re-parse only when the session file's size or mtime changed, at most 
 
 ### Removed (planners delete)
 
-The context breakdown and `components/context-breakdown.ts`; the effective-prompt sections (`system-prompt-block.ts`, `collapsible.ts`, the prompt record's use in the view); the focus/verbose mode, `mode-store.ts` and the file `pi-subagents-view.json`; the message box, its status line and the view's `route` call; the keys `c`, `v`, `Tab`, `Space`; the `Transcript` and `Effective prompt` titles; the `agent closed, messages disabled` hint; the `Task: ` prefix on the description line.
+The context breakdown and `components/context-breakdown.ts`; the effective-prompt sections (`system-prompt-block.ts`, `collapsible.ts`, the prompt record's `sections`, `tools`, `skills` and `guidelines` in the view), replaced by the single Request block (above), which reads only the record's `providerPayload`; the focus/verbose mode, `mode-store.ts` and the file `pi-subagents-view.json`; the message box, its status line and the view's `route` call; the keys `c`, `v`, `Tab`, `Space`; the `Transcript` and `Effective prompt` titles; the `agent closed, messages disabled` hint; the `Task: ` prefix on the description line.
 
 ### Mockup (running agent, codemode call collapsed)
 
+One leading space = `PAD` (and pi's own transcript pad, which lands on the same column); the rule is the only full-width line:
+
 ```
-⠹ explorer-3f2a9c1b7d0e · running · provider/model:high
-Map the auth module
-4 tool uses · 12.3k tokens · 1m 5s · 23% ctx
+
+ ⠹ explorer › Map the auth module
+ running · provider/model:high · id explorer-3f2a9c1b7d0e
+ 4 tool uses · 12.3k tokens · 1m 5s · 23% ctx
 ────────────────────────────────────────────────────────────────────────────────
+ ▸ Request · 912 lines
  Task from main (agent id explorer-3f2a9c1b7d0e): Map the auth module. List
  every entry point and the session handling.
 
@@ -423,12 +491,44 @@ Map the auth module
  grep pattern="session" path="src/auth"
 
 
-esc to close · x to stop · ctrl+o tool detail · ↑/↓ to scroll        1-18/18
+
+ esc to close · x to stop · r request · ctrl+o tool detail              1-19/19
+
 ```
+
+The hint (57 columns) and the position (7) need `2 + 57 + 2 + 7 = 68` columns, so at 80 both fit and the position ends at column 78. The longest hint, `esc to go back · x to close now · r hide request · ctrl+o tool detail` (69 columns), keeps a position of up to 7 columns at 80; a longer position drops first: `1-14/940` (8) needs 81 columns, `1-14/940 · end to follow` (24) needs 97. Below 71 columns the hint itself is cut with `…`.
+
+### Mockup (Request expanded, finished agent, after `r`; first lines)
+
+```
+
+ ✓ explorer › Map the auth module
+ done · provider/model:high · id explorer-3f2a9c1b7d0e
+ 4 tool uses · 12.3k tokens · 1m 5s · 23% ctx
+────────────────────────────────────────────────────────────────────────────────
+ ▾ Request · 912 lines
+   {
+     "model": "provider/model",
+     "system": "You are explorer, a read-only agent. Map the code you are point
+   ed at and report entry points with file paths.\n\n# Tools\n...",
+     "tools": [
+       {
+         "name": "read",
+         "description": "Read a file. Returns its contents with line numbers.",
+         "parameters": {
+           "type": "object",
+           "properties": {
+             "path": {
+
+ esc to close · r hide request · ctrl+o tool detail                    1-13/940
+
+```
+
+The `▸`/`▾` line starts at column `PAD` (1), aligned with pi's transcript text; request lines and their wrapped continuations start at column 3 (the `ed at and report…` line: plain wrapping cuts at the column, not at a word) and wrap at column 78, so nothing reaches the last column. The block ends with one blank line, then the transcript. The keys inside the JSON are whatever the request contains; the mockup's are illustrative.
 
 ## 7. Surface E: working indicator
 
-The adapter computes a phase from pi's `turn_start`, `message_update`, `message_end`, `tool_execution_start/end`, `agent_end`, `agent_settled` events (assistant messages only; events with `parentToolCallId` ignored) and exposes `host.onPhase(phase, detail)`. The extension toggles `setWorkingVisible` and writes the message.
+The adapter computes a phase from pi's `turn_start`, `message_update`, `message_end`, `tool_execution_start/end`, `agent_end`, `agent_settled` events (assistant messages only; events with `parentToolCallId` ignored) and exposes `host.onPhase(phase, detail)`. The extension toggles `setWorkingVisible` and writes the message. pi draws the working line at column 1 (`Loader`, `paddingX 1`), which matches §2's `PAD`; nothing to change.
 
 | Phase | Entered on | Visible | Message |
 |---|---|---|---|
@@ -498,13 +598,16 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Unlimited panel rows: replaced by the 5-row window with markers (D2).
 - `run_agent` result rendered as fixed-width 120 agent rows with a frozen spinner: replaced by the block of section 3 (D1).
 - Wake as a visible user message with full results inline: hidden custom message, plus a one-line `↳ 3 agents finished` user line only when the session was idle (D1, adapter plan §C).
-- `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Needs input / Completed (n)` (D3).
+- `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Completed (n)`, both in tree order, with `needs input` shown on the row (D3).
 - `/agents` `/` filter and its input line: removed, the list is short-lived (D3).
 - `X` then `y` stop-all confirmation: replaced by `X` twice within 3 s (D3).
 - List closing before the view opens: list and view share one overlay (D3).
 - Agent view context breakdown (`c`): removed (D4).
-- Agent view effective-prompt sections and `Tab`/`Enter`/`Space` on them: removed (D4).
+- Agent view effective-prompt sections and `Tab`/`Enter`/`Space` on them: removed, replaced by one collapsed Request block, key `r` (D4).
 - Agent view focus/verbose mode, `v`, and `pi-subagents-view.json`: removed (D4).
+- Agent view header led by the hex id: the header leads with `<agent> › <description>`; the id moves to the dim second line (§2 Identity).
+- `↑/↓ to scroll` in the agent view hint: the position indicator shows scrolling (§6 Hint line).
+- Forwarded dialog title `<id> (<agent>) asks: <title>`: replaced by `<agent> › <description> asks: <title>` (§3).
 - Agent view message box, delivery status line and `route` from the UI: the user never types into an agent (D4, goal 2).
 - Subagents `notifications` plugin, the `notifications` setting, per-batch / per-failure / per-dialog terminal notifications: replaced by the global notifications extension (D5).
 - Busy channel name `session-limits:busy`: renamed `pi:busy` (D5).
@@ -513,7 +616,8 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 
 ## 11. Open points (resolved)
 
-1. Model label: resolved. The transcript row names the model (` · <model>` dim, section 3); the panel and the list do not. The README sentence about "the progress row" changes to "the start block".
+1. Model label: resolved. The transcript row names the model (` · <model>` dim, section 3) and so does the agent view header's second line (§6); the panel and the list rows do not. The README sentence about "the progress row" changes to "the start block". (deviation: Claude Code names the model on a transcript row only when the call overrides it; we always show it, because agent files pin their models and the user wants to see which one runs.)
 2. Panel markers: resolved. `↑ N more` / `↓ N more` stay separate lines; clarity over height.
 3. Idle delay: resolved at `idleDelayMs` 20 000 after the review (10 000 before). The user asked to be told promptly when the work is done; the keystroke cancel covers a user who is typing, and `auto` sends no bell, so a notification after a reply the user is reading is a quiet banner. The setting exists for people who want it faster or slower.
 4. Activity versus description: resolved. The description always stays; the activity is the first part of the stats column (section 4).
+5. Identity: resolved (§2 Identity, from `research/claude-code-agent-identity.md`). Agents are named by `<agent> › <description>` in the view header and forwarded dialogs, and same-agent batches name the agent in the block header. Unchanged on purpose: the `Task from <caller> (agent id <id>): …` user message in the view, the default `message_agent` rendering, and `Status unavailable · /agents <id>`.

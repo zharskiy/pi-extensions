@@ -2,20 +2,20 @@
 
 Implements spec `plans/00-ux-spec.md` §4 (Surface B) and the footer status, replacing `plugins/progress-widget/`. Decisions from `plans/research/decisions.md` D2; module contracts from `plans/research/shared-modules.md` (this plan owns `components/refresh.ts`, `components/agent-row.ts`, `components/tree.ts`, settings `doneLingerMs`, `failedLingerMs`, `agentsHintMs`). Paths are relative to `extensions/subagents/` unless they start with `core/` or are repo docs.
 
-Reviewed 2026-10-14: findings 1, 4, 9, 10, 11, 13, 26, 34, 41, 42 applied; decision P5 (window top kept). Finding 26 checked against the codebase: the `/agents <id>`, then `x` sentence is at `prompts/main-session.md:61` today and stays there after plan 04 (its prompt section keeps the line count), so §6 keeps `:61`.
+Reviewed 2026-10-14: findings 1, 4, 9, 10, 11, 13, 26, 34, 41, 42 applied; decision P5 (window top kept). Finding 26 checked against the codebase: the `/agents <id>`, then `x` sentence is at `prompts/main-session.md:61` today and stays there after plan 04 (its prompt section keeps the line count), so §6 keeps `:61`. Revised 2026-10-14 (third pass): padding per spec §2 "Padding and margins" (`research/padding.md`): `PAD` and `innerWidth` come from plan 04's `format.ts`, rows end one column before the last, markers sit in the glyph column, the hint is cut at the inner width, and the panel ends with one blank line; `treeOrder`'s `roots` predicate is now used by plan 06's list.
 
 ## 1. Goal
 
 1. A widget below the editor lists agents as Claude-style rows: glyph, name, description, right-aligned activity and stats; tree order with connectors and `(+N)`; at most 5 rows with `↑ N more` / `↓ N more` markers (spec §4 mockups: two running; seven agents scrolled; one done; one failed selected).
 2. No header, no `/agents` text; the widget is absent without rows; `done` rows leave after `doneLingerMs`, `failed`/`stopped`/`handoff` after `failedLingerMs` or on `x`.
-3. `↓` on an empty editor selects the first row; `↑`/`↓` move; `Enter` opens the agent view; `x` stops/closes/clears; `Esc` deselects; any other key deselects and is typed. The editor keeps focus; a selected row never lets `Esc` interrupt the main turn.
+3. `←` on an empty editor selects the first row; `↑`/`↓` move; `Enter` opens the agent view; `x` stops/closes/clears; `Esc` deselects; any other key deselects and is typed (`→` is such a key: it deselects, and in an empty editor it is a no-op; `Esc` stays the documented deselect key). The editor keeps focus; a selected row never lets `Esc` interrupt the main turn.
 4. The footer status shows `3 agents` while any record is open, `/agents to see agents` for `agentsHintMs` after the last closes, then nothing.
 5. One clock, one spinner: rows read `spinnerFrame(now)` and plan 04's formatters; the panel refreshes on `agent:changed` (throttled by `renderThrottleMs`) and the shared ticker (100 ms / 1000 ms / none).
 6. Shared modules (`tree.ts`, `agent-row.ts`, `refresh.ts`) are pure and reused by plan 06's list view.
-7. Depends on plan 01 §B (`HostUi.onEmptyEditorDown`, `HostUi.captureEditorKeys`, `KeyPress` names) and plan 04 (`format.ts`, `spinner.ts`, `state-text.ts`, `AgentRecord.activity`); calls `agentView.open(id, { from: "panel" })`, whose `AgentViewOrigin` type and optional `options` parameter this plan adds to `model/types.ts` (§3.3; plan 06 makes `options` required).
+7. Depends on plan 01 §B (`HostUi.onEmptyEditorLeft`, `HostUi.captureEditorKeys`, `KeyPress` names) and plan 04 (`format.ts`, `spinner.ts`, `state-text.ts`, `AgentRecord.activity`); calls `agentView.open(id, { from: "panel" })`, whose `AgentViewOrigin` type and optional `options` parameter this plan adds to `model/types.ts` (§3.3; plan 06 makes `options` required).
 8. Everything stays in memory; nothing new is written to disk.
 
-Deviations from the contract/spec, each justified where it appears: `nameColumn` takes tree rows, not records (§2.2); every panel line carries a one-column `PAD` (§2.2); the closed-row cache key also includes the tree shape and name column (§3.2); `watchAgents` call sites in `agent-view` and `agent-list-view` get a one-line adaptation so `npm run check` stays green until plan 06 rewrites them (§2.3); today's row helpers move unchanged to a temporary `components/legacy-row.ts` that plan 06 deletes (§9 step 3); the window keeps its top row when the selection clears (decision P5, §3.1).
+Deviations from the contract/spec, each justified where it appears: `nameColumn` takes tree rows, not records (§2.2); the closed-row cache key also includes the tree shape and name column (§3.2); `watchAgents` call sites in `agent-view` and `agent-list-view` get a one-line adaptation so `npm run check` stays green until plan 06 rewrites them (§2.3); today's row helpers move unchanged to a temporary `components/legacy-row.ts` that plan 06 deletes (§9 step 3); the window keeps its top row when the selection clears (decision P5, §3.1).
 
 ## 2. Shared modules
 
@@ -32,7 +32,7 @@ export const treeOrder = (records: AgentRecord[], roots?: (record: AgentRecord) 
 Rules (`records` is the input; nothing outside it exists for this function):
 
 - Chain links: a record whose `successorId` names a record in the input is a link, never a row. The chain's row is its terminal (last link in the input). Its position is the first link's: sort key = `createdAt` of the earliest link reachable through `predecessorId` within the input; parent = that link's `callerId` (all links share it). Children whose `callerId` is any link of the chain attach to the chain's row. Reason: the row keeps its place when the agent hands off, and `#n` on the name tells the story.
-- Parent of a row = the row whose chain contains `record.callerId`. A row whose parent is not in the input is a root (`depth` 0), including `callerId === "main"`. `roots`, when given, forces matching records to depth 0 regardless of their caller (plan 06 may use it; the panel does not).
+- Parent of a row = the row whose chain contains `record.callerId`. A row whose parent is not in the input is a root (`depth` 0), including `callerId === "main"`. `roots`, when given, forces matching records to depth 0 regardless of their caller (plan 06's list uses it for an open record whose caller is closed; the panel does not).
 - Order: depth-first; roots sorted by sort key, then each root's children (sorted by sort key) directly under it, recursively.
 - `depth` is the tree depth (0 for roots), not `record.depth`.
 - `last`: the row is the last child of its parent (roots: last root). `ancestorsContinue[k]` for `k < depth - 1`: whether the ancestor at depth `k + 1` is not `last`. Connector for a row at depth ≥ 1 = `ancestorsContinue.map(c => c ? "│  " : "   ").join("") + (last ? "└─ " : "├─ ")`; depth 0 has no connector. Width = `3 * depth`.
@@ -55,12 +55,11 @@ Tests `test/components/tree.test.ts` (fixture builder `rec({ id, callerId, creat
 
 ```ts
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { displayWidth, elapsedOf, formatDuration, formatTokens, padEndCols, SEP, singleLine, truncateCols } from "./format.ts";
+import { displayWidth, elapsedOf, formatDuration, formatTokens, innerWidth, PAD, padEndCols, SEP, singleLine, truncateCols } from "./format.ts";
 import { stateGlyph, stateToken, stateWord } from "./state-text.ts";
 import type { TreeRow } from "./tree.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 
-export const PAD = " ";              // one-column left margin on every panel line (footer PAD, composer margin)
 export const NAME_COLS_MAX = 24;
 export type RowInput = TreeRow & { selected: boolean };
 export const rowName = (row: Pick<TreeRow, "record" | "openDescendants">): string;   // `explorer`, `explorer #2`, `reviewer (+1)`, `explorer #2 (+1)`
@@ -72,7 +71,7 @@ export const renderRow = (input: RowInput, now: number, width: number, theme: Th
 
 Deviation: the contract says `nameColumn(records: AgentRecord[])`, but `(+N)` is a tree fact, so it takes `{ record, openDescendants }[]` (a `TreeRow[]` works as is). Plan 06 calls it with its tree rows. The panel measures the column over every lifecycle-visible row (not just the 5 in the window) so columns do not shift while scrolling.
 
-Deviation: `PAD`. The spec's mockups show one column before the pointer on every line; the footer and composer align on the same one-column margin. Every panel line (rows, markers, hint) starts with `PAD`, and the row grammar gets `width - 1` columns.
+Padding (spec §2 "Padding and margins"): every panel line (rows, markers, hint) starts with `PAD`, imported from `format.ts` (plan 04 owns it; this module does not export one), and the row grammar gets `W = innerWidth(width)` columns, so the last column stays blank.
 
 `renderRow` algorithm (plain strings; theme applied at the end; every width in display columns via `displayWidth`):
 
@@ -82,37 +81,37 @@ Deviation: `PAD`. The spec's mockups show one column before the pointer on every
    - open with `attention`: `["needs input"]` (`warning`).
    - `grace`: `["stopping"]` (`warning`). `queued`: `["queued"]` (`muted`).
    - `running`: `activity` = `record.activity.text` when `kind === "tool"`, `writing` when `kind === "text"`, none when unset; `elapsed` = `formatDuration(elapsedOf)`; `tokens` = `↓ ${formatTokens(record.tokens)} tokens` when `tokens > 0`. Candidates: `[join(activity, elapsed, tokens), join(elapsed, tokens), elapsed, ""]` (`join` drops missing parts and uses `SEP`). All `dim`.
-3. Column rule with `W = width - 1` and `fixed = 2 + displayWidth(tree) + 2 + nameCols + 2`: for each candidate `stats` in order, `room = W - fixed - (stats ? 2 + displayWidth(stats) : 0)`; take the first candidate with `room >= 12`. If none qualifies, keep the last candidate (status words and closed stats are never dropped) and its `room`.
-4. `room >= 8`: line = `PAD + pointer + tree + glyph + " " + padEndCols(name, nameCols) + "  " + description part + tail`, where the description part is `padEndCols(truncateCols(description, room), room)` when `stats` is non-empty (so the stats are right-aligned to `width`), or `truncateCols(description, room)` without padding when `stats` is empty; `tail` = `"  " + stats` or `""`.
+3. Column rule with `W = innerWidth(width)` (`width - 2`) and `fixed = 2 + displayWidth(tree) + 2 + nameCols + 2`: for each candidate `stats` in order, `room = W - fixed - (stats ? 2 + displayWidth(stats) : 0)`; take the first candidate with `room >= 12`. If none qualifies, keep the last candidate (status words and closed stats are never dropped) and its `room`.
+4. `room >= 8`: line = `PAD + pointer + tree + glyph + " " + padEndCols(name, nameCols) + "  " + description part + tail`, where the description part is `padEndCols(truncateCols(description, room), room)` when `stats` is non-empty (so the stats are right-aligned to `PAD + W`, ending at column `width - 2`), or `truncateCols(description, room)` without padding when `stats` is empty; `tail` = `"  " + stats` or `""`.
 5. `room < 8`: the description is omitted; `nameRoom = W - 2 - displayWidth(tree) - 2 - (stats ? 2 + displayWidth(stats) : 0)`; line = `PAD + pointer + tree + glyph + " " + padEndCols(truncateCols(name, nameRoom), nameRoom) + tail`.
-6. Painting never changes widths: measure plain parts, then wrap each part with `theme.fg`/`theme.bold`. The adapter hard-cuts the line to `width` afterwards; a correct line is exactly `width` columns when stats are present.
+6. Painting never changes widths: measure plain parts, then wrap each part with `theme.fg`/`theme.bold`. The adapter's hard cut at `width` is a safety net only; a correct line is exactly `width - 1` columns when stats are present and never longer.
 
 Tests `test/components/agent-row.test.ts` (rewrite; `plainTheme`; fixture `rec(patch)` with `agent: "explorer"`, `callerId: "main"`, `chainIndex: 1`, `createdAt: 0`, `startedAt: 0`, `tokens: 0`, `state: "running"`; `row(record, patch)` with `depth: 0`, `last: true`, `ancestorsContinue: []`, `openDescendants: 0`, `selected: false`; spinner frame at the chosen `now` values is `⠋`):
 
 | test | input (`now`, `nameCols`) | width | expected line |
 |---|---|---|---|
-| `"renders a running row with activity, elapsed and tokens at 80 columns"` | explorer, "Map the auth module", tokens 12 300, activity tool `grep` (65 000, 8) | 80 | `"   ⠋ explorer  Map the auth module                 grep · 1m 5s · ↓ 12.3k tokens"` |
-| `"cuts the description before dropping stats"` | same | 60 | `"   ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens"` |
-| `"drops the activity, then the tokens, when the description would fall below 12 columns"` | same | 40 | `"   ⠋ explorer  Map the auth modu…  1m 5s"` |
-| `"drops the elapsed too and keeps the description"` | same | 30 | `"   ⠋ explorer  Map the auth m…"` |
-| `"shows queued as the status word"` | worker, "Rename parseDate callers", queued (65 000, 6) | 80 | `"   ○ worker  Rename parseDate callers                                     queued"` |
-| `"keeps the status word on a narrow row"` | same | 30 | `"   ○ worker  Rename p…  queued"` |
-| `"replaces the stats with needs input while a dialog waits"` | reviewer, "Review the diff of PR 5", tokens 8 200, attention title "Run npm test?" (45 000, 8) | 80 | `"   ⠋ reviewer  Review the diff of PR 5                               needs input"` |
-| same test, second assertion | same | 40 | `"   ⠋ reviewer  Review the …  needs input"` |
-| `"shows done with the duration"` | explorer, "Map the auth module", done, endedAt 65 000 (99 000, 8) | 80 | `"   ✓ explorer  Map the auth module                                  done · 1m 5s"` |
-| `"omits the description and pads the name when fewer than 8 columns remain"` | same | 30 | `"   ✓ explorer     done · 1m 5s"` |
-| `"marks the selected row with the pointer"` | worker, "Fix the login redirect", failed, endedAt 130 000, selected (200 000, 6) | 80 | `" › ✗ worker  Fix the login redirect                              failed · 2m 10s"` |
-| `"shows stopping during grace"` | worker, "Fix the login redirect", grace (130 000, 6) | 80 | `"   ◐ worker  Fix the login redirect                                     stopping"` |
-| `"appends the chain index to the name"` | explorer, chainIndex 2, "Map the auth module", tokens 30 100, activity tool `bash` (130 000, 11) | 80 | `"   ⠋ explorer #2  Map the auth module             bash · 2m 10s · ↓ 30.1k tokens"` |
-| `"draws the connector of a last child"` | explorer, "Find callers of login", tokens 1 100, activity tool `read`, depth 1, last (12 000, 13) | 80 | `"   └─ ⠋ explorer       Find callers of login          read · 12s · ↓ 1.1k tokens"` |
-| `"draws continuation bars for deeper rows"` | same, depth 2, last false, ancestorsContinue `[true]` | 80 | `"   │  ├─ ⠋ explorer       Find callers of login       read · 12s · ↓ 1.1k tokens"` |
-| `"shows open descendants and writing"` | reviewer, "Review the diff of PR 5", tokens 8 200, activity text, openDescendants 1, selected (45 000, 13) | 80 | `" › ⠋ reviewer (+1)  Review the diff of PR 5        writing · 45s · ↓ 8.2k tokens"` |
-| `"omits zero tokens"` | explorer, "Map the auth module", tokens 0, no activity (3 000, 8) | 80 | `"   ⠋ explorer  Map the auth module                                            3s"` |
+| `"renders a running row with activity, elapsed and tokens at 80 columns"` | explorer, "Map the auth module", tokens 12 300, activity tool `grep` (65 000, 8) | 80 | `"   ⠋ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens"` |
+| `"cuts the description before dropping stats"` | same | 60 | `"   ⠋ explorer  Map the auth…  grep · 1m 5s · ↓ 12.3k tokens"` |
+| `"drops the activity, then the tokens, when the description would fall below 12 columns"` | same | 40 | `"   ⠋ explorer  Map the auth mod…  1m 5s"` |
+| `"drops the elapsed too and keeps the description"` | same | 30 | `"   ⠋ explorer  Map the auth …"` |
+| `"shows queued as the status word"` | worker, "Rename parseDate callers", queued (65 000, 6) | 80 | `"   ○ worker  Rename parseDate callers                                    queued"` |
+| `"keeps the status word on a narrow row"` | same | 30 | `"   ○ worker  Rename …  queued"` |
+| `"replaces the stats with needs input while a dialog waits"` | reviewer, "Review the diff of PR 5", tokens 8 200, attention title "Run npm test?" (45 000, 8) | 80 | `"   ⠋ reviewer  Review the diff of PR 5                              needs input"` |
+| same test, second assertion | same | 40 | `"   ⠋ reviewer  Review the…  needs input"` |
+| `"shows done with the duration"` | explorer, "Map the auth module", done, endedAt 65 000 (99 000, 8) | 80 | `"   ✓ explorer  Map the auth module                                 done · 1m 5s"` |
+| `"omits the description and pads the name when fewer than 8 columns remain"` | same | 30 | `"   ✓ explorer    done · 1m 5s"` |
+| `"marks the selected row with the pointer"` | worker, "Fix the login redirect", failed, endedAt 130 000, selected (200 000, 6) | 80 | `" › ✗ worker  Fix the login redirect                             failed · 2m 10s"` |
+| `"shows stopping during grace"` | worker, "Fix the login redirect", grace (130 000, 6) | 80 | `"   ◐ worker  Fix the login redirect                                    stopping"` |
+| `"appends the chain index to the name"` | explorer, chainIndex 2, "Map the auth module", tokens 30 100, activity tool `bash` (130 000, 11) | 80 | `"   ⠋ explorer #2  Map the auth module            bash · 2m 10s · ↓ 30.1k tokens"` |
+| `"draws the connector of a last child"` | explorer, "Find callers of login", tokens 1 100, activity tool `read`, depth 1, last (12 000, 13) | 80 | `"   └─ ⠋ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens"` |
+| `"draws continuation bars for deeper rows"` | same, depth 2, last false, ancestorsContinue `[true]` | 80 | `"   │  ├─ ⠋ explorer       Find callers of login      read · 12s · ↓ 1.1k tokens"` |
+| `"shows open descendants and writing"` | reviewer, "Review the diff of PR 5", tokens 8 200, activity text, openDescendants 1, selected (45 000, 13) | 80 | `" › ⠋ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens"` |
+| `"omits zero tokens"` | explorer, "Map the auth module", tokens 0, no activity (3 000, 8) | 80 | `"   ⠋ explorer  Map the auth module                                           3s"` |
 | `"paints the parts with the theme tokens"` | failed selected row with a recording theme (`fg: (t, s) => `<${t}>${s}``) | 80 | contains `<accent>›`, `<error>✗`, `<muted>worker`, `<error>failed`, `<dim>2m 10s` |
 | `"measures the name column over names, chain suffixes and counts, capped at 24"` | `nameColumn` over rows `explorer`, `explorer #2 (+3)`, a 40-char agent name | — | `8`, `16`, `24` for the cumulative inputs |
 | `"collapses whitespace in the description"` | description `"a\n  b"` | 80 | contains `a b` |
 
-Every expected line is asserted with `displayWidth(line)` equal to the width when stats are present.
+Every expected line is asserted with `displayWidth(line)` equal to `width - 1` when stats are present (79 at width 80: one leading `PAD`, the last column blank), and every line starts with `" "`. New: `"ends every line before the last column"` (each case above at widths 80, 60, 40, 30, 20: `displayWidth(line) <= width - 1` and the line starts with `PAD`).
 
 ### 2.3 `src/components/refresh.ts` (rewrite)
 
@@ -167,7 +166,7 @@ export const createClosedRowCache = (): RowRenderer & { prune(rows: TreeRow[]): 
 - Selection is by id. `reconcile`: `selectedId` not among the rows → `selectedId = undefined`, return `{ deselected: true }` (after the clamp below). Otherwise scroll by the minimum to keep it visible: `index < top` → `top = index`; `index >= top + WINDOW` → `top = index - WINDOW + 1`. In every case finally `top = clamp(top, 0, max(0, rows.length - WINDOW))`. Decision P5: when the selection clears (`Esc`, a typed key, the selected row leaving) the window keeps its top row, clamped to the row count, instead of jumping back to 0; the window moves only to keep a selection visible. With nothing selected `top` is therefore only clamped.
 - `windowOf`: `start = top`, `end = min(rows.length, top + WINDOW)`, `above = start`, `below = rows.length - end`.
 - `hintText(record, actions)`: parts `enter to view` (only when `actions.view`), the `x` part (only when `actions.stop` or the row is closed): closed → `x to clear`, `grace` → `x to close now`, else `x to stop`; then `esc to deselect`; joined with `SEP`. With both actions available this yields exactly the spec's three lines.
-- `panelLines`: `nameCols = nameColumn(rows)`; lines = [`PAD + dim("↑ N more")` when `above > 0`] + window rows through `row({ ...treeRow, selected: treeRow.record.id === selectedId }, now, width, theme, nameCols)` + [`PAD + dim("↓ N more")` when `below > 0`] + [`PAD + dim(hint)` while a row is selected]. Empty rows → `[]`.
+- `panelLines`: `nameCols = nameColumn(rows)`; lines = [`PAD + "  " + dim("↑ N more")` when `above > 0`] + window rows through `row({ ...treeRow, selected: treeRow.record.id === selectedId }, now, width, theme, nameCols)` + [`PAD + "  " + dim("↓ N more")` when `below > 0`] + [`PAD + dim(truncateCols(hint, innerWidth(width)))` while a row is selected] + [`""`, the trailing blank line so the footer does not touch the panel]. The markers start in the glyph column (`PAD + 2`, as Claude Code's do). Empty rows → `[]` (no trailing blank without rows).
 - `createClosedRowCache`: `cache: Map<id, { key: string; theme: ThemeLike; line: string }>`; open rows always re-render; closed rows reuse the line when `theme` is the same object and `key` equals `${version}|${width}|${selected}|${depth}|${last}|${ancestorsContinue.join("")}|${openDescendants}|${nameCols}` (today's id/version/width/theme, plus selection, and the tree facts that change the line without a version bump). `prune(rows)` deletes ids not in `rows`.
 
 ### 3.2 `keys.ts`
@@ -218,9 +217,9 @@ State: `state = createPanelState()`, `rowCache = createClosedRowCache()`, `handl
 - `refresh()`: `current = rows()`; `rowCache.prune(current)`; `reconcile(current, state).deselected` → `release()`. No rows → `setWidget(WIDGET_KEY, undefined)` when `handle` is set, `handle = undefined`, `shownSignature = ""`, return. Else `handle ??= host.ui.setWidget(WIDGET_KEY, (width, theme) => panelLines(rows(), state, Date.now(), width, theme, rowCache, actionsAvailable))` (the render closure recomputes rows and reads the clock on every TUI render, as today). Signature skip: when every row is closed, `signature = ids@version joined + "|" + selectedId + "|" + top`; equal to `shownSignature` → return without `handle.refresh()`. Output skip: once the closure has rendered, it keeps `lastWidth`, `lastTheme`, `lastOutput` (the joined `panelLines` string) and `lastLines`; `refresh()` computes `panelLines(current, state, Date.now(), lastWidth, lastTheme, rowCache, actionsAvailable).join("\n")` and, when it equals `lastOutput`, returns without `handle.refresh()`; the closure itself returns `lastLines` (same array) when its joined output equals `lastOutput`. Otherwise store and `handle.refresh()`.
 - `tickMs()`: rows empty → `undefined`; any row `running` or `grace` → 100; else 1 000. The 1 000 ms tick also retires lingered rows (a closed row leaves within one tick of its linger end; the exact instant is not observable and tests use the fake clock).
 - `unwatch = watchAgents(bus, { relevant: () => true, tickMs, throttleMs: () => settings.renderThrottleMs, onChange: refresh })`.
-- `offDown = host.ui.onEmptyEditorDown(() => { if (selectFirst(actions)) install(); })`. Registered at enable (returns a no-op remover when another extension owns the editor; the panel then has no keyboard selection, as plan 01 §B says).
+- `offLeft = host.ui.onEmptyEditorLeft(() => { if (selectFirst(actions)) install(); })`. Registered at enable (returns a no-op remover when another extension owns the editor; the panel then has no keyboard selection, as plan 01 §B says).
 - Footer status (§4) wired here too.
-- Disable: `offDown()`, `release()`, `unwatch()`, footer timer cleared, `setStatus(STATUS_KEY, undefined)`, and `setWidget(WIDGET_KEY, undefined)` when a handle exists.
+- Disable: `offLeft()`, `release()`, `unwatch()`, footer timer cleared, `setStatus(STATUS_KEY, undefined)`, and `setWidget(WIDGET_KEY, undefined)` when a handle exists.
 
 Why keys in the panel call `refresh()` synchronously: a key must be reflected on the next TUI render, and `refresh()` is cheap (one `registry.list()` pass); the throttle applies to bus storms only.
 
@@ -265,18 +264,18 @@ Tests: `test/model/settings.test.ts` (if it asserts defaults) gets the three new
 `extensions/subagents/README.md` "Use": replace line 36 (the bullet starting `The widget below the editor lists running, queued and stopping agents…`) and its three sub-bullets with the three panel bullets below. Plan 06 appends its list and view bullets after them and deletes line 40 (the old `/agents` list bullet); this plan does not touch line 40.
 
 - `The panel below the editor shows one row per agent: a spinner or state glyph, the agent name (with `#2` for a continued session and `(+N)` for agents it started), the description, and on the right the current tool or `writing`, the elapsed time and the tokens it used; `queued`, `needs input` and `stopping` replace the stats, finished rows show `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s` or `handed off · 1h 2m`. Agents started by other agents sit under their caller. At most five rows are shown; `↑ N more` and `↓ N more` mark the rest.`
-- `Press `↓` in an empty prompt to select the first row, `↑`/`↓` to move, `Enter` to open the agent's view, `x` to stop a running agent (it keeps answering for `stopGraceSeconds`; `x` again closes it now), to close a queued agent at once, or to clear a finished row; `Esc` deselects. The prompt keeps the focus: any other key deselects and is typed, and `Esc` never interrupts the main session while a row is selected. While the panel shows rows, `↓` on an empty prompt always selects the panel; `Esc` returns you to typing.`
+- `Press `←` in an empty prompt to select the first row, `↑`/`↓` to move, `Enter` to open the agent's view, `x` to stop a running agent (it keeps answering for `stopGraceSeconds`; `x` again closes it now), to close a queued agent at once, or to clear a finished row; `Esc` deselects. The prompt keeps the focus: any other key deselects and is typed, and `Esc` never interrupts the main session while a row is selected. While the panel shows rows, `↓` on an empty prompt always selects the panel; `Esc` returns you to typing.`
 - `Finished rows leave after `doneLingerMs` (10 s); failed, stopped and handoff rows after `failedLingerMs` (30 s) or when you clear them. The panel disappears with its last row. The footer shows `3 agents` while agents are open and `/agents to see agents` for `agentsHintMs` (30 s) after the last one finished.`
 
 README line 45 `shown in the start message, the progress row, …` → plan 04 changes it to `the start block` (spec §11.1); if plan 04 has not landed, change `the progress row` to `the start block` here.
 
-`ARCHITECTURE.md`: plugin list line 51: `progress-widget` [registry] → `agent-panel` [registry] (panel below the editor, keyboard selection, footer status). "Status, views, notifications": the section's final bullet list is in plan 04 §9. This plan replaces today's second bullet (`The progress widget and list view re-render…`) with bullet 3 of the list in plan 04 §9 (the list half of today's bullet returns as plan 06's bullet 4): "The agent panel (`agent-panel`) renders the registry in tree order (`components/tree.ts`) with the shared row grammar (`components/agent-row.ts`) in a `belowEditor` widget: at most five rows plus `↑/↓ N more` markers, a selection driven by `HostUi.onEmptyEditorDown` and `captureEditorKeys` (consumed: `↑`, `↓`, `Enter`, `x`, `Esc`; any other key releases the capture and clears the selection), `done` rows kept `doneLingerMs`, other closed rows `failedLingerMs` or until cleared. It refreshes through `components/refresh.ts` (`watchAgents`: `agent:changed` throttled by `renderThrottleMs`, plus an unref'd ticker at 100 ms while any row runs, 1 s while only queued or closed rows show, none otherwise). The same plugin sets the footer status `pi-subagents` (`N agents` while any record is open, `/agents to see agents` for `agentsHintMs` after the last closes)."
+`ARCHITECTURE.md`: plugin list line 51: `progress-widget` [registry] → `agent-panel` [registry] (panel below the editor, keyboard selection, footer status). "Status, views, notifications": the section's final bullet list is in plan 04 §9. This plan replaces today's second bullet (`The progress widget and list view re-render…`) with bullet 3 of the list in plan 04 §9 (the list half of today's bullet returns as plan 06's bullet 4): "The agent panel (`agent-panel`) renders the registry in tree order (`components/tree.ts`) with the shared row grammar (`components/agent-row.ts`) in a `belowEditor` widget: at most five rows plus `↑/↓ N more` markers, a selection driven by `HostUi.onEmptyEditorLeft` and `captureEditorKeys` (consumed: `↑`, `↓`, `Enter`, `x`, `Esc`; any other key releases the capture and clears the selection), `done` rows kept `doneLingerMs`, other closed rows `failedLingerMs` or until cleared. It refreshes through `components/refresh.ts` (`watchAgents`: `agent:changed` throttled by `renderThrottleMs`, plus an unref'd ticker at 100 ms while any row runs, 1 s while only queued or closed rows show, none otherwise). The same plugin sets the footer status `pi-subagents` (`N agents` while any record is open, `/agents to see agents` for `agentsHintMs` after the last closes)."
 
 `STRUCTURE.md`: components comment: add `tree.ts` (tree order, connectors, open descendants) next to `agent-row`; plugin list: `progress-widget/    # live progress widget below the editor` → `agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)`.
 
 ## 8. Tests for the plugin
 
-Harness: `createHarness([agentRegistryPlugin, agentPanelPlugin], overrides)` with fake timers (`setTimeout`, `clearTimeout`, `setInterval`, `clearInterval`, `Date`) and `vi.setSystemTime(1_000_000)`. `widget()` = `harness.host.widgets.get("pi-subagents-agents")`; `lines(width = 80)` = `widget()?.(width, plainTheme) ?? []`. Fake drivers from plan 01 §B: `host.pressEmptyDown()`, `host.pressEditorKey(key)`, `host.editorCapture`, `host.foreignEditor`. Stubs for the optional services: `services.provide("agentView", { open: vi.fn() })` and `services.provide("runner", { stop: vi.fn(async () => true), … })` through a tiny `stubPlugin(id, provide)` plugin listed before the panel. `newAgent(patch)` as in today's widget test; `running(id)` = `registry.update(id, { state: "running", startedAt: Date.now() })`.
+Harness: `createHarness([agentRegistryPlugin, agentPanelPlugin], overrides)` with fake timers (`setTimeout`, `clearTimeout`, `setInterval`, `clearInterval`, `Date`) and `vi.setSystemTime(1_000_000)`. `widget()` = `harness.host.widgets.get("pi-subagents-agents")`; `lines(width = 80)` = `widget()?.(width, plainTheme) ?? []`. Fake drivers from plan 01 §B: `host.pressEmptyLeft()`, `host.pressEditorKey(key)`, `host.editorCapture`, `host.foreignEditor`. Stubs for the optional services: `services.provide("agentView", { open: vi.fn() })` and `services.provide("runner", { stop: vi.fn(async () => true), … })` through a tiny `stubPlugin(id, provide)` plugin listed before the panel. `newAgent(patch)` as in today's widget test; `running(id)` = `registry.update(id, { state: "running", startedAt: Date.now() })`.
 
 `test/plugins/agent-panel/model.test.ts` (pure):
 
@@ -284,7 +283,9 @@ Harness: `createHarness([agentRegistryPlugin, agentPanelPlugin], overrides)` wit
 - `"hides a cleared row for good"`: failed row with `cleared` containing its id is absent at 0 and at 29 999.
 - `"anchors a chain at the first link even after the link lingered out"`: records `a` (handoff, `endedAt` 0, `successorId a2`), `b` (running, created 5), `a2` (running, created 100, `predecessorId a`); at `now` 40 000 (a invisible) rows are `[a2, b]`.
 - `"windows seven rows around the selection"`: 7 running roots `r0..r6`; nothing selected → `windowOf` `{ start 0, end 5, above 0, below 2 }`; `selectedId r3` → `{ 0, 5, 0, 2 }` (already visible); `r0` → same; `r6` → `{ 2, 7, 2, 0 }`; then `r3` again from `top 2` → stays `{ 2, 7 }` (no scroll since visible).
-- `"renders markers and the hint around the window"`: same 7 rows, `r6` selected → first line `" ↑ 2 more"`, five rows, no `↓` line, last line `" enter to view · x to stop · esc to deselect"`; with `r3` selected and `top 0` → no `↑` line, `" ↓ 2 more"`, hint.
+- `"renders markers and the hint around the window"`: same 7 rows, `r6` selected → first line `"   ↑ 2 more"`, five rows, no `↓` line, then `" enter to view · x to stop · esc to deselect"`, then the trailing `""`; with `r3` selected and `top 0` → no `↑` line, `"   ↓ 2 more"`, hint, `""`.
+- `"puts the markers in the glyph column"`: the marker lines start with three spaces and their arrow is at the column of the rows' glyph (`PAD + 2`).
+- `"ends every line before the last column"`: at widths 80 and 30, every line of `panelLines` (rows, markers, a hint longer than the width) has `displayWidth <= width - 1`, starts with `" "` unless it is the trailing `""`; the hint at width 30 is cut with `…`.
 - `"clears a selection whose row left and keeps it when rows are added"`: `reconcile` with `selectedId` absent → `deselected: true`; adding a row before the selected one → `selectedIndex` moves with it, `deselected: false`.
 - `"keeps the window top when the selection clears"` (decision P5): 7 rows, `top 2`, `selectedId r6`; remove `r6` → `reconcile` gives `deselected: true` and `top` 1 (clamped to `6 - 5`); with `top 2` and `selectedId` cleared by hand (Esc) on 7 rows → `top` stays 2; with 4 rows left → `top` 0 (clamped).
 - `"builds the hint per state and per available action"`: running → `enter to view · x to stop · esc to deselect`; grace → `… x to close now …`; done → `… x to clear …`; running with `{ view: false, stop: false }` → `esc to deselect`; done with `{ view: false, stop: false }` → `x to clear · esc to deselect`.
@@ -306,28 +307,28 @@ Harness: `createHarness([agentRegistryPlugin, agentPanelPlugin], overrides)` wit
 
 - `"shows rows below the editor and removes the widget when the last row leaves"`: create one agent → `lines()` has one `○ … queued` row; `running`, close `done`; at `+9 999` the widget exists; at `+10 001` `widget()` is undefined.
 - `"keeps failed rows failedLingerMs and done rows doneLingerMs"` (fake clock, both rows).
-- `"renders seven agents in tree order with markers and (+N)"`: a running root with one running child plus six other roots → `lines()[0]` is a row (no `↑`), 5 rows, `" ↓ 3 more"`; the parent row contains `(+1)`; the child row starts with `"   └─ "`.
-- `"down on an empty editor selects the first row and installs a capture"`: `host.pressEmptyDown()` → `lines()[0]` starts with `" › "`, last line is the hint, `host.editorCapture` defined.
-- `"down with no rows does nothing"`: `pressEmptyDown()` → no capture, no widget.
-- `"moves the selection and scrolls the window"`: 7 rows, `pressEmptyDown()`, five `down` → `" ↑ 1 more"` first, pointer on the last visible row.
+- `"renders seven agents in tree order with markers and (+N)"`: a running root with one running child plus six other roots → `lines()[0]` is a row (no `↑`), 5 rows, `"   ↓ 3 more"`, then `""`; the parent row contains `(+1)`; the child row starts with `"   └─ "`.
+- `"left on an empty editor selects the first row and installs a capture"`: `host.pressEmptyLeft()` → `lines()[0]` starts with `" › "`, the line before the trailing `""` is the hint, `host.editorCapture` defined.
+- `"left with no rows does nothing"`: `pressEmptyLeft()` → no capture, no widget.
+- `"moves the selection and scrolls the window"`: 7 rows, `pressEmptyLeft()`, five `down` → `"   ↑ 1 more"` first, pointer on the last visible row.
 - `"enter opens the agent view from the panel and deselects"`: `agentView.open` called with `(id, { from: "panel" })`; no pointer afterwards; `host.editorCapture` undefined.
 - `"x stops a running agent through the runner and clears a done row for good"`: running → `runner.stop(id)` called once; done row → after `x` the row is gone at once, and still gone at `+1 ms` (the widget disappears when it was the only row).
 - `"a released key clears the selection and reaches the editor"`: `pressEditorKey({ name: "other", char: "a" })` returns `"release"`, no pointer, no hint.
 - `"esc deselects without reaching the editor"`: returns `"consumed"`.
 - `"deselects and releases the capture when the selected row leaves"`: select a done row, advance past `doneLingerMs` → no capture, no pointer; a new agent created meanwhile did not move the selection before that (check after creating a second agent while the first is selected: pointer still on the first).
-- `"keeps the window in place when the selection clears"` (decision P5): 7 running rows, `pressEmptyDown()` and six `down` → first line `" ↑ 2 more"`; `escape` → no pointer, no hint, first line still `" ↑ 2 more"`; select again and type `a` → same window.
+- `"keeps the window in place when the selection clears"` (decision P5): 7 running rows, `pressEmptyLeft()` and six `down` → first line `"   ↑ 2 more"`; `escape` → no pointer, no hint, first line still `"   ↑ 2 more"`; select again and type `a` → same window.
 - `"ticks every 100 ms while a row runs, every second with only queued rows, and never when empty"`: count `host.widgetRefreshes` over 1 s while a row runs (≥ 9; the spinner changes the output); with only queued rows after one `lines()` render, 0 refreshes over 1 s (output skip) but a done row whose linger ends within that second is gone after it (the 1 s tick ran); with no rows, no ticker timer is pending.
 - `"skips the redraw when the panel output is unchanged"` (finding 34): one queued row, `lines()` once; a relevant `registry.update` that changes nothing visible (e.g. `tokens` on a queued row) adds no `widgetRefreshes`; `lines()` twice returns the same array instance; a state change to `running` refreshes.
 - `"stops redrawing on ticks once every row is closed and unchanged"` (today's test, with the new signature including the selection: pressing `down` redraws once).
 - `"reuses the closed-row cache across renders"`: counting theme through `widget()(80, theme)` twice → second call adds no `bold` calls for the closed row.
 - `"degrades without agent-view and run-agent"`: harness without the stubs; `Enter` is consumed and nothing is thrown; hint for a running row is `" esc to deselect"`; `x` on the running row is consumed and the record stays running; `x` on a done row clears it.
-- `"does nothing with a foreign editor"`: `host.foreignEditor = true` → `pressEmptyDown()` returns false; rows still render.
+- `"does nothing with a foreign editor"`: `host.foreignEditor = true` → `pressEmptyLeft()` returns false; rows still render.
 - `"removes the widget, the capture and the status on disable"`: `manager.disableAll()` → widget undefined, capture undefined, `statuses.get("pi-subagents")` undefined, no pending timers (`vi.getTimerCount()` is 0).
 - Footer status, with the fake clock: `"shows N agents while any record is open"` (one queued → `<accent>1 agent`; second → `<accent>2 agents`; one closed → `<accent>1 agent`); `"shows the /agents hint for agentsHintMs after the last agent closes, then nothing"` (close the last → `<dim>/agents to see agents`; `+29 999` same; `+30 000` undefined); `"replaces the hint with the count when a new agent starts"`; `"counts nested agents"` (depth 3 record counts); `"sets no status before any agent exists"`.
 
 ## 9. Order of work
 
-Prerequisites: plan 01 §B merged (`onEmptyEditorDown`, `captureEditorKeys`, fake drivers) and plan 04's `components/format.ts`, `spinner.ts`, `state-text.ts` and `AgentRecord.activity` present. If plan 04 is not merged yet, land those three modules first from the shared-modules contract (they are small) rather than stubbing them here.
+Prerequisites: plan 01 §B merged (`onEmptyEditorLeft`, `captureEditorKeys`, fake drivers) and plan 04's `components/format.ts`, `spinner.ts`, `state-text.ts` and `AgentRecord.activity` present. If plan 04 is not merged yet, land those three modules first from the shared-modules contract (they are small) rather than stubbing them here.
 
 1. `model/settings.ts` + settings test; README settings paragraph. `npm run check`.
 2. `components/tree.ts` + `test/components/tree.test.ts`.
@@ -340,11 +341,11 @@ Prerequisites: plan 01 §B merged (`onEmptyEditorDown`, `captureEditorKeys`, fak
 
 Manual checklist (`pi -e ./extensions/subagents/src/index.ts`, tui):
 
-- Narrow terminal at 40 columns: a running row shows the description and `1m 5s` only; at 30 the stats go and the description stays; a done row at 30 shows the name and `done · 1m 5s`; no line wraps.
-- Seven agents: five rows, `↓ 2 more`; `↓` on the empty prompt selects the first; six more `↓` presses scroll one row at a time, `↑ N more` appears, the window never jumps; `Esc` (or typing) then deselects and the window stays where it was.
+- Narrow terminal at 40 columns: a running row shows the description and `1m 5s` only; at 30 the stats go and the description stays; a done row at 30 shows the name and `done · 1m 5s`; no line wraps, every line starts one column in and the last column stays blank; one blank line separates the panel from the footer.
+- Seven agents: five rows, `↓ 2 more`; `←` on the empty prompt selects the first; six more `↓` presses scroll one row at a time, `↑ N more` appears, the window never jumps; `Esc` (or typing) then deselects and the window stays where it was.
 - Nested agents (an agent with `subagents`): children under their caller with `└─`/`├─`, `(+N)` on the parent while they run, the count drops as they finish.
 - Typing while selected: with a row selected, type `a` → the selection clears and `a` appears in the prompt; `x` while selected stops the agent and is not typed; `Enter` opens the view, and `Esc` from there returns to the prompt with nothing selected.
 - Esc while the main session is busy: start a long main turn (agents running), select a row, press `Esc` → the row deselects and the main turn keeps running; press `Esc` again (nothing selected) → pi interrupts as usual.
 - Footer: `2 agents` in the accent colour while two run; after both finish `/agents to see agents` (dim) for 30 s, then the status line is empty; starting a new agent during the 30 s shows `1 agent` at once.
-- Linger: a done row leaves after ~10 s, a failed row after ~30 s or at once on `x`; the panel vanishes with its last row and `↓` then does nothing visible.
+- Linger: a done row leaves after ~10 s, a failed row after ~30 s or at once on `x`; the panel vanishes with its last row and `←` then does nothing visible.
 - `/reload` with agents running: no stray timers (the process exits cleanly on `/quit`), the panel reappears empty (registry is per instance).

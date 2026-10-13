@@ -8,7 +8,7 @@ Branch `plans/claude-ux`. These documents are the complete design and implementa
 2. The user never types into an agent. The main session is the orchestrator; corrections go through the model (`message_agent`).
 3. One desktop notification when the work is done, none per agent.
 4. The working indicator shows work (waiting for the model, thinking, running tools), not output.
-5. The agent view shows an agent's transcript and nothing else; codemode calls read like they do in the main session.
+5. The agent view shows an agent's task and transcript, plus the first request the model received as one text block collapsed by default (`r`); codemode calls read like they do in the main session.
 
 ## Documents
 
@@ -26,14 +26,16 @@ Read in this order. Each later document assumes the earlier ones.
 | `05-agent-panel.md` | The panel below the editor, keyboard selection, footer status, row/tree/refresh modules. | final |
 | `06-list-and-agent-view.md` | The `/agents` list and the simplified agent view in one overlay; codemode rendering. | final |
 | `research/review-findings.md` | The cross-plan review: findings and their resolution. | final |
+| `research/padding.md` | The padding audit and the rule set spec §2 "Padding and margins" adopts; its per-plan change list has been applied. | reference |
+| `research/claude-code-agent-identity.md` | How Claude Code names agents and what it shows per surface; the identity decisions in spec §2 follow it. | reference |
 | `research/*.md` (others) | Research: Claude Code behaviour (agents UX; indicator and notifications), the current UI audit, pi 1.1.0 API capabilities. | reference |
 
 ## What changes, in one screen
 
-- Main transcript: `run_agent` renders as `3 background agents launched (↓ to manage)` with one tree row per agent and a live status line; each agent that closes adds one dim line (`✓ Agent "Map the auth module" finished · 1m 5s`); the batch results reach the model as a hidden message (plus a short `↳ 3 agents finished` user line when the session was idle).
-- Panel below the editor: Claude-style rows (`⠹ explorer  Map the auth module   grep · 1m 5s · ↓ 12.3k tokens`), at most 5 visible with `↑ N more`/`↓ N more`, tree order with `(+N)`; `↓` on an empty editor selects a row, `Enter` opens it, `x` stops or clears, `Esc` deselects; done rows leave after 10 s, failed ones after 30 s; the footer shows `3 agents`, then `/agents to see agents` for 30 s.
-- `/agents`: `Running`, `Needs input`, `Completed (n)` sections; `Enter` opens the agent view inside the same overlay, `Esc` returns; `X` twice stops all; closed rows leave after 30 s.
-- Agent view: header, transcript, `Ctrl+O` tool detail, `x` stop, `Esc` back or close. Context breakdown, prompt sections, focus/verbose mode and the message box are gone. Codemode renders with pi's own renderer.
+- Main transcript: `run_agent` renders as `3 background agents launched (← to manage)` with one tree row per agent and a live status line (a batch of one agent kind is named: `3 background explorer agents launched`); forwarded dialogs read `explorer › Map the auth module asks: <title>`; each agent that closes adds one dim line (`✓ Agent "Map the auth module" finished · 1m 5s`); the batch results reach the model as a hidden message (plus a short `↳ 3 agents finished` user line when the session was idle).
+- Panel below the editor: Claude-style rows (`⠹ explorer  Map the auth module   grep · 1m 5s · ↓ 12.3k tokens`), at most 5 visible with `↑ N more`/`↓ N more`, tree order with `(+N)`; `←` on an empty editor selects a row, `Enter` opens it, `x` stops or clears, `Esc` deselects; done rows leave after 10 s, failed ones after 30 s; the footer shows `3 agents`, then `/agents to see agents` for 30 s.
+- `/agents`: `Running` and `Completed (n)` sections, each in tree order with every subagent under its caller (an agent that needs input keeps its place and says so on its row); `Enter` opens the agent view inside the same overlay, `Esc` returns; `X` twice stops all; closed rows leave after 30 s.
+- Agent view: header `⠹ explorer › Map the auth module` with `running · <model> · id <id>` under it, a collapsed `▸ Request · 912 lines` line (`r` shows the literal first provider request, pretty-printed, collapsed by default), transcript starting with the task, `Ctrl+O` tool detail, `x` stop, `Esc` back or close; the hint reads `esc to close · x to stop · r request · ctrl+o tool detail`. Context breakdown, per-section prompt collapsibles, focus/verbose mode and the message box are gone. Codemode renders with pi's own renderer.
 - Working indicator: visible while waiting, thinking, streaming tool arguments and running tools (`Pondering… (bash · 12s · esc to interrupt)`); hidden while the assistant's text streams; child sessions never touch it.
 - Notifications: a new extension sends `pi is waiting for your input` 20 s after the session settles with no agent running and no keystroke since, and `pi needs your input: <title>` 6 s after a dialog opens. A desktop notification without a bell on `auto`; nothing per agent.
 
@@ -55,6 +57,7 @@ Plans 05 and 06 may land in one PR; then the bridge and the optional parameter a
 ## Rules that apply to every step
 
 - `npm run check` must pass after each plan section; live tests (`npm run test:live`) are local only and needed once, for the wake (plan 01 §C).
+- Padding: every widget and overlay line starts with one column `PAD` and ends before the last column; transcript blocks follow pi's `outputPad` (spec §2 "Padding and margins").
 - Only `core/adapter` imports pi packages; extensions never import each other; no provider or model names in code, prompts or docs (mockups use `provider/model:high`).
 - Every behaviour has a unit test against the fakes in `core/test/helpers/fakes.ts`; snapshot tests with pi's real components stay in `extensions/subagents/test/plugins/agent-view/`.
 - Update `ARCHITECTURE.md`, `STRUCTURE.md` and the extension READMEs in the same change as the code they describe; each plan carries its final doc text.

@@ -2,7 +2,7 @@
 
 Platform work in `core/adapter` and `core/manager` that the extension plans (02+) build on. Decisions come from `plans/research/decisions.md` (D1–D7); pi facts from `plans/research/pi-api-capabilities.md`, re-checked against the dist sources cited below.
 
-Reviewed 2026-10-14: findings 5, 6, 14, 24, 27, 31, 36 of `research/review-findings.md` applied; §I added.
+Reviewed 2026-10-14: findings 5, 6, 14, 24, 27, 31, 36 of `research/review-findings.md` applied; §I added. Padding (`research/padding.md`, plan 01 flags 1-2): entry renderers and `renderShell: "self"` blocks are indented by pi's `outputPad` and cut, never wrapped (§C `padLines`, §D `ToolRenderState.outputPad`).
 
 Path aliases: `$PCA` = `node_modules/@earendil-works/pi-coding-agent/dist`, `$TUI` = `node_modules/@earendil-works/pi-tui/dist`, `$CORE` = `node_modules/@earendil-works/pi-agent-core/dist`, `types.d.ts` = `$PCA/core/extensions/types.d.ts`, `AS` = `$PCA/core/agent-session.js`, `IM` = `$PCA/modes/interactive/interactive-mode.js`.
 
@@ -104,7 +104,7 @@ ARCHITECTURE.md "Startup and the adapter": add "`onPhase` is computed by `pi-pha
 
 ### Decision
 
-One editor subclass (`HostEditor`, in `pi-editor-frame.ts`) handles both the `↓`-on-empty hook and the capture mode in its `handleInput` override, instead of `onTerminalInput` + a focus check. Reason, in two lines: `handleInput` runs only while the editor is the focused component ($TUI/tui.js:678-752 routes input to `focusedComponent` after the listeners), so overlays and dialogs are excluded for free and no widget-capture trick is needed; and returning before `super.handleInput` keeps a consumed `Esc` away from `CustomEditor`'s `app.interrupt` dispatch ($PCA/modes/interactive/components/custom-editor.js:62-80), which an input listener could only achieve by consuming the key for every component.
+One editor subclass (`HostEditor`, in `pi-editor-frame.ts`) handles both the `←`-on-empty hook and the capture mode in its `handleInput` override, instead of `onTerminalInput` + a focus check. Reason, in two lines: `handleInput` runs only while the editor is the focused component ($TUI/tui.js:678-752 routes input to `focusedComponent` after the listeners), so overlays and dialogs are excluded for free and no widget-capture trick is needed; and returning before `super.handleInput` keeps a consumed `Esc` away from `CustomEditor`'s `app.interrupt` dispatch ($PCA/modes/interactive/components/custom-editor.js:62-80), which an input listener could only achieve by consuming the key for every component.
 
 ### Contract
 
@@ -114,11 +114,11 @@ export type EditorKeyHandler = (key: KeyPress) => "consumed" | "release";
 
 // HostUi additions
 /**
- * Fires when `tui.editor.cursorDown` is pressed in the focused editor while it is empty and no autocomplete is open
- * (an empty editor has one line, so the cursor is on the last line). The key is consumed. tui only; silently
+ * Fires when `tui.editor.cursorLeft` is pressed in the focused editor while it is empty and no autocomplete is open
+ * (an empty editor has the cursor at column 0 of its only line, so the key would be a no-op). The key is consumed. tui only; silently
  * inactive when another extension installed its own editor. Returns an unsubscribe function.
  */
-onEmptyEditorDown(handler: () => void): () => void;
+onEmptyEditorLeft(handler: () => void): () => void;
 /**
  * Routes every key the focused editor receives to `handler` until it returns "release" or the returned function is
  * called. "consumed" swallows the key (it never reaches pi: no `app.interrupt` on Esc, no shortcuts, no text edit);
@@ -132,17 +132,17 @@ captureEditorKeys(handler: EditorKeyHandler): () => void;
 
 ### Adapter (`core/adapter/pi-editor-frame.ts`)
 
-1. Shared mutable `EditorHooks = { frame?: EditorFrame; emptyDown: Set<() => void>; capture?: EditorKeyHandler }`, one per `createUi` call.
+1. Shared mutable `EditorHooks = { frame?: EditorFrame; emptyLeft: Set<() => void>; capture?: EditorKeyHandler }`, one per `createUi` call.
 2. Rename `FramedEditor` → `HostEditor(tui, theme, keybindings, hooks)`; keep its own `keys = keybindings` reference (the `CustomEditor` field is `private`, custom-editor.d.ts:11). `render`/`handleMouse` read `hooks.frame` live; with no frame they call `super` directly (frame optional).
 3. `handleInput(data)` order:
    1. `hooks.capture` set → `key = editorKeyPress(data, this.keys)`; `"consumed"` → return; `"release"` → `hooks.capture = undefined`, fall through.
-   2. `this.keys.matches(data, "tui.editor.cursorDown") && this.getText() === "" && !this.isShowingAutocomplete()` ($TUI/components/editor.js:760-771 would otherwise call `moveToLineEnd`, a no-op on an empty line) and `hooks.emptyDown.size > 0` → call each handler, return.
+   2. `this.keys.matches(data, "tui.editor.cursorLeft") && this.getText() === "" && !this.isShowingAutocomplete()` ($TUI/components/editor.js:777-780 would otherwise call `moveCursor(0, -1)`, a no-op at column 0 of an empty editor; `←` has no history or autocomplete behaviour) and `hooks.emptyLeft.size > 0` → call each handler, return.
    3. `super.handleInput(data)`.
-4. `createEditorHooks(tuiCtx)` returns `{ setEditorFrame, onEmptyEditorDown, captureEditorKeys }` and owns `installed: EditorFactory | undefined`:
+4. `createEditorHooks(tuiCtx)` returns `{ setEditorFrame, onEmptyEditorLeft, captureEditorKeys }` and owns `installed: EditorFactory | undefined`:
    - `ensureInstalled()`: `ctx = tuiCtx()`; no ctx → false; `active = ctx.ui.getEditorComponent()` (IM:2084); `active && active !== installed` → false (another extension's editor; back off silently, as today); `!active` → `installed = (tui, theme, kb) => new HostEditor(tui, theme, kb, hooks)`, `ctx.ui.setEditorComponent(installed)` (IM:2083; pi copies text, border colour, autocomplete and the app action handlers onto the new instance, IM:2255-2290). Returns true.
-   - `releaseIfUnused()`: when `hooks.frame` is undefined, `emptyDown` is empty and `capture` is unset and `installed` is the active factory → `ctx.ui.setEditorComponent(undefined)`, `installed = undefined`.
+   - `releaseIfUnused()`: when `hooks.frame` is undefined, `emptyLeft` is empty and `capture` is unset and `installed` is the active factory → `ctx.ui.setEditorComponent(undefined)`, `installed = undefined`.
    - `setEditorFrame(frame)`: `hooks.frame = frame`; frame → `ensureInstalled()`; undefined → `releaseIfUnused()`. Changing the frame no longer reinstalls the editor (the instance reads `hooks.frame`), so the composer may call it at any time.
-   - `onEmptyEditorDown(handler)`: `ensureInstalled()` false → return `() => {}`; else add, return a remover that also calls `releaseIfUnused()`.
+   - `onEmptyEditorLeft(handler)`: `ensureInstalled()` false → return `() => {}`; else add, return a remover that also calls `releaseIfUnused()`.
    - `captureEditorKeys(handler)`: `ensureInstalled()` false → return `() => {}`; else `hooks.capture = handler`; return `() => { if (hooks.capture === handler) hooks.capture = undefined; releaseIfUnused(); }`.
 5. `pi-ui.ts`: replace `setEditorFrame: createEditorFrame(tuiCtx)` with `...createEditorHooks(tuiCtx)`; move `keyPress` to an exported `editorKeyPress(data, keys)` variant (same table, `up`/`down` via `keys.matches`).
 
@@ -150,14 +150,14 @@ Semantics the extension plan relies on (D2): the panel installs a capture when i
 
 ### Fakes
 
-`FakeHost`: `emptyDownHandlers: Set<() => void>`, `editorCapture?: EditorKeyHandler`, drivers `pressEmptyDown()` (calls handlers, returns whether any ran) and `pressEditorKey(key: KeyPress): "consumed" | "release" | "editor"` (routes to the capture, clears it on `"release"`, returns `"editor"` when no capture). `foreignEditor: true` makes both registrations no-ops, like `setEditorFrame` today.
+`FakeHost`: `emptyLeftHandlers: Set<() => void>`, `editorCapture?: EditorKeyHandler`, drivers `pressEmptyLeft()` (calls handlers, returns whether any ran) and `pressEditorKey(key: KeyPress): "consumed" | "release" | "editor"` (routes to the capture, clears it on `"release"`, returns `"editor"` when no capture). `foreignEditor: true` makes both registrations no-ops, like `setEditorFrame` today.
 
-### Tests (`core/test/adapter/pi-editor-frame.test.ts`, extend the existing fake ctx with a `keybindings` stub whose `matches(data, id)` maps `"\x1b[B"` → `cursorDown`, `"\x1b[A"` → `cursorUp`)
+### Tests (`core/test/adapter/pi-editor-frame.test.ts`, extend the existing fake ctx with a `keybindings` stub whose `matches(data, id)` maps `"\x1b[D"` → `cursorLeft`, `"\x1b[B"` → `cursorDown`, `"\x1b[A"` → `cursorUp`)
 
 - keep: narrower render, min width, scrolled, mouse shift, foreign editor back-off, outside tui.
 - replace "reinstalls … on undefined" with `"installs the editor once and removes it when the frame is cleared and no hook remains"` (`sets` is 1 after frame + hook; 1 after `setEditorFrame(undefined)` while the hook remains; 2 after the hook unsubscribes, factory undefined).
 - `"renders the plain editor when only a key hook installed the editor"` (no frame → `render` equals `CustomEditor` output).
-- `"fires the empty-down hook only for cursorDown on an empty editor without autocomplete and consumes the key"` (text "a" → not fired, cursor moves as usual; empty → fired once, `getCursor()` unchanged).
+- `"fires the empty-left hook only for cursorLeft on an empty editor without autocomplete and consumes the key"` (text "a" with the cursor at the end → `←` moves the cursor as usual, not fired; empty → fired once, `getCursor()` unchanged).
 - `"routes keys to the capture, swallows consumed ones and lets a released key reach the editor"` (capture returns consumed for Esc: `onEscape` spy not called; returns release for "a": text becomes "a", capture gone).
 - `"keeps up and down bound to pi's editor keybindings"` (a stub manager that maps `tui.editor.cursorDown` to `ctrl+n` only: the capture sees `name: "down"` for `ctrl+n` and `name: "other"` for the raw arrow sequence).
 - `"installs at most one capture"`.
@@ -165,7 +165,7 @@ Semantics the extension plan relies on (D2): the panel installs a capture when i
 
 ### Architecture notes
 
-ARCHITECTURE.md "Composer" paragraph and "Startup and the adapter": "`pi-editor-frame.ts` installs one `HostEditor` subclass when the composer frame or a subagents key hook (`onEmptyEditorDown`, `captureEditorKeys`) is used; the frame is optional; keys reach the hooks only while the editor has focus." STRUCTURE.md: `pi-editor-frame.ts  # editor subclass: optional EditorFrame, empty-↓ hook, key capture`.
+ARCHITECTURE.md "Composer" paragraph and "Startup and the adapter": "`pi-editor-frame.ts` installs one `HostEditor` subclass when the composer frame or a subagents key hook (`onEmptyEditorLeft`, `captureEditorKeys`) is used; the frame is optional; keys reach the hooks only while the editor has focus." STRUCTURE.md: `pi-editor-frame.ts  # editor subclass: optional EditorFrame, empty-← hook, key capture`.
 
 ---
 
@@ -197,7 +197,7 @@ export type HiddenMessage = { customType: string; text: string; details?: unknow
  * a live session nothing is sent.
  */
 sendHiddenMessage(message: HiddenMessage, visible: string): void;
-/** Register a renderer for custom entries (`appendEntry`). `undefined` hides the entry. Lines are truncated to the width by pi. */
+/** Register a renderer for custom entries (`appendEntry`). `undefined` hides the entry. The adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (never wraps). */
 registerEntryRenderer<T>(customType: string, render: (data: T, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined): void;
 ```
 
@@ -211,7 +211,9 @@ registerEntryRenderer<T>(customType: string, render: (data: T, state: { expanded
 3. `!ctx.isIdle()` → `pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true })` (AS:1795-1797). Done.
 4. idle → `pi.sendMessage(custom, { deliverAs: "nextTurn" })` (AS:1792-1794) then `pi.sendUserMessage(visible)` (AS:1848 → `prompt()` AS:1517; `before_agent_start` AS:1591; next-turn injection AS:1611-1614). Both calls from an `agent_settled` handler are deferred by pi in order (AS:1518-1521 for the prompt; the `nextTurn` push is synchronous), so the outbox flushing on `onIdle` keeps working.
 
-`registerEntryRenderer(customType, render)`: `pi.registerEntryRenderer(customType, (entry, { expanded }, theme) => { const lines = render(entry.data, { expanded }, themeLike(theme)); return lines ? new Text(lines.join("\n"), 0, 0) : undefined; })` (types.d.ts `registerEntryRenderer`, `EntryRenderer`; rendered live by IM:2776-2781 → `addCustomEntryToChat` IM:3126-3144, inserted above a streaming assistant message, and on resume; `CustomEntryComponent` adds the spacer and catches renderer errors, `$PCA/modes/interactive/components/custom-entry.js:36-57`). Register at boot (before `session_start`), since pi builds one extension instance per session.
+`registerEntryRenderer(customType, render)`: `pi.registerEntryRenderer(customType, (entry, { expanded }, theme) => { const lines = render(entry.data, { expanded }, themeLike(theme)); return lines ? padLines(lines, pi.getSettings().outputPad ?? 1) : undefined; })` (types.d.ts `registerEntryRenderer`, `EntryRenderer`; rendered live by IM:2776-2781 → `addCustomEntryToChat` IM:3126-3144, inserted above a streaming assistant message, and on resume; `CustomEntryComponent` adds the spacer and catches renderer errors, `$PCA/modes/interactive/components/custom-entry.js:36-57`). Register at boot (before `session_start`), since pi builds one extension instance per session.
+
+Padding (spec §2 "Padding and margins"; `plans/research/padding.md` A): pi gives an entry component no padding (`CustomEntryComponent` adds `Spacer(1)` and the renderer's component unpadded, `custom-entry.js:52-55`) and `EntryRenderOptions` carries no `outputPad` (`types.d.ts:1142-1144`), so the adapter reads the setting through `pi.getSettings().outputPad` (`types.d.ts:1262`) at render time. `padLines(lines, outputPad)` (new, `pi-ui.ts`, shared with §D) is a component whose `render(width)` returns `lines.map((line) => " ".repeat(outputPad) + truncateToWidth(line, Math.max(1, width - 2 * outputPad), "…"))` (pi-tui's ANSI-aware cut): the text starts at column `outputPad`, the last `outputPad` columns stay blank, nothing wraps. A `Text(…, 0, 0)` would start at column 0 and wrap long lines back to column 0. pi's spacer puts one blank line before every entry, so consecutive entries are one blank line apart.
 
 `main-prompt.ts` is unchanged.
 
@@ -221,13 +223,13 @@ registerEntryRenderer<T>(customType: string, render: (data: T, state: { expanded
 
 ### Tests
 
-- `core/test/adapter/pi-adapter.test.ts` (fake pi gains `sendMessage` and `registerEntryRenderer` recorders): `"sends a hidden follow-up while busy"` (one `sendMessage` call with `{ deliverAs: "followUp", triggerTurn: true }`, no `sendUserMessage`), `"parks a hidden next-turn message and starts the turn with the visible line when idle"` (order: `sendMessage` nextTurn, then `sendUserMessage(visible)` with no options), `"sends nothing without a live session"`, `"wraps entry renderers in a Text component and hides on undefined"`.
+- `core/test/adapter/pi-adapter.test.ts` (fake pi gains `sendMessage` and `registerEntryRenderer` recorders): `"sends a hidden follow-up while busy"` (one `sendMessage` call with `{ deliverAs: "followUp", triggerTurn: true }`, no `sendUserMessage`), `"parks a hidden next-turn message and starts the turn with the visible line when idle"` (order: `sendMessage` nextTurn, then `sendUserMessage(visible)` with no options), `"sends nothing without a live session"`, `"renders entry lines indented by outputPad and cut at width - 2 * outputPad, and hides on undefined"` (fake `getSettings()` returns `outputPad: 1`: a 100-character line at width 40 renders as one line, starting with one space, `visibleWidth` 39, ending with `…`; with `outputPad: 0`, no leading space and width 40; `undefined` from the renderer → no component).
 - `core/test/adapter/conformance.test.ts`: `"keeps the sendMessage delivery options the wake relies on"` (type-level: `Parameters<ExtensionAPI["sendMessage"]>[1]` accepts `{ deliverAs: "nextTurn" }` and `{ deliverAs: "followUp"; triggerTurn: true }`).
 - Live proof, `core/test/adapter/wake.live.test.ts` (new; `vitest.live.config.ts` `include` gains `"core/test/adapter/**/*.live.test.ts"`; CI never runs it): build a main-like session the way `pi-child.ts` does (`DefaultResourceLoader` with `extensionFactories: [{ name: "wake", factory }]`, `createAgentSession`, `bindExtensions({ mode: "print", uiContext })`, outside `childScope` so `createPiExtension` boots), where `factory = createPiExtension(boot, { root, namespace: "wake-test" })` and `boot` calls `host.setMainPrompt("WAKE-TEST-PROMPT <uuid>")`, registers a trivial `noop` tool and keeps `host`; a second inline factory records every `before_provider_request` payload. Steps: `session.prompt("Call noop twice, then reply ok")`; wait for `agent_settled`; `host.sendHiddenMessage({ customType: "wake-test", text: "Call noop once more, then reply done" }, "Agents finished")`; wait for settle. Assert: every recorded payload's system prompt is identical and contains the marker; the session file has exactly one `role: "system"` message entry with `sections` after the first user message and none after the wake; the wake entry is `custom_message` with `display: false` followed by a user message `Agents finished`. Report cost with `reportCost`. Name: `"keeps the replaced main prompt identical across a wake-triggered run"`.
 
 ### Architecture notes
 
-ARCHITECTURE.md "Startup and the adapter": replace the `sendUserMessage` bullet with: "`sendUserMessage` delivers immediately when idle, otherwise as a follow-up. `sendHiddenMessage` sends a `display: false` custom message: a follow-up of the active run, or, when idle, a next-turn message plus a short visible user line that starts the turn through `prompt()`, because only `prompt()` emits `before_agent_start` (pi skips it for custom messages that start a run). `registerEntryRenderer` renders `appendEntry` entries." Add to "Subagents › A run_agent call": step 9 says the outbox uses `sendHiddenMessage` (extension plan).
+ARCHITECTURE.md "Startup and the adapter": replace the `sendUserMessage` bullet with: "`sendUserMessage` delivers immediately when idle, otherwise as a follow-up. `sendHiddenMessage` sends a `display: false` custom message: a follow-up of the active run, or, when idle, a next-turn message plus a short visible user line that starts the turn through `prompt()`, because only `prompt()` emits `before_agent_start` (pi skips it for custom messages that start a run). `registerEntryRenderer` renders `appendEntry` entries, each line indented by pi's `outputPad` and cut at `width - 2 * outputPad`." Add to "Subagents › A run_agent call": step 9 says the outbox uses `sendHiddenMessage` (extension plan).
 
 ---
 
@@ -248,6 +250,8 @@ export type ToolRenderState = {
   args: unknown;
   /** Set only on the final result. */
   durationMs?: number;
+  /** pi's horizontal transcript padding (`ToolRenderContext.outputPad`, 0 or 1, default 1). A `renderShell: "self"` block is not padded by pi; the adapter applies it (below), the renderer may read it. */
+  outputPad: number;
   /** Re-render this call later (safe after the tool returned, until the transcript is rebuilt). */
   invalidate(): void;
 };
@@ -271,9 +275,9 @@ Backwards compatibility: existing `renderCall(params, theme)` ignores the third 
 
 `core/adapter/pi-tools.ts` (`toPiTool`):
 - `renderShell: spec.renderShell`.
-- `renderState(context: ToolRenderContext): ToolRenderState` picks `toolCallId, expanded, isPartial, executionStarted, isError, args, durationMs, invalidate` from pi's context (`$PCA/modes/interactive/components/tool-execution.js:74-93`; types.d.ts:347-379 `ToolRenderContext`, `args` at :349, `isError` at :371). `isError` is forwarded as is, so renderers can test `state.isError`.
+- `renderState(context: ToolRenderContext): ToolRenderState` picks `toolCallId, expanded, isPartial, executionStarted, isError, args, durationMs, outputPad, invalidate` from pi's context (`outputPad` at types.d.ts:377-378, "Renderers with `renderShell: \"self\"` apply it themselves") (`$PCA/modes/interactive/components/tool-execution.js:74-93`; types.d.ts:347-379 `ToolRenderContext`, `args` at :349, `isError` at :371). `isError` is forwarded as is, so renderers can test `state.isError`.
 - `fromPiResult` also copies `isError` (`...(result.isError ? { isError: true } : {})`, mirroring `toPiResult`), so the `ToolResult` a `renderResult` receives carries it and agrees with `state.isError`.
-- `renderCall: (args, theme, context) => textComponent(context.lastComponent, spec.renderCall(args, themeLike(theme), renderState(context)))`.
+- `renderCall: (args, theme, context) => textComponent(context.lastComponent, spec.renderCall(args, themeLike(theme), renderState(context)))`; when `spec.renderShell === "self"`, both renderers return `padLines(text.split("\n"), context.outputPad)` instead (§C; an empty text stays zero lines): pi pads only its `Box` shell (`tool-execution.js:208-211`), so without this a self block would draw at column 0 and reach the last column. Lines are cut at `width - 2 * outputPad`, never wrapped, so tree rows keep their connectors.
 - `renderResult: (result, options, theme, context) => textComponent(context.lastComponent, spec.renderResult(fromPiResult(result), renderState(context), themeLike(theme)))` (`options.expanded/isPartial` equal the context's, tool-execution.js:242).
 - `execute`'s `update: (text, details) => onUpdate?.({ content: [{ type: "text", text }], details })` so partial renders see live details (IM:2936-2941 → `updateResult(partial, true)`).
 
@@ -285,17 +289,17 @@ Backwards compatibility: existing `renderCall(params, theme)` ignores the third 
 
 ### Fakes
 
-`FakeHost.tool(name)` returns the spec unchanged; add `renderTool(name, { call?, result?, state? })` helper that invokes `renderCall`/`renderResult` with a default `ToolRenderState` (`{ toolCallId: "call-1", expanded: false, isPartial: false, executionStarted: true, isError: result?.isError ?? false, args: call, invalidate }`, i.e. `args` carries the `call` params and `isError` comes from the given result; `state` overrides any field) and `plainTheme`, so extension tests render tool rows without pi. Fake overlay APIs built by extension tests (`agent-view.test.ts:50`) get `createTranscript(options)`; the fake runtime is unchanged.
+`FakeHost.tool(name)` returns the spec unchanged; add `renderTool(name, { call?, result?, state? })` helper that invokes `renderCall`/`renderResult` with a default `ToolRenderState` (`{ toolCallId: "call-1", expanded: false, isPartial: false, executionStarted: true, isError: result?.isError ?? false, args: call, outputPad: 1, invalidate }`, i.e. `args` carries the `call` params and `isError` comes from the given result; `state` overrides any field) and `plainTheme`, so extension tests render tool rows without pi. Fake overlay APIs built by extension tests (`agent-view.test.ts:50`) get `createTranscript(options)`; the fake runtime is unchanged.
 
 ### Tests
 
-- `core/test/adapter/pi-tools.test.ts` (new): `"passes the render state to renderCall and renderResult"` (pi-style context object → spec receives `toolCallId`, `durationMs`, `isError`, `invalidate` identity), `"passes the call arguments as state.args to renderCall and renderResult"` (context `args: { wait: true }` → both renderers see it), `"copies isError into the result renderResult receives"` (pi result with `isError: true` → `result.isError` and `state.isError` both true), `"forwards update details"`, `"keeps string-only renderers working"` (spec with the old signatures), `"sets renderShell"`.
+- `core/test/adapter/pi-tools.test.ts` (new): `"passes the render state to renderCall and renderResult"` (pi-style context object → spec receives `toolCallId`, `durationMs`, `isError`, `invalidate` identity), `"passes the call arguments as state.args to renderCall and renderResult"` (context `args: { wait: true }` → both renderers see it), `"copies isError into the result renderResult receives"` (pi result with `isError: true` → `result.isError` and `state.isError` both true), `"forwards update details"`, `"keeps string-only renderers working"` (spec with the old signatures), `"sets renderShell"`, `"passes outputPad and pads self-shell lines by it"` (context `outputPad: 1`, `renderShell: "self"`: `state.outputPad === 1`; the component's lines at width 40 start with one space, are at most 39 columns wide, and a long line is cut with `…`, not wrapped; `outputPad: 0` → column 0, at most 40; a default-shell spec still gets the plain `Text`).
 - `core/test/adapter/pi-ui.test.ts`: `"captures codemode and tool_search renderers from pi's factories"` (`capturePiRenderers` with the real exports → both have `renderCall`; `tool_search` has none, so entry absent or renderers undefined → fallback), `"falls back to the generic display when a factory throws"` (stub factory `() => { throw }`), `"renders a codemode call with pi's renderer in the transcript pane"` (sync an assistant item with a `codemode` call and a tool item with `details.calls: [{ id, name: "grep", args: "{}", status: "ok", durationMs: 12 }]`; snapshot the visible text with the existing APC/SGR strippers: contains `codemode`, the highlighted `tools.grep` line and `✓ grep`), `"renders custom specs passed to createTranscript with their own renderers"` (`tools: [spec]` whose `renderCall` returns `"RUN-AGENT-ROW"`), `"keeps the raw fallback for unknown tools"`.
 - `core/test/adapter/conformance.test.ts`: `"exports the codemode and tool_search factories as ExtensionFactory producers"` and `"ToolRenderContext carries the fields the contract forwards"` (type-level).
 
 ### Architecture notes
 
-ARCHITECTURE.md "Startup and the adapter": "`ToolSpec` renderers receive `ToolRenderState` (pi's render context) and may set `renderShell: "self"`; `update(text, details)` forwards details to partial renders." "Status, views": "The agent view transcript renders built-in tools with pi's definitions, `codemode`/`tool_search` with renderers captured from pi's exported extension factories (generic fallback if capture fails), and the subagents tools with the specs passed to `createTranscript({ tools })`."
+ARCHITECTURE.md "Startup and the adapter": "`ToolSpec` renderers receive `ToolRenderState` (pi's render context) and may set `renderShell: "self"` (the adapter then indents each line by pi's `outputPad` and cuts it, since pi pads only its own box); `update(text, details)` forwards details to partial renders." "Status, views": "The agent view transcript renders built-in tools with pi's definitions, `codemode`/`tool_search` with renderers captured from pi's exported extension factories (generic fallback if capture fails), and the subagents tools with the specs passed to `createTranscript({ tools })`."
 
 ---
 

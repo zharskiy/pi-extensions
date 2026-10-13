@@ -219,7 +219,11 @@ look like `"shift+down"`.
 - `EditorFrame.onKey?(key: KeyPress, state: {empty: boolean; autocomplete: boolean}) => boolean` (or a narrow
   `onEmptyDown`) handled in `FramedEditor.handleInput`; optionally `host.registerShortcut(keyId, handler)`.
 
+Decision (2026-10-14): the panel uses `←`. In pi-tui 1.1.0 `Editor.handleInput` (`node_modules/@earendil-works/pi-tui/dist/components/editor.js:777-780`), `tui.editor.cursorLeft` only calls `this.moveCursor(0, -1)`, a no-op on an empty editor (one empty line, cursor at column 0). There is no history or autocomplete behaviour on `←`. The only other bindings using left are the word moves `alt+left` / `ctrl+left` (`pi-coding-agent/dist/core/keybindings.js:86`), different keys. So the hook condition is `tui.editor.cursorLeft` with an empty editor and no autocomplete open; `↓` stays free for history browsing. The `↓` analysis above is kept as history.
+
 ---
+
+
 
 ## Need 3: overlays, widgets, status, footer, notify, title
 

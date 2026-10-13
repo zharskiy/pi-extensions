@@ -1,6 +1,6 @@
 # Shared modules and ownership between the feature plans
 
-Updated 2026-10-14 after the review (`plans/research/review-findings.md`).
+Updated 2026-10-14 after the review (`plans/research/review-findings.md`), and again for the padding rules (`PAD`, `innerWidth`, `alignRight` move to `format.ts`, see `padding.md`).
 
 The feature plans (02–06) are written in parallel. To fit together they use these module names and signatures exactly. The owning plan specifies the module in full (file, code, tests); the other plans only import it. If an owner needs to deviate, it says so in its plan and the README index records the change.
 
@@ -16,6 +16,9 @@ export const formatCtx = (percent: number | undefined): string | undefined; // "
 export const displayWidth = (text: string): number;     // display columns (wide chars = 2, combining = 0, ANSI stripped)
 export const truncateCols = (text: string, cols: number): string; // cut to cols with a trailing "…" (plain text only)
 export const padEndCols = (text: string, cols: number): string;
+export const PAD = " ";                                   // one-column left margin of every widget and overlay line (spec §2 "Padding and margins")
+export const innerWidth = (width: number): number;      // Math.max(1, width - 2 * PAD.length): content width, the last column stays blank
+export const alignRight = (left: string, right: string, cols: number): string | undefined;  // padEndCols(left, cols - displayWidth(right)) + right; undefined when displayWidth(left) + 2 + displayWidth(right) > cols
 export const charWidth = (char: string): number;        // display columns of one code point (0, 1 or 2)
 export const singleLine = (text: string): string;       // whitespace runs collapsed to one space, trimmed
 export const firstLine = (text: string): string;        // first non-empty line, trimmed
@@ -62,7 +65,7 @@ export const renderRow = (input: RowInput, now: number, width: number, theme: Th
 export const nameColumn = (rows: Pick<TreeRow, "record" | "openDescendants">[]): number;   // widest name (+ chain suffix + (+N)), capped at 24; plan 06 passes sections.flatMap((s) => s.rows)
 ```
 
-Every row starts with a one-column `PAD` (exported), in the panel and in the list.
+`PAD` (one column) and `innerWidth` come from `format.ts`; `agent-row.ts` does not export `PAD`. Every panel, list and view line starts with `PAD` and ends before the last column (spec §2 "Padding and margins").
 
 Bridge (plan 05 creates, plan 06 deletes): before rewriting `agent-row.ts`, plan 05 renames today's file (as plan 04 left it) to `components/legacy-row.ts`, unchanged, for `components/agent-list.ts`, `plugins/agent-list-view/view.ts` and `plugins/agent-view/view.ts` until plan 06 deletes all of them. Landing 05 and 06 in one PR skips the bridge.
 
@@ -70,8 +73,17 @@ Bridge (plan 05 creates, plan 06 deletes): before rewriting `agent-row.ts`, plan
 
 ```ts
 export type TreeRow = { record: AgentRecord; depth: number; last: boolean; ancestorsContinue: boolean[]; openDescendants: number };
-export const treeOrder = (records: AgentRecord[], roots?: (r: AgentRecord) => boolean): TreeRow[];  // callers first, children under their caller, siblings by createdAt; a child whose caller is absent renders at depth 0
+export const treeOrder = (records: AgentRecord[], roots?: (r: AgentRecord) => boolean): TreeRow[];  // callers first, children under their caller, siblings by createdAt; a child whose caller is absent renders at depth 0; plan 06's list calls it per section (open roots; each closed root's subtree)
 ```
+
+## `extensions/subagents/src/components/request-block.ts` (owner: plan 06, new)
+
+```ts
+export const requestLines = (payload: unknown | undefined, open: boolean, expanded: boolean, width: number, theme: ThemeLike): string[];  // spec §6 "Request": one dim line at PAD collapsed, or that line plus the pretty-printed request at PAD + 2, wrapped at innerWidth(width) - 2, plus one blank line
+export const requestLineCount = (payload: unknown): number;   // JSON.stringify(payload, null, 2).split("\n").length; 0 for undefined or when stringify fails
+```
+
+Only the agent view uses it; listed here because it is the one new component of plan 06 and reads `SessionRecord.prompt.providerPayload` from the contract.
 
 ## Record fields (owner: plan 04, in `model/types.ts` and the runner)
 
