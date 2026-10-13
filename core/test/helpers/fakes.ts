@@ -4,6 +4,7 @@ import {
   type ChildSession,
   type CommandSpec,
   type ContextSnapshot,
+  type EditorFrame,
   emptyUsage,
   type Host,
   type InputPane,
@@ -43,6 +44,8 @@ export type FakeHost = Host & {
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
   widgetRefreshes: number;
   overlays: OverlayFactory[];
+  editorFrame?: EditorFrame;
+  foreignEditor: boolean;
   idle: boolean;
   usage: UsageTotals;
   info: SessionInfo;
@@ -117,6 +120,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     widgets: new Map(),
     widgetRefreshes: 0,
     overlays: [],
+    foreignEditor: false,
     idle: true,
     usage: emptyUsage(),
     confirmations: [],
@@ -188,6 +192,14 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         host.editorSubmissions.push(text);
 
         return host.editorReachable;
+      },
+      setEditorFrame: (frame) => {
+        if (host.foreignEditor) {
+          return false;
+        }
+
+        host.editorFrame = frame;
+        return true;
       },
     },
     registerTool: (spec) => {

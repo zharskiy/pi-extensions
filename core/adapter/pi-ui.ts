@@ -39,6 +39,7 @@ import type {
   TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
+import { createEditorFrame } from "./pi-editor-frame.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
@@ -450,5 +451,6 @@ export const createUi = (
     },
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
+    setEditorFrame: createEditorFrame(tuiCtx),
   };
 };

@@ -115,6 +115,12 @@ export type WidgetHandle = { refresh(): void };
 
 export type WorkingIndicator = { frames: string[]; intervalMs: number };
 
+export type EditorFrame = {
+  chrome: number;
+  minWidth: number;
+  decorate(lines: string[], paint: (text: string) => string): string[];
+};
+
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
@@ -130,6 +136,7 @@ export type HostUi = {
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
   mapCommandCompletion(map: (command: string) => string | undefined): void;
   submitEditor(text: string): Promise<boolean>;
+  setEditorFrame(frame: EditorFrame | undefined): boolean;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };

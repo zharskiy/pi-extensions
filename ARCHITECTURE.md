@@ -123,6 +123,11 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - `onEditorSubmit`: a terminal input listener that, on the `tui.input.submit` key, swaps an editor text that is exactly an alias for its target before the key is processed. `mapCommandCompletion`: wraps the autocomplete provider so picking an alias in the slash menu inserts the target.
 - Each alias is also a registered command. If it still runs, `submitEditor` waits one macrotask, sets the target as editor text and feeds Enter to the TUI's focused component (the TUI is captured through a widget factory that is removed at once); when no component takes input the extension notifies `Could not run <target>`. No state, no files.
 
+## Composer
+
+- On session start composer hands `host.ui.setEditorFrame(frame)` a pure `EditorFrame` (`chrome`, `minWidth`, `decorate(lines, paint)`). The adapter (`core/adapter/pi-editor-frame.ts`) installs a `CustomEditor` subclass through `ctx.ui.setEditorComponent`, only in `tui` mode and only when no other extension has set an editor (`getEditorComponent()`).
+- The subclass renders pi's editor `chrome` columns narrower and passes the lines and the editor's live `borderColor` to `decorate`; below `minWidth` it renders the plain editor. `decorate` treats lines that are all `─` or a `─ ↑ N more` scroll hint (after stripping SGR codes) as rules: rules before the first content line get the top corners, the first rule after it the bottom corners, content lines get pipes and the chevron gutter, and everything below the box (autocomplete) is indented.
+
 ## Persistence summary
 
 Every file the extensions write lives under pi's agent dir or session dir (`~/.pi/agent` by default; the `sessionDir` setting or `--session-dir` moves session data), except handoff files (OS temp dir) and `worktree: true` agents (checkout under `<cwd>/.pi/worktrees/`, git's `pi-agents/...` branch and `.git/worktrees/` metadata).
