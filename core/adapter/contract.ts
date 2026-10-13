@@ -136,7 +136,7 @@ export type HostUi = {
   terminalNotify(title: string, body: string): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
-  /** Show or hide pi's working row (spinner + message); tui only. `false` clears the row at once; `true` shows it again at once while a run is active (pi's `isStreaming`), with the last `setWorkingMessage` text, and otherwise at the next `turn_start`. */
+  /** Show or hide pi's working row; tui only. Hiding is immediate. Showing is immediate while a run is active, otherwise pi applies it at the next turn_start. The flag persists until set again; pi resets it to true on session switch and reload. */
   setWorkingVisible(visible: boolean): void;
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
   mapCommandCompletion(map: (command: string) => string | undefined): void;

@@ -27,6 +27,7 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/usage/totals channel names, payloads, parsers
+│   │   ├── format.ts            # shared duration (and later token) formatters
 │   │   └── settings.ts / settle.ts  # settings, timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, live.ts, render-theme.ts

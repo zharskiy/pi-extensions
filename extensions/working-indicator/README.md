@@ -3,14 +3,16 @@
 A pi extension that replaces pi's plain `Working...` line with a spinner, a playful verb and the elapsed time of the current prompt:
 
 ```
-⠹ Percolating… (12s · esc to interrupt)
+⠹ Percolating… (bash · 12s · esc to interrupt)
 ```
 
 ## What it does
 
 - At session start the working indicator becomes the configured spinner, drawn in the theme's accent colour; pi keeps it for the whole session.
-- While a prompt runs (from agent start until the run settles, across all its model calls and tool runs), the working message shows a verb, the seconds since the prompt started and the interrupt hint. The interrupt key comes from pi's `app.interrupt` keybinding, so a rebound key shows correctly. The seconds advance every second; the verb changes every 8 seconds, picked at random from a fixed list.
-- When the run settles and on shutdown the message goes back to pi's default.
+- While a prompt runs (from agent start until the run settles, across all its model calls and tool runs), the working line shows a verb, the time since the prompt started (`12s`, `1m 5s`) and the interrupt hint (from pi's `app.interrupt` keybinding). While a tool runs, the tool's name comes first: `Percolating… (bash · 1m 5s · esc to interrupt)`. The time advances every second; the verb changes every 8 seconds.
+- The line shows while pi waits for the model, while the model thinks or writes a tool call, and while tools run. It hides while the assistant's answer text streams in, and comes back as soon as the text stops.
+- When the run settles the line disappears and the message goes back to pi's default.
+- Only the main session drives it; subagents never show, hide or change it.
 - Active only in `tui` mode; in other modes it does nothing.
 
 ## Configuration
@@ -23,4 +25,4 @@ Constants at the top of `src/working-indicator.ts`:
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/working-indicator.ts` holds the spinners, the verbs and the prompt timer, and depends only on `core/adapter/contract.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/working-indicator.ts` holds the spinners, the verbs and the prompt timer, and depends only on `core/adapter/contract.ts` and `core/manager/format.ts`, whose duration format (`12s`, `1m 5s`) it shares with subagents and footer. Tests are under `test/`.
