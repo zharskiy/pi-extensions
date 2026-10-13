@@ -23,7 +23,7 @@ type RenderedList = { lines: string[]; selectedRow?: number };
 export const groupOf = (record: AgentRecord): AgentGroup => {
   const open = !isClosed(record.state);
 
-  if (open && (record.state === "grace" || record.attention)) {
+  if (open && record.state === "grace") {
     return "attention";
   }
 

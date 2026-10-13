@@ -23,10 +23,6 @@ export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRe
   return earlier;
 };
 
-export type AttentionKind = "confirm" | "select" | "input";
-
-export type Attention = { kind: AttentionKind; title: string; since: number };
-
 export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 
 export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
@@ -55,7 +51,6 @@ export type AgentRecord = {
   chainIndex: number;
   predecessorId?: string;
   successorId?: string;
-  attention?: Attention;
   state: AgentState;
   createdAt: number;
   startedAt?: number;

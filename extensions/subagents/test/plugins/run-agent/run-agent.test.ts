@@ -293,6 +293,15 @@ describe("run_agent batches", () => {
     ]);
   });
 
+  it("spawns children without a dialog forwarder", async () => {
+    const { run, runtime, host } = setup();
+
+    await run(tasks(1));
+
+    expect(runtime.children[0].spec).not.toHaveProperty("prompts");
+    expect(host.confirmations).toEqual([]);
+  });
+
   it("marks running agents failed on shutdown and never wakes for them", async () => {
     const { run, runtime, host, registry } = setup();
 

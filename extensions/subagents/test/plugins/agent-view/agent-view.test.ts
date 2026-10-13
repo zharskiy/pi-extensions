@@ -824,7 +824,7 @@ describe("agent view successor chain", () => {
 });
 
 describe("agent view header", () => {
-  it("shows the chain index, chain links and a pending question", () => {
+  it("shows the chain index and chain links", () => {
     const base = closedAgent(setup());
     const record: AgentRecord = {
       ...base,
@@ -832,13 +832,12 @@ describe("agent view header", () => {
       chainIndex: 2,
       predecessorId: "explorer-0001",
       successorId: "explorer-0003",
-      attention: { kind: "confirm", title: "Allow rm -rf build?", since: 0 },
     };
 
     const { view } = openViewWith(record, async () => ({ ok: true, delivery: "steer" }));
 
     expect(plain(view.render(200))[0]).toBe(
-      `⠋ ${record.id} #2 (explorer) · running · model n/a · continues explorer-0001 · continued by explorer-0003 · needs input: Allow rm -rf build?`,
+      `⠋ ${record.id} #2 (explorer) · running · model n/a · continues explorer-0001 · continued by explorer-0003`,
     );
   });
 });

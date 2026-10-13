@@ -5,7 +5,6 @@ import type { Plugin } from "../../model/plugin.ts";
 import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
 import { createHandoff } from "./handoff.ts";
 import { createOutbox } from "./outbox.ts";
-import { childPromptsFor, createPromptQueue } from "./prompts.ts";
 import { createRunner } from "./runner.ts";
 import { describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
 
@@ -55,7 +54,6 @@ export const runAgentPlugin: Plugin = {
       return tools;
     };
 
-    const promptQueue = createPromptQueue();
     const handoff = createHandoff(root);
 
     const runner = createRunner({
@@ -68,7 +66,6 @@ export const runAgentPlugin: Plugin = {
       session: () => host.session(),
       handoff,
       toolsFor: childTools,
-      promptsFor: (record) => childPromptsFor({ ui: host.ui, registry, queue: promptQueue }, record),
     });
 
     services.provide("runner", runner);

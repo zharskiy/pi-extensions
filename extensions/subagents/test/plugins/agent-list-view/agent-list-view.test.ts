@@ -131,7 +131,7 @@ describe("agent list view", () => {
     const asking = create({ description: "asking" }, 3);
     const done = create({ description: "done" }, 4);
 
-    harness.registry.update(asking.id, { attention: { kind: "confirm", title: "Allow bash?", since: 3 } });
+    harness.registry.update(asking.id, { state: "grace" });
     harness.registry.close(done.id, { state: "done" });
 
     const { lines } = await harness.openList();
@@ -142,7 +142,6 @@ describe("agent list view", () => {
     expect(body[2]).toMatch(new RegExp(`^  . ${first.id} · first`));
     expect(body[4]).toBe("Needs attention · 1");
     expect(body[5]).toContain(`${asking.id} · asking`);
-    expect(body[5]).toContain("needs input: Allow bash?");
     expect(body[7]).toBe("Done · 1");
     expect(body[8]).toContain(`${done.id} · done`);
   });

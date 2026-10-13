@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   emptyListText,
-  groupOf,
   listEntries,
   moveSelection,
   renderList,
@@ -38,7 +37,7 @@ const records = [
   record("explorer-new", { createdAt: 5 }),
   record("reviewer-q", { state: "queued", createdAt: 3 }),
   record("explorer-grace", { state: "grace", createdAt: 2 }),
-  record("reviewer-ask", { attention: { kind: "confirm", title: "Allow?", since: 0 }, createdAt: 4 }),
+  record("reviewer-ask", { state: "grace", createdAt: 4 }),
   record("explorer-done", { state: "done", createdAt: 6, endedAt: 7 }),
   record("reviewer-failed", { state: "failed", createdAt: 7, endedAt: 8 }),
   record("explorer-stopped", { state: "stopped", createdAt: 8, endedAt: 9 }),
@@ -68,13 +67,6 @@ describe("agent list model", () => {
     ]);
   });
 
-  it("puts open agents waiting for input under needs attention, never closed ones", () => {
-    const attention = { kind: "input" as const, title: "Name?", since: 0 };
-
-    expect(groupOf(record("a-1", { state: "queued", attention }))).toBe("attention");
-    expect(groupOf(record("a-2", { state: "done", attention }))).toBe("done");
-  });
-
   it("moves the selection over agents only and clamps at both ends", () => {
     const entries = listEntries(records, "");
 
@@ -100,7 +92,7 @@ describe("agent list model", () => {
       "reviewer-ask",
       "explorer-grace",
     ]);
-    expect(summary(listEntries(records, "grace"))).toEqual(["# attention", "explorer-grace"]);
+    expect(summary(listEntries(records, "grace"))).toEqual(["# attention", "reviewer-ask", "explorer-grace"]);
     expect(selectedRecord(listEntries(records, "failed"), "explorer-new")?.id).toBe("reviewer-failed");
   });
 

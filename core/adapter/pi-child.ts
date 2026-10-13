@@ -8,20 +8,17 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type ExtensionFactory,
-  type ExtensionUIContext,
   estimateTokens,
   getAgentDir,
   type InlineExtension,
   ModelRuntime,
   SessionManager,
   SettingsManager,
-  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { settleWithin } from "../manager/settle.ts";
 import type {
   AgentRuntime,
   ChildEvent,
-  ChildPrompts,
   ChildSession,
   MessageDelivery,
   SpawnSpec,
@@ -94,41 +91,6 @@ export const createChildExtension =
       });
     });
   };
-
-const silentUi = {
-  onTerminalInput: () => () => {},
-  setStatus: () => {},
-  setWorkingMessage: () => {},
-  setWorkingVisible: () => {},
-  setWorkingIndicator: () => {},
-  setHiddenThinkingLabel: () => {},
-  setWidget: () => {},
-  setFooter: () => {},
-  setHeader: () => {},
-  setTitle: () => {},
-  custom: async () => undefined as never,
-  pasteToEditor: () => {},
-  setEditorText: () => {},
-  getEditorText: () => "",
-  editor: async () => undefined,
-  addAutocompleteProvider: () => {},
-  setEditorComponent: () => {},
-  getEditorComponent: () => undefined,
-  getAllThemes: () => [],
-  getTheme: () => undefined,
-  setTheme: () => ({ success: false, error: "UI not available" }),
-  getToolsExpanded: () => false,
-  setToolsExpanded: () => {},
-};
-
-export const childUiContext = (theme: Theme, prompts: ChildPrompts | undefined): ExtensionUIContext => ({
-  ...silentUi,
-  theme,
-  select: (title, options) => prompts?.select(title, options) ?? Promise.resolve(undefined),
-  confirm: (title, message) => prompts?.confirm(title, message) ?? Promise.resolve(false),
-  input: (title, placeholder) => prompts?.input(title, placeholder) ?? Promise.resolve(undefined),
-  notify: (message, type = "info") => prompts?.notify(message, type),
-});
 
 const MCP_PREFIX = "mcp__";
 
@@ -294,9 +256,7 @@ export const createPiRuntime = (
     };
 
     try {
-      await childScope.run(scope, () =>
-        session.bindExtensions({ mode: "print", uiContext: childUiContext(ctx.ui.theme, spec.prompts) }),
-      );
+      await childScope.run(scope, () => session.bindExtensions({ mode: "print" }));
     } catch (error) {
       await dispose();
       throw error;

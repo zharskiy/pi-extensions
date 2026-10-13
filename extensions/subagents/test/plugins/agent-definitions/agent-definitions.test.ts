@@ -563,6 +563,19 @@ describe("prompt assembly", () => {
       ]
     `);
   });
+
+  it("tells the agent that approvals are refused", () => {
+    const base = readFileSync(join(PACKAGE_ROOT, "prompts", "base-system-prompt.md"), "utf8");
+    const parsed = parseDefinition(
+      "---\nname: scout\ndescription: d\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\nYou scout.",
+      "/x/scout.md",
+      "user",
+    );
+    const [first] = assemblePromptAppend(base, parsed.definition as NonNullable<typeof parsed.definition>);
+
+    expect(first).toContain("Nobody can approve anything while you run: confirmations are refused at once.");
+    expect(first).toContain("list the blocked step in your result");
+  });
 });
 
 describe("agent-definitions plugin", () => {

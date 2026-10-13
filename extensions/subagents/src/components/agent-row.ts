@@ -63,14 +63,6 @@ export const truncate = (text: string, width: number) => {
 
 export const chainLabel = (record: AgentRecord) => (record.chainIndex > 1 ? ` #${record.chainIndex}` : "");
 
-export const attentionText = (record: AgentRecord) => {
-  if (!record.attention || isClosed(record.state)) {
-    return undefined;
-  }
-
-  return `needs input: ${singleLine(record.attention.title)}`;
-};
-
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
   if (record.state !== "grace" || record.graceEndsAt === undefined) {
     return undefined;
@@ -101,14 +93,11 @@ export const agentRow = (
   const description = singleLine(record.description);
   const name = `${record.id}${chainLabel(record)}`;
   const model = record.model ? ` (${record.model})` : "";
-  const attention = attentionText(record);
-  const alert = attention ? ` · ${attention}` : "";
   const head = `${name}${model} · `;
   const tail = ` · ${detail}`;
-  const room = Math.max(8, width - 2 - head.length - tail.length - alert.length);
-  const row = `${icon} ${theme.bold(name)}${theme.fg("dim", model)} · ${theme.fg("muted", truncate(description, room))}${theme.fg("dim", tail)}`;
+  const room = Math.max(8, width - 2 - head.length - tail.length);
 
-  return attention ? `${row}${theme.fg("warning", alert)}` : row;
+  return `${icon} ${theme.bold(name)}${theme.fg("dim", model)} · ${theme.fg("muted", truncate(description, room))}${theme.fg("dim", tail)}`;
 };
 
 export const treeRow = (record: AgentRecord, now: number, frame: number, theme: ThemeLike, width: number) => {

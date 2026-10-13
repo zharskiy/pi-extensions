@@ -303,13 +303,6 @@ export type ChildSession = {
   wake(text: string): Promise<void>;
 };
 
-export type ChildPrompts = {
-  confirm(title: string, message: string): Promise<boolean>;
-  select(title: string, options: string[]): Promise<string | undefined>;
-  input(title: string, placeholder?: string): Promise<string | undefined>;
-  notify(message: string, level: "info" | "warning" | "error"): void;
-};
-
 export type SpawnSpec = {
   id: string;
   cwd: string;
@@ -322,7 +315,6 @@ export type SpawnSpec = {
   promptAppend: string[];
   reserveTokens: number;
   customTools: AnyToolSpec[];
-  prompts?: ChildPrompts;
 };
 
 export type PromptSection = { name: string; text: string };

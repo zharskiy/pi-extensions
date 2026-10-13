@@ -5,7 +5,6 @@ import {
   type AgentRuntime,
   type AnyToolSpec,
   type ChildEvent,
-  type ChildPrompts,
   type ChildSession,
   type RoutedMessage,
   type SessionInfo,
@@ -49,7 +48,6 @@ type RunnerDeps = {
   session: () => SessionInfo;
   handoff: HandoffService;
   toolsFor: (record: AgentRecord) => AnyToolSpec[];
-  promptsFor: (record: AgentRecord) => ChildPrompts;
 };
 
 export type BatchItem = {
@@ -585,7 +583,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
         customTools: deps.toolsFor(record),
-        prompts: deps.promptsFor(record),
         skills: allowlist(definition.skills),
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,

@@ -6,14 +6,7 @@ import type {
   ThemeLike,
   ViewComponent,
 } from "../../../../../core/adapter/contract.ts";
-import {
-  attentionText,
-  chainLabel,
-  finishSummary,
-  progressText,
-  stateIcon,
-  truncate,
-} from "../../components/agent-row.ts";
+import { chainLabel, finishSummary, progressText, stateIcon, truncate } from "../../components/agent-row.ts";
 import {
   type CollapsibleSection,
   renderSections,
@@ -102,11 +95,9 @@ const titleText = (record: AgentRecord, theme: ThemeLike, frame: number) => {
     .map((part) => ` · ${part}`)
     .join("");
 
-  const attention = attentionText(record);
-  const alert = attention ? theme.fg("warning", ` · ${attention}`) : "";
   const name = theme.bold(`${record.id}${chainLabel(record)}`);
 
-  return `${stateIcon(record.state, frame)} ${name} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}${links}${alert}`;
+  return `${stateIcon(record.state, frame)} ${name} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}${links}`;
 };
 
 type Status = { tone: "warning" | "dim"; text: string };

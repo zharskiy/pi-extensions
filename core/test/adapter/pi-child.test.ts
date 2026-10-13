@@ -1,14 +1,8 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Theme } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChildPrompts, SpawnSpec } from "../../adapter/contract.ts";
-import {
-  childToolNames,
-  childUiContext,
-  createPiRuntime,
-  type ParentSource,
-} from "../../adapter/pi-child.ts";
+import type { SpawnSpec } from "../../adapter/contract.ts";
+import { childToolNames, createPiRuntime, type ParentSource } from "../../adapter/pi-child.ts";
 
 type InlineEntry = {
   name: string;
@@ -199,50 +193,6 @@ describe("child tool names", () => {
   });
 });
 
-describe("childUiContext", () => {
-  const theme = { name: "fake" } as unknown as Theme;
-
-  it("forwards the four dialogs to the prompts and returns their results", async () => {
-    const prompts: ChildPrompts = {
-      confirm: vi.fn(async () => true),
-      select: vi.fn(async () => "b"),
-      input: vi.fn(async () => "typed"),
-      notify: vi.fn(),
-    };
-
-    const ui = childUiContext(theme, prompts);
-
-    expect(await ui.confirm("t", "m")).toBe(true);
-    expect(await ui.select("t", ["a", "b"])).toBe("b");
-    expect(await ui.input("t", "ph")).toBe("typed");
-
-    ui.notify("hello", "warning");
-
-    expect(prompts.confirm).toHaveBeenCalledWith("t", "m");
-    expect(prompts.select).toHaveBeenCalledWith("t", ["a", "b"]);
-    expect(prompts.input).toHaveBeenCalledWith("t", "ph");
-    expect(prompts.notify).toHaveBeenCalledWith("hello", "warning");
-  });
-
-  it("denies everything without prompts", async () => {
-    const ui = childUiContext(theme, undefined);
-
-    expect(await ui.confirm("t", "m")).toBe(false);
-    expect(await ui.select("t", ["a"])).toBeUndefined();
-    expect(await ui.input("t")).toBeUndefined();
-    expect(() => ui.notify("x")).not.toThrow();
-  });
-
-  it("uses the given theme and keeps the rest harmless", () => {
-    const ui = childUiContext(theme, undefined);
-
-    expect(ui.theme).toBe(theme);
-    expect(() => ui.setStatus("k", "v")).not.toThrow();
-    expect(() => ui.setWidget("k", undefined)).not.toThrow();
-    expect(typeof ui.custom).toBe("function");
-  });
-});
-
 describe("child skills", () => {
   const mainSkills = () => [
     { name: "docs", path: "/skills/docs/SKILL.md" },
@@ -294,11 +244,14 @@ const scriptedSession = () => {
   let promptError: Error | undefined;
   let bindError: Error | undefined;
   const queued: string[] = [];
+  const bindings: unknown[] = [];
 
   const session = {
     isStreaming: false,
     sessionFile: undefined,
-    bindExtensions: async () => {
+    bindExtensions: async (options: unknown) => {
+      bindings.push(options);
+
       if (bindError) {
         throw bindError;
       }
@@ -341,6 +294,7 @@ const scriptedSession = () => {
   return {
     session,
     calls,
+    bindings,
     settle: () => listener({ type: "agent_settled", aborted: false }),
     leaveQueued: (text: string) => {
       queued.push(text);
@@ -426,6 +380,13 @@ describe("child prompting", () => {
     await child.send({ sender: "main", text: "hi" }, "steer");
 
     expect(calls).toEqual(["emit session_shutdown", "dispose"]);
+  });
+
+  it("binds the child's extensions without a UI context", async () => {
+    const { bindings } = await spawnScripted();
+
+    expect(bindings).toEqual([{ mode: "print" }]);
+    expect(bindings[0]).not.toHaveProperty("uiContext");
   });
 
   it("shuts down and disposes the session when binding its extensions fails", async () => {

@@ -71,21 +71,6 @@ describe("agent row formatting", () => {
     );
   });
 
-  it("appends a pending question in warning colour while the agent waits for input", () => {
-    const theme = { fg: (token: string, text: string) => `<${token}>${text}`, bold: (text: string) => text };
-    const waiting = record({ attention: { kind: "confirm", title: "Allow bash?", since: 0 } });
-
-    expect(agentRow(waiting, 45_000, 0, plainTheme, 120)).toBe(
-      "⠋ explorer-1a2b · find the auth handler · 12 tool calls · 86.4k tokens · 45s · 20% ctx · needs input: Allow bash?",
-    );
-    expect(agentRow(waiting, 45_000, 0, theme as never, 120)).toMatch(
-      /<warning> · needs input: Allow bash\?$/,
-    );
-    expect(agentRow({ ...waiting, state: "done", endedAt: 1_000 }, 45_000, 0, plainTheme, 120)).not.toContain(
-      "needs input",
-    );
-  });
-
   it("indents nested agents and shows the grace countdown", () => {
     expect(
       treeRow(record({ depth: 3, state: "grace", graceEndsAt: 50_000 }), 45_000, 0, plainTheme, 140),

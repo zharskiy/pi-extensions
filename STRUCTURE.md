@@ -98,7 +98,7 @@ agent-definitions/  # loads agents/*.md: loader.ts, fields.ts (field rules),
 agent-registry/     # in-memory agent records (registry.ts)
 run-agent/          # runner.ts, tools.ts (run_agent, message_agent), placement.ts
                     #   + worktree.ts, task.ts (task text), outbox.ts, result.ts,
-                    #   prompts.ts (forwarded dialogs), model-text.ts, semaphore.ts,
+                    #   model-text.ts, semaphore.ts,
                     #   handoff.ts (handoff template and schema service)
 agent-status/       # status tool and snapshots
 agent-view/         # /agents command view, view-mode store
