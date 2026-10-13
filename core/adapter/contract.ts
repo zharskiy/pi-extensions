@@ -123,6 +123,9 @@ export type HostUi = {
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(title: string, body: string): void;
+  onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
+  mapCommandCompletion(map: (command: string) => string | undefined): void;
+  submitEditor(text: string): Promise<boolean>;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };

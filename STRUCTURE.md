@@ -12,6 +12,7 @@ pi-extensions/
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts / pi-tools.ts   # pi TUI components, tool wrapping
+│   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
@@ -49,8 +50,12 @@ pi-extensions/
 │   │   ├── prompts/handoff.md   # handoff instruction template
 │   │   ├── test/
 │   │   └── README.md
-│   └── spending/                # footer with total session cost
-│       ├── src/                 # index, ledger, footer, spending
+│   ├── spending/                # footer with total session cost
+│   │   ├── src/                 # index, ledger, footer, spending
+│   │   ├── test/
+│   │   └── README.md
+│   └── command-aliases/         # friendlier names for built-in commands
+│       ├── src/                 # index, command-aliases (ALIASES)
 │       ├── test/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
@@ -95,7 +100,7 @@ usage-report/       # reports agent usage to the spending channel
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending}/src/index.ts`.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,command-aliases}/src/index.ts`.
 - Development-only: `core/test`, `extensions/*/test`, `test/`, `research/`, `.github/`, config files below.
 
 ### Config files

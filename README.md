@@ -5,6 +5,7 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session, inside the main session's process, optionally in their own git worktree, with a context breakdown per agent, terminal notifications and MCP for every agent with tools; what they spend is reported to spending.
 - [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
 - [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
+- [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 
 ## Install
 
@@ -19,6 +20,7 @@ Either installs all extensions. To try one for a single run without installing, 
 pi -e ./pi-extensions/extensions/subagents/src/index.ts
 pi -e ./pi-extensions/extensions/session-limits/src/index.ts
 pi -e ./pi-extensions/extensions/spending/src/index.ts
+pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
 ```
 
 ## Update

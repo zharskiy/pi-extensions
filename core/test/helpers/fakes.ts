@@ -57,6 +57,10 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
+  submitRewrites: ((text: string) => string | undefined)[];
+  completionMaps: ((command: string) => string | undefined)[];
+  editorSubmissions: string[];
+  editorReachable: boolean;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -114,6 +118,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     confirmAnswer: true,
     newSessions: [],
     newSessionResult: true,
+    submitRewrites: [],
+    completionMaps: [],
+    editorSubmissions: [],
+    editorReachable: true,
     info: {
       id: "main-session",
       file: undefined,
@@ -154,6 +162,21 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (title, body) => {
         host.terminalNotices.push({ title, body });
+      },
+      onEditorSubmit: (rewrite) => {
+        host.submitRewrites.push(rewrite);
+
+        return () => {
+          host.submitRewrites = host.submitRewrites.filter((entry) => entry !== rewrite);
+        };
+      },
+      mapCommandCompletion: (map) => {
+        host.completionMaps.push(map);
+      },
+      submitEditor: async (text) => {
+        host.editorSubmissions.push(text);
+
+        return host.editorReachable;
       },
     },
     registerTool: (spec) => {
