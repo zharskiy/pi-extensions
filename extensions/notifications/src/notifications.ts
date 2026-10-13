@@ -19,6 +19,7 @@ export const createNotifications = (host: Host) => {
   const settings = watchSettings(host);
   const sources = new Set<string>();
   let active = false;
+  let channel: NotifyChannel = "auto";
   let pending = false;
   let dialog: { title?: string; fired: boolean } | undefined;
   let idleTimer: (() => void) | undefined;
@@ -26,7 +27,7 @@ export const createNotifications = (host: Host) => {
   let offKeys: (() => void) | undefined;
 
   const send = (text: string) => {
-    host.ui.terminalNotify(text, settings().channel as NotifyChannel);
+    host.ui.terminalNotify(text, channel);
   };
 
   const clearIdle = () => {
@@ -81,7 +82,13 @@ export const createNotifications = (host: Host) => {
   };
 
   host.onSessionStart((info) => {
-    active = info.mode === "tui" && settings().channel !== "off";
+    const configured = settings().channel;
+
+    active = info.mode === "tui" && configured !== "off";
+
+    if (configured !== "off") {
+      channel = configured;
+    }
 
     if (active && !offKeys) {
       offKeys = host.ui.onKeyPress(key);

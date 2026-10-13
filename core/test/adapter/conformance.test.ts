@@ -203,51 +203,54 @@ describe("pi adapter conformance", () => {
     const seen: unknown[] = [];
     let answer: boolean | undefined;
 
-    vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+    try {
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
 
-    const settingsManager = pi.SettingsManager.inMemory({});
+      const settingsManager = pi.SettingsManager.inMemory({});
 
-    const loader = new pi.DefaultResourceLoader({
-      cwd: dir,
-      agentDir: dir,
-      settingsManager,
-      extensionFactories: [
-        {
-          name: "asker",
-          factory: (api) => {
-            api.on("ui_prompt_start", (event) => {
-              seen.push(event);
-            });
-            api.on("ui_prompt_end", (event) => {
-              seen.push(event);
-            });
-            api.on("session_start", async (_event, ctx) => {
-              answer = await ctx.ui.confirm("Allow bash?", "rm -rf build");
-            });
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "asker",
+            factory: (api) => {
+              api.on("ui_prompt_start", (event) => {
+                seen.push(event);
+              });
+              api.on("ui_prompt_end", (event) => {
+                seen.push(event);
+              });
+              api.on("session_start", async (_event, ctx) => {
+                answer = await ctx.ui.confirm("Allow bash?", "rm -rf build");
+              });
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
 
-    await loader.reload();
+      await loader.reload();
 
-    const { session } = await pi.createAgentSession({
-      cwd: dir,
-      agentDir: dir,
-      modelRuntime: await pi.ModelRuntime.create(),
-      model: offlineModel as never,
-      resourceLoader: loader,
-      settingsManager,
-      sessionManager: pi.SessionManager.inMemory(dir),
-    });
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
 
-    const uiContext = { confirm: async () => true } as unknown as pi.ExtensionUIContext;
+      const uiContext = { confirm: async () => true } as unknown as pi.ExtensionUIContext;
 
-    await session.bindExtensions({ mode: "print", uiContext });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+      await session.bindExtensions({ mode: "print", uiContext });
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    session.dispose();
-    vi.unstubAllEnvs();
+      session.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+    }
 
     expect(answer).toBe(true);
     expect(seen).toEqual([

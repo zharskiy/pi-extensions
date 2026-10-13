@@ -320,6 +320,25 @@ describe("dialog notification", () => {
   });
 });
 
+describe("dialog end re-arm", () => {
+  it("a dialog ending re-arms a fresh idle delay", () => {
+    const host = setup();
+
+    host.settle();
+    advance(10_000);
+    host.dialog("start", "confirm", "Allow?");
+    advance(1_000);
+    host.dialog("end", "confirm");
+    advance(19_999);
+
+    expect(host.terminalNotices).toEqual([]);
+
+    advance(1);
+
+    expect(host.terminalNotices).toEqual([IDLE]);
+  });
+});
+
 describe("channels, modes and settings", () => {
   it("rings only the bell with the bell channel", () => {
     const host = setup("tui", { channel: "bell" });
@@ -363,6 +382,9 @@ describe("channels, modes and settings", () => {
     host.settle();
     host.dialog("start", "confirm", "Allow?");
     await host.shutdown();
+
+    expect(vi.getTimerCount()).toBe(0);
+
     advance(60_000);
 
     expect(host.terminalNotices).toEqual([]);
@@ -389,6 +411,7 @@ describe("channels, modes and settings", () => {
     host.start();
     host.start();
 
+    expect(host.keyListeners.size).toBe(1);
     expect(host.notices).toEqual([
       {
         message: `pi-notifications settings: ${settingsFile}: channel must be one of "auto", "bell", "off"`,
