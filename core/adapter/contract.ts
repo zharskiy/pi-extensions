@@ -113,6 +113,8 @@ export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 
 export type WidgetHandle = { refresh(): void };
 
+export type WorkingIndicator = { frames: string[]; intervalMs: number };
+
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
@@ -123,6 +125,8 @@ export type HostUi = {
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(title: string, body: string): void;
+  setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
+  setWorkingMessage(text: string | undefined): void;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -172,6 +176,7 @@ export type Host = {
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
+  onTurnStart(handler: () => void): void;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";

@@ -20,6 +20,7 @@ import {
   type ThemeLike,
   type ToolSpec,
   type UsageTotals,
+  type WorkingIndicator,
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
 
@@ -57,6 +58,9 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
+  workingIndicators: (WorkingIndicator | undefined)[];
+  workingMessages: (string | undefined)[];
+  turnStart(): void;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -67,6 +71,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const idleHandlers: (() => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const turnStartHandlers: (() => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -154,6 +159,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (title, body) => {
         host.terminalNotices.push({ title, body });
+      },
+      setWorkingIndicator: (indicator) => {
+        host.workingIndicators.push(indicator);
+      },
+      setWorkingMessage: (text) => {
+        host.workingMessages.push(text);
       },
     },
     registerTool: (spec) => {
@@ -298,6 +309,18 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       return spec as unknown as ToolSpec<P, D>;
+    },
+    workingIndicators: [],
+    workingMessages: [],
+    onTurnStart: (handler) => {
+      turnStartHandlers.push(handler);
+    },
+    turnStart: () => {
+      host.idle = false;
+
+      turnStartHandlers.forEach((handler) => {
+        handler();
+      });
     },
   };
 
