@@ -112,6 +112,11 @@ Nesting: a child gets `run_agent`, `message_agent` and `agent_status` as custom 
 - Persistence: changed reports are appended as `pi-spending:usage` custom entries in the main session file on idle and shutdown, and replayed on session start (resume). Reports that arrive after spending's own shutdown are ignored.
 - Lineage: totals cover the whole session lineage. Compaction and `/tree` only append to the same file, and `sumUsage` reads every entry of every branch. When a session is created from another one (`/fork`, `/clone` or a handoff switch; `parent` set) spending appends a `pi-spending:main-offset` entry (the parent's main cost, its own last offset plus all its entries, minus the usage of the entries copied into the new session), so main = last offset + `sumUsage` of the new session's entries; it also appends a continuation marker report, absorbs every parent `pi-spending:usage` report under an id prefixed with the parent file name (so new agents cannot collide with parent agent ids) and persists them into the new session at once; restore ignores reports before the last marker, so resumed sessions and chains of forks and handoffs keep the totals. Only a plain `/new` starts at zero; a handoff switch keeps the totals, since it continues the same work in a new session. A fork of a session without a file (`--no-session`) has no parent file to read and starts from the copied entries only.
 
+## Working-indicator
+
+- Active only in `tui` mode. On session start and every `Host.onTurnStart` (pi's `turn_start`) it sets `HostUi.setWorkingIndicator` to the `SPINNER` frames; the adapter (`pi-working.ts`) paints them with the theme's accent colour and both working calls are no-ops outside `tui`.
+- On turn start an unref'd interval refreshes `HostUi.setWorkingMessage` every `TICK_MS` with `<verb>… (<seconds>s · esc to interrupt)`, picking a new random verb every `VERB_MS`; turn end and shutdown stop it and restore pi's default message. Nothing is persisted.
+
 ## Persistence summary
 
 Every file the extensions write lives under pi's agent dir or session dir (`~/.pi/agent` by default; the `sessionDir` setting or `--session-dir` moves session data), except handoff files (OS temp dir) and `worktree: true` agents (checkout under `<cwd>/.pi/worktrees/`, git's `pi-agents/...` branch and `.git/worktrees/` metadata).

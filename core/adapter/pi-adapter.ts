@@ -69,6 +69,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const idleHandlers: (() => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const turnStartHandlers: (() => void)[] = [];
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -114,6 +115,14 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     if (mainPrompt) {
       replaceMainPrompt(event.systemPromptOptions, mainPrompt);
     }
+  });
+
+  pi.on("turn_start", (_event, ctx) => {
+    capture(ctx);
+
+    turnStartHandlers.forEach((handler) => {
+      handler();
+    });
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -227,6 +236,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     readEntries,
     sessionUsage: (file) => sumUsage(entriesOf(file)),
     session: () => sessionInfo(liveCtx(state)),
+    onTurnStart: (handler) => {
+      turnStartHandlers.push(handler);
+    },
   };
 };
 
