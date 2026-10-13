@@ -126,6 +126,9 @@ export type EditorFrame = {
 
 export type NotifyChannel = "auto" | "bell";
 
+/** Keys the editor sees while a capture is installed. `up`/`down` follow pi's `tui.editor.cursorUp/Down` bindings. */
+export type EditorKeyHandler = (key: KeyPress) => "consumed" | "release";
+
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
@@ -145,6 +148,19 @@ export type HostUi = {
   mapCommandCompletion(map: (command: string) => string | undefined): void;
   submitEditor(text: string): Promise<boolean>;
   setEditorFrame(frame: EditorFrame | undefined): void;
+  /**
+   * Fires when `tui.editor.cursorLeft` is pressed in the focused editor while it is empty and no autocomplete is open
+   * (an empty editor has the cursor at column 0 of its only line, so the key would be a no-op). The key is consumed. tui only; silently
+   * inactive when another extension installed its own editor. Returns an unsubscribe function.
+   */
+  onEmptyEditorLeft(handler: () => void): () => void;
+  /**
+   * Routes every key the focused editor receives to `handler` until it returns "release" or the returned function is
+   * called. "consumed" swallows the key (it never reaches pi: no `app.interrupt` on Esc, no shortcuts, no text edit);
+   * "release" ends the capture and lets the editor handle that same key normally. Keys never reach the handler while
+   * an overlay or dialog has focus. At most one capture at a time: installing a second one releases the first.
+   */
+  captureEditorKeys(handler: EditorKeyHandler): () => void;
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
   /** Calls `listener` on every keyboard input chunk (mouse reports and key-release events excluded) without consuming it. tui only. Returns an unsubscribe function. */

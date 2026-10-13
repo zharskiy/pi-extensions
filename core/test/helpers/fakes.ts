@@ -7,10 +7,12 @@ import {
   type DialogEvent,
   type DialogKind,
   type EditorFrame,
+  type EditorKeyHandler,
   emptyUsage,
   type FooterRender,
   type Host,
   type InputPane,
+  type KeyPress,
   type MessageDelivery,
   type ModelInfo,
   type NewSessionOptions,
@@ -53,6 +55,10 @@ export type FakeHost = Host & {
   overlays: OverlayFactory[];
   editorFrame?: EditorFrame;
   foreignEditor: boolean;
+  emptyLeftHandlers: Set<() => void>;
+  editorCapture?: EditorKeyHandler;
+  pressEmptyLeft(): boolean;
+  pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   idle: boolean;
   usage: UsageTotals;
   info: SessionInfo;
@@ -143,6 +149,31 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     widgetRefreshes: 0,
     overlays: [],
     foreignEditor: false,
+    emptyLeftHandlers: new Set(),
+    pressEmptyLeft: () => {
+      const handlers = Array.from(host.emptyLeftHandlers);
+
+      handlers.forEach((handler) => {
+        handler();
+      });
+
+      return handlers.length > 0;
+    },
+    pressEditorKey: (key) => {
+      const capture = host.editorCapture;
+
+      if (!capture) {
+        return "editor";
+      }
+
+      const outcome = capture(key);
+
+      if (outcome === "release" && host.editorCapture === capture) {
+        host.editorCapture = undefined;
+      }
+
+      return outcome;
+    },
     idle: true,
     usage: emptyUsage(),
     confirmations: [],
@@ -224,6 +255,32 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         }
 
         host.editorFrame = frame;
+      },
+      onEmptyEditorLeft: (handler) => {
+        if (host.foreignEditor) {
+          return () => {};
+        }
+
+        const entry = () => handler();
+
+        host.emptyLeftHandlers.add(entry);
+
+        return () => {
+          host.emptyLeftHandlers.delete(entry);
+        };
+      },
+      captureEditorKeys: (handler) => {
+        if (host.foreignEditor) {
+          return () => {};
+        }
+
+        host.editorCapture = handler;
+
+        return () => {
+          if (host.editorCapture === handler) {
+            host.editorCapture = undefined;
+          }
+        };
       },
       setFooter: (render) => {
         host.footer = render;

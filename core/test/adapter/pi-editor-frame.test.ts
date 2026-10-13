@@ -1,8 +1,8 @@
-import type { CustomEditor, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { EditorFrame } from "../../adapter/contract.ts";
-import { createEditorFrame } from "../../adapter/pi-editor-frame.ts";
+import type { EditorFrame, KeyPress } from "../../adapter/contract.ts";
+import { createEditorHooks } from "../../adapter/pi-editor-frame.ts";
 
 type Factory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
@@ -38,7 +38,27 @@ const frame: EditorFrame = {
     }),
 };
 
-const editor = (factory: Factory) => factory?.(tui, theme, {} as never) as unknown as CustomEditor;
+const ESC = String.fromCharCode(27);
+const LEFT = `${ESC}[D`;
+const DOWN = `${ESC}[B`;
+const UP = `${ESC}[A`;
+
+const bindings = (map: Record<string, string>) => ({
+  matches: (data: string, id: string) => map[data] === id,
+});
+
+const keybindings = bindings({
+  [LEFT]: "tui.editor.cursorLeft",
+  [DOWN]: "tui.editor.cursorDown",
+  [UP]: "tui.editor.cursorUp",
+  [ESC]: "app.interrupt",
+});
+
+const editor = (factory: Factory, keys: object = keybindings) =>
+  factory?.(tui, theme, keys as never) as unknown as CustomEditor;
+
+const createEditorFrame = (tuiCtx: () => ExtensionContext | undefined) =>
+  createEditorHooks(tuiCtx).setEditorFrame;
 
 const render = (factory: Factory, width: number) => editor(factory)?.render(width) ?? [];
 
@@ -57,7 +77,7 @@ const click = (x: number, y: number, width: number) => ({
   clickCount: 1,
 });
 
-describe("createEditorFrame", () => {
+describe("createEditorHooks", () => {
   it("renders the editor narrower and decorates it with the border colour", () => {
     const { ctx, ui } = fakeCtx();
 
@@ -118,23 +138,165 @@ describe("createEditorFrame", () => {
     expect(ui.sets).toBe(0);
   });
 
-  it("reinstalls its own editor when set again and removes it on undefined", () => {
+  it("installs the editor once and removes it when the frame is cleared and no hook remains", () => {
     const { ctx, ui } = fakeCtx();
-    const setFrame = createEditorFrame(() => ctx);
+    const hooks = createEditorHooks(() => ctx);
 
-    setFrame(frame);
-    setFrame(frame);
+    hooks.setEditorFrame(frame);
+    hooks.setEditorFrame(frame);
 
-    expect(ui.sets).toBe(2);
+    const off = hooks.onEmptyEditorLeft(() => {});
+
+    expect(ui.sets).toBe(1);
+
+    hooks.setEditorFrame(undefined);
+
+    expect(ui.sets).toBe(1);
     expect(ui.factory).toBeTypeOf("function");
 
-    setFrame(undefined);
+    off();
 
-    expect(ui.sets).toBe(3);
+    expect(ui.sets).toBe(2);
     expect(ui.factory).toBeUndefined();
   });
 
+  it("renders the plain editor when only a key hook installed the editor", () => {
+    const { ctx, ui } = fakeCtx();
+
+    createEditorHooks(() => ctx).onEmptyEditorLeft(() => {});
+
+    const hooked = editor(ui.factory);
+    const plain = new CustomEditor(tui, theme, keybindings as never);
+
+    hooked.setText("abc");
+    plain.setText("abc");
+
+    expect(hooked.render(30)).toEqual(plain.render(30));
+  });
+
+  it("fires the empty-left hook only for cursorLeft on an empty editor without autocomplete and consumes the key", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorLeft(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory);
+
+    hooked.setText("a");
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(0);
+    expect(hooked.getCursor()).toEqual({ line: 0, col: 0 });
+
+    hooked.setText("");
+
+    const before = hooked.getCursor();
+
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(1);
+    expect(hooked.getCursor()).toEqual(before);
+  });
+
+  it("routes keys to the capture, swallows consumed ones and lets a released key reach the editor", () => {
+    const { ctx, ui } = fakeCtx();
+    const seen: KeyPress[] = [];
+    let escapes = 0;
+
+    createEditorHooks(() => ctx).captureEditorKeys((key) => {
+      seen.push(key);
+
+      return key.name === "escape" ? "consumed" : "release";
+    });
+
+    const hooked = editor(ui.factory);
+
+    hooked.onEscape = () => {
+      escapes += 1;
+    };
+
+    hooked.handleInput(ESC);
+
+    expect(escapes).toBe(0);
+    expect(hooked.getText()).toBe("");
+
+    hooked.handleInput("a");
+    hooked.handleInput("b");
+
+    expect(seen.map((key) => key.name)).toEqual(["escape", "other"]);
+    expect(hooked.getText()).toBe("ab");
+
+    hooked.handleInput(ESC);
+
+    expect(escapes).toBe(1);
+  });
+
+  it("keeps up and down bound to pi's editor keybindings", () => {
+    const { ctx, ui } = fakeCtx();
+    const seen: KeyPress[] = [];
+    const ctrlN = String.fromCharCode(14);
+
+    createEditorHooks(() => ctx).captureEditorKeys((key) => {
+      seen.push(key);
+
+      return "consumed";
+    });
+
+    const hooked = editor(ui.factory, bindings({ [ctrlN]: "tui.editor.cursorDown" }));
+
+    hooked.handleInput(ctrlN);
+    hooked.handleInput(DOWN);
+
+    expect(seen.map((key) => key.name)).toEqual(["down", "other"]);
+  });
+
+  it("installs at most one capture", () => {
+    const { ctx, ui } = fakeCtx();
+    const hooks = createEditorHooks(() => ctx);
+    const first: string[] = [];
+    const second: string[] = [];
+
+    const offFirst = hooks.captureEditorKeys((key) => {
+      first.push(key.raw ?? "");
+
+      return "consumed";
+    });
+
+    hooks.captureEditorKeys((key) => {
+      second.push(key.raw ?? "");
+
+      return "consumed";
+    });
+
+    const hooked = editor(ui.factory);
+
+    hooked.handleInput("x");
+    offFirst();
+    hooked.handleInput("y");
+
+    expect(first).toEqual([]);
+    expect(second).toEqual(["x", "y"]);
+    expect(hooked.getText()).toBe("");
+    expect(ui.sets).toBe(1);
+  });
+
+  it("registers no hook when another extension set the editor", () => {
+    const { ctx, ui } = fakeCtx(() => ({}) as never);
+    const hooks = createEditorHooks(() => ctx);
+
+    hooks.onEmptyEditorLeft(() => {})();
+    hooks.captureEditorKeys(() => "consumed")();
+
+    expect(ui.sets).toBe(0);
+  });
+
   it("does nothing outside tui mode", () => {
-    expect(() => createEditorFrame(() => undefined)(frame)).not.toThrow();
+    const hooks = createEditorHooks(() => undefined);
+
+    expect(() => hooks.setEditorFrame(frame)).not.toThrow();
+    expect(() => hooks.onEmptyEditorLeft(() => {})()).not.toThrow();
+    expect(() => hooks.captureEditorKeys(() => "consumed")()).not.toThrow();
   });
 });

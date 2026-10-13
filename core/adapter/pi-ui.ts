@@ -42,7 +42,7 @@ import type {
   TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
-import { createEditorFrame } from "./pi-editor-frame.ts";
+import { createEditorHooks } from "./pi-editor-frame.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
 import { createWorkingUi } from "./pi-working.ts";
@@ -52,25 +52,37 @@ export const themeLike = (theme: Theme): ThemeLike => ({
   bold: (text) => theme.bold(text),
 });
 
-const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPress => {
-  if (isToolsToggle(data)) {
+type KeyMatchers = {
+  isToolsToggle(data: string): boolean;
+  isUp(data: string): boolean;
+  isDown(data: string): boolean;
+};
+
+const KEY_NAMES = [
+  ["pageUp", Key.pageUp],
+  ["pageDown", Key.pageDown],
+  ["home", Key.home],
+  ["end", Key.end],
+  ["enter", Key.enter],
+  ["escape", Key.escape],
+  ["space", Key.space],
+  ["tab", Key.tab],
+] as const;
+
+const keyPressWith = (data: string, matchers: KeyMatchers): KeyPress => {
+  if (matchers.isToolsToggle(data)) {
     return { name: "toggleTools", raw: data };
   }
 
-  const names = [
-    ["up", Key.up],
-    ["down", Key.down],
-    ["pageUp", Key.pageUp],
-    ["pageDown", Key.pageDown],
-    ["home", Key.home],
-    ["end", Key.end],
-    ["enter", Key.enter],
-    ["escape", Key.escape],
-    ["space", Key.space],
-    ["tab", Key.tab],
-  ] as const;
+  if (matchers.isUp(data)) {
+    return { name: "up", raw: data };
+  }
 
-  const match = names.find(([, key]) => matchesKey(data, key));
+  if (matchers.isDown(data)) {
+    return { name: "down", raw: data };
+  }
+
+  const match = KEY_NAMES.find(([, key]) => matchesKey(data, key));
 
   if (match) {
     return { name: match[0], raw: data };
@@ -78,6 +90,23 @@ const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPr
 
   return { name: "other", char: data.length === 1 ? data : undefined, raw: data };
 };
+
+const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPress =>
+  keyPressWith(data, {
+    isToolsToggle,
+    isUp: (input) => matchesKey(input, Key.up),
+    isDown: (input) => matchesKey(input, Key.down),
+  });
+
+type KeyMatcher = { matches(data: string, binding: string): boolean };
+
+/** The key as the focused editor sees it: `up`/`down` through pi's `tui.editor.cursorUp/Down` bindings, `toggleTools` through `app.tools.expand`, the rest by `Key.*`. */
+export const editorKeyPress = (data: string, keys: KeyMatcher): KeyPress =>
+  keyPressWith(data, {
+    isToolsToggle: (input) => keys.matches(input, "app.tools.expand"),
+    isUp: (input) => keys.matches(input, "tui.editor.cursorUp"),
+    isDown: (input) => keys.matches(input, "tui.editor.cursorDown"),
+  });
 
 export const textComponent = (previous: unknown, text: string): Component => {
   if (previous instanceof Text) {
@@ -464,7 +493,7 @@ export const createUi = (
     },
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
-    setEditorFrame: createEditorFrame(tuiCtx),
+    ...createEditorHooks(tuiCtx),
     setFooter: createFooterSetter(tuiCtx, themeLike),
     keyText: (binding) => keyText(binding as Keybinding),
     onKeyPress: (listener) =>

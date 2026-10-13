@@ -1,7 +1,13 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { createInputPane, createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
+import {
+  createInputPane,
+  createUi,
+  editorKeyPress,
+  type HostState,
+  notificationSequence,
+} from "../../adapter/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
@@ -66,6 +72,37 @@ describe("createInputPane focus", () => {
     pane.setFocused(true);
 
     expect(pane.render(30).join("")).toContain(CURSOR_MARKER);
+  });
+});
+
+describe("editorKeyPress", () => {
+  it("editorKeyPress names up and down through the keybindings manager", () => {
+    const ctrlP = String.fromCharCode(16);
+    const ctrlN = String.fromCharCode(14);
+    const ctrlO = String.fromCharCode(15);
+    const map: Record<string, string> = {
+      [ctrlP]: "tui.editor.cursorUp",
+      [ctrlN]: "tui.editor.cursorDown",
+      [ctrlO]: "app.tools.expand",
+    };
+    const keys = { matches: (data: string, id: string) => map[data] === id };
+
+    const names = [ctrlP, ctrlN, ctrlO, `${ESC}[A`, `${ESC}[B`, ESC, "\r", " ", "x"].map(
+      (data) => editorKeyPress(data, keys).name,
+    );
+
+    expect(names).toEqual([
+      "up",
+      "down",
+      "toggleTools",
+      "other",
+      "other",
+      "escape",
+      "enter",
+      "space",
+      "other",
+    ]);
+    expect(editorKeyPress("x", keys).char).toBe("x");
   });
 });
 
