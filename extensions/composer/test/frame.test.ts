@@ -11,12 +11,12 @@ const layout = { bottom: 2, scrolled: false };
 const visible = (line: string) => line.replaceAll(ANSI, "").length;
 
 describe("createFrame", () => {
-  it("reserves only the chevron gutter", () => {
+  it("reserves the margin and the chevron gutter", () => {
     const frame = createFrame();
 
-    expect(frame.chrome).toBe(2);
-    expect(frame.left).toBe(2);
-    expect(frame.minWidth).toBe(10);
+    expect(frame.chrome).toBe(3);
+    expect(frame.left).toBe(3);
+    expect(frame.minWidth).toBe(11);
   });
 
   it("draws two full-width rules and puts the chevron only on the first content line", () => {
@@ -26,7 +26,7 @@ describe("createFrame", () => {
       plain,
     );
 
-    expect(lines).toEqual(["────────", `${bold(CHEVRON)} abcdef`, "  ghijkl", "────────"]);
+    expect(lines).toEqual(["─────────", ` ${bold(CHEVRON)} abcdef`, "   ghijkl", "─────────"]);
   });
 
   it("keeps every line as wide as the given width", () => {
@@ -50,14 +50,14 @@ describe("createFrame", () => {
     const rule = `${ESC}[31m─── ↑ 3 more ───${ESC}[39m`;
     const lines = frame.decorate([rule, "ab", "──"], layout, plain);
 
-    expect(lines[0]).toBe(`${rule}──`);
+    expect(lines[0]).toBe(`${rule}───`);
     expect(visible(lines[0] ?? "")).toBe(visible(rule) + frame.chrome);
   });
 
   it("paints the extension and the chevron with the given colour", () => {
     const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed);
 
-    expect(lines).toEqual(["──[──]", `${bold(`[${CHEVRON}]`)} ab`, "──[──]"]);
+    expect(lines).toEqual(["──[───]", ` ${bold(`[${CHEVRON}]`)} ab`, "──[───]"]);
   });
 
   it("puts the gutter space instead of the chevron while scrolled", () => {
@@ -67,13 +67,13 @@ describe("createFrame", () => {
       plain,
     );
 
-    expect(lines).toEqual(["─ ↑ 2 more ───", "  ab", "  cd", "────"]);
+    expect(lines).toEqual(["─ ↑ 2 more ────", "   ab", "   cd", "─────"]);
   });
 
   it("indents lines below the bottom rule, such as autocomplete, under the text", () => {
     const lines = createFrame().decorate(["──", "ab", "──", "/help", "──"], layout, plain);
 
-    expect(lines.slice(2)).toEqual(["────", "  /help", "  ──"]);
+    expect(lines.slice(2)).toEqual(["─────", "   /help", "   ──"]);
   });
 
   it("leaves the lines unframed without a bottom rule", () => {

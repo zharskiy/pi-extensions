@@ -17,7 +17,7 @@ describe("composer", () => {
 
     host.start();
 
-    expect(host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1]?.startsWith(`${ESC}[1m`)).toBe(
+    expect(host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1]?.startsWith(` ${ESC}[1m`)).toBe(
       true,
     );
   });

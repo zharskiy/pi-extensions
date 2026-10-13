@@ -1,7 +1,7 @@
 import type { ContextSnapshot, FooterData, ModelInfo, ThemeLike } from "../../../core/adapter/contract.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
 
-const PAD = "";
+const PAD = " ";
 
 const PAD_BOTTOM = 1;
 

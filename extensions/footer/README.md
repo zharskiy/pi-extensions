@@ -20,7 +20,7 @@ feature-branch
 - Line 4: the git branch, only inside a repository.
 - Line 5: the thinking level and the key that cycles it, or `thinking unavailable` for models without reasoning.
 - Then, after a blank line, the status texts other extensions set, sorted by key, whitespace collapsed, on one line. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it, its ` (sub)` marker included.
-- The block starts at column 0, in line with the composer chevron (`PAD` is empty), and is followed by `PAD_BOTTOM` (1) blank lines; both are constants at the top of `src/render.ts`. Every line is cut to the terminal width with a dim `…`.
+- The block is indented one column (`PAD` is a single space), in line with the composer chevron, and is followed by `PAD_BOTTOM` (1) blank lines; both are constants at the top of `src/render.ts`. Every line is cut to the terminal width with a dim `…`.
 - Active only in tui mode; elsewhere it does nothing.
 
 ## Where the figures come from

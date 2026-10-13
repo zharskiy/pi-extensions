@@ -3,12 +3,15 @@ import type { EditorFrame, EditorLayout } from "../../../core/adapter/contract.t
 export const CHEVRON = "❯";
 
 const RULE = "─";
+const MARGIN = 1;
 const MIN_CONTENT = 8;
 
 const ESC = String.fromCharCode(27);
 
 export const createFrame = (): EditorFrame => {
-  const chrome = CHEVRON.length + 1;
+  const gutter = CHEVRON.length + 1;
+  const chrome = MARGIN + gutter;
+  const margin = " ".repeat(MARGIN);
   const gutterSpace = " ".repeat(chrome);
   const tail = RULE.repeat(chrome);
 
@@ -18,7 +21,7 @@ export const createFrame = (): EditorFrame => {
     }
 
     const extension = paint(tail);
-    const lead = scrolled ? gutterSpace : `${ESC}[1m${paint(CHEVRON)}${ESC}[22m `;
+    const lead = scrolled ? gutterSpace : `${margin}${ESC}[1m${paint(CHEVRON)}${ESC}[22m `;
 
     return lines.map((line, index) => {
       if (index === 0 || index === bottom) {
