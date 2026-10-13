@@ -118,7 +118,7 @@ describe("reducePhase", () => {
     });
   });
 
-  it("ignores nested codemode calls", () => {
+  it("keeps codemode as the tool while nested calls run (filtered in the adapter)", () => {
     const outer = run([{ type: "agent_start" }, toolStart("outer", "codemode")]);
 
     expect(view(outer)).toEqual({ phase: "tool", detail: { toolName: "codemode", running: 1 } });

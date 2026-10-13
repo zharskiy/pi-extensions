@@ -59,7 +59,7 @@ pi-extensions/
 │   │   ├── src/                 # index, ledger, footer, spending
 │   │   ├── test/
 │   │   └── README.md
-│   ├── working-indicator/       # spinner, verb and turn time in the working line
+│   ├── working-indicator/       # spinner, verb and prompt time in the working line
 │   │   ├── src/                 # index, working-indicator
 │   │   ├── test/
 │   │   └── README.md

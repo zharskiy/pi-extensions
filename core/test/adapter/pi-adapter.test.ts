@@ -104,6 +104,7 @@ describe("pi adapter", () => {
     await fire("message_end", ctx, { message: { role: "assistant" } });
     await fire("tool_execution_start", ctx, { toolCallId: "t1", toolName: "codemode" });
     await fire("tool_execution_start", ctx, { toolCallId: "n1", toolName: "bash", parentToolCallId: "t1" });
+    await fire("message_end", ctx, { message: { role: "toolResult" } });
     await fire("tool_execution_end", ctx, { toolCallId: "n1", toolName: "bash", parentToolCallId: "t1" });
     await fire("tool_execution_end", ctx, { toolCallId: "t1", toolName: "codemode" });
     await fire("agent_end", ctx);
