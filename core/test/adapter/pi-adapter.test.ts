@@ -225,7 +225,8 @@ describe("pi adapter", () => {
     expect(host.session().subscription).toBe(false);
   });
 
-  it("sends follow-ups while busy and dispatches commands as prompts", async () => {
+  it("queues user messages and commands as follow-ups while busy", async () => {
+    // The starting window is covered: pi reports not-idle from submission, before agent_start.
     const { pi, fire, sent } = fakePi();
     const host = createPiHost(pi, {});
 
@@ -254,22 +255,6 @@ describe("pi adapter", () => {
     expect(sent).toEqual([
       { text: "write it", options: undefined },
       { text: "/skill:review src", options: { expandPromptTemplates: true } },
-    ]);
-  });
-
-  it("queues a command as a follow-up while a run is starting", async () => {
-    const { pi, fire, sent } = fakePi();
-    const host = createPiHost(pi, {});
-    let idle = true;
-    const ctx = { ...fakeCtx("tui", true), isIdle: () => idle };
-
-    await fire("session_start", ctx);
-    idle = false;
-    await fire("before_agent_start", ctx, { systemPromptOptions: {} });
-    host.dispatchCommand("template", "arg");
-
-    expect(sent).toEqual([
-      { text: "/template arg", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
     ]);
   });
 

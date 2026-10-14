@@ -20,6 +20,7 @@ import {
   type ToolRenderers,
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
+import * as tui from "@earendil-works/pi-tui";
 import {
   type Component,
   Container,
@@ -29,7 +30,6 @@ import {
   Key,
   type Keybinding,
   matchesKey,
-  renderFakeCursor,
   ScrollView,
   type TUI,
   type TuiMouseEvent,
@@ -291,25 +291,41 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
   };
 };
 
-const [FAKE_CURSOR_START = "", FAKE_CURSOR_END = ""] = renderFakeCursor("\0").split("\0");
-
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const FOCUSED_FAKE_CURSOR = new RegExp(
-  `(${escapeRegExp(CURSOR_MARKER)})${escapeRegExp(FAKE_CURSOR_START)}(.*?)(?:${escapeRegExp(FAKE_CURSOR_END)}|$)`,
-  "s",
-);
+const fakeCursorMarkers = (): [string, string] => {
+  const render = (tui as { renderFakeCursor?: (text: string) => string }).renderFakeCursor;
+  const [start = "", end = ""] = render?.("\0").split("\0") ?? [];
 
-export const resolveFakeCursors = (lines: string[], hardwareCursor: boolean): string[] =>
-  lines.map((line) => {
-    if (!line.includes(FAKE_CURSOR_START)) {
-      return line;
-    }
+  return [start, end];
+};
 
-    const resolved = hardwareCursor ? line.replace(FOCUSED_FAKE_CURSOR, "$1$2") : line;
+export const createFakeCursorResolver = (
+  start: string,
+  end: string,
+): ((lines: string[], hardwareCursor: boolean) => string[]) => {
+  if (start === "" || end === "") {
+    return (lines) => lines;
+  }
 
-    return resolved.replaceAll(FAKE_CURSOR_START, "\x1b[7m").replaceAll(FAKE_CURSOR_END, "\x1b[27m");
-  });
+  const focused = new RegExp(
+    `(${escapeRegExp(CURSOR_MARKER)})${escapeRegExp(start)}(.*?)(?:${escapeRegExp(end)}|$)`,
+    "s",
+  );
+
+  return (lines, hardwareCursor) =>
+    lines.map((line) => {
+      if (!line.includes(start)) {
+        return line;
+      }
+
+      const resolved = hardwareCursor ? line.replace(focused, "$1$2") : line;
+
+      return resolved.replaceAll(start, "\x1b[7m").replaceAll(end, "\x1b[27m");
+    });
+};
+
+export const resolveFakeCursors = createFakeCursorResolver(...fakeCursorMarkers());
 
 export const createInputPane = (
   placeholder: string,

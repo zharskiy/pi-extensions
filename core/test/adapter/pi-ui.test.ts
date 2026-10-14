@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
 import {
   capturePiRenderers,
+  createFakeCursorResolver,
   createInputPane,
   createTranscriptPane,
   createUi,
@@ -116,6 +117,13 @@ describe("createInputPane fake cursor", () => {
   it("draws the cursor in reverse video unless the hardware cursor shows", () => {
     expect(rendered(false, true).join("")).toContain(`${CURSOR_MARKER}${ESC}[7mh${ESC}[27mi`);
     expect(rendered(true, true).join("")).toContain(`${CURSOR_MARKER}hi`);
+  });
+
+  it("leaves lines untouched when pi-tui has no fake cursor markers", () => {
+    const lines = [`${CURSOR_MARKER}hi`, "plain"];
+
+    expect(createFakeCursorResolver("", "")(lines, false)).toEqual(lines);
+    expect(createFakeCursorResolver(fakeStart, "")(lines, true)).toEqual(lines);
   });
 });
 
