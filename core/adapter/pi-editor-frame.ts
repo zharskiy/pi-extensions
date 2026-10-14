@@ -37,7 +37,7 @@ class HostEditor extends CustomEditor {
   private scrolled = false;
 
   constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, hooks: SharedEditor) {
-    super(tui, theme, keybindings);
+    super(tui, theme, keybindings, { embedWorkingStatus: true });
     this.keys = keybindings;
     this.hooks = hooks;
   }

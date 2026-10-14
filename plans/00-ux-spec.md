@@ -46,7 +46,7 @@ Identity: what the user sees about an agent is its agent definition name (`recor
 
 Every surface follows one set of margins, so no text is glued to a display edge and the surfaces line up with pi's messages, editor and footer.
 
-- Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list, status line and working line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block, the completion lines) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
+- Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list and status line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block, the completion lines) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
 - Right margin: the same width on the right. The content width is `inner = width - 2 * PAD` (transcript surfaces: `width - 2 * outputPad`); no text goes past column `width - 1 - PAD` (0-based), so the last column is always blank. Every cut is `truncateCols(text, inner - <prefix>)`, never `truncateCols(text, width)`.
 - What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block or completion line, the chat width pi passes to the component (pi does not pad a self-rendered block or an entry). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
 - Columns inside the pad: column `PAD` holds the pointer gutter of a row (`› ` or two spaces) and the first cell of every line that is not a row: title, section header, feedback, hint, view header, `▸ Request`. Row glyphs and the panel's `↑ N more` / `↓ N more` markers sit at `PAD + 2`, the glyph column. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
@@ -527,7 +527,7 @@ The `▸`/`▾` line starts at column `PAD` (1), aligned with pi's transcript te
 
 ## 7. Surface E: working indicator
 
-The adapter computes a phase from pi's `turn_start`, `message_update`, `message_end`, `tool_execution_start/end`, `agent_end`, `agent_settled` events (assistant messages only; events with `parentToolCallId` ignored) and exposes `host.onPhase(phase, detail)`. The extension toggles `setWorkingVisible` and writes the message. pi draws the working line at column 1 (`Loader`, `paddingX 1`), which matches §2's `PAD`; nothing to change.
+The adapter computes a phase from pi's `turn_start`, `message_update`, `message_end`, `tool_execution_start/end`, `agent_end`, `agent_settled` events (assistant messages only; events with `parentToolCallId` ignored) and exposes `host.onPhase(phase, detail)`. The extension toggles `setWorkingVisible` and writes the message. pi draws the working line embedded in the editor's top rule after `── ` (the composer's editor is built with `embedWorkingStatus`), so it sits directly on the input with no gap; nothing else to change.
 
 | Phase | Entered on | Visible | Message |
 |---|---|---|---|

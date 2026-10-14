@@ -114,6 +114,37 @@ describe("createEditorHooks", () => {
     expect(lines.every((line) => line.startsWith("<|>") && line.endsWith("<|>"))).toBe(true);
   });
 
+  it("builds pi's editor with the working status embedded", () => {
+    const { ctx, ui } = fakeCtx();
+
+    createEditorFrame(() => ctx)(frame);
+
+    expect(editor(ui.factory).embedWorkingStatus).toBe(true);
+  });
+
+  it("draws pi's working status in the framed top rule and keeps a plain rule otherwise", () => {
+    const { ctx, ui } = fakeCtx();
+
+    createEditorFrame(() => ctx)(frame);
+
+    const framed = editor(ui.factory);
+    const plain = framed.render(40);
+
+    framed.setWorkingStatusIndicator({
+      renderInBorder: () => "⠹ Working",
+      renderSpinnerInBorder: () => "⠹",
+    } as never);
+
+    const working = framed.render(40);
+
+    expect(plain[0]).not.toContain("Working");
+    expect(working[0]).toContain("⠹ Working");
+    expect(working[0]?.endsWith("<|>")).toBe(true);
+    expect(working[1]?.startsWith("<|>>  ")).toBe(true);
+    expect(working.length).toBe(plain.length);
+    expect(working.filter((line) => line.includes("──")).length).toBe(2);
+  });
+
   it("falls back to the plain editor below the minimum width", () => {
     const { ctx, ui } = fakeCtx();
 
