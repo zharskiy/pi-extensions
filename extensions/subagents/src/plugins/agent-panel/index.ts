@@ -1,5 +1,4 @@
 import type { ThemeLike, WidgetHandle } from "../../../../../core/adapter/contract.ts";
-import { formatAgents } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import type { TreeRow } from "../../components/tree.ts";
 import type { Plugin } from "../../model/plugin.ts";
@@ -15,8 +14,6 @@ import {
 } from "./model.ts";
 
 const WIDGET_KEY = "pi-subagents-agents";
-
-const STATUS_KEY = "pi-subagents";
 
 const TICK_RUNNING_MS = 100;
 
@@ -178,48 +175,10 @@ export const agentPanelPlugin: Plugin = {
       }
     });
 
-    let hintTimer: ReturnType<typeof setTimeout> | undefined;
-    let shownStatus: string | undefined;
-
-    const setStatus = (text: string | undefined) => {
-      if (text !== shownStatus) {
-        shownStatus = text;
-        host.ui.setStatus(STATUS_KEY, text);
-      }
-    };
-
-    const updateStatus = () => {
-      const open = registry.list().filter((record) => !isClosed(record.state)).length;
-
-      if (open > 0) {
-        clearTimeout(hintTimer);
-        hintTimer = undefined;
-        setStatus(host.ui.style("accent", formatAgents(open)));
-        return;
-      }
-
-      if (shownStatus === undefined || hintTimer) {
-        return;
-      }
-
-      setStatus(host.ui.style("dim", "/agents to see agents"));
-      hintTimer = setTimeout(() => {
-        hintTimer = undefined;
-        setStatus(undefined);
-      }, settings.agentsHintMs);
-      hintTimer.unref?.();
-    };
-
-    const offStatus = bus.on("agent:changed", updateStatus);
-
     return () => {
       offLeft();
       release();
       unwatch();
-      offStatus();
-      clearTimeout(hintTimer);
-      hintTimer = undefined;
-      setStatus(undefined);
 
       if (handle) {
         host.ui.setWidget(WIDGET_KEY, undefined);

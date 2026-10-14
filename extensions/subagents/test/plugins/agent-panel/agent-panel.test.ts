@@ -589,7 +589,7 @@ describe("agent panel", () => {
     expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(2);
   });
 
-  it("removes the widget, the capture and the status on disable", async () => {
+  it("removes the widget and the capture on disable", async () => {
     const panel = setup();
     const record = panel.newAgent();
 
@@ -599,82 +599,18 @@ describe("agent panel", () => {
 
     expect(panel.widget()).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
-    expect(panel.host.statuses.get(STATUS)).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
 });
 
 describe("footer status", () => {
-  it("shows N agents while any record is open", () => {
+  it("sets no footer status", () => {
     const panel = setup();
-    const first = panel.newAgent();
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<accent>1 agent");
+    const done = panel.newAgent();
 
     panel.newAgent();
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<accent>2 agents");
-
-    panel.registry.close(first.id, { state: "done" });
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<accent>1 agent");
-  });
-
-  it("shows the /agents hint for agentsHintMs after the last agent closes, then nothing", () => {
-    const panel = setup();
-    const record = panel.newAgent();
-
-    panel.registry.close(record.id, { state: "done" });
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<dim>/agents to see agents");
-
-    vi.advanceTimersByTime(29_999);
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<dim>/agents to see agents");
-
-    vi.advanceTimersByTime(1);
-
-    expect(panel.host.statuses.get(STATUS)).toBeUndefined();
-  });
-
-  it("reads agentsHintMs from the settings", () => {
-    const panel = setup({ settings: { agentsHintMs: 5_000 } });
-
-    panel.registry.close(panel.newAgent().id, { state: "done" });
-    vi.advanceTimersByTime(4_999);
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<dim>/agents to see agents");
-
-    vi.advanceTimersByTime(1);
-
-    expect(panel.host.statuses.get(STATUS)).toBeUndefined();
-  });
-
-  it("replaces the hint with the count when a new agent starts", () => {
-    const panel = setup();
-
-    panel.registry.close(panel.newAgent().id, { state: "done" });
-    vi.advanceTimersByTime(5_000);
-    panel.newAgent();
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<accent>1 agent");
-
-    vi.advanceTimersByTime(30_000);
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<accent>1 agent");
-  });
-
-  it("counts nested agents", () => {
-    const panel = setup();
-    const parent = panel.newAgent();
-
-    panel.newAgent({ callerId: parent.id, depth: 3 });
-
-    expect(panel.host.statuses.get(STATUS)).toBe("<accent>2 agents");
-  });
-
-  it("sets no status before any agent exists", () => {
-    const panel = setup();
+    panel.registry.close(done.id, { state: "done" });
+    vi.advanceTimersByTime(60_000);
 
     expect(panel.host.statuses.has(STATUS)).toBe(false);
   });

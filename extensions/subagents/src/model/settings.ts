@@ -16,7 +16,6 @@ export type Settings = {
   lingerMs: number;
   failedLingerMs: number;
   doneLingerMs: number;
-  agentsHintMs: number;
   renderThrottleMs: number;
   stopGraceSeconds: number;
   maxChainLength: number;
@@ -35,7 +34,6 @@ export const defaultSettings = (): Settings => ({
   lingerMs: 30_000,
   failedLingerMs: 30_000,
   doneLingerMs: 10_000,
-  agentsHintMs: 30_000,
   renderThrottleMs: 250,
   stopGraceSeconds: 60,
   maxChainLength: 3,
@@ -54,7 +52,6 @@ const settingsSchema: SettingsSchema<Settings> = {
   lingerMs: range(0, 3_600_000),
   failedLingerMs: range(0, 3_600_000),
   doneLingerMs: range(0, 3_600_000),
-  agentsHintMs: range(0, 3_600_000),
   renderThrottleMs: range(0, 10_000),
   stopGraceSeconds: range(0, 3_600),
   maxChainLength: range(1, 20),

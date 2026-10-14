@@ -30,6 +30,7 @@ Decided by the orchestrator on 2026-10-13 after the four research reports in thi
 - Lifecycle: `done` rows leave the panel after 10 s (`doneLingerMs`, new default); `failed`, `stopped`, `handoff` rows stay 30 s (`failedLingerMs` default lowered from 60 s) or until `x` clears them. When the last row leaves, the panel disappears.
 - Keyboard: `←` on an empty editor (no autocomplete) selects the first row; `↑`/`↓` move; `Enter` opens the agent view; `x` stops a running agent (grace, then `x` again closes now) or clears a finished row; `Esc` deselects and returns focus to the editor. Esc never interrupts the main turn while a row is selected. Stop-all lives in the list view only.
 - Footer: while agents run the footer status shows `N agents` (accent); for 30 s after the last agent finished it shows `/agents to see agents` (dim), then nothing.
+  - Revised 2026-10-14: removed. The panel lists every open agent, so the footer sets no `N agents` count and no hint; `agentsHintMs` is gone.
 
 ### D3. `/agents` list view
 

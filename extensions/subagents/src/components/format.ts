@@ -6,8 +6,6 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const formatToolUses = (n: number): string => plural(n, "tool use");
 
-export const formatAgents = (n: number): string => plural(n, "agent");
-
 export const formatCtx = (percent: number | null | undefined): string | undefined =>
   percent === null || percent === undefined ? undefined : `${Math.round(percent)}% ctx`;
 

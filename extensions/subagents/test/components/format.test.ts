@@ -3,7 +3,6 @@ import {
   alignRight,
   displayWidth,
   firstLine,
-  formatAgents,
   formatCtx,
   formatDuration,
   formatTokens,
@@ -21,12 +20,10 @@ describe("format helpers", () => {
     expect(formatDuration(62_000)).toBe("1m 2s");
   });
 
-  it("pluralises tool uses and agents", () => {
+  it("pluralises tool uses", () => {
     expect(formatToolUses(1)).toBe("1 tool use");
     expect(formatToolUses(0)).toBe("0 tool uses");
     expect(formatToolUses(4)).toBe("4 tool uses");
-    expect(formatAgents(1)).toBe("1 agent");
-    expect(formatAgents(3)).toBe("3 agents");
   });
 
   it("formats context percent or nothing", () => {

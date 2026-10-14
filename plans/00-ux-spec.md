@@ -164,7 +164,7 @@ After everything finished, including the model's reply:
 
 ## 4. Surface B: agent panel
 
-A widget below the editor (`belowEditor`), replacing the progress widget. No header line, no `/agents` text. Absent when it has no rows. With the footer extension the panel sits below the footer block (usage, thinking, `N agents`): the footer draws its block as the first below-editor widget (`setFooter(render, { slot: "belowEditor" })`) and leaves pi's footer slot empty; pi keeps below-editor widgets in the order they were first set, and the panel is set only once a row exists, after every extension's session start. Without the footer extension the panel sits directly under the editor, above pi's footer.
+A widget below the editor (`belowEditor`), replacing the progress widget. No header line, no `/agents` text. Absent when it has no rows. With the footer extension the panel sits below the footer block (usage, session total, folder, branch, thinking, other extensions' statuses): the footer draws its block as the first below-editor widget (`setFooter(render, { slot: "belowEditor" })`) and leaves pi's footer slot empty; pi keeps below-editor widgets in the order they were first set, and the panel is set only once a row exists, after every extension's session start. Without the footer extension the panel sits directly under the editor, above pi's footer.
 
 ### Row grammar
 
@@ -225,11 +225,7 @@ Only while a row is selected, `dim`, one line:
 
 ### Footer status
 
-Through `setStatus("pi-subagents", …)`, drawn by the footer extension with its own `PAD` as the last line of its block, above the panel:
-
-- While any record is open (`queued`, `running`, `grace`, any depth): `3 agents` (`accent`), `1 agent` singular.
-- From the moment the last open record closes, for `agentsHintMs` (new, default 30 000): `/agents to see agents` (`dim`).
-- Then nothing. A new open record replaces the hint with the count at once.
+Revised 2026-10-14: the panel sets no footer status (no `N agents` counter, no `/agents to see agents` hint); it lists every open agent itself, and `←` opens the list.
 
 ### Refresh
 
@@ -562,7 +558,7 @@ Events that must not notify:
 | `doneLingerMs` | `pi-subagents.json` | new: panel linger for `done` rows | 10 000 | 0–3 600 000 |
 | `failedLingerMs` | `pi-subagents.json` | default lowered; panel linger for `failed`, `stopped`, `handoff` | 30 000 (was 60 000) | 0–3 600 000 |
 | `lingerMs` | `pi-subagents.json` | meaning narrowed: list-view linger for every closed row | 30 000 | 0–3 600 000 |
-| `agentsHintMs` | `pi-subagents.json` | new: footer `/agents to see agents` duration | 30 000 | 0–3 600 000 |
+| `agentsHintMs` | removed | the footer hint is gone; old files that still carry the key are ignored | none | none |
 | `renderThrottleMs` | `pi-subagents.json` | now also governs the list and the view (the hard-coded 300 goes) | 250 | 0–10 000 |
 | `stopGraceSeconds` | `pi-subagents.json` | unchanged | 60 | 0–3 600 |
 | `notifications` | `pi-subagents.json` | removed | — | — |
