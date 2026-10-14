@@ -178,7 +178,11 @@ export const runAgentTool = (
         })),
       };
 
-      if (ctx.toolCallId && started.records.some((record) => !isClosed(record.state))) {
+      if (
+        callerId !== MAIN_CALLER &&
+        ctx.toolCallId &&
+        started.records.some((record) => !isClosed(record.state))
+      ) {
         deps.calls?.set(callKey(callerId, ctx.toolCallId), { details });
       }
 

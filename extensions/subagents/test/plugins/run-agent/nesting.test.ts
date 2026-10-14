@@ -369,6 +369,19 @@ describe("pending nested calls", () => {
     expect(main.pendingResult?.("call_0", second.id)?.details).toEqual(two.details);
   });
 
+  it("keeps nothing for a main-session call, whose transcript gets pi's own partial results", async () => {
+    const { host } = setup();
+    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+
+    await main.execute(
+      { agents: [{ agent: "explorer", task: "look" }] },
+      { toolCallId: "ra1", update: () => {} },
+    );
+    await flush();
+
+    expect(main.pendingResult?.("ra1", "main")).toBeUndefined();
+  });
+
   it("keeps nothing for a call without a tool call id", async () => {
     const { startGeneral, spawnFrom, host, registry } = setup();
     const { record, child } = await startGeneral();

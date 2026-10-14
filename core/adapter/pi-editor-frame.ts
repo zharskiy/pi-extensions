@@ -20,12 +20,24 @@ type SharedEditor = {
 
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v2");
 
-const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor };
+/** The record of older copies, which have no `emptyDown`: reused and upgraded, so every copy shares one editor. */
+const EDITOR_KEY_V1 = Symbol.for("pi-extensions.editor-hooks.v1");
+
+type SharedEditorV1 = Omit<SharedEditor, "emptyDown"> & { emptyDown?: Set<() => void> };
+
+const shared = globalThis as typeof globalThis & {
+  [EDITOR_KEY]?: SharedEditor;
+  [EDITOR_KEY_V1]?: SharedEditorV1;
+};
 
 const sharedEditor = (): SharedEditor => {
-  shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set() };
+  const record = shared[EDITOR_KEY] ?? shared[EDITOR_KEY_V1] ?? { emptyLeft: new Set() };
 
-  return shared[EDITOR_KEY];
+  record.emptyDown ??= new Set();
+  shared[EDITOR_KEY] = record as SharedEditor;
+  shared[EDITOR_KEY_V1] = record;
+
+  return record as SharedEditor;
 };
 
 /**

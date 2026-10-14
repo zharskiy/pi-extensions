@@ -9,7 +9,7 @@ A pi extension that replaces pi's plain `Working...` line with a spinner, a play
 ## What it does
 
 - At session start the working indicator becomes the configured spinner, drawn in the theme's accent colour; pi keeps it for the whole session.
-- While a prompt runs (from agent start until the run settles, across all its model calls and tool runs), the working line shows a verb, the time since the prompt started (`12s`, `1m 5s`) and the interrupt hint (from pi's `app.interrupt` keybinding). While a tool runs, the tool's name comes first: `Percolating… (bash · 1m 5s · esc to interrupt)`. Pi draws it in the input's top line (`───── ⠹ Percolating… (…) ───`), right above the text. The time advances every second; the verb changes every 8 seconds.
+- While a prompt runs (from agent start until the run settles, across all its model calls and tool runs), the working line shows a verb, the time since the prompt started (`12s`, `1m 5s`) and the interrupt hint (from pi's `app.interrupt` keybinding). While a tool runs, the tool's name comes first: `Percolating… (bash · 1m 5s · esc to interrupt)`. Pi draws it in the input's top line (`── ⠹ Percolating… (…) ───`; with the composer the rule starts `───── ⠹`), right above the text. The time advances every second; the verb changes every 8 seconds.
 - The line shows while pi waits for the model, while the model thinks or writes a tool call, and while tools run. It hides while the assistant's answer text streams in, and comes back as soon as the text stops.
 - When the run settles the line disappears and the message goes back to pi's default.
 - Only the main session drives it; subagents never show, hide or change it.
