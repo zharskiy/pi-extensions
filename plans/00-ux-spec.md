@@ -64,19 +64,21 @@ Only the main session is interactive. A child's `confirm` resolves `false`, its 
 
 ### `run_agent` block
 
-One block per `run_agent` call. The tool call line is the header; the tool result is the rows. The block uses pi's plain shell (`renderShell: "self"`, no coloured box, no `(ctrl+o to expand)` hint). pi does not pad a self-rendered block; the adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (no wrapping), so the block lines up with pi's messages (§2 "Padding and margins"). It re-renders through the stored `invalidate` at most every `renderThrottleMs` (default 250) after an `agent:changed` of its batch. It never schedules its own timer, and pi caches a tool block between invalidations, so the spinner in the header advances only on agent events (deviation: a frozen spinner between events is accepted; the panel below the editor animates).
+One block per `run_agent` call. The tool call line draws nothing (the working line already shows the run); the tool result is the header and the rows. The block uses pi's plain shell (`renderShell: "self"`, no coloured box, no `(ctrl+o to expand)` hint). pi does not pad a self-rendered block; the adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (no wrapping), so the block lines up with pi's messages (§2 "Padding and margins"). It re-renders through the stored `invalidate` at most every `renderThrottleMs` (default 250) after an `agent:changed` of its batch. It never schedules its own timer; pi caches a tool block between invalidations, so the rows advance only on agent events (the panel below the editor animates).
 
 Header phases:
 
 | Phase | Header line |
 |---|---|
-| Tool running (`wait: true`, or `wait: false` before it returns) | `⠹ Running 3 agents…` (spinner `accent`, `3` bold, `agents…` `text`); `1 agent…` singular |
+| Arguments streaming | nothing (the working line shows the run) |
+| Tool running, `wait: true` | `3 agents launched` (`3` bold); `1 agent launched` singular |
+| Tool running, `wait: false` | `3 background agents launched (← to manage)` from the first render, as in the next row |
 | Returned, `wait: false`, at least one agent still open | `3 background agents launched (← to manage)` (`3` bold, hint `dim`) |
 | Returned, `wait: false`, every agent closed | `3 background agents launched` (deviation: Claude keeps the hint; we drop it because there is nothing left to manage) |
 | Returned, `wait: true` | `3 agents finished` (`3` bold) |
 | Error result (nothing started) | `✗ No agents started: <first line of the error>` (`error`); the full error text when expanded with `Ctrl+O` |
 
-When every agent of the batch has the same agent name, the header names it (as Claude Code does with the agent type): `⠹ Running 3 explorer agents…`, `3 background explorer agents launched (← to manage)`, `3 background explorer agents launched`, `3 explorer agents finished`; singular `⠹ Running 1 explorer agent…`, `1 background explorer agent launched (← to manage)`, `1 explorer agent finished`. The name is plain `text`, the count stays bold. Mixed batches keep the wording of the table. The rows are unchanged: each still reads `<agent> (<description>)` (deviation: Claude drops the type from same-type rows; we keep the name so a row reads the same in every batch). While the arguments still stream the header has no name (`⠹ Running agents…`).
+When every agent of the batch has the same agent name, the header names it (as Claude Code does with the agent type): `3 explorer agents launched`, `3 background explorer agents launched (← to manage)`, `3 background explorer agents launched`, `3 explorer agents finished`; singular `1 explorer agent launched`, `1 background explorer agent launched (← to manage)`, `1 explorer agent finished`. The name is plain `text`, the count stays bold. Mixed batches keep the wording of the table. The rows are unchanged: each still reads `<agent> (<description>)` (deviation: Claude drops the type from same-type rows; we keep the name so a row reads the same in every batch).
 
 Rows, one per agent of the batch, tree-connected under the header with `├─ ` and `└─ ` (last), continuation `│  ` / `   `:
 

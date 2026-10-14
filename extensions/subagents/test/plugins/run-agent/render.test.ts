@@ -149,31 +149,16 @@ afterEach(() => {
 });
 
 describe("run_agent block", () => {
-  it("shows the spinner header with the agent count while partial", () => {
+  it("renders nothing for the call, partial or final", () => {
     const harness = setup();
 
-    expect(renderCall(harness, { agents: THREE }, true)).toBe("⠹ Running 3 agents…");
-    expect(renderCall(harness, { agents: [THREE[0]] }, true)).toBe("⠹ Running 1 explorer agent…");
-    expect(renderCall(harness, { agents: [item("explorer", "a"), item("worker", "b")].slice(1) }, true)).toBe(
-      "⠹ Running 1 worker agent…",
-    );
-    expect(renderCall(harness, {}, true)).toBe("⠹ Running agents…");
+    expect(renderCall(harness, { agents: THREE }, true)).toBe("");
+    expect(renderCall(harness, { agents: THREE }, true, plainTheme, false)).toBe("");
+    expect(renderCall(harness, {}, true)).toBe("");
+    expect(renderCall(harness, { agents: THREE }, false)).toBe("");
   });
 
-  it("names no agents while the arguments still stream", () => {
-    const harness = setup();
-
-    expect(renderCall(harness, { agents: THREE }, true, plainTheme, false)).toBe("⠹ Running agents…");
-    expect(renderCall(harness, { agents: [item("expl", "a")] }, true, plainTheme, false)).toBe(
-      "⠹ Running agents…",
-    );
-  });
-
-  it("renders nothing for the call once the result is final", () => {
-    expect(renderCall(setup(), { agents: THREE }, false)).toBe("");
-  });
-
-  it("renders rows only while the result is partial", async () => {
+  it("draws the launched header and the rows while partial", async () => {
     const harness = withWorker();
     const params = { agents: THREE, wait: true };
     const { updates } = await start(harness, THREE, true);
@@ -182,8 +167,18 @@ describe("run_agent block", () => {
 
     const text = renderResult(harness, { text: "", details: updates[0] }, params, { isPartial: true });
 
-    expect(lines(text)).toHaveLength(6);
-    expect(lines(text)[0]).toMatch(/^├─ explorer \(Map the auth module\)/);
+    expect(lines(text)).toHaveLength(7);
+    expect(lines(text)[0]).toBe("3 agents launched");
+    expect(lines(text)[1]).toMatch(/^├─ explorer \(Map the auth module\)/);
+
+    const background = renderResult(
+      harness,
+      { text: "", details: updates[0] },
+      { agents: THREE },
+      { isPartial: true },
+    );
+
+    expect(lines(background)[0]).toBe("3 background agents launched (← to manage)");
   });
 
   it("headers: launched with hint, launched without hint, finished", async () => {
@@ -215,7 +210,9 @@ describe("run_agent block", () => {
     const explorers = [item("explorer", "a"), item("explorer", "b"), item("explorer", "c")];
     const result = await launched(harness, explorers);
 
-    expect(renderCall(harness, { agents: explorers }, true)).toBe("⠹ Running 3 explorer agents…");
+    expect(
+      lines(renderResult(harness, result, { agents: explorers, wait: true }, { isPartial: true }))[0],
+    ).toBe("3 explorer agents launched");
     expect(lines(renderResult(harness, result, { agents: explorers }))[0]).toBe(
       "3 background explorer agents launched (← to manage)",
     );
@@ -578,13 +575,13 @@ describe("run_agent block", () => {
 });
 
 describe("run_agent block colours", () => {
-  it("paints the header: spinner accent, count bold, hint dim", async () => {
+  it("paints the header: count bold, hint dim", async () => {
     const harness = withWorker();
     const result = await launched(harness, THREE);
 
-    expect(renderCall(harness, { agents: THREE }, true, tagged)).toBe(
-      "<accent>⠹</accent> Running <b>3</b> agents…",
-    );
+    expect(
+      lines(renderResult(harness, result, { agents: THREE, wait: true }, { isPartial: true }, tagged))[0],
+    ).toBe("<b>3</b> agents launched");
     expect(lines(renderResult(harness, result, { agents: THREE }, {}, tagged))[0]).toBe(
       "<b>3</b> background agents launched <dim>(← to manage)</dim>",
     );

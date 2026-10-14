@@ -11,7 +11,6 @@ import {
   singleLine,
   truncateCols,
 } from "../../components/format.ts";
-import { spinnerFrame } from "../../components/spinner.ts";
 import {
   type AgentRecord,
   type AgentRegistry,
@@ -66,22 +65,6 @@ const namedAgents = (agents: { agent?: string }[], n: number) => {
   const kind = sharedAgent(agents);
 
   return kind ? `${kind} ${agentsWord(n)}` : agentsWord(n);
-};
-
-export const renderRunningHeader = (
-  params: Partial<RunAgentParams> | undefined,
-  theme: ThemeLike,
-  now: number,
-): string => {
-  const agents = (params?.agents ?? []) as { agent?: string }[];
-  const n = agents.length;
-  const spinner = theme.fg("accent", spinnerFrame(now));
-
-  if (n === 0) {
-    return `${spinner} Running agents…`;
-  }
-
-  return `${spinner} Running ${theme.bold(String(n))} ${namedAgents(agents, n)}…`;
 };
 
 const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
@@ -269,7 +252,12 @@ const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean)
   return `${count} background ${named} launched${open ? ` ${theme.fg("dim", "(← to manage)")}` : ""}`;
 };
 
-/** Header and rows (rows only while partial, or the error header) at `width`, the render width pi gives the block (bounded by `BLOCK_WIDTH`). */
+const partialHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean) =>
+  wait
+    ? `${input.theme.bold(String(details.agents.length))} ${namedAgents(details.agents, details.agents.length)} launched`
+    : finalHeader(input, details, false);
+
+/** Header and rows (the error header for a failed launch) at `width`, the render width pi gives the block (bounded by `BLOCK_WIDTH`). */
 export const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
   const { result, state, theme } = input;
   const width = blockWidth(renderWidth);
@@ -292,7 +280,7 @@ export const renderBlockAt = (input: BlockInput, renderWidth: number): string =>
   const rows = agentRows(input, details, wait, width);
 
   if (state.isPartial) {
-    return rows.join("\n");
+    return [partialHeader(input, details, wait), ...rows].join("\n");
   }
 
   return [finalHeader(input, details, wait), ...rows].join("\n");
