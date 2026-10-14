@@ -1,7 +1,7 @@
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import { Box, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ToolRender, ToolRenderState, ToolResult, ToolSpec } from "./contract.ts";
+import type { ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
 import { padLines, textComponent, themeLike } from "./pi-components.ts";
 
 const toPiResult = (result: ToolResult) => ({
@@ -52,18 +52,49 @@ const renderState = (context: RenderContext): ToolRenderState => ({
   invalidate: context.invalidate,
 });
 
-const shellComponent = (
-  shell: ToolSpec["renderShell"],
+const TONE_BG = {
+  pending: "toolPendingBg",
+  success: "toolSuccessBg",
+  error: "toolErrorBg",
+} as const satisfies Record<ToolTone, Parameters<Theme["bg"]>[0]>;
+
+/** pi's own colour rule for a tool box (`ToolExecutionComponent.updateDisplay`). */
+const piTone = (context: RenderContext): ToolTone =>
+  context.isPartial ? "pending" : context.isError ? "error" : "success";
+
+const lineSource = (text: ToolRender) =>
+  typeof text === "function" ? text : text === "" ? [] : text.split("\n");
+
+/** pi's tool `Box` (padding `outputPad` x 1, background `tone`) around the lines; draws nothing when they are empty. Reuses `previous` when it is a `Box`. */
+const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
+  const pad = context.outputPad ?? 1;
+  const bg = (line: string) => theme.bg(TONE_BG[tone], line);
+  const box = context.lastComponent instanceof Box ? context.lastComponent : new Box(pad, 1, bg);
+
+  box.clear();
+  box.setBgFn(bg);
+  box.setPaddingX(pad);
+  box.addChild(padLines(lineSource(text), 0));
+
+  return box;
+};
+
+const shellComponent = <P, D>(
+  spec: ToolSpec<P, D>,
+  theme: Theme,
   context: RenderContext,
   text: ToolRender,
+  result?: ToolResult<D>,
 ): Component => {
-  if (shell !== "self") {
+  if (spec.renderShell === "box") {
+    return toolBox(theme, context, text, spec.renderTone?.(renderState(context), result) ?? piTone(context));
+  }
+
+  if (spec.renderShell !== "self") {
     return textComponent(context.lastComponent, text);
   }
 
-  const lines = typeof text === "function" ? text : text === "" ? [] : text.split("\n");
-
-  return padLines(lines, context.outputPad ?? 1, context.lastComponent);
+  return padLines(lineSource(text), context.outputPad ?? 1, context.lastComponent);
 };
 
 export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionContext) => void = () => {}) =>
@@ -73,7 +104,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     description: spec.description,
     promptSnippet: spec.promptSnippet,
     parameters: Type.Unsafe<P>(spec.parameters),
-    renderShell: spec.renderShell,
+    renderShell: spec.renderShell === "box" ? "self" : spec.renderShell,
     execute: async (
       _toolCallId: string,
       params: unknown,
@@ -95,7 +126,8 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     renderCall: spec.renderCall
       ? (args: unknown, theme: Theme, context: RenderContext) =>
           shellComponent(
-            spec.renderShell,
+            spec,
+            theme,
             context,
             spec.renderCall?.(args as P, themeLike(theme), renderState(context)) ?? "",
           )
@@ -103,15 +135,14 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     renderResult: spec.renderResult
       ? (result: unknown, _options: { expanded: boolean }, theme: Theme, context: RenderContext) => {
           const converted = fromPiResult(result as never) as ToolResult<D>;
+          const final = context.isError ? { ...converted, isError: true } : converted;
 
           return shellComponent(
-            spec.renderShell,
+            spec,
+            theme,
             context,
-            spec.renderResult?.(
-              context.isError ? { ...converted, isError: true } : converted,
-              renderState(context),
-              themeLike(theme),
-            ) ?? "",
+            spec.renderResult?.(final, renderState(context), themeLike(theme)) ?? "",
+            final,
           );
         }
       : undefined,

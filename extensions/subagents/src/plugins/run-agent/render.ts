@@ -1,4 +1,9 @@
-import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
+import type {
+  ThemeLike,
+  ToolRenderState,
+  ToolResult,
+  ToolTone,
+} from "../../../../../core/adapter/contract.ts";
 import {
   charWidth,
   displayWidth,
@@ -291,3 +296,34 @@ export const renderBlock =
   (input: BlockInput) =>
   (width: number): string =>
     renderBlockAt(input, width);
+
+/**
+ * The block's box colour: error when the tool errored; pending while any agent of the batch is open (also after a
+ * background launch returned); then error if any agent failed, else success. Undefined (pi's rule) when the
+ * registry has no record of the batch, e.g. after `/reload`.
+ */
+export const blockTone = (
+  registry: Pick<AgentRegistry, "get">,
+  state: ToolRenderState,
+  result: ToolResult<RunAgentDetails> | undefined,
+): ToolTone | undefined => {
+  if (state.isError || result?.isError) {
+    return "error";
+  }
+
+  const terminals = (result?.details?.ids ?? []).flatMap((id) => {
+    const record = registry.get(id);
+
+    return record ? [chainTerminal(registry, record)] : [];
+  });
+
+  if (terminals.length === 0) {
+    return undefined;
+  }
+
+  if (terminals.some((record) => !isClosed(record.state))) {
+    return "pending";
+  }
+
+  return terminals.some((record) => record.state === "failed") ? "error" : "success";
+};

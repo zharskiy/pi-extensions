@@ -7,7 +7,7 @@ import {
   isNone,
   MAIN_CALLER,
 } from "../../model/types.ts";
-import { type RunAgentDetails, renderBlock } from "./render.ts";
+import { blockTone, type RunAgentDetails, renderBlock } from "./render.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
 export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
@@ -156,7 +156,7 @@ export const runAgentTool = (
     description,
     promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
     parameters: runAgentParameters,
-    renderShell: "self",
+    renderShell: "box",
     execute: async (params, ctx) => {
       const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
 
@@ -211,6 +211,7 @@ export const runAgentTool = (
         now: now(),
       });
     },
+    renderTone: (state, result) => blockTone(deps.registry, state, result),
   };
 };
 

@@ -6,7 +6,7 @@ Review resolution: Reviewed 2026-10-14: findings 3, 5, 6, 10, 13, 17, 18, 21, 22
 
 ## 1. Goal
 
-1. `run_agent` renders as one self-shelled block: a spinner header while the tool runs, then `N background agents launched (← to manage)` or `N agents finished`, with one tree-connected row per agent whose status line updates live until the batch settles.
+1. `run_agent` renders as one block in pi's tool box (`renderShell: "box"`, coloured by the batch, see `00-ux-spec.md` §3; originally self-shelled): a spinner header while the tool runs, then `N background agents launched (← to manage)` or `N agents finished`, with one tree-connected row per agent whose status line updates live until the batch settles.
 2. Every agent of the main session adds exactly one dim completion line when it closes (after worktree cleanup for worktree agents); the model never sees it; resume renders it again from the persisted entry.
 3. The batch text reaches the model as a hidden message; when the session was idle a `↳ 3 agents finished` user line starts the turn.
 4. One set of formatters (`format.ts`), one spinner (`spinner.ts`), one state vocabulary (`state-text.ts`), used by plans 05 and 06 as given.

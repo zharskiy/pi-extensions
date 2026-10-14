@@ -33,6 +33,7 @@ import {
   type ToolRenderState,
   type ToolResult,
   type ToolSpec,
+  type ToolTone,
   type UsageTotals,
   type WorkingIndicator,
 } from "../../adapter/contract.ts";
@@ -97,8 +98,9 @@ export type FakeHost = Host & {
   /**
    * Renders a registered tool's call and/or result with `plainTheme` and a default render state (`args` = `call`,
    * `isError` from `result`, `outputPad` 1); `state` overrides any field. A width-function render is resolved like the adapter
-   * does: with `width` (default 80) minus `outputPad` on both sides for `renderShell: "self"`, with `width` otherwise. The
-   * adapter's indent and cut are not applied.
+   * does: with `width` (default 80) minus `outputPad` on both sides for `renderShell: "self"` and `"box"`, with `width` otherwise. The
+   * adapter's indent and cut are not applied. For `renderShell: "box"`, `tone` is the box background the adapter would draw
+   * (`renderTone` with the result, else pi's rule: pending while `isPartial`, error on `isError`, else success).
    */
   renderTool(
     name: string,
@@ -108,7 +110,7 @@ export type FakeHost = Host & {
       state?: Partial<ToolRenderState>;
       width?: number;
     },
-  ): { call?: string; result?: string; state: ToolRenderState };
+  ): { call?: string; result?: string; state: ToolRenderState; tone?: ToolTone };
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
@@ -544,7 +546,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         ...overrides,
       };
 
-      const inner = spec.renderShell === "self" ? Math.max(1, width - 2 * state.outputPad) : width;
+      const shelled = spec.renderShell === "self" || spec.renderShell === "box";
+      const inner = shelled ? Math.max(1, width - 2 * state.outputPad) : width;
+      const piTone: ToolTone = state.isPartial ? "pending" : state.isError ? "error" : "success";
       const resolve = (render: ToolRender | undefined) =>
         typeof render === "function" ? render(inner) : render;
 
@@ -552,6 +556,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         call: call === undefined ? undefined : resolve(spec.renderCall?.(call, plainTheme, state)),
         result: result === undefined ? undefined : resolve(spec.renderResult?.(result, state, plainTheme)),
         state,
+        ...(spec.renderShell === "box" ? { tone: spec.renderTone?.(state, result) ?? piTone } : {}),
       };
     },
     workingIndicators: [],

@@ -574,6 +574,100 @@ describe("run_agent block", () => {
   });
 });
 
+describe("run_agent block box tone", () => {
+  const tone = (
+    harness: Harness,
+    result: ToolResult<RunAgentDetails>,
+    params: RunAgentParams,
+    state: { isPartial?: boolean; isError?: boolean } = {},
+  ) => harness.host.renderTool("run_agent", { call: params, result, state }).tone;
+
+  it("draws pi's tool box", () => {
+    expect(setup().tool.renderShell).toBe("box");
+  });
+
+  it("background batch: pending after the call returned while an agent is open, success once all are done", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, THREE);
+    const params = { agents: THREE };
+
+    expect(tone(harness, result, params)).toBe("pending");
+
+    const [first, ...rest] = harness.runtime.children;
+
+    first?.finish("ok");
+    await flush();
+
+    expect(tone(harness, result, params)).toBe("pending");
+
+    rest.forEach((child) => {
+      child.finish("ok");
+    });
+    await flush();
+
+    expect(tone(harness, result, params)).toBe("success");
+  });
+
+  it("waiting batch: pending while partial, success on the final result", async () => {
+    const harness = withWorker();
+    const params = { agents: THREE, wait: true };
+    const { updates, pending } = await start(harness, THREE, true);
+
+    expect(tone(harness, { text: "", details: updates[0] }, params, { isPartial: true })).toBe("pending");
+
+    harness.runtime.children.forEach((child) => {
+      child.finish("ok");
+    });
+
+    expect(tone(harness, await pending, params)).toBe("success");
+  });
+
+  it("error once every agent closed and one failed; stopped stays success", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, THREE);
+    const [first, second, third] = ids(harness);
+    const params = { agents: THREE };
+
+    harness.registry.close(first, { state: "failed", error: "boom" });
+
+    expect(tone(harness, result, params)).toBe("pending");
+
+    harness.registry.close(second, { state: "stopped" });
+    harness.registry.close(third, { state: "done" });
+
+    expect(tone(harness, result, params)).toBe("error");
+
+    patch(harness, first, { state: "handoff" });
+
+    expect(tone(harness, result, params)).toBe("success");
+  });
+
+  it("error when the tool errored", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, THREE);
+    const params = { agents: THREE };
+
+    expect(tone(harness, { isError: true, text: "unknown agent(s): x" }, params)).toBe("error");
+    expect(tone(harness, { ...result, isError: true }, params)).toBe("error");
+  });
+
+  it("falls back to pi's rule without registry records", () => {
+    const harness = setup();
+    const details: RunAgentDetails = {
+      batchId: "b-old",
+      ids: ["explorer-abc"],
+      agents: [{ id: "explorer-abc", agent: "explorer", description: "Map the auth module" }],
+    };
+    const params = { agents: [THREE[0]] };
+
+    expect(
+      harness.tool.renderTone?.(harness.host.renderTool("run_agent", {}).state, { text: "", details }),
+    ).toBe(undefined);
+    expect(tone(harness, { text: "", details }, params)).toBe("success");
+    expect(tone(harness, { text: "", details }, params, { isPartial: true })).toBe("pending");
+  });
+});
+
 describe("run_agent block colours", () => {
   it("paints the header: count bold, hint dim", async () => {
     const harness = withWorker();

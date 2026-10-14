@@ -38,6 +38,9 @@ export type ToolRenderState = {
   invalidate(): void;
 };
 
+/** The background of a `renderShell: "box"` tool box: pi's `toolPendingBg`, `toolSuccessBg` or `toolErrorBg`. */
+export type ToolTone = "pending" | "success" | "error";
+
 /** What a tool renderer returns: text, or a function of the render width (the component width minus `outputPad` on both sides for `renderShell: "self"`) that the adapter calls on every render. */
 export type ToolRender = string | ((width: number) => string);
 
@@ -47,14 +50,20 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   description: string;
   promptSnippet?: string;
   parameters: Record<string, unknown>;
-  /** "self" drops pi's coloured box so the renderer owns the whole row; the adapter indents each line by pi's `outputPad` and cuts it at `width - 2 * outputPad` (never wraps). Default "default". */
-  renderShell?: "default" | "self";
+  /**
+   * "self" drops pi's coloured box so the renderer owns the whole row; the adapter indents each line by pi's `outputPad` and cuts it at `width - 2 * outputPad` (never wraps).
+   * "box" draws the same lines inside pi's tool box (pi-tui `Box`, padding `outputPad` x 1, the native tool geometry) whose background follows `renderTone`;
+   * `renderCall` and `renderResult` each get their own box (an empty render draws none), so only one of them should return text at a time. Default "default".
+   */
+  renderShell?: "default" | "self" | "box";
   execute(
     params: P,
     ctx: { signal?: AbortSignal; update(text: string, details?: D): void },
   ): Promise<ToolResult<D>>;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
+  /** The box background for `renderShell: "box"` (`result` is undefined for the call render); undefined keeps pi's rule: pending while `isPartial`, error on `isError`, else success. */
+  renderTone?(state: ToolRenderState, result: ToolResult<D> | undefined): ToolTone | undefined;
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;
