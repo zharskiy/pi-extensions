@@ -132,7 +132,8 @@ const defaultPiRenderers = () => {
 
 export type TranscriptPaneOptions = { tools?: AnyToolSpec[]; piRenderers?: Record<string, ToolRenderers> };
 
-const OSC133_ZONE_PREFIX = new RegExp("^(?:\\x1b\\]133;[ABC](?:\\x07|\\x1b\\\\))+");
+// biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
+const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 
 export const createTranscriptPane = (
   tui: TUI,
