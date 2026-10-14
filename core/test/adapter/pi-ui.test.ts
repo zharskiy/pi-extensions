@@ -321,6 +321,34 @@ const toolResult = (name: string, text: string, details?: unknown, id = "call-1"
   },
 });
 
+describe("transcript pane terminal marks", () => {
+  it("drops prompt marks from pi's message lines and keeps colours", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([
+      { kind: "user", text: "find the files" },
+      {
+        kind: "assistant",
+        text: "Three files",
+        toolCalls: [],
+        raw: {
+          role: "assistant",
+          content: [{ type: "text", text: "Three files" }],
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      },
+    ]);
+
+    const raw = pane.render(60).join("\n");
+
+    expect(raw).not.toContain(`${ESC}]133;`);
+    expect(raw).toContain("find the files");
+    expect(raw).toContain("Three files");
+    expect(raw).toMatch(SGR);
+  });
+});
+
 describe("pi renderers in the transcript pane", () => {
   it("captures codemode and tool_search renderers from pi's factories", () => {
     const captured = capturePiRenderers({

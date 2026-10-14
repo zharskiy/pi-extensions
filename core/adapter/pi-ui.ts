@@ -131,6 +131,8 @@ const defaultPiRenderers = () => {
 
 export type TranscriptPaneOptions = { tools?: AnyToolSpec[]; piRenderers?: Record<string, ToolRenderers> };
 
+const OSC133_ZONE_PREFIX = new RegExp("^(?:\\x1b\\]133;[ABC](?:\\x07|\\x1b\\\\))+");
+
 export const createTranscriptPane = (
   tui: TUI,
   cwd: string,
@@ -254,7 +256,7 @@ export const createTranscriptPane = (
         component.setExpanded(value);
       });
     },
-    render: (width) => container.render(width),
+    render: (width) => container.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX, "")),
   };
 };
 
