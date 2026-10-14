@@ -2,14 +2,14 @@
 
 Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package (`pi-extensions-mz`). Version 0.4.0, for pi 1.2.0 or later within pi 1 (developed and tested against pi 1.2.0).
 
-- [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session, inside the main session's process, optionally in their own git worktree, with MCP for every agent with tools. A panel below the editor shows the running agents (`←` to select), `/agents` lists them and opens any agent's view, each finished agent leaves one line in the transcript, and agents never ask you anything; what they spend is reported to spending.
+- [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session, inside the main session's process, optionally in their own git worktree, with MCP for every agent with tools. A panel below the editor (under the footer block when the footer is installed) shows the running agents (`←` to select), `/agents` lists them and opens any agent's view, each finished agent leaves one line in the transcript, and agents never ask you anything; what they spend is reported to spending.
 - [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
 - [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
 - [working-indicator](extensions/working-indicator/README.md): pi's working line as a spinner, a playful verb and the elapsed time of the current prompt.
 - [notifications](extensions/notifications/README.md): one terminal notification when pi waits for your input (after the work and any background agents are done) and one when a dialog waits unanswered.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 - [composer](extensions/composer/README.md): the input box drawn with a rounded border in the editor's colour and a chevron prompt.
-- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
+- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
 
 ## Install
 

@@ -1,7 +1,12 @@
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { createFakeHost, createFakeRuntime, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import {
+  createFakeHost,
+  createFakeRuntime,
+  FAKE_FOOTER_KEY,
+  plainTheme,
+} from "../../../../../core/test/helpers/fakes.ts";
 import type { Plugin } from "../../../src/model/plugin.ts";
 import type { Settings } from "../../../src/model/settings.ts";
 import type { AgentRunner, NewAgent, ServiceMap } from "../../../src/model/types.ts";
@@ -75,6 +80,28 @@ afterEach(() => {
 });
 
 describe("agent panel", () => {
+  it("draws nothing at session start, so a footer block set then stays above the panel", () => {
+    const panel = setup();
+
+    expect(panel.host.belowEditor).toEqual([]);
+
+    panel.host.ui.setFooter(() => ["usage"], { slot: "belowEditor" });
+
+    const record = panel.newAgent();
+
+    expect(panel.host.belowEditor).toEqual([FAKE_FOOTER_KEY, WIDGET]);
+
+    panel.running(record.id);
+    panel.registry.close(record.id, { state: "done" });
+    vi.advanceTimersByTime(11_001);
+
+    expect(panel.host.belowEditor).toEqual([FAKE_FOOTER_KEY]);
+
+    panel.newAgent();
+
+    expect(panel.host.belowEditor).toEqual([FAKE_FOOTER_KEY, WIDGET]);
+  });
+
   it("shows rows below the editor and removes the widget when the last row leaves", () => {
     const panel = setup();
     const record = panel.newAgent();

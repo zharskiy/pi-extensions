@@ -51,7 +51,7 @@ Every surface follows one set of margins, so no text is glued to a display edge 
 - What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block or completion line, the chat width pi passes to the component (pi does not pad a self-rendered block or an entry). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
 - Columns inside the pad: column `PAD` holds the first cell of every line: title, section header, feedback, hint, view header, `▸ Request`, and the glyph (or tree connector) of every row and the panel's `↑ N more` / `↓ N more` markers. The pointer `›` of the selected row replaces the `PAD` column (column 0, touching the glyph), the one place a row's text touches the display edge. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
 - Rules: `─` rules are chrome, not text, and run the full width, edge to edge, like pi's editor borders and dialogs. Only the agent view has one.
-- Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request`, then one blank (pi's spacer before the task message, which the transcript pane adds before every user message) in both states. Panel: no blank above (the editor's bottom border separates it), no blanks between rows, markers and hint, and one trailing blank line so the footer never touches the last line.
+- Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request`, then one blank (pi's spacer before the task message, which the transcript pane adds before every user message) in both states. Panel: no blank above (with the footer extension it sits under the footer block, whose trailing blank line separates them; without it, the editor's bottom border does), no blanks between rows, markers and hint, and one trailing blank line so the panel never touches the bottom of the screen or pi's own footer.
 - Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block and the completion lines are cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
 
 `PAD`, `innerWidth(width)` and `alignRight(left, right, cols)` live in `extensions/subagents/src/components/format.ts` (plan 04) next to `truncateCols` and `padEndCols`; the panel, the list and the view import them.
@@ -181,7 +181,7 @@ After everything finished, including the model's reply:
 
 ## 4. Surface B: agent panel
 
-A widget below the editor (`belowEditor`), replacing the progress widget. No header line, no `/agents` text. Absent when it has no rows.
+A widget below the editor (`belowEditor`), replacing the progress widget. No header line, no `/agents` text. Absent when it has no rows. With the footer extension the panel sits below the footer block (usage, thinking, `N agents`): the footer draws its block as the first below-editor widget (`setFooter(render, { slot: "belowEditor" })`) and leaves pi's footer slot empty; pi keeps below-editor widgets in the order they were first set, and the panel is set only once a row exists, after every extension's session start. Without the footer extension the panel sits directly under the editor, above pi's footer.
 
 ### Row grammar
 
@@ -204,7 +204,7 @@ Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are t
 
 - At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The markers start in the glyph column (`PAD`), as Claude Code's do. The window scrolls by the minimum to keep the selected row visible. When the selection clears, the window keeps its top row (clamped to the row count); it never jumps back to the first row on its own.
 - The hint line (below the rows and markers, at `PAD`, cut at `inner`) exists only while a row is selected.
-- One blank line follows the panel's last line, so the footer never touches it; there is no blank above the panel (the editor's bottom border separates it).
+- One blank line follows the panel's last line; there is no blank above the panel (the footer block's trailing blank line, or without the footer extension the editor's bottom border, separates it).
 - `(+N)` on a visible row tells the user that rows under it exist even when they are scrolled out.
 
 ### Which rows are visible
@@ -242,7 +242,7 @@ Only while a row is selected, `dim`, one line:
 
 ### Footer status
 
-Through `setStatus("pi-subagents", …)`, drawn by the footer extension with its own `PAD`:
+Through `setStatus("pi-subagents", …)`, drawn by the footer extension with its own `PAD` as the last line of its block, above the panel:
 
 - While any record is open (`queued`, `running`, `grace`, any depth): `3 agents` (`accent`), `1 agent` singular.
 - From the moment the last open record closes, for `agentsHintMs` (new, default 30 000): `/agents to see agents` (`dim`).

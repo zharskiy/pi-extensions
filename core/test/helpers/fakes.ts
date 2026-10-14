@@ -68,6 +68,8 @@ export type FakeHost = Host & {
   terminalNotices: { message: string; channel: NotifyChannel }[];
   statuses: Map<string, string | undefined>;
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
+  /** Keys of what pi draws below the editor, top to bottom, in pi's order: first set first; `FAKE_FOOTER_KEY` for a `belowEditor` footer. */
+  belowEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
   editorFrame?: EditorFrame;
@@ -124,6 +126,7 @@ export type FakeHost = Host & {
   editorSubmissions: string[];
   editorReachable: boolean;
   footer?: FooterRender;
+  footerSlot?: "footer" | "belowEditor";
   footerRefreshes: number;
   contextUsage: ContextSnapshot;
   activeModel?: ModelInfo;
@@ -135,6 +138,8 @@ export type FakeHost = Host & {
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+export const FAKE_FOOTER_KEY = "footer";
 
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
@@ -207,6 +212,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     terminalNotices: [],
     statuses: new Map(),
     widgets: new Map(),
+    belowEditor: [],
     widgetRefreshes: 0,
     overlays: [],
     foreignEditor: false,
@@ -284,6 +290,11 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       input: async () => undefined,
       setWidget: (key, render) => {
         host.widgets.set(key, render);
+        host.belowEditor = host.belowEditor.filter((entry) => entry !== key);
+
+        if (render) {
+          host.belowEditor.push(key);
+        }
         return {
           refresh: () => {
             host.widgetRefreshes += 1;
@@ -347,8 +358,18 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           }
         };
       },
-      setFooter: (render) => {
+      setFooter: (render, options) => {
+        const slot = render ? (options?.slot ?? "footer") : undefined;
+
         host.footer = render;
+        host.footerSlot = slot;
+
+        if (slot !== "belowEditor") {
+          host.belowEditor = host.belowEditor.filter((entry) => entry !== FAKE_FOOTER_KEY);
+        } else if (!host.belowEditor.includes(FAKE_FOOTER_KEY)) {
+          host.belowEditor.push(FAKE_FOOTER_KEY);
+        }
+
         return {
           refresh: () => {
             host.footerRefreshes += 1;

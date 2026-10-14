@@ -26,20 +26,22 @@ export const createFooter = (host: Host) => {
   host.onSessionStart((info) => {
     const cycleKey = host.ui.keyText(CYCLE_BINDING);
 
-    footer = host.ui.setFooter((_width, theme, data) =>
-      renderFooter(
-        theme,
-        {
-          context: host.context(),
-          model: host.model(),
-          thinking: host.thinkingLevel(),
-          cycleKey,
-          cwd: info.cwd,
-          sessionName: host.sessionName(),
-          totals,
-        },
-        data,
-      ),
+    footer = host.ui.setFooter(
+      (_width, theme, data) =>
+        renderFooter(
+          theme,
+          {
+            context: host.context(),
+            model: host.model(),
+            thinking: host.thinkingLevel(),
+            cycleKey,
+            cwd: info.cwd,
+            sessionName: host.sessionName(),
+            totals,
+          },
+          data,
+        ),
+      { slot: "belowEditor" },
     );
   });
 

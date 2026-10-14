@@ -1,51 +1,124 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ReadonlyFooterDataProvider,
+  Theme,
+} from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import type { ContextSnapshot, Host, HostUi, ThemeLike, WidgetHandle } from "./contract.ts";
+import type {
+  ContextSnapshot,
+  FooterData,
+  FooterRender,
+  Host,
+  HostUi,
+  ThemeLike,
+  WidgetHandle,
+} from "./contract.ts";
 import type { HostState } from "./pi-ui.ts";
 import { contextOf } from "./usage.ts";
+
+export const FOOTER_WIDGET_KEY = "pi-footer";
 
 export const createFooterSetter = (
   tuiCtx: () => ExtensionContext | undefined,
   themeOf: (theme: Theme) => ThemeLike,
 ): HostUi["setFooter"] => {
   let footerTui: TUI | undefined;
-  const handle: WidgetHandle = { refresh: () => footerTui?.requestRender() };
+  let widgetTui: TUI | undefined;
+  let footerData: ReadonlyFooterDataProvider | undefined;
+  let current: FooterRender | undefined;
+  const handle: WidgetHandle = {
+    refresh: () => (widgetTui ?? footerTui)?.requestRender(),
+  };
 
-  return (render) => {
-    const ctx = tuiCtx();
+  const dataOf = (data: ReadonlyFooterDataProvider | undefined): FooterData => ({
+    branch: data?.getGitBranch() ?? null,
+    statuses: data?.getExtensionStatuses() ?? new Map(),
+  });
 
-    if (!ctx) {
-      return handle;
-    }
+  const draw = (width: number, theme: Theme, data: ReadonlyFooterDataProvider | undefined) =>
+    (current?.(width, themeOf(theme), dataOf(data)) ?? []).map((line) =>
+      truncateToWidth(line, width, theme.fg("dim", "…")),
+    );
 
-    if (!render) {
-      footerTui = undefined;
-      ctx.ui.setFooter(undefined);
-      return handle;
-    }
-
-    ctx.ui.setFooter((tui, theme, footerData) => {
-      const footerTheme = themeOf(theme);
-      const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+  const mountFooter = (ctx: ExtensionContext, drawn: boolean) => {
+    ctx.ui.setFooter((tui, theme, data) => {
+      const unsubscribe = data.onBranchChange(() => tui.requestRender());
 
       footerTui = tui;
+      footerData = data;
 
       return {
-        render: (width: number) =>
-          render(width, footerTheme, {
-            branch: footerData.getGitBranch(),
-            statuses: footerData.getExtensionStatuses(),
-          }).map((line) => truncateToWidth(line, width, theme.fg("dim", "…"))),
+        render: (width: number) => (drawn ? draw(width, theme, data) : []),
         invalidate: () => {},
         dispose: () => {
           unsubscribe();
 
           if (footerTui === tui) {
             footerTui = undefined;
+            footerData = undefined;
           }
         },
       };
     });
+  };
+
+  const removeWidget = (ctx: ExtensionContext) => {
+    if (widgetTui) {
+      widgetTui = undefined;
+      ctx.ui.setWidget(FOOTER_WIDGET_KEY, undefined);
+    }
+  };
+
+  const mountWidget = (ctx: ExtensionContext) => {
+    ctx.ui.setWidget(
+      FOOTER_WIDGET_KEY,
+      (tui, theme) => {
+        widgetTui = tui;
+
+        return {
+          render: (width: number) => draw(width, theme, footerData),
+          invalidate: () => {},
+          dispose: () => {
+            if (widgetTui === tui) {
+              widgetTui = undefined;
+            }
+          },
+        };
+      },
+      { placement: "belowEditor" },
+    );
+  };
+
+  return (render, options) => {
+    const ctx = tuiCtx();
+
+    if (!ctx) {
+      return handle;
+    }
+
+    current = render;
+
+    if (!render) {
+      removeWidget(ctx);
+      footerTui = undefined;
+      ctx.ui.setFooter(undefined);
+      return handle;
+    }
+
+    if ((options?.slot ?? "footer") === "footer") {
+      removeWidget(ctx);
+      mountFooter(ctx, true);
+      return handle;
+    }
+
+    if (widgetTui) {
+      handle.refresh();
+      return handle;
+    }
+
+    mountFooter(ctx, false);
+    mountWidget(ctx);
 
     return handle;
   };

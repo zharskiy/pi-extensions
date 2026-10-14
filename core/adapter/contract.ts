@@ -201,7 +201,13 @@ export type HostUi = {
    * `onEmptyEditorLeft`, it may be called before the session starts and is inactive under an editor this package did not install.
    */
   captureEditorKeys(handler: EditorKeyHandler): () => void;
-  setFooter(render: FooterRender | undefined): WidgetHandle;
+  /**
+   * Draws `render` in pi's footer slot (`slot: "footer"`, the default), or as a below-editor widget with pi's footer
+   * slot left empty (`slot: "belowEditor"`). pi keeps below-editor widgets in the order they were first set and clears
+   * them on reload and session switch, so a footer set at session start sits above widgets set later, such as the agent
+   * panel. Setting it again in the same slot keeps its position and only re-renders. `undefined` restores pi's footer.
+   */
+  setFooter(render: FooterRender | undefined, options?: FooterOptions): WidgetHandle;
   keyText(binding: string): string;
   /** Calls `listener` on every keyboard input chunk (mouse reports and key-release events excluded) without consuming it. tui only. Returns an unsubscribe function. */
   onKeyPress(listener: () => void): () => void;
@@ -437,5 +443,7 @@ export const addUsage = (left: UsageTotals, right: UsageTotals): UsageTotals => 
 export type FooterData = { branch: string | null; statuses: ReadonlyMap<string, string> };
 
 export type FooterRender = (width: number, theme: ThemeLike, data: FooterData) => string[];
+
+export type FooterOptions = { slot?: "footer" | "belowEditor" };
 
 export type ModelInfo = { name: string; contextWindow: number; reasoning: boolean };

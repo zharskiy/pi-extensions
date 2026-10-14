@@ -1,8 +1,11 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { createFooterSetter, footerHost } from "../../adapter/pi-footer.ts";
-import type { HostState } from "../../adapter/pi-ui.ts";
+import { themeLike } from "../../adapter/pi-components.ts";
+import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../../adapter/pi-footer.ts";
+import { createUi, type HostState } from "../../adapter/pi-ui.ts";
 import { plainTheme } from "../helpers/fakes.ts";
+import { initRenderTheme } from "./render-theme.ts";
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
@@ -12,11 +15,21 @@ type Factory = (
   data: unknown,
 ) => { render(width: number): string[]; dispose(): void };
 
+type WidgetFactory = (tui: unknown, theme: unknown) => { render(width: number): string[]; dispose(): void };
+
 const fakeFooter = (mode: string) => {
   const installed: (Factory | undefined)[] = [];
+  const widgets: { key: string; factory: WidgetFactory | undefined; placement?: string }[] = [];
   const branchListeners = new Set<() => void>();
   const tui = { renders: 0, requestRender: () => (tui.renders += 1) };
-  const ctx = { mode, ui: { setFooter: (factory: Factory | undefined) => installed.push(factory) } };
+  const ctx = {
+    mode,
+    ui: {
+      setFooter: (factory: Factory | undefined) => installed.push(factory),
+      setWidget: (key: string, factory: WidgetFactory | undefined, options?: { placement?: string }) =>
+        widgets.push({ key, factory, placement: options?.placement }),
+    },
+  };
   const data = {
     getGitBranch: () => "main",
     getExtensionStatuses: () => new Map([["k", "v"]]),
@@ -31,7 +44,9 @@ const fakeFooter = (mode: string) => {
   );
   const mount = () => installed.at(-1)?.(tui, { fg: (_token: string, text: string) => text }, data);
 
-  return { installed, branchListeners, tui, setFooter, mount };
+  const mountWidget = () => widgets.at(-1)?.factory?.(tui, { fg: (_token: string, text: string) => text });
+
+  return { installed, widgets, branchListeners, tui, setFooter, mount, mountWidget };
 };
 
 describe("setFooter", () => {
@@ -99,6 +114,163 @@ describe("setFooter", () => {
     setFooter(undefined);
 
     expect(installed).toEqual([undefined]);
+  });
+});
+
+describe("setFooter below the editor", () => {
+  it("draws the block as a below-editor widget and leaves pi's footer slot empty", () => {
+    const { installed, widgets, setFooter, mount, mountWidget } = fakeFooter("tui");
+
+    setFooter((_width, _theme, { branch, statuses }) => [`${branch} ${statuses.get("k")}`, "0123456789"], {
+      slot: "belowEditor",
+    });
+
+    expect(installed).toHaveLength(1);
+    expect(widgets.map(({ key, placement }) => ({ key, placement }))).toEqual([
+      { key: FOOTER_WIDGET_KEY, placement: "belowEditor" },
+    ]);
+    expect(mount()?.render(6)).toEqual([]);
+    expect(
+      mountWidget()
+        ?.render(6)
+        .map((line) => line.replace(ANSI, "")),
+    ).toEqual(["main v", "01234…"]);
+  });
+
+  it("re-renders on refresh and branch changes without setting the widget again", () => {
+    const { widgets, branchListeners, setFooter, mount, mountWidget, tui } = fakeFooter("tui");
+    const handle = setFooter(() => ["a"], { slot: "belowEditor" });
+    const component = mountWidget();
+
+    mount();
+
+    const again = setFooter(() => ["b"], { slot: "belowEditor" });
+
+    expect(widgets).toHaveLength(1);
+    expect(component?.render(10)).toEqual(["b"]);
+
+    branchListeners.forEach((listener) => {
+      listener();
+    });
+    handle.refresh();
+    again.refresh();
+
+    expect(tui.renders).toBe(4);
+  });
+
+  it("sets the widget again once pi has disposed it", () => {
+    const { widgets, setFooter, mountWidget } = fakeFooter("tui");
+
+    setFooter(() => ["a"], { slot: "belowEditor" });
+    mountWidget()?.dispose();
+    setFooter(() => ["a"], { slot: "belowEditor" });
+
+    expect(widgets).toHaveLength(2);
+  });
+
+  it("removes the widget when cleared or moved back to the footer slot", () => {
+    const { installed, widgets, setFooter, mountWidget } = fakeFooter("tui");
+
+    setFooter(() => ["a"], { slot: "belowEditor" });
+    mountWidget();
+    setFooter(undefined);
+
+    expect(widgets.at(-1)).toEqual({ key: FOOTER_WIDGET_KEY, factory: undefined, placement: undefined });
+    expect(installed.at(-1)).toBeUndefined();
+
+    setFooter(() => ["a"], { slot: "belowEditor" });
+    mountWidget();
+    setFooter(() => ["a"]);
+
+    expect(widgets.at(-1)?.factory).toBeUndefined();
+    expect(installed.at(-1)).toBeDefined();
+  });
+});
+
+describe("setFooter with pi's interactive layout", () => {
+  const piLayout = () => {
+    initRenderTheme();
+
+    const mode = Object.assign(Object.create(InteractiveMode.prototype), {
+      extensionWidgetsAbove: new Map(),
+      extensionWidgetsBelow: new Map(),
+      widgetContainerAbove: new Container(),
+      widgetContainerBelow: new Container(),
+      footerContainer: new Container(),
+      footer: { render: () => ["pi footer"], invalidate: () => {} },
+      footerDataProvider: {
+        getGitBranch: () => "main",
+        getExtensionStatuses: () => new Map([["pi-subagents", "2 agents"]]),
+        onBranchChange: () => () => {},
+      },
+      ui: { requestRender: () => {} },
+    }) as {
+      setExtensionWidget(key: string, content: unknown, options?: unknown): void;
+      setExtensionFooter(factory: unknown): void;
+      clearExtensionWidgets(): void;
+      widgetContainerBelow: Container;
+      footerContainer: Container;
+    };
+    const state: HostState = {
+      ctx: {
+        mode: "tui",
+        ui: {
+          setWidget: (key: string, content: unknown, options?: unknown) =>
+            mode.setExtensionWidget(key, content, options),
+          setFooter: (factory: unknown) => mode.setExtensionFooter(factory),
+        },
+      } as unknown as ExtensionContext,
+    };
+    const ui = createUi(state, { write: () => {} }, {});
+    const setFooter = createFooterSetter(() => state.ctx, themeLike);
+    const footer = () =>
+      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("pi-subagents") ?? ""], {
+        slot: "belowEditor",
+      });
+    const below = () => [...mode.widgetContainerBelow.render(40), ...mode.footerContainer.render(40)];
+    const reset = () => {
+      mode.setExtensionFooter(undefined);
+      mode.clearExtensionWidgets();
+    };
+
+    mode.setExtensionFooter(undefined);
+
+    return { ui, footer, below, reset, setFooter };
+  };
+
+  it("draws pi's own footer until the block is set, then nothing in the footer slot", () => {
+    const { footer, below } = piLayout();
+
+    expect(below()).toEqual(["pi footer"]);
+
+    footer();
+
+    expect(below()).toEqual(["usage", "thinking", "2 agents"]);
+  });
+
+  it("keeps the footer block above a panel set later, across a reset and a second set", () => {
+    const { ui, footer, below, reset } = piLayout();
+
+    footer();
+    ui.setWidget("panel", () => ["panel row"]);
+    footer();
+
+    expect(below()).toEqual(["usage", "thinking", "2 agents", "panel row"]);
+
+    reset();
+    footer();
+    ui.setWidget("panel", () => ["panel row"]);
+
+    expect(below()).toEqual(["usage", "thinking", "2 agents", "panel row"]);
+  });
+
+  it("puts a panel set before the footer block above it", () => {
+    const { ui, footer, below } = piLayout();
+
+    ui.setWidget("panel", () => ["panel row"]);
+    footer();
+
+    expect(below()).toEqual(["panel row", "usage", "thinking", "2 agents"]);
   });
 });
 

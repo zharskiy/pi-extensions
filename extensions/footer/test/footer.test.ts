@@ -23,10 +23,11 @@ const setup = () => {
 };
 
 describe("footer", () => {
-  it("installs the footer and hides the cost figures until spending publishes", () => {
+  it("installs the footer below the editor and hides the cost figures until spending publishes", () => {
     const { host, lines } = setup();
 
     expect(host.published).toEqual([]);
+    expect(host.footerSlot).toBe("belowEditor");
     expect(lines()).toEqual([
       " 50.0k · test-model (200k context)",
       " my-project",
