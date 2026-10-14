@@ -132,8 +132,9 @@ describe("line builders", () => {
 });
 
 describe("renderFooter", () => {
-  it("renders the padded block followed by a blank line", () => {
+  it("renders the padded block between a blank line above and below", () => {
     expect(render()).toEqual([
+      "",
       " 150.1k · $4.00 · test-model (1M context)",
       " Session total (agents included): 162.4k / $4.42",
       " my-project",
@@ -146,6 +147,7 @@ describe("renderFooter", () => {
     const lines = render({ sessionName: "refactor" }, "feature-branch", new Map([["other", "busy"]]));
 
     expect(lines).toEqual([
+      "",
       " 150.1k · $4.00 · test-model (1M context)",
       " Session total (agents included): 162.4k / $4.42",
       " my-project • refactor",
@@ -159,6 +161,7 @@ describe("renderFooter", () => {
 
   it("hides the cost and the session total until spending publishes", () => {
     expect(render({ totals: undefined })).toEqual([
+      "",
       " 150.1k · test-model (1M context)",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",

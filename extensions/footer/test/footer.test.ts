@@ -29,6 +29,7 @@ describe("footer", () => {
     expect(host.published).toEqual([]);
     expect(host.footerSlot).toBe("belowEditor");
     expect(lines()).toEqual([
+      "",
       " 50.0k · test-model (200k context)",
       " my-project",
       " main",
@@ -47,7 +48,7 @@ describe("footer", () => {
     });
 
     expect(host.footerRefreshes).toBe(1);
-    expect(lines().slice(0, 2)).toEqual([
+    expect(lines().slice(1, 3)).toEqual([
       " 50.0k · $1.50 · test-model (200k context)",
       " Session total (agents included): 50.0k / $2.00",
     ]);
@@ -66,7 +67,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines().slice(0, 2)).toEqual([" 50.0k · test-model (200k context)", " my-project"]);
+    expect(lines().slice(1, 3)).toEqual([" 50.0k · test-model (200k context)", " my-project"]);
   });
 
   it("refreshes on idle", () => {

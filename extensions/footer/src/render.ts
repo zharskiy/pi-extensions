@@ -4,6 +4,8 @@ import { formatTokens } from "../../../core/manager/format.ts";
 
 const PAD = " ";
 
+const PAD_TOP = 1;
+
 const PAD_BOTTOM = 1;
 
 const DOT = " · ";
@@ -160,6 +162,7 @@ export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterD
   ];
 
   return [
+    ...Array.from({ length: PAD_TOP }, () => ""),
     ...lines.map((line) => (line ? `${PAD}${line}` : line)),
     ...Array.from({ length: PAD_BOTTOM }, () => ""),
   ];

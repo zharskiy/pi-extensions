@@ -3,6 +3,7 @@
 A pi extension that replaces pi's footer with a multi-line status block drawn right below the editor:
 
 ```
+
 150.1k · $4.00 · <model name> (1M context)
 Session total (agents included): 162.4k / $4.42
 my-project • <session name>
@@ -20,7 +21,7 @@ feature-branch
 - Line 4: the git branch, only inside a repository.
 - Line 5: the thinking level and the key that cycles it, or `thinking unavailable` for models without reasoning.
 - Then, after a blank line, the status texts other extensions set, sorted by key, whitespace collapsed, on one line. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it, its ` (sub)` marker included.
-- The block is indented one column (`PAD` is a single space), in line with the composer chevron, and is followed by `PAD_BOTTOM` (1) blank lines; both are constants at the top of `src/render.ts`. Every line is cut to the terminal width with a dim `…`.
+- The block is indented one column (`PAD` is a single space), in line with the composer chevron, and is preceded by `PAD_TOP` (1) and followed by `PAD_BOTTOM` (1) blank lines, so pi's command list and the editor's bottom rule never touch line 1; all are constants at the top of `src/render.ts`. Every line is cut to the terminal width with a dim `…`.
 - Placement: the block is drawn as the first below-editor widget and pi's own footer slot is left empty, so below-editor widgets other extensions add later, such as the subagents panel, sit under the block (usage, thinking and statuses first, then the panel). pi keeps below-editor widgets in the order they were first set and clears them on reload and session switch; the footer sets its block at session start and only re-renders it afterwards, so it stays first unless another extension sets a below-editor widget during its own session start ahead of the footer.
 - Active only in tui mode; elsewhere it does nothing.
 
