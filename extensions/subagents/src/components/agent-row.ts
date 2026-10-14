@@ -66,6 +66,7 @@ const statsVariants = (record: AgentRecord, now: number): Stats[] => {
         paint: (theme) =>
           theme.fg(stateToken(record.state), word) + theme.fg("dim", SEP) + theme.fg("dim", elapsed),
       },
+      plainStats(word, stateToken(record.state)),
     ];
   }
 

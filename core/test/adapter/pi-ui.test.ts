@@ -353,6 +353,27 @@ describe("pi renderers in the transcript pane", () => {
     expect(text).not.toContain('"agents"');
   });
 
+  it("renders a recorded call without a result as started, since its arguments are complete", () => {
+    const states: boolean[] = [];
+    const spec = {
+      name: "run_agent",
+      label: "Run agent",
+      description: "run",
+      parameters: {},
+      execute: async () => ({ text: "" }),
+      renderCall: (_params: unknown, _theme: unknown, state: { executionStarted: boolean }) => {
+        states.push(state.executionStarted);
+        return "RUN-AGENT-ROW";
+      },
+    } as unknown as AnyToolSpec;
+    const pane = createTranscriptPane(tui, "/repo", { tools: [spec] });
+
+    pane.sync([assistantCall("run_agent", { agents: [] })]);
+    pane.render(80);
+
+    expect(states.at(-1)).toBe(true);
+  });
+
   it("keeps the raw fallback for unknown tools", () => {
     const pane = createTranscriptPane(tui, "/repo");
 

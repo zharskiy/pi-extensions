@@ -111,7 +111,7 @@ export const runAgentPlugin: Plugin = {
     });
 
     const offCleanup = bus.on("agent:changed", (record) => {
-      if (!awaitingCleanup.has(record.id) || record.worktree?.cleanup === undefined) {
+      if (shuttingDown || !awaitingCleanup.has(record.id) || record.worktree?.cleanup === undefined) {
         return;
       }
 

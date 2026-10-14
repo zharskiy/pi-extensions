@@ -194,6 +194,7 @@ export const createTranscriptPane = (
       return;
     }
 
+    component.markExecutionStarted();
     pendingTools.set(call.id, component);
   };
 

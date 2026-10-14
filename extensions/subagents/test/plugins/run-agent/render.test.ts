@@ -119,12 +119,13 @@ const renderCall = (
   params: Partial<RunAgentParams>,
   isPartial: boolean,
   theme: ThemeLike = plainTheme,
+  executionStarted = true,
 ) =>
   harness.tool.renderCall?.(params as RunAgentParams, theme, {
     toolCallId: "call-1",
     expanded: false,
     isPartial,
-    executionStarted: false,
+    executionStarted,
     isError: false,
     args: params,
     outputPad: 1,
@@ -157,6 +158,15 @@ describe("run_agent block", () => {
       "⠹ Running 1 worker agent…",
     );
     expect(renderCall(harness, {}, true)).toBe("⠹ Running agents…");
+  });
+
+  it("names no agents while the arguments still stream", () => {
+    const harness = setup();
+
+    expect(renderCall(harness, { agents: THREE }, true, plainTheme, false)).toBe("⠹ Running agents…");
+    expect(renderCall(harness, { agents: [item("expl", "a")] }, true, plainTheme, false)).toBe(
+      "⠹ Running agents…",
+    );
   });
 
   it("renders nothing for the call once the result is final", () => {

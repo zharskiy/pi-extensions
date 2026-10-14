@@ -186,6 +186,20 @@ describe("completion lines", () => {
     ]);
   });
 
+  it("prints no line for a worktree cleanup that finishes after shutdown started", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+
+    const harness = setup();
+    const worktree = { path: "/w", branch: "pi-agents/explorer-1", base: "abc", cwd: "/w" };
+    const record = harness.create({ worktree });
+
+    harness.close(record, { state: "done", endedAt: 3_000 });
+    await harness.host.shutdown("new");
+    harness.registry.update(record.id, { worktree: { ...worktree, cleanup: "removed" } });
+
+    expect(harness.closedEntries()).toEqual([]);
+  });
+
   it("hides entries of an unknown version", () => {
     expect(setup().host.renderEntry(CLOSED_ENTRY, { v: 2 })).toBeUndefined();
   });

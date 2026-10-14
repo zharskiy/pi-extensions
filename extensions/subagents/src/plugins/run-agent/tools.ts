@@ -196,7 +196,8 @@ export const runAgentTool = (
 
       return { text: deps.runner.batchText(started.batchId), details };
     },
-    renderCall: (params, theme, state) => (state.isPartial ? renderRunningHeader(params, theme, now()) : ""),
+    renderCall: (params, theme, state) =>
+      state.isPartial ? renderRunningHeader(state.executionStarted ? params : undefined, theme, now()) : "",
     renderResult: (result, state, theme) => {
       if (result.details?.batchId) {
         deps.onRendered?.(result.details.batchId, state.invalidate);

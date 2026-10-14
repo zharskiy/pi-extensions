@@ -129,12 +129,20 @@ const cases: Case[] = [
     expected: "   ✓ explorer  Map the auth module                                 done · 1m 5s",
   },
   {
-    name: "omits the description and pads the name when fewer than 8 columns remain",
+    name: "drops the duration of a closed row and keeps its status word",
     input: row(done),
     now: 99_000,
     nameCols: 8,
     width: 30,
-    expected: "   ✓ explorer    done · 1m 5s",
+    expected: "   ✓ explorer  Map the…  done",
+  },
+  {
+    name: "omits the description and pads the name when fewer than 8 columns remain",
+    input: row(done),
+    now: 99_000,
+    nameCols: 8,
+    width: 26,
+    expected: "   ✓ explorer        done",
   },
   {
     name: "marks the selected row with the pointer",
