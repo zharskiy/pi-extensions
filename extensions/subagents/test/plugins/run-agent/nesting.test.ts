@@ -320,7 +320,7 @@ describe("nested agents", () => {
 describe("pending nested calls", () => {
   it("shares a nested call's partial result with the main spec until its batch settles", async () => {
     const { startGeneral, host, registry, runtime } = setup();
-    const { child } = await startGeneral();
+    const { record, child } = await startGeneral();
     const params = { agents: [{ agent: "explorer", task: "find callers" }] };
     const result = await childTool<RunAgentParams>(child, "run_agent").execute(params, {
       toolCallId: "ra1",
@@ -332,24 +332,52 @@ describe("pending nested calls", () => {
     const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
     const nested = registry.batch(String(result.details?.batchId));
 
-    expect(main.pendingResult?.("ra1", params)).toEqual({ text: "", details: result.details });
-    expect(main.pendingResult?.("ra1", { agents: [{ agent: "explorer", task: "other" }] })).toBeUndefined();
-    expect(main.pendingResult?.("ra2", params)).toBeUndefined();
+    expect(main.pendingResult?.("ra1", record.id)).toEqual({ text: "", details: result.details });
+    expect(main.pendingResult?.("ra1", undefined)).toBeUndefined();
+    expect(main.pendingResult?.("ra1", "main")).toBeUndefined();
+    expect(main.pendingResult?.("ra2", record.id)).toBeUndefined();
 
     runtime.child(String(nested[0]?.id)).finish("callers found");
     await flush();
 
-    expect(main.pendingResult?.("ra1", params)).toBeUndefined();
+    expect(main.pendingResult?.("ra1", record.id)).toBeUndefined();
+  });
+
+  it("keeps the calls of two agents that reuse a tool call id apart", async () => {
+    const { runMain, host, registry, runtime } = setup();
+
+    await runMain([
+      { agent: "general", task: "fix a" },
+      { agent: "general", task: "fix b" },
+    ]);
+
+    const [first, second] = registry.list();
+    const run = (id: string, task: string) =>
+      childTool<RunAgentParams>(runtime.child(id), "run_agent").execute(
+        { agents: [{ agent: "explorer", task }] },
+        { toolCallId: "call_0", update: () => {} },
+      );
+    const one = await run(first.id, "find a");
+    const two = await run(second.id, "find b");
+
+    await flush();
+
+    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+
+    expect(one.details?.batchId).not.toBe(two.details?.batchId);
+    expect(main.pendingResult?.("call_0", first.id)?.details).toEqual(one.details);
+    expect(main.pendingResult?.("call_0", second.id)?.details).toEqual(two.details);
   });
 
   it("keeps nothing for a call without a tool call id", async () => {
-    const { runMain, host } = setup();
-    const params = { agents: [{ agent: "explorer", task: "find callers" }] };
+    const { startGeneral, spawnFrom, host, registry } = setup();
+    const { record, child } = await startGeneral();
 
-    await runMain(params.agents);
+    await spawnFrom(child, [{ agent: "explorer", task: "find callers" }]);
 
+    expect(registry.list()).toHaveLength(2);
     expect(
-      host.tool<RunAgentParams, RunAgentDetails>("run_agent").pendingResult?.("", params),
+      host.tool<RunAgentParams, RunAgentDetails>("run_agent").pendingResult?.("", record.id),
     ).toBeUndefined();
   });
 });

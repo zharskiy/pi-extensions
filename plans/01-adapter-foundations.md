@@ -272,13 +272,13 @@ export type ToolSpec<P, D> = {
   /** "self" drops pi's coloured box so the renderer owns the whole row. Default "default". */
   renderShell?: "default" | "self";
   execute(params: P, ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void }): Promise<ToolResult<D>>;
-  pendingResult?(toolCallId: string, params: P): ToolResult<D> | undefined;
+  pendingResult?(toolCallId: string, owner: string | undefined): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): string;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): string;
 };
 
 // OverlayApi change
-createTranscript(options?: { tools?: AnyToolSpec[] }): TranscriptPane;
+createTranscript(options?: { tools?: AnyToolSpec[]; owner?: string }): TranscriptPane;
 ```
 
 Backwards compatibility: existing `renderCall(params, theme)` ignores the third argument; existing `renderResult(result, { expanded, invalidate }, theme)` keeps working because `ToolRenderState` is a superset; `update(text)` keeps working (`details` optional). `AnyToolSpec` unchanged.

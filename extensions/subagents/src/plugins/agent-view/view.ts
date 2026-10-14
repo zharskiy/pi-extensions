@@ -136,8 +136,8 @@ const tickOf = (record: AgentRecord) => {
 
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const scroll = api.createScroll();
-  let transcript = api.createTranscript({ tools: deps.tools });
   let data = deps.load();
+  let transcript = api.createTranscript({ tools: deps.tools, owner: data.record.id });
   let transcriptKey = transcriptKeyOf(data);
   let toolsExpanded = false;
   let requestExpanded = false;
@@ -159,7 +159,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     if (key !== transcriptKey) {
       transcriptKey = key;
       requestExpanded = false;
-      transcript = api.createTranscript({ tools: deps.tools });
+      transcript = api.createTranscript({ tools: deps.tools, owner: data.record.id });
       transcript.setToolsExpanded(toolsExpanded);
     }
 

@@ -23,6 +23,8 @@ const MIN_DESCRIPTION = 12;
 
 const MIN_ROOM = 8;
 
+const STATS_COLS = 30;
+
 export type RowInput = TreeRow & { selected: boolean };
 
 export type RowLayout = { nameCols: number; infoAt: number };
@@ -97,12 +99,12 @@ const statsVariants = (record: AgentRecord, now: number): Stats[] => {
 const roomFor = (width: number, fixed: number, stats: string) =>
   innerWidth(width) - fixed - (stats ? 2 + displayWidth(stats) : 0);
 
-const pickStats = (variants: Stats[], width: number, fixed: number) => {
-  const fitting = variants.find((stats) => roomFor(width, fixed, stats.plain) >= MIN_DESCRIPTION);
-  const stats = fitting ?? (variants.at(-1) as Stats);
+const pickStats = (variants: Stats[], width: number, infoAt: number) =>
+  variants.find((stats) => !stats.plain || infoAt + 2 + displayWidth(stats.plain) <= innerWidth(width)) ??
+  (variants.at(-1) as Stats);
 
-  return { stats, room: roomFor(width, fixed, stats.plain) };
-};
+const statsReserve = (record: AgentRecord, now: number) =>
+  record.state === "running" ? STATS_COLS : displayWidth((statsVariants(record, now)[0] as Stats).plain);
 
 const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
   const base = baseName(input.record);
@@ -125,20 +127,16 @@ const leadOf = (row: TreeRow, nameCols: number, pointerCols: number) =>
 export const rowLayout = (rows: TreeRow[], now: number, width: number, selecting: boolean): RowLayout => {
   const nameCols = nameColumn(rows);
   const reserve = selecting ? POINTER_COLS : 0;
-  const wanted = rows.reduce((widest, row) => {
-    const want = Math.min(DESCRIPTION_COLS_MAX, displayWidth(singleLine(row.record.description)));
+  const widest = (measure: (row: TreeRow) => number) =>
+    rows.reduce((most, row) => Math.max(most, measure(row)), 0);
+  const wants = (row: TreeRow, cap: number) =>
+    leadOf(row, nameCols, 0) + Math.min(cap, displayWidth(singleLine(row.record.description)));
+  const wanted = widest((row) => wants(row, DESCRIPTION_COLS_MAX));
+  const floor = widest((row) => wants(row, MIN_DESCRIPTION));
+  const limit = innerWidth(width) - 2 - widest((row) => statsReserve(row.record, now));
+  const infoAt = Math.max(floor + reserve, Math.min(wanted + reserve, limit));
 
-    return Math.max(widest, leadOf(row, nameCols, 0) + want);
-  }, 0);
-  const limit = rows.reduce((least, row) => {
-    const { stats, room } = pickStats(statsVariants(row.record, now), width, leadOf(row, nameCols, 0));
-
-    return stats.plain && room >= MIN_ROOM
-      ? Math.min(least, innerWidth(width) - 2 - displayWidth(stats.plain))
-      : least;
-  }, Number.POSITIVE_INFINITY);
-
-  return { nameCols, infoAt: Math.min(wanted + reserve, limit) };
+  return { nameCols, infoAt: Math.min(innerWidth(width), infoAt) };
 };
 
 export const renderRow = (
@@ -155,7 +153,8 @@ export const renderRow = (
   const tree = treePrefix(input);
   const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
   const fixed = leadOf(input, nameCols, pointerCols);
-  const { stats, room } = pickStats(statsVariants(record, now), width, fixed);
+  const stats = pickStats(statsVariants(record, now), width, infoAt);
+  const room = roomFor(width, fixed, stats.plain);
   const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
 
   if (room < MIN_ROOM) {
@@ -172,7 +171,7 @@ export const renderRow = (
     return head + paintName(input, Math.max(0, nameRoom), theme) + tail;
   }
 
-  const cols = Math.max(0, Math.min(room, infoAt - fixed));
+  const cols = Math.max(0, Math.min(room, stats.plain ? infoAt - fixed : DESCRIPTION_COLS_MAX));
   const description = truncateCols(singleLine(record.description), cols);
   const shown = stats.plain ? padEndCols(description, cols) : description;
   const padding = shown.slice(description.length);

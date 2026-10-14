@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SessionRecord, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import type { SessionRecord, ToolSpec, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { parseSessionLines, promptRecordEntry } from "../../../../../core/adapter/session-file.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
@@ -37,13 +37,13 @@ const ARGS = {
   ],
 };
 
-const nestedSession = (wait: boolean, result?: { text: string; details?: RunAgentDetails }) =>
+const nestedSession = (args: Record<string, unknown>, result?: { text: string; details?: RunAgentDetails }) =>
   parseSessionLines(
     [
       line({ role: "user", content: [{ type: "text", text: "Task from main (agent id explorer-1): Nest" }] }),
       line({
         role: "assistant",
-        content: [{ type: "toolCall", id: "ra1", name: "run_agent", arguments: { ...ARGS, wait } }],
+        content: [{ type: "toolCall", id: "ra1", name: "run_agent", arguments: args }],
         stopReason: "toolUse",
       }),
       ...(result
@@ -62,7 +62,7 @@ const nestedSession = (wait: boolean, result?: { text: string; details?: RunAgen
     RECORD_ENTRY,
   );
 
-const setup = async (wait: boolean) => {
+const setup = async (wait: boolean, args: Record<string, unknown> = { ...ARGS, wait }) => {
   const harness = createHarness([
     agentRegistryPlugin,
     agentDefinitionsPlugin,
@@ -71,30 +71,32 @@ const setup = async (wait: boolean) => {
     agentViewPlugin,
   ]);
   const registry = harness.services.require("registry");
-  const running = harness.host
+
+  await harness.host
     .tool<RunAgentParams, RunAgentDetails>("run_agent")
-    .execute({ ...ARGS, wait }, { toolCallId: "ra1", update: () => {} });
+    .execute({ agents: [{ agent: "general", task: "nest" }] }, { toolCallId: "ra1", update: () => {} });
+  await flush();
+
+  const parent = registry.list()[0];
+  const runAgent = harness.runtime
+    .child(parent.id)
+    .spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as ToolSpec<
+    RunAgentParams,
+    RunAgentDetails
+  >;
+  const running = runAgent.execute({ ...ARGS, wait }, { toolCallId: "ra1", update: () => {} });
 
   await flush();
 
   const file = join(harness.root, "parent.jsonl");
-  const parent = registry.create({
-    agent: "explorer",
-    description: "nest",
-    callerId: "main",
-    depth: 1,
-    batchId: "b-parent",
-    dir: join(harness.root, "agents"),
-    contextLimit: 100_000,
-  });
 
   const show = (session: SessionRecord, content: string) => {
     writeFileSync(file, content);
     harness.runtime.sessions.set(file, session);
   };
 
-  show(nestedSession(wait), "");
-  registry.close(parent.id, { state: "done", sessionFile: file });
+  show(nestedSession(args), "");
+  registry.update(parent.id, { sessionFile: file });
 
   const open = async () => {
     await harness.services.require("agentView").open(parent.id, { from: "command" });
@@ -112,7 +114,7 @@ const setup = async (wait: boolean) => {
     return () => plain(view.render(100)).join("\n");
   };
 
-  const nested = registry.list().filter((record) => record.id !== parent.id);
+  const nested = registry.list().filter((record) => record.callerId === parent.id);
 
   return { harness, running, nested, show, open };
 };
@@ -145,11 +147,19 @@ describe("agent view nested run_agent calls", () => {
     expect(text()).toContain(" 2 explorer agents launched");
     expect(text()).toContain("Done · 0 tool uses");
 
-    show(nestedSession(true, result), "written");
+    show(nestedSession({ ...ARGS, wait: true }, result), "written");
 
     const final = (await open())();
 
     expect(final).toContain(" 2 explorer agents finished");
     expect(final).toContain("Done · 0 tool uses");
+  });
+
+  it("draws the live block when the saved arguments carry a null optional field", async () => {
+    const { open } = await setup(false, { ...ARGS, wait: null });
+    const shown = (await open())();
+
+    expect(shown).toContain(" 2 background explorer agents launched");
+    expect(shown).toContain("Initializing…");
   });
 });

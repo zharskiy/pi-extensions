@@ -477,7 +477,7 @@ describe("pi renderers in the transcript pane", () => {
 });
 
 describe("transcript pane pending results", () => {
-  const pendingSpec = (pendingResult: (id: string, params: unknown) => unknown) =>
+  const pendingSpec = (pendingResult: (id: string, owner: string | undefined) => unknown) =>
     ({
       name: "run_agent",
       label: "Run agent",
@@ -492,11 +492,12 @@ describe("transcript pane pending results", () => {
     }) as unknown as AnyToolSpec;
 
   it("fills an executing call once with the spec's partial result until its result arrives", () => {
-    const asked: [string, unknown][] = [];
+    const asked: [string, string | undefined][] = [];
     const pane = createTranscriptPane(tui, "/repo", {
+      owner: "explorer-1",
       tools: [
-        pendingSpec((id, params) => {
-          asked.push([id, params]);
+        pendingSpec((id, owner) => {
+          asked.push([id, owner]);
           return { text: "", details: { n: 1 } };
         }),
       ],
@@ -507,7 +508,7 @@ describe("transcript pane pending results", () => {
 
     expect(visibleText(pane.render(80))).toContain("BATCH 1 partial true");
     expect(visibleText(pane.render(80))).toContain("BATCH 1 partial true");
-    expect(asked).toEqual([["ra1", { agents: [] }]]);
+    expect(asked).toEqual([["ra1", "explorer-1"]]);
 
     pane.sync([call, toolResult("run_agent", "done", { n: 2 }, "ra1")]);
 

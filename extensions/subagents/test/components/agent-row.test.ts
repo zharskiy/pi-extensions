@@ -93,14 +93,14 @@ const cases: Case[] = [
     input: row(grepping),
     now: 65_000,
     width: 60,
-    expected: " ⠋ explorer  Map the auth m…  grep · 1m 5s · ↓ 12.3k tokens",
+    expected: " ⠋ explorer  Map the auth…   grep · 1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "drops the activity, then the tokens, when the description would fall below 12 columns",
     input: row(grepping),
     now: 65_000,
     width: 38,
-    expected: " ⠋ explorer  Map the auth mod…  1m 5s",
+    expected: " ⠋ explorer  Map the aut…  1m 5s",
   },
   {
     name: "drops the elapsed too and keeps the description",
@@ -110,12 +110,12 @@ const cases: Case[] = [
     expected: " ⠋ explorer  Map the auth mo…",
   },
   {
-    name: "drops the activity when the description room would be 10 columns",
+    name: "drops the activity when it does not fit after the info column",
     input: row(grepping),
     now: 65_000,
     layout: { nameCols: 9, infoAt: 31 },
-    width: 56,
-    expected: " ⠋ explorer   Map the auth mod…  1m 5s · ↓ 12.3k tokens",
+    width: 57,
+    expected: " ⠋ explorer   Map the auth modu…  1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "shows queued as the status word",
@@ -258,18 +258,51 @@ describe("agent row", () => {
     expect(line).toBe(` ✓ explorer  ${"d".repeat(47)}…  done · 1m 5s`);
   });
 
-  it("moves the info column left so the widest stats end at inner on a narrow terminal", () => {
+  it("moves the info column left to keep 30 columns for running stats on a narrow terminal", () => {
     const rows = [row(grepping), row(done)];
     const layout = rowLayout(rows, 65_000, 60, false);
     const lines = rows.map((input) => renderRow(input, 65_000, 60, plainTheme, layout));
 
-    expect(layout.infoAt).toBe(58 - 2 - displayWidth("grep · 1m 5s · ↓ 12.3k tokens"));
+    expect(layout.infoAt).toBe(58 - 2 - 30);
     expect(infoStart(lines[0], "grep")).toBe(infoStart(lines[1], "done"));
-    expect(displayWidth(lines[0])).toBe(59);
     expect(lines).toEqual([
-      " ⠋ explorer  Map the auth m…  grep · 1m 5s · ↓ 12.3k tokens",
-      " ✓ explorer  Map the auth m…  done · 1m 5s",
+      " ⠋ explorer  Map the auth…   grep · 1m 5s · ↓ 12.3k tokens",
+      " ✓ explorer  Map the auth…   done · 1m 5s",
     ]);
+  });
+
+  it("keeps the info column still while the activity and elapsed change", () => {
+    const at = (activity: string, tokens: number) =>
+      row(rec({ tokens, activity: { kind: "tool", text: activity, at: 0 }, description: "d".repeat(60) }));
+    const first = [at("ls", 1_000), row(child, { depth: 1 })];
+    const second = [at("tool_search", 123_500), row(child, { depth: 1 })];
+
+    [70, 100, 140].forEach((width) => {
+      const before = rowLayout(first, 5_000, width, false);
+      const after = rowLayout(second, 605_000, width, false);
+      const line = renderRow(second[0], 605_000, width, plainTheme, after);
+
+      expect(after.infoAt).toBe(before.infoAt);
+      expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+    });
+  });
+
+  it("keeps a readable description on a deep row next to a root with long stats", () => {
+    const root = row(rec({ tokens: 123_500, activity: { kind: "tool", text: "tool_search", at: 0 } }), {
+      openDescendants: 1,
+    });
+    const deep = row(rec({ tokens: 10, activity: { kind: "tool", text: "ls", at: 0 } }), {
+      depth: 4,
+      ancestorsContinue: [true, true, true],
+    });
+    const layout = rowLayout([root, deep], 5_000, 70, false);
+    const lines = [root, deep].map((input) => renderRow(input, 5_000, 70, plainTheme, layout));
+
+    expect(lines).toEqual([
+      " ⠋ explorer (+1)  Map the auth module       5s · ↓ 123.5k tokens",
+      " │  │  │  └─ ⠋ explorer       Map the aut…  ls · 5s · ↓ 10 tokens",
+    ]);
+    expect(infoStart(lines[0], "5s")).toBe(infoStart(lines[1], "ls"));
   });
 
   it("keeps the stats of a row with a short description", () => {

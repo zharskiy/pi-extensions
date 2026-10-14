@@ -130,7 +130,11 @@ const defaultPiRenderers = () => {
   return piRenderers;
 };
 
-export type TranscriptPaneOptions = { tools?: AnyToolSpec[]; piRenderers?: Record<string, ToolRenderers> };
+export type TranscriptPaneOptions = {
+  tools?: AnyToolSpec[];
+  owner?: string;
+  piRenderers?: Record<string, ToolRenderers>;
+};
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
 const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
@@ -249,7 +253,7 @@ export const createTranscriptPane = (
   const seedPendingResults = () => {
     pendingCalls.forEach((call, id) => {
       const spec = options.tools?.find((tool) => tool.name === call.name);
-      const partial = spec?.pendingResult?.(id, call.arguments as never);
+      const partial = spec?.pendingResult?.(id, options.owner);
 
       if (!partial) {
         return;
@@ -519,7 +523,8 @@ export const createUi = (
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
           wheelScrolling: tui.mode === "fullscreen",
-          createTranscript: (options) => createTranscriptPane(tui, cwd, { tools: options?.tools }),
+          createTranscript: (options) =>
+            createTranscriptPane(tui, cwd, { tools: options?.tools, owner: options?.owner }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
           createInput: (placeholder) => createInputPane(placeholder, () => tui.getShowHardwareCursor()),
         });

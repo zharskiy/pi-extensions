@@ -60,8 +60,11 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
     params: P,
     ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
   ): Promise<ToolResult<D>>;
-  /** The latest partial result of a call still executing, for transcripts read from a session file (the agent view), which never see pi's partial updates; undefined leaves the call as pi draws it. */
-  pendingResult?(toolCallId: string, params: P): ToolResult<D> | undefined;
+  /**
+   * The latest partial result of a call still executing, for transcripts read from a session file (the agent view), which never see pi's partial updates; undefined leaves the call as pi draws it.
+   * `owner` is the transcript's `createTranscript({ owner })`, the session that made the call: tool call ids are unique only within one session.
+   */
+  pendingResult?(toolCallId: string, owner: string | undefined): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
   /** The box background for `renderShell: "box"` (`result` is undefined for the call render); undefined keeps pi's rule: pending while `isPartial`, error on `isError`, else success. */
@@ -144,7 +147,7 @@ export type OverlayApi = {
   toolsKey: string;
   wheelScrolling: boolean;
   /** `tools` render with their own `renderCall`/`renderResult` (after pi's built-ins, before codemode and tool_search). */
-  createTranscript(options?: { tools?: AnyToolSpec[] }): TranscriptPane;
+  createTranscript(options?: { tools?: AnyToolSpec[]; owner?: string }): TranscriptPane;
   createScroll(): ScrollPane;
   createInput(placeholder: string): InputPane;
 };

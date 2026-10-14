@@ -33,7 +33,10 @@ export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
     createTranscript: (options) => {
       transcripts.push(options ?? {});
 
-      return createTranscriptPane({ requestRender } as never, "/repo", { tools: options?.tools });
+      return createTranscriptPane({ requestRender } as never, "/repo", {
+        tools: options?.tools,
+        owner: options?.owner,
+      });
     },
     createScroll: () => createScrollPane(requestRender),
     createInput: createFakeInputPane,

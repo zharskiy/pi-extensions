@@ -17,7 +17,10 @@ export type { RunAgentDetails } from "./render.ts";
 
 export type MessageAgentParams = { id: string; message: string };
 
-export type PendingCalls = Map<string, { params: RunAgentParams; details: RunAgentDetails }>;
+/** Live details of executing calls, keyed by `callKey(callerId, toolCallId)`. */
+export type PendingCalls = Map<string, { details: RunAgentDetails }>;
+
+const callKey = (callerId: string, toolCallId: string) => `${callerId}\n${toolCallId}`;
 
 type ToolDeps = {
   runner: Runner;
@@ -176,7 +179,7 @@ export const runAgentTool = (
       };
 
       if (ctx.toolCallId && started.records.some((record) => !isClosed(record.state))) {
-        deps.calls?.set(ctx.toolCallId, { params, details });
+        deps.calls?.set(callKey(callerId, ctx.toolCallId), { details });
       }
 
       ctx.update("", details);
@@ -220,12 +223,10 @@ export const runAgentTool = (
       });
     },
     renderTone: (state, result) => blockTone(deps.registry, state, result),
-    pendingResult: (toolCallId, params) => {
-      const call = deps.calls?.get(toolCallId);
+    pendingResult: (toolCallId, owner) => {
+      const call = owner === undefined ? undefined : deps.calls?.get(callKey(owner, toolCallId));
 
-      return call && JSON.stringify(call.params) === JSON.stringify(params)
-        ? { text: "", details: call.details }
-        : undefined;
+      return call ? { text: "", details: call.details } : undefined;
     },
   };
 };
