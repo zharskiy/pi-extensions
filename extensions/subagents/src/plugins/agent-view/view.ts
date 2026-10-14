@@ -192,7 +192,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       };
     }
 
-    const request = requestLines(payload(), isOpen(), requestExpanded, width, theme);
+    const request = [...requestLines(payload(), isOpen(), requestExpanded, width, theme), ""];
     const lines = transcript.render(width);
 
     if (lines.length === 0) {

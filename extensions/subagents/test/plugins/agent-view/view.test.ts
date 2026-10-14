@@ -1126,6 +1126,16 @@ describe("agent view request block", () => {
     expect(all.at(-2)).toContain("x to stop · r request · ctrl+o tool detail");
   });
 
+  it("leaves a blank line under the collapsed request, apart from the task box padding", () => {
+    const { view } = viewOf(requestSession(), { record: openRecord, theme: recordingTheme });
+    const raw = plain(view.render(100));
+    const at = raw.findIndex((entry) => entry.includes("▸ Request"));
+
+    expect(raw[at + 1]).toBe("");
+    expect(raw[at + 2]).toBe("");
+    expect(raw[at + 3]).toContain("Task from");
+  });
+
   it("expands the request with r and scrolls to the top", () => {
     const { view, lines, update } = viewOf(requestSession(30), { record: openRecord, rows: 10 });
 
@@ -1312,10 +1322,10 @@ describe("agent view clicks", () => {
     const before = lines();
     const row = rowOf(before, "alpha 10");
 
-    expect(before.at(-2)).toMatch(/ 9-30\/46$/);
+    expect(before.at(-2)).toMatch(/ 9-30\/47$/);
     expect(row).toBeGreaterThan(0);
     expect(view.handleClick?.(5, row)).toBe(true);
-    expect(lines().at(-2)).toMatch(/ 9-30\/70$/);
+    expect(lines().at(-2)).toMatch(/ 9-30\/71$/);
     expect(lines()[row]).toBe(before[row]);
   });
 

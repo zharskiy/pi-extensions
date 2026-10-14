@@ -135,7 +135,7 @@ describe("agents overlay", () => {
         before.findIndex((line) => line.includes("alpha 10")),
       ),
     ).toBe(true);
-    expect(lines().at(-2)).toMatch(/\/70$/);
+    expect(lines().at(-2)).toMatch(/\/71$/);
   });
 
   it("/agents <id> opens the view and Esc closes the overlay", async () => {
