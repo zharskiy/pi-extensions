@@ -264,7 +264,8 @@ export type ToolSpec<P, D> = {
   …existing fields…
   /** "self" drops pi's coloured box so the renderer owns the whole row. Default "default". */
   renderShell?: "default" | "self";
-  execute(params: P, ctx: { signal?: AbortSignal; update(text: string, details?: D): void }): Promise<ToolResult<D>>;
+  execute(params: P, ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void }): Promise<ToolResult<D>>;
+  pendingResult?(toolCallId: string, params: P): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): string;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): string;
 };
@@ -287,7 +288,7 @@ Backwards compatibility: existing `renderCall(params, theme)` ignores the third 
 
 `core/adapter/pi-ui.ts`:
 - `capturePiRenderers(factories: Record<string, () => ExtensionFactory>): Record<string, ToolRenderers>` runs each exported factory (`createCodemodeExtension()`, `createToolSearchExtension()`, `$PCA/extensions/codemode/index.js:17-30`, `$PCA/extensions/tool-search/index.js:9-13`) against a stub `{ registerTool: (definition) => { captured = definition; } } as unknown as ExtensionAPI`; the factories only call `registerTool` with a definition whose pi callbacks are closures (`getSettings`, `getAllTools`, `appendEntry`) used at execute time, never at construction. Keep `{ renderShell, renderCall, renderResult }` (`ToolRenderers`, exported from `$PCA/index.d.ts:8`; `ToolExecutionComponent` accepts `ToolRenderers | ToolDefinition`, tool-execution.d.ts). Failure mode: a factory that throws or registers nothing yields no entry → that tool keeps pi's generic fallback (`formatToolExecution`, tool-execution.js:311-322), exactly today's display. Memoise at module level, computed on first use.
-- `createTranscriptPane(tui, cwd, options: { tools?: AnyToolSpec[]; piRenderers?: Record<string, ToolRenderers> } = {})`: `definitionFor(name)` order: built-in factory → `options.tools` spec by name (`toPiTool(spec)`, renderers only) → `piRenderers[name]` (default `capturePiRenderers({ codemode: createCodemodeExtension, tool_search: createToolSearchExtension })`) → `undefined`. Nested `run_agent`/`message_agent`/`agent_status` calls inside an agent therefore render with the same `renderCall`/`renderResult` as the main session (D4), receiving a real `ToolRenderState` from pi's component.
+- `createTranscriptPane(tui, cwd, options: { tools?: AnyToolSpec[]; piRenderers?: Record<string, ToolRenderers> } = {})`: `definitionFor(name)` order: built-in factory → `options.tools` spec by name (`toPiTool(spec)`, renderers only) → `piRenderers[name]` (default `capturePiRenderers({ codemode: createCodemodeExtension, tool_search: createToolSearchExtension })`) → `undefined`. Nested `run_agent`/`message_agent`/`agent_status` calls inside an agent therefore render with the same `renderCall`/`renderResult` as the main session (D4), receiving a real `ToolRenderState` from pi's component. A call with no result in the file is marked started; on each render the pane asks the spec's `pendingResult(toolCallId, arguments)` and, the first time it answers, feeds it to the component as `updateResult(partial, true)`, so a call still executing draws its partial block (pi writes no partial results to session files). The persisted result replaces it on a later `sync`.
 - `openOverlay`: `createTranscript: (options) => createTranscriptPane(tui, cwd, { tools: options?.tools })`.
 - Codemode result entries in a child session file carry `details.calls` (`$PCA/extensions/codemode/execute.js:363-470`), which `updateResult(item.raw)` already passes through, so the nested call list renders.
 

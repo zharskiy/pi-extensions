@@ -158,6 +158,21 @@ describe("toPiTool render state", () => {
     ]);
   });
 
+  it("passes pi's tool call id into the execute context", async () => {
+    const seen: (string | undefined)[] = [];
+    const tool = piTool({
+      ...baseSpec,
+      execute: async (_params, ctx) => {
+        seen.push(ctx.toolCallId);
+        return { text: "done" };
+      },
+    });
+
+    await tool.execute("call-7", {}, undefined, () => {}, {});
+
+    expect(seen).toEqual(["call-7"]);
+  });
+
   it("keeps string-only renderers working", () => {
     const tool = piTool<{ name?: string }, unknown>({
       ...baseSpec,

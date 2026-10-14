@@ -6,7 +6,7 @@ import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from 
 import { createHandoff } from "./handoff.ts";
 import { createOutbox, joinTexts, type OutboxItem } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
-import { describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
+import { describeRunAgent, messageAgentTool, type PendingCalls, runAgentTool } from "./tools.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 
@@ -18,6 +18,7 @@ export const runAgentPlugin: Plugin = {
     const definitions = services.require("definitions");
 
     const waking: OutboxItem[] = [];
+    const calls: PendingCalls = new Map();
 
     const wake = () => {
       const items = waking.splice(0);
@@ -62,7 +63,7 @@ export const runAgentPlugin: Plugin = {
         maxConcurrent: settings.maxConcurrent,
       });
 
-      const childDeps = { runner, registry };
+      const childDeps = { runner, registry, calls };
 
       const tools: AnyToolSpec[] = [
         runAgentTool(childDeps, description, record.id),
@@ -125,11 +126,18 @@ export const runAgentPlugin: Plugin = {
     const offSettled = bus.on("batch:settled", ({ batchId }) => {
       safeInvalidate(batchId);
       invalidators.delete(batchId);
+
+      calls.forEach((call, id) => {
+        if (call.details.batchId === batchId) {
+          calls.delete(id);
+        }
+      });
     });
 
     const toolDeps = {
       runner,
       registry,
+      calls,
       onRendered: (batchId: string, invalidate: () => void) => {
         if (registry.batch(batchId).some((record) => !isClosed(record.state))) {
           invalidators.set(batchId, invalidate);
@@ -183,6 +191,7 @@ export const runAgentPlugin: Plugin = {
     host.onSessionShutdown(async (reason) => {
       outbox.clear();
       waking.length = 0;
+      calls.clear();
       await runner.shutdown(`session ${reason}`);
     });
 
@@ -195,6 +204,7 @@ export const runAgentPlugin: Plugin = {
       }
 
       invalidators.clear();
+      calls.clear();
     };
   },
 };

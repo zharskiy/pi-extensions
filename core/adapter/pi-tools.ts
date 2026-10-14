@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import type { ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
 import { padLines, textComponent, themeLike } from "./pi-components.ts";
 
-const toPiResult = (result: ToolResult) => ({
+export const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
@@ -106,7 +106,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     parameters: Type.Unsafe<P>(spec.parameters),
     renderShell: spec.renderShell === "box" ? "self" : spec.renderShell,
     execute: async (
-      _toolCallId: string,
+      toolCallId: string,
       params: unknown,
       signal: AbortSignal | undefined,
       onUpdate:
@@ -118,6 +118,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
 
       const result = await spec.execute(params as P, {
         signal,
+        toolCallId,
         update: (text, details) => onUpdate?.({ content: [{ type: "text", text }], details }),
       });
 

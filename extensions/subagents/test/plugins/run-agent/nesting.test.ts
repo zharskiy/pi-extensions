@@ -316,3 +316,40 @@ describe("nested agents", () => {
     expect(explorer.state).toBe("stopped");
   });
 });
+
+describe("pending nested calls", () => {
+  it("shares a nested call's partial result with the main spec until its batch settles", async () => {
+    const { startGeneral, host, registry, runtime } = setup();
+    const { child } = await startGeneral();
+    const params = { agents: [{ agent: "explorer", task: "find callers" }] };
+    const result = await childTool<RunAgentParams>(child, "run_agent").execute(params, {
+      toolCallId: "ra1",
+      update: () => {},
+    });
+
+    await flush();
+
+    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+    const nested = registry.batch(String(result.details?.batchId));
+
+    expect(main.pendingResult?.("ra1", params)).toEqual({ text: "", details: result.details });
+    expect(main.pendingResult?.("ra1", { agents: [{ agent: "explorer", task: "other" }] })).toBeUndefined();
+    expect(main.pendingResult?.("ra2", params)).toBeUndefined();
+
+    runtime.child(String(nested[0]?.id)).finish("callers found");
+    await flush();
+
+    expect(main.pendingResult?.("ra1", params)).toBeUndefined();
+  });
+
+  it("keeps nothing for a call without a tool call id", async () => {
+    const { runMain, host } = setup();
+    const params = { agents: [{ agent: "explorer", task: "find callers" }] };
+
+    await runMain(params.agents);
+
+    expect(
+      host.tool<RunAgentParams, RunAgentDetails>("run_agent").pendingResult?.("", params),
+    ).toBeUndefined();
+  });
+});

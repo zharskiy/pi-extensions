@@ -4,6 +4,7 @@ import {
   type AgentInternals,
   type AgentRegistry,
   grantText,
+  isClosed,
   isNone,
   MAIN_CALLER,
 } from "../../model/types.ts";
@@ -16,9 +17,12 @@ export type { RunAgentDetails } from "./render.ts";
 
 export type MessageAgentParams = { id: string; message: string };
 
+export type PendingCalls = Map<string, { params: RunAgentParams; details: RunAgentDetails }>;
+
 type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
+  calls?: PendingCalls;
   onRendered?: (batchId: string, invalidate: () => void) => void;
   now?: () => number;
 };
@@ -171,6 +175,10 @@ export const runAgentTool = (
         })),
       };
 
+      if (ctx.toolCallId && started.records.some((record) => !isClosed(record.state))) {
+        deps.calls?.set(ctx.toolCallId, { params, details });
+      }
+
       ctx.update("", details);
 
       if (params.wait !== true) {
@@ -212,6 +220,13 @@ export const runAgentTool = (
       });
     },
     renderTone: (state, result) => blockTone(deps.registry, state, result),
+    pendingResult: (toolCallId, params) => {
+      const call = deps.calls?.get(toolCallId);
+
+      return call && JSON.stringify(call.params) === JSON.stringify(params)
+        ? { text: "", details: call.details }
+        : undefined;
+    },
   };
 };
 

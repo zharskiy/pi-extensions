@@ -58,8 +58,10 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   renderShell?: "default" | "self" | "box";
   execute(
     params: P,
-    ctx: { signal?: AbortSignal; update(text: string, details?: D): void },
+    ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
   ): Promise<ToolResult<D>>;
+  /** The latest partial result of a call still executing, for transcripts read from a session file (the agent view), which never see pi's partial updates; undefined leaves the call as pi draws it. */
+  pendingResult?(toolCallId: string, params: P): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
   /** The box background for `renderShell: "box"` (`result` is undefined for the call render); undefined keeps pi's rule: pending while `isPartial`, error on `isError`, else success. */

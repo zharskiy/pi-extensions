@@ -213,6 +213,20 @@ describe("pi adapter conformance", () => {
     expect(invalidate).toBeTypeOf("function");
   });
 
+  it("passes the tool call id first to execute and takes partial results on the tool component", () => {
+    type Execute = pi.ToolDefinition["execute"];
+    const toolCallId: Parameters<Execute>[0] = "call-1";
+    type UpdateResult = pi.ToolExecutionComponent["updateResult"];
+    const partial: Parameters<UpdateResult> = [
+      { content: [{ type: "text", text: "" }], details: { n: 1 }, isError: false },
+      true,
+    ];
+
+    expect(toolCallId).toBe("call-1");
+    expect(partial[1]).toBe(true);
+    expect(pi.ToolExecutionComponent.prototype.updateResult.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("keeps the sendMessage delivery options the wake relies on", () => {
     type Options = NonNullable<Parameters<pi.ExtensionAPI["sendMessage"]>[1]>;
     const options: Options[] = [
