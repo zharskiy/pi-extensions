@@ -24,7 +24,11 @@ export const createFrame = (): EditorFrame => {
     const lead = scrolled ? gutterSpace : `${margin}${ESC}[1m${paint(CHEVRON)}${ESC}[22m `;
 
     return lines.map((line, index) => {
-      if (index === 0 || index === bottom) {
+      if (index === 0) {
+        return extension + line;
+      }
+
+      if (index === bottom) {
         return line + extension;
       }
 

@@ -527,7 +527,7 @@ The `▸`/`▾` line starts at column `PAD` (1), aligned with pi's transcript te
 
 ## 7. Surface E: working indicator
 
-The adapter computes a phase from pi's `turn_start`, `message_update`, `message_end`, `tool_execution_start/end`, `agent_end`, `agent_settled` events (assistant messages only; events with `parentToolCallId` ignored) and exposes `host.onPhase(phase, detail)`. The extension toggles `setWorkingVisible` and writes the message. pi draws the working line embedded in the editor's top rule after `── ` (the composer's editor is built with `embedWorkingStatus`), so it sits directly on the input with no gap; nothing else to change.
+The adapter computes a phase from pi's `turn_start`, `message_update`, `message_end`, `tool_execution_start/end`, `agent_end`, `agent_settled` events (assistant messages only; events with `parentToolCallId` ignored) and exposes `host.onPhase(phase, detail)`. The extension toggles `setWorkingVisible` and writes the message. pi draws the working line embedded in the editor's top rule after `───── ` (the composer frame's 3 rule columns in front of pi's `── `, so the spinner sits 3 columns right of the input text; the composer's editor is built with `embedWorkingStatus`), so it sits directly on the input with no gap; nothing else to change.
 
 | Phase | Entered on | Visible | Message |
 |---|---|---|---|
