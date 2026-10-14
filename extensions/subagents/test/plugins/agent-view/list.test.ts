@@ -147,6 +147,7 @@ describe("agents list", () => {
     expect(body[8]).toBe(" Completed (1)");
     expect(body[9]).toMatch(/^ ✓ reviewer +review the diff +done · /);
     expect(body[10]).toMatch(/^ └─ ✓ explorer +collect files +done · /);
+    expect(new Set([6, 9, 10].map((index) => body[index].indexOf("done · "))).size).toBe(1);
     expect(lines().join("\n")).not.toContain(child.id);
   });
 

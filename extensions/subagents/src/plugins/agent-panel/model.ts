@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { nameColumn, type RowInput, renderRow } from "../../components/agent-row.ts";
+import { type RowInput, type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
 import { innerWidth, PAD, SEP, truncateCols } from "../../components/format.ts";
 import { type TreeRow, treeOrder } from "../../components/tree.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -128,14 +128,14 @@ export const panelLines = (
     return [];
   }
 
-  const nameCols = nameColumn(rows);
   const { start, end, above, below } = windowOf(rows, state);
   const marker = (text: string) => `${PAD}${theme.fg("dim", text)}`;
   const selected = rows.find((entry) => entry.record.id === state.selectedId);
+  const layout = rowLayout(rows, now, width, selected !== undefined);
   const lines = rows
     .slice(start, end)
     .map((entry) =>
-      row({ ...entry, selected: entry.record.id === state.selectedId }, now, width, theme, nameCols),
+      row({ ...entry, selected: entry.record.id === state.selectedId }, now, width, theme, layout),
     );
 
   if (above > 0) {
@@ -157,7 +157,7 @@ export const panelLines = (
 
 type CachedRow = { key: string; theme: ThemeLike; line: string };
 
-const cacheKey = (input: RowInput, width: number, nameCols: number) =>
+const cacheKey = (input: RowInput, width: number, layout: RowLayout) =>
   [
     input.record.version,
     width,
@@ -166,25 +166,26 @@ const cacheKey = (input: RowInput, width: number, nameCols: number) =>
     input.last,
     input.ancestorsContinue.join(""),
     input.openDescendants,
-    nameCols,
+    layout.nameCols,
+    layout.infoAt,
   ].join("|");
 
 export const createClosedRowCache = (): RowRenderer & { prune(rows: TreeRow[]): void } => {
   const cache = new Map<string, CachedRow>();
 
-  const row: RowRenderer = (input, now, width, theme, nameCols) => {
+  const row: RowRenderer = (input, now, width, theme, layout) => {
     if (!isClosed(input.record.state)) {
-      return renderRow(input, now, width, theme, nameCols);
+      return renderRow(input, now, width, theme, layout);
     }
 
-    const key = cacheKey(input, width, nameCols);
+    const key = cacheKey(input, width, layout);
     const cached = cache.get(input.record.id);
 
     if (cached && cached.key === key && cached.theme === theme) {
       return cached.line;
     }
 
-    const line = renderRow(input, now, width, theme, nameCols);
+    const line = renderRow(input, now, width, theme, layout);
 
     cache.set(input.record.id, { key, theme, line });
 

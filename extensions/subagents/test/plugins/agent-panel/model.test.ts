@@ -23,6 +23,8 @@ const settings = { doneLingerMs: 10_000, failedLingerMs: 30_000 };
 
 const both = { view: true, stop: true };
 
+const PAD_AND_POINTER = 3;
+
 const ids = (rows: { record: AgentRecord }[]) => rows.map((row) => row.record.id);
 
 const sevenRoots = () =>
@@ -116,6 +118,28 @@ describe("panel window", () => {
     expect(top).toHaveLength(8);
     expect(top[0]).toContain("work of r0");
     expect(top.slice(5)).toEqual([" ↓ 2 more", " enter to view · x to stop · esc to deselect", ""]);
+  });
+
+  it("aligns the info column across the window and keeps it when the window scrolls", () => {
+    const rows = treeOrder(
+      Array.from({ length: 7 }, (_, index) =>
+        agentRecord({ id: `r${index}`, createdAt: index, description: "d".repeat(10 + index * 3) }),
+      ),
+    );
+    const state = createPanelState();
+    const infoColumns = (lines: string[]) =>
+      lines.filter((line) => line.includes("⠋")).map((line) => line.lastIndexOf("  ") + 2);
+
+    select(rows, state, "r0");
+
+    const top = infoColumns(panelLines(rows, state, 0, 120, plainTheme, renderRow, both));
+
+    select(rows, state, "r6");
+
+    const bottom = infoColumns(panelLines(rows, state, 0, 120, plainTheme, renderRow, both));
+
+    expect(new Set([...top, ...bottom]).size).toBe(1);
+    expect(top[0]).toBe(PAD_AND_POINTER + 2 + displayWidth(rows[0].record.agent) + 2 + 28 + 2);
   });
 
   it("puts the markers in the glyph column", () => {
@@ -232,18 +256,21 @@ describe("panel window", () => {
     const cache = createClosedRowCache();
     const closed = { record: agentRecord({ id: "c", state: "done", endedAt: 1_000 }), depth: 0, last: true };
     const input = { ...closed, ancestorsContinue: [], openDescendants: 0, selected: false };
-    const first = cache(input, 5_000, 80, theme, 8);
+    const layout = { nameCols: 8, infoAt: 40 };
+    const first = cache(input, 5_000, 80, theme, layout);
     const before = calls;
 
-    expect(cache(input, 6_000, 80, theme, 8)).toBe(first);
+    expect(cache(input, 6_000, 80, theme, layout)).toBe(first);
     expect(calls).toBe(before);
 
     const changes = [
-      () => cache({ ...input, record: { ...input.record, version: 1 } }, 6_000, 80, theme, 8),
-      () => cache(input, 6_000, 60, theme, 8),
-      () => cache(input, 6_000, 80, counting(), 8),
-      () => cache({ ...input, selected: true }, 6_000, 80, theme, 8),
-      () => cache({ ...input, last: false }, 6_000, 80, theme, 8),
+      () => cache({ ...input, record: { ...input.record, version: 1 } }, 6_000, 80, theme, layout),
+      () => cache(input, 6_000, 60, theme, layout),
+      () => cache(input, 6_000, 80, counting(), layout),
+      () => cache({ ...input, selected: true }, 6_000, 80, theme, layout),
+      () => cache({ ...input, last: false }, 6_000, 80, theme, layout),
+      () => cache(input, 6_000, 80, theme, { nameCols: 9, infoAt: 40 }),
+      () => cache(input, 6_000, 80, theme, { nameCols: 8, infoAt: 41 }),
     ];
 
     changes.forEach((change) => {
@@ -256,11 +283,11 @@ describe("panel window", () => {
 
     const open = { ...input, record: agentRecord({ id: "o" }) };
 
-    cache(open, 6_000, 80, theme, 8);
+    cache(open, 6_000, 80, theme, layout);
 
     const counted = calls;
 
-    cache(open, 6_000, 80, theme, 8);
+    cache(open, 6_000, 80, theme, layout);
 
     expect(calls).toBeGreaterThan(counted);
   });
@@ -283,18 +310,19 @@ describe("panel window", () => {
       openDescendants: 0,
       selected: false,
     };
+    const layout = { nameCols: 8, infoAt: 40 };
 
-    cache(input, 5_000, 80, theme, 8);
+    cache(input, 5_000, 80, theme, layout);
     cache.prune([input]);
 
     const kept = calls;
 
-    cache(input, 5_000, 80, theme, 8);
+    cache(input, 5_000, 80, theme, layout);
 
     expect(calls).toBe(kept);
 
     cache.prune([]);
-    cache(input, 5_000, 80, theme, 8);
+    cache(input, 5_000, 80, theme, layout);
 
     expect(calls).toBeGreaterThan(kept);
   });

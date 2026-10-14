@@ -1,5 +1,5 @@
 import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../core/adapter/contract.ts";
-import { nameColumn, renderRow } from "../../components/agent-row.ts";
+import { renderRow, rowLayout } from "../../components/agent-row.ts";
 import { innerWidth, PAD, truncateCols, truncatePainted } from "../../components/format.ts";
 import type { TreeRow } from "../../components/tree.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
@@ -140,7 +140,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     }
 
     const now = Date.now();
-    const nameCols = nameColumn(rows);
+    const layout = rowLayout(rows, now, width, selectedId !== undefined);
     const lines: string[] = [];
     let selectedLine = -1;
 
@@ -158,7 +158,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
           selectedLine = lines.length;
         }
 
-        lines.push(renderRow({ ...row, selected: isSelected }, now, width, theme, nameCols));
+        lines.push(renderRow({ ...row, selected: isSelected }, now, width, theme, layout));
       });
     });
 

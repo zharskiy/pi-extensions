@@ -49,7 +49,7 @@ Every surface follows one set of margins, so no text is glued to a display edge 
 - Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list and status line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
 - Right margin: the same width on the right. The content width is `inner = width - 2 * PAD` (transcript surfaces: `width - 2 * outputPad`); no text goes past column `width - 1 - PAD` (0-based), so the last column is always blank. Every cut is `truncateCols(text, inner - <prefix>)`, never `truncateCols(text, width)`.
 - What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block, the chat width pi passes to the component (pi does not pad a self-rendered block). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
-- Columns inside the pad: column `PAD` holds the first cell of every line: title, section header, feedback, hint, view header, `▸ Request`, and the glyph (or tree connector) of every row and the panel's `↑ N more` / `↓ N more` markers. The selected row starts with `PAD`, then the pointer `›` and a space, then its tree and glyph: the row moves two columns right; every other row's glyph (or tree connector) is at `PAD`. No row text touches the display edge. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
+- Columns inside the pad: column `PAD` holds the first cell of every line: title, section header, feedback, hint, view header, `▸ Request`, and the glyph (or tree connector) of every row and the panel's `↑ N more` / `↓ N more` markers. The selected row starts with `PAD`, then the pointer `›` and a space, then its tree and glyph: the row moves two columns right; every other row's glyph (or tree connector) is at `PAD`. No row text touches the display edge. A right-aligned part (the agent view's position only; rows use the info column of §4) ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
 - Rules: `─` rules are chrome, not text, and run the full width, edge to edge, like pi's editor borders and dialogs. Only the agent view has one.
 - Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request`, then one blank line the view itself adds under the Request block (the transcript pane skips its own spacer before its first item) in both states. Panel: no blank above (with the footer extension it sits under the footer block (which itself starts with one blank line so pi's command list never touches its first line), whose trailing blank line separates them; without it, the editor's bottom border does), no blanks between rows, markers and hint, and one trailing blank line so the panel never touches the bottom of the screen or pi's own footer.
 - Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block is cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
@@ -169,7 +169,7 @@ A widget below the editor (`belowEditor`), replacing the progress widget. No hea
 ### Row grammar
 
 ```
-<PAD>[› ]<tree><glyph> <name>[ (+N)]  <description>  [<activity> · ]<stats>
+<PAD>[› ]<tree><glyph> <name>[ (+N)]<name pad>  <description><description pad>  [<activity> · ]<stats>
 ```
 
 - `PAD`: one column (§2 "Padding and margins").
@@ -179,9 +179,11 @@ A widget below the editor (`belowEditor`), replacing the progress widget. No hea
 - `name`: `record.agent`, `text` (`muted` on closed rows), with ` #2` for chain links after the first; `(+N)` (`dim`) is the number of open descendants of this agent; omitted when 0. The name column is padded to the widest visible name, capped at 24 columns, then two spaces.
 - `description` (`muted`): always the agent's description, so two agents of the same kind stay distinguishable (deviation: Claude replaces it with the latest progress summary; we keep the description and put the activity in the stats column).
 - `activity`: while `running`, the latest activity when known, shown as the first part of the stats: the last top-level tool name (`grep`, `bash`, `codemode`, …) or, when the last event was an assistant message, the word `writing`. It is `dim` like the stats and separated with ` · `. The record gains `activity?: { kind: "tool" | "text"; text: string; at: number }`; its `text` is the tool name or the first line of the assistant text (used by the agent view header later, not by the row).
-- `stats`, right-aligned to `PAD + W` (ending one column before the last): `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
+- `stats`, left-aligned in the info column (below): `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
 
-Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are the tree, glyph (2), name column, two spaces, and two spaces before the stats. The description gets the rest. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description is cut with `…` to fit. A correct line ends at `PAD + W` (79 columns at width 80); the last column stays blank, and the adapter's hard cut at `width` is only a safety net.
+Info column (revised 2026-10-14; it was right-aligned to `PAD + W`, far from the description on a wide terminal): the activity and stats (or the status word) of every row of a surface start in one shared column, two columns after the longest description, and nothing is padded after them. Measured after `PAD`, `lead` is a row's tree, glyph (2), name column and two spaces; the description column ends at `infoAt = max(lead + min(48, description width))` over the rows (`DESCRIPTION_COLS_MAX = 48`), plus the pointer's 2 columns while any row of the surface is selected (so the column stays still while the selection moves). On a narrow terminal the column moves left, `infoAt = min(infoAt, W - 2 - stats width)` over the rows that show stats, so the widest info still ends by `PAD + W` and the column stays aligned. It is measured over the same rows as the name column: every row the panel holds (also those scrolled out of the window, so scrolling never moves it) and every row of the list (both sections). `rowLayout` in `components/agent-row.ts` returns the name column and `infoAt`.
+
+Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are the pointer (selected row only), tree, glyph (2), name column, two spaces, and two spaces before the stats. The room is what is left; the stats variant is picked against that room. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description gets `min(room, infoAt - lead)` columns, cut with `…` (a description over 48 columns is cut even on a wide terminal) and padded to that width when stats follow. No line passes `PAD + W`; the last column stays blank, and the adapter's hard cut at `width` is only a safety net.
 
 ### Window and markers
 
@@ -229,27 +231,27 @@ Revised 2026-10-14: the panel sets no footer status (no `N agents` counter, no `
 
 ### Refresh
 
-Re-render on `agent:changed` throttled by `renderThrottleMs` (default 250), plus the shared ticker (section 2). Closed rows are cached by `id`, `version`, width and theme as today.
+Re-render on `agent:changed` throttled by `renderThrottleMs` (default 250), plus the shared ticker (section 2). Closed rows are cached by `id`, `version`, width, theme and the row layout (name column and info column).
 
 ### Mockups
 
 Two running (one is a worktree agent; the panel does not say so); one leading space = `PAD` = the glyph column, and the selected row has `› ` after `PAD` (pushing its glyph two columns in), the last column stays blank, and the trailing blank line is the panel's own:
 
 ```
- ⠹ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens
- ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
+ ⠹ explorer  Map the auth module     grep · 1m 5s · ↓ 12.3k tokens
+ ⠹ worker    Fix the login redirect  bash · 2m 10s · ↓ 30.1k tokens
 
 ```
 
-Seven agents, selection on the fourth, window scrolled (the name column is measured over all seven rows):
+Seven agents, selection on the fourth, window scrolled, width 80 (the name and info columns are measured over all seven rows; the widest stats pull the info column left, so the longest description is cut):
 
 ```
  ↑ 2 more
- ⠹ worker         Fix the login redirect       bash · 2m 10s · ↓ 30.1k tokens
- › ⠹ reviewer (+1)  Review the diff of PR 5     writing · 45s · ↓ 8.2k tokens
- └─ ⠹ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens
- ○ worker         Rename parseDate callers                             queued
- ○ explorer       Find every date format in tests                      queued
+ ⠹ worker         Fix the login redirect         bash · 2m 10s · ↓ 30.1k tokens
+ › ⠹ reviewer (+1)  Review the diff of PR 5      writing · 45s · ↓ 8.2k tokens
+ └─ ⠹ explorer       Find callers of login       read · 12s · ↓ 1.1k tokens
+ ○ worker         Rename parseDate callers       queued
+ ○ explorer       Find every date format in te…  queued
  ↓ 1 more
  enter to view · x to stop · esc to deselect
 
@@ -258,20 +260,20 @@ Seven agents, selection on the fourth, window scrolled (the name column is measu
 One done row (it leaves 10 s after it finished; no countdown is shown):
 
 ```
- ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
- ✓ explorer  Map the auth module                                 done · 1m 5s
+ ⠹ worker    Fix the login redirect  bash · 2m 10s · ↓ 30.1k tokens
+ ✓ explorer  Map the auth module     done · 1m 5s
 
 ```
 
 One failed row, selected, with the hint line:
 
 ```
- › ✗ worker  Fix the login redirect                           failed · 2m 10s
+ › ✗ worker  Fix the login redirect  failed · 2m 10s
  enter to view · x to clear · esc to deselect
 
 ```
 
-Every row line is 79 columns at width 80 (`PAD + inner`).
+No row line passes column 79 at width 80 (`PAD + inner`).
 
 ## 5. Surface C: `/agents` list view
 
@@ -301,7 +303,7 @@ A full-screen overlay (`openOverlay`, width `100%`, max height `100%`). `/agents
 - The list shows the agent structure everywhere: a subagent is always under the agent that started it, in both sections. A root is a record whose caller is `main` or not in the registry; an open record whose caller is closed also counts as a root (rare: a caller normally outlives its children).
 - `Running`: every open root, in tree order (callers first, children under them, siblings by `createdAt`) with the panel's connectors, with all its listed descendants under it, open or closed. A closed descendant renders as a closed row (`muted` name, state word and duration in the stats column) and keeps its tree position.
 - `Completed (n)`: the closed roots, newest `endedAt` first, each followed by its closed descendants in tree order.
-- Rows reuse the panel row grammar exactly (`PAD`, pointer, tree, glyph, name, `(+N)`, description, right-aligned activity and stats), at the overlay width with the §2 padding; one name column for the whole list.
+- Rows reuse the panel row grammar exactly (`PAD`, pointer, tree, glyph, name, `(+N)`, description, activity and stats in the info column), at the overlay width with the §2 padding; one name column and one info column for the whole list.
 - Scroll window: the rows between the title block and the reserved blank above the feedback/hint block, page keys as today, wheel in fullscreen TUI mode. The selection is kept visible.
 
 ### Lifecycle
@@ -330,7 +332,7 @@ Hint line (`dim`, at `PAD`, 72 columns): `↑/↓ to select · enter to view · 
 
 ### Mockup
 
-A closed child under a running parent, a running child in its tree position, and a completed root with its child; one leading space = `PAD`, every row 79 columns at width 80:
+A closed child under a running parent, a running child in its tree position, and a completed root with its child; one leading space = `PAD`, width 80, one info column for both sections:
 
 ```
 
@@ -338,13 +340,13 @@ A closed child under a running parent, a running child in its tree position, and
 
  Running
  ⠹ explorer     Map the auth module             grep · 1m 5s · ↓ 12.3k tokens
- › ⠹ worker (+1)  Fix the login redirect       bash · 2m 10s · ↓ 30.1k tokens
- ├─ ⠹ explorer     Find callers of login           read · 12s · ↓ 1.1k tokens
- └─ ✓ explorer     Find callers of parseDate                       done · 45s
+ › ⠹ worker (+1)  Fix the login redirect        bash · 2m 10s · ↓ 30.1k tokens
+ ├─ ⠹ explorer     Find callers of login        read · 12s · ↓ 1.1k tokens
+ └─ ✓ explorer     Find callers of parseDate    done · 45s
 
  Completed (1)
- ✓ reviewer     Review the diff of PR 5                          done · 3m 2s
- └─ ✓ explorer     Collect the changed files                       done · 40s
+ ✓ reviewer     Review the diff of PR 5         done · 3m 2s
+ └─ ✓ explorer     Collect the changed files    done · 40s
 
 
  Press X again to stop all agents

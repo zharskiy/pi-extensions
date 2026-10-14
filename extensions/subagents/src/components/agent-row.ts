@@ -17,11 +17,15 @@ import type { TreeRow } from "./tree.ts";
 
 export const NAME_COLS_MAX = 24;
 
+export const DESCRIPTION_COLS_MAX = 48;
+
 const MIN_DESCRIPTION = 12;
 
 const MIN_ROOM = 8;
 
 export type RowInput = TreeRow & { selected: boolean };
+
+export type RowLayout = { nameCols: number; infoAt: number };
 
 type NamedRow = Pick<TreeRow, "record" | "openDescendants">;
 
@@ -115,19 +119,42 @@ const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
 
 export const POINTER_COLS = 2;
 
+const leadOf = (row: TreeRow, nameCols: number, pointerCols: number) =>
+  pointerCols + displayWidth(treePrefix(row)) + 2 + nameCols + 2;
+
+export const rowLayout = (rows: TreeRow[], now: number, width: number, selecting: boolean): RowLayout => {
+  const nameCols = nameColumn(rows);
+  const reserve = selecting ? POINTER_COLS : 0;
+  const wanted = rows.reduce((widest, row) => {
+    const want = Math.min(DESCRIPTION_COLS_MAX, displayWidth(singleLine(row.record.description)));
+
+    return Math.max(widest, leadOf(row, nameCols, 0) + want);
+  }, 0);
+  const limit = rows.reduce((least, row) => {
+    const { stats, room } = pickStats(statsVariants(row.record, now), width, leadOf(row, nameCols, 0));
+
+    return stats.plain && room >= MIN_ROOM
+      ? Math.min(least, innerWidth(width) - 2 - displayWidth(stats.plain))
+      : least;
+  }, Number.POSITIVE_INFINITY);
+
+  return { nameCols, infoAt: Math.min(wanted + reserve, limit) };
+};
+
 export const renderRow = (
   input: RowInput,
   now: number,
   width: number,
   theme: ThemeLike,
-  nameCols: number,
+  layout: RowLayout,
 ): string => {
   const { record } = input;
+  const { nameCols, infoAt } = layout;
   const pointerCols = input.selected ? POINTER_COLS : 0;
   const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : "";
   const tree = treePrefix(input);
   const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
-  const fixed = pointerCols + displayWidth(tree) + 2 + nameCols + 2;
+  const fixed = leadOf(input, nameCols, pointerCols);
   const { stats, room } = pickStats(statsVariants(record, now), width, fixed);
   const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
 
@@ -145,8 +172,9 @@ export const renderRow = (
     return head + paintName(input, Math.max(0, nameRoom), theme) + tail;
   }
 
-  const description = truncateCols(singleLine(record.description), room);
-  const shown = stats.plain ? padEndCols(description, room) : description;
+  const cols = Math.max(0, Math.min(room, infoAt - fixed));
+  const description = truncateCols(singleLine(record.description), cols);
+  const shown = stats.plain ? padEndCols(description, cols) : description;
   const padding = shown.slice(description.length);
 
   return `${head}${paintName(input, nameCols, theme)}  ${theme.fg("muted", description)}${padding}${tail}`;
