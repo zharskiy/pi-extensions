@@ -146,6 +146,7 @@ export const createTranscriptPane = (
   const renderers = options.piRenderers ?? defaultPiRenderers();
   let toolsExpanded = false;
   let synced = 0;
+  let rendered = 0;
 
   const resolveDefinition = (name: string): object | undefined => {
     const builtin = toolDefinitionFactories[name];
@@ -258,7 +259,31 @@ export const createTranscriptPane = (
         component.setExpanded(value);
       });
     },
-    render: (width) => container.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX, "")),
+    render: (width) => {
+      const lines = container.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX, ""));
+
+      rendered = lines.length;
+
+      return lines;
+    },
+    click: (line, column, width) => {
+      const result = container.handleMouse({
+        type: "click",
+        button: "left",
+        x: column,
+        y: line,
+        screenX: column,
+        screenY: line,
+        width,
+        height: rendered,
+        shift: false,
+        alt: false,
+        ctrl: false,
+        clickCount: 1,
+      });
+
+      return result?.handled === true;
+    },
   };
 };
 
@@ -277,8 +302,8 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
     scrollBy: (lines) => {
       view.scrollBy(lines);
     },
-    scrollTo: (top) => {
-      view.scrollTo(top);
+    scrollTo: (top, options) => {
+      view.scrollTo(top, options);
     },
     scrollToStart: () => {
       view.scrollToStart();
@@ -484,6 +509,10 @@ export const createUi = (
             tui.requestRender();
           },
           handleMouse: (event: TuiMouseEvent) => {
+            if (event.type === "click" && event.button === "left") {
+              return view.handleClick?.(event.x, event.y) ? { handled: true } : undefined;
+            }
+
             if (event.type !== "wheel" || !view.handleWheel) {
               return undefined;
             }

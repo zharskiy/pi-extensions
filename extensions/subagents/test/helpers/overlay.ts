@@ -1,7 +1,9 @@
 import { stripVTControlCharacters } from "node:util";
 import type { AnyToolSpec, KeyPress, OverlayApi, ThemeLike } from "../../../../core/adapter/contract.ts";
 import { createScrollPane, createTranscriptPane } from "../../../../core/adapter/pi-ui.ts";
+import { parseSessionLines, promptRecordEntry } from "../../../../core/adapter/session-file.ts";
 import { createFakeInputPane, plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { NAMESPACE } from "../../src/model/paths.ts";
 
 /** Lines without escape codes and trailing spaces. */
 export const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
@@ -45,3 +47,51 @@ export const recordingTheme: ThemeLike = {
   fg: (token, text) => `<${token}>${text}</>`,
   bold: (text) => `<b>${text}</b>`,
 };
+
+const message = (body: Record<string, unknown>) => JSON.stringify({ type: "message", message: body });
+
+const grepCall = (id: string, pattern: string) =>
+  message({
+    role: "assistant",
+    content: [{ type: "toolCall", id, name: "grep", arguments: { pattern, path: "src" } }],
+    stopReason: "toolUse",
+  });
+
+const grepResult = (id: string, pattern: string) =>
+  message({
+    role: "toolResult",
+    toolCallId: id,
+    toolName: "grep",
+    content: [
+      {
+        type: "text",
+        text: Array.from(
+          { length: 40 },
+          (_, index) => `src/${pattern}.ts:${index}: ${pattern} ${index}`,
+        ).join("\n"),
+      },
+    ],
+    details: {},
+    isError: false,
+  });
+
+/** A session with a recorded request and two finished grep calls of 40 result lines each, `alpha` then `beta`. */
+export const grepSession = () =>
+  parseSessionLines(
+    [
+      message({
+        role: "user",
+        content: [{ type: "text", text: "Task from main (agent id explorer-1): Find" }],
+      }),
+      JSON.stringify({
+        type: "custom",
+        customType: promptRecordEntry(NAMESPACE),
+        data: { providerPayload: { messages: [{ role: "user", content: "Find" }] } },
+      }),
+      grepCall("g1", "alpha"),
+      grepResult("g1", "alpha"),
+      grepCall("g2", "beta"),
+      grepResult("g2", "beta"),
+    ],
+    promptRecordEntry(NAMESPACE),
+  );

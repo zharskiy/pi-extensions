@@ -144,6 +144,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   let pendingTop = false;
   let notice: string | undefined;
   let lastHeight = 1;
+  let layout = { width: 0, headerRows: 0, requestRows: 0, bodyRows: 0 };
   let disposed = false;
 
   const payload = () => data.session?.prompt.providerPayload;
@@ -184,13 +185,21 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const inner = innerWidth(width);
 
     if (data.error !== undefined) {
-      return [PAD + theme.fg("warning", truncateCols(data.error, inner))];
+      return {
+        request: [],
+        lines: [PAD + theme.fg("warning", truncateCols(data.error, inner))],
+        clickable: 0,
+      };
     }
 
     const request = requestLines(payload(), isOpen(), requestExpanded, width, theme);
     const lines = transcript.render(width);
 
-    return request.concat(lines.length > 0 ? lines : [PAD + theme.fg("dim", "(no transcript yet)")]);
+    if (lines.length === 0) {
+      return { request, lines: [PAD + theme.fg("dim", "(no transcript yet)")], clickable: 0 };
+    }
+
+    return { request, lines, clickable: lines.length };
   };
 
   const hintText = () => {
@@ -234,7 +243,8 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
     const footer = notice ? [PAD + theme.fg("warning", truncateCols(notice, inner))] : [];
     const height = Math.max(3, api.rows() - header.length - 3 - (footer.length + 1));
-    const body = bodyLines(width);
+    const { request, lines, clickable } = bodyLines(width);
+    const body = request.concat(lines);
     let window = scroll.window(body, height);
 
     if (pendingTop) {
@@ -244,6 +254,12 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     }
 
     lastHeight = height;
+    layout = {
+      width,
+      headerRows: header.length,
+      requestRows: request.length,
+      bodyRows: request.length + clickable,
+    };
 
     const padding = Array.from({ length: height - window.length }, () => "");
 
@@ -288,6 +304,36 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     transcript.setToolsExpanded(toolsExpanded);
   };
 
+  const handleClick = (x: number, y: number) => {
+    const row = y - 1 - layout.headerRows;
+
+    if (row < 0 || row >= lastHeight) {
+      return false;
+    }
+
+    const { top } = scroll.state();
+    const index = top + row;
+
+    if (index < layout.requestRows) {
+      const toggles = index === 0 && hasRequest();
+
+      if (toggles) {
+        toggleRequest();
+      }
+
+      return toggles;
+    }
+
+    if (index >= layout.bodyRows || !transcript.click(index - layout.requestRows, x, layout.width)) {
+      return false;
+    }
+
+    scroll.scrollTo(top, { disableFollow: true });
+    api.requestRender();
+
+    return true;
+  };
+
   const page = () => Math.max(1, lastHeight - 1);
 
   const actions: Partial<Record<KeyPress["name"], () => void>> = {
@@ -326,6 +372,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     handleWheel: (lines) => {
       scroll.scrollBy(lines);
     },
+    handleClick,
     dispose,
   };
 };

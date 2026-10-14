@@ -93,6 +93,7 @@ export const createAgentsOverlay = (
     handleWheel: (lines) => {
       current.handleWheel?.(lines);
     },
+    handleClick: (x, y) => current.handleClick?.(x, y) ?? false,
     dispose,
     close,
   };

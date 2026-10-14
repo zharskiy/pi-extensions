@@ -100,6 +100,8 @@ export type ViewComponent = {
   render(width: number): string[];
   handleKey(key: KeyPress): void;
   handleWheel?(lines: number): void;
+  /** A left click at overlay-local cells (fullscreen TUI only); returns whether the view used it. */
+  handleClick?(x: number, y: number): boolean;
   dispose?(): void;
 };
 
@@ -119,12 +121,14 @@ export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;
   setToolsExpanded(expanded: boolean): void;
   render(width: number): string[];
+  /** Routes a left click at a line and column of the last render at `width` to pi's components; returns whether pi handled it. */
+  click(line: number, column: number, width: number): boolean;
 };
 
 export type ScrollPane = {
   window(lines: string[], height: number): string[];
   scrollBy(lines: number): void;
-  scrollTo(top: number): void;
+  scrollTo(top: number, options?: { disableFollow?: boolean }): void;
   scrollToStart(): void;
   scrollToEnd(): void;
   state(): { top: number; height: number; total: number; following: boolean };

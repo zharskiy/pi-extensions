@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, renderFakeCursor, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
+import type { AnyToolSpec, TranscriptItem, ViewComponent } from "../../adapter/contract.ts";
 import {
   capturePiRenderers,
   createFakeCursorResolver,
@@ -474,5 +474,151 @@ describe("pi renderers in the transcript pane", () => {
     expect(text).toContain("mystery");
     expect(text).toContain('"q": "x"');
     expect(text).toContain("found it");
+  });
+});
+
+const grepOutput = Array.from({ length: 40 }, (_, index) => `src/file.ts:${index}: line ${index}`).join("\n");
+
+const grepPane = () => {
+  const pane = createTranscriptPane(tui, "/repo");
+
+  pane.sync([
+    { kind: "user", text: "find the lines" },
+    assistantCall("grep", { pattern: "line", path: "src" }, "g1"),
+    toolResult("grep", grepOutput, {}, "g1"),
+    assistantCall("grep", { pattern: "other", path: "src" }, "g2"),
+  ]);
+
+  return pane;
+};
+
+const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
+
+describe("transcript pane clicks", () => {
+  it("expands one tool result on a click and collapses it on a second click", () => {
+    const pane = grepPane();
+    const collapsed = plainLines(pane.render(80));
+    const row = collapsed.findIndex((line) => line.includes("line 3"));
+
+    expect(collapsed.join("\n")).toContain("25 more lines");
+    expect(pane.click(row, 4, 80)).toBe(true);
+
+    const expanded = plainLines(pane.render(80));
+
+    expect(expanded.length).toBeGreaterThan(collapsed.length);
+    expect(expanded.join("\n")).toContain("line 39");
+    expect(expanded.join("\n")).not.toContain("25 more lines");
+    expect(pane.click(row, 4, 80)).toBe(true);
+    expect(plainLines(pane.render(80))).toEqual(collapsed);
+  });
+
+  it("ignores clicks on a user message, on a call without a result and outside the transcript", () => {
+    const pane = grepPane();
+    const lines = plainLines(pane.render(80));
+    const user = lines.findIndex((line) => line.includes("find the lines"));
+    const pending = lines.findIndex((line) => line.includes("other"));
+
+    expect(pane.click(user, 4, 80)).toBe(false);
+    expect(pane.click(pending, 4, 80)).toBe(false);
+    expect(pane.click(lines.length + 5, 4, 80)).toBe(false);
+    expect(plainLines(pane.render(80))).toEqual(lines);
+  });
+
+  it("lets the global toggle reset a call opened by a click", () => {
+    const pane = grepPane();
+    const collapsed = plainLines(pane.render(80));
+
+    pane.click(
+      collapsed.findIndex((line) => line.includes("line 3")),
+      4,
+      80,
+    );
+    pane.setToolsExpanded(false);
+
+    expect(plainLines(pane.render(80))).toEqual(collapsed);
+  });
+});
+
+describe("overlay mouse routing", () => {
+  const overlayFor = (view: ViewComponent) => {
+    const components: { handleMouse(event: object): unknown }[] = [];
+    const state: HostState = {
+      ctx: {
+        mode: "tui",
+        cwd: "/repo",
+        ui: {
+          custom: async (factory: (...args: unknown[]) => { handleMouse(event: object): unknown }) => {
+            components.push(
+              factory(
+                { terminal: { rows: 40 }, mode: "fullscreen", requestRender: () => {} },
+                {},
+                { matches: () => false },
+                () => {},
+              ),
+            );
+          },
+        },
+      } as unknown as ExtensionContext,
+    };
+
+    void createUi(state, { write: () => {} }, {}).openOverlay(() => view);
+
+    return components[0] as { handleMouse(event: object): unknown };
+  };
+
+  const mouse = (type: string, extra: object = {}) => ({
+    type,
+    button: "left",
+    x: 3,
+    y: 7,
+    screenX: 3,
+    screenY: 7,
+    width: 80,
+    height: 40,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    ...extra,
+  });
+
+  it("forwards a left click to the view and reports whether it used it", () => {
+    const clicks: [number, number][] = [];
+    let used = true;
+    const component = overlayFor({
+      render: () => [],
+      handleKey: () => {},
+      handleClick: (x, y) => {
+        clicks.push([x, y]);
+        return used;
+      },
+    });
+
+    expect(component.handleMouse(mouse("click", { clickCount: 1 }))).toEqual({ handled: true });
+
+    used = false;
+
+    expect(component.handleMouse(mouse("click", { clickCount: 1 }))).toBeUndefined();
+    expect(component.handleMouse(mouse("click", { button: "right", clickCount: 1 }))).toBeUndefined();
+    expect(component.handleMouse(mouse("press"))).toBeUndefined();
+    expect(clicks).toEqual([
+      [3, 7],
+      [3, 7],
+    ]);
+  });
+
+  it("still scrolls with the wheel", () => {
+    const wheels: number[] = [];
+    const component = overlayFor({
+      render: () => [],
+      handleKey: () => {},
+      handleWheel: (lines) => {
+        wheels.push(lines);
+      },
+    });
+
+    expect(component.handleMouse(mouse("wheel", { button: "none", wheelDelta: 3 }))).toEqual({
+      handled: true,
+    });
+    expect(wheels).toEqual([3]);
   });
 });

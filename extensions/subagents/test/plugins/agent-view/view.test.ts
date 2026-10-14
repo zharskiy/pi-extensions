@@ -22,7 +22,7 @@ import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
-import { char, fakeOverlayApi, key, plain, recordingTheme } from "../../helpers/overlay.ts";
+import { char, fakeOverlayApi, grepSession, key, plain, recordingTheme } from "../../helpers/overlay.ts";
 import { agentRecord } from "../../helpers/records.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
@@ -1273,5 +1273,92 @@ describe("agent view request block", () => {
     expect(raw[start]).toBe(` <dim>▾ Request · ${PAYLOAD_LINES} lines</>`);
     expect(raw.slice(start + 1, end).every((entry) => !entry.includes("<"))).toBe(true);
     expect(raw.slice(start, end)).toMatchSnapshot();
+  });
+});
+
+describe("agent view clicks", () => {
+  const rowOf = (lines: string[], text: string) => lines.findIndex((entry) => entry.includes(text));
+
+  const expanders = (lines: string[]) => lines.filter((entry) => entry.includes("more lines")).length;
+
+  it("opens one tool call on a click and closes it on a second click", () => {
+    const { view, lines } = viewOf(grepSession(), {
+      record: agentRecord({ id: "explorer-1", state: "done" }),
+    });
+    const before = lines();
+
+    expect(expanders(before)).toBe(2);
+    expect(view.handleClick?.(5, rowOf(before, "alpha 3"))).toBe(true);
+
+    const opened = lines();
+
+    expect(opened.join("\n")).toContain("alpha 39");
+    expect(opened.join("\n")).not.toContain("beta 39");
+    expect(expanders(opened)).toBe(1);
+    expect(view.handleClick?.(5, rowOf(opened, "alpha 3"))).toBe(true);
+    expect(lines()).toEqual(before);
+  });
+
+  it("maps the row through the header and the scroll position", () => {
+    const { view, lines } = viewOf(grepSession(), {
+      rows: 30,
+      record: agentRecord({ id: "explorer-1", state: "done" }),
+    });
+
+    lines();
+    view.handleKey(key("home"));
+    view.handleWheel?.(8);
+
+    const before = lines();
+    const row = rowOf(before, "alpha 10");
+
+    expect(before.at(-2)).toMatch(/ 9-30\/47$/);
+    expect(row).toBeGreaterThan(0);
+    expect(view.handleClick?.(5, row)).toBe(true);
+    expect(lines().at(-2)).toMatch(/ 9-30\/71$/);
+    expect(lines()[row]).toBe(before[row]);
+  });
+
+  it("ignores clicks on the header, the rule, the hint and the padding", () => {
+    const { view, lines } = viewOf(grepSession(), {
+      rows: 200,
+      record: agentRecord({ id: "explorer-1", state: "done" }),
+    });
+    const before = lines();
+    const rule = before.indexOf(RULE(100));
+    const rows = [0, 1, 2, rule, before.length - 2, before.length - 4];
+
+    expect(rows.map((row) => view.handleClick?.(5, row))).toEqual(rows.map(() => false));
+    expect(lines()).toEqual(before);
+  });
+
+  it("toggles the request on a click on its line, like r", () => {
+    const { view, lines } = viewOf(grepSession(), {
+      record: agentRecord({ id: "explorer-1", state: "done" }),
+    });
+    const row = requestIndex(lines());
+
+    expect(view.handleClick?.(3, row)).toBe(true);
+    expect(lines()[row]).toMatch(/^ ▾ Request · \d+ lines$/);
+    expect(lines().at(-2)).toContain("r hide request");
+    expect(view.handleClick?.(3, row + 1)).toBe(false);
+    expect(view.handleClick?.(3, row)).toBe(true);
+    expect(lines()[row]).toMatch(/^ ▸ Request · \d+ lines$/);
+  });
+
+  it("keeps the clicked call in place instead of following the tail", () => {
+    const { view, lines } = viewOf(grepSession(), { rows: 30, record: agentRecord({ id: "explorer-1" }) });
+    const before = lines();
+    const position = before.at(-2)?.match(/ (\d+)-\d+\/\d+$/)?.[1];
+    const row = rowOf(before, "beta 3");
+
+    expect(before.at(-2)).not.toContain("end to follow");
+    expect(view.handleClick?.(5, row)).toBe(true);
+
+    const after = lines();
+
+    expect(after[row]).toBe(before[row]);
+    expect(after.at(-2)).toContain(`${position}-`);
+    expect(after.at(-2)).toContain("end to follow");
   });
 });

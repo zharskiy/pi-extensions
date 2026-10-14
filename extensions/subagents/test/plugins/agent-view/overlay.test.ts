@@ -9,7 +9,7 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
-import { fakeOverlayApi, key, plain } from "../../helpers/overlay.ts";
+import { fakeOverlayApi, grepSession, key, plain } from "../../helpers/overlay.ts";
 
 initRenderTheme();
 
@@ -109,6 +109,33 @@ describe("agents overlay", () => {
 
     expect(lines()).toContain(" Completed (1)");
     expect(lines().join("\n")).toContain("closing job");
+  });
+
+  it("forwards clicks to the current part", async () => {
+    const harness = setup();
+    const record = harness.create("grep job", 1);
+    const file = join(harness.root, "grep.jsonl");
+
+    writeFileSync(file, "");
+    harness.runtime.sessions.set(file, grepSession());
+    harness.registry.close(record.id, { state: "done", sessionFile: file });
+    await harness.host.runCommand("agents", "");
+
+    const { overlay, lines } = harness.openLast();
+
+    expect(overlay.handleClick?.(5, 3)).toBe(false);
+
+    overlay.handleKey(key("enter"));
+
+    const before = lines();
+
+    expect(
+      overlay.handleClick?.(
+        5,
+        before.findIndex((line) => line.includes("alpha 10")),
+      ),
+    ).toBe(true);
+    expect(lines().at(-2)).toMatch(/\/71$/);
   });
 
   it("/agents <id> opens the view and Esc closes the overlay", async () => {

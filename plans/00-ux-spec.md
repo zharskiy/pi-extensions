@@ -389,7 +389,7 @@ The overlay's top row is blank (§2 "Padding and margins"). Then the header line
 ### Transcript
 
 - Rendered with pi's own components (`UserMessageComponent`, `AssistantMessageComponent` with thinking hidden, `ToolExecutionComponent`, `CustomMessageComponent`) as today. Thinking is never shown.
-- `Ctrl+O` (pi's `app.tools.expand` binding; the label comes from `keyText("app.tools.expand")`) toggles tool detail for every tool row.
+- `Ctrl+O` (pi's `app.tools.expand` binding; the label comes from `keyText("app.tools.expand")`) toggles tool detail for every tool row; a left click on a tool row toggles that one call (pi's own per-call expansion, fullscreen TUI only). `Ctrl+O` resets per-call state, as in pi's main transcript. Collapsed previews stay pi's own (grep 15, read 10, bash 5 lines).
 - Tool definitions for rendering: the eight built-ins plus `codemode` and `tool_search` captured from pi's exported factories, plus this extension's `run_agent`, `message_agent` and `agent_status` with the same `renderCall`/`renderResult` as the main session (so a nested `run_agent` shows the block of section 3 inside the agent's transcript). Every other tool keeps pi's generic fallback.
 - Codemode, collapsed: the title `codemode`, the script syntax-highlighted with its first 10 visual lines and `… (N more lines, ctrl+o to expand)`, then the nested-call list (the last 8 calls, `… (N earlier calls, ctrl+o to expand)` above them), one per line: `<icon> <tool name> <args cut at 80> <duration>`, icons `…` (`warning`, running), `✓` (`success`), `✗` (`error`), `⊘` (`muted`, cancelled), then the output's first 5 visual lines. Expanded: the full script, every nested call, the full output, `Full output: <path>` when codemode truncated it.
 - The task arrives as the user message `Task from <caller> (agent id <id>): …` and routed messages as `[message from <sender>]` user messages, unchanged.
@@ -413,12 +413,13 @@ One block at the top of the body, before the first transcript item, so the user 
 - Expanded: that pretty-printed JSON as simple text (no syntax highlighting, no colour), every line starting at `PAD + 2` and soft-wrapped at `inner - 2` columns with plain wrapping (continuations at `PAD + 2` too; nothing reaches the last column), then the transcript, whose first item (the task message) brings its own blank line (pi's spacer) above it, as in the collapsed state.
 - `r` toggles it. Expanding stops following and scrolls to the top (the block begins at line 0), so the request is read from its start. Collapsing scrolls to the tail and resumes following when the agent is open; a closed agent never follows, it only scrolls to the tail.
 - On `not sent yet` and `not recorded`, `r` does nothing; the line still shows.
+- A left click on the `▸ Request` / `▾ Request` line does the same as `r` (fullscreen TUI only); a click on the request's JSON does nothing.
 - `Ctrl+O` does not affect the block.
 - When the view shows a load error instead of a transcript (`session file not written yet`, `cannot read session: <message>`), the body is only that `warning` line at `PAD`; no Request line is drawn.
 
 ### Scrolling
 
-Opens at the tail. Follows the tail while the agent is open and new content arrives. `↑`, `PgUp`, `Home`, a wheel-up or expanding the Request block with `r` stop following; `End` (or collapsing the Request block) scrolls to the tail and resumes following. A closed agent neither ticks nor follows.
+Opens at the tail. Follows the tail while the agent is open and new content arrives. `↑`, `PgUp`, `Home`, a wheel-up, a click on a tool row or expanding the Request block with `r` stop following; `End` (or collapsing the Request block) scrolls to the tail and resumes following. A closed agent neither ticks nor follows.
 
 ### Hint line
 
@@ -447,6 +448,7 @@ Examples: `esc to close · x to stop · r request · ctrl+o tool detail` (57 col
 | `x` | Open: stop (grace); grace: close now; closed: nothing. |
 | `Esc` | Back to the list when opened from it, else close the overlay. |
 | wheel | Scroll (fullscreen TUI only). |
+| click | Toggle that tool call's detail, or the Request block on its line (fullscreen TUI only). Stops following and keeps the clicked row in place. |
 
 Every other key does nothing.
 
