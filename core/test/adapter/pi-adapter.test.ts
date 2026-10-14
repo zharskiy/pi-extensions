@@ -238,8 +238,38 @@ describe("pi adapter", () => {
 
     expect(sent).toEqual([
       { text: "write it", options: { deliverAs: "followUp" } },
-      { text: "/session-handoff", options: { expandPromptTemplates: true } },
-      { text: "/agents a1", options: { expandPromptTemplates: true } },
+      { text: "/session-handoff", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
+      { text: "/agents a1", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
+    ]);
+  });
+
+  it("sends user messages and commands as prompts while idle", async () => {
+    const { pi, fire, sent } = fakePi();
+    const host = createPiHost(pi, {});
+
+    await fire("session_start", fakeCtx("tui", true));
+    host.sendUserMessage("write it");
+    host.dispatchCommand("skill:review", "src");
+
+    expect(sent).toEqual([
+      { text: "write it", options: undefined },
+      { text: "/skill:review src", options: { expandPromptTemplates: true } },
+    ]);
+  });
+
+  it("queues a command as a follow-up while a run is starting", async () => {
+    const { pi, fire, sent } = fakePi();
+    const host = createPiHost(pi, {});
+    let idle = true;
+    const ctx = { ...fakeCtx("tui", true), isIdle: () => idle };
+
+    await fire("session_start", ctx);
+    idle = false;
+    await fire("before_agent_start", ctx, { systemPromptOptions: {} });
+    host.dispatchCommand("template", "arg");
+
+    expect(sent).toEqual([
+      { text: "/template arg", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
     ]);
   });
 

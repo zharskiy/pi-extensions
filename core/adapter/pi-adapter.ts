@@ -114,6 +114,21 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   };
 
+  const sendUser = (text: string, options?: { expandPromptTemplates: boolean }) => {
+    const ctx = state.ctx;
+
+    if (!ctx) {
+      return;
+    }
+
+    if (ctx.isIdle()) {
+      pi.sendUserMessage(text, options);
+      return;
+    }
+
+    pi.sendUserMessage(text, { ...options, deliverAs: "followUp" });
+  };
+
   const deliverIdle = (custom: HiddenCustom, visible: string) => {
     pi.sendMessage(custom, { deliverAs: "nextTurn" });
     pi.sendUserMessage(visible);
@@ -348,18 +363,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendUserMessage: (text) => {
-      const ctx = state.ctx;
-
-      if (!ctx) {
-        return;
-      }
-
-      if (ctx.isIdle()) {
-        pi.sendUserMessage(text);
-        return;
-      }
-
-      pi.sendUserMessage(text, { deliverAs: "followUp" });
+      sendUser(text);
     },
     sendHiddenMessage: (message, visible) => {
       const ctx = state.ctx;
@@ -399,11 +403,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       });
     },
     dispatchCommand: (name, args) => {
-      if (!state.ctx) {
-        return;
-      }
-
-      pi.sendUserMessage(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
+      sendUser(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
     },
     publish: (channel, data) => {
       if (!state.ctx) {
