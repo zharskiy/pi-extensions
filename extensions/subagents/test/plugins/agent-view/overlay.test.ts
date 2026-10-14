@@ -62,7 +62,7 @@ const setup = () => {
   return { ...harness, registry, create, openLast };
 };
 
-const selected = (lines: string[]) => lines.find((line) => line.startsWith("›"));
+const selected = (lines: string[]) => lines.find((line) => line.startsWith(" › "));
 
 describe("agents overlay", () => {
   it("Enter swaps to the view in the same overlay and Esc returns to the list with the selection kept", async () => {

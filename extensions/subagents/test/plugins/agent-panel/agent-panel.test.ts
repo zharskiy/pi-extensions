@@ -68,7 +68,7 @@ const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {
   return { ...harness, ...stub, registry, newAgent, running, widget, lines, key, type };
 };
 
-const pointed = (lines: string[]) => lines.filter((line) => line.startsWith("›"));
+const pointed = (lines: string[]) => lines.filter((line) => line.startsWith(" › "));
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -161,7 +161,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0].startsWith("›")).toBe(true);
+    expect(lines[0].startsWith(" › ")).toBe(true);
     expect(lines.at(-2)).toBe(HINT);
     expect(lines.at(-1)).toBe("");
     expect(panel.host.editorCapture).toBeDefined();
@@ -195,7 +195,7 @@ describe("agent panel", () => {
     const lines = panel.lines();
 
     expect(lines[0]).toBe(" ↑ 1 more");
-    expect(lines[5].startsWith("›")).toBe(true);
+    expect(lines[5].startsWith(" › ")).toBe(true);
     expect(pointed(lines)).toHaveLength(1);
   });
 
@@ -210,7 +210,7 @@ describe("agent panel", () => {
     const lines = panel.lines();
 
     expect(lines[0]).toBe(" ↑ 1 more");
-    expect(lines[1].startsWith("›")).toBe(true);
+    expect(lines[1].startsWith(" › ")).toBe(true);
     expect(pointed(lines)).toHaveLength(1);
   });
 
@@ -400,11 +400,12 @@ describe("agent panel", () => {
 
     const reselected = panel.lines();
 
-    expect(reselected[0].startsWith("›")).toBe(true);
+    expect(reselected[0].startsWith(" › ")).toBe(true);
 
     panel.type("a");
 
-    expect(panel.lines()[0]).toBe(reselected[0].replace("›", " "));
+    expect(panel.lines()[0]).toMatch(/^ [^›]/);
+    expect(panel.lines()[0]).not.toContain("›");
     expect(panel.lines().at(-2)).toBe(" ↓ 2 more");
   });
 

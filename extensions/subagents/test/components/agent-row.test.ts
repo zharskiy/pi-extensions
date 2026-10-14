@@ -150,7 +150,7 @@ const cases: Case[] = [
     now: 200_000,
     nameCols: 6,
     width: 80,
-    expected: "›✗ worker  Fix the login redirect                               failed · 2m 10s",
+    expected: " › ✗ worker  Fix the login redirect                             failed · 2m 10s",
   },
   {
     name: "shows stopping during grace",
@@ -198,7 +198,7 @@ const cases: Case[] = [
     now: 45_000,
     nameCols: 13,
     width: 80,
-    expected: "›⠋ reviewer (+1)  Review the diff of PR 5         writing · 45s · ↓ 8.2k tokens",
+    expected: " › ⠋ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens",
   },
   {
     name: "omits zero tokens",
@@ -217,7 +217,7 @@ describe("agent row", () => {
     const line = renderRow(input, now, width, plainTheme, nameCols);
 
     expect(line).toBe(expected);
-    expect(line).toMatch(/^[ ›]/);
+    expect(line).toMatch(input.selected ? /^ › / : /^ [^›]/);
 
     if (hasStats(expected)) {
       expect(displayWidth(line)).toBe(width - 1);
@@ -230,8 +230,21 @@ describe("agent row", () => {
         const line = renderRow(input, now, width, plainTheme, nameCols);
 
         expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
-        expect(line).toMatch(/^[ ›]/);
+        expect(line).toMatch(input.selected ? /^ › / : /^ [^›]/);
       });
+    });
+  });
+
+  it("puts the pointer after the pad and shifts the selected row by two", () => {
+    [80, 40, 20].forEach((width) => {
+      const plainLine = renderRow(row(failed), 200_000, width, plainTheme, 6);
+      const pointed = renderRow(row(failed, { selected: true }), 200_000, width, plainTheme, 6);
+
+      expect(plainLine.indexOf("✗")).toBe(1);
+      expect(pointed.indexOf("✗")).toBe(3);
+      expect(pointed.startsWith(" › ")).toBe(true);
+      expect(displayWidth(plainLine)).toBeLessThanOrEqual(width - 1);
+      expect(displayWidth(pointed)).toBeLessThanOrEqual(width - 1);
     });
   });
 

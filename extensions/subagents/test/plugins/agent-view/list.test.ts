@@ -96,7 +96,7 @@ const setup = () => {
   return { ...harness, registry, create, finish, openList, spawn };
 };
 
-const selectedLine = (lines: string[]) => lines.find((line) => line.startsWith("›"));
+const selectedLine = (lines: string[]) => lines.find((line) => line.startsWith(" › "));
 
 describe("agents list", () => {
   it("opens from /agents without an id and shows the empty state", async () => {
@@ -140,7 +140,7 @@ describe("agents list", () => {
     const body = lines().slice(0, 12);
 
     expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 3 done", "", " Running"]);
-    expect(body[4]).toMatch(/^›⠋ explorer \(\+1\) +map the auth module/);
+    expect(body[4]).toMatch(/^ › ⠋ explorer \(\+1\) +map the auth module/);
     expect(body[5]).toMatch(/^ ├─ ⠋ explorer +find callers/);
     expect(body[6]).toMatch(/^ └─ ✓ explorer +find parseDate +done · \d+m? ?\d+s$/);
     expect(body[7]).toBe("");
@@ -336,12 +336,12 @@ describe("agents list", () => {
       lines
         .filter((line) => line !== "")
         .forEach((line) => {
-          expect(line).toMatch(/^[ ›]/);
+          expect(line).toMatch(/^ /);
           expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
         });
       rows.forEach((line) => {
-        expect(line.slice(0, 1)).toMatch(/^[ ›]$/);
-        expect(line.slice(1, 2)).toMatch(/[⠋✓├└]/);
+        expect(line.slice(0, 1)).toBe(" ");
+        expect(line.slice(line.startsWith(" › ") ? 3 : 1).slice(0, 1)).toMatch(/[⠋✓├└]/);
       });
     });
   });

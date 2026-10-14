@@ -148,7 +148,7 @@ describe("panel window", () => {
         expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
 
         if (index < lines.length - 1) {
-          expect(line).toMatch(/^[ ›]/);
+          expect(line).toMatch(/^ /);
         }
       });
       expect(lines.at(-1)).toBe("");

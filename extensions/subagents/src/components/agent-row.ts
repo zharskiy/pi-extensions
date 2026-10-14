@@ -113,6 +113,8 @@ const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
   return painted + " ".repeat(Math.max(0, cols - displayWidth(cut)));
 };
 
+export const POINTER_COLS = 2;
+
 export const renderRow = (
   input: RowInput,
   now: number,
@@ -121,15 +123,16 @@ export const renderRow = (
   nameCols: number,
 ): string => {
   const { record } = input;
-  const lead = input.selected ? theme.fg("accent", theme.bold("›")) : PAD;
+  const pointerCols = input.selected ? POINTER_COLS : 0;
+  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : "";
   const tree = treePrefix(input);
-  const head = `${lead}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
-  const fixed = displayWidth(tree) + 2 + nameCols + 2;
+  const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
+  const fixed = pointerCols + displayWidth(tree) + 2 + nameCols + 2;
   const { stats, room } = pickStats(statsVariants(record, now), width, fixed);
   const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
 
   if (room < MIN_ROOM) {
-    const after = innerWidth(width) - displayWidth(tree) - 2;
+    const after = innerWidth(width) - pointerCols - displayWidth(tree) - 2;
 
     if (stats.plain && 2 + displayWidth(stats.plain) > after) {
       const cut = truncateCols(stats.plain, Math.max(0, after - 2));
