@@ -28,7 +28,7 @@ Optional JSON in `~/.pi/agent/pi-notifications.json`, or `.pi/pi-notifications.j
 
 - `channel`: `"auto"` (desktop notification, no bell), `"bell"` (bell only, for terminals without desktop notifications and inside tmux) or `"off"`.
 - `idleDelayMs`: how long pi waits after the work is done before notifying, 0 to 600000 milliseconds (default 20000).
-- `dialogDelayMs`: how long a dialog waits before notifying, 0 to 600000 milliseconds.
+- `dialogDelayMs`: how long a dialog waits before notifying, 0 to 600000 milliseconds (default 6000).
 
 Invalid values are reported once as a warning and ignored. The files are read at session start; run `/reload` or start a new session after editing them.
 
