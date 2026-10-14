@@ -49,7 +49,7 @@ Every surface follows one set of margins, so no text is glued to a display edge 
 - Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list and status line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block, the completion lines) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
 - Right margin: the same width on the right. The content width is `inner = width - 2 * PAD` (transcript surfaces: `width - 2 * outputPad`); no text goes past column `width - 1 - PAD` (0-based), so the last column is always blank. Every cut is `truncateCols(text, inner - <prefix>)`, never `truncateCols(text, width)`.
 - What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block or completion line, the chat width pi passes to the component (pi does not pad a self-rendered block or an entry). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
-- Columns inside the pad: column `PAD` holds the pointer gutter of a row (`› ` or two spaces) and the first cell of every line that is not a row: title, section header, feedback, hint, view header, `▸ Request`. Row glyphs and the panel's `↑ N more` / `↓ N more` markers sit at `PAD + 2`, the glyph column. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
+- Columns inside the pad: column `PAD` holds the first cell of every line: title, section header, feedback, hint, view header, `▸ Request`, and the glyph (or tree connector) of every row and the panel's `↑ N more` / `↓ N more` markers. The pointer `›` of the selected row replaces the `PAD` column (column 0, touching the glyph), the one place a row's text touches the display edge. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
 - Rules: `─` rules are chrome, not text, and run the full width, edge to edge, like pi's editor borders and dialogs. Only the agent view has one.
 - Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request`, then one blank (pi's spacer before the task message, which the transcript pane adds before every user message) in both states. Panel: no blank above (the editor's bottom border separates it), no blanks between rows, markers and hint, and one trailing blank line so the footer never touches the last line.
 - Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block and the completion lines are cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
@@ -186,11 +186,11 @@ A widget below the editor (`belowEditor`), replacing the progress widget. No hea
 ### Row grammar
 
 ```
-<PAD><pointer><tree><glyph> <name>[ (+N)]  <description>  [<activity> · ]<stats>
+<PAD or pointer><tree><glyph> <name>[ (+N)]  <description>  [<activity> · ]<stats>
 ```
 
 - `PAD`: one column (§2 "Padding and margins").
-- `pointer`: at column `PAD`, `› ` (`accent`, bold) on the selected row, else two spaces; the glyph of a root row is at `PAD + 2`.
+- `PAD or pointer`: `›` (`accent`, bold) on the selected row in place of `PAD`, else `PAD`; the glyph of a root row is at `PAD`.
 - `tree`: nothing for agents called by `main`; `├─ ` / `└─ ` (`dim`) for children under their caller, with `│  ` / `   ` continuation per level above. Rows are in tree order: callers first, children directly under them, siblings by `createdAt`. A row keeps its place when it closes.
 - `glyph` + space: the state glyph in the state token (spinner while `running`).
 - `name`: `record.agent`, `text` (`muted` on closed rows), with ` #2` for chain links after the first; `(+N)` (`dim`) is the number of open descendants of this agent; omitted when 0. The name column is padded to the widest visible name, capped at 24 columns, then two spaces.
@@ -198,11 +198,11 @@ A widget below the editor (`belowEditor`), replacing the progress widget. No hea
 - `activity`: while `running`, the latest activity when known, shown as the first part of the stats: the last top-level tool name (`grep`, `bash`, `codemode`, …) or, when the last event was an assistant message, the word `writing`. It is `dim` like the stats and separated with ` · `. The record gains `activity?: { kind: "tool" | "text"; text: string; at: number }`; its `text` is the tool name or the first line of the assistant text (used by the agent view header later, not by the row).
 - `stats`, right-aligned to `PAD + W` (ending one column before the last): `grep · 1m 5s · ↓ 12.3k tokens` (`dim`); the activity part only while `running` and known; tokens omitted when 0. Status words replace the stats: `queued` (`muted`), `stopping` (`warning`). Closed rows show `<word> · <duration>`: `done · 1m 5s`, `failed · 2m 10s`, `stopped · 3s`, `handed off · 1h 2m` (word in the state token, duration `dim`).
 
-Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are pointer (2), tree, glyph (2), name column, two spaces, and two spaces before the stats. The description gets the rest. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description is cut with `…` to fit. A correct line ends at `PAD + W` (79 columns at width 80); the last column stays blank, and the adapter's hard cut at `width` is only a safety net.
+Column rule, from `W = width - 2 * PAD` (`innerWidth(width)`): fixed parts are the tree, glyph (2), name column, two spaces, and two spaces before the stats. The description gets the rest. If that is below 12 columns, drop the activity from the stats; if still below 12, drop the tokens; if still below 12, drop the elapsed too (status words stay); if still below 8, the description is omitted and the name is cut with `…`. Otherwise the description is cut with `…` to fit. A correct line ends at `PAD + W` (79 columns at width 80); the last column stays blank, and the adapter's hard cut at `width` is only a safety net.
 
 ### Window and markers
 
-- At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The markers start in the glyph column (`PAD + 2`), as Claude Code's do. The window scrolls by the minimum to keep the selected row visible. When the selection clears, the window keeps its top row (clamped to the row count); it never jumps back to the first row on its own.
+- At most 5 agent rows. With more rows, a dim `↑ N more` line precedes the first visible row and a dim `↓ N more` line follows the last visible row (either, both or none). The markers start in the glyph column (`PAD`), as Claude Code's do. The window scrolls by the minimum to keep the selected row visible. When the selection clears, the window keeps its top row (clamped to the row count); it never jumps back to the first row on its own.
 - The hint line (below the rows and markers, at `PAD`, cut at `inner`) exists only while a row is selected.
 - One blank line follows the panel's last line, so the footer never touches it; there is no blank above the panel (the editor's bottom border separates it).
 - `(+N)` on a visible row tells the user that rows under it exist even when they are scrolled out.
@@ -254,24 +254,24 @@ Re-render on `agent:changed` throttled by `renderThrottleMs` (default 250), plus
 
 ### Mockups
 
-Two running (one is a worktree agent; the panel does not say so); one leading space = `PAD`, the glyph column is `PAD + 2`, the last column stays blank, and the trailing blank line is the panel's own:
+Two running (one is a worktree agent; the panel does not say so); one leading space = `PAD` = the glyph column, and the selected row's `›` takes the `PAD` column, the last column stays blank, and the trailing blank line is the panel's own:
 
 ```
-   ⠹ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens
-   ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
+ ⠹ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens
+ ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
 
 ```
 
 Seven agents, selection on the fourth, window scrolled (the name column is measured over all seven rows):
 
 ```
-   ↑ 2 more
-   ⠹ worker         Fix the login redirect       bash · 2m 10s · ↓ 30.1k tokens
- › ⠹ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens
-   └─ ⠹ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens
-   ○ worker         Rename parseDate callers                             queued
-   ○ explorer       Find every date format in tests                      queued
-   ↓ 1 more
+ ↑ 2 more
+ ⠹ worker         Fix the login redirect       bash · 2m 10s · ↓ 30.1k tokens
+›⠹ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens
+ └─ ⠹ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens
+ ○ worker         Rename parseDate callers                             queued
+ ○ explorer       Find every date format in tests                      queued
+ ↓ 1 more
  enter to view · x to stop · esc to deselect
 
 ```
@@ -279,15 +279,15 @@ Seven agents, selection on the fourth, window scrolled (the name column is measu
 One done row (it leaves 10 s after it finished; no countdown is shown):
 
 ```
-   ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
-   ✓ explorer  Map the auth module                                 done · 1m 5s
+ ⠹ worker    Fix the login redirect            bash · 2m 10s · ↓ 30.1k tokens
+ ✓ explorer  Map the auth module                                 done · 1m 5s
 
 ```
 
 One failed row, selected, with the hint line:
 
 ```
- › ✗ worker  Fix the login redirect                             failed · 2m 10s
+›✗ worker  Fix the login redirect                             failed · 2m 10s
  enter to view · x to clear · esc to deselect
 
 ```
@@ -358,14 +358,14 @@ A closed child under a running parent, a running child in its tree position, and
  Agents · 3 running · 3 done
 
  Running
-   ⠹ explorer     Map the auth module             grep · 1m 5s · ↓ 12.3k tokens
- › ⠹ worker (+1)  Fix the login redirect         bash · 2m 10s · ↓ 30.1k tokens
-   ├─ ⠹ explorer     Find callers of login           read · 12s · ↓ 1.1k tokens
-   └─ ✓ explorer     Find callers of parseDate                       done · 45s
+ ⠹ explorer     Map the auth module             grep · 1m 5s · ↓ 12.3k tokens
+›⠹ worker (+1)  Fix the login redirect         bash · 2m 10s · ↓ 30.1k tokens
+ ├─ ⠹ explorer     Find callers of login           read · 12s · ↓ 1.1k tokens
+ └─ ✓ explorer     Find callers of parseDate                       done · 45s
 
  Completed (1)
-   ✓ reviewer     Review the diff of PR 5                          done · 3m 2s
-   └─ ✓ explorer     Collect the changed files                       done · 40s
+ ✓ reviewer     Review the diff of PR 5                          done · 3m 2s
+ └─ ✓ explorer     Collect the changed files                       done · 40s
 
 
  Press X again to stop all agents

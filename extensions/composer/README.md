@@ -13,7 +13,7 @@ A pi extension that draws the input as two horizontal lines, edge to edge, with 
 
 - The lines reuse the editor's own border colour, so it follows pi's mode colours (thinking level, bash mode).
 - The content sits one column in from the left edge (`MARGIN` at the top of `src/frame.ts`). The chevron sits on the first content line only; wrapped and further lines are indented under it. Scroll hints (`↑ 3 more`) stay in the top and bottom lines, which are extended to the full width, and the chevron is hidden while the editor is scrolled.
-- Autocomplete lists below the editor are indented to line up with the text.
+- Autocomplete lists below the editor start one column in, so pi's `→` sits under the chevron and the entries under the text.
 - Pi's working status (spinner, verb, elapsed time) is drawn inside the top line, as in pi's own editor, so there is no gap between it and the input.
 - Mouse clicks in the input move the cursor to the clicked character.
 - On terminals narrower than the frame needs (11 columns with the default chevron and margin) pi's plain editor is drawn.

@@ -121,15 +121,15 @@ export const renderRow = (
   nameCols: number,
 ): string => {
   const { record } = input;
-  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : "  ";
+  const lead = input.selected ? theme.fg("accent", theme.bold("›")) : PAD;
   const tree = treePrefix(input);
-  const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
-  const fixed = 2 + displayWidth(tree) + 2 + nameCols + 2;
+  const head = `${lead}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
+  const fixed = displayWidth(tree) + 2 + nameCols + 2;
   const { stats, room } = pickStats(statsVariants(record, now), width, fixed);
   const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
 
   if (room < MIN_ROOM) {
-    const after = innerWidth(width) - 2 - displayWidth(tree) - 2;
+    const after = innerWidth(width) - displayWidth(tree) - 2;
 
     if (stats.plain && 2 + displayWidth(stats.plain) > after) {
       const cut = truncateCols(stats.plain, Math.max(0, after - 2));

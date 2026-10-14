@@ -29,7 +29,7 @@ export const createFrame = (): EditorFrame => {
       }
 
       if (index > bottom) {
-        return gutterSpace + line;
+        return margin + line;
       }
 
       return (index === 1 ? lead : gutterSpace) + line;

@@ -130,7 +130,7 @@ export const panelLines = (
 
   const nameCols = nameColumn(rows);
   const { start, end, above, below } = windowOf(rows, state);
-  const marker = (text: string) => `${PAD}  ${theme.fg("dim", text)}`;
+  const marker = (text: string) => `${PAD}${theme.fg("dim", text)}`;
   const selected = rows.find((entry) => entry.record.id === state.selectedId);
   const lines = rows
     .slice(start, end)

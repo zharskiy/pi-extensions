@@ -70,10 +70,10 @@ describe("createFrame", () => {
     expect(lines).toEqual(["─ ↑ 2 more ────", "   ab", "   cd", "─────"]);
   });
 
-  it("indents lines below the bottom rule, such as autocomplete, under the text", () => {
+  it("indents lines below the bottom rule by the margin, so pi's list arrow sits under the chevron", () => {
     const lines = createFrame().decorate(["──", "ab", "──", "/help", "──"], layout, plain);
 
-    expect(lines.slice(2)).toEqual(["─────", "   /help", "   ──"]);
+    expect(lines.slice(2)).toEqual(["─────", " /help", " ──"]);
   });
 
   it("leaves the lines unframed without a bottom rule", () => {

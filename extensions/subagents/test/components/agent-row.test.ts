@@ -70,7 +70,7 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 8,
     width: 80,
-    expected: "   ⠋ explorer  Map the auth module                grep · 1m 5s · ↓ 12.3k tokens",
+    expected: " ⠋ explorer  Map the auth module                  grep · 1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "cuts the description before dropping stats",
@@ -78,15 +78,15 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 8,
     width: 60,
-    expected: "   ⠋ explorer  Map the auth…  grep · 1m 5s · ↓ 12.3k tokens",
+    expected: " ⠋ explorer  Map the auth m…  grep · 1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "drops the activity, then the tokens, when the description would fall below 12 columns",
     input: row(grepping),
     now: 65_000,
     nameCols: 8,
-    width: 40,
-    expected: "   ⠋ explorer  Map the auth mod…  1m 5s",
+    width: 38,
+    expected: " ⠋ explorer  Map the auth mod…  1m 5s",
   },
   {
     name: "drops the elapsed too and keeps the description",
@@ -94,15 +94,15 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 8,
     width: 30,
-    expected: "   ⠋ explorer  Map the auth…",
+    expected: " ⠋ explorer  Map the auth mo…",
   },
   {
     name: "drops the activity when the description room would be 10 columns",
     input: row(grepping),
     now: 65_000,
     nameCols: 9,
-    width: 58,
-    expected: "   ⠋ explorer   Map the auth mod…  1m 5s · ↓ 12.3k tokens",
+    width: 56,
+    expected: " ⠋ explorer   Map the auth mod…  1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "shows queued as the status word",
@@ -110,7 +110,7 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 6,
     width: 80,
-    expected: "   ○ worker  Rename parseDate callers                                    queued",
+    expected: " ○ worker  Rename parseDate callers                                      queued",
   },
   {
     name: "keeps the status word on a narrow row",
@@ -118,7 +118,7 @@ const cases: Case[] = [
     now: 65_000,
     nameCols: 6,
     width: 30,
-    expected: "   ○ worker  Rename…   queued",
+    expected: " ○ worker  Rename pa…  queued",
   },
   {
     name: "shows done with the duration",
@@ -126,7 +126,7 @@ const cases: Case[] = [
     now: 99_000,
     nameCols: 8,
     width: 80,
-    expected: "   ✓ explorer  Map the auth module                                 done · 1m 5s",
+    expected: " ✓ explorer  Map the auth module                                   done · 1m 5s",
   },
   {
     name: "drops the duration of a closed row and keeps its status word",
@@ -134,7 +134,7 @@ const cases: Case[] = [
     now: 99_000,
     nameCols: 8,
     width: 30,
-    expected: "   ✓ explorer  Map the…  done",
+    expected: " ✓ explorer  Map the a…  done",
   },
   {
     name: "omits the description and pads the name when fewer than 8 columns remain",
@@ -142,7 +142,7 @@ const cases: Case[] = [
     now: 99_000,
     nameCols: 8,
     width: 26,
-    expected: "   ✓ explorer        done",
+    expected: " ✓ explorer          done",
   },
   {
     name: "marks the selected row with the pointer",
@@ -150,7 +150,7 @@ const cases: Case[] = [
     now: 200_000,
     nameCols: 6,
     width: 80,
-    expected: " › ✗ worker  Fix the login redirect                             failed · 2m 10s",
+    expected: "›✗ worker  Fix the login redirect                               failed · 2m 10s",
   },
   {
     name: "shows stopping during grace",
@@ -158,7 +158,7 @@ const cases: Case[] = [
     now: 130_000,
     nameCols: 6,
     width: 80,
-    expected: "   ◐ worker  Fix the login redirect                                    stopping",
+    expected: " ◐ worker  Fix the login redirect                                      stopping",
   },
   {
     name: "appends the chain index to the name",
@@ -166,7 +166,7 @@ const cases: Case[] = [
     now: 130_000,
     nameCols: 11,
     width: 80,
-    expected: "   ⠋ explorer #2  Map the auth module            bash · 2m 10s · ↓ 30.1k tokens",
+    expected: " ⠋ explorer #2  Map the auth module              bash · 2m 10s · ↓ 30.1k tokens",
   },
   {
     name: "draws the connector of a last child",
@@ -174,7 +174,7 @@ const cases: Case[] = [
     now: 12_000,
     nameCols: 13,
     width: 80,
-    expected: "   └─ ⠋ explorer       Find callers of login         read · 12s · ↓ 1.1k tokens",
+    expected: " └─ ⠋ explorer       Find callers of login           read · 12s · ↓ 1.1k tokens",
   },
   {
     name: "draws continuation bars for deeper rows",
@@ -182,7 +182,7 @@ const cases: Case[] = [
     now: 12_000,
     nameCols: 13,
     width: 80,
-    expected: "   │  ├─ ⠋ explorer       Find callers of login      read · 12s · ↓ 1.1k tokens",
+    expected: " │  ├─ ⠋ explorer       Find callers of login        read · 12s · ↓ 1.1k tokens",
   },
   {
     name: "keeps only the name on a deep row too narrow for any stats",
@@ -190,7 +190,7 @@ const cases: Case[] = [
     now: 12_000,
     nameCols: 13,
     width: 24,
-    expected: "   │  ├─ ⠋ explorer    ",
+    expected: " │  ├─ ⠋ explorer      ",
   },
   {
     name: "shows open descendants and writing",
@@ -198,7 +198,7 @@ const cases: Case[] = [
     now: 45_000,
     nameCols: 13,
     width: 80,
-    expected: " › ⠋ reviewer (+1)  Review the diff of PR 5       writing · 45s · ↓ 8.2k tokens",
+    expected: "›⠋ reviewer (+1)  Review the diff of PR 5         writing · 45s · ↓ 8.2k tokens",
   },
   {
     name: "omits zero tokens",
@@ -206,7 +206,7 @@ const cases: Case[] = [
     now: 3_000,
     nameCols: 8,
     width: 80,
-    expected: "   ⠋ explorer  Map the auth module                                           3s",
+    expected: " ⠋ explorer  Map the auth module                                             3s",
   },
 ];
 
@@ -217,7 +217,7 @@ describe("agent row", () => {
     const line = renderRow(input, now, width, plainTheme, nameCols);
 
     expect(line).toBe(expected);
-    expect(line.startsWith(" ")).toBe(true);
+    expect(line).toMatch(/^[ ›]/);
 
     if (hasStats(expected)) {
       expect(displayWidth(line)).toBe(width - 1);
@@ -230,7 +230,7 @@ describe("agent row", () => {
         const line = renderRow(input, now, width, plainTheme, nameCols);
 
         expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
-        expect(line.startsWith(" ")).toBe(true);
+        expect(line).toMatch(/^[ ›]/);
       });
     });
   });

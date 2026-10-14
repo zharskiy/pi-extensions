@@ -102,7 +102,7 @@ describe("panel window", () => {
 
     const scrolled = panelLines(rows, state, 0, 80, plainTheme, renderRow, both);
 
-    expect(scrolled[0]).toBe("   ↑ 2 more");
+    expect(scrolled[0]).toBe(" ↑ 2 more");
     expect(scrolled.slice(1, 6).map((line) => line.trimEnd())).toEqual(
       ["r2", "r3", "r4", "r5", "r6"].map((id) => expect.stringContaining(`work of ${id}`)),
     );
@@ -115,7 +115,7 @@ describe("panel window", () => {
 
     expect(top).toHaveLength(8);
     expect(top[0]).toContain("work of r0");
-    expect(top.slice(5)).toEqual(["   ↓ 2 more", " enter to view · x to stop · esc to deselect", ""]);
+    expect(top.slice(5)).toEqual([" ↓ 2 more", " enter to view · x to stop · esc to deselect", ""]);
   });
 
   it("puts the markers in the glyph column", () => {
@@ -128,8 +128,8 @@ describe("panel window", () => {
     const lines = panelLines(rows, state, 0, 80, plainTheme, renderRow, both);
     const glyphColumn = lines[1].indexOf("⠋");
 
-    expect(glyphColumn).toBe(3);
-    expect(lines[0].startsWith("   ")).toBe(true);
+    expect(glyphColumn).toBe(1);
+    expect(lines[0].startsWith(" ")).toBe(true);
     expect(lines[0].indexOf("↑")).toBe(glyphColumn);
     expect(lines[6].indexOf("↓")).toBe(glyphColumn);
   });
@@ -148,7 +148,7 @@ describe("panel window", () => {
         expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
 
         if (index < lines.length - 1) {
-          expect(line.startsWith(" ")).toBe(true);
+          expect(line).toMatch(/^[ ›]/);
         }
       });
       expect(lines.at(-1)).toBe("");

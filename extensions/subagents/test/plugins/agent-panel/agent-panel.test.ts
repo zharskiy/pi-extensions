@@ -63,7 +63,7 @@ const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {
   return { ...harness, ...stub, registry, newAgent, running, widget, lines, key, type };
 };
 
-const pointed = (lines: string[]) => lines.filter((line) => line.startsWith(" › "));
+const pointed = (lines: string[]) => lines.filter((line) => line.startsWith("›"));
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -79,7 +79,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual([expect.stringMatching(/^ {3}○ explorer {2}look around +queued$/), ""]);
+    expect(panel.lines()).toEqual([expect.stringMatching(/^ ○ explorer {2}look around +queued$/), ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });
@@ -121,9 +121,9 @@ describe("agent panel", () => {
 
     expect(lines).toHaveLength(7);
     expect(lines[0]).toContain("reviewer (+1)");
-    expect(lines[1].startsWith("   └─ ")).toBe(true);
+    expect(lines[1].startsWith(" └─ ")).toBe(true);
     expect(lines[1]).toContain("nested");
-    expect(lines.slice(5)).toEqual(["   ↓ 3 more", ""]);
+    expect(lines.slice(5)).toEqual([" ↓ 3 more", ""]);
   });
 
   it("left on an empty editor selects the first row and installs a capture", () => {
@@ -134,7 +134,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0].startsWith(" › ")).toBe(true);
+    expect(lines[0].startsWith("›")).toBe(true);
     expect(lines.at(-2)).toBe(HINT);
     expect(lines.at(-1)).toBe("");
     expect(panel.host.editorCapture).toBeDefined();
@@ -167,8 +167,8 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0]).toBe("   ↑ 1 more");
-    expect(lines[5].startsWith(" › ")).toBe(true);
+    expect(lines[0]).toBe(" ↑ 1 more");
+    expect(lines[5].startsWith("›")).toBe(true);
     expect(pointed(lines)).toHaveLength(1);
   });
 
@@ -182,8 +182,8 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0]).toBe("   ↑ 1 more");
-    expect(lines[1].startsWith(" › ")).toBe(true);
+    expect(lines[0]).toBe(" ↑ 1 more");
+    expect(lines[1].startsWith("›")).toBe(true);
     expect(pointed(lines)).toHaveLength(1);
   });
 
@@ -359,7 +359,7 @@ describe("agent panel", () => {
     panel.host.pressEmptyLeft();
     Array.from({ length: 6 }, () => panel.key("down"));
 
-    expect(panel.lines()[0]).toBe("   ↑ 2 more");
+    expect(panel.lines()[0]).toBe(" ↑ 2 more");
 
     panel.key("escape");
 
@@ -367,18 +367,18 @@ describe("agent panel", () => {
 
     expect(pointed(after)).toEqual([]);
     expect(after).not.toContain(HINT);
-    expect(after[0]).toBe("   ↑ 2 more");
+    expect(after[0]).toBe(" ↑ 2 more");
 
     panel.host.pressEmptyLeft();
 
     const reselected = panel.lines();
 
-    expect(reselected[0].startsWith(" › ")).toBe(true);
+    expect(reselected[0].startsWith("›")).toBe(true);
 
     panel.type("a");
 
-    expect(panel.lines()[0]).toBe(reselected[0].replace(" › ", "   "));
-    expect(panel.lines().at(-2)).toBe("   ↓ 2 more");
+    expect(panel.lines()[0]).toBe(reselected[0].replace("›", " "));
+    expect(panel.lines().at(-2)).toBe(" ↓ 2 more");
   });
 
   it("ticks every 100 ms while a row runs, every second with only queued rows, and never when empty", () => {
