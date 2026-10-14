@@ -39,6 +39,8 @@ exports[`agent view codemode and nested tools > renders codemode calls with pi's
    return session;
  ... (3 more lines, ctrl+o to expand)
 
+ Took 0.4s
+
 
 
  grep /session/ in src/auth"

@@ -974,6 +974,7 @@ const codemodeSession = () =>
           ],
         },
         isError: false,
+        durationMs: 420,
       }),
       line({
         role: "assistant",
