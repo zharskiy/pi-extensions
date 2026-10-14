@@ -3,7 +3,7 @@ import {
   createToolSearchExtension,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, renderFakeCursor, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
 import {
@@ -82,6 +82,40 @@ describe("createInputPane focus", () => {
     pane.setFocused(true);
 
     expect(pane.render(30).join("")).toContain(CURSOR_MARKER);
+  });
+});
+
+describe("createInputPane fake cursor", () => {
+  const [fakeStart = "", fakeEnd = ""] = renderFakeCursor("|").split("|");
+  const CSI = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+  const columns = (line: string) => Array.from(line.replaceAll(CURSOR_MARKER, "").replace(CSI, "")).length;
+
+  const rendered = (hardwareCursor: boolean, focused: boolean) => {
+    const pane = createInputPane("type", () => hardwareCursor);
+
+    pane.setValue("hi");
+    pane.setFocused(focused);
+
+    return pane.render(30);
+  };
+
+  it.each([
+    [false, true],
+    [true, true],
+    [false, false],
+  ])("returns lines without fake cursor markers (hardware cursor %s, focused %s)", (hardware, focused) => {
+    const lines = rendered(hardware, focused);
+
+    expect(fakeStart).toContain("pi:fc");
+    expect(lines.join("")).not.toContain(fakeStart);
+    expect(lines.join("")).not.toContain(fakeEnd);
+    expect(lines.map((line) => visibleWidth(line))).toEqual(lines.map(() => 30));
+    expect(lines.map(columns)).toEqual(lines.map(() => 30));
+  });
+
+  it("draws the cursor in reverse video unless the hardware cursor shows", () => {
+    expect(rendered(false, true).join("")).toContain(`${CURSOR_MARKER}${ESC}[7mh${ESC}[27mi`);
+    expect(rendered(true, true).join("")).toContain(`${CURSOR_MARKER}hi`);
   });
 });
 

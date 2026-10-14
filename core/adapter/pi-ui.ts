@@ -23,11 +23,13 @@ import {
 import {
   type Component,
   Container,
+  CURSOR_MARKER,
   Input,
   isKeyRelease,
   Key,
   type Keybinding,
   matchesKey,
+  renderFakeCursor,
   ScrollView,
   type TUI,
   type TuiMouseEvent,
@@ -289,7 +291,30 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
   };
 };
 
-export const createInputPane = (placeholder: string): InputPane => {
+const [FAKE_CURSOR_START = "", FAKE_CURSOR_END = ""] = renderFakeCursor("\0").split("\0");
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const FOCUSED_FAKE_CURSOR = new RegExp(
+  `(${escapeRegExp(CURSOR_MARKER)})${escapeRegExp(FAKE_CURSOR_START)}(.*?)(?:${escapeRegExp(FAKE_CURSOR_END)}|$)`,
+  "s",
+);
+
+export const resolveFakeCursors = (lines: string[], hardwareCursor: boolean): string[] =>
+  lines.map((line) => {
+    if (!line.includes(FAKE_CURSOR_START)) {
+      return line;
+    }
+
+    const resolved = hardwareCursor ? line.replace(FOCUSED_FAKE_CURSOR, "$1$2") : line;
+
+    return resolved.replaceAll(FAKE_CURSOR_START, "\x1b[7m").replaceAll(FAKE_CURSOR_END, "\x1b[27m");
+  });
+
+export const createInputPane = (
+  placeholder: string,
+  hardwareCursor: () => boolean = () => false,
+): InputPane => {
   const input = new Input({ placeholder });
   let outcome: "submitted" | "cancelled" | undefined;
 
@@ -315,7 +340,7 @@ export const createInputPane = (placeholder: string): InputPane => {
     setFocused: (focused) => {
       input.focused = focused;
     },
-    render: (width) => input.render(width),
+    render: (width) => resolveFakeCursors(input.render(width), hardwareCursor()),
   };
 };
 
@@ -427,7 +452,7 @@ export const createUi = (
           wheelScrolling: tui.mode === "fullscreen",
           createTranscript: (options) => createTranscriptPane(tui, cwd, { tools: options?.tools }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
-          createInput: createInputPane,
+          createInput: (placeholder) => createInputPane(placeholder, () => tui.getShowHardwareCursor()),
         });
 
         const isToolsToggle = (data: string) => keybindings.matches(data, "app.tools.expand");
