@@ -8,7 +8,7 @@ Version 0.4.0 replaces the progress widget with a panel below the editor, redraw
 
 ## What you need
 
-- pi 1.1.0 (`pi --version`), the version it is developed and tested against.
+- pi 1.2.0 or later within pi 1 (`pi --version`); it is developed and tested against pi 1.2.0.
 - Node 22.19 or newer (only for development; pi loads the TypeScript sources directly).
 - A model configured in pi. The shipped agents name OpenAI models (see [Agents](#agents)); without OpenAI credentials, copy their files to `~/.pi/agent/agents/` and set `model` to one of your models, or name a model in the `model` parameter of `run_agent`. An agent file without a `model` line runs on the main session's model and thinking level.
 
