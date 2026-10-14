@@ -188,15 +188,17 @@ export type HostUi = {
   setEditorFrame(frame: EditorFrame | undefined): void;
   /**
    * Fires when `tui.editor.cursorLeft` is pressed in the focused editor while it is empty and no autocomplete is open
-   * (an empty editor has the cursor at column 0 of its only line, so the key would be a no-op). The key is consumed. tui only; silently
-   * inactive when another extension installed its own editor. Returns an unsubscribe function.
+   * (an empty editor has the cursor at column 0 of its only line, so the key would be a no-op). The key is consumed. tui only. May be
+   * called before the session starts; the hook becomes active at session start. Every extension of this package shares one editor;
+   * the hook is silently inactive while an editor this package did not install is set. Returns an unsubscribe function.
    */
   onEmptyEditorLeft(handler: () => void): () => void;
   /**
    * Routes every key the focused editor receives to `handler` until it returns "release" or the returned function is
    * called. "consumed" swallows the key (it never reaches pi: no `app.interrupt` on Esc, no shortcuts, no text edit);
    * "release" ends the capture and lets the editor handle that same key normally. Keys never reach the handler while
-   * an overlay or dialog has focus. At most one capture at a time: installing a second one releases the first.
+   * an overlay or dialog has focus. At most one capture at a time: installing a second one releases the first. Like
+   * `onEmptyEditorLeft`, it may be called before the session starts and is inactive under an editor this package did not install.
    */
   captureEditorKeys(handler: EditorKeyHandler): () => void;
   setFooter(render: FooterRender | undefined): WidgetHandle;

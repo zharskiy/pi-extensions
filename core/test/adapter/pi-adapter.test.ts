@@ -1,8 +1,14 @@
 import { stripVTControlCharacters } from "node:util";
 import type { EntryRenderer, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
-import { createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
+import {
+  type EditorTheme,
+  KeybindingsManager,
+  type TUI,
+  TUI_KEYBINDINGS,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -600,6 +606,58 @@ describe("pi adapter", () => {
     await expect(fire("session_shutdown", fakeCtx("tui"), { reason: "quit" })).rejects.toThrow("boom");
     expect(seen).toEqual(["second"]);
     expect(() => host.session()).toThrow("no live pi session");
+  });
+});
+
+describe("editor hooks boot order", () => {
+  afterEach(() => {
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks.v1")];
+  });
+
+  it("installs an empty-left hook registered while the extension loads once the session starts", async () => {
+    const { pi, fire } = fakePi();
+    let factory: ((tui: TUI, theme: EditorTheme, keys: KeybindingsManager) => unknown) | undefined;
+    let fired = 0;
+
+    createPiExtension(
+      (host) => {
+        host.ui.onEmptyEditorLeft(() => {
+          fired += 1;
+        });
+      },
+      { root: "/ext", namespace: "test" },
+    )(pi);
+
+    const ctx = fakeCtx("tui");
+    const tuiCtx = {
+      ...ctx,
+      ui: {
+        ...ctx.ui,
+        getEditorComponent: () => factory,
+        setEditorComponent: (next: typeof factory) => {
+          factory = next;
+        },
+      },
+    };
+
+    expect(factory).toBeUndefined();
+
+    await fire("session_start", tuiCtx, { reason: "startup" });
+
+    const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
+    const theme = { borderColor: (text: string) => text, selectList: {} } as unknown as EditorTheme;
+    const editor = factory?.(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS)) as
+      | { handleInput(data: string): void }
+      | undefined;
+
+    editor?.handleInput("\x1b[D");
+
+    expect(editor).toBeDefined();
+    expect(fired).toBe(1);
+
+    await fire("session_shutdown", tuiCtx, { reason: "reload" });
+
+    expect(factory).toBeUndefined();
   });
 });
 

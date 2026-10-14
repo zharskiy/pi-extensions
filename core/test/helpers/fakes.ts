@@ -74,8 +74,9 @@ export type FakeHost = Host & {
   foreignEditor: boolean;
   emptyLeftHandlers: Set<() => void>;
   editorCapture?: EditorKeyHandler;
+  /** Hooks registered before `start()` are kept and fire only once the session started and no foreign editor is set, like the real adapter. */
   pressEmptyLeft(): boolean;
-  /** Feeds `key` to the editor capture; a `left` the capture does not consume reaches the empty-editor hooks (the fake editor is empty). */
+  /** Feeds `key` to the editor capture; a `left` the capture does not consume reaches the empty-editor hooks (the fake editor is empty). Returns "editor" while no session runs. */
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   /** `idle` false models an active agent run; `compacting` models pi busy without a run (`isIdle()` is false). */
   idle: boolean;
@@ -147,6 +148,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
+  const editorLive = () => started && !host.foreignEditor;
   let stale = false;
   let settling = false;
 
@@ -210,6 +212,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     foreignEditor: false,
     emptyLeftHandlers: new Set(),
     pressEmptyLeft: () => {
+      if (!editorLive()) {
+        return false;
+      }
+
       const handlers = Array.from(host.emptyLeftHandlers);
 
       handlers.forEach((handler) => {
@@ -219,6 +225,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       return handlers.length > 0;
     },
     pressEditorKey: (key) => {
+      if (!editorLive()) {
+        return "editor";
+      }
+
       const capture = host.editorCapture;
       const outcome = capture ? capture(key) : "editor";
 
@@ -320,10 +330,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         host.editorFrame = frame;
       },
       onEmptyEditorLeft: (handler) => {
-        if (host.foreignEditor) {
-          return () => {};
-        }
-
         const entry = () => handler();
 
         host.emptyLeftHandlers.add(entry);
@@ -333,10 +339,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         };
       },
       captureEditorKeys: (handler) => {
-        if (host.foreignEditor) {
-          return () => {};
-        }
-
         host.editorCapture = handler;
 
         return () => {

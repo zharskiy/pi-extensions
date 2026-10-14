@@ -9,18 +9,34 @@ import { editorKeyPress } from "./pi-keys.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-type EditorHooks = { frame?: EditorFrame; emptyLeft: Set<() => void>; capture?: EditorKeyHandler };
+/** One record for every extension of this package: pi loads each extension with its own module cache, so module state is per extension. */
+type SharedEditor = {
+  frame?: EditorFrame;
+  emptyLeft: Set<() => void>;
+  capture?: EditorKeyHandler;
+  installed?: EditorFactory;
+};
+
+const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v1");
+
+const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor };
+
+const sharedEditor = (): SharedEditor => {
+  shared[EDITOR_KEY] ??= { emptyLeft: new Set() };
+
+  return shared[EDITOR_KEY];
+};
 
 /** pi-tui `Editor` private state (editor.d.ts) that takes a key before the cursor bindings: jump mode and bracketed paste. */
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
 class HostEditor extends CustomEditor {
   private readonly keys: KeybindingsManager;
-  private readonly hooks: EditorHooks;
+  private readonly hooks: SharedEditor;
   private bottomBorder = "";
   private scrolled = false;
 
-  constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, hooks: EditorHooks) {
+  constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, hooks: SharedEditor) {
     super(tui, theme, keybindings);
     this.keys = keybindings;
     this.hooks = hooks;
@@ -103,84 +119,126 @@ class HostEditor extends CustomEditor {
 
 type EditorHooksUi = Pick<HostUi, "setEditorFrame" | "onEmptyEditorLeft" | "captureEditorKeys">;
 
-export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): EditorHooksUi => {
-  const hooks: EditorHooks = { emptyLeft: new Set() };
-  let installed: EditorFactory;
+/** `sync` installs the editor for hooks registered before the session started; `release` drops this copy's hooks at session shutdown. */
+export type EditorHooks = EditorHooksUi & { sync(): void; release(): void };
+
+export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): EditorHooks => {
+  const own: Omit<SharedEditor, "installed"> = { emptyLeft: new Set() };
+
+  const inUse = (hooks: SharedEditor) => Boolean(hooks.frame || hooks.emptyLeft.size > 0 || hooks.capture);
 
   const ensureInstalled = () => {
     const ctx = tuiCtx();
+    const hooks = sharedEditor();
 
     if (!ctx) {
-      return false;
+      return;
     }
 
     const active = ctx.ui.getEditorComponent();
 
-    if (active && active !== installed) {
-      return false;
+    if (active && active !== hooks.installed) {
+      return;
     }
 
     if (!active) {
-      installed = (tui, theme, keybindings) => new HostEditor(tui, theme, keybindings, hooks);
-      ctx.ui.setEditorComponent(installed);
+      hooks.installed = (tui, theme, keybindings) => new HostEditor(tui, theme, keybindings, hooks);
+      ctx.ui.setEditorComponent(hooks.installed);
     }
-
-    return true;
   };
 
   const releaseIfUnused = () => {
     const ctx = tuiCtx();
+    const hooks = sharedEditor();
 
-    if (!ctx || hooks.frame || hooks.emptyLeft.size > 0 || hooks.capture || !installed) {
+    if (!ctx || inUse(hooks) || !hooks.installed) {
       return;
     }
 
-    if (ctx.ui.getEditorComponent() === installed) {
+    if (ctx.ui.getEditorComponent() === hooks.installed) {
       ctx.ui.setEditorComponent(undefined);
     }
 
-    installed = undefined;
+    hooks.installed = undefined;
+  };
+
+  const dropCapture = (handler: EditorKeyHandler) => {
+    const hooks = sharedEditor();
+
+    if (hooks.capture === handler) {
+      hooks.capture = undefined;
+    }
+
+    if (own.capture === handler) {
+      own.capture = undefined;
+    }
   };
 
   return {
     setEditorFrame: (frame) => {
-      hooks.frame = frame;
+      const hooks = sharedEditor();
 
       if (frame) {
+        hooks.frame = frame;
+        own.frame = frame;
         ensureInstalled();
         return;
       }
 
+      if (hooks.frame === own.frame) {
+        hooks.frame = undefined;
+      }
+
+      own.frame = undefined;
       releaseIfUnused();
     },
     onEmptyEditorLeft: (handler) => {
-      if (!ensureInstalled()) {
-        return () => {};
-      }
-
       const entry = () => handler();
 
-      hooks.emptyLeft.add(entry);
+      sharedEditor().emptyLeft.add(entry);
+      own.emptyLeft.add(entry);
+      ensureInstalled();
 
       return () => {
-        hooks.emptyLeft.delete(entry);
+        sharedEditor().emptyLeft.delete(entry);
+        own.emptyLeft.delete(entry);
         releaseIfUnused();
       };
     },
     captureEditorKeys: (handler) => {
-      if (!ensureInstalled()) {
-        return () => {};
-      }
-
-      hooks.capture = handler;
+      sharedEditor().capture = handler;
+      own.capture = handler;
+      ensureInstalled();
 
       return () => {
-        if (hooks.capture === handler) {
-          hooks.capture = undefined;
-        }
-
+        dropCapture(handler);
         releaseIfUnused();
       };
+    },
+    sync: () => {
+      if (inUse(sharedEditor())) {
+        ensureInstalled();
+      }
+    },
+    release: () => {
+      const hooks = sharedEditor();
+
+      if (own.frame && hooks.frame === own.frame) {
+        hooks.frame = undefined;
+      }
+
+      own.frame = undefined;
+
+      own.emptyLeft.forEach((entry) => {
+        hooks.emptyLeft.delete(entry);
+      });
+      own.emptyLeft.clear();
+
+      if (own.capture) {
+        dropCapture(own.capture);
+      }
+
+      releaseIfUnused();
     },
   };
 };

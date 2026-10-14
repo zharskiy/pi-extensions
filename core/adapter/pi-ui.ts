@@ -49,7 +49,7 @@ import type {
   WidgetHandle,
 } from "./contract.ts";
 import { themeLike } from "./pi-components.ts";
-import { createEditorHooks } from "./pi-editor-frame.ts";
+import { createEditorHooks, type EditorHooks } from "./pi-editor-frame.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
 import { keyPressWith } from "./pi-keys.ts";
@@ -425,21 +425,18 @@ export const notificationSequence = (
   return `\x1b]9;${text}\x07`;
 };
 
+export const tuiContext = (state: HostState) => (state.ctx?.mode === "tui" ? state.ctx : undefined);
+
 export const createUi = (
   state: HostState,
   stdout: TerminalOut = process.stdout,
   env: TerminalEnv = process.env,
+  editor: EditorHooks = createEditorHooks(() => tuiContext(state)),
 ): HostUi => {
   const widgetTuis = new Map<string, TUI>();
   let lastTui: TUI | undefined;
 
-  const tuiCtx = () => {
-    if (state.ctx?.mode !== "tui") {
-      return undefined;
-    }
-
-    return state.ctx;
-  };
+  const tuiCtx = () => tuiContext(state);
 
   const setWidget: HostUi["setWidget"] = (key, render) => {
     const ctx = tuiCtx();
@@ -582,7 +579,9 @@ export const createUi = (
     },
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
-    ...createEditorHooks(tuiCtx),
+    setEditorFrame: editor.setEditorFrame,
+    onEmptyEditorLeft: editor.onEmptyEditorLeft,
+    captureEditorKeys: editor.captureEditorKeys,
     setFooter: createFooterSetter(tuiCtx, themeLike),
     keyText: (binding) => keyText(binding as Keybinding),
     onKeyPress: (listener) =>

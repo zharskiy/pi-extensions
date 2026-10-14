@@ -1,6 +1,12 @@
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type EditorTheme, type TUI, visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import {
+  type EditorTheme,
+  KeybindingsManager,
+  type TUI,
+  TUI_KEYBINDINGS,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EditorFrame, KeyPress } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor-frame.ts";
 
@@ -75,6 +81,23 @@ const click = (x: number, y: number, width: number) => ({
   alt: false,
   ctrl: false,
   clickCount: 1,
+});
+
+const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v1");
+
+const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
+
+/** A fresh module instance, as pi gives every extension through its own module cache. */
+const adapterCopy = async () => {
+  vi.resetModules();
+
+  const copy = await import("../../adapter/pi-editor-frame.ts");
+
+  return copy.createEditorHooks;
+};
+
+afterEach(() => {
+  delete (globalThis as Record<symbol, unknown>)[EDITOR_KEY];
 });
 
 describe("createEditorHooks", () => {
@@ -340,5 +363,167 @@ describe("createEditorHooks", () => {
     expect(() => hooks.setEditorFrame(frame)).not.toThrow();
     expect(() => hooks.onEmptyEditorLeft(() => {})()).not.toThrow();
     expect(() => hooks.captureEditorKeys(() => "consumed")()).not.toThrow();
+  });
+
+  it("keeps an empty-left hook registered before the session and installs the editor at session start", () => {
+    const { ctx, ui } = fakeCtx();
+    let current: ExtensionContext | undefined;
+    let fired = 0;
+    const hooks = createEditorHooks(() => current);
+
+    hooks.onEmptyEditorLeft(() => {
+      fired += 1;
+    });
+
+    expect(ui.sets).toBe(0);
+
+    current = ctx;
+    hooks.sync();
+
+    expect(ui.sets).toBe(1);
+
+    editor(ui.factory, piKeys()).handleInput(LEFT);
+
+    expect(fired).toBe(1);
+  });
+
+  it("keeps a capture registered before the session and installs the editor at session start", () => {
+    const { ctx, ui } = fakeCtx();
+    let current: ExtensionContext | undefined;
+    const seen: string[] = [];
+    const hooks = createEditorHooks(() => current);
+
+    hooks.captureEditorKeys((key) => {
+      seen.push(key.name);
+
+      return "consumed";
+    });
+
+    current = ctx;
+    hooks.sync();
+    editor(ui.factory, piKeys()).handleInput(DOWN);
+
+    expect(seen).toEqual(["down"]);
+  });
+
+  it("installs nothing at session start when no frame or hook is registered", () => {
+    const { ctx, ui } = fakeCtx();
+
+    createEditorHooks(() => ctx).sync();
+
+    expect(ui.sets).toBe(0);
+  });
+
+  it.each([
+    ["the frame first", true],
+    ["the hook first", false],
+  ])("shares one editor between two adapter copies with %s", async (_, frameFirst) => {
+    const { ctx, ui } = fakeCtx();
+    const composer = (await adapterCopy())(() => ctx);
+    const subagents = (await adapterCopy())(() => ctx);
+    let fired = 0;
+
+    const hook = () =>
+      subagents.onEmptyEditorLeft(() => {
+        fired += 1;
+      });
+
+    if (frameFirst) {
+      composer.setEditorFrame(frame);
+      hook();
+    } else {
+      hook();
+      composer.setEditorFrame(frame);
+    }
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.handleInput(LEFT);
+
+    expect(ui.sets).toBe(1);
+    expect(fired).toBe(1);
+    expect(hooked.render(20)[1]?.startsWith("<|>>  ")).toBe(true);
+  });
+
+  it.each([
+    ["the frame first", true],
+    ["the capture first", false],
+  ])("routes a capture from another adapter copy to the shared editor with %s", async (_, frameFirst) => {
+    const { ctx, ui } = fakeCtx();
+    const composer = (await adapterCopy())(() => ctx);
+    const subagents = (await adapterCopy())(() => ctx);
+    const seen: string[] = [];
+
+    const capture = () =>
+      subagents.captureEditorKeys((key) => {
+        seen.push(key.name);
+
+        return "consumed";
+      });
+
+    if (frameFirst) {
+      composer.setEditorFrame(frame);
+      capture();
+    } else {
+      capture();
+      composer.setEditorFrame(frame);
+    }
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.handleInput(UP);
+
+    expect(ui.sets).toBe(1);
+    expect(seen).toEqual(["up"]);
+    expect(hooked.render(20)[1]?.startsWith("<|>>  ")).toBe(true);
+  });
+
+  it("drops only this copy's frame and hooks at shutdown and removes the editor when none remain", async () => {
+    const { ctx, ui } = fakeCtx();
+    const composer = (await adapterCopy())(() => ctx);
+    const subagents = (await adapterCopy())(() => ctx);
+    let fired = 0;
+
+    composer.setEditorFrame(frame);
+    subagents.onEmptyEditorLeft(() => {
+      fired += 1;
+    });
+    subagents.captureEditorKeys(() => "release");
+
+    subagents.release();
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(0);
+    expect(hooked.render(20)[1]?.startsWith("<|>>  ")).toBe(true);
+
+    composer.release();
+
+    expect(ui.factory).toBeUndefined();
+  });
+
+  it("keeps the hooks of the new extensions after a reload", async () => {
+    const { ctx, ui } = fakeCtx();
+    const old = (await adapterCopy())(() => ctx);
+    let fired = "";
+
+    old.onEmptyEditorLeft(() => {
+      fired += "old";
+    });
+    old.release();
+
+    let current: ExtensionContext | undefined;
+    const fresh = (await adapterCopy())(() => current);
+
+    fresh.onEmptyEditorLeft(() => {
+      fired += "new";
+    });
+    current = ctx;
+    fresh.sync();
+    editor(ui.factory, piKeys()).handleInput(LEFT);
+
+    expect(fired).toBe("new");
   });
 });

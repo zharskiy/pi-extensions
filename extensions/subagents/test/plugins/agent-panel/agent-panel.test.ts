@@ -140,6 +140,15 @@ describe("agent panel", () => {
     expect(panel.host.editorCapture).toBeDefined();
   });
 
+  it("selects the first row when the plugin was enabled before the session started", () => {
+    const panel = setup();
+
+    panel.newAgent();
+
+    expect(panel.host.pressEmptyLeft()).toBe(true);
+    expect(pointed(panel.lines())).toHaveLength(1);
+  });
+
   it("left with no rows does nothing", () => {
     const panel = setup();
 

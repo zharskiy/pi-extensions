@@ -22,11 +22,12 @@ import type {
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
 import { padLines, themeLike } from "./pi-components.ts";
+import { createEditorHooks } from "./pi-editor-frame.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createUi, type HostState } from "./pi-ui.ts";
+import { createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -93,6 +94,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let runActive = false;
   const held: HiddenCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
+  const editor = createEditorHooks(() => tuiContext(state));
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -163,6 +165,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
+    editor.sync();
     runActive = false;
 
     const info = sessionInfo(ctx);
@@ -194,6 +197,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       Promise.resolve(),
     );
 
+    editor.release();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -345,7 +349,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       .map((entry) => entry.data as T);
 
   return {
-    ui: createUi(state),
+    ui: createUi(state, process.stdout, process.env, editor),
     registerTool,
     registerCommand,
     setMainPrompt: (text) => {
