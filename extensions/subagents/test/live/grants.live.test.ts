@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
+import { codemodeCalls, describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
 import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
@@ -29,7 +29,7 @@ describeLive("live grants", () => {
       record,
       tools: session.prompt.tools.map((tool) => tool.name).toSorted(),
       skills: session.prompt.skills.map((entry) => entry.name).toSorted(),
-      calls: calls.map((call) => call.name),
+      calls: [...calls.map((call) => call.name), ...codemodeCalls(session.items)],
       payload: JSON.stringify(session.prompt.providerPayload),
       leaks: realContextMarkers().filter((marker) => JSON.stringify(session.prompt).includes(marker)),
     };
