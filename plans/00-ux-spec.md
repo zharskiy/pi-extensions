@@ -1,6 +1,6 @@
 # UX spec: Claude-alike subagents
 
-Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`). Revised 2026-10-14 (third pass): the `/agents` list keeps the agent tree in both of its sections (`Running`, `Completed (n)`; no `Needs input` section); agents are named by `<agent> › <description>` (§2 Identity); one padding rule set for every surface (§2 "Padding and margins", from `research/padding.md`); a shorter agent view hint. Revised 2026-10-14 (fourth pass): agents never ask the user for input; a child's dialogs resolve at once to their denial defaults and its `notify` is a no-op, so dialog forwarding, the `needs input` status and the record's `attention` field are gone (§2 Agents never ask, decisions D2, D3, D5).
+Reviewed 2026-10-14: the wake line gets a `↳` glyph, the notification channel `auto` sends no bell, `idleDelayMs` is 20 000, the panel window keeps its top row on deselect, `Esc` in the list also cancels a pending stop-all, the token and duration formatters live in `core/manager/format.ts`, and the start block's spinner moves only on agent events (see `research/review-findings.md`). Revised 2026-10-14 (third pass): the `/agents` list keeps the agent tree in both of its sections (`Running`, `Completed (n)`; no `Needs input` section); agents are named by `<agent> › <description>` (§2 Identity); one padding rule set for every surface (§2 "Padding and margins", from `research/padding.md`); a shorter agent view hint. Revised 2026-10-14 (fourth pass): agents never ask the user for input; a child's dialogs resolve at once to their denial defaults and its `notify` is a no-op, so dialog forwarding, the `needs input` status and the record's `attention` field are gone (§2 Agents never ask, decisions D2, D3, D5). Revised 2026-10-14 (fifth pass): the idle wake is fully hidden; the `↳ N agents finished` user line is gone, since pi 1.2.0 keeps the main prompt for runs that a custom message starts (§3 "The wake").
 
 Single source of truth for what the user sees and does. Follows `plans/research/decisions.md` (D1–D7); where this file is more precise, it wins. Strings in code spans are exact. Timings are in ms with their setting name. Mockups are 80 columns wide and draw the padding of §2 "Padding and margins" (a leading space is `PAD` or pi's `outputPad`; no text line reaches the last column; only `─` rules are 80 wide); `provider/model:high` stands for any model label. Nothing here names a provider or a model.
 
@@ -119,11 +119,9 @@ Details after the text, each ` · `-joined: duration (always); `2 sessions` for 
 The batch text for the model always travels as a hidden custom message (`display: false`; see `plans/01-adapter-foundations.md` §C, `Host.sendHiddenMessage`). What the user sees depends on whether the main session is busy when the batch settles:
 
 - Main session busy (the model is mid-run): the hidden message joins the run as a follow-up. The user sees nothing new; the model's reply simply takes the results into account.
-- Main session idle: a run can only start safely through a visible user message, so one short user-role line starts the turn: `↳ 3 agents finished` (`↳ 1 agent finished` singular; several batches held in the outbox are counted together). The leading `↳` marks it as a system note inside the user-message box. It renders as a user message (pi's user-message box; that is the only way to start a turn with the main prompt intact), and the hidden results message follows it for the model. Then the working indicator (section 7) and the model's reply.
+- Main session idle: the hidden message starts the turn itself (pi 1.2.0 runs `before_agent_start` for it, so the main prompt stays intact; several batches held in the outbox start one turn together). Nothing new appears except the working indicator (section 7) and the model's reply; there is no user-message box.
 
 In both cases the dim completion lines (above) have already appeared as each agent closed, and the `run_agent` block's header has lost `(← to manage)`.
-
-(deviation: Claude shows no user line at all; pi has no other safe way to start a run from idle. The line is short, starts with `↳` and names only the count so it reads as a system note, not as pasted results.)
 
 ### Unchanged
 
@@ -595,7 +593,7 @@ Fixed constants, not settings: spinner frame period 100 ms; ticker 100 ms / 1 00
 - Creation-order rows and indent-only nesting: replaced by tree order with connectors and `(+N)` (D2).
 - Unlimited panel rows: replaced by the 5-row window with markers (D2).
 - `run_agent` result rendered as fixed-width 120 agent rows with a frozen spinner: replaced by the block of section 3 (D1).
-- Wake as a visible user message with full results inline: hidden custom message, plus a one-line `↳ 3 agents finished` user line only when the session was idle (D1, adapter plan §C).
+- Wake as a visible user message with full results inline: hidden custom message that joins a busy run or starts the turn when idle, with no visible user line (D1, adapter plan §C).
 - `/agents` list grouping `Working / Needs attention / Done / Failed / Closed` with `· count` headers: replaced by `Running / Completed (n)`, both in tree order (D3).
 - `/agents` `/` filter and its input line: removed, the list is short-lived (D3).
 - `X` then `y` stop-all confirmation: replaced by `X` twice within 3 s (D3).

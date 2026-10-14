@@ -215,7 +215,11 @@ describe("pi adapter conformance", () => {
 
   it("keeps the sendMessage delivery options the wake relies on", () => {
     type Options = NonNullable<Parameters<pi.ExtensionAPI["sendMessage"]>[1]>;
-    const options: Options[] = [{ deliverAs: "nextTurn" }, { deliverAs: "followUp", triggerTurn: true }];
+    const options: Options[] = [
+      { deliverAs: "nextTurn" },
+      { triggerTurn: true },
+      { deliverAs: "followUp", triggerTurn: true },
+    ];
     const hidden: Parameters<pi.ExtensionAPI["sendMessage"]>[0] = {
       customType: "wake",
       content: "text",
@@ -223,7 +227,7 @@ describe("pi adapter conformance", () => {
       details: undefined,
     };
 
-    expect(options).toHaveLength(2);
+    expect(options).toHaveLength(3);
     expect(hidden.display).toBe(false);
   });
 

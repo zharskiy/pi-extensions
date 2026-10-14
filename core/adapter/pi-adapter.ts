@@ -91,7 +91,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
-  const held: { custom: HiddenCustom; visible: string }[] = [];
+  const held: HiddenCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
 
   const capture = (ctx: ExtensionContext) => {
@@ -129,9 +129,16 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     pi.sendUserMessage(text, { ...options, deliverAs: "followUp" });
   };
 
-  const deliverIdle = (custom: HiddenCustom, visible: string) => {
-    pi.sendMessage(custom, { deliverAs: "nextTurn" });
-    pi.sendUserMessage(visible);
+  const startHidden = (customs: HiddenCustom[]) => {
+    const [first, ...rest] = customs;
+
+    rest.forEach((custom) => {
+      pi.sendMessage(custom, { deliverAs: "nextTurn" });
+    });
+
+    if (first) {
+      pi.sendMessage(first, { triggerTurn: true });
+    }
   };
 
   const stopHeldPoll = () => {
@@ -151,9 +158,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    held.splice(0).forEach(({ custom, visible }) => {
-      deliverIdle(custom, visible);
-    });
+    startHidden(held.splice(0));
   };
 
   pi.on("session_start", (event, ctx) => {
@@ -365,7 +370,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     sendUserMessage: (text) => {
       sendUser(text);
     },
-    sendHiddenMessage: (message, visible) => {
+    sendHiddenMessage: (message) => {
       const ctx = state.ctx;
 
       if (!ctx) {
@@ -385,12 +390,12 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       }
 
       if (!ctx.isIdle()) {
-        held.push({ custom, visible });
+        held.push(custom);
         heldTimer ??= setTimeout(deliverHeld, HELD_POLL_MS);
         return;
       }
 
-      deliverIdle(custom, visible);
+      startHidden([custom]);
     },
     registerEntryRenderer: <T>(
       customType: string,

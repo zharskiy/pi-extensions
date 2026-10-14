@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
-import { formatAgents } from "../../components/format.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import {
   type AgentDefinition,
@@ -35,16 +34,11 @@ export const runAgentPlugin: Plugin = {
         return;
       }
 
-      const agents = items.reduce((sum, item) => sum + item.agents, 0);
-
-      host.sendHiddenMessage(
-        {
-          customType: "pi-subagents:wake",
-          text: joinTexts(items),
-          details: { v: 1, batches: items.map((item) => item.batchId) },
-        },
-        `↳ ${formatAgents(agents)} finished`,
-      );
+      host.sendHiddenMessage({
+        customType: "pi-subagents:wake",
+        text: joinTexts(items),
+        details: { v: 1, batches: items.map((item) => item.batchId) },
+      });
     };
 
     const outbox = createOutbox({

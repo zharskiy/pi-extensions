@@ -306,10 +306,7 @@ describe("pi adapter", () => {
     await fire("session_start", fakeCtx("tui", false));
     await fire("agent_start", fakeCtx("tui", false));
 
-    host.sendHiddenMessage(
-      { customType: "wake", text: "results", details: { batch: 1 } },
-      "↳ 1 agent finished",
-    );
+    host.sendHiddenMessage({ customType: "wake", text: "results", details: { batch: 1 } });
 
     expect(calls).toEqual([
       {
@@ -320,22 +317,49 @@ describe("pi adapter", () => {
     ]);
   });
 
-  it("parks a hidden next-turn message and starts the turn with the visible line when idle", async () => {
+  it("starts a run with the hidden message when idle and sends no user message", async () => {
     const { pi, fire, calls } = fakePi();
     const host = createPiHost(pi, {});
 
     await fire("session_start", fakeCtx("tui", true));
 
-    host.sendHiddenMessage({ customType: "wake", text: "results" }, "↳ 2 agents finished");
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
 
     expect(calls).toEqual([
       {
         call: "sendMessage",
         message: { customType: "wake", content: "results", display: false, details: undefined },
-        options: { deliverAs: "nextTurn" },
+        options: { triggerTurn: true },
       },
-      { call: "sendUserMessage", message: "↳ 2 agents finished", options: undefined },
     ]);
+  });
+
+  it("starts one run for several held messages, the first one triggering it", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { pi, fire, calls } = fakePi();
+      const host = createPiHost(pi, {});
+      let idle = false;
+      const ctx = { ...fakeCtx("tui"), isIdle: () => idle };
+
+      await fire("session_start", ctx);
+
+      host.sendHiddenMessage({ customType: "wake", text: "first" });
+      host.sendHiddenMessage({ customType: "wake", text: "second" });
+
+      idle = true;
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(
+        calls.map((call) => [call.call, (call.message as { content: string }).content, call.options]),
+      ).toEqual([
+        ["sendMessage", "second", { deliverAs: "nextTurn" }],
+        ["sendMessage", "first", { triggerTurn: true }],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("holds a hidden message while pi is busy without a run and delivers it the idle way once idle", async () => {
@@ -349,7 +373,7 @@ describe("pi adapter", () => {
 
       await fire("session_start", ctx);
 
-      host.sendHiddenMessage({ customType: "wake", text: "compacting" }, "↳ 1 agent finished");
+      host.sendHiddenMessage({ customType: "wake", text: "compacting" });
       await vi.advanceTimersByTimeAsync(500);
 
       expect(calls).toEqual([]);
@@ -361,9 +385,8 @@ describe("pi adapter", () => {
         {
           call: "sendMessage",
           message: { customType: "wake", content: "compacting", display: false, details: undefined },
-          options: { deliverAs: "nextTurn" },
+          options: { triggerTurn: true },
         },
-        { call: "sendUserMessage", message: "↳ 1 agent finished", options: undefined },
       ]);
     } finally {
       vi.useRealTimers();
@@ -381,7 +404,7 @@ describe("pi adapter", () => {
 
       await fire("session_start", ctx);
 
-      host.sendHiddenMessage({ customType: "wake", text: "early" }, "↳ 1 agent finished");
+      host.sendHiddenMessage({ customType: "wake", text: "early" });
       await fire("agent_start", ctx);
       await vi.advanceTimersByTimeAsync(500);
 
@@ -391,8 +414,7 @@ describe("pi adapter", () => {
       await fire("agent_settled", ctx);
 
       expect(calls.map((call) => [call.call, call.options])).toEqual([
-        ["sendMessage", { deliverAs: "nextTurn" }],
-        ["sendUserMessage", undefined],
+        ["sendMessage", { triggerTurn: true }],
       ]);
     } finally {
       vi.useRealTimers();
@@ -403,12 +425,12 @@ describe("pi adapter", () => {
     const { pi, fire, calls } = fakePi();
     const host = createPiHost(pi, {});
 
-    host.sendHiddenMessage({ customType: "wake", text: "early" }, "early");
+    host.sendHiddenMessage({ customType: "wake", text: "early" });
 
     await fire("session_start", fakeCtx("tui"));
     await fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
 
-    host.sendHiddenMessage({ customType: "wake", text: "late" }, "late");
+    host.sendHiddenMessage({ customType: "wake", text: "late" });
 
     expect(calls).toEqual([]);
   });

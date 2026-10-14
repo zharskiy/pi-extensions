@@ -168,7 +168,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     callerOutbox(batch.callerId)?.post({
       batchId: batch.id,
       text: batchText(batch.id),
-      agents: terminals.length,
     });
   };
 

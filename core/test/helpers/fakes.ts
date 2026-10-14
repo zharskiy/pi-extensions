@@ -54,11 +54,11 @@ export type FakeHost = Host & {
   sent: string[];
   /**
    * Delivered `sendHiddenMessage` calls, mirroring the adapter: `followUp` while a run is active (`idle` false),
-   * `nextTurn` when idle (then `visible` started the turn). While `compacting` with no run the call is held in
-   * `heldHidden` and delivered as `nextTurn` by `finishCompacting()` or `settle()`.
+   * `run` when idle (the hidden message starts a run). While `compacting` with no run the call is held in
+   * `heldHidden` and delivered as `run` by `finishCompacting()` or `settle()`.
    */
-  hidden: { message: HiddenMessage; visible: string; delivery: "followUp" | "nextTurn" }[];
-  heldHidden: { message: HiddenMessage; visible: string }[];
+  hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
+  heldHidden: HiddenMessage[];
   entryRenderers: Map<string, EntryRender>;
   /** Runs the renderer registered for `customType` with `plainTheme`; the adapter's outputPad indent is not applied. */
   renderEntry(customType: string, data: unknown, expanded?: boolean): string[] | undefined;
@@ -176,8 +176,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       return;
     }
 
-    host.heldHidden.splice(0).forEach(({ message, visible }) => {
-      host.hidden.push({ message, visible, delivery: "nextTurn" });
+    host.heldHidden.splice(0).forEach((message) => {
+      host.hidden.push({ message, delivery: "run" });
     });
   };
 
@@ -396,22 +396,22 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       host.sent.push(text);
     },
-    sendHiddenMessage: (message, visible) => {
+    sendHiddenMessage: (message) => {
       if (stale) {
         return;
       }
 
       if (!host.idle) {
-        host.hidden.push({ message: structuredClone(message), visible, delivery: "followUp" });
+        host.hidden.push({ message: structuredClone(message), delivery: "followUp" });
         return;
       }
 
       if (host.compacting) {
-        host.heldHidden.push({ message: structuredClone(message), visible });
+        host.heldHidden.push(structuredClone(message));
         return;
       }
 
-      host.hidden.push({ message: structuredClone(message), visible, delivery: "nextTurn" });
+      host.hidden.push({ message: structuredClone(message), delivery: "run" });
     },
     registerEntryRenderer: (customType, render) => {
       host.entryRenderers.set(customType, render as EntryRender);

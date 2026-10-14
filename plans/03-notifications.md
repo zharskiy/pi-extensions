@@ -197,7 +197,7 @@ Setup: `vi.useFakeTimers()` / `vi.useRealTimers()` per test; `setup(mode = "tui"
 
 - Active only in `tui` mode and when `channel` is not `off`; otherwise it registers no key listener and arms no timer. `pi-notifications.json` is read at session start; nothing is persisted, timers are unref'd and cleared on shutdown.
 - Idle notification: `Host.onIdle` (pi's `agent_settled`, once per run) marks the settle pending and, when no source is on the busy channel (`pi:busy`, kept as a set of source names like session-limits), arms an `idleDelayMs` timer. `Host.onAgentStart`, any key (`HostUi.onKeyPress`, observed without consuming) and a busy source appearing cancel it; the last busy source clearing or a dialog ending re-arms it with the full delay while the settle is still pending. At fire time it checks again (pending, no busy source, no dialog, `isIdle()`), sends `pi is waiting for your input` and clears the pending settle, so a settle notifies at most once.
-- Agents and the wake: subagents holds the busy channel while any agent is open. Agents finishing while main is idle arm the timer, but the outbox's wake starts a run through a visible user line at once, which cancels it; that run's settle arms it again. One notification follows the finished work.
+- Agents and the wake: subagents holds the busy channel while any agent is open. Agents finishing while main is idle arm the timer, but the outbox's hidden wake starts a run at once, which cancels it; that run's settle arms it again. One notification follows the finished work.
 - Dialog notification: `Host.onDialog` (pi's `ui_prompt_start`/`ui_prompt_end`, outermost dialog only, main-session dialogs only since agents never open one; `custom` overlays ignored). `dialogDelayMs` after the later of the dialog start and the last key it sends `pi needs your input: <title>`, at most once per dialog; the dialog ending cancels it.
 - Output: `HostUi.terminalNotify(message, channel)` with `auto` (OSC 9/777 only, no BEL: the idle notification follows ordinary replies too, and a bell each time is noise) or `bell`.
 ```
@@ -223,7 +223,7 @@ Sequence when the user is away and agents run in the background:
 1. Main run settles → `onIdle`: `pending = true`; the registry has `pi-subagents` busy, so **held** (no timer).
 2. Agents work. They never open a dialog; only a main-session dialog would notify, on its own, after `dialogDelayMs`.
 3. The last agent closes → registry `agent:changed` → `pi:busy { source: "pi-subagents", busy: false }` → sources empty, still pending → **armed** (20 s).
-4. `batch:settled` → outbox → `sendHiddenMessage(..., "2 agents finished")` → idle path → `sendUserMessage` → pi `agent_start` → `onAgentStart`: `pending = false`, timer cleared (**quiet**).
+4. `batch:settled` → outbox → `sendHiddenMessage(...)` → idle path → `sendMessage(..., { triggerTurn: true })` → pi `agent_start` → `onAgentStart`: `pending = false`, timer cleared (**quiet**).
 5. Wake run settles → `onIdle` → **armed** → 20 s without a key → `pi is waiting for your input`, once.
 
 Covered by the test `a wake run between settles does not double-notify`. If the main session is busy when agents finish, step 3 finds `pending` already false (cleared by the run's `agent_start`), and the hidden follow-up joins the run; its settle notifies once. Known gap: the batch settles only after worktree cleanup, so a `git worktree remove` slower than `idleDelayMs` between steps 3 and 4 would let the idle notification fire just before the wake. Acceptable at the defaults; if it shows up, subagents can keep `busy: true` until the outbox has delivered (subagents plan, not here).
@@ -244,7 +244,7 @@ Other events in spec §8's "must not notify" table need no code: the extension l
 
 - [ ] Ask something short, switch to another app at once: one desktop notification `pi is waiting for your input` about 3 s after the reply, with no bell sound or flash; nothing more after a minute.
 - [ ] Same, but press any key within 3 s: nothing. Scrolling with the mouse wheel alone does not cancel.
-- [ ] Ask the main session to run two background agents and leave: nothing at the main reply, nothing while they run; the `2 agents finished` line starts a run; one notification 3 s after that reply.
+- [ ] Ask the main session to run two background agents and leave: nothing at the main reply, nothing while they run; the hidden wake starts a run (working indicator, then the reply); one notification 3 s after that reply.
 - [ ] A dialog that waits (with agents running, `/session-handoff` asks to confirm): notification `pi needs your input: <title>` with the dialog's title as pi shows it, after 2 s; an agent whose extension asks a confirmation sends nothing (the agent gets the denial at once); pressing `↓` repeatedly keeps deferring it; answering within 2 s sends nothing.
 - [ ] `/agents` left open for 10 s: nothing.
 - [ ] `"channel": "bell"` + `/reload`: bell only (sound, flash or tab mark per terminal settings), no desktop notification; Apple Terminal with `auto` shows nothing, with `bell` rings. `"channel": "off"`: nothing.

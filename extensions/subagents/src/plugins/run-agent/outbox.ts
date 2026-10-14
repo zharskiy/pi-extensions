@@ -1,4 +1,4 @@
-export type OutboxItem = { batchId: string; text: string; agents: number };
+export type OutboxItem = { batchId: string; text: string };
 
 type CallerChannel = {
   isBusy(): boolean;

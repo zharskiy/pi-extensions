@@ -58,8 +58,7 @@ describe("run_agent batches", () => {
     expect(wakeTexts(host)[0]).toContain("third result");
     expect(host.hidden[0]).toMatchObject({
       message: { customType: "pi-subagents:wake" },
-      visible: "↳ 3 agents finished",
-      delivery: "nextTurn",
+      delivery: "run",
     });
     expect(host.sent).toEqual([]);
     expect(registry.list().every((record) => record.state === "done")).toBe(true);
@@ -126,7 +125,7 @@ describe("run_agent batches", () => {
     expect(existsSync(small.resultPath ?? "")).toBe(true);
   });
 
-  it("joins a busy turn as a hidden follow-up with no visible line", async () => {
+  it("joins a busy turn as a hidden follow-up", async () => {
     const { run, runtime, host } = setup();
 
     await run(tasks(1));
@@ -142,17 +141,6 @@ describe("run_agent batches", () => {
     host.settle();
 
     expect(host.hidden).toHaveLength(1);
-  });
-
-  it("names a single finished agent in the singular", async () => {
-    const { run, runtime, host } = setup();
-
-    await run(tasks(1));
-    host.settle();
-    runtime.children[0].finish("one");
-    await flush();
-
-    expect(host.hidden.map((entry) => entry.visible)).toEqual(["↳ 1 agent finished"]);
   });
 
   it("sends each batch that settles during a busy turn as its own hidden follow-up", async () => {
@@ -190,7 +178,7 @@ describe("run_agent batches", () => {
     await flush();
 
     expect(host.hidden).toHaveLength(1);
-    expect(host.hidden[0].visible).toBe("↳ 2 agents finished");
+    expect(host.hidden[0].delivery).toBe("run");
     expect(host.hidden[0].message.text).toContain("batch one");
     expect(host.hidden[0].message.text).toContain("batch two");
     expect(host.hidden[0].message.text).toContain("\n\n---\n\n");
@@ -592,7 +580,7 @@ describe("semaphore", () => {
 });
 
 describe("outbox", () => {
-  const item = (text: string) => ({ batchId: `b-${text}`, text, agents: 1 });
+  const item = (text: string) => ({ batchId: `b-${text}`, text });
 
   it("delivers at once when idle and holds while busy", () => {
     const delivered: OutboxItem[][] = [];

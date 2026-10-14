@@ -23,21 +23,6 @@ type Line = {
   message?: { role?: string; sections?: unknown; content?: unknown; usage?: { cost?: { total?: number } } };
 };
 
-const userText = (line: Line) => {
-  const content = line.message?.content;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  return Array.isArray(content)
-    ? content
-        .filter((part): part is { type: "text"; text: string } => part?.type === "text")
-        .map((part) => part.text)
-        .join("")
-    : "";
-};
-
 describeLive("live wake", () => {
   let root = "";
 
@@ -50,7 +35,7 @@ describeLive("live wake", () => {
   });
 
   it(
-    "keeps the replaced main prompt identical across a wake-triggered run",
+    "keeps the replaced main prompt across a hidden wake-triggered run",
     async () => {
       const marker = `WAKE-TEST-PROMPT ${randomUUID()}`;
       const cwd = join(root, "project");
@@ -123,13 +108,10 @@ describeLive("live wake", () => {
         await session.prompt("Call the noop tool twice, then reply with the single word ok.");
         await waitUntil(() => settled >= 1, LIVE_TIMEOUT_MS, "the first run to settle");
 
-        host?.sendHiddenMessage(
-          {
-            customType: "wake-test",
-            text: "Call the noop tool once more, then reply with the single word done.",
-          },
-          "Agents finished",
-        );
+        host?.sendHiddenMessage({
+          customType: "wake-test",
+          text: "Call the noop tool once more, then reply with the single word done.",
+        });
 
         await waitUntil(() => settled >= 2, LIVE_TIMEOUT_MS, "the wake run to settle");
 
@@ -162,8 +144,10 @@ describeLive("live wake", () => {
         expect(systems.filter(({ index }) => index > firstUser)).toEqual([]);
         expect(wakeIndex).toBeGreaterThan(firstUser);
         expect(messages[wakeIndex]?.display).toBe(false);
-        expect(messages[wakeIndex - 1]?.message?.role).toBe("user");
-        expect(userText(messages[wakeIndex - 1] ?? {})).toBe("Agents finished");
+        expect(messages.filter((line) => line.message?.role === "user")).toHaveLength(1);
+        expect(
+          messages.slice(wakeIndex + 1).filter((line) => line.message?.role === "assistant").length,
+        ).toBeGreaterThanOrEqual(2);
       } finally {
         await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
         session.dispose();
