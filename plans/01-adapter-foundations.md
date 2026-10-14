@@ -384,7 +384,7 @@ Tests: `channels.test.ts` as above. Size S.
 
 ## H. Theme
 
-Needs from D1–D4: completion lines use `dim`, `error`, `warning` foregrounds; panel rows use `accent`, `muted`, `dim`, `success`, `warning`, `error` plus `bold`; the agent view header the same; codemode and tool_search render with pi's own renderers against pi's `Theme`, outside `ThemeLike`; `renderShell: "self"` rows draw no background. All of this is already in `ThemeToken` (`accent | muted | dim | success | warning | error | text`) and `ThemeLike` (`fg`, `bold`).
+Needs from D1–D4: panel rows use `accent`, `muted`, `dim`, `success`, `warning`, `error` plus `bold`; the agent view header the same; codemode and tool_search render with pi's own renderers against pi's `Theme`, outside `ThemeLike`; `renderShell: "self"` rows draw no background. All of this is already in `ThemeToken` (`accent | muted | dim | success | warning | error | text`) and `ThemeLike` (`fg`, `bold`).
 
 **Decision: no change to `ThemeLike`.** `bg` and `italic` are not added; `plainTheme` in the fakes stays. If a later plan needs a background it adds `bg(token: "selected", text)` then, with pi's `selectedBg`.
 

@@ -31,13 +31,9 @@ const WORDS: Record<AgentState, string> = {
   handoff: "handed off",
 };
 
-const SENTENCES: Record<AgentState, string> = { ...WORDS, done: "finished", stopped: "was stopped" };
-
 export const stateGlyph = (state: AgentState, now: number): string =>
   state === "running" ? spinnerFrame(now) : GLYPHS[state];
 
 export const stateToken = (state: AgentState): ThemeToken => TOKENS[state];
 
 export const stateWord = (state: AgentState): string => WORDS[state];
-
-export const stateSentence = (state: AgentState): string => SENTENCES[state];

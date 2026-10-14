@@ -99,7 +99,7 @@ agent-definitions/  # loads agents/*.md: loader.ts, fields.ts (field rules),
                     #   yaml-lite.ts (frontmatter parser), prompt assembly
 agent-registry/     # in-memory agent records (registry.ts)
 run-agent/          # index.ts (plugin, tools service), runner.ts, tools.ts (run_agent, message_agent), render.ts (block),
-                    #   completion.ts (closed lines), placement.ts + worktree.ts,
+                    #   placement.ts + worktree.ts,
                     #   task.ts (task text), outbox.ts, result.ts, model-text.ts,
                     #   semaphore.ts, handoff.ts (handoff template and schema service)
 agent-status/       # status tool and snapshots

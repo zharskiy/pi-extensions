@@ -22,7 +22,7 @@ Read in this order. Each later document assumes the earlier ones.
 | `01-adapter-foundations.md` | Platform work in `core/adapter` and `core/manager` (A–H): turn phases, editor key hooks, hidden messages and entry renderers, richer tool rendering and pi's codemode renderers in the agent view, dialog and key events, busy channel rename, child dialogs fixed to their denial defaults (§I.4). | final |
 | `02-working-indicator.md` | The working-indicator extension on phases. | final |
 | `03-notifications.md` | The new global `notifications` extension; removal of per-agent notifications from subagents. | final |
-| `04-main-transcript.md` | The `run_agent` block, completion lines, the wake, the `activity` field, shared formatters, removal of dialog forwarding and `attention`. | final |
+| `04-main-transcript.md` | The `run_agent` block, the wake, the `activity` field, shared formatters, removal of dialog forwarding and `attention`. | final |
 | `05-agent-panel.md` | The panel below the editor, keyboard selection, footer status, row/tree/refresh modules. | final |
 | `06-list-and-agent-view.md` | The `/agents` list and the simplified agent view in one overlay; codemode rendering. | final |
 | `research/review-findings.md` | The cross-plan review: findings and their resolution. | final |
@@ -33,7 +33,7 @@ Read in this order. Each later document assumes the earlier ones.
 
 ## What changes, in one screen
 
-- Main transcript: `run_agent` renders as `3 background agents launched (← to manage)` with one tree row per agent and a live status line (a batch of one agent kind is named: `3 background explorer agents launched`); each agent that closes adds one dim line (`✓ Agent "Map the auth module" finished · 1m 5s`); the batch results reach the model as a hidden message that also starts the turn when the session was idle (no visible user line).
+- Main transcript: `run_agent` renders as `3 background agents launched (← to manage)` with one tree row per agent and a live status line (a batch of one agent kind is named: `3 background explorer agents launched`) (no per-agent lines when agents close); the batch results reach the model as a hidden message that also starts the turn when the session was idle (no visible user line).
 - Panel below the editor: Claude-style rows (`⠹ explorer  Map the auth module   grep · 1m 5s · ↓ 12.3k tokens`), at most 5 visible with `↑ N more`/`↓ N more`, tree order with `(+N)`; `←` on an empty editor selects a row, `Enter` opens it, `x` stops or clears, `Esc` deselects; done rows leave after 10 s, failed ones after 30 s; the footer shows `3 agents`, then `/agents to see agents` for 30 s.
 - `/agents`: `Running` and `Completed (n)` sections, each in tree order with every subagent under its caller; `Enter` opens the agent view inside the same overlay, `Esc` returns; `X` twice stops all; closed rows leave after 30 s.
 - Agent view: header `⠹ explorer › Map the auth module` with `running · <model> · id <id>` under it, a collapsed `▸ Request · 912 lines` line (`r` shows the literal first provider request, pretty-printed, collapsed by default), transcript starting with the task, `Ctrl+O` tool detail, `x` stop, `Esc` back or close; the hint reads `esc to close · x to stop · r request · ctrl+o tool detail`. Context breakdown, per-section prompt collapsibles, focus/verbose mode and the message box are gone. Codemode renders with pi's own renderer.
@@ -49,7 +49,7 @@ Each step ends with a green `npm run check`. The authoritative sequence, with th
 2. Plan 01 §A (turn phases) → plan 02 (working indicator; creates `core/manager/format.ts` with `formatDuration` if it lands before plan 04).
 3. Plan 01 §F (dialog events, key listener) → plan 03 (remove the subagents notifications plugin, `ChoiceRule`, `terminalNotify(message, channel)`, the new extension, docs).
 4. Plan 01 §B (editor hooks) → §D (tool render state with `args` and `isError`, pi renderers in the agent view transcript) → §C (hidden message, entry renderer; run the live wake test locally).
-5. Plan 04 (step 0 `core/manager/format.ts` with `formatTokens`; shared modules; `activity`; the start block; completion lines; the wake; the `tools` service).
+5. Plan 04 (step 0 `core/manager/format.ts` with `formatTokens`; shared modules; `activity`; the start block; the wake; the `tools` service).
 6. Plan 05 (optional `{ from }` on `agentView.open`; the `legacy-row.ts` bridge; settings; README "Other keys" sentence).
 7. Plan 06 (one overlay; list; view; codemode snapshot; deletes `legacy-row.ts`; README and ARCHITECTURE merges per plan 04 §9).
 8. Final doc pass: `ARCHITECTURE.md` plugin list and "Status and views", `STRUCTURE.md`, root `README.md`, `package.json` description; then delete `plans/`.

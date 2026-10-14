@@ -40,19 +40,19 @@ Shared formatters (`formatTokens` and `formatDuration` live in `core/manager/for
 - Separator inside stats: ` · ` (space, middle dot, space).
 - Truncation: `…` as the last visible cell, measured in display columns, never in UTF-16 units.
 
-Identity: what the user sees about an agent is its agent definition name (`record.agent`, e.g. `explorer`, with ` #2` for a later chain link), its description, its model, its state and its stats. The name and the description appear together everywhere an agent is named: transcript rows `explorer (Map the auth module)`, panel and list rows, the agent view header `explorer › Map the auth module`; completion lines use the description alone. The model label is shown on the transcript row (§3, `dim`) and on the agent view header's second line (§6), not on panel or list rows. The hex id (`explorer-3f2a9c1b7d0e`) is a handle for commands, not a label: it appears only on the agent view header (`id <id>` on its second line, the link ids of its chain line) and in command and status lines (`/agents <id>`, `Status unavailable · /agents <id>`, the `message_agent <id> …` call line), plus the model-facing task message `Task from <caller> (agent id <id>): …` that the view shows unchanged as its first transcript item.
+Identity: what the user sees about an agent is its agent definition name (`record.agent`, e.g. `explorer`, with ` #2` for a later chain link), its description, its model, its state and its stats. The name and the description appear together everywhere an agent is named: transcript rows `explorer (Map the auth module)`, panel and list rows, the agent view header `explorer › Map the auth module`. The model label is shown on the transcript row (§3, `dim`) and on the agent view header's second line (§6), not on panel or list rows. The hex id (`explorer-3f2a9c1b7d0e`) is a handle for commands, not a label: it appears only on the agent view header (`id <id>` on its second line, the link ids of its chain line) and in command and status lines (`/agents <id>`, `Status unavailable · /agents <id>`, the `message_agent <id> …` call line), plus the model-facing task message `Task from <caller> (agent id <id>): …` that the view shows unchanged as its first transcript item.
 
 ### Padding and margins
 
 Every surface follows one set of margins, so no text is glued to a display edge and the surfaces line up with pi's messages, editor and footer.
 
-- Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list and status line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block, the completion lines) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
+- Left pad: every line drawn in a widget or an overlay (the panel, the list, the agent view) starts with `PAD`, one column, like pi's widgets, pending list and status line, our footer and the composer's chevron. Transcript surfaces (the `run_agent` block) use pi's `outputPad` setting instead (0 or 1, default 1), so they line up with pi's messages and follow the user's setting.
 - Right margin: the same width on the right. The content width is `inner = width - 2 * PAD` (transcript surfaces: `width - 2 * outputPad`); no text goes past column `width - 1 - PAD` (0-based), so the last column is always blank. Every cut is `truncateCols(text, inner - <prefix>)`, never `truncateCols(text, width)`.
-- What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block or completion line, the chat width pi passes to the component (pi does not pad a self-rendered block or an entry). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
+- What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block, the chat width pi passes to the component (pi does not pad a self-rendered block). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
 - Columns inside the pad: column `PAD` holds the first cell of every line: title, section header, feedback, hint, view header, `▸ Request`, and the glyph (or tree connector) of every row and the panel's `↑ N more` / `↓ N more` markers. The pointer `›` of the selected row replaces the `PAD` column (column 0, touching the glyph), the one place a row's text touches the display edge. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
 - Rules: `─` rules are chrome, not text, and run the full width, edge to edge, like pi's editor borders and dialogs. Only the agent view has one.
 - Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request`, then one blank (pi's spacer before the task message, which the transcript pane adds before every user message) in both states. Panel: no blank above (with the footer extension it sits under the footer block (which itself starts with one blank line so pi's command list never touches its first line), whose trailing blank line separates them; without it, the editor's bottom border does), no blanks between rows, markers and hint, and one trailing blank line so the panel never touches the bottom of the screen or pi's own footer.
-- Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block and the completion lines are cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
+- Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block is cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
 
 `PAD`, `innerWidth(width)` and `alignRight(left, right, cols)` live in `extensions/subagents/src/components/format.ts` (plan 04) next to `truncateCols` and `padEndCols`; the panel, the list and the view import them.
 
@@ -101,18 +101,9 @@ Closed worktree agents append ` · worktree removed`, ` · branch <branch> kept`
 
 Live updates stop when the batch settles (`batch:settled`, after worktree cleanup). After a transcript rebuild (resume, `/reload`) with no registry record for the batch, the status line reads `Status unavailable · /agents <id>` (`dim`); the header keeps its last phase from the persisted result.
 
-### Per-agent completion lines
+### No per-agent lines
 
-A custom transcript entry (`appendEntry`, rendered by a registered entry renderer; the model never sees it) for every agent whose caller is `main` (children of agents print nothing), appended when the record closes; for a worktree agent, when its cleanup outcome is known. One line each, glyph then text, whole line in one token:
-
-| State | Line | Token |
-|---|---|---|
-| `done` | `✓ Agent "Map the auth module" finished · 1m 5s` | `dim` |
-| `failed` | `✗ Agent "Fix the login redirect" failed: tests failed twice · 2m 10s` | `error` |
-| `stopped` | `■ Agent "Review the diff of PR 5" was stopped · 3m 2s` | `warning` |
-| `handoff` | `↪ Agent "Map the auth module" handed off · 1h 2m` | `warning` |
-
-Details after the text, each ` · `-joined: duration (always); `2 sessions` for a chain (printed once, at the chain's end; links that continue print nothing); `worktree removed` / `branch <branch> kept` / `worktree kept` for worktree agents. The error is its first line, cut at 120 columns with `…`. The description is cut at 60 columns with `…`. Each line is indented by `outputPad` and cut at `width - 2 * outputPad` like the block (never wrapped). pi puts a blank line before every custom entry, so consecutive completion lines are one blank line apart.
+The main transcript gets no per-agent line when an agent closes: the block's rows and colour are the record. Deviation: Claude Code prints a dim `Agent "…" finished · <duration>` notification per agent (`plans/research/claude-code-agents-ux.md:27`); removed at the user's request because the live block and the panel already carry it, and the wake never depended on them. After a resume the block reads `Status unavailable · /agents <id>`; the model's reply and `/agents <id>` carry the outcome. An interrupted `wait: true` call shows `✗ No agents started: Operation aborted`; the panel rows (`stopped`) show that agents did start.
 
 ### The wake
 
@@ -121,7 +112,7 @@ The batch text for the model always travels as a hidden custom message (`display
 - Main session busy (the model is mid-run): the hidden message joins the run as a follow-up. The user sees nothing new; the model's reply simply takes the results into account.
 - Main session idle: the hidden message starts the turn itself (pi 1.2.0 runs `before_agent_start` for it, so the main prompt stays intact; several batches held in the outbox start one turn together). Nothing new appears except the working indicator (section 7) and the model's reply; there is no user-message box.
 
-In both cases the dim completion lines (above) have already appeared as each agent closed, and the `run_agent` block's header has lost `(← to manage)`.
+In both cases the `run_agent` block's rows show each outcome and its header has lost `(← to manage)`.
 
 ### Unchanged
 
@@ -144,7 +135,7 @@ Batch of 3 just launched (`wait: false`):
 
 One leading space = pi's `outputPad` (1 by default) in every transcript mockup.
 
-Same batch, one done (the completion line is a separate entry below the block):
+Same batch, one done:
 
 ```
  3 background agents launched (← to manage)
@@ -154,8 +145,6 @@ Same batch, one done (the completion line is a separate entry below the block):
  │  Running in the background
  └─ reviewer (Review the diff of PR 5)
     Running in the background
-
- ✓ Agent "Map the auth module" finished · 1m 5s
 ```
 
 After everything finished, including the model's reply:
@@ -168,12 +157,6 @@ After everything finished, including the model's reply:
  │  Failed: tests failed twice
  └─ reviewer (Review the diff of PR 5)
     Done · 12 tool uses · 44.0k tokens · 3m 2s
-
- ✓ Agent "Map the auth module" finished · 1m 5s
-
- ✗ Agent "Fix the login redirect" failed: tests failed twice · 2m 10s
-
- ✓ Agent "Review the diff of PR 5" finished · 3m 2s
 
  The auth module lives in src/auth. The login redirect fix did not land:
  its tests failed twice; the reviewer found the diff of PR 5 clean. …
@@ -564,7 +547,7 @@ Events that must not notify:
 
 | Event | Reason |
 |---|---|
-| An agent finishes, fails, stops or hands off | the completion line and the idle notification cover it |
+| An agent finishes, fails, stops or hands off | the `run_agent` block, the panel and the idle notification cover it |
 | A batch settles, a wake is delivered | the model's reply follows; the next settle notifies |
 | A tool starts or ends, in main or in an agent | noise |
 | The main turn ends, before the delay | the user is likely present |
@@ -580,7 +563,7 @@ Events that must not notify:
 | `failedLingerMs` | `pi-subagents.json` | default lowered; panel linger for `failed`, `stopped`, `handoff` | 30 000 (was 60 000) | 0–3 600 000 |
 | `lingerMs` | `pi-subagents.json` | meaning narrowed: list-view linger for every closed row | 30 000 | 0–3 600 000 |
 | `agentsHintMs` | `pi-subagents.json` | new: footer `/agents to see agents` duration | 30 000 | 0–3 600 000 |
-| `renderThrottleMs` | `pi-subagents.json` | now also governs the list, the view and the completion lines (the hard-coded 300 goes) | 250 | 0–10 000 |
+| `renderThrottleMs` | `pi-subagents.json` | now also governs the list and the view (the hard-coded 300 goes) | 250 | 0–10 000 |
 | `stopGraceSeconds` | `pi-subagents.json` | unchanged | 60 | 0–3 600 |
 | `notifications` | `pi-subagents.json` | removed | — | — |
 | `channel` | `pi-notifications.json` | new | `"auto"` | `auto` / `bell` / `off` |

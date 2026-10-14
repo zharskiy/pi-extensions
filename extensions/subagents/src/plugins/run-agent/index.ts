@@ -2,15 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import {
-  type AgentDefinition,
-  type AgentRecord,
-  chainLinks,
-  isClosed,
-  MAIN_CALLER,
-  subagentNames,
-} from "../../model/types.ts";
-import { CLOSED_ENTRY, type ClosedEntry, closedEntryOf, renderClosedEntry } from "./completion.ts";
+import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
 import { createHandoff } from "./handoff.ts";
 import { createOutbox, joinTexts, type OutboxItem } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
@@ -83,39 +75,6 @@ export const runAgentPlugin: Plugin = {
 
       return tools;
     };
-
-    let shuttingDown = false;
-    const awaitingCleanup = new Set<string>();
-
-    const appendClosed = (record: AgentRecord) => {
-      host.appendEntry(CLOSED_ENTRY, closedEntryOf(record, chainLinks(registry, record)));
-    };
-
-    const offClosed = bus.on("agent:closed", (record) => {
-      if (shuttingDown || record.callerId !== MAIN_CALLER || record.successorId) {
-        return;
-      }
-
-      if (record.worktree && record.worktree.cleanup === undefined) {
-        awaitingCleanup.add(record.id);
-        return;
-      }
-
-      appendClosed(record);
-    });
-
-    const offCleanup = bus.on("agent:changed", (record) => {
-      if (shuttingDown || !awaitingCleanup.has(record.id) || record.worktree?.cleanup === undefined) {
-        return;
-      }
-
-      awaitingCleanup.delete(record.id);
-      appendClosed(record);
-    });
-
-    host.registerEntryRenderer<ClosedEntry>(CLOSED_ENTRY, (data, _state, theme) =>
-      renderClosedEntry(data, theme),
-    );
 
     const handoff = createHandoff(root);
 
@@ -222,7 +181,6 @@ export const runAgentPlugin: Plugin = {
     });
 
     host.onSessionShutdown(async (reason) => {
-      shuttingDown = true;
       outbox.clear();
       waking.length = 0;
       await runner.shutdown(`session ${reason}`);
@@ -231,8 +189,6 @@ export const runAgentPlugin: Plugin = {
     return () => {
       offChanged();
       offSettled();
-      offClosed();
-      offCleanup();
 
       if (pendingRender) {
         clearTimeout(pendingRender);

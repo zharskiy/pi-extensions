@@ -125,6 +125,22 @@ describe("run_agent batches", () => {
     expect(existsSync(small.resultPath ?? "")).toBe(true);
   });
 
+  it("appends no transcript entries when main-session agents close", async () => {
+    const { run, runtime, host } = setup();
+
+    await run(tasks(3));
+    host.settle();
+
+    runtime.children[0].finish("ok");
+    runtime.children[1].finish("", { stopReason: "error", error: "rate limited" });
+    runtime.children[2].finish("partial", { aborted: true });
+    await flush();
+
+    expect(host.entries.filter((entry) => entry.customType.startsWith("pi-subagents:"))).toEqual([]);
+    expect(host.entryRenderers.size).toBe(0);
+    expect(host.hidden).toHaveLength(1);
+  });
+
   it("joins a busy turn as a hidden follow-up", async () => {
     const { run, runtime, host } = setup();
 
