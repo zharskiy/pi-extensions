@@ -169,14 +169,14 @@ export const agentPanelPlugin: Plugin = {
       onChange: refresh,
     });
 
-    const offLeft = host.ui.onEmptyEditorLeft(() => {
+    const offDown = host.ui.onEmptyEditorDown(() => {
       if (selectFirst(actions)) {
         install();
       }
     });
 
     return () => {
-      offLeft();
+      offDown();
       release();
       unwatch();
 

@@ -240,7 +240,10 @@ const errorBlock = (
   return [header, ...body].join("\n");
 };
 
-const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean) => {
+const MANAGE_HINT = `(↓ to manage${SEP}← to list)`;
+const MANAGE_HINT_SHORT = "(↓ to manage)";
+
+const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
   const { theme, registry } = input;
   const n = details.agents.length;
   const named = namedAgents(details.agents, n);
@@ -254,13 +257,21 @@ const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean)
     details.batchId !== undefined &&
     registry.batch(details.batchId).some((record) => !isClosed(record.state));
 
-  return `${count} background ${named} launched${open ? ` ${theme.fg("dim", "(← to manage)")}` : ""}`;
+  const text = `${count} background ${named} launched`;
+
+  if (!open) {
+    return text;
+  }
+
+  const fits = displayWidth(`${n} background ${named} launched ${MANAGE_HINT}`) <= width;
+
+  return `${text} ${theme.fg("dim", fits ? MANAGE_HINT : MANAGE_HINT_SHORT)}`;
 };
 
-const partialHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean) =>
+const partialHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) =>
   wait
     ? `${input.theme.bold(String(details.agents.length))} ${namedAgents(details.agents, details.agents.length)} launched`
-    : finalHeader(input, details, false);
+    : finalHeader(input, details, false, width);
 
 /** Header and rows (the error header for a failed launch) at `width`, the render width pi gives the block (bounded by `BLOCK_WIDTH`). */
 export const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
@@ -285,10 +296,10 @@ export const renderBlockAt = (input: BlockInput, renderWidth: number): string =>
   const rows = agentRows(input, details, wait, width);
 
   if (state.isPartial) {
-    return [partialHeader(input, details, wait), ...rows].join("\n");
+    return [partialHeader(input, details, wait, width), ...rows].join("\n");
   }
 
-  return [finalHeader(input, details, wait), ...rows].join("\n");
+  return [finalHeader(input, details, wait, width), ...rows].join("\n");
 };
 
 /** The block as a function of the render width, for `ToolSpec.renderResult` (the adapter calls it on every render). */

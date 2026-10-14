@@ -72,13 +72,13 @@ Header phases:
 |---|---|
 | Arguments streaming | nothing (the working line shows the run) |
 | Tool running, `wait: true` | `3 agents launched` (`3` bold); `1 agent launched` singular |
-| Tool running, `wait: false` | `3 background agents launched (← to manage)` from the first render, as in the next row |
-| Returned, `wait: false`, at least one agent still open | `3 background agents launched (← to manage)` (`3` bold, hint `dim`) |
+| Tool running, `wait: false` | `3 background agents launched (↓ to manage · ← to list)` from the first render, as in the next row |
+| Returned, `wait: false`, at least one agent still open | `3 background agents launched (↓ to manage · ← to list)` (`3` bold, hint `dim`; `(↓ to manage)` when the line is too narrow) |
 | Returned, `wait: false`, every agent closed | `3 background agents launched` (deviation: Claude keeps the hint; we drop it because there is nothing left to manage) |
 | Returned, `wait: true` | `3 agents finished` (`3` bold) |
 | Error result (nothing started) | `✗ No agents started: <first line of the error>` (`error`); the full error text when expanded with `Ctrl+O` |
 
-When every agent of the batch has the same agent name, the header names it (as Claude Code does with the agent type): `3 explorer agents launched`, `3 background explorer agents launched (← to manage)`, `3 background explorer agents launched`, `3 explorer agents finished`; singular `1 explorer agent launched`, `1 background explorer agent launched (← to manage)`, `1 explorer agent finished`. The name is plain `text`, the count stays bold. Mixed batches keep the wording of the table. The rows are unchanged: each still reads `<agent> (<description>)` (deviation: Claude drops the type from same-type rows; we keep the name so a row reads the same in every batch).
+When every agent of the batch has the same agent name, the header names it (as Claude Code does with the agent type): `3 explorer agents launched`, `3 background explorer agents launched (↓ to manage · ← to list)`, `3 background explorer agents launched`, `3 explorer agents finished`; singular `1 explorer agent launched`, `1 background explorer agent launched (↓ to manage · ← to list)`, `1 explorer agent finished`. The name is plain `text`, the count stays bold. Mixed batches keep the wording of the table. The rows are unchanged: each still reads `<agent> (<description>)` (deviation: Claude drops the type from same-type rows; we keep the name so a row reads the same in every batch).
 
 Rows, one per agent of the batch, tree-connected under the header with `├─ ` and `└─ ` (last), continuation `│  ` / `   `:
 
@@ -112,7 +112,7 @@ The batch text for the model always travels as a hidden custom message (`display
 - Main session busy (the model is mid-run): the hidden message joins the run as a follow-up. The user sees nothing new; the model's reply simply takes the results into account.
 - Main session idle: the hidden message starts the turn itself (pi 1.2.0 runs `before_agent_start` for it, so the main prompt stays intact; several batches held in the outbox start one turn together). Nothing new appears except the working indicator (section 7) and the model's reply; there is no user-message box.
 
-In both cases the `run_agent` block's rows show each outcome and its header has lost `(← to manage)`.
+In both cases the `run_agent` block's rows show each outcome and its header has lost `(↓ to manage · ← to list)`.
 
 ### Unchanged
 
@@ -124,7 +124,7 @@ In both cases the `run_agent` block's rows show each outcome and its header has 
 Batch of 3 just launched (`wait: false`):
 
 ```
- 3 background agents launched (← to manage)
+ 3 background agents launched (↓ to manage · ← to list)
  ├─ explorer (Map the auth module) · provider/model:high
  │  Initializing…
  ├─ worker (Fix the login redirect) · provider/model:medium
@@ -138,7 +138,7 @@ One leading space = pi's `outputPad` (1 by default) in every transcript mockup.
 Same batch, one done:
 
 ```
- 3 background agents launched (← to manage)
+ 3 background agents launched (↓ to manage · ← to list)
  ├─ explorer (Map the auth module)
  │  Done · 4 tool uses · 12.3k tokens · 1m 5s
  ├─ worker (Fix the login redirect)
@@ -203,8 +203,8 @@ The interception lives in the framed editor's input handler and acts only while 
 
 | Key | Nothing selected | Row selected |
 |---|---|---|
-| `←` | Editor empty, no autocomplete, panel present: selects the first row. Otherwise the editor's own behaviour (a no-op cursor move on an empty editor; `←` has no history or autocomplete meaning). | Nothing happens (the key is consumed). |
-| `↓` | The editor's own behaviour (history), nothing new. | Moves to the next row (clamped at the last). |
+| `←` | Editor empty, no autocomplete: opens the `/agents` list (section 5) when it has rows, otherwise a no-op (the key is consumed). Otherwise the editor's own behaviour (`←` has no history or autocomplete meaning). | Deselects and opens the list (the key is released to the editor, which is empty, so the empty-editor rule applies). |
+| `↓` | Editor empty, not browsing input history (pi's `↓` would be a no-op: an empty editor is never on a history entry), no autocomplete, panel present: selects the first row. Otherwise the editor's own behaviour (history, cursor, autocomplete). | Moves to the next row (clamped at the last). |
 | `↑` | Editor's own behaviour (history). | Moves to the previous row; on the first row it deselects and focus stays in the editor. |
 | `Enter` | Submits the editor. | Opens the agent view of the selected row (section 6) in an overlay; the selection clears. |
 | `x` | Types `x`. | `running` or `queued`: stops the agent (a running agent enters grace; a queued one closes at once). `grace`: closes it now. Closed: clears the row. |
@@ -275,7 +275,7 @@ Every row line is 79 columns at width 80 (`PAD + inner`).
 
 ## 5. Surface C: `/agents` list view
 
-A full-screen overlay (`openOverlay`, width `100%`, max height `100%`). `/agents` opens the list; `/agents <id>` opens the view of that agent directly (manifest fallback, chains followed to the terminal, as today).
+A full-screen overlay (`openOverlay`, width `100%`, max height `100%`). `/agents` opens the list, as does `←` on an empty editor (section 4, Keys) when the list has rows; `/agents <id>` opens the view of that agent directly (manifest fallback, chains followed to the terminal, as today).
 
 ### Layout
 

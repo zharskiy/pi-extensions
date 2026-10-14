@@ -153,11 +153,11 @@ describe("agent panel", () => {
     expect(lines.slice(5)).toEqual([" ↓ 3 more", ""]);
   });
 
-  it("left on an empty editor selects the first row and installs a capture", () => {
+  it("down on an empty editor selects the first row and installs a capture", () => {
     const panel = setup();
 
     panel.newAgent();
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     const lines = panel.lines();
 
@@ -172,14 +172,14 @@ describe("agent panel", () => {
 
     panel.newAgent();
 
-    expect(panel.host.pressEmptyLeft()).toBe(true);
+    expect(panel.host.pressEmptyDown()).toBe(true);
     expect(pointed(panel.lines())).toHaveLength(1);
   });
 
-  it("left with no rows does nothing", () => {
+  it("down with no rows does nothing", () => {
     const panel = setup();
 
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.host.editorCapture).toBeUndefined();
     expect(panel.widget()).toBeUndefined();
@@ -189,7 +189,7 @@ describe("agent panel", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     Array.from({ length: 5 }, () => panel.key("down"));
 
     const lines = panel.lines();
@@ -203,7 +203,7 @@ describe("agent panel", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     Array.from({ length: 6 }, () => panel.key("down"));
     Array.from({ length: 5 }, () => panel.key("up"));
 
@@ -218,7 +218,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.key("enter")).toBe("consumed");
     expect(panel.open).toHaveBeenCalledWith(record.id, { from: "panel" });
@@ -231,7 +231,7 @@ describe("agent panel", () => {
     const record = panel.newAgent();
 
     panel.running(record.id);
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.type("x")).toBe("consumed");
     expect(panel.stop).toHaveBeenCalledTimes(1);
@@ -254,7 +254,7 @@ describe("agent panel", () => {
 
     panel.registry.close(done.id, { state: "done" });
     panel.running(panel.newAgent({ description: "second" }).id);
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.type("x")).toBe("consumed");
 
@@ -274,7 +274,7 @@ describe("agent panel", () => {
     const done = panel.newAgent({ description: "finished" });
 
     panel.registry.close(done.id, { state: "done" });
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     panel.key("down");
     panel.type("x");
 
@@ -287,7 +287,7 @@ describe("agent panel", () => {
     const record = panel.newAgent({ description: "finished" });
 
     panel.registry.close(record.id, { state: "done" });
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     vi.setSystemTime(Date.now() + 10_000);
 
     expect(panel.key("down")).toBe("release");
@@ -300,7 +300,7 @@ describe("agent panel", () => {
 
     panel.stop.mockRejectedValueOnce(new Error("runner gone"));
     panel.running(record.id);
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     panel.type("x");
     await vi.advanceTimersByTimeAsync(0);
 
@@ -314,7 +314,7 @@ describe("agent panel", () => {
     const panel = setup();
 
     panel.newAgent();
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.type("a")).toBe("release");
 
@@ -325,26 +325,47 @@ describe("agent panel", () => {
     expect(panel.host.editorCapture).toBeUndefined();
   });
 
-  it("left on a selected row is consumed and does not move the selection", () => {
+  it("left on a selected row deselects and releases the capture", () => {
     const panel = setup();
 
     Array.from({ length: 3 }, () => panel.newAgent());
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
+    panel.key("down");
+
+    expect(panel.key("left")).toBe("release");
+    expect(pointed(panel.lines())).toEqual([]);
+    expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("left on an empty editor does not select a row", () => {
+    const panel = setup();
+
+    panel.newAgent();
+
+    expect(panel.host.pressEmptyLeft()).toBe(false);
+    expect(pointed(panel.lines())).toEqual([]);
+    expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("down on the last row keeps the selection there", () => {
+    const panel = setup();
+
+    Array.from({ length: 2 }, () => panel.newAgent());
+    panel.host.pressEmptyDown();
     panel.key("down");
 
     const before = panel.lines();
 
-    expect(panel.key("left")).toBe("consumed");
+    expect(panel.key("down")).toBe("consumed");
     expect(panel.lines()).toEqual(before);
-    expect(pointed(panel.lines())).toHaveLength(1);
-    expect(panel.host.editorCapture).toBeDefined();
+    expect(pointed(before)).toHaveLength(1);
   });
 
   it("right on a selected row deselects and releases the capture", () => {
     const panel = setup();
 
     panel.newAgent();
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.key("right")).toBe("release");
     expect(pointed(panel.lines())).toEqual([]);
@@ -355,7 +376,7 @@ describe("agent panel", () => {
     const panel = setup();
 
     panel.newAgent();
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.key("escape")).toBe("consumed");
     expect(pointed(panel.lines())).toEqual([]);
@@ -367,7 +388,7 @@ describe("agent panel", () => {
 
     panel.running(first.id);
     panel.registry.close(first.id, { state: "done" });
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     panel.running(panel.newAgent({ description: "second" }).id);
 
     expect(pointed(panel.lines())).toEqual([expect.stringContaining("first")]);
@@ -383,7 +404,7 @@ describe("agent panel", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     Array.from({ length: 6 }, () => panel.key("down"));
 
     expect(panel.lines()[0]).toBe(" ↑ 2 more");
@@ -396,7 +417,7 @@ describe("agent panel", () => {
     expect(after).not.toContain(HINT);
     expect(after[0]).toBe(" ↑ 2 more");
 
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     const reselected = panel.lines();
 
@@ -503,7 +524,7 @@ describe("agent panel", () => {
 
     expect(panel.host.widgetRefreshes).toBe(afterClose);
 
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     const selected = panel.host.widgetRefreshes;
 
@@ -544,12 +565,12 @@ describe("agent panel", () => {
 
     panel.running(run.id);
     panel.registry.close(done.id, { state: "done" });
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.lines().at(-2)).toBe(" esc to deselect");
     expect(panel.key("enter")).toBe("consumed");
 
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
 
     expect(panel.type("x")).toBe("consumed");
     expect(panel.registry.get(run.id)?.state).toBe("running");
@@ -585,7 +606,7 @@ describe("agent panel", () => {
       contextLimit: 100_000,
     });
 
-    expect(host.pressEmptyLeft()).toBe(false);
+    expect(host.pressEmptyDown()).toBe(false);
     expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(2);
   });
 
@@ -594,7 +615,7 @@ describe("agent panel", () => {
     const record = panel.newAgent();
 
     panel.running(record.id);
-    panel.host.pressEmptyLeft();
+    panel.host.pressEmptyDown();
     await panel.manager.disableAll();
 
     expect(panel.widget()).toBeUndefined();

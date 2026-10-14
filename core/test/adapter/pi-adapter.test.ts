@@ -611,54 +611,62 @@ describe("pi adapter", () => {
 
 describe("editor hooks boot order", () => {
   afterEach(() => {
-    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks.v1")];
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks.v2")];
   });
 
-  it("installs an empty-left hook registered while the extension loads once the session starts", async () => {
-    const { pi, fire } = fakePi();
-    let factory: ((tui: TUI, theme: EditorTheme, keys: KeybindingsManager) => unknown) | undefined;
-    let fired = 0;
+  it.each([
+    ["left", "\x1b[D"],
+    ["down", "\x1b[B"],
+  ] as const)(
+    "installs an empty-%s hook registered while the extension loads once the session starts",
+    async (key, data) => {
+      const { pi, fire } = fakePi();
+      let factory: ((tui: TUI, theme: EditorTheme, keys: KeybindingsManager) => unknown) | undefined;
+      let fired = 0;
 
-    createPiExtension(
-      (host) => {
-        host.ui.onEmptyEditorLeft(() => {
-          fired += 1;
-        });
-      },
-      { root: "/ext", namespace: "test" },
-    )(pi);
+      createPiExtension(
+        (host) => {
+          const hook = key === "left" ? host.ui.onEmptyEditorLeft : host.ui.onEmptyEditorDown;
 
-    const ctx = fakeCtx("tui");
-    const tuiCtx = {
-      ...ctx,
-      ui: {
-        ...ctx.ui,
-        getEditorComponent: () => factory,
-        setEditorComponent: (next: typeof factory) => {
-          factory = next;
+          hook(() => {
+            fired += 1;
+          });
         },
-      },
-    };
+        { root: "/ext", namespace: "test" },
+      )(pi);
 
-    expect(factory).toBeUndefined();
+      const ctx = fakeCtx("tui");
+      const tuiCtx = {
+        ...ctx,
+        ui: {
+          ...ctx.ui,
+          getEditorComponent: () => factory,
+          setEditorComponent: (next: typeof factory) => {
+            factory = next;
+          },
+        },
+      };
 
-    await fire("session_start", tuiCtx, { reason: "startup" });
+      expect(factory).toBeUndefined();
 
-    const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
-    const theme = { borderColor: (text: string) => text, selectList: {} } as unknown as EditorTheme;
-    const editor = factory?.(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS)) as
-      | { handleInput(data: string): void }
-      | undefined;
+      await fire("session_start", tuiCtx, { reason: "startup" });
 
-    editor?.handleInput("\x1b[D");
+      const tui = { terminal: { rows: 40 }, requestRender: () => {} } as unknown as TUI;
+      const theme = { borderColor: (text: string) => text, selectList: {} } as unknown as EditorTheme;
+      const editor = factory?.(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS)) as
+        | { handleInput(data: string): void }
+        | undefined;
 
-    expect(editor).toBeDefined();
-    expect(fired).toBe(1);
+      editor?.handleInput(data);
 
-    await fire("session_shutdown", tuiCtx, { reason: "reload" });
+      expect(editor).toBeDefined();
+      expect(fired).toBe(1);
 
-    expect(factory).toBeUndefined();
-  });
+      await fire("session_shutdown", tuiCtx, { reason: "reload" });
+
+      expect(factory).toBeUndefined();
+    },
+  );
 });
 
 describe("main session MCP", () => {

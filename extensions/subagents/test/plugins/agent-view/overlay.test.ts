@@ -6,6 +6,7 @@ import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.t
 import { agentsDirFor, MANIFEST_FILE } from "../../../src/model/paths.ts";
 import type { AgentRecord, NewAgent } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
+import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
@@ -93,6 +94,61 @@ describe("agents overlay", () => {
     overlay.handleKey(key("escape"));
 
     expect(state.closed).toBe(true);
+  });
+
+  it("left on an empty editor opens the agents list", () => {
+    const harness = setup();
+
+    harness.create("first job", 1);
+
+    expect(harness.host.pressEmptyLeft()).toBe(true);
+    expect(harness.host.overlays).toHaveLength(1);
+
+    const { lines } = harness.openLast();
+
+    expect(selected(lines())).toContain("first job");
+  });
+
+  it("left on a selected panel row clears the selection and opens the list", () => {
+    const harness = createHarness([
+      agentRegistryPlugin,
+      agentDefinitionsPlugin,
+      agentPanelPlugin,
+      agentViewPlugin,
+    ]);
+
+    harness.services.require("registry").create({
+      agent: "explorer",
+      description: "job",
+      callerId: "main",
+      depth: 2,
+      batchId: "b-1",
+      dir: harness.root,
+      contextLimit: 100_000,
+    });
+
+    expect(harness.host.pressEmptyDown()).toBe(true);
+    expect(harness.host.editorCapture).toBeDefined();
+    expect(harness.host.pressEditorKey({ name: "left" })).toBe("release");
+    expect(harness.host.editorCapture).toBeUndefined();
+    expect(harness.host.overlays).toHaveLength(1);
+  });
+
+  it("left without listed agents opens nothing", () => {
+    const harness = setup();
+
+    harness.host.pressEmptyLeft();
+
+    expect(harness.host.overlays).toHaveLength(0);
+  });
+
+  it("drops the left hook on disable", async () => {
+    const harness = setup();
+
+    harness.create("first job", 1);
+    await harness.manager.disableAll();
+
+    expect(harness.host.emptyLeftHandlers.size).toBe(0);
   });
 
   it("reloads the list on return", async () => {

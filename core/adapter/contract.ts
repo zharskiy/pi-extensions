@@ -196,6 +196,12 @@ export type HostUi = {
    */
   onEmptyEditorLeft(handler: () => void): () => void;
   /**
+   * Fires when `tui.editor.cursorDown` is pressed in the focused editor while it is empty, not browsing input history and no
+   * autocomplete is open (an empty editor is never on a history entry, so the key would be a no-op). The key is consumed.
+   * Same lifetime rules as `onEmptyEditorLeft`. Returns an unsubscribe function.
+   */
+  onEmptyEditorDown(handler: () => void): () => void;
+  /**
    * Routes every key the focused editor receives to `handler` until it returns "release" or the returned function is
    * called. "consumed" swallows the key (it never reaches pi: no `app.interrupt` on Esc, no shortcuts, no text edit);
    * "release" ends the capture and lets the editor handle that same key normally. Keys never reach the handler while

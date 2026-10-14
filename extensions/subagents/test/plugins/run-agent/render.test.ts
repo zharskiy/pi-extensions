@@ -178,7 +178,7 @@ describe("run_agent block", () => {
       { isPartial: true },
     );
 
-    expect(lines(background)[0]).toBe("3 background agents launched (← to manage)");
+    expect(lines(background)[0]).toBe("3 background agents launched (↓ to manage · ← to list)");
   });
 
   it("headers: launched with hint, launched without hint, finished", async () => {
@@ -187,7 +187,7 @@ describe("run_agent block", () => {
     const params = { agents: THREE };
 
     expect(lines(renderResult(harness, result, params))[0]).toBe(
-      "3 background agents launched (← to manage)",
+      "3 background agents launched (↓ to manage · ← to list)",
     );
 
     harness.runtime.children.forEach((child) => {
@@ -201,8 +201,18 @@ describe("run_agent block", () => {
     const single = await launched(harness, [item("worker", "one")]);
 
     expect(lines(renderResult(harness, single, { agents: [item("worker", "one")] }))[0]).toBe(
-      "1 background worker agent launched (← to manage)",
+      "1 background worker agent launched (↓ to manage · ← to list)",
     );
+  });
+
+  it("shortens the hint to the panel key when the header does not fit", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, THREE);
+    const header = (width: number) =>
+      lines(renderResult(harness, result, { agents: THREE }, {}, plainTheme, width))[0];
+
+    expect(header(54)).toBe("3 background agents launched (↓ to manage · ← to list)");
+    expect(header(53)).toBe("3 background agents launched (↓ to manage)");
   });
 
   it("headers name the agent when the batch shares one", async () => {
@@ -214,7 +224,7 @@ describe("run_agent block", () => {
       lines(renderResult(harness, result, { agents: explorers, wait: true }, { isPartial: true }))[0],
     ).toBe("3 explorer agents launched");
     expect(lines(renderResult(harness, result, { agents: explorers }))[0]).toBe(
-      "3 background explorer agents launched (← to manage)",
+      "3 background explorer agents launched (↓ to manage · ← to list)",
     );
     expect(lines(renderResult(harness, result, { agents: explorers, wait: true }))[0]).toBe(
       "3 explorer agents finished",
@@ -224,14 +234,14 @@ describe("run_agent block", () => {
     const one = await launched(harness, [explorers[0]]);
 
     expect(lines(renderResult(harness, one, { agents: [explorers[0]] }))[0]).toBe(
-      "1 background explorer agent launched (← to manage)",
+      "1 background explorer agent launched (↓ to manage · ← to list)",
     );
 
     const mixed = [item("explorer", "a"), item("worker", "b")];
     const both = await launched(harness, mixed);
 
     expect(lines(renderResult(harness, both, { agents: mixed }))[0]).toBe(
-      "2 background agents launched (← to manage)",
+      "2 background agents launched (↓ to manage · ← to list)",
     );
   });
 
@@ -677,7 +687,7 @@ describe("run_agent block colours", () => {
       lines(renderResult(harness, result, { agents: THREE, wait: true }, { isPartial: true }, tagged))[0],
     ).toBe("<b>3</b> agents launched");
     expect(lines(renderResult(harness, result, { agents: THREE }, {}, tagged))[0]).toBe(
-      "<b>3</b> background agents launched <dim>(← to manage)</dim>",
+      "<b>3</b> background agents launched <dim>(↓ to manage · ← to list)</dim>",
     );
     expect(lines(renderResult(harness, result, { agents: THREE, wait: true }, {}, tagged))[0]).toBe(
       "<b>3</b> agents finished",

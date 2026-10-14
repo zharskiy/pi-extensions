@@ -83,7 +83,7 @@ const click = (x: number, y: number, width: number) => ({
   clickCount: 1,
 });
 
-const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v1");
+const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v2");
 
 const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
 
@@ -296,6 +296,206 @@ describe("createEditorHooks", () => {
     expect(pending.jumpMode).toBeNull();
   });
 
+  it("fires the empty-down hook on an empty editor with pi's keybindings and consumes the key", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput");
+
+    try {
+      hooked.handleInput(DOWN);
+
+      expect(fired).toBe(1);
+      expect(reached).not.toHaveBeenCalled();
+    } finally {
+      reached.mockRestore();
+    }
+  });
+
+  it("lets down reach the editor when the editor has text", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.setText("abc");
+    hooked.handleInput(LEFT);
+    hooked.handleInput(DOWN);
+
+    expect(fired).toBe(0);
+    expect(hooked.getCursor()).toEqual({ line: 0, col: 3 });
+  });
+
+  it("lets down browse input history back to the empty draft before it fires", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.addToHistory("first");
+    hooked.addToHistory("second");
+    hooked.handleInput(UP);
+    hooked.handleInput(UP);
+
+    expect(hooked.getText()).toBe("first");
+
+    hooked.handleInput(DOWN);
+
+    expect(hooked.getText()).toBe("second");
+
+    hooked.handleInput(DOWN);
+
+    expect(hooked.getText()).toBe("");
+    expect(fired).toBe(0);
+
+    hooked.handleInput(DOWN);
+
+    expect(fired).toBe(1);
+  });
+
+  it("does not fire while browsing history even if the shown text is empty", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
+
+    try {
+      (hooked as unknown as { historyIndex: number }).historyIndex = 0;
+      hooked.handleInput(DOWN);
+
+      expect(fired).toBe(0);
+      expect(reached).toHaveBeenCalledWith(DOWN);
+    } finally {
+      reached.mockRestore();
+    }
+  });
+
+  it("does not fire with a non-empty draft after browsing history", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.addToHistory("first");
+    hooked.handleInput("d");
+    hooked.handleInput(UP);
+    hooked.handleInput(DOWN);
+    hooked.handleInput(DOWN);
+
+    expect(hooked.getText()).toBe("d");
+    expect(fired).toBe(0);
+  });
+
+  it("lets down reach the editor while autocomplete is open or a jump target is pending", () => {
+    const { ctx, ui } = fakeCtx();
+    let fired = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+    const autocomplete = vi.spyOn(hooked, "isShowingAutocomplete").mockReturnValue(true);
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
+
+    try {
+      hooked.handleInput(DOWN);
+      autocomplete.mockReturnValue(false);
+      (hooked as unknown as { jumpMode: "forward" | "backward" | null }).jumpMode = "forward";
+      hooked.handleInput(DOWN);
+
+      expect(fired).toBe(0);
+      expect(reached).toHaveBeenCalledTimes(2);
+    } finally {
+      reached.mockRestore();
+    }
+  });
+
+  it("gives down to a capture first and to the empty-down hook once the capture releases it", () => {
+    const { ctx, ui } = fakeCtx();
+    const hooks = createEditorHooks(() => ctx);
+    let fired = 0;
+    let outcome: "consumed" | "release" = "consumed";
+
+    hooks.onEmptyEditorDown(() => {
+      fired += 1;
+    });
+    hooks.captureEditorKeys(() => outcome);
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.handleInput(DOWN);
+
+    expect(fired).toBe(0);
+
+    outcome = "release";
+    hooked.handleInput(DOWN);
+
+    expect(fired).toBe(1);
+  });
+
+  it("keeps the left and down hooks independent", () => {
+    const { ctx, ui } = fakeCtx();
+    const hooks = createEditorHooks(() => ctx);
+    const fired: string[] = [];
+
+    hooks.onEmptyEditorLeft(() => {
+      fired.push("left");
+    });
+    const offDown = hooks.onEmptyEditorDown(() => {
+      fired.push("down");
+    });
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.handleInput(LEFT);
+    hooked.handleInput(DOWN);
+    offDown();
+    hooked.handleInput(DOWN);
+    hooked.handleInput(LEFT);
+
+    expect(fired).toEqual(["left", "down", "left"]);
+    expect(ui.factory).toBeDefined();
+  });
+
+  it("shares its hooks through the v2 record", () => {
+    const { ctx } = fakeCtx();
+
+    createEditorHooks(() => ctx).onEmptyEditorDown(() => {});
+
+    const record = (globalThis as Record<symbol, { emptyLeft: Set<unknown>; emptyDown: Set<unknown> }>)[
+      EDITOR_KEY
+    ];
+
+    expect(record?.emptyLeft.size).toBe(0);
+    expect(record?.emptyDown.size).toBe(1);
+    expect(
+      (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks.v1")],
+    ).toBeUndefined();
+  });
+
   it("routes keys to the capture, swallows consumed ones and lets a released key reach the editor", () => {
     const { ctx, ui } = fakeCtx();
     const seen: KeyPress[] = [];
@@ -383,6 +583,7 @@ describe("createEditorHooks", () => {
     const hooks = createEditorHooks(() => ctx);
 
     hooks.onEmptyEditorLeft(() => {})();
+    hooks.onEmptyEditorDown(() => {})();
     hooks.captureEditorKeys(() => "consumed")();
 
     expect(ui.sets).toBe(0);
@@ -393,6 +594,7 @@ describe("createEditorHooks", () => {
 
     expect(() => hooks.setEditorFrame(frame)).not.toThrow();
     expect(() => hooks.onEmptyEditorLeft(() => {})()).not.toThrow();
+    expect(() => hooks.onEmptyEditorDown(() => {})()).not.toThrow();
     expect(() => hooks.captureEditorKeys(() => "consumed")()).not.toThrow();
   });
 
@@ -415,6 +617,26 @@ describe("createEditorHooks", () => {
 
     editor(ui.factory, piKeys()).handleInput(LEFT);
 
+    expect(fired).toBe(1);
+  });
+
+  it("keeps an empty-down hook registered before the session and installs the editor at session start", () => {
+    const { ctx, ui } = fakeCtx();
+    let current: ExtensionContext | undefined;
+    let fired = 0;
+    const hooks = createEditorHooks(() => current);
+
+    hooks.onEmptyEditorDown(() => {
+      fired += 1;
+    });
+
+    expect(ui.sets).toBe(0);
+
+    current = ctx;
+    hooks.sync();
+    editor(ui.factory, piKeys()).handleInput(DOWN);
+
+    expect(ui.sets).toBe(1);
     expect(fired).toBe(1);
   });
 
@@ -455,7 +677,7 @@ describe("createEditorHooks", () => {
     let fired = 0;
 
     const hook = () =>
-      subagents.onEmptyEditorLeft(() => {
+      subagents.onEmptyEditorDown(() => {
         fired += 1;
       });
 
@@ -469,7 +691,7 @@ describe("createEditorHooks", () => {
 
     const hooked = editor(ui.factory, piKeys());
 
-    hooked.handleInput(LEFT);
+    hooked.handleInput(DOWN);
 
     expect(ui.sets).toBe(1);
     expect(fired).toBe(1);
@@ -519,6 +741,9 @@ describe("createEditorHooks", () => {
     subagents.onEmptyEditorLeft(() => {
       fired += 1;
     });
+    subagents.onEmptyEditorDown(() => {
+      fired += 1;
+    });
     subagents.captureEditorKeys(() => "release");
 
     subagents.release();
@@ -526,6 +751,7 @@ describe("createEditorHooks", () => {
     const hooked = editor(ui.factory, piKeys());
 
     hooked.handleInput(LEFT);
+    hooked.handleInput(DOWN);
 
     expect(fired).toBe(0);
     expect(hooked.render(20)[1]?.startsWith("<|>>  ")).toBe(true);

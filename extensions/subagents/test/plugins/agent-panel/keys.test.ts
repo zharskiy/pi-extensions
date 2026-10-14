@@ -56,16 +56,12 @@ describe("panel keys", () => {
     expect(actions.release).toHaveBeenCalledTimes(1);
   });
 
-  it("left is consumed and keeps the selection; right deselects and releases", () => {
+  it.each(["left", "right"] as const)("%s deselects and releases", (name) => {
     const actions = actionsFor(three());
-    const handle = panelKeyHandler(actions);
 
     actions.state.selectedId = "b";
 
-    expect(handle({ name: "left" })).toBe("consumed");
-    expect(actions.state.selectedId).toBe("b");
-    expect(actions.release).not.toHaveBeenCalled();
-    expect(handle({ name: "right" })).toBe("release");
+    expect(panelKeyHandler(actions)({ name })).toBe("release");
     expect(actions.state.selectedId).toBeUndefined();
     expect(actions.release).toHaveBeenCalledTimes(1);
   });

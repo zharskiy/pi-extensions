@@ -101,10 +101,6 @@ export const panelKeyHandler =
       return "consumed";
     }
 
-    if (key.name === "left") {
-      return "consumed";
-    }
-
     if (key.name === "escape") {
       deselect(actions);
       return "consumed";

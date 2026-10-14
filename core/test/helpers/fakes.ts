@@ -75,10 +75,13 @@ export type FakeHost = Host & {
   editorFrame?: EditorFrame;
   foreignEditor: boolean;
   emptyLeftHandlers: Set<() => void>;
+  emptyDownHandlers: Set<() => void>;
   editorCapture?: EditorKeyHandler;
   /** Hooks registered before `start()` are kept and fire only once the session started and no foreign editor is set, like the real adapter. */
   pressEmptyLeft(): boolean;
-  /** Feeds `key` to the editor capture; a `left` the capture does not consume reaches the empty-editor hooks (the fake editor is empty). Returns "editor" while no session runs. */
+  /** Like `pressEmptyLeft`, for the empty-editor `down` hooks (the fake editor never browses history). */
+  pressEmptyDown(): boolean;
+  /** Feeds `key` to the editor capture; a `left` or `down` the capture does not consume reaches the empty-editor hooks (the fake editor is empty). Returns "editor" while no session runs. */
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   /** `idle` false models an active agent run; `compacting` models pi busy without a run (`isIdle()` is false). */
   idle: boolean;
@@ -154,6 +157,20 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
   const editorLive = () => started && !host.foreignEditor;
+
+  const pressEmpty = (registered: Set<() => void>) => {
+    if (!editorLive()) {
+      return false;
+    }
+
+    const handlers = Array.from(registered);
+
+    handlers.forEach((handler) => {
+      handler();
+    });
+
+    return handlers.length > 0;
+  };
   let stale = false;
   let settling = false;
 
@@ -217,19 +234,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     overlays: [],
     foreignEditor: false,
     emptyLeftHandlers: new Set(),
-    pressEmptyLeft: () => {
-      if (!editorLive()) {
-        return false;
-      }
-
-      const handlers = Array.from(host.emptyLeftHandlers);
-
-      handlers.forEach((handler) => {
-        handler();
-      });
-
-      return handlers.length > 0;
-    },
+    emptyDownHandlers: new Set(),
+    pressEmptyLeft: () => pressEmpty(host.emptyLeftHandlers),
+    pressEmptyDown: () => pressEmpty(host.emptyDownHandlers),
     pressEditorKey: (key) => {
       if (!editorLive()) {
         return "editor";
@@ -244,6 +251,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       if (outcome !== "consumed" && key.name === "left") {
         host.pressEmptyLeft();
+      }
+
+      if (outcome !== "consumed" && key.name === "down") {
+        host.pressEmptyDown();
       }
 
       return outcome;
@@ -347,6 +358,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
         return () => {
           host.emptyLeftHandlers.delete(entry);
+        };
+      },
+      onEmptyEditorDown: (handler) => {
+        const entry = () => handler();
+
+        host.emptyDownHandlers.add(entry);
+
+        return () => {
+          host.emptyDownHandlers.delete(entry);
         };
       },
       captureEditorKeys: (handler) => {

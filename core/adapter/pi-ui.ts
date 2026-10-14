@@ -608,6 +608,7 @@ export const createUi = (
     ...createEditorInput(tuiCtx),
     setEditorFrame: editor.setEditorFrame,
     onEmptyEditorLeft: editor.onEmptyEditorLeft,
+    onEmptyEditorDown: editor.onEmptyEditorDown,
     captureEditorKeys: editor.captureEditorKeys,
     setFooter: createFooterSetter(tuiCtx, themeLike),
     keyText: (binding) => keyText(binding as Keybinding),

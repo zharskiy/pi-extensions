@@ -122,7 +122,7 @@ describe("agent view nested run_agent calls", () => {
     const { open } = await setup(false);
     const shown = (await open())();
 
-    expect(shown).toContain(" 2 background explorer agents launched (← to manage)");
+    expect(shown).toContain(" 2 background explorer agents launched (↓ to manage · ← to list)");
     expect(shown).toContain("explorer (find callers)");
     expect(shown).toContain("explorer (find tests)");
     expect(shown).toContain("Initializing…");

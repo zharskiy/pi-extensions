@@ -104,7 +104,7 @@ ARCHITECTURE.md "Startup and the adapter": add "`onPhase` is computed by `pi-pha
 
 ### Decision
 
-One editor subclass (`HostEditor`, in `pi-editor-frame.ts`) handles both the `←`-on-empty hook and the capture mode in its `handleInput` override, instead of `onTerminalInput` + a focus check. Reason, in two lines: `handleInput` runs only while the editor is the focused component ($TUI/tui.js:678-752 routes input to `focusedComponent` after the listeners), so overlays and dialogs are excluded for free and no widget-capture trick is needed; and returning before `super.handleInput` keeps a consumed `Esc` away from `CustomEditor`'s `app.interrupt` dispatch ($PCA/modes/interactive/components/custom-editor.js:62-80), which an input listener could only achieve by consuming the key for every component.
+One editor subclass (`HostEditor`, in `pi-editor-frame.ts`) handles the `←`-on-empty and `↓`-on-empty hooks and the capture mode in its `handleInput` override, instead of `onTerminalInput` + a focus check. Reason, in two lines: `handleInput` runs only while the editor is the focused component ($TUI/tui.js:678-752 routes input to `focusedComponent` after the listeners), so overlays and dialogs are excluded for free and no widget-capture trick is needed; and returning before `super.handleInput` keeps a consumed `Esc` away from `CustomEditor`'s `app.interrupt` dispatch ($PCA/modes/interactive/components/custom-editor.js:62-80), which an input listener could only achieve by consuming the key for every component.
 
 ### Contract
 
@@ -121,6 +121,12 @@ export type EditorKeyHandler = (key: KeyPress) => "consumed" | "release";
  */
 onEmptyEditorLeft(handler: () => void): () => void;
 /**
+ * Fires when `tui.editor.cursorDown` is pressed in the focused editor while it is empty, not browsing input history and no
+ * autocomplete is open (an empty editor is never on a history entry, so the key would be a no-op). The key is consumed.
+ * Same lifetime rules as `onEmptyEditorLeft`. Returns an unsubscribe function.
+ */
+onEmptyEditorDown(handler: () => void): () => void;
+/**
  * Routes every key the focused editor receives to `handler` until it returns "release" or the returned function is
  * called. "consumed" swallows the key (it never reaches pi: no `app.interrupt` on Esc, no shortcuts, no text edit);
  * "release" ends the capture and lets the editor handle that same key normally. Keys never reach the handler while
@@ -133,17 +139,18 @@ captureEditorKeys(handler: EditorKeyHandler): () => void;
 
 ### Adapter (`core/adapter/pi-editor-frame.ts`)
 
-1. Shared mutable `EditorHooks = { frame?: EditorFrame; emptyLeft: Set<() => void>; capture?: EditorKeyHandler }`, one per `createUi` call.
+1. Shared mutable `EditorHooks = { frame?: EditorFrame; emptyLeft: Set<() => void>; emptyDown: Set<() => void>; capture?: EditorKeyHandler }`, one per `createUi` call.
 2. Rename `FramedEditor` → `HostEditor(tui, theme, keybindings, hooks)`; keep its own `keys = keybindings` reference (the `CustomEditor` field is `private`, custom-editor.d.ts:11). `render`/`handleMouse` read `hooks.frame` live; with no frame they call `super` directly (frame optional).
 3. `handleInput(data)` order:
    1. `hooks.capture` set → `key = editorKeyPress(data, this.keys)`; `"consumed"` → return; `"release"` → `hooks.capture = undefined`, fall through.
    2. `this.keys.matches(data, "tui.editor.cursorLeft") && this.getText() === "" && !this.isShowingAutocomplete()` ($TUI/components/editor.js:777-780 would otherwise call `moveCursor(0, -1)`, a no-op at column 0 of an empty editor; `←` has no history or autocomplete behaviour) and `hooks.emptyLeft.size > 0` → call each handler, return.
-   3. `super.handleInput(data)`.
-4. `createEditorHooks(tuiCtx)` returns `{ setEditorFrame, onEmptyEditorLeft, captureEditorKeys, sync, release }`. pi loads every extension with its own module cache (jiti, `moduleCache: false`), so module state is per extension; the editor state (`frame`, `emptyLeft`, `capture`, `installed: EditorFactory | undefined`) is one record on `globalThis` under `Symbol.for("pi-extensions.editor-hooks.v1")` (the `pi-scope.ts` pattern), shared by every adapter copy. Each `createEditorHooks` call also remembers which frame, handlers and capture it registered itself.
+   3. Same for `tui.editor.cursorDown` and `hooks.emptyDown`, and only while pi-tui's TS-private `historyIndex` is -1 (not browsing history; $TUI/components/editor.js:760-771 moves forward in history only while `historyIndex > -1`, otherwise `↓` on an empty editor is a no-op `moveToLineEnd()`). Neither hook fires while a jump target or a bracketed paste is pending.
+   4. `super.handleInput(data)`.
+4. `createEditorHooks(tuiCtx)` returns `{ setEditorFrame, onEmptyEditorLeft, onEmptyEditorDown, captureEditorKeys, sync, release }`. pi loads every extension with its own module cache (jiti, `moduleCache: false`), so module state is per extension; the editor state (`frame`, `emptyLeft`, `emptyDown`, `capture`, `installed: EditorFactory | undefined`) is one record on `globalThis` under `Symbol.for("pi-extensions.editor-hooks.v2")` (v2 since `emptyDown` was added; a v1 record left by an older copy is ignored) (the `pi-scope.ts` pattern), shared by every adapter copy. Each `createEditorHooks` call also remembers which frame, handlers and capture it registered itself.
    - `ensureInstalled()`: `ctx = tuiCtx()`; no ctx → nothing; `active = ctx.ui.getEditorComponent()` (IM:2084); `active && active !== shared.installed` → nothing (an editor this package did not install; back off silently); `!active` → `shared.installed = (tui, theme, kb) => new HostEditor(tui, theme, kb, shared)`, `ctx.ui.setEditorComponent(shared.installed)` (IM:2083; pi copies text, border colour, autocomplete and the app action handlers onto the new instance, IM:2255-2290).
-   - `releaseIfUnused()`: when the shared record has no frame, no empty-left handler and no capture and `shared.installed` is the active factory → `ctx.ui.setEditorComponent(undefined)`, `shared.installed = undefined`.
+   - `releaseIfUnused()`: when the shared record has no frame, no empty-left or empty-down handler and no capture and `shared.installed` is the active factory → `ctx.ui.setEditorComponent(undefined)`, `shared.installed = undefined`.
    - `setEditorFrame(frame)`: frame → `shared.frame = frame`, `ensureInstalled()`; undefined → clears the shared frame if this copy set it, `releaseIfUnused()`. The instance reads `shared.frame` on every render, so the composer may call it at any time.
-   - `onEmptyEditorLeft(handler)` and `captureEditorKeys(handler)`: always store the handler in the shared record (extensions register while they load, before any session exists), then `ensureInstalled()`; the remover deletes it and calls `releaseIfUnused()`.
+   - `onEmptyEditorLeft(handler)`, `onEmptyEditorDown(handler)` and `captureEditorKeys(handler)`: always store the handler in the shared record (extensions register while they load, before any session exists), then `ensureInstalled()`; the remover deletes it and calls `releaseIfUnused()`.
    - `sync()`: called from the adapter's `session_start` handler right after the ctx is captured; `ensureInstalled()` when the shared record holds a frame or a hook.
    - `release()`: called from the adapter's `session_shutdown` handler after the extension's own shutdown handlers; drops this copy's frame, handlers and capture from the shared record and calls `releaseIfUnused()`, so a `/reload` or session switch (both re-create the extensions) leaves no stale hook behind.
 5. `pi-ui.ts`: replace `setEditorFrame: createEditorFrame(tuiCtx)` with `...createEditorHooks(tuiCtx)`; move `keyPress` to an exported `editorKeyPress(data, keys)` variant (same table, `up`/`down` via `keys.matches`).
@@ -152,7 +159,7 @@ Semantics the extension plan relies on (D2): the panel installs a capture when i
 
 ### Fakes
 
-`FakeHost`: `emptyLeftHandlers: Set<() => void>`, `editorCapture?: EditorKeyHandler`, drivers `pressEmptyLeft()` (calls handlers, returns whether any ran) and `pressEditorKey(key: KeyPress): "consumed" | "release" | "editor"` (routes to the capture, clears it on `"release"`, returns `"editor"` when no capture). `foreignEditor: true` makes both registrations no-ops, like `setEditorFrame` today.
+`FakeHost`: `emptyLeftHandlers` and `emptyDownHandlers: Set<() => void>`, `editorCapture?: EditorKeyHandler`, drivers `pressEmptyLeft()` and `pressEmptyDown()` (call handlers, return whether any ran) and `pressEditorKey(key: KeyPress): "consumed" | "release" | "editor"` (routes to the capture, clears it on `"release"`, returns `"editor"` when no capture; a `left` or `down` that is not consumed reaches the matching empty-editor hooks). `foreignEditor: true` makes both registrations no-ops, like `setEditorFrame` today.
 
 ### Tests (`core/test/adapter/pi-editor-frame.test.ts`, extend the existing fake ctx with a `keybindings` stub whose `matches(data, id)` maps `"\x1b[D"` → `cursorLeft`, `"\x1b[B"` → `cursorDown`, `"\x1b[A"` → `cursorUp`)
 
@@ -167,7 +174,7 @@ Semantics the extension plan relies on (D2): the panel installs a capture when i
 
 ### Architecture notes
 
-ARCHITECTURE.md "Composer" paragraph and "Startup and the adapter": "`pi-editor-frame.ts` installs one `HostEditor` subclass when the composer frame or a subagents key hook (`onEmptyEditorLeft`, `captureEditorKeys`) is used; the frame is optional; keys reach the hooks only while the editor has focus." STRUCTURE.md: `pi-editor-frame.ts  # editor subclass: optional EditorFrame, empty-← hook, key capture`.
+ARCHITECTURE.md "Composer" paragraph and "Startup and the adapter": "`pi-editor-frame.ts` installs one `HostEditor` subclass when the composer frame or a subagents key hook (`onEmptyEditorLeft`, `onEmptyEditorDown`, `captureEditorKeys`) is used; the frame is optional; keys reach the hooks only while the editor has focus." STRUCTURE.md: `pi-editor-frame.ts  # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture`.
 
 ---
 
