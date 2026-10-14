@@ -323,7 +323,7 @@ const toolResult = (name: string, text: string, details?: unknown, id = "call-1"
 });
 
 describe("transcript pane spacing", () => {
-  it("puts pi's spacer before each user message", () => {
+  it("puts pi's spacer between items and none before the first", () => {
     const pane = createTranscriptPane(tui, "/repo");
 
     pane.sync([
@@ -333,10 +333,9 @@ describe("transcript pane spacing", () => {
 
     const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
 
-    expect(lines[0]).toBe("");
-    expect(lines[1]?.trim()).toBe("");
-    expect(lines[2]).toContain("find the files");
-    expect(lines.findIndex((line) => line.includes("and the tests"))).toBeGreaterThan(4);
+    expect(lines[0]?.trim()).toBe("");
+    expect(lines[1]).toContain("find the files");
+    expect(lines.findIndex((line) => line.includes("and the tests"))).toBeGreaterThan(3);
     expect(lines[lines.findIndex((line) => line.includes("and the tests")) - 2]).toBe("");
   });
 });

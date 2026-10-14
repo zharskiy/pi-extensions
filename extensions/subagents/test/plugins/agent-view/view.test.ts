@@ -1312,7 +1312,7 @@ describe("agent view clicks", () => {
     const before = lines();
     const row = rowOf(before, "alpha 10");
 
-    expect(before.at(-2)).toMatch(/ 9-30\/47$/);
+    expect(before.at(-2)).toMatch(/ 9-30\/46$/);
     expect(row).toBeGreaterThan(0);
     expect(view.handleClick?.(5, row)).toBe(true);
     expect(lines().at(-2)).toMatch(/ 9-30\/71$/);

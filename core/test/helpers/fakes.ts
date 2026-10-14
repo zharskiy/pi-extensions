@@ -57,7 +57,7 @@ export type FakeHost = Host & {
    * `run` when idle (the hidden message starts a run). While `compacting` with no run the call is held in
    * `heldHidden` and delivered as `run` by `finishCompacting()` or `settle()`.
    */
-  hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
+  hidden: { message: HiddenMessage; delivery: "followUp" | "nextTurn" | "run" }[];
   heldHidden: HiddenMessage[];
   entryRenderers: Map<string, EntryRender>;
   /** Runs the renderer registered for `customType` with `plainTheme`; the adapter's outputPad indent is not applied. */
@@ -183,8 +183,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       return;
     }
 
-    host.heldHidden.splice(0).forEach((message) => {
-      host.hidden.push({ message, delivery: "run" });
+    host.heldHidden.splice(0).forEach((message, index) => {
+      host.hidden.push({ message, delivery: index === 0 ? "run" : "nextTurn" });
     });
   };
 

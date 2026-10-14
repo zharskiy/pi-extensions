@@ -2,7 +2,6 @@
 
 exports[`agent view > renders the transcript with pi's message and tool components 1`] = `
 "
-
  Task from main (agent id explorer-cb2e):
  List the files in /repo/agents.
 
