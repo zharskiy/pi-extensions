@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as pi from "@earendil-works/pi-coding-agent";
@@ -12,7 +12,26 @@ import { ASSISTANT_DELTA_TYPES, deltaEvent } from "../../adapter/pi-phase.ts";
 import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
-const PINNED_PI_VERSION = "1.1.0";
+const ADAPTER_PI_MAJOR = 1;
+
+const PI_PACKAGES = ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
+
+const readJson = (url: URL) => JSON.parse(readFileSync(url, "utf8"));
+
+const declaredPiRanges = (): Record<string, string> =>
+  readJson(new URL("../../../package.json", import.meta.url)).devDependencies;
+
+const installedVersion = (name: string): string =>
+  readJson(new URL("../package.json", import.meta.resolve(name))).version;
+
+const versionParts = (version: string) => version.split(".").map(Number);
+
+const satisfiesCaret = (version: string, range: string) => {
+  const [major, minor, patch] = versionParts(version);
+  const [floorMajor, floorMinor, floorPatch] = versionParts(range.slice(1));
+
+  return major === floorMajor && (minor > floorMinor || (minor === floorMinor && patch >= floorPatch));
+};
 
 type Handler = (event: unknown) => unknown;
 
@@ -78,8 +97,18 @@ const fakeExtensionApi = () => {
 };
 
 describe("pi adapter conformance", () => {
-  it(`is pinned to pi ${PINNED_PI_VERSION}`, () => {
-    expect(pi.VERSION).toBe(PINNED_PI_VERSION);
+  it.each(PI_PACKAGES)("installs a %s inside the declared caret range", (name) => {
+    const range = declaredPiRanges()[name];
+    const version = installedVersion(name);
+
+    expect(range).toMatch(/^\^\d+\.\d+\.\d+$/);
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(satisfiesCaret(version, range)).toBe(true);
+    expect(versionParts(version)[0]).toBe(ADAPTER_PI_MAJOR);
+  });
+
+  it("reports the installed pi version as its VERSION", () => {
+    expect(pi.VERSION).toBe(installedVersion("@earendil-works/pi-coding-agent"));
   });
 
   it("finds every pi export the adapter uses", () => {
