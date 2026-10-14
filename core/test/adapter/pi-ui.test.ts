@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import {
   createCodemodeExtension,
   createToolSearchExtension,
@@ -319,6 +320,25 @@ const toolResult = (name: string, text: string, details?: unknown, id = "call-1"
     details,
     isError: false,
   },
+});
+
+describe("transcript pane spacing", () => {
+  it("puts pi's spacer before each user message", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([
+      { kind: "user", text: "find the files" },
+      { kind: "user", text: "and the tests" },
+    ]);
+
+    const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
+
+    expect(lines[0]).toBe("");
+    expect(lines[1]?.trim()).toBe("");
+    expect(lines[2]).toContain("find the files");
+    expect(lines.findIndex((line) => line.includes("and the tests"))).toBeGreaterThan(4);
+    expect(lines[lines.findIndex((line) => line.includes("and the tests")) - 2]).toBe("");
+  });
 });
 
 describe("transcript pane terminal marks", () => {

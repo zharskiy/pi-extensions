@@ -51,7 +51,7 @@ Every surface follows one set of margins, so no text is glued to a display edge 
 - What `width` is: in a widget, the terminal width pi passes to the factory (pi adds no padding); in an overlay (`width: "100%"`, no frame), the terminal width; in a transcript block or completion line, the chat width pi passes to the component (pi does not pad a self-rendered block or an entry). The adapter's hard cut at `width` stays a safety net only; a correct line never reaches it.
 - Columns inside the pad: column `PAD` holds the pointer gutter of a row (`› ` or two spaces) and the first cell of every line that is not a row: title, section header, feedback, hint, view header, `▸ Request`. Row glyphs and the panel's `↑ N more` / `↓ N more` markers sit at `PAD + 2`, the glyph column. A right-aligned part ends at `inner` (`alignRight`): `PAD + padEndCols(left, inner - displayWidth(right)) + right`, shown only when `displayWidth(left) + 2 + displayWidth(right) <= inner`; otherwise the right part is dropped and the line is `PAD + truncateCols(left, inner)`.
 - Rules: `─` rules are chrome, not text, and run the full width, edge to edge, like pi's editor borders and dialogs. Only the agent view has one.
-- Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request` with no blank; the expanded Request block ends with one blank before the transcript (pi's components bring their own spacers). Panel: no blank above (the editor's bottom border separates it), no blanks between rows, markers and hint, and one trailing blank line so the footer never touches the last line.
+- Blank lines: a full-screen overlay (list and view) has one blank row at the top, one blank row at the bottom, and one blank row between its body window and the feedback/hint block, always reserved so the hint never moves. List: title, blank, first section; one blank between sections. View: header, rule, then `▸ Request`, then one blank (pi's spacer before the task message, which the transcript pane adds before every user message) in both states. Panel: no blank above (the editor's bottom border separates it), no blanks between rows, markers and hint, and one trailing blank line so the footer never touches the last line.
 - Wrapping: transcripts drawn by pi's components get the full `width` (pi already pads them by 1 on both sides; narrowing them would move their text to column 2 and break the alignment with `▸ Request`). The expanded Request JSON starts at `PAD + 2` and soft-wraps at `inner - 2` columns, continuations at `PAD + 2` too. The `run_agent` block and the completion lines are cut per line at `width - 2 * outputPad` with `…`, never wrapped, so tree rows keep their connectors.
 
 `PAD`, `innerWidth(width)` and `alignRight(left, right, cols)` live in `extensions/subagents/src/components/format.ts` (plan 04) next to `truncateCols` and `padEndCols`; the panel, the list and the view import them.
@@ -410,7 +410,7 @@ One block at the top of the body, before the first transcript item, so the user 
 | agent closed, no `providerPayload` (manifest-only past agents, session files from before the upgrade) | `▸ Request · not recorded` |
 
 - The count is the number of lines of `JSON.stringify(payload, null, 2)`.
-- Expanded: that pretty-printed JSON as simple text (no syntax highlighting, no colour), every line starting at `PAD + 2` and soft-wrapped at `inner - 2` columns with plain wrapping (continuations at `PAD + 2` too; nothing reaches the last column), then one blank line before the first transcript item.
+- Expanded: that pretty-printed JSON as simple text (no syntax highlighting, no colour), every line starting at `PAD + 2` and soft-wrapped at `inner - 2` columns with plain wrapping (continuations at `PAD + 2` too; nothing reaches the last column), then the transcript, whose first item (the task message) brings its own blank line (pi's spacer) above it, as in the collapsed state.
 - `r` toggles it. Expanding stops following and scrolls to the top (the block begins at line 0), so the request is read from its start. Collapsing scrolls to the tail and resumes following when the agent is open; a closed agent never follows, it only scrolls to the tail.
 - On `not sent yet` and `not recorded`, `r` does nothing; the line still shows.
 - `Ctrl+O` does not affect the block.
@@ -469,6 +469,7 @@ One leading space = `PAD` (and pi's own transcript pad, which lands on the same 
  4 tool uses · 12.3k tokens · 1m 5s · 23% ctx
 ────────────────────────────────────────────────────────────────────────────────
  ▸ Request · 912 lines
+
  Task from main (agent id explorer-3f2a9c1b7d0e): Map the auth module. List
  every entry point and the session handling.
 
@@ -520,7 +521,7 @@ The hint (57 columns) and the position (7) need `2 + 57 + 2 + 7 = 68` columns, s
 
 ```
 
-The `▸`/`▾` line starts at column `PAD` (1), aligned with pi's transcript text; request lines and their wrapped continuations start at column 3 (the `ed at and report…` line: plain wrapping cuts at the column, not at a word) and wrap at column 78, so nothing reaches the last column. The block ends with one blank line, then the transcript. The keys inside the JSON are whatever the request contains; the mockup's are illustrative.
+The `▸`/`▾` line starts at column `PAD` (1), aligned with pi's transcript text; request lines and their wrapped continuations start at column 3 (the `ed at and report…` line: plain wrapping cuts at the column, not at a word) and wrap at column 78, so nothing reaches the last column. The block ends without a blank of its own; the one blank line before the task is the transcript's spacer. The keys inside the JSON are whatever the request contains; the mockup's are illustrative.
 
 ## 7. Surface E: working indicator
 

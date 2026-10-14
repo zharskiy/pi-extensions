@@ -95,5 +95,5 @@ export const requestLines = (
     return [line(`▸ Request · ${count} lines`)];
   }
 
-  return [line(`▾ Request · ${count} lines`), ...wrappedLines(payload, Math.max(1, inner - 2)), ""];
+  return [line(`▾ Request · ${count} lines`), ...wrappedLines(payload, Math.max(1, inner - 2))];
 };

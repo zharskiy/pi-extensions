@@ -31,6 +31,7 @@ import {
   type Keybinding,
   matchesKey,
   ScrollView,
+  Spacer,
   type TUI,
   type TuiMouseEvent,
   truncateToWidth,
@@ -204,6 +205,7 @@ export const createTranscriptPane = (
 
   const addItem = (item: TranscriptItem) => {
     if (item.kind === "user") {
+      container.addChild(new Spacer(1));
       container.addChild(new UserMessageComponent(item.text, getMarkdownTheme()));
       return;
     }

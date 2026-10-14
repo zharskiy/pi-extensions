@@ -215,6 +215,8 @@ describe("agent view", () => {
     expect(lines[3]).toMatch(/^ \d+ tool uses? · /);
     expect(lines[4]).toBe(RULE(100));
     expect(lines[5]).toMatch(/^ ▸ Request · \d+ lines$/);
+    expect(lines[6]).toBe("");
+    expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
     expect(lines.at(-2)?.startsWith(" esc to close · r request · ctrl+o tool detail")).toBe(true);
     expect(lines.at(-3)).toBe("");

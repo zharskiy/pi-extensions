@@ -48,13 +48,12 @@ describe("request block", () => {
     const lines = requestLines(value, false, true, 120, plainTheme);
 
     expect(lines[0]).toBe(` ▾ Request · ${pretty(value).length} lines`);
-    expect(lines.slice(1, -1)).toEqual(pretty(value).map((line) => `   ${line}`));
-    expect(lines.at(-1)).toBe("");
+    expect(lines.slice(1)).toEqual(pretty(value).map((line) => `   ${line}`));
   });
 
   it("wraps long string values at the inner width minus 2", () => {
     const value = { system: "s".repeat(300) };
-    const lines = requestLines(value, false, true, 40, plainTheme).slice(1, -1);
+    const lines = requestLines(value, false, true, 40, plainTheme).slice(1);
     const long = pretty(value)[1] as string;
 
     expect(lines.every((line) => displayWidth(line) <= 39)).toBe(true);
