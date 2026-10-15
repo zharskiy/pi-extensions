@@ -44,6 +44,7 @@ describe("renderFooter", () => {
       " Session total (agents included): 162.4k / $4.42",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",
+      " ← to agents",
       "",
     ]);
   });
@@ -55,9 +56,9 @@ describe("renderFooter", () => {
       "",
       " 150.1k · $4.00 · test-model (1M context)",
       " Session total (agents included): 162.4k / $4.42",
-      " my-project • refactor",
-      " feature-branch",
+      " my-project git:(feature-branch) • refactor",
       " ▶▶ thinking high (shift+tab to cycle)",
+      " ← to agents",
       "",
       " busy",
       "",
@@ -70,6 +71,7 @@ describe("renderFooter", () => {
       " 150.1k · test-model (1M context)",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",
+      " ← to agents",
       "",
     ]);
   });

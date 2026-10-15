@@ -30,9 +30,9 @@ describe("footer", () => {
     expect(lines()).toEqual([
       "",
       " 50.0k · test-model (200k context)",
-      " my-project",
-      " main",
+      " my-project git:(main)",
       " ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
+      " ← to agents",
       "",
     ]);
   });
@@ -66,7 +66,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines().slice(1, 3)).toEqual([" 50.0k · test-model (200k context)", " my-project"]);
+    expect(lines().slice(1, 3)).toEqual([" 50.0k · test-model (200k context)", " my-project git:(main)"]);
   });
 
   it("refreshes on idle", () => {
@@ -85,7 +85,7 @@ describe("footer", () => {
     host.sessionTitle = "refactor";
 
     expect(lines()).toContain(" 190.0k · test-model (200k context)");
-    expect(lines()).toContain(" my-project • refactor");
+    expect(lines()).toContain(" my-project git:(main) • refactor");
     expect(lines()).toContain(" ▶▶ thinking high (<app.thinking.cycle> to cycle)");
   });
 });

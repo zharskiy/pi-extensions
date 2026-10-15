@@ -8,6 +8,8 @@ const DOT = " · ";
 
 const MODE_MARK = "▶▶";
 
+const AGENTS_HINT = "← to agents";
+
 const RESET = "\x1b[0m";
 
 const BOLD = "\x1b[1m";
@@ -112,13 +114,12 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   ].join("");
 };
 
-const placeLine = (theme: ThemeLike, cwd: string, sessionName: string | undefined) => {
+const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
   const folder = paint(COLORS.blue, folderName(cwd));
+  const place = branch ? `${folder} ${paint(COLORS.yellow, `git:(${branch})`)}` : folder;
 
-  return sessionName ? `${folder}${theme.fg("dim", ` • ${sessionName}`)}` : folder;
+  return sessionName ? `${place}${theme.fg("dim", ` • ${sessionName}`)}` : place;
 };
-
-const branchLine = (branch: string) => paint(COLORS.yellow, branch);
 
 const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {
   const level =
@@ -144,9 +145,9 @@ export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterD
   const lines = [
     statsLine(theme, state.context, state.model, state.totals?.main.cost),
     ...(state.totals ? [sessionLine(theme, state.totals)] : []),
-    placeLine(theme, state.cwd, state.sessionName),
-    ...(data.branch ? [branchLine(data.branch)] : []),
+    placeLine(theme, state.cwd, data.branch, state.sessionName),
     modeLine(theme, state.model, state.thinking, state.cycleKey),
+    theme.fg("dim", AGENTS_HINT),
     ...(status ? ["", status] : []),
   ];
 
