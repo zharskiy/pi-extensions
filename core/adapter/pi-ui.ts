@@ -16,8 +16,9 @@ import type {
   WidgetHandle,
 } from "./contract.ts";
 import type { EditorHooks } from "./pi-editor.ts";
-import { createEditorInput } from "./pi-editor-input.ts";
+import { captureTui, createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
+import { createShowForm } from "./pi-form.ts";
 import { keyPress } from "./pi-keys.ts";
 import { themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
@@ -208,6 +209,7 @@ export const createUi = (
     },
     setWidget,
     openOverlay,
+    showForm: createShowForm(tuiCtx, (ctx) => lastTui ?? captureTui(ctx)),
     style: (token, text) => state.ctx?.ui.theme.fg(token, text) ?? text,
     terminalNotify: (message, channel) => {
       if (!tuiCtx()) {

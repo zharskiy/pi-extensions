@@ -10,6 +10,7 @@ import {
   type EditorKeyHandler,
   emptyUsage,
   type FooterRender,
+  type FormFactory,
   type HiddenMessage,
   type Host,
   type KeyPress,
@@ -27,6 +28,7 @@ import {
   type ShutdownReason,
   type SpawnSpec,
   type StopReason,
+  type TextInput,
   type ThemeLike,
   type ToolRender,
   type ToolRenderState,
@@ -34,12 +36,115 @@ import {
   type ToolSpec,
   type ToolTone,
   type UsageTotals,
+  type ViewComponent,
   type WorkingIndicator,
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
 import { textMetrics } from "../../adapter/pi-tools.ts";
 
 export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text, ...textMetrics };
+
+export type FakeForm = {
+  view: ViewComponent;
+  inputs: TextInput[];
+  closed: boolean;
+  result?: unknown;
+  renders: number;
+  render(width?: number): string[];
+  press(...keys: KeyPress[]): void;
+  type(text: string): void;
+};
+
+const fakeTextInput = (): TextInput => {
+  let text = "";
+  let submit: ((text: string) => void) | undefined;
+
+  return {
+    render: () => [`> ${text}`],
+    handleKey: (key) => {
+      if (key.name === "enter") {
+        submit?.(text);
+        return;
+      }
+
+      if (key.raw === "\x7f") {
+        text = text.slice(0, -1);
+        return;
+      }
+
+      if (key.char) {
+        text += key.char;
+      }
+    },
+    text: () => text,
+    setText: (value) => {
+      text = value;
+    },
+    onSubmit: (handler) => {
+      submit = handler;
+    },
+  };
+};
+
+const openFakeForm = <T>(
+  factory: FormFactory<T>,
+  theme: ThemeLike,
+  signal: AbortSignal | undefined,
+  register: (form: FakeForm) => void,
+) =>
+  new Promise<T | undefined>((resolve) => {
+    const inputs: TextInput[] = [];
+
+    const close = (result: T | undefined) => {
+      if (form.closed) {
+        return;
+      }
+
+      form.closed = true;
+      form.result = result;
+      signal?.removeEventListener("abort", abort);
+      form.view.dispose?.();
+      resolve(result);
+    };
+
+    const abort = () => close(undefined);
+
+    const form: FakeForm = {
+      view: { render: () => [], handleKey: () => {} },
+      inputs,
+      closed: false,
+      renders: 0,
+      render: (width = 80) => form.view.render(width),
+      press: (...keys) => {
+        keys.forEach((key) => {
+          if (!form.closed) {
+            form.view.handleKey(key);
+          }
+        });
+      },
+      type: (text) => {
+        form.press(...Array.from(text).map((char): KeyPress => ({ name: "other", char, raw: char })));
+      },
+    };
+
+    form.view = factory({
+      theme,
+      requestRender: () => {
+        form.renders += 1;
+      },
+      done: close,
+      createTextInput: () => {
+        const input = fakeTextInput();
+
+        inputs.push(input);
+
+        return input;
+      },
+    });
+
+    signal?.addEventListener("abort", abort, { once: true });
+    register(form);
+  });
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
@@ -61,6 +166,9 @@ export type FakeHost = Host & {
   belowEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
+  forms: FakeForm[];
+  formTheme: ThemeLike;
+  form(): FakeForm;
   editorFrame?: EditorFrame;
   foreignEditor: boolean;
   emptyLeftHandlers: Set<() => void>;
@@ -187,6 +295,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     belowEditor: [],
     widgetRefreshes: 0,
     overlays: [],
+    forms: [],
+    formTheme: plainTheme,
+    form: () => {
+      const open = host.forms.at(-1);
+
+      if (!open) {
+        throw new Error("no form shown");
+      }
+
+      return open;
+    },
     foreignEditor: false,
     emptyLeftHandlers: new Set(),
     emptyDownHandlers: new Set(),
@@ -264,6 +383,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       openOverlay: async (factory) => {
         host.overlays.push(factory);
+      },
+      showForm: async (factory, options = {}) => {
+        if (!started || host.info.mode !== "tui" || options.signal?.aborted) {
+          return undefined;
+        }
+
+        return openFakeForm(factory, host.formTheme, options.signal, (form) => {
+          host.forms.push(form);
+        });
       },
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (message, channel) => {

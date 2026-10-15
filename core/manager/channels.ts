@@ -4,7 +4,11 @@ export const BUSY_CHANNEL = "pi:busy";
 
 export const USAGE_CHANNEL = "spending:usage";
 
+export const AWAITING_INPUT_CHANNEL = "pi:awaiting-input";
+
 type BusySignal = { source: string; busy: boolean };
+
+export type AwaitingInput = { source: string; waiting: boolean; title?: string };
 
 export type UsageReport = { source: string; id: string; usage: UsageTotals };
 
@@ -35,6 +39,22 @@ export const parseBusySignal = (data: unknown): BusySignal | undefined => {
   }
 
   return { source: data.source, busy: data.busy };
+};
+
+export const parseAwaitingInput = (data: unknown): AwaitingInput | undefined => {
+  if (!isRecord(data) || !isLabel(data.source) || typeof data.waiting !== "boolean") {
+    return undefined;
+  }
+
+  if (data.title !== undefined && typeof data.title !== "string") {
+    return undefined;
+  }
+
+  return {
+    source: data.source,
+    waiting: data.waiting,
+    ...(isLabel(data.title) ? { title: data.title } : {}),
+  };
 };
 
 export const parseUsageReport = (data: unknown): UsageReport | undefined => {

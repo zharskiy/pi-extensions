@@ -8,12 +8,13 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 pi-extensions/
 ├── core/                        # shared code, no extension-specific logic
 │   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg, bold, width, truncate)
+│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg, bold, width, truncate, wrap)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
+│   │   ├── pi-form.ts           # HostUi.showForm: inline form, overlay wait, text input (pi-tui Editor)
 │   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
-│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics, line cutting
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics (width, truncate, wrap), line cutting
 │   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
 │   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
@@ -29,7 +30,7 @@ pi-extensions/
 │   │   ├── extension-manager.ts # enables plugins in dependency order
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
-│   │   ├── channels.ts          # busy/usage/totals channel names, payloads, parsers
+│   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
 │   │   ├── format.ts            # token, duration and error-text formatters
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
@@ -81,6 +82,11 @@ pi-extensions/
 │   │   ├── src/                 # index, composer, frame
 │   │   ├── test/
 │   │   └── README.md
+│   ├── questionnaire/           # questionnaire tool: batch of multiple-choice questions in one form
+│   │   ├── src/                 # index, questionnaire (tool spec, form view), form (pure state),
+│   │   │                        #   render (pure line builders), result (normalising, model text)
+│   │   ├── test/
+│   │   └── README.md
 │   └── footer/                  # multi-line status footer with session totals
 │       ├── src/                 # index, footer (wiring), render (pure line builders)
 │       ├── test/
@@ -126,7 +132,7 @@ usage-report/       # reports agent usage to the spending channel
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,footer}/src/index.ts`.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,footer}/src/index.ts`.
 - Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files

@@ -18,6 +18,7 @@ const KEY_NAMES = [
   ["escape", Key.escape],
   ["space", Key.space],
   ["tab", Key.tab],
+  ["backTab", Key.shift("tab")],
 ] as const;
 
 export const keyPress = (data: string, keys: { matches(data: string, id: string): boolean }): KeyPress => {

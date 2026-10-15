@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BUSY_CHANNEL, parseBusySignal, parseTotals, parseUsageReport } from "../../manager/channels.ts";
+import {
+  AWAITING_INPUT_CHANNEL,
+  BUSY_CHANNEL,
+  parseAwaitingInput,
+  parseBusySignal,
+  parseTotals,
+  parseUsageReport,
+} from "../../manager/channels.ts";
 import { usageOf } from "../helpers/fakes.ts";
 
 describe("parseBusySignal", () => {
@@ -16,6 +23,37 @@ describe("parseBusySignal", () => {
     expect(parseBusySignal({ source: "x", busy: "yes" })).toBeUndefined();
     expect(parseBusySignal(null)).toBeUndefined();
     expect(parseBusySignal("busy")).toBeUndefined();
+  });
+});
+
+describe("parseAwaitingInput", () => {
+  it("names the channel pi:awaiting-input", () => {
+    expect(AWAITING_INPUT_CHANNEL).toBe("pi:awaiting-input");
+  });
+
+  it("accepts a source, a waiting flag and an optional title", () => {
+    expect(parseAwaitingInput({ source: "pi-questionnaire", waiting: true, title: "questionnaire" })).toEqual(
+      {
+        source: "pi-questionnaire",
+        waiting: true,
+        title: "questionnaire",
+      },
+    );
+    expect(parseAwaitingInput({ source: "pi-questionnaire", waiting: false })).toEqual({
+      source: "pi-questionnaire",
+      waiting: false,
+    });
+    expect(parseAwaitingInput({ source: "x", waiting: true, title: "" })).toEqual({
+      source: "x",
+      waiting: true,
+    });
+  });
+
+  it("ignores malformed payloads", () => {
+    expect(parseAwaitingInput({ source: "", waiting: true })).toBeUndefined();
+    expect(parseAwaitingInput({ source: "x", waiting: "yes" })).toBeUndefined();
+    expect(parseAwaitingInput({ source: "x", waiting: true, title: 3 })).toBeUndefined();
+    expect(parseAwaitingInput(null)).toBeUndefined();
   });
 });
 

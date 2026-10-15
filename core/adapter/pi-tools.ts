@@ -1,18 +1,26 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Box, type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  Box,
+  type Component,
+  Text,
+  truncateToWidth,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
 
 const ESC = "\x1b";
 
-export const textMetrics: Pick<ThemeLike, "width" | "truncate"> = {
+export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
   width: visibleWidth,
   truncate: (text, cols) => {
     const cut = truncateToWidth(text, cols, "…");
 
     return text.includes(ESC) ? cut : stripVTControlCharacters(cut);
   },
+  wrap: (text, cols) => wrapTextWithAnsi(text, Math.max(1, cols)),
 };
 
 export const themeLike = (theme: Theme): ThemeLike => ({
@@ -163,7 +171,10 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     label: spec.label,
     description: spec.description,
     promptSnippet: spec.promptSnippet,
+    promptGuidelines: spec.promptGuidelines,
     parameters: Type.Unsafe<P>(spec.parameters),
+    executionMode: spec.executionMode,
+    exposure: spec.exposure,
     renderShell: spec.renderShell === "box" ? "self" : undefined,
     execute: async (
       toolCallId: string,

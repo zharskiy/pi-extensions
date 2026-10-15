@@ -14,6 +14,7 @@ export type ThemeLike = {
   bold(text: string): string;
   width(text: string): number;
   truncate(text: string, cols: number): string;
+  wrap(text: string, cols: number): string[];
 };
 
 export type ToolResult<D = unknown> = {
@@ -40,7 +41,10 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   label: string;
   description: string;
   promptSnippet?: string;
+  promptGuidelines?: string[];
   parameters: Record<string, unknown>;
+  executionMode?: "sequential" | "parallel";
+  exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
   renderShell?: "default" | "box";
   execute(
     params: P,
@@ -68,6 +72,7 @@ export type KeyPress = {
     | "escape"
     | "space"
     | "tab"
+    | "backTab"
     | "toggleTools"
     | "other";
   char?: string;
@@ -122,6 +127,23 @@ export type OverlayApi = {
 
 export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 
+export type TextInput = {
+  render(width: number): string[];
+  handleKey(key: KeyPress): void;
+  text(): string;
+  setText(text: string): void;
+  onSubmit(handler: (text: string) => void): void;
+};
+
+export type FormApi<T> = {
+  theme: ThemeLike;
+  requestRender(): void;
+  done(result: T): void;
+  createTextInput(): TextInput;
+};
+
+export type FormFactory<T> = (api: FormApi<T>) => ViewComponent;
+
 export type WidgetHandle = { refresh(): void };
 
 export type WorkingIndicator = { frames: string[]; intervalMs: number };
@@ -145,6 +167,7 @@ export type HostUi = {
   confirm(title: string, message: string): Promise<boolean>;
   setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;
+  showForm<T>(factory: FormFactory<T>, options?: { signal?: AbortSignal }): Promise<T | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(message: string, channel: NotifyChannel): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;

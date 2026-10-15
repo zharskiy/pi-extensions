@@ -1,8 +1,15 @@
 import type { Host, NotifyChannel } from "../../../core/adapter/contract.ts";
-import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
+import {
+  AWAITING_INPUT_CHANNEL,
+  BUSY_CHANNEL,
+  parseAwaitingInput,
+  parseBusySignal,
+} from "../../../core/manager/channels.ts";
 import type { NotificationSettings } from "./settings.ts";
 
 const IDLE_TEXT = "pi is waiting for your input";
+
+const PI_DIALOG = "";
 
 const dialogText = (title?: string) => (title ? `pi needs your input: ${title}` : "pi needs your input");
 
@@ -29,7 +36,7 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
   const dialogTimer = slot();
   let channel: NotifyChannel | undefined;
   let pending = false;
-  let dialog: { title?: string; fired: boolean } | undefined;
+  let dialog: { owner: string; title?: string; fired: boolean } | undefined;
   let offKeys: (() => void) | undefined;
 
   const send = (text: string) => channel && host.ui.terminalNotify(text, channel);
@@ -55,6 +62,28 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
   const armIdle = () => idle.arm(fireIdle, settings().idleDelayMs);
 
   const armDialog = () => dialogTimer.arm(fireDialog, settings().dialogDelayMs);
+
+  const openDialog = (owner: string, title?: string) => {
+    if (!channel) {
+      return;
+    }
+
+    dialog = { owner, title, fired: false };
+    armDialog();
+  };
+
+  const closeDialog = (owner: string) => {
+    if (dialog?.owner !== owner) {
+      return;
+    }
+
+    dialog = undefined;
+    dialogTimer.clear();
+
+    if (pending && sources.size === 0) {
+      armIdle();
+    }
+  };
 
   const key = () => {
     pending = false;
@@ -118,21 +147,26 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     }
 
     if (event.phase === "start") {
-      if (!channel) {
-        return;
-      }
-
-      dialog = { title: event.title, fired: false };
-      armDialog();
+      openDialog(PI_DIALOG, event.title);
       return;
     }
 
-    dialog = undefined;
-    dialogTimer.clear();
+    closeDialog(PI_DIALOG);
+  });
 
-    if (pending && sources.size === 0) {
-      armIdle();
+  host.subscribe(AWAITING_INPUT_CHANNEL, (data) => {
+    const signal = parseAwaitingInput(data);
+
+    if (!signal) {
+      return;
     }
+
+    if (signal.waiting) {
+      openDialog(signal.source, signal.title);
+      return;
+    }
+
+    closeDialog(signal.source);
   });
 
   host.onSessionShutdown(() => {

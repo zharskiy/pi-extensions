@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../core/adapter/contract.ts";
-import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
+import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { watchSettings } from "../../../core/manager/settings.ts";
 import { createFakeHost, type FakeHost } from "../../../core/test/helpers/fakes.ts";
 import { createNotifications } from "../src/notifications.ts";
@@ -43,6 +43,10 @@ const setup = (mode: RunMode = "tui", file?: unknown) => {
 
 const busy = (host: FakeHost, source: string, value: boolean) => {
   host.emit(BUSY_CHANNEL, { source, busy: value });
+};
+
+const waiting = (host: FakeHost, source: string, value: boolean, title?: string) => {
+  host.emit(AWAITING_INPUT_CHANNEL, { source, waiting: value, title });
 };
 
 const advance = (ms: number) => {
@@ -356,6 +360,74 @@ describe("dialog notification", () => {
     advance(60_000);
 
     expect(host.terminalNotices).toEqual([dialogNotice]);
+  });
+});
+
+describe("awaiting-input notification", () => {
+  const notice = { message: "pi needs your input: questionnaire", channel: "auto" };
+
+  it("notifies a waiting source like a dialog, after the dialog delay and at most once", () => {
+    const host = setup();
+
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    advance(5_000);
+    host.pressKey();
+    advance(5_999);
+
+    expect(host.terminalNotices).toEqual([]);
+
+    advance(1);
+    host.pressKey();
+    advance(60_000);
+
+    expect(host.terminalNotices).toEqual([notice]);
+  });
+
+  it("the source clearing cancels it, and another source clearing does not", () => {
+    const host = setup();
+
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    waiting(host, "other", false);
+    advance(6_000);
+
+    expect(host.terminalNotices).toEqual([notice]);
+
+    const later = setup();
+
+    waiting(later, "pi-questionnaire", true, "questionnaire");
+    advance(3_000);
+    waiting(later, "pi-questionnaire", false);
+    advance(60_000);
+
+    expect(later.terminalNotices).toEqual([]);
+  });
+
+  it("holds the idle notification while waiting and re-arms it when waiting clears", () => {
+    const host = setup();
+
+    host.settle();
+    advance(2_000);
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    advance(18_000);
+
+    expect(host.terminalNotices).toEqual([notice]);
+
+    waiting(host, "pi-questionnaire", false);
+    advance(20_000);
+
+    expect(host.terminalNotices).toEqual([notice, IDLE]);
+  });
+
+  it("ignores malformed payloads and sends nothing with the off channel", () => {
+    const host = setup();
+    const off = setup("tui", { channel: "off" });
+
+    host.emit(AWAITING_INPUT_CHANNEL, { source: "", waiting: true });
+    waiting(off, "pi-questionnaire", true, "questionnaire");
+    advance(60_000);
+
+    expect(host.terminalNotices).toEqual([]);
+    expect(off.terminalNotices).toEqual([]);
   });
 });
 

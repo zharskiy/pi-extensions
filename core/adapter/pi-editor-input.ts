@@ -12,7 +12,7 @@ const CAPTURE_KEY = "pi-editor-input";
 
 const nextMacrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-const captureTui = (ctx: ExtensionContext) => {
+export const captureTui = (ctx: ExtensionContext) => {
   let captured: FocusedTui | undefined;
 
   ctx.ui.setWidget(CAPTURE_KEY, (tui) => {
