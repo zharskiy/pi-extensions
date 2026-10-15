@@ -40,12 +40,21 @@ describe("single question", () => {
     expect(onSubmitTab(outcome.state)).toBe(false);
   });
 
-  it("picks an option with a digit, unless digits are not armed yet", () => {
+  it("picks an option with a digit, unless answers are not armed yet", () => {
     const state = initialForm(questions(SCOPE));
 
     expect(pressKey(state, char("2"), false)).toEqual({ state });
     expect(pressKey(state, char("2")).state.answers[0]?.value).toBe("backend");
     expect(pressKey(state, char("9"))).toEqual({ state });
+  });
+
+  it("ignores Enter until answers are armed, but still moves the selection", () => {
+    const state = initialForm(questions(SCOPE));
+    const moved = pressKey(state, key("down"), false).state;
+
+    expect(moved.option).toBe(1);
+    expect(pressKey(moved, key("enter"), false)).toEqual({ state: moved });
+    expect(pressKey(moved, key("enter")).state.answers[0]?.value).toBe("backend");
   });
 
   it("clamps the selection and jumps with Home and End", () => {

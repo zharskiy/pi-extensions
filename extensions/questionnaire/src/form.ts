@@ -134,7 +134,7 @@ const submitKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormOut
   enter: (state) => (allAnswered(state) ? { state, done: "submit" } : { state }),
 };
 
-export const pressKey = (state: FormState, key: KeyPress, digits = true): FormOutcome => {
+export const pressKey = (state: FormState, key: KeyPress, armed = true): FormOutcome => {
   if (key.name === "escape") {
     return { state, done: "cancel" };
   }
@@ -145,14 +145,18 @@ export const pressKey = (state: FormState, key: KeyPress, digits = true): FormOu
     return { state: tabbed(state) };
   }
 
+  const digit = digitOf(key);
+
+  if (!armed && (key.name === "enter" || digit !== undefined)) {
+    return { state };
+  }
+
   if (onSubmitTab(state)) {
     return submitKeys[key.name]?.(state) ?? { state };
   }
 
-  const digit = digitOf(key);
-
   if (digit !== undefined) {
-    return digits ? choose(state, digit - 1) : { state };
+    return choose(state, digit - 1);
   }
 
   return questionKeys[key.name]?.(state) ?? { state };

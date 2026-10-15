@@ -3,8 +3,8 @@ import type { RunMode } from "../../../core/adapter/contract.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flush } from "../../../core/test/helpers/fakes.ts";
 import {
+  ANSWER_ARM_MS,
   createQuestionnaire,
-  DIGIT_ARM_MS,
   QUESTIONNAIRE_SOURCE,
   type QuestionnaireParams,
 } from "../src/questionnaire.ts";
@@ -74,7 +74,7 @@ describe("questionnaire tool", () => {
     const pending = run(tool, { questions: [SCOPE] });
 
     await flush();
-    clock.now += DIGIT_ARM_MS;
+    clock.now += ANSWER_ARM_MS;
     host.form().press(key("down"), key("enter"));
 
     const result = await pending;
@@ -90,7 +90,7 @@ describe("questionnaire tool", () => {
 
     await flush();
     host.form().press(char("1"));
-    clock.now += DIGIT_ARM_MS - 1;
+    clock.now += ANSWER_ARM_MS - 1;
     host.form().press(char("1"));
 
     expect(host.form().closed).toBe(false);
@@ -101,12 +101,29 @@ describe("questionnaire tool", () => {
     expect((await pending).text).toBe("Scope (scope): selected 1. Frontend only [value: frontend]");
   });
 
+  it("ignores Enter typed ahead in the first moments after the form opens", async () => {
+    const { host, tool, clock } = setup();
+    const pending = run(tool, { questions: [SCOPE] });
+
+    await flush();
+    host.form().press(key("enter"));
+    clock.now += ANSWER_ARM_MS - 1;
+    host.form().press(key("enter"));
+
+    expect(host.form().closed).toBe(false);
+
+    clock.now += 1;
+    host.form().press(key("enter"));
+
+    expect((await pending).text).toBe("Scope (scope): selected 1. Frontend only [value: frontend]");
+  });
+
   it("walks several questions, takes a typed answer and submits from the Submit tab", async () => {
     const { host, tool, clock } = setup();
     const pending = run(tool, { questions: [SCOPE, PRIORITY] });
 
     await flush();
-    clock.now += DIGIT_ARM_MS;
+    clock.now += ANSWER_ARM_MS;
 
     const form = host.form();
 
@@ -136,7 +153,7 @@ describe("questionnaire tool", () => {
     const pending = run(tool, { questions: [SCOPE, PRIORITY] });
 
     await flush();
-    clock.now += DIGIT_ARM_MS;
+    clock.now += ANSWER_ARM_MS;
 
     const form = host.form();
 
@@ -169,7 +186,7 @@ describe("questionnaire tool", () => {
     const pending = run(tool, { questions: [SCOPE, PRIORITY] }, controller.signal);
 
     await flush();
-    clock.now += DIGIT_ARM_MS;
+    clock.now += ANSWER_ARM_MS;
     host.form().press(char("2"));
     controller.abort();
 
@@ -192,6 +209,41 @@ describe("questionnaire tool", () => {
     host.form().press(key("escape"));
     await pending;
 
+    expect(waitingSignals(host)).toEqual([
+      { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
+      { source: QUESTIONNAIRE_SOURCE, waiting: false, title: "questionnaire" },
+    ]);
+  });
+
+  it.each([
+    ["the overlay wait ends without a form", false],
+    ["the signal aborts during the overlay wait", true],
+  ])("publishes waiting before the form opens and stops it once when %s", async (_, aborts) => {
+    const { host, tool } = setup();
+    const controller = new AbortController();
+    let release: (value: undefined) => void = () => {};
+
+    host.ui.showForm = (_factory, options) =>
+      new Promise((resolve) => {
+        release = resolve;
+        options?.signal?.addEventListener("abort", () => resolve(undefined));
+      });
+
+    const pending = run(tool, { questions: [SCOPE] }, controller.signal);
+
+    await flush();
+
+    expect(waitingSignals(host)).toEqual([
+      { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
+    ]);
+
+    if (aborts) {
+      controller.abort();
+    } else {
+      release(undefined);
+    }
+
+    expect((await pending).details?.cancelled).toBe(true);
     expect(waitingSignals(host)).toEqual([
       { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
       { source: QUESTIONNAIRE_SOURCE, waiting: false, title: "questionnaire" },

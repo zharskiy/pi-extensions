@@ -24,7 +24,7 @@ import {
 
 export const QUESTIONNAIRE_SOURCE = "pi-questionnaire";
 
-export const DIGIT_ARM_MS = 250;
+export const ANSWER_ARM_MS = 250;
 
 const DESCRIPTION =
   "Ask the user a batch of mutually independent multiple-choice questions in one interactive form. Each question also accepts a typed answer unless allowOther is false, and the user may cancel. Interactive sessions only: it errors in non-interactive runs.";
@@ -135,7 +135,7 @@ export const createFormView = (
       return;
     }
 
-    const outcome = pressKey(state, key, now() - openedAt >= DIGIT_ARM_MS);
+    const outcome = pressKey(state, key, now() - openedAt >= ANSWER_ARM_MS);
 
     apply(outcome.state, outcome.done);
   };
@@ -173,7 +173,6 @@ export const questionnaireTool = (
     }
 
     let latest = initialForm(questions);
-    let opened = false;
 
     const waiting = (value: boolean) =>
       host.publish(AWAITING_INPUT_CHANNEL, {
@@ -182,28 +181,24 @@ export const questionnaireTool = (
         title: "questionnaire",
       });
 
+    waiting(true);
+
     try {
       const shown = await host.ui.showForm<QuestionnaireDetails>(
-        (api) => {
-          opened = true;
-          waiting(true);
-
-          return createFormView(api, questions, {
+        (api) =>
+          createFormView(api, questions, {
             now,
             onChange: (state) => {
               latest = state;
             },
-          });
-        },
+          }),
         { signal },
       );
       const details = shown ?? { questions, answers: latest.answers, cancelled: true };
 
       return { text: resultText(details), details };
     } finally {
-      if (opened) {
-        waiting(false);
-      }
+      waiting(false);
     }
   },
   renderCall: (params, theme) => callText(params, theme),
