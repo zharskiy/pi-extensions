@@ -8,7 +8,6 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
  Session total (agents included): 162.4k / $4.42
  my-project git:(feature-branch) • <session name>
  ▶▶ thinking high (shift+tab to cycle)
- ← to agents
 
  <status text other extensions have set>
 
@@ -20,8 +19,7 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 - Line 2: the cumulative chargeable tokens (`input + output + cacheRead + cacheWrite`) and cost of the whole session, the main session plus everything reported to the spending extension, such as subagents at every depth.
 - Line 3: the current folder name followed by `git:(<branch>)` when pi reports a git branch (just the folder name otherwise), plus the session name when one is set.
 - Line 4: the thinking level and the key that cycles it, or `thinking unavailable` for models without reasoning.
-- Line 5: the dim hint `← to agents` (pressing `←` on an empty editor opens the agents list; shown always).
-- Then, after a blank line, the status texts other extensions set, sorted by key, whitespace collapsed, on one line. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it, its ` (sub)` marker included.
+- Then, after a blank line, the status texts other extensions set, one per line, sorted by key, whitespace collapsed. For example, the subagents extension contributes the `← to agents` line through its status while its panel is empty. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it, its ` (sub)` marker included.
 - The block is indented one column (`PAD` is a single space), in line with the composer chevron, and is preceded and followed by one blank line, so pi's command list and the editor's bottom rule never touch line 1; `PAD` is a constant at the top of `src/render.ts`. Every line is cut to the terminal width with a dim `…`.
 - Placement: the block is drawn as the first below-editor widget and pi's own footer slot is left empty, so below-editor widgets other extensions add later, such as the subagents panel, sit under the block (usage, thinking and statuses first, then the panel). pi keeps below-editor widgets in the order they were first set and clears them on reload and session switch; the footer sets its block at session start and only re-renders it afterwards, so it stays first unless another extension sets a below-editor widget during its own session start ahead of the footer.
 - Active only in tui mode; elsewhere it does nothing.

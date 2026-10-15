@@ -32,7 +32,6 @@ describe("footer", () => {
       " 50.0k · test-model (200k context)",
       " my-project git:(main)",
       " ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
-      " ← to agents",
       "",
     ]);
   });

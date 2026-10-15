@@ -8,8 +8,6 @@ const DOT = " · ";
 
 const MODE_MARK = "▶▶";
 
-const AGENTS_HINT = "← to agents";
-
 const RESET = "\x1b[0m";
 
 const BOLD = "\x1b[1m";
@@ -130,25 +128,21 @@ const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: stri
   return `${paint(COLORS.gold, MODE_MARK)} ${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
 };
 
-const statusLine = (statuses: ReadonlyMap<string, string>) => {
-  const texts = Array.from(statuses)
+const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
+  Array.from(statuses)
     .filter(([key]) => key !== SPENDING_STATUS_KEY)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, text]) => text.replace(/\s+/g, " ").trim())
     .filter((text) => text.length > 0);
 
-  return texts.length > 0 ? texts.join(" ") : undefined;
-};
-
 export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterData) => {
-  const status = statusLine(data.statuses);
+  const status = statusLines(data.statuses);
   const lines = [
     statsLine(theme, state.context, state.model, state.totals?.main.cost),
     ...(state.totals ? [sessionLine(theme, state.totals)] : []),
     placeLine(theme, state.cwd, data.branch, state.sessionName),
     modeLine(theme, state.model, state.thinking, state.cycleKey),
-    theme.fg("dim", AGENTS_HINT),
-    ...(status ? ["", status] : []),
+    ...(status.length > 0 ? ["", ...status] : []),
   ];
 
   return ["", ...lines.map((line) => (line ? `${PAD}${line}` : line)), ""];

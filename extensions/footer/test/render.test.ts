@@ -44,7 +44,6 @@ describe("renderFooter", () => {
       " Session total (agents included): 162.4k / $4.42",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",
-      " ← to agents",
       "",
     ]);
   });
@@ -58,7 +57,6 @@ describe("renderFooter", () => {
       " Session total (agents included): 162.4k / $4.42",
       " my-project git:(feature-branch) • refactor",
       " ▶▶ thinking high (shift+tab to cycle)",
-      " ← to agents",
       "",
       " busy",
       "",
@@ -71,7 +69,6 @@ describe("renderFooter", () => {
       " 150.1k · test-model (1M context)",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",
-      " ← to agents",
       "",
     ]);
   });
@@ -141,7 +138,7 @@ describe("renderFooter", () => {
     );
   });
 
-  it("joins statuses by key, collapses whitespace and skips the spending status", () => {
+  it("lists one line per status by key, collapses whitespace and skips the spending status", () => {
     const statuses = new Map([
       ["zeta", "last"],
       [SPENDING_STATUS_KEY, "main $1.000 · total $1.000"],
@@ -149,7 +146,8 @@ describe("renderFooter", () => {
       ["empty", "   "],
     ]);
 
-    expect(render({}, null, statuses).slice(-3)).toEqual(["", " first line last", ""]);
+    expect(render({}, null, statuses).slice(-4)).toEqual(["", " first line", " last", ""]);
+    expect(render().some((line) => line.includes("← to agents"))).toBe(false);
     expect(render({}, null, new Map([[SPENDING_STATUS_KEY, "main $1.000"]]))).toEqual(render());
   });
 });
