@@ -52,15 +52,9 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
-  /**
-   * Delivered `sendHiddenMessage` calls, mirroring the adapter: `followUp` while a run is active (`idle` false),
-   * `run` when idle (the hidden message starts a run). While `compacting` with no run the call is held in
-   * `heldHidden` and delivered as `run` by `finishCompacting()` or `settle()`.
-   */
   hidden: { message: HiddenMessage; delivery: "followUp" | "nextTurn" | "run" }[];
   heldHidden: HiddenMessage[];
   entryRenderers: Map<string, EntryRender>;
-  /** Runs the renderer registered for `customType` with `plainTheme`; the adapter's outputPad indent is not applied. */
   renderEntry(customType: string, data: unknown, expanded?: boolean): string[] | undefined;
   dispatched: string[];
   published: { channel: string; data: unknown }[];
@@ -68,7 +62,6 @@ export type FakeHost = Host & {
   terminalNotices: { message: string; channel: NotifyChannel }[];
   statuses: Map<string, string | undefined>;
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
-  /** Keys of what pi draws below the editor, top to bottom, in pi's order: first set first; `FAKE_FOOTER_KEY` for a `belowEditor` footer. */
   belowEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
@@ -77,13 +70,9 @@ export type FakeHost = Host & {
   emptyLeftHandlers: Set<() => void>;
   emptyDownHandlers: Set<() => void>;
   editorCapture?: EditorKeyHandler;
-  /** Hooks registered before `start()` are kept and fire only once the session started and no foreign editor is set, like the real adapter. */
   pressEmptyLeft(): boolean;
-  /** Like `pressEmptyLeft`, for the empty-editor `down` hooks (the fake editor never browses history). */
   pressEmptyDown(): boolean;
-  /** Feeds `key` to the editor capture; a `left` or `down` the capture does not consume reaches the empty-editor hooks (the fake editor is empty). Returns "editor" while no session runs. */
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
-  /** `idle` false models an active agent run; `compacting` models pi busy without a run (`isIdle()` is false). */
   idle: boolean;
   compacting: boolean;
   finishCompacting(): void;
@@ -101,13 +90,6 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
-  /**
-   * Renders a registered tool's call and/or result with `plainTheme` and a default render state (`args` = `call`,
-   * `isError` from `result`, `outputPad` 1); `state` overrides any field. A width-function render is resolved like the adapter
-   * does: with `width` (default 80) minus `outputPad` on both sides for `renderShell: "self"` and `"box"`, with `width` otherwise. The
-   * adapter's indent and cut are not applied. For `renderShell: "box"`, `tone` is the box background the adapter would draw
-   * (`renderTone` with the result, else pi's rule: pending while `isPartial`, error on `isError`, else success).
-   */
   renderTool(
     name: string,
     input: {

@@ -42,10 +42,8 @@ export type BlockInput = {
   now: number;
 };
 
-/** The widest the block draws; a narrower render width shrinks every budget. */
 export const BLOCK_WIDTH = 100;
 
-/** The render width a block uses: the width pi gives (minus `outputPad` on both sides), at most `BLOCK_WIDTH`. */
 export const blockWidth = (width: number) => Math.max(1, Math.min(width, BLOCK_WIDTH));
 
 const CONTINUATION = 3;
@@ -201,7 +199,6 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, w
 
 const ERROR_INDENT = "   ";
 
-/** Cuts `line` into pieces of at most `cols` columns (never fewer than one character per piece). */
 const wrapCols = (line: string, cols: number): string[] =>
   Array.from(line).reduce<{ lines: string[]; used: number }>(
     (acc, char) => {
@@ -273,7 +270,6 @@ const partialHeader = (input: BlockInput, details: RunAgentDetails, wait: boolea
     ? `${input.theme.bold(String(details.agents.length))} ${namedAgents(details.agents, details.agents.length)} launched`
     : finalHeader(input, details, false, width);
 
-/** Header and rows (the error header for a failed launch) at `width`, the render width pi gives the block (bounded by `BLOCK_WIDTH`). */
 export const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
   const { result, state, theme } = input;
   const width = blockWidth(renderWidth);
@@ -302,17 +298,11 @@ export const renderBlockAt = (input: BlockInput, renderWidth: number): string =>
   return [finalHeader(input, details, wait, width), ...rows].join("\n");
 };
 
-/** The block as a function of the render width, for `ToolSpec.renderResult` (the adapter calls it on every render). */
 export const renderBlock =
   (input: BlockInput) =>
   (width: number): string =>
     renderBlockAt(input, width);
 
-/**
- * The block's box colour: error when the tool errored; pending while any agent of the batch is open (also after a
- * background launch returned); then error if any agent failed, else success. Undefined (pi's rule) when the
- * registry has no record of the batch, e.g. after `/reload`.
- */
 export const blockTone = (
   registry: Pick<AgentRegistry, "get">,
   state: ToolRenderState,

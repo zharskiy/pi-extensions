@@ -101,7 +101,6 @@ export const truncateCols = (text: string, cols: number): string => {
 
 type Painted = readonly [text: string, paint: (text: string) => string];
 
-/** Cuts the joined texts at `cols` like `truncateCols`, then paints what is left of each part with its own paint. */
 export const truncatePainted = (parts: readonly Painted[], cols: number): string => {
   const cut = truncateCols(parts.map(([text]) => text).join(""), cols);
   const starts = parts.reduce<number[]>(

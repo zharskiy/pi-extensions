@@ -17,7 +17,6 @@ export type { RunAgentDetails } from "./render.ts";
 
 export type MessageAgentParams = { id: string; message: string };
 
-/** Live details of executing calls, keyed by `callKey(callerId, toolCallId)`. */
 export type PendingCalls = Map<string, { details: RunAgentDetails }>;
 
 const callKey = (callerId: string, toolCallId: string) => `${callerId}\n${toolCallId}`;

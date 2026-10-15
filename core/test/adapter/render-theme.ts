@@ -5,7 +5,6 @@ export const initRenderTheme = () => {
   initTheme(undefined, false);
 };
 
-/** pi's `KEYBINDINGS` is not exported, so its `app.tools.expand` default is restated here for pi's own `keyText`. */
 export const initRenderKeys = () => {
   setKeybindings(
     new KeybindingsManager({

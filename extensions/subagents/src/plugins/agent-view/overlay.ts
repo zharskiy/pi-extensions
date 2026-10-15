@@ -9,7 +9,6 @@ export type ListHooks = { open(id: string): void; leave(): void; selected?: stri
 
 export type OverlayParts = {
   list(hooks: ListHooks): ListComponent;
-  /** `undefined` when the id no longer resolves. */
   view(id: string, from: AgentViewOrigin, leave: () => void): ViewComponent | undefined;
 };
 

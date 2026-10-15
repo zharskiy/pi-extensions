@@ -96,7 +96,6 @@ export const liveAgentModel = () => {
   return `${provider}/${modelId}${thinking ? `:${thinking}` : ""}`;
 };
 
-/** The live model from `PI_LIVE_MODEL` as pi's catalog entry, plus its thinking suffix. */
 export const liveModel = () => {
   const { model, thinking } = liveState();
 

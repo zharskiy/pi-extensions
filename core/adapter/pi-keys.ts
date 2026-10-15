@@ -52,7 +52,6 @@ export const keyPressWith = (data: string, matchers: KeyMatchers): KeyPress => {
 
 type KeyMatcher = { matches(data: string, binding: string): boolean };
 
-/** The key as the focused editor sees it: `up`/`down`/`left`/`right` through pi's `tui.editor.cursorUp/Down/Left/Right` bindings, `toggleTools` through `app.tools.expand`, the rest by `Key.*`. */
 export const editorKeyPress = (data: string, keys: KeyMatcher): KeyPress =>
   keyPressWith(data, {
     isToolsToggle: (input) => keys.matches(input, "app.tools.expand"),

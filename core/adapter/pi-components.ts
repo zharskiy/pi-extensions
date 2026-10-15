@@ -7,7 +7,6 @@ export const themeLike = (theme: Theme): ThemeLike => ({
   bold: (text) => theme.bold(text),
 });
 
-/** A `Text` whose content is computed from the render width on every render. */
 export class WidthText implements Component {
   private source: (width: number) => string;
   private readonly text = new Text("", 0, 0);
@@ -31,7 +30,6 @@ export class WidthText implements Component {
   }
 }
 
-/** pi's `Text` for a string; for a width function, a component that calls it with the render width on every render. Reuses `previous` when it fits. */
 export const textComponent = (previous: unknown, text: ToolRender): Component => {
   if (typeof text === "function") {
     if (previous instanceof WidthText) {
@@ -79,12 +77,6 @@ export class PaddedLines implements Component {
 
 const splitText = (text: string) => (text === "" ? [] : text.split("\n"));
 
-/**
- * A component drawing `lines` as given: each starts at column `outputPad` and is cut at `width - 2 * outputPad`
- * with `…`, never wrapped, so the last `outputPad` columns stay blank (spec §2 "Padding and margins"). A line
- * containing `\n` is split into several lines. `lines` may be a function of that inner width, called on every
- * render (its text split at `\n`, `""` drawing nothing). Reuses `previous` when it is one.
- */
 export const padLines = (lines: PaddedSource, outputPad: number, previous?: unknown): Component => {
   if (previous instanceof PaddedLines) {
     previous.set(lines, outputPad);

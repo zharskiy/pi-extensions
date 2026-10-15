@@ -86,11 +86,6 @@ type RawAssistant = { content: RawToolCall[]; stopReason: string; errorMessage?:
 
 type Expandable = Component & { setExpanded(expanded: boolean): void };
 
-/**
- * Runs each pi extension factory against a stub that only records `registerTool` and keeps the renderers of the
- * registered tool. A factory that throws or registers no renderer yields no entry, so the tool keeps pi's generic
- * display.
- */
 export const capturePiRenderers = (
   factories: Record<string, () => ExtensionFactory>,
 ): Record<string, ToolRenderers> =>

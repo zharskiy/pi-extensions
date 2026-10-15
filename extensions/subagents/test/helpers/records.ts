@@ -1,6 +1,5 @@
 import type { AgentRecord } from "../../src/model/types.ts";
 
-/** A plain running record for pure row, tree and panel tests; `patch` overrides any field. */
 export const agentRecord = (patch: Partial<AgentRecord> & { id: string }): AgentRecord => ({
   agent: "explorer",
   description: `work of ${patch.id}`,

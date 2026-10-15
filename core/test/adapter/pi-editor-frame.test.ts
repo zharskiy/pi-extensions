@@ -94,7 +94,6 @@ const records = globalThis as Record<
 
 const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
 
-/** A fresh module instance, as pi gives every extension through its own module cache. */
 const adapterCopy = async () => {
   vi.resetModules();
 

@@ -61,7 +61,6 @@ const withLinks = (records: AgentRecord[], byId: ById): AgentRecord[] => {
   return [...records, ...links.values()];
 };
 
-/** Records the `/agents` list shows (chain terminals, plus the earlier links of their chains). */
 export const visibleRecords = (
   records: AgentRecord[],
   now: number,
@@ -113,7 +112,6 @@ export const visibleRecords = (
   );
 };
 
-/** The chain terminals of `visible`: one per row. */
 export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] =>
   terminalsOf(visible, indexOf(visible));
 

@@ -232,7 +232,6 @@ describe("pi adapter", () => {
   });
 
   it("queues user messages and commands as follow-ups while busy", async () => {
-    // The starting window is covered: pi reports not-idle from submission, before agent_start.
     const { pi, fire, sent } = fakePi();
     const host = createPiHost(pi, {});
 

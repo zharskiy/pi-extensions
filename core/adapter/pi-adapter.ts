@@ -77,7 +77,6 @@ const liveCtx = (state: HostState) => {
 
 type HiddenCustom = { customType: string; content: string; display: false; details: unknown };
 
-/** How often held hidden messages check whether pi went idle (compaction or a branch summary without a run). */
 const HELD_POLL_MS = 100;
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {

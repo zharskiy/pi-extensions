@@ -20,28 +20,20 @@ export type ToolResult<D = unknown> = {
   isError?: boolean;
 };
 
-/** Render-time facts pi passes to tool renderers (ToolRenderContext in pi). */
 export type ToolRenderState = {
   toolCallId: string;
   expanded: boolean;
-  /** True while the call streams or the result is partial. */
   isPartial: boolean;
   executionStarted: boolean;
   isError: boolean;
-  /** The call's arguments as pi parsed them (pi's `ToolRenderContext.args`, shared by the call and result renders of one call); the tool's params type, `unknown` here because the state is not generic. */
   args: unknown;
-  /** Set only on the final result. */
   durationMs?: number;
-  /** pi's horizontal transcript padding (`ToolRenderContext.outputPad`, 0 or 1, default 1). A `renderShell: "self"` block is not padded by pi; the adapter applies it, the renderer may read it. */
   outputPad: number;
-  /** Re-render this call later (safe after the tool returned, until the transcript is rebuilt). */
   invalidate(): void;
 };
 
-/** The background of a `renderShell: "box"` tool box: pi's `toolPendingBg`, `toolSuccessBg` or `toolErrorBg`. */
 export type ToolTone = "pending" | "success" | "error";
 
-/** What a tool renderer returns: text, or a function of the render width (the component width minus `outputPad` on both sides for `renderShell: "self"`) that the adapter calls on every render. */
 export type ToolRender = string | ((width: number) => string);
 
 export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
@@ -50,24 +42,14 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   description: string;
   promptSnippet?: string;
   parameters: Record<string, unknown>;
-  /**
-   * "self" drops pi's coloured box so the renderer owns the whole row; the adapter indents each line by pi's `outputPad` and cuts it at `width - 2 * outputPad` (never wraps).
-   * "box" draws the same lines inside pi's tool box (pi-tui `Box`, padding `outputPad` x 1, the native tool geometry) whose background follows `renderTone`;
-   * `renderCall` and `renderResult` each get their own box (an empty render draws none), so only one of them should return text at a time. Default "default".
-   */
   renderShell?: "default" | "self" | "box";
   execute(
     params: P,
     ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
   ): Promise<ToolResult<D>>;
-  /**
-   * The latest partial result of a call still executing, for transcripts read from a session file (the agent view), which never see pi's partial updates; undefined leaves the call as pi draws it.
-   * `owner` is the transcript's `createTranscript({ owner })`, the session that made the call: tool call ids are unique only within one session.
-   */
   pendingResult?(toolCallId: string, owner: string | undefined): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
-  /** The box background for `renderShell: "box"` (`result` is undefined for the call render); undefined keeps pi's rule: pending while `isPartial`, error on `isError`, else success. */
   renderTone?(state: ToolRenderState, result: ToolResult<D> | undefined): ToolTone | undefined;
 };
 
@@ -105,7 +87,6 @@ export type ViewComponent = {
   render(width: number): string[];
   handleKey(key: KeyPress): void;
   handleWheel?(lines: number): void;
-  /** A left click at overlay-local cells (fullscreen TUI only); returns whether the view used it. */
   handleClick?(x: number, y: number): boolean;
   dispose?(): void;
 };
@@ -126,7 +107,6 @@ export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;
   setToolsExpanded(expanded: boolean): void;
   render(width: number): string[];
-  /** Routes a left click at a line and column of the last render at `width` to pi's components; returns whether pi handled it. */
   click(line: number, column: number, width: number): boolean;
 };
 
@@ -146,7 +126,6 @@ export type OverlayApi = {
   requestRender(): void;
   toolsKey: string;
   wheelScrolling: boolean;
-  /** `tools` render with their own `renderCall`/`renderResult` (after pi's built-ins, before codemode and tool_search). */
   createTranscript(options?: { tools?: AnyToolSpec[]; owner?: string }): TranscriptPane;
   createScroll(): ScrollPane;
   createInput(placeholder: string): InputPane;
@@ -169,7 +148,6 @@ export type EditorFrame = {
 
 export type NotifyChannel = "auto" | "bell";
 
-/** Keys the editor sees while a capture is installed. `up`/`down` follow pi's `tui.editor.cursorUp/Down` bindings. */
 export type EditorKeyHandler = (key: KeyPress) => "consumed" | "release";
 
 export type HostUi = {
@@ -181,46 +159,19 @@ export type HostUi = {
   openOverlay(factory: OverlayFactory): Promise<void>;
   select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
-  /** tui only. `bell` writes BEL. `auto` writes only a desktop notification with `message`, no BEL: OSC 9, or OSC 777 titled `pi` when TERM or TERM_PROGRAM names rxvt. Control characters in `message` become spaces. */
   terminalNotify(message: string, channel: NotifyChannel): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
-  /** Show or hide pi's working row; tui only. Hiding is immediate. Showing is immediate while a run is active, otherwise pi applies it at the next turn_start. The flag persists until set again; pi resets it to true on session switch and reload. */
   setWorkingVisible(visible: boolean): void;
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
   mapCommandCompletion(map: (command: string) => string | undefined): void;
   submitEditor(text: string): Promise<boolean>;
   setEditorFrame(frame: EditorFrame | undefined): void;
-  /**
-   * Fires when `tui.editor.cursorLeft` is pressed in the focused editor while it is empty and no autocomplete is open
-   * (an empty editor has the cursor at column 0 of its only line, so the key would be a no-op). The key is consumed. tui only. May be
-   * called before the session starts; the hook becomes active at session start. Every extension of this package shares one editor;
-   * the hook is silently inactive while an editor this package did not install is set. Returns an unsubscribe function.
-   */
   onEmptyEditorLeft(handler: () => void): () => void;
-  /**
-   * Fires when `tui.editor.cursorDown` is pressed in the focused editor while it is empty, not browsing input history and no
-   * autocomplete is open (an empty editor is never on a history entry, so the key would be a no-op). The key is consumed.
-   * Same lifetime rules as `onEmptyEditorLeft`. Returns an unsubscribe function.
-   */
   onEmptyEditorDown(handler: () => void): () => void;
-  /**
-   * Routes every key the focused editor receives to `handler` until it returns "release" or the returned function is
-   * called. "consumed" swallows the key (it never reaches pi: no `app.interrupt` on Esc, no shortcuts, no text edit);
-   * "release" ends the capture and lets the editor handle that same key normally. Keys never reach the handler while
-   * an overlay or dialog has focus. At most one capture at a time: installing a second one releases the first. Like
-   * `onEmptyEditorLeft`, it may be called before the session starts and is inactive under an editor this package did not install.
-   */
   captureEditorKeys(handler: EditorKeyHandler): () => void;
-  /**
-   * Draws `render` in pi's footer slot (`slot: "footer"`, the default), or as a below-editor widget with pi's footer
-   * slot left empty (`slot: "belowEditor"`). pi keeps below-editor widgets in the order they were first set and clears
-   * them on reload and session switch, so a footer set at session start sits above widgets set later, such as the agent
-   * panel. Setting it again in the same slot keeps its position and only re-renders. `undefined` restores pi's footer.
-   */
   setFooter(render: FooterRender | undefined, options?: FooterOptions): WidgetHandle;
   keyText(binding: string): string;
-  /** Calls `listener` on every keyboard input chunk (mouse reports and key-release events excluded) without consuming it. tui only. Returns an unsubscribe function. */
   onKeyPress(listener: () => void): () => void;
 };
 
@@ -252,17 +203,14 @@ export type CommandSpec = {
   run(args: string, control: SessionControl): Promise<void> | void;
 };
 
-/** What the main session is doing right now, derived from pi's turn events (see pi-phase.ts). */
 export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "idle";
 
-/** `toolName` is the most recently started top-level tool still running; `running` counts them. Both are 0/unset outside `tool`. */
 export type PhaseDetail = { toolName?: string; running: number };
 
 export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
 
-/** A message for the model that the user does not see. `details` is persisted with the custom_message entry. */
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
 
 export type Host = {
@@ -277,16 +225,7 @@ export type Host = {
   onCompact(handler: () => void): void;
   isIdle(): boolean;
   sendUserMessage(text: string): void;
-  /**
-   * Delivers `message` to the model without rendering it. A follow-up is used only while an agent run is active
-   * (between pi's `agent_start` and `agent_settled`): it is then queued as a hidden follow-up of that run. When idle the
-   * hidden message itself starts a run (pi emits `before_agent_start` for it, so `setMainPrompt` applies); nothing is
-   * rendered. When pi is busy without a run (compaction, a branch summary), the message is held and delivered the idle
-   * way once pi is idle; several held messages start one run together. Without a live session nothing is sent, and held
-   * messages are dropped at session shutdown.
-   */
   sendHiddenMessage(message: HiddenMessage): void;
-  /** Register a renderer for custom entries (`appendEntry`). `undefined` hides the entry. The adapter indents every line by pi's `outputPad` and cuts it at `width - 2 * outputPad` with `…` (never wraps). */
   registerEntryRenderer<T>(
     customType: string,
     render: (data: T, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined,
@@ -299,11 +238,8 @@ export type Host = {
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
   onAgentStart(handler: () => void): void;
-  /** Fires on every phase or detail change. `idle` fires once per settled run, after the `onIdle` handlers. Nothing fires at session start. */
   onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
-  /** Current phase; `idle` without a live session. */
   phase(): { phase: Phase; detail: PhaseDetail };
-  /** pi's ui_prompt_start/ui_prompt_end: one outer dialog at a time, nested dialogs are folded into it. Overlays opened with openOverlay report kind "custom". */
   onDialog(handler: (event: DialogEvent) => void): void;
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;

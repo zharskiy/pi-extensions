@@ -27,7 +27,6 @@ export const tempDir = (prefix = "pi-subagents-") => {
   return dir;
 };
 
-/** Texts of the hidden wake messages the main session received. */
 export const wakeTexts = (host: FakeHost) => host.hidden.map((entry) => entry.message.text);
 
 export const startPlugins = <R extends AgentRuntime>(

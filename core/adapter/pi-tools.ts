@@ -23,7 +23,6 @@ const fromPiResult = (result: {
   ...(result.isError ? { isError: true } : {}),
 });
 
-/** pi's `ToolRenderContext` (not exported from the package root). */
 export type PiToolRenderContext = Parameters<NonNullable<ToolDefinition["renderCall"]>>[2];
 
 type RenderContext = Pick<
@@ -58,14 +57,12 @@ const TONE_BG = {
   error: "toolErrorBg",
 } as const satisfies Record<ToolTone, Parameters<Theme["bg"]>[0]>;
 
-/** pi's own colour rule for a tool box (`ToolExecutionComponent.updateDisplay`). */
 const piTone = (context: RenderContext): ToolTone =>
   context.isPartial ? "pending" : context.isError ? "error" : "success";
 
 const lineSource = (text: ToolRender) =>
   typeof text === "function" ? text : text === "" ? [] : text.split("\n");
 
-/** pi's tool `Box` (padding `outputPad` x 1, background `tone`) around the lines; draws nothing when they are empty. Reuses `previous` when it is a `Box`. */
 const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
   const pad = context.outputPad ?? 1;
   const bg = (line: string) => theme.bg(TONE_BG[tone], line);

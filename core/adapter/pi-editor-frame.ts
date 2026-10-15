@@ -9,7 +9,6 @@ import { editorKeyPress } from "./pi-keys.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-/** One record for every extension of this package: pi loads each extension with its own module cache, so module state is per extension. */
 type SharedEditor = {
   frame?: EditorFrame;
   emptyLeft: Set<() => void>;
@@ -20,7 +19,6 @@ type SharedEditor = {
 
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v2");
 
-/** The record of older copies, which have no `emptyDown`: reused and upgraded, so every copy shares one editor. */
 const EDITOR_KEY_V1 = Symbol.for("pi-extensions.editor-hooks.v1");
 
 type SharedEditorV1 = Omit<SharedEditor, "emptyDown"> & { emptyDown?: Set<() => void> };
@@ -40,10 +38,6 @@ const sharedEditor = (): SharedEditor => {
   return record as SharedEditor;
 };
 
-/**
- * pi-tui `Editor` private state (editor.d.ts): jump mode and bracketed paste take a key before the cursor bindings;
- * `historyIndex` is -1 unless the editor shows an input history entry.
- */
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean; historyIndex?: number };
 
 type EmptyKey = "emptyLeft" | "emptyDown";
@@ -154,7 +148,6 @@ type EditorHooksUi = Pick<
   "setEditorFrame" | "onEmptyEditorLeft" | "onEmptyEditorDown" | "captureEditorKeys"
 >;
 
-/** `sync` installs the editor for hooks registered before the session started; `release` drops this copy's hooks at session shutdown. */
 export type EditorHooks = EditorHooksUi & { sync(): void; release(): void };
 
 export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): EditorHooks => {

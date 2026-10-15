@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import type { ToolRenderState, ToolResult, ToolSpec, ToolTone } from "../../adapter/contract.ts";
 import { type PiToolRenderContext, toPiTool } from "../../adapter/pi-tools.ts";
 
-/** pi's dark theme, whose three tool backgrounds differ (the system theme leaves them at the terminal default). */
 initTheme("dark", false);
 
 const theme = {
@@ -264,7 +263,6 @@ describe("toPiTool render state", () => {
 
 type Phase = "partial" | "final" | "error";
 
-/** pi's own tool row for `definition` after `phase`, rendered at `width`. */
 const toolRow = (definition: ToolDefinition, phase: Phase, width = 40) => {
   const component = new ToolExecutionComponent(
     "probe",
@@ -289,7 +287,6 @@ const BACKGROUND = new RegExp(`${String.fromCharCode(27)}\\[48;[0-9;]*m`);
 
 const background = (line: string | undefined) => line?.match(BACKGROUND)?.[0];
 
-/** The background pi itself gives a native (default-shell) tool box in each phase. */
 const native = (phase: Phase) =>
   background(
     toolRow(toPiTool({ ...baseSpec, renderCall: () => "", renderResult: (result) => result.text }), phase)[1],
