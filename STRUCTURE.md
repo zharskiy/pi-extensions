@@ -21,6 +21,7 @@ pi-extensions/
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
 │   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
+│   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents)
 │   │   ├── pi-working.ts        # working indicator and message (HostUi)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
 │   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
@@ -81,6 +82,11 @@ pi-extensions/
 │   │   ├── src/                 # index, composer, frame
 │   │   ├── test/
 │   │   └── README.md
+│   ├── style/                   # /style: output style for the main session and every agent
+│   │   ├── src/                 # index, style, settings
+│   │   ├── prompts/concise.md   # one file per style
+│   │   ├── test/
+│   │   └── README.md
 │   └── footer/                  # multi-line status footer with session totals
 │       ├── src/                 # index, footer (wiring), render (pure line builders)
 │       ├── test/
@@ -120,13 +126,14 @@ usage-report/       # reports agent usage to the spending channel
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
 - `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
+- Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. Only `<agentDir>/pi-style.json` is written by an extension (`/style`); the full list of written files is in ARCHITECTURE.md (Persistence summary).
 - Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
 - No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
 
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,footer}/src/index.ts`.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,style,footer}/src/index.ts`.
 - Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files

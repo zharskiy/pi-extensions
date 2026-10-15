@@ -540,6 +540,66 @@ describe("pi adapter", () => {
     expect(() => host.session()).toThrow("no live pi session");
   });
 
+  it("applies every adapter copy's prompt sections on each run, with or without the main prompt", async () => {
+    const promptOptions = () => ({
+      selectedTools: [],
+      hiddenTools: [],
+      toolSnippets: {},
+      toolGuidelines: {},
+      promptGuidelines: [],
+      sections: {} as Record<string, string>,
+    });
+
+    const style = fakePi();
+    const agents = fakePi();
+    const styleHost = createPiHost(style.pi, { tools: new Map() });
+    const agentsHost = createPiHost(agents.pi, { tools: new Map() });
+
+    await style.fire("session_start", fakeCtx("tui"));
+    await agents.fire("session_start", fakeCtx("tui"));
+    styleHost.setPromptSection("output_style", "Be brief.");
+
+    const plain = promptOptions();
+
+    await style.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: plain });
+
+    expect(plain.sections).toEqual({ output_style: "Be brief." });
+
+    agentsHost.setMainPrompt("# Main");
+
+    const replaced = promptOptions();
+
+    await agents.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: replaced });
+
+    expect(Object.keys(replaced.sections)).toEqual(["tools", "rules", "docs", "output_style"]);
+    expect(replaced.sections.output_style).toBe("Be brief.");
+
+    await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+    const kept = promptOptions();
+
+    await agents.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: kept });
+
+    expect(kept.sections.output_style).toBe("Be brief.");
+
+    styleHost.setPromptSection("output_style", undefined);
+
+    const cleared = promptOptions();
+
+    await style.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: cleared });
+
+    expect(cleared.sections).toEqual({});
+
+    styleHost.setPromptSection("output_style", "Be brief.");
+    await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+    const dropped = promptOptions();
+
+    await agents.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: dropped });
+
+    expect(dropped.sections.output_style).toBeUndefined();
+  });
+
   it("runs shutdown handlers one after another in registration order", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });

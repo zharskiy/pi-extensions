@@ -27,6 +27,7 @@ import type {
 import { messageText, toolCallCount } from "./messages.ts";
 import { resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
+import { applyPromptSections } from "./pi-sections.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { formatRoutedMessage } from "./route.ts";
 import { promptRecordEntry, readSessionFile } from "./session-file.ts";
@@ -63,6 +64,8 @@ export const createChildExtension =
     pi.on("session_before_compact", () => ({ cancel: true }));
 
     pi.on("before_agent_start", (event) => {
+      applyPromptSections(event.systemPromptOptions);
+
       skills = event.systemPromptOptions.skills.map((skill) => ({
         name: skill.name,
         description: skill.description,

@@ -9,6 +9,7 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [notifications](extensions/notifications/README.md): one terminal notification when pi waits for your input (after the work and any background agents are done) and one when a dialog waits unanswered.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 - [composer](extensions/composer/README.md): the input drawn between two full-width rules in the editor's colour, with a chevron prompt.
+- [style](extensions/style/README.md): `/style concise` makes the main session and every subagent answer in short, result-first replies; `/style normal` turns it off, and the footer shows the style while one is on.
 - [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
 
 ## Install
@@ -28,6 +29,7 @@ pi -e ./pi-extensions/extensions/working-indicator/src/index.ts
 pi -e ./pi-extensions/extensions/notifications/src/index.ts
 pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
 pi -e ./pi-extensions/extensions/composer/src/index.ts
+pi -e ./pi-extensions/extensions/style/src/index.ts
 pi -e ./pi-extensions/extensions/footer/src/index.ts
 ```
 
