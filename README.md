@@ -57,4 +57,4 @@ PI_LIVE_MODEL=provider/id:low npm run test:live   # real agents, local only, cos
 - Outside `core/adapter` code imports only `core/adapter/contract.ts` and the shared `core/manager/` modules; each extension's `src/index.ts` may also import `core/adapter/pi-adapter.ts`. `core/` never imports from `extensions/`.
 - Extensions never import each other. They talk over pi's event bus (`pi.events`), for example the `pi:busy` and `spending:usage` channels.
 - `test/architecture.test.ts` enforces these rules, and that extension tests reach the adapter only through `contract.ts` and `core/test/adapter/`; biome (`biome.json`) enforces that only `core/adapter/` and `core/test/adapter/` import pi packages.
-- [ARCHITECTURE.md](ARCHITECTURE.md) explains how it works, [STRUCTURE.md](STRUCTURE.md) shows where things are, [AGENTS.md](AGENTS.md) is the short guide for coding agents. `research/` holds the pi API notes the adapter was built from.
+- [ARCHITECTURE.md](ARCHITECTURE.md) explains how it works, [STRUCTURE.md](STRUCTURE.md) shows where things are, [AGENTS.md](AGENTS.md) is the short guide for coding agents.
