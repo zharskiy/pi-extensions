@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
-import { flush } from "../../../../../core/test/helpers/fakes.ts";
-import { displayWidth } from "../../../src/components/format.ts";
+import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { AgentRecord, NewAgent } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
@@ -117,7 +116,7 @@ describe("agents list", () => {
 
     const { lines } = await harness.openList(40, 14, recordingTheme);
 
-    expect(lines()[1]).toBe(" <b>Agents</b><dim> · 2…</>");
+    expect(lines()[1]).toBe(" <b>Agents</b><dim> · 2 …</>");
   });
 
   it("shows the sections, headers, rows and subtitle", async () => {
@@ -338,7 +337,7 @@ describe("agents list", () => {
         .filter((line) => line !== "")
         .forEach((line) => {
           expect(line).toMatch(/^ /);
-          expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+          expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
         });
       rows.forEach((line) => {
         expect(line.slice(0, 1)).toBe(" ");

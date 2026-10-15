@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import {
-  carrySelection,
   clearTargets,
   listHint,
   listSections,
@@ -141,14 +140,6 @@ describe("list model", () => {
 
     expect(clearTargets("a1", visible(running))).toEqual(["a1", "a1x"]);
     expect(clearTargets("a", visible(running))).toEqual([]);
-  });
-
-  it("carries the selection to the next row, else the previous, else none", () => {
-    expect(carrySelection(["a", "b", "c"], ["a", "b", "c"], "b")).toBe("b");
-    expect(carrySelection(["a", "b", "c"], ["a", "c"], "b")).toBe("c");
-    expect(carrySelection(["a", "b", "c"], ["a"], "c")).toBe("a");
-    expect(carrySelection(["a"], [], "a")).toBeUndefined();
-    expect(carrySelection([], ["a"], undefined)).toBeUndefined();
   });
 
   it("writes the hint for the selected row", () => {

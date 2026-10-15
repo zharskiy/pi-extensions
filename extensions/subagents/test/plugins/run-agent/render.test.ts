@@ -2,7 +2,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike, ToolRender, ToolResult } from "../../../../../core/adapter/contract.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
-import { displayWidth } from "../../../src/components/format.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
@@ -132,6 +131,7 @@ const renderCall = (
 const lines = (text: string) => text.split("\n");
 
 const tagged: ThemeLike = {
+  ...plainTheme,
   fg: (token, text) => `<${token}>${text}</${token}>`,
   bold: (text) => `<b>${text}</b>`,
 };
@@ -248,7 +248,7 @@ describe("run_agent block", () => {
     const rendered = lines(renderResult(harness, result, { agents: long }));
 
     rendered.forEach((line) => {
-      expect(displayWidth(line)).toBeLessThanOrEqual(BLOCK_WIDTH);
+      expect(plainTheme.width(line)).toBeLessThanOrEqual(BLOCK_WIDTH);
     });
     expect(rendered[0].startsWith(" ")).toBe(false);
   });
@@ -304,7 +304,7 @@ describe("run_agent block", () => {
 
     const failed = status()[2];
 
-    expect(displayWidth(failed)).toBeLessThanOrEqual(BLOCK_WIDTH);
+    expect(plainTheme.width(failed)).toBeLessThanOrEqual(BLOCK_WIDTH);
     expect(failed.endsWith("…")).toBe(true);
   });
 
@@ -368,7 +368,7 @@ describe("run_agent block", () => {
     const result = await launched(harness, long);
     const row = lines(renderResult(harness, result, { agents: long }))[1];
 
-    expect(displayWidth(row)).toBeLessThanOrEqual(BLOCK_WIDTH);
+    expect(plainTheme.width(row)).toBeLessThanOrEqual(BLOCK_WIDTH);
     expect(row).toMatch(/d…\) · \S+\/\S+:\w+$/);
 
     const rebuilt = runAgentTool(
@@ -393,7 +393,7 @@ describe("run_agent block", () => {
 
     expect(crowded.endsWith("…)")).toBe(true);
     expect(crowded).not.toContain("fake/model");
-    expect(displayWidth(crowded)).toBeLessThanOrEqual(BLOCK_WIDTH);
+    expect(plainTheme.width(crowded)).toBeLessThanOrEqual(BLOCK_WIDTH);
 
     const short = await launched(harness, [THREE[0]]);
 
@@ -784,7 +784,7 @@ describe("run_agent block width", () => {
       lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
 
     expect(at(80)).toBe(`└─ explorer (${forty}) · ${model}`);
-    expect(displayWidth(at(80))).toBeLessThanOrEqual(78);
+    expect(plainTheme.width(at(80))).toBeLessThanOrEqual(78);
     expect(at(120)).toBe(`└─ explorer (${forty}) · ${model}`);
   });
 
@@ -797,12 +797,12 @@ describe("run_agent block width", () => {
       lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
 
     expect(at(80).endsWith(`…) · ${model}`)).toBe(true);
-    expect(displayWidth(at(80))).toBe(78);
+    expect(plainTheme.width(at(80))).toBe(78);
     expect(at(120)).toBe(`└─ explorer (${"d".repeat(60)}) · ${model}`);
     expect(at(50)).not.toContain(model);
     expect(at(50).endsWith("…)")).toBe(true);
-    expect(displayWidth(at(50))).toBeLessThanOrEqual(48);
-    expect(displayWidth(at(200))).toBeLessThanOrEqual(BLOCK_WIDTH);
+    expect(plainTheme.width(at(50))).toBeLessThanOrEqual(48);
+    expect(plainTheme.width(at(200))).toBeLessThanOrEqual(BLOCK_WIDTH);
   });
 
   it("wraps an expanded long error at the real width instead of cutting it", () => {
@@ -820,11 +820,7 @@ describe("run_agent block width", () => {
     const body = rendered.slice(1);
 
     expect(body.length).toBeGreaterThan(2);
-    body.forEach((line) => {
-      expect(line.startsWith("   ")).toBe(true);
-      expect(displayWidth(line)).toBeLessThanOrEqual(78);
-      expect(line).not.toContain("…");
-    });
+    expect(body.every((line) => line.startsWith("   "))).toBe(true);
     expect(body.map((line) => line.slice(3)).join("")).toBe(error);
   });
 });

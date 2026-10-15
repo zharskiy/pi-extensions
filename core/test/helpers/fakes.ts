@@ -37,8 +37,9 @@ import {
   type WorkingIndicator,
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
+import { textMetrics } from "../../adapter/pi-tools.ts";
 
-export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text };
+export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text, ...textMetrics };
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 

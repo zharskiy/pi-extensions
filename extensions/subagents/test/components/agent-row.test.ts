@@ -1,39 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
-import {
-  DESCRIPTION_COLS_MAX,
-  POINTER_COLS,
-  type RowInput,
-  type RowLayout,
-  renderRow,
-  rowLayout,
-} from "../../src/components/agent-row.ts";
-import { displayWidth } from "../../src/components/format.ts";
+import { type RowInput, type RowLayout, renderRow, rowLayout } from "../../src/components/agent-row.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
+import { agentRecord } from "../helpers/records.ts";
 
-const rec = (patch: Partial<AgentRecord> = {}): AgentRecord => ({
-  id: "explorer-1a2b",
-  agent: "explorer",
-  description: "Map the auth module",
-  callerId: "main",
-  depth: 2,
-  batchId: "b-1",
-  chainIndex: 1,
-  state: "running",
-  createdAt: 0,
-  startedAt: 0,
-  turns: 0,
-  toolCalls: 0,
-  tokens: 0,
-  lastText: "",
-  handoffPath: "/x/handoff.md",
-  dir: "/x",
-  contextLimit: 100_000,
-  handoffRequested: false,
-  version: 0,
-  ...patch,
-});
+const rec = (patch: Partial<AgentRecord> = {}): AgentRecord =>
+  agentRecord({ id: "explorer-1a2b", description: "Map the auth module", ...patch });
 
 const row = (record: AgentRecord, patch: Partial<RowInput> = {}): RowInput => ({
   record,
@@ -55,7 +28,7 @@ type Case = {
 };
 
 const layoutOf = ({ input, now, width, layout }: Case) =>
-  layout ?? rowLayout([input], now, width, input.selected);
+  layout ?? rowLayout([input], now, width, input.selected, plainTheme);
 
 const grepping = rec({ tokens: 12_300, activity: { kind: "tool", text: "grep", at: 0 } });
 const queued = rec({ agent: "worker", description: "Rename parseDate callers", state: "queued" });
@@ -67,6 +40,13 @@ const failed = rec({
   endedAt: 130_000,
 });
 const grace = rec({ agent: "worker", description: "Fix the login redirect", state: "grace" });
+const stopped = rec({
+  agent: "worker",
+  description: "Fix the login redirect",
+  state: "stopped",
+  endedAt: 3_000,
+});
+const handedOff = rec({ state: "handoff", endedAt: 3_720_000 });
 const chained = rec({ chainIndex: 2, tokens: 30_100, activity: { kind: "tool", text: "bash", at: 0 } });
 const child = rec({
   description: "Find callers of login",
@@ -93,7 +73,7 @@ const cases: Case[] = [
     input: row(grepping),
     now: 65_000,
     width: 60,
-    expected: " ⠋ explorer  Map the auth…   grep · 1m 5s · ↓ 12.3k tokens",
+    expected: " ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "drops the activity, then the tokens, when the description would fall below 12 columns",
@@ -167,6 +147,20 @@ const cases: Case[] = [
     expected: " ◐ worker  Fix the login redirect  stopping",
   },
   {
+    name: "shows stopped with the duration",
+    input: row(stopped),
+    now: 9_000,
+    width: 80,
+    expected: " ■ worker  Fix the login redirect  stopped · 3s",
+  },
+  {
+    name: "shows handed off with the duration",
+    input: row(handedOff),
+    now: 9_000_000,
+    width: 80,
+    expected: " ↪ explorer  Map the auth module  handed off · 1h 2m",
+  },
+  {
     name: "appends the chain index to the name",
     input: row(chained),
     now: 130_000,
@@ -213,7 +207,7 @@ const cases: Case[] = [
   },
 ];
 
-const infoStart = (line: string, cell: string) => displayWidth(line.slice(0, line.indexOf(cell)));
+const infoStart = (line: string, cell: string) => plainTheme.width(line.slice(0, line.indexOf(cell)));
 
 describe("agent row", () => {
   it.each(cases)("$name", (testCase) => {
@@ -222,7 +216,16 @@ describe("agent row", () => {
 
     expect(line).toBe(expected);
     expect(line).toMatch(input.selected ? /^ › / : /^ [^›]/);
-    expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+    expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
+  });
+
+  it("advances the spinner of a running row with the clock", () => {
+    const frames = [0, 250, 950, 1_000].map(
+      (now) =>
+        renderRow(row(rec()), now, 80, plainTheme, rowLayout([row(rec())], now, 80, false, plainTheme))[1],
+    );
+
+    expect(frames).toEqual(["⠋", "⠹", "⠏", "⠋"]);
   });
 
   it("ends every line before the last column", () => {
@@ -230,7 +233,7 @@ describe("agent row", () => {
       [80, 60, 40, 30, 20].forEach((width) => {
         const line = renderRow(testCase.input, testCase.now, width, plainTheme, layoutOf(testCase));
 
-        expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
         expect(line).toMatch(testCase.input.selected ? /^ › / : /^ [^›]/);
       });
     });
@@ -238,7 +241,7 @@ describe("agent row", () => {
 
   it("starts the info two columns after the longest description of the surface", () => {
     const rows = [row(grepping), row(queued), row(done)];
-    const layout = rowLayout(rows, 99_000, 200, false);
+    const layout = rowLayout(rows, 99_000, 200, false, plainTheme);
     const lines = rows.map((input) => renderRow(input, 99_000, 200, plainTheme, layout));
 
     expect(layout).toEqual({ nameCols: 8, infoAt: 12 + 24 });
@@ -251,23 +254,23 @@ describe("agent row", () => {
 
   it("caps the description column at 48 and cuts longer descriptions", () => {
     const long = row(rec({ state: "done", endedAt: 65_000, description: "d".repeat(60) }));
-    const layout = rowLayout([long], 99_000, 200, false);
+    const layout = rowLayout([long], 99_000, 200, false, plainTheme);
     const line = renderRow(long, 99_000, 200, plainTheme, layout);
 
-    expect(layout.infoAt).toBe(12 + DESCRIPTION_COLS_MAX);
+    expect(layout.infoAt).toBe(12 + 48);
     expect(line).toBe(` ✓ explorer  ${"d".repeat(47)}…  done · 1m 5s`);
   });
 
   it("moves the info column left to keep 30 columns for running stats on a narrow terminal", () => {
     const rows = [row(grepping), row(done)];
-    const layout = rowLayout(rows, 65_000, 60, false);
+    const layout = rowLayout(rows, 65_000, 60, false, plainTheme);
     const lines = rows.map((input) => renderRow(input, 65_000, 60, plainTheme, layout));
 
     expect(layout.infoAt).toBe(58 - 2 - 30);
     expect(infoStart(lines[0], "grep")).toBe(infoStart(lines[1], "done"));
     expect(lines).toEqual([
-      " ⠋ explorer  Map the auth…   grep · 1m 5s · ↓ 12.3k tokens",
-      " ✓ explorer  Map the auth…   done · 1m 5s",
+      " ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
+      " ✓ explorer  Map the auth …  done · 1m 5s",
     ]);
   });
 
@@ -278,12 +281,12 @@ describe("agent row", () => {
     const second = [at("tool_search", 123_500), row(child, { depth: 1 })];
 
     [70, 100, 140].forEach((width) => {
-      const before = rowLayout(first, 5_000, width, false);
-      const after = rowLayout(second, 605_000, width, false);
+      const before = rowLayout(first, 5_000, width, false, plainTheme);
+      const after = rowLayout(second, 605_000, width, false, plainTheme);
       const line = renderRow(second[0], 605_000, width, plainTheme, after);
 
       expect(after.infoAt).toBe(before.infoAt);
-      expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+      expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
     });
   });
 
@@ -295,7 +298,7 @@ describe("agent row", () => {
       depth: 4,
       ancestorsContinue: [true, true, true],
     });
-    const layout = rowLayout([root, deep], 5_000, 70, false);
+    const layout = rowLayout([root, deep], 5_000, 70, false, plainTheme);
     const lines = [root, deep].map((input) => renderRow(input, 5_000, 70, plainTheme, layout));
 
     expect(lines).toEqual([
@@ -309,19 +312,19 @@ describe("agent row", () => {
     const short = row(
       rec({ description: "ab", tokens: 12_300, activity: { kind: "tool", text: "grep", at: 0 } }),
     );
-    const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, false));
+    const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, false, plainTheme));
 
     expect(line).toBe(" ⠋ explorer  ab  grep · 1m 5s · ↓ 12.3k tokens");
   });
 
   it("reserves the pointer columns while a row is selected", () => {
     const rows = [row(grepping), row(failed)];
-    const idle = rowLayout(rows, 200_000, 120, false);
-    const selecting = rowLayout(rows, 200_000, 120, true);
+    const idle = rowLayout(rows, 200_000, 120, false, plainTheme);
+    const selecting = rowLayout(rows, 200_000, 120, true, plainTheme);
     const pointed = renderRow({ ...rows[1], selected: true }, 200_000, 120, plainTheme, selecting);
     const other = renderRow(rows[0], 200_000, 120, plainTheme, selecting);
 
-    expect(selecting.infoAt).toBe(idle.infoAt + POINTER_COLS);
+    expect(selecting.infoAt).toBe(idle.infoAt + 2);
     expect(infoStart(pointed, "failed")).toBe(infoStart(other, "grep"));
   });
 
@@ -332,27 +335,27 @@ describe("agent row", () => {
         200_000,
         width,
         plainTheme,
-        rowLayout([row(failed)], 200_000, width, false),
+        rowLayout([row(failed)], 200_000, width, false, plainTheme),
       );
-      const layout = rowLayout([row(failed)], 200_000, width, true);
+      const layout = rowLayout([row(failed)], 200_000, width, true, plainTheme);
       const pointed = renderRow(row(failed, { selected: true }), 200_000, width, plainTheme, layout);
 
       expect(plainLine.indexOf("✗")).toBe(1);
       expect(pointed.indexOf("✗")).toBe(3);
       expect(pointed.startsWith(" › ")).toBe(true);
-      expect(displayWidth(plainLine)).toBeLessThanOrEqual(width - 1);
-      expect(displayWidth(pointed)).toBeLessThanOrEqual(width - 1);
+      expect(plainTheme.width(plainLine)).toBeLessThanOrEqual(width - 1);
+      expect(plainTheme.width(pointed)).toBeLessThanOrEqual(width - 1);
     });
   });
 
   it("paints the parts with the theme tokens", () => {
-    const recording: ThemeLike = { fg: (token, text) => `<${token}>${text}`, bold: (text) => text };
+    const recording: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
     const line = renderRow(
       row(failed, { selected: true }),
       200_000,
       80,
       recording,
-      rowLayout([row(failed)], 200_000, 80, true),
+      rowLayout([row(failed)], 200_000, 80, true, plainTheme),
     );
 
     expect(line).toContain("<accent>›");
@@ -366,7 +369,7 @@ describe("agent row", () => {
     const first = row(rec());
     const second = row(rec({ chainIndex: 2 }), { openDescendants: 3 });
     const third = row(rec({ agent: "a".repeat(40) }));
-    const nameCols = (rows: RowInput[]) => rowLayout(rows, 0, 80, false).nameCols;
+    const nameCols = (rows: RowInput[]) => rowLayout(rows, 0, 80, false, plainTheme).nameCols;
 
     expect(nameCols([])).toBe(0);
     expect(nameCols([first])).toBe(8);
@@ -377,6 +380,8 @@ describe("agent row", () => {
   it("collapses whitespace in the description", () => {
     const input = row(rec({ description: "a\n  b" }));
 
-    expect(renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, false))).toContain("a b");
+    expect(
+      renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, false, plainTheme)),
+    ).toContain("a b");
   });
 });

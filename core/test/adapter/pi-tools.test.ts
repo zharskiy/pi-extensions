@@ -5,10 +5,10 @@ import {
   type ToolDefinition,
   ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, Text, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { ToolRenderState, ToolResult, ToolSpec, ToolTone } from "../../adapter/contract.ts";
-import { type PiToolRenderContext, toPiTool } from "../../adapter/pi-tools.ts";
+import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
 
 initTheme("dark", false);
 
@@ -331,5 +331,25 @@ describe("toPiTool box shell", () => {
       [false, "out"],
     ]);
     expect(second).toBe(first);
+  });
+});
+
+describe("themeLike text metrics", () => {
+  it("measures and truncates with pi-tui", () => {
+    const like = themeLike(theme);
+
+    expect(like.width("日本")).toBe(visibleWidth("日本"));
+    expect(like.width("a\tb")).toBe(visibleWidth("a\tb"));
+    expect(like.width("🚀 \x1b[31mab\x1b[0m")).toBe(visibleWidth("🚀 \x1b[31mab\x1b[0m"));
+    expect(like.truncate("Map the auth module", 8)).toBe("Map the…");
+    expect(like.truncate("日本語テキスト", 5)).toBe("日本…");
+    expect(like.truncate("short", 10)).toBe("short");
+    expect(like.truncate("x", 0)).toBe("");
+  });
+
+  it("keeps pi's resets around the ellipsis of a painted line", () => {
+    const painted = "\x1b[31mMap the auth module\x1b[0m";
+
+    expect(themeLike(theme).truncate(painted, 8)).toBe(truncateToWidth(painted, 8, "…"));
   });
 });

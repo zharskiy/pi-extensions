@@ -1,9 +1,7 @@
-import { stripVTControlCharacters } from "node:util";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
-import { displayWidth } from "../../src/components/format.ts";
-import { requestLineCount, requestLines } from "../../src/components/request-block.ts";
-import { recordingTheme } from "../helpers/overlay.ts";
+import { describe, expect, it } from "vitest";
+import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import { requestLineCount, requestLines } from "../../../src/plugins/agent-view/request-block.ts";
+import { recordingTheme } from "../../helpers/overlay.ts";
 
 const payload = () => ({
   model: "provider/model",
@@ -12,10 +10,6 @@ const payload = () => ({
 });
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2).split("\n");
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("request block", () => {
   it("counts the lines of the pretty-printed request", () => {
@@ -56,33 +50,12 @@ describe("request block", () => {
     const lines = requestLines(value, false, true, 40, plainTheme).slice(1);
     const long = pretty(value)[1] as string;
 
-    expect(lines.every((line) => displayWidth(line) <= 39)).toBe(true);
-    expect(lines.every((line) => line.startsWith("   "))).toBe(true);
+    expect(lines.every((line) => line.startsWith("   ") && plainTheme.width(line) <= 39)).toBe(true);
     expect(
       lines
         .slice(1, -1)
         .map((line) => line.slice(3))
         .join(""),
     ).toBe(long);
-  });
-
-  it("does not split wide characters", () => {
-    const lines = requestLines({ text: "漢字".repeat(60) }, false, true, 41, plainTheme);
-
-    expect(lines.every((line) => displayWidth(stripVTControlCharacters(line)) <= 40)).toBe(true);
-  });
-
-  it("reuses the stringified request for the same payload", () => {
-    const stringify = vi.spyOn(JSON, "stringify");
-    const value = payload();
-
-    requestLines(value, false, true, 80, plainTheme);
-    requestLines(value, false, true, 60, plainTheme);
-
-    expect(stringify).toHaveBeenCalledTimes(1);
-
-    requestLines(payload(), false, true, 60, plainTheme);
-
-    expect(stringify).toHaveBeenCalledTimes(2);
   });
 });

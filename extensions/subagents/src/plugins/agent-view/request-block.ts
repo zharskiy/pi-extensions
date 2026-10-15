@@ -1,11 +1,11 @@
-import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { charWidth, innerWidth, PAD, truncateCols } from "./format.ts";
+import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
+import { innerWidth, PAD, wrapCols } from "../../components/format.ts";
 
 const INDENT = `${PAD}  `;
 
 const stringified = new WeakMap<object, string[]>();
 
-let wrapped: { payload: unknown; cols: number; lines: string[] } | undefined;
+let wrapped: { payload: unknown; cols: number; theme: ThemeLike; lines: string[] } | undefined;
 
 const pretty = (payload: unknown): string[] => {
   try {
@@ -41,37 +41,14 @@ const linesOf = (payload: unknown): string[] => {
 
 export const requestLineCount = (payload: unknown): number => linesOf(payload).length;
 
-const wrapLine = (line: string, cols: number): string[] => {
-  const parts: string[] = [];
-  let current = "";
-  let used = 0;
-
-  Array.from(line).forEach((char) => {
-    const width = charWidth(char);
-
-    if (used + width > cols && current !== "") {
-      parts.push(current);
-      current = "";
-      used = 0;
-    }
-
-    current += char;
-    used += width;
-  });
-
-  parts.push(current);
-
-  return parts;
-};
-
-const wrappedLines = (payload: unknown, cols: number): string[] => {
-  if (wrapped && wrapped.payload === payload && wrapped.cols === cols) {
+const wrappedLines = (payload: unknown, cols: number, theme: ThemeLike): string[] => {
+  if (wrapped && wrapped.payload === payload && wrapped.cols === cols && wrapped.theme === theme) {
     return wrapped.lines;
   }
 
-  const lines = linesOf(payload).flatMap((line) => wrapLine(line, cols).map((part) => INDENT + part));
+  const lines = linesOf(payload).flatMap((line) => wrapCols(theme, line, cols).map((part) => INDENT + part));
 
-  wrapped = { payload, cols, lines };
+  wrapped = { payload, cols, theme, lines };
 
   return lines;
 };
@@ -85,7 +62,7 @@ export const requestLines = (
 ): string[] => {
   const inner = innerWidth(width);
   const count = requestLineCount(payload);
-  const line = (text: string) => PAD + theme.fg("dim", truncateCols(text, inner));
+  const line = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
 
   if (count === 0) {
     return [line(open ? "▸ Request · not sent yet" : "▸ Request · not recorded")];
@@ -95,5 +72,5 @@ export const requestLines = (
     return [line(`▸ Request · ${count} lines`)];
   }
 
-  return [line(`▾ Request · ${count} lines`), ...wrappedLines(payload, Math.max(1, inner - 2))];
+  return [line(`▾ Request · ${count} lines`), ...wrappedLines(payload, Math.max(1, inner - 2), theme)];
 };

@@ -1,11 +1,24 @@
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Box, type Component, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Box, type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
+
+const ESC = "\x1b";
+
+export const textMetrics: Pick<ThemeLike, "width" | "truncate"> = {
+  width: visibleWidth,
+  truncate: (text, cols) => {
+    const cut = truncateToWidth(text, cols, "…");
+
+    return text.includes(ESC) ? cut : stripVTControlCharacters(cut);
+  },
+};
 
 export const themeLike = (theme: Theme): ThemeLike => ({
   fg: (token, text) => theme.fg(token, text),
   bold: (text) => theme.bold(text),
+  ...textMetrics,
 });
 
 class WidthText implements Component {

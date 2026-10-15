@@ -1,10 +1,12 @@
-import { elapsedOf, formatDuration, formatTokens, singleLine } from "../../components/format.ts";
+import {
+  cutChars,
+  elapsedOf,
+  formatDuration,
+  formatTokens,
+  formatToolUses,
+  singleLine,
+} from "../../components/format.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-
-const cutChars = (text: string, limit: number) =>
-  text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
   if (record.state !== "grace" || record.graceEndsAt === undefined) {
@@ -97,7 +99,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
     `${name} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
     formatDuration(snapshot.elapsedMs),
     `${formatTokens(snapshot.tokens)} tokens`,
-    plural(snapshot.toolCalls, "tool call"),
+    formatToolUses(snapshot.toolCalls),
     percent,
   ];
 

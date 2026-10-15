@@ -1,5 +1,6 @@
 import type { ThemeLike, WidgetHandle } from "../../../../../core/adapter/contract.ts";
-import { watchAgents } from "../../components/refresh.ts";
+import { errorText } from "../../components/format.ts";
+import { tickFor, watchAgents } from "../../components/refresh.ts";
 import type { TreeRow } from "../../components/tree.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { isClosed } from "../../model/types.ts";
@@ -14,10 +15,6 @@ import {
 } from "./model.ts";
 
 const WIDGET_KEY = "pi-subagents-agents";
-
-const TICK_RUNNING_MS = 100;
-
-const TICK_IDLE_MS = 1_000;
 
 type Rendered = { width: number; theme: ThemeLike; output: string; lines: string[] };
 
@@ -116,10 +113,7 @@ export const agentPanelPlugin: Plugin = {
     };
 
     const report = (action: string, error: unknown) => {
-      host.ui.notify(
-        `pi-subagents: ${action} failed: ${error instanceof Error ? error.message : String(error)}`,
-        "warning",
-      );
+      host.ui.notify(`pi-subagents: ${action} failed: ${errorText(error)}`, "warning");
     };
 
     const actions: PanelActions = {
@@ -150,17 +144,11 @@ export const agentPanelPlugin: Plugin = {
       capture = host.ui.captureEditorKeys(panelKeyHandler(actions));
     };
 
-    const tickMs = () => {
-      const current = rows();
-
-      if (current.length === 0) {
-        return undefined;
-      }
-
-      return current.some((row) => row.record.state === "running" || row.record.state === "grace")
-        ? TICK_RUNNING_MS
-        : TICK_IDLE_MS;
-    };
+    const tickMs = () =>
+      tickFor(
+        rows().map((row) => row.record),
+        true,
+      );
 
     const unwatch = watchAgents(bus, {
       relevant: () => true,

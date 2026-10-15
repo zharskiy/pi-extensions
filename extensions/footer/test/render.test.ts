@@ -18,7 +18,7 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
 const plain = (text: string) => text.replace(ANSI, "");
 
-const tokenTheme: ThemeLike = { fg: (token, text) => `<${token}>${text}`, bold: (text) => text };
+const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
 
 const model = { name: "test-model", contextWindow: 1_000_000, reasoning: true };
 

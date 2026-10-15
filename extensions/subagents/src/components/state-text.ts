@@ -1,6 +1,9 @@
 import type { ThemeToken } from "../../../../core/adapter/contract.ts";
-import type { AgentState } from "../model/types.ts";
-import { spinnerFrame } from "./spinner.ts";
+import { type AgentState, isClosed } from "../model/types.ts";
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+const spinnerFrame = (now: number): string => SPINNER_FRAMES[Math.floor(now / 100) % SPINNER_FRAMES.length];
 
 const GLYPHS: Record<Exclude<AgentState, "running">, string> = {
   queued: "○",
@@ -37,3 +40,6 @@ export const stateGlyph = (state: AgentState, now: number): string =>
 export const stateToken = (state: AgentState): ThemeToken => TOKENS[state];
 
 export const stateWord = (state: AgentState): string => WORDS[state];
+
+export const stopHint = (state: AgentState): string =>
+  isClosed(state) ? "x to clear" : state === "grace" ? "x to close now" : "x to stop";

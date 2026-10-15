@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRuntime, Host, SessionRecord } from "../../../../../core/adapter/contract.ts";
+import { errorText } from "../../components/format.ts";
 import { agentsDirFor, handoffPathFor, MANIFEST_FILE } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../../model/types.ts";
 
@@ -25,14 +26,19 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
   const { host, runtime, registry } = deps;
 
   const fromManifest = (id: string): AgentRecord | undefined => {
-    const dir = join(agentsDirFor(host.session()), id);
-    const path = join(dir, MANIFEST_FILE);
+    const session = host.session();
+    const dir = join(agentsDirFor(session), id);
+    let manifest: Partial<AgentRecord>;
 
-    if (!existsSync(path)) {
-      return undefined;
+    try {
+      manifest = JSON.parse(readFileSync(join(dir, MANIFEST_FILE), "utf8")) as Partial<AgentRecord>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
+      }
+
+      throw new Error(`manifest of "${id}": ${errorText(error)}`);
     }
-
-    const manifest = JSON.parse(readFileSync(path, "utf8")) as Partial<AgentRecord>;
 
     return {
       turns: 0,
@@ -43,31 +49,23 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
       contextLimit: deps.limitOf(manifest.agent),
       chainIndex: 1,
       version: 0,
-      handoffPath: handoffPathFor(host.session(), id),
+      handoffPath: handoffPathFor(session, id),
       dir,
       ...manifest,
     } as AgentRecord;
   };
 
-  const pastTerminal = (record: AgentRecord): AgentRecord => {
-    const successor = record.successorId ? fromManifest(record.successorId) : undefined;
-
-    return successor ? pastTerminal(successor) : record;
+  const readable = {
+    get: (id: string) => {
+      try {
+        return fromManifest(id);
+      } catch {
+        return undefined;
+      }
+    },
   };
 
-  const readable = (id: string) => {
-    try {
-      return fromManifest(id);
-    } catch {
-      return undefined;
-    }
-  };
-
-  const pastChain = (record: AgentRecord): string[] => {
-    const predecessor = record.predecessorId ? readable(record.predecessorId) : undefined;
-
-    return [...(predecessor ? pastChain(predecessor) : []), record.id];
-  };
+  const pastChain = (record: AgentRecord): string[] => chainLinks(readable, record).map((link) => link.id);
 
   const find = (id: string): AgentRecord | undefined => {
     const live = registry.get(id);
@@ -78,7 +76,7 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
 
     const past = fromManifest(id);
 
-    return past ? pastTerminal(past) : undefined;
+    return past ? chainTerminal(readable, past) : undefined;
   };
 
   const loader = (id: string, found: AgentRecord) => {

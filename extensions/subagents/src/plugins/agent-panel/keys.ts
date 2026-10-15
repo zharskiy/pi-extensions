@@ -1,5 +1,5 @@
 import type { EditorKeyHandler } from "../../../../../core/adapter/contract.ts";
-import type { TreeRow } from "../../components/tree.ts";
+import { carrySelection, type TreeRow } from "../../components/tree.ts";
 import { isClosed } from "../../model/types.ts";
 import { type PanelState, selectedIndex } from "./model.ts";
 
@@ -33,25 +33,19 @@ const move = (actions: PanelActions, step: 1 | -1) => {
   actions.refresh();
 };
 
-const clear = (actions: PanelActions, before: TreeRow[], id: string) => {
-  const index = before.findIndex((row) => row.record.id === id);
+const ids = (rows: TreeRow[]) => rows.map((row) => row.record.id);
 
+const clear = (actions: PanelActions, before: TreeRow[], id: string) => {
   actions.state.cleared.add(id);
 
-  const remaining = new Set(actions.rows().map((row) => row.record.id));
-  const next =
-    before.slice(index + 1).find((row) => remaining.has(row.record.id)) ??
-    before
-      .slice(0, index)
-      .reverse()
-      .find((row) => remaining.has(row.record.id));
+  const next = carrySelection(ids(before), ids(actions.rows()), id);
 
   if (!next) {
     deselect(actions);
     return;
   }
 
-  actions.state.selectedId = next.record.id;
+  actions.state.selectedId = next;
   actions.refresh();
 };
 

@@ -5,10 +5,11 @@ import type {
   ThemeLike,
   ViewComponent,
 } from "../../../../../core/adapter/contract.ts";
+import { agentName } from "../../components/agent-row.ts";
 import {
   alignRight,
-  displayWidth,
   elapsedOf,
+  errorText,
   firstLine,
   formatCtx,
   formatDuration,
@@ -18,14 +19,14 @@ import {
   PAD,
   SEP,
   singleLine,
-  truncateCols,
   truncatePainted,
 } from "../../components/format.ts";
-import { requestLineCount, requestLines } from "../../components/request-block.ts";
-import { stateGlyph, stateToken, stateWord } from "../../components/state-text.ts";
+import { tickFor } from "../../components/refresh.ts";
+import { stateGlyph, stateToken, stateWord, stopHint } from "../../components/state-text.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
 import { type AgentRecord, type AgentViewOrigin, isClosed, worktreeText } from "../../model/types.ts";
 import type { ViewData } from "./loader.ts";
+import { requestLineCount, requestLines } from "./request-block.ts";
 
 export type ViewDeps = {
   load(): ViewData;
@@ -49,15 +50,16 @@ const ctxPercent = (data: ViewData, reserveTokens: number) => {
 
 const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) => {
   const glyph = stateGlyph(record.state, now);
-  const name = record.chainIndex > 1 ? `${record.agent} #${record.chainIndex}` : record.agent;
+  const name = agentName(record);
   const prefix = `${glyph} ${name} › `;
   const description = singleLine(record.description);
-  const room = inner - displayWidth(prefix);
+  const room = inner - theme.width(prefix);
 
   if (room < MIN_DESCRIPTION) {
     return (
       PAD +
       truncatePainted(
+        theme,
         [
           [glyph, (text) => theme.fg(stateToken(record.state), text)],
           [" ", (text) => text],
@@ -69,7 +71,7 @@ const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: nu
     );
   }
 
-  return `${PAD}${theme.fg(stateToken(record.state), glyph)} ${theme.bold(name)} › ${truncateCols(description, room)}`;
+  return `${PAD}${theme.fg(stateToken(record.state), glyph)} ${theme.bold(name)} › ${theme.truncate(description, room)}`;
 };
 
 const statsText = (data: ViewData, now: number, reserveTokens: number) => {
@@ -88,14 +90,14 @@ const statsText = (data: ViewData, now: number, reserveTokens: number) => {
 const outcomeLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
   if (record.state === "failed") {
     return [
-      PAD + theme.fg("error", truncateCols(`error: ${firstLine(record.error ?? "unknown error")}`, inner)),
+      PAD + theme.fg("error", theme.truncate(`error: ${firstLine(record.error ?? "unknown error")}`, inner)),
     ];
   }
 
   if (record.state === "handoff") {
     const invalid = record.error ? ` (invalid: ${record.error})` : "";
 
-    return [PAD + theme.fg("warning", truncateCols(`handoff: ${record.handoffPath}${invalid}`, inner))];
+    return [PAD + theme.fg("warning", theme.truncate(`handoff: ${record.handoffPath}${invalid}`, inner))];
   }
 
   return [];
@@ -110,7 +112,7 @@ export const headerLines = (
 ): string[] => {
   const { record, chain, openedId } = data;
   const inner = innerWidth(width);
-  const dim = (text: string) => PAD + theme.fg("dim", truncateCols(text, inner));
+  const dim = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
   const opened = openedId ? ` · opened ${openedId}` : "";
 
   return [
@@ -125,14 +127,6 @@ export const headerLines = (
 };
 
 const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.sessionFile ?? ""}`;
-
-const tickOf = (record: AgentRecord) => {
-  if (record.state === "running" || record.state === "grace") {
-    return 100;
-  }
-
-  return record.state === "queued" ? 1_000 : undefined;
-};
 
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const scroll = api.createScroll();
@@ -178,7 +172,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     api.requestRender();
   };
 
-  const unwatch = deps.watch(() => tickOf(data.record), reload);
+  const unwatch = deps.watch(() => tickFor([data.record], false), reload);
 
   const bodyLines = (width: number) => {
     const theme = api.theme;
@@ -187,7 +181,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     if (data.error !== undefined) {
       return {
         request: [],
-        lines: [PAD + theme.fg("warning", truncateCols(data.error, inner))],
+        lines: [PAD + theme.fg("warning", theme.truncate(data.error, inner))],
         clickable: 0,
       };
     }
@@ -204,7 +198,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
   const hintText = () => {
     const record = data.record;
-    const stop = record.state === "grace" ? "x to close now" : isOpen() ? "x to stop" : undefined;
+    const stop = isOpen() ? stopHint(record.state) : undefined;
     const request = hasRequest() ? (requestExpanded ? "r hide request" : "r request") : undefined;
 
     return [
@@ -232,7 +226,8 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const hintLine = (inner: number) => {
     const hint = hintText();
     const position = positionText();
-    const text = (position && alignRight(hint, position, inner)) || truncateCols(hint, inner);
+    const text =
+      (position && alignRight(api.theme, hint, position, inner)) || api.theme.truncate(hint, inner);
 
     return PAD + api.theme.fg("dim", text);
   };
@@ -241,7 +236,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const inner = innerWidth(width);
     const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
-    const footer = notice ? [PAD + theme.fg("warning", truncateCols(notice, inner))] : [];
+    const footer = notice ? [PAD + theme.fg("warning", theme.truncate(notice, inner))] : [];
     const height = Math.max(3, api.rows() - header.length - 3 - (footer.length + 1));
     const { request, lines, clickable } = bodyLines(width);
     const body = request.concat(lines);
@@ -271,7 +266,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       return;
     }
 
-    notice = `stop failed: ${(error as Error).message}`;
+    notice = `stop failed: ${errorText(error)}`;
     api.requestRender();
   };
 

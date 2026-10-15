@@ -8,12 +8,12 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 pi-extensions/
 ├── core/                        # shared code, no extension-specific logic
 │   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types
+│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg, bold, width, truncate)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
 │   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
-│   │   ├── pi-tools.ts          # tool wrapping, themeLike, padded lines
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics, padded lines
 │   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
 │   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
@@ -44,10 +44,11 @@ pi-extensions/
 │   │   │   ├── plugins.ts       # ordered plugin list
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
 │   │   │   │                    #   agent-schema, context-limit
-│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and padding,
-│   │   │   │                    #   spinner.ts, state-text.ts, agent-row, tree.ts (tree order,
-│   │   │   │                    #   connectors, open descendants), request-block (the agent
-│   │   │   │                    #   view's Request block), refresh.ts throttle/ticker)
+│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters, padding and
+│   │   │   │                    #   wrapping over the theme, state-text.ts glyphs, spinner, words
+│   │   │   │                    #   and stop hint, agent-row, tree.ts (chain links, terminals,
+│   │   │   │                    #   tree order, connectors, selection carry), refresh.ts
+│   │   │   │                    #   throttle/ticker and tick cadence)
 │   │   │   └── plugins/         # one folder per feature, see below
 │   │   ├── agents/              # bundled agent definitions (*.md)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
@@ -106,7 +107,8 @@ run-agent/          # index.ts (plugin, tools service), runner.ts, tools.ts (run
                     #   semaphore.ts, handoff.ts (handoff template and schema service)
 agent-status/       # status tool and snapshots
 agent-view/         # /agents overlay: index (command, service), overlay.ts (list/view host),
-                    #   list.ts + list-model.ts (tree sections), view.ts, loader.ts
+                    #   list.ts + list-model.ts (tree sections), view.ts, loader.ts,
+                    #   request-block.ts (the view's Request block)
 agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel

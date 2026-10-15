@@ -1,13 +1,19 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { elapsedOf, formatDuration, formatTokens, singleLine } from "../../components/format.ts";
+import {
+  cutChars,
+  elapsedOf,
+  formatDuration,
+  formatTokens,
+  formatToolUses,
+  singleLine,
+} from "../../components/format.ts";
+import { isTerminal } from "../../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const statsText = (record: AgentRecord, now: number) =>
   [
-    plural(record.toolCalls, "tool call"),
+    formatToolUses(record.toolCalls),
     `${formatTokens(record.tokens)} tokens`,
     formatDuration(elapsedOf(record, now)),
   ].join(" · ");
@@ -29,9 +35,6 @@ const finishSummary = (record: AgentRecord, now: number) => {
 
   return `Failed: ${record.error ?? "unknown error"} (${stats})`;
 };
-
-const cutChars = (text: string, limit: number) =>
-  text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 
 type StoredResult = { resultText: string; resultPath?: string; error?: string };
 
@@ -122,13 +125,10 @@ const countByState = (records: AgentRecord[]) => {
 
 export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number, now: number) => {
   const byId = new Map(records.map((record) => [record.id, record]));
-  const lookup = { get: (id: string) => byId.get(id) };
-  const terminals = records.filter((record) => !(record.successorId && byId.has(record.successorId)));
+  const terminals = records.filter((record) => isTerminal(record, byId));
   const header = `[pi-subagents] Batch ${batchId} finished: ${countByState(terminals)}.`;
 
-  const entries = terminals.map((record) =>
-    resultEntry(record, inlineLimit, now, chainLinks(lookup, record)),
-  );
+  const entries = terminals.map((record) => resultEntry(record, inlineLimit, now, chainLinks(byId, record)));
 
   entries.unshift(header);
 

@@ -538,6 +538,7 @@ describe("agent panel", () => {
     const record = panel.newAgent();
     let calls = 0;
     const counting: ThemeLike = {
+      ...plainTheme,
       fg: (_token, text) => {
         calls += 1;
         return text;

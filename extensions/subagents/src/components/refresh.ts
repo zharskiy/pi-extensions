@@ -1,7 +1,23 @@
 import type { Bus } from "../model/events.ts";
 import type { AgentRecord } from "../model/types.ts";
 
-export type Throttle = { call(): void; cancel(): void };
+const TICK_RUNNING_MS = 100;
+
+const TICK_IDLE_MS = 1_000;
+
+export const tickFor = (records: AgentRecord[], linger: boolean): number | undefined => {
+  if (records.some((record) => record.state === "running" || record.state === "grace")) {
+    return TICK_RUNNING_MS;
+  }
+
+  if (records.some((record) => record.state === "queued") || (linger && records.length > 0)) {
+    return TICK_IDLE_MS;
+  }
+
+  return undefined;
+};
+
+type Throttle = { call(): void; cancel(): void };
 
 export const createThrottle = (run: () => void, intervalMs: () => number): Throttle => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -36,7 +52,7 @@ export const createThrottle = (run: () => void, intervalMs: () => number): Throt
   };
 };
 
-export type AgentWatch = {
+type AgentWatch = {
   relevant(record: AgentRecord): boolean;
   tickMs(): number | undefined;
   throttleMs(): number;

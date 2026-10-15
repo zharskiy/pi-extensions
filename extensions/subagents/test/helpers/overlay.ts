@@ -44,6 +44,7 @@ export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
 };
 
 export const recordingTheme: ThemeLike = {
+  ...plainTheme,
   fg: (token, text) => `<${token}>${text}</>`,
   bold: (text) => `<b>${text}</b>`,
 };

@@ -1,30 +1,17 @@
 import { SEP } from "../../components/format.ts";
-import { type TreeRow, treeOrder } from "../../components/tree.ts";
-import { type AgentRecord, isClosed, MAIN_CALLER } from "../../model/types.ts";
+import { stopHint } from "../../components/state-text.ts";
+import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
+import { type AgentRecord, chainLinks, chainTerminal, isClosed, MAIN_CALLER } from "../../model/types.ts";
 
 type ById = ReadonlyMap<string, AgentRecord>;
 
 export type ListSection = { title: string; rows: TreeRow[] };
 
-const terminalOf = (record: AgentRecord, byId: ById): AgentRecord => {
-  const successor = record.successorId ? byId.get(record.successorId) : undefined;
-
-  return successor ? terminalOf(successor, byId) : record;
-};
-
-const firstLinkOf = (record: AgentRecord, byId: ById): AgentRecord => {
-  const predecessor = record.predecessorId ? byId.get(record.predecessorId) : undefined;
-
-  return predecessor ? firstLinkOf(predecessor, byId) : record;
-};
-
-const isTerminal = (record: AgentRecord, byId: ById) => !record.successorId || !byId.has(record.successorId);
-
 const callerOf = (record: AgentRecord, byId: ById): AgentRecord | undefined => {
-  const callerId = firstLinkOf(record, byId).callerId;
+  const callerId = chainLinks(byId, record)[0].callerId;
   const caller = callerId === MAIN_CALLER ? undefined : byId.get(callerId);
 
-  return caller ? terminalOf(caller, byId) : undefined;
+  return caller ? chainTerminal(byId, caller) : undefined;
 };
 
 const indexOf = (records: AgentRecord[]) => new Map(records.map((record) => [record.id, record]));
@@ -42,23 +29,6 @@ const rootOf = (record: AgentRecord, byId: ById): AgentRecord => {
   const caller = callerOf(record, byId);
 
   return !caller || isListRoot(record, byId) ? record : rootOf(caller, byId);
-};
-
-const withLinks = (records: AgentRecord[], byId: ById): AgentRecord[] => {
-  const links = new Map<string, AgentRecord>();
-
-  const add = (record: AgentRecord) => {
-    const predecessor = record.predecessorId ? byId.get(record.predecessorId) : undefined;
-
-    if (predecessor && !links.has(predecessor.id)) {
-      links.set(predecessor.id, predecessor);
-      add(predecessor);
-    }
-  };
-
-  records.forEach(add);
-
-  return [...records, ...links.values()];
 };
 
 export const visibleRecords = (
@@ -179,38 +149,12 @@ export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
   ];
 };
 
-const STOP_PART: Record<"open" | "grace" | "closed", string> = {
-  open: "x to stop",
-  grace: "x to close now",
-  closed: "x to clear",
-};
-
 export const listHint = (selected: AgentRecord | undefined): string => {
   if (!selected) {
     return "esc to close";
   }
 
-  const kind = selected.state === "grace" ? "grace" : isClosed(selected.state) ? "closed" : "open";
-
-  return ["↑/↓ to select", "enter to view", STOP_PART[kind], "X to stop all", "esc to close"].join(SEP);
-};
-
-export const carrySelection = (
-  previousIds: string[],
-  ids: string[],
-  selected: string | undefined,
-): string | undefined => {
-  if (selected === undefined || ids.includes(selected)) {
-    return selected;
-  }
-
-  const index = previousIds.indexOf(selected);
-  const kept = new Set(ids);
-  const after = previousIds.slice(index + 1).find((id) => kept.has(id));
-  const before = previousIds
-    .slice(0, Math.max(0, index))
-    .reverse()
-    .find((id) => kept.has(id));
-
-  return after ?? before;
+  return ["↑/↓ to select", "enter to view", stopHint(selected.state), "X to stop all", "esc to close"].join(
+    SEP,
+  );
 };

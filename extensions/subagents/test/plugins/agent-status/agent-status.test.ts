@@ -108,7 +108,7 @@ describe("agent_status", () => {
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
     expect(result.text).toContain(`${first.id} (explorer, ${first.model}) running`);
     expect(result.text).toContain("ctx 15%");
-    expect(result.text).toContain(" · 1 tool call · ctx 15%");
+    expect(result.text).toContain(" · 1 tool use · ctx 15%");
     expect(result.text).toContain("ghost-0000: unknown agent");
 
     harness.host.settle();

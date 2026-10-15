@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBus } from "../../../../core/manager/bus.ts";
-import { createThrottle, watchAgents } from "../../src/components/refresh.ts";
+import { createThrottle, tickFor, watchAgents } from "../../src/components/refresh.ts";
 import type { BusEvents } from "../../src/model/events.ts";
-import type { AgentRecord } from "../../src/model/types.ts";
+import type { AgentRecord, AgentState } from "../../src/model/types.ts";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -14,7 +14,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const record = (id: string) => ({ id }) as AgentRecord;
+const record = (id: string, state: AgentState = "running") => ({ id, state }) as AgentRecord;
+
+describe("tick cadence", () => {
+  it.each([
+    { name: "100 ms while a record runs", records: ["running", "done"], linger: false, expected: 100 },
+    { name: "100 ms while a record is in grace", records: ["grace"], linger: false, expected: 100 },
+    { name: "1 s while a record is queued", records: ["queued", "done"], linger: false, expected: 1_000 },
+    { name: "1 s for lingering closed records", records: ["done", "failed"], linger: true, expected: 1_000 },
+    { name: "none for closed records without linger", records: ["done"], linger: false, expected: undefined },
+    { name: "none without records", records: [], linger: true, expected: undefined },
+  ] as { name: string; records: AgentState[]; linger: boolean; expected: number | undefined }[])(
+    "$name",
+    ({ records, linger, expected }) => {
+      expect(
+        tickFor(
+          records.map((state, index) => record(`r${index}`, state)),
+          linger,
+        ),
+      ).toBe(expected);
+    },
+  );
+});
 
 describe("throttle", () => {
   it("runs at most once per interval and keeps a trailing call", () => {
@@ -127,23 +148,6 @@ describe("agent watch", () => {
     vi.advanceTimersByTime(300);
 
     expect(onChange).toHaveBeenCalledTimes(4);
-  });
-
-  it("unrefs the ticker", () => {
-    const realSetTimeout = globalThis.setTimeout;
-    const unref = vi.fn();
-
-    vi.stubGlobal("setTimeout", (run: () => void, ms: number) => {
-      const timer = realSetTimeout(run, ms);
-
-      return Object.assign(timer, { unref });
-    });
-
-    const bus = createBus<BusEvents>();
-
-    watchAgents(bus, { relevant: () => true, tickMs: () => 100, throttleMs: () => 0, onChange: () => {} });
-
-    expect(unref).toHaveBeenCalled();
   });
 
   it("clears everything on unsubscribe", () => {

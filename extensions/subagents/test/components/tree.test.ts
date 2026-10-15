@@ -1,40 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { treeOrder } from "../../src/components/tree.ts";
-import type { AgentRecord, AgentState } from "../../src/model/types.ts";
+import { carrySelection, isTerminal, treeOrder, withLinks } from "../../src/components/tree.ts";
+import type { AgentRecord } from "../../src/model/types.ts";
+import { agentRecord } from "../helpers/records.ts";
 
-type Fixture = {
-  id: string;
-  callerId?: string;
-  createdAt?: number;
-  state?: AgentState;
-  successorId?: string;
-  predecessorId?: string;
-  chainIndex?: number;
-};
-
-const rec = ({ id, callerId = "main", createdAt = 0, state = "running", ...rest }: Fixture): AgentRecord => ({
-  id,
-  agent: "explorer",
-  description: `work of ${id}`,
-  callerId,
-  depth: 2,
-  batchId: "b-1",
-  chainIndex: 1,
-  state,
-  createdAt,
-  turns: 0,
-  toolCalls: 0,
-  tokens: 0,
-  lastText: "",
-  handoffPath: "/x/handoff.md",
-  dir: "/x",
-  contextLimit: 100_000,
-  handoffRequested: false,
-  version: 0,
-  ...rest,
-});
+const rec = (patch: Partial<AgentRecord> & { id: string }): AgentRecord => agentRecord(patch);
 
 const byId = (rows: ReturnType<typeof treeOrder>, id: string) => rows.find((row) => row.record.id === id);
+
+const indexOf = (records: AgentRecord[]) => new Map(records.map((record) => [record.id, record]));
 
 describe("tree order", () => {
   it("orders callers first, children under their caller and siblings by createdAt", () => {
@@ -100,6 +73,34 @@ describe("tree order", () => {
     expect(byId(finished, "a2")?.openDescendants).toBe(0);
   });
 
+  it("shows a successor and its predecessor once while the predecessor has no successorId yet", () => {
+    const records = [
+      rec({ id: "a", createdAt: 1, state: "handoff" }),
+      rec({ id: "a2", createdAt: 9, predecessorId: "a", chainIndex: 2 }),
+    ];
+    const index = indexOf(records);
+    const terminals = records.filter((record) => isTerminal(record, index));
+
+    expect(terminals.map((record) => record.id)).toEqual(["a", "a2"]);
+    expect(withLinks(terminals, index).map((record) => record.id)).toEqual(["a", "a2"]);
+    expect(treeOrder(withLinks(terminals, index)).map((row) => row.record.id)).toEqual(["a", "a2"]);
+  });
+
+  it("adds the earlier links of a chain once behind the listed records", () => {
+    const records = [
+      rec({ id: "a", createdAt: 1, state: "handoff", successorId: "a2" }),
+      rec({ id: "a2", createdAt: 5, state: "handoff", predecessorId: "a", successorId: "a3", chainIndex: 2 }),
+      rec({ id: "a3", createdAt: 9, predecessorId: "a2", chainIndex: 3 }),
+      rec({ id: "b", createdAt: 2 }),
+    ];
+    const index = indexOf(records);
+    const terminals = records.filter((record) => isTerminal(record, index));
+
+    expect(terminals.map((record) => record.id)).toEqual(["a3", "b"]);
+    expect(withLinks(terminals, index).map((record) => record.id)).toEqual(["a3", "b", "a", "a2"]);
+    expect(treeOrder(withLinks(terminals, index)).map((row) => row.record.id)).toEqual(["a3", "b"]);
+  });
+
   it("counts open descendants over the whole subtree", () => {
     const rows = treeOrder([
       rec({ id: "a", createdAt: 1 }),
@@ -126,5 +127,15 @@ describe("tree order", () => {
 
   it("returns an empty list for no records", () => {
     expect(treeOrder([])).toEqual([]);
+  });
+});
+
+describe("selection", () => {
+  it("carries the selection to the next row, else the previous, else none", () => {
+    expect(carrySelection(["a", "b", "c"], ["a", "b", "c"], "b")).toBe("b");
+    expect(carrySelection(["a", "b", "c"], ["a", "c"], "b")).toBe("c");
+    expect(carrySelection(["a", "b", "c"], ["a"], "c")).toBe("a");
+    expect(carrySelection(["a"], [], "a")).toBeUndefined();
+    expect(carrySelection([], ["a"], undefined)).toBeUndefined();
   });
 });

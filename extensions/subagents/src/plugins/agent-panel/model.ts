@@ -1,7 +1,8 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { type RowInput, type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
-import { innerWidth, PAD, SEP, truncateCols } from "../../components/format.ts";
-import { type TreeRow, treeOrder } from "../../components/tree.ts";
+import { innerWidth, PAD, SEP } from "../../components/format.ts";
+import { stopHint } from "../../components/state-text.ts";
+import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
 import type { Settings } from "../../model/settings.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 
@@ -41,26 +42,11 @@ export const panelRows = (
 ): TreeRow[] => {
   const byId = new Map(records.map((record) => [record.id, record]));
   const visible = records.filter(
-    (record) =>
-      !(record.successorId && byId.has(record.successorId)) && isVisible(record, now, settings, cleared),
+    (record) => isTerminal(record, byId) && isVisible(record, now, settings, cleared),
   );
   const visibleIds = new Set(visible.map((record) => record.id));
-  const links = new Map<string, AgentRecord>();
 
-  const addLinks = (record: AgentRecord) => {
-    const predecessor = record.predecessorId ? byId.get(record.predecessorId) : undefined;
-
-    if (!predecessor || visibleIds.has(predecessor.id) || links.has(predecessor.id)) {
-      return;
-    }
-
-    links.set(predecessor.id, predecessor);
-    addLinks(predecessor);
-  };
-
-  visible.forEach(addLinks);
-
-  return treeOrder([...visible, ...links.values()]).filter((row) => visibleIds.has(row.record.id));
+  return treeOrder(withLinks(visible, byId)).filter((row) => visibleIds.has(row.record.id));
 };
 
 export const selectedIndex = (rows: TreeRow[], state: PanelState): number =>
@@ -98,18 +84,10 @@ export const windowOf = (rows: TreeRow[], state: PanelState) => {
   return { start, end, above: start, below: rows.length - end };
 };
 
-const stopPart = (record: AgentRecord) => {
-  if (isClosed(record.state)) {
-    return "x to clear";
-  }
-
-  return record.state === "grace" ? "x to close now" : "x to stop";
-};
-
 export const hintText = (record: AgentRecord, actions: PanelActionsAvailable): string =>
   [
     actions.view ? "enter to view" : undefined,
-    actions.stop || isClosed(record.state) ? stopPart(record) : undefined,
+    actions.stop || isClosed(record.state) ? stopHint(record.state) : undefined,
     "esc to deselect",
   ]
     .filter((part) => part !== undefined)
@@ -131,7 +109,7 @@ export const panelLines = (
   const { start, end, above, below } = windowOf(rows, state);
   const marker = (text: string) => `${PAD}${theme.fg("dim", text)}`;
   const selected = rows.find((entry) => entry.record.id === state.selectedId);
-  const layout = rowLayout(rows, now, width, selected !== undefined);
+  const layout = rowLayout(rows, now, width, selected !== undefined, theme);
   const lines = rows
     .slice(start, end)
     .map((entry) =>
@@ -147,7 +125,7 @@ export const panelLines = (
   }
 
   if (selected) {
-    lines.push(PAD + theme.fg("dim", truncateCols(hintText(selected.record, actions), innerWidth(width))));
+    lines.push(PAD + theme.fg("dim", theme.truncate(hintText(selected.record, actions), innerWidth(width))));
   }
 
   lines.push("");

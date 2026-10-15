@@ -4,9 +4,8 @@ import type {
   ToolResult,
   ToolTone,
 } from "../../../../../core/adapter/contract.ts";
+import { agentName } from "../../components/agent-row.ts";
 import {
-  charWidth,
-  displayWidth,
   elapsedOf,
   firstLine,
   formatDuration,
@@ -14,8 +13,9 @@ import {
   formatToolUses,
   SEP,
   singleLine,
-  truncateCols,
+  wrapCols,
 } from "../../components/format.ts";
+import { stateToken } from "../../components/state-text.ts";
 import {
   type AgentRecord,
   type AgentRegistry,
@@ -97,9 +97,10 @@ type Status = { lead: string; leadToken: Parameters<ThemeLike["fg"]>[0]; rest?: 
 
 const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now: number): Status => {
   const stats = statsOf(totals, now, true);
+  const token = stateToken(terminal.state);
 
   if (terminal.state === "queued") {
-    return { lead: "Queued", leadToken: "muted" };
+    return { lead: "Queued", leadToken: token };
   }
 
   if (terminal.state === "running") {
@@ -113,22 +114,22 @@ const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now
   }
 
   if (terminal.state === "grace") {
-    return { lead: "Stopping…", leadToken: "warning" };
+    return { lead: "Stopping…", leadToken: token };
   }
 
   if (terminal.state === "done") {
-    return { lead: "Done", leadToken: "success", rest: `${SEP}${stats}`, restToken: "dim" };
+    return { lead: "Done", leadToken: token, rest: `${SEP}${stats}`, restToken: "dim" };
   }
 
   if (terminal.state === "failed") {
-    return { lead: `Failed: ${firstLine(terminal.error ?? "unknown error")}`, leadToken: "error" };
+    return { lead: `Failed: ${firstLine(terminal.error ?? "unknown error")}`, leadToken: token };
   }
 
   if (terminal.state === "stopped") {
-    return { lead: `Stopped${SEP}${stats}`, leadToken: "muted" };
+    return { lead: `Stopped${SEP}${stats}`, leadToken: token };
   }
 
-  return { lead: `Handed off${SEP}${stats}`, leadToken: "warning" };
+  return { lead: `Handed off${SEP}${stats}`, leadToken: token };
 };
 
 const statusLine = (
@@ -142,9 +143,9 @@ const statusLine = (
   const status = statusOf(terminal, totals, wait, now);
   const cleanup = cleanupText(terminal);
   const suffix = cleanup ? `${SEP}${cleanup}` : "";
-  const budget = width - CONTINUATION - displayWidth(suffix);
-  const lead = truncateCols(status.lead, budget);
-  const rest = status.rest ? truncateCols(status.rest, Math.max(0, budget - displayWidth(lead))) : "";
+  const budget = width - CONTINUATION - theme.width(suffix);
+  const lead = theme.truncate(status.lead, budget);
+  const rest = status.rest ? theme.truncate(status.rest, Math.max(0, budget - theme.width(lead))) : "";
   const painted = `${theme.fg(status.leadToken, lead)}${rest ? theme.fg(status.restToken ?? "dim", rest) : ""}`;
 
   return suffix ? `${painted}${theme.fg("dim", suffix)}` : painted;
@@ -160,11 +161,11 @@ const nameLine = (
 ) => {
   const head = `${connector}${name} (`;
   const fullTail = model ? `)${SEP}${model}` : ")";
-  const budgetWith = width - displayWidth(head) - displayWidth(fullTail);
+  const budgetWith = width - theme.width(head) - theme.width(fullTail);
   const keepModel = model !== undefined && budgetWith >= MODEL_MIN_BUDGET;
   const tail = keepModel ? fullTail : ")";
-  const budget = Math.max(DESCRIPTION_MIN, width - displayWidth(head) - displayWidth(tail));
-  const cut = truncateCols(singleLine(description), budget);
+  const budget = Math.max(DESCRIPTION_MIN, width - theme.width(head) - theme.width(tail));
+  const cut = theme.truncate(singleLine(description), budget);
   const modelPart = keepModel ? theme.fg("dim", `${SEP}${model}`) : "";
 
   return `${connector}${theme.bold(name)} ${theme.fg("muted", `(${cut})`)}${modelPart}`;
@@ -188,34 +189,21 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, w
 
     const terminal = chainTerminal(registry, record);
     const totals = chainTotals(chainLinks(registry, terminal));
-    const name = `${terminal.agent}${terminal.chainIndex > 1 ? ` #${terminal.chainIndex}` : ""}`;
-
     return [
-      nameLine(connector, name, terminal.description, terminal.model ?? entry.model, theme, width),
+      nameLine(
+        connector,
+        agentName(terminal),
+        terminal.description,
+        terminal.model ?? entry.model,
+        theme,
+        width,
+      ),
       `${continuation}${statusLine(terminal, totals, wait, theme, now, width)}`,
     ];
   });
 };
 
 const ERROR_INDENT = "   ";
-
-const wrapCols = (line: string, cols: number): string[] =>
-  Array.from(line).reduce<{ lines: string[]; used: number }>(
-    (acc, char) => {
-      const width = charWidth(char);
-
-      if (acc.used + width > cols && acc.used > 0) {
-        acc.lines.push(char);
-
-        return { lines: acc.lines, used: width };
-      }
-
-      acc.lines[acc.lines.length - 1] += char;
-
-      return { lines: acc.lines, used: acc.used + width };
-    },
-    { lines: [""], used: 0 },
-  ).lines;
 
 const errorBlock = (
   result: ToolResult<RunAgentDetails>,
@@ -232,7 +220,7 @@ const errorBlock = (
   const cols = Math.max(1, width - ERROR_INDENT.length);
   const body = result.text
     .split("\n")
-    .flatMap((line) => wrapCols(line, cols).map((piece) => `${ERROR_INDENT}${piece}`));
+    .flatMap((line) => wrapCols(theme, line, cols).map((piece) => `${ERROR_INDENT}${piece}`));
 
   return [header, ...body].join("\n");
 };
@@ -260,7 +248,7 @@ const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean,
     return text;
   }
 
-  const fits = displayWidth(`${n} background ${named} launched ${MANAGE_HINT}`) <= width;
+  const fits = theme.width(`${n} background ${named} launched ${MANAGE_HINT}`) <= width;
 
   return `${text} ${theme.fg("dim", fits ? MANAGE_HINT : MANAGE_HINT_SHORT)}`;
 };

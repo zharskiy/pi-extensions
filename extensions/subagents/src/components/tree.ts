@@ -1,4 +1,4 @@
-import { type AgentRecord, isClosed } from "../model/types.ts";
+import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../model/types.ts";
 
 export type TreeRow = {
   record: AgentRecord;
@@ -8,20 +8,47 @@ export type TreeRow = {
   openDescendants: number;
 };
 
+type ById = ReadonlyMap<string, AgentRecord>;
+
+export const isTerminal = (record: AgentRecord, byId: ById): boolean =>
+  !record.successorId || !byId.has(record.successorId);
+
+export const withLinks = (records: AgentRecord[], byId: ById): AgentRecord[] => {
+  const listed = new Map(records.map((record) => [record.id, record]));
+
+  records
+    .flatMap((record) => chainLinks(byId, record))
+    .forEach((link) => {
+      listed.set(link.id, link);
+    });
+
+  return [...listed.values()];
+};
+
+export const carrySelection = (
+  previousIds: string[],
+  ids: string[],
+  selected: string | undefined,
+): string | undefined => {
+  if (selected === undefined || ids.includes(selected)) {
+    return selected;
+  }
+
+  const index = previousIds.indexOf(selected);
+  const kept = new Set(ids);
+  const after = previousIds.slice(index + 1).find((id) => kept.has(id));
+  const before = previousIds
+    .slice(0, Math.max(0, index))
+    .reverse()
+    .find((id) => kept.has(id));
+
+  return after ?? before;
+};
+
 export const treeOrder = (records: AgentRecord[], roots?: (record: AgentRecord) => boolean): TreeRow[] => {
   const byId = new Map(records.map((record) => [record.id, record]));
 
-  const terminalOf = (record: AgentRecord): AgentRecord => {
-    const successor = record.successorId ? byId.get(record.successorId) : undefined;
-
-    return successor ? terminalOf(successor) : record;
-  };
-
-  const firstLinkOf = (record: AgentRecord): AgentRecord => {
-    const predecessor = record.predecessorId ? byId.get(record.predecessorId) : undefined;
-
-    return predecessor ? firstLinkOf(predecessor) : record;
-  };
+  const firstLinkOf = (record: AgentRecord): AgentRecord => chainLinks(byId, record)[0];
 
   const parentOf = (terminal: AgentRecord) => {
     if (roots?.(terminal)) {
@@ -30,10 +57,10 @@ export const treeOrder = (records: AgentRecord[], roots?: (record: AgentRecord) 
 
     const caller = byId.get(firstLinkOf(terminal).callerId);
 
-    return caller ? terminalOf(caller).id : undefined;
+    return caller ? chainTerminal(byId, caller).id : undefined;
   };
 
-  const terminals = records.filter((record) => !record.successorId || !byId.has(record.successorId));
+  const terminals = records.filter((record) => isTerminal(record, byId));
   const children = new Map<string | undefined, AgentRecord[]>();
 
   terminals.forEach((terminal) => {

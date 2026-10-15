@@ -1,5 +1,5 @@
 import type { OverlayApi } from "../../../../../core/adapter/contract.ts";
-import { truncateCols } from "../../components/format.ts";
+import { cutChars, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
@@ -32,20 +32,12 @@ export const agentViewPlugin: Plugin = {
     const tools = () => (services.has("tools") ? services.require("tools").list() : []);
 
     const watch =
-      (relevant: (record: AgentRecord) => boolean, live: () => boolean) =>
+      (relevant: (record: AgentRecord) => boolean) =>
       (tickMs: () => number | undefined, onChange: () => void) =>
-        watchAgents(bus, {
-          relevant,
-          tickMs: () => (live() ? tickMs() : undefined),
-          throttleMs: () => settings.renderThrottleMs,
-          onChange,
-        });
+        watchAgents(bus, { relevant, tickMs, throttleMs: () => settings.renderThrottleMs, onChange });
 
     const viewWatch = (id: string) =>
-      watch(
-        (record) => chainLinks(registry, record).some((link) => link.id === id),
-        () => registry.get(id) !== undefined,
-      );
+      watch((record) => chainLinks(registry, record).some((link) => link.id === id));
 
     const listed = () =>
       listedTerminals(visibleRecords(registry.list(), Date.now(), settings.lingerMs, cleared));
@@ -58,10 +50,7 @@ export const agentViewPlugin: Plugin = {
             lingerMs: settings.lingerMs,
             cleared,
             stop,
-            watch: watch(
-              () => true,
-              () => true,
-            ),
+            watch: watch(() => true),
             ...hooks,
           },
           api,
@@ -125,10 +114,7 @@ export const agentViewPlugin: Plugin = {
 
         return terminal;
       } catch (error) {
-        host.ui.notify(
-          `pi-subagents: cannot read manifest of "${id}": ${(error as Error).message}`,
-          "warning",
-        );
+        host.ui.notify(`pi-subagents: cannot read ${errorText(error)}`, "warning");
 
         return undefined;
       }
@@ -145,7 +131,7 @@ export const agentViewPlugin: Plugin = {
     services.provide("agentView", { open });
 
     const label = (record: AgentRecord) =>
-      truncateCols(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
+      cutChars(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
 
     host.registerCommand("agents", {
       description: "Open the agents list, or one agent's view by id. Usage: /agents [id]",
@@ -171,10 +157,7 @@ export const agentViewPlugin: Plugin = {
       }
 
       openOverlay({ kind: "list" }).catch((error: unknown) => {
-        host.ui.notify(
-          `pi-subagents: cannot open the agents list: ${error instanceof Error ? error.message : String(error)}`,
-          "warning",
-        );
+        host.ui.notify(`pi-subagents: cannot open the agents list: ${errorText(error)}`, "warning");
       });
     });
 

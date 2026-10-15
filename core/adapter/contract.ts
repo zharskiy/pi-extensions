@@ -12,6 +12,8 @@ export type ThemeToken = "accent" | "muted" | "dim" | "success" | "warning" | "e
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
   bold(text: string): string;
+  width(text: string): number;
+  truncate(text: string, cols: number): string;
 };
 
 export type ToolResult<D = unknown> = {

@@ -126,7 +126,7 @@ describe("successor chain", () => {
     expect(wake).toContain("finished: 1 done.");
     expect(wake).toContain(`## ${third} (explorer) - done`);
     expect(wake).toContain(`Chain: ${first.id} → ${second} → ${third} (3 sessions)`);
-    expect(wake).toContain("Done (3 tool calls");
+    expect(wake).toContain("Done (3 tool uses");
     expect(wake).toContain("final answer: tokens refresh in src/auth.ts");
     expect(wake).not.toContain(`## ${first.id}`);
     expect(wake).not.toContain(`## ${second}`);

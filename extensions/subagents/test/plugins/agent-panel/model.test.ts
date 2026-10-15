@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { renderRow } from "../../../src/components/agent-row.ts";
-import { displayWidth } from "../../../src/components/format.ts";
 import { treeOrder } from "../../../src/components/tree.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import {
@@ -139,7 +138,7 @@ describe("panel window", () => {
     const bottom = infoColumns(panelLines(rows, state, 0, 120, plainTheme, renderRow, both));
 
     expect(new Set([...top, ...bottom]).size).toBe(1);
-    expect(top[0]).toBe(PAD_AND_POINTER + 2 + displayWidth(rows[0].record.agent) + 2 + 28 + 2);
+    expect(top[0]).toBe(PAD_AND_POINTER + 2 + plainTheme.width(rows[0].record.agent) + 2 + 28 + 2);
   });
 
   it("puts the markers in the glyph column", () => {
@@ -169,7 +168,7 @@ describe("panel window", () => {
       const lines = panelLines(rows, state, 0, width, plainTheme, renderRow, both);
 
       lines.forEach((line, index) => {
-        expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
 
         if (index < lines.length - 1) {
           expect(line).toMatch(/^ /);
@@ -243,6 +242,7 @@ describe("panel window", () => {
   it("reuses a closed row until its record, width, theme, selection or tree shape changes", () => {
     let calls = 0;
     const counting = (): ThemeLike => ({
+      ...plainTheme,
       fg: (_token, text) => {
         calls += 1;
         return text;
@@ -295,11 +295,11 @@ describe("panel window", () => {
   it("prune drops the cached line of a row that left", () => {
     let calls = 0;
     const theme: ThemeLike = {
+      ...plainTheme,
       fg: (_token, text) => {
         calls += 1;
         return text;
       },
-      bold: (text) => text,
     };
     const cache = createClosedRowCache();
     const input = {

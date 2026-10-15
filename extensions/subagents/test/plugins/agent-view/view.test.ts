@@ -9,7 +9,6 @@ import {
 } from "../../../../../core/test/adapter/offline.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
-import { displayWidth } from "../../../src/components/format.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord, AgentViewOrigin } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
@@ -484,7 +483,7 @@ describe("agent view header", () => {
   it("keeps the glyph colour and the bold name when line 1 is cut below 8 columns of description", () => {
     const record = base({ state: "done", endedAt: 0 });
 
-    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b> ›…");
+    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b> › …");
     expect(header(record, recordingTheme, 8)[0]).toBe(" <success>✓</> <b>exp…</b>");
   });
 
@@ -515,7 +514,7 @@ describe("agent view header", () => {
 
     lines.slice(0, -1).forEach((line) => {
       expect(line.startsWith(" ")).toBe(true);
-      expect(displayWidth(line)).toBeLessThanOrEqual(39);
+      expect(plainTheme.width(line)).toBeLessThanOrEqual(39);
     });
     expect(lines[0]).toMatch(/ › d{8,}…$/);
     expect(lines.at(-1)).toBe(RULE(40));
@@ -579,15 +578,15 @@ describe("agent view hint", () => {
     const wide = hintOf(closed).view.render(100).at(-2) ?? "";
 
     expect(plain([wide])[0]).toMatch(/ 1-\d+\/\d+$/);
-    expect(displayWidth(wide)).toBe(99);
+    expect(plainTheme.width(wide)).toBe(99);
   });
 
   it("drops the position when it does not fit", () => {
     const narrow = viewOf(fixture(), { record: agentRecord({ id: "explorer-1" }), width: 40 });
     const hintLine = narrow.lines().at(-2) ?? "";
 
-    expect(hintLine).toBe(" esc to close · x to stop · r request…");
-    expect(displayWidth(hintLine)).toBe(38);
+    expect(hintLine).toBe(" esc to close · x to stop · r request …");
+    expect(plainTheme.width(hintLine)).toBe(39);
 
     const items = Array.from({ length: 900 }, (_, index) => ({
       kind: "user" as const,
@@ -632,7 +631,7 @@ describe("agent view hint", () => {
             }
 
             expect(line.startsWith(" ")).toBe(true);
-            expect(displayWidth(line)).toBeLessThanOrEqual(width - 1);
+            expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
           });
         });
       });
