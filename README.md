@@ -11,7 +11,7 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [composer](extensions/composer/README.md): the input drawn between two full-width rules in the editor's colour, with a chevron prompt.
 - [questionnaire](extensions/questionnaire/README.md): a `questionnaire` tool the main session's model uses to ask you a batch of independent multiple-choice questions in one inline form (tabs, number keys, a typed answer per question), with a notification when it waits.
 - [style](extensions/style/README.md): `/style concise` makes the main session and every subagent answer in short, result-first replies; `/style normal` turns it off, and the footer shows the style while one is on.
-- [context](extensions/context/README.md): `/context` prints what fills the context window into the transcript, like Claude Code's: a usage grid, the estimated tokens per category (system prompt, tools, memory files, skills, messages, free space, compaction reserve), the cache hit rate of the last turn and the session, and every file, skill and tool with `Ctrl+O`.
+- [context](extensions/context/README.md): `/context` prints what fills the context window into the transcript: a usage grid, the estimated tokens per category (system prompt, tools, memory files, skills, messages, free space, compaction reserve), the cache hit rate of the last turn and the session, and every file, skill and tool with `Ctrl+O`.
 - [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, session cache hit rate, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
 
 ## Install

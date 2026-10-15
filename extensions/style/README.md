@@ -12,7 +12,7 @@ A pi extension that switches the output style of the main session and of every s
 
 ## Concise
 
-`prompts/concise.md` follows the behaviour Claude Code documents for its Concise output style: the first sentence states the result, no lead-in, no step-by-step narration and no closing recap, a simple question gets one to three sentences, and the engineering work stays as thorough as usual. Explanations you ask for, errors, failing test output, security concerns and confirmations before destructive actions keep their full content, and a background agent's final result still carries everything its caller needs. Unlike Claude Code, the style also applies to every subagent.
+`prompts/concise.md` asks for short, result-first replies: the first sentence states the result, no lead-in, no step-by-step narration and no closing recap, a simple question gets one to three sentences, and the engineering work stays as thorough as usual. Explanations you ask for, errors, failing test output, security concerns and confirmations before destructive actions keep their full content, and a background agent's final result still carries everything its caller needs. The style also applies to every subagent.
 
 ## Adding a style
 
