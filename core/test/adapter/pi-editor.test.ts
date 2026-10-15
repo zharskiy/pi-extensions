@@ -701,6 +701,21 @@ describe("createEditorHooks", () => {
     expect(fired).toBe("new");
   });
 
+  it("recalls submitted input when an older copy left a record without history", () => {
+    (globalThis as Record<symbol, unknown>)[EDITOR_KEY] = { emptyLeft: new Set(), emptyDown: new Set() };
+
+    const { ctx, ui } = fakeCtx();
+
+    createEditorHooks(() => ctx).setEditorFrame(frame);
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.addToHistory("sent");
+    hooked.handleInput(UP);
+
+    expect(hooked.getText()).toBe("sent");
+  });
+
   it("keeps input history when pi rebuilds the editor after a reload", async () => {
     const { ctx, ui } = fakeCtx();
     const first = createEditorHooks(() => ctx);

@@ -23,10 +23,19 @@ type SharedEditor = {
 
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
 
-const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor };
+const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: Partial<SharedEditor> };
 
-const sharedEditor = (): SharedEditor =>
-  (shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set(), history: [] });
+const sharedEditor = (): SharedEditor => {
+  const hooks = shared[EDITOR_KEY] ?? {};
+
+  shared[EDITOR_KEY] = hooks;
+
+  hooks.emptyLeft ??= new Set();
+  hooks.emptyDown ??= new Set();
+  hooks.history ??= [];
+
+  return hooks as SharedEditor;
+};
 
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
