@@ -4,8 +4,8 @@ A pi extension that tells you, through your terminal, when pi is waiting for you
 
 ## What it does
 
-- When the main session finishes its work and you have not touched the keyboard for 20 seconds, it sends one notification: `pi is waiting for your input`. Each finished run notifies at most once; a key press, a new run or a busy extension cancels it.
-- While background agents run (any extension that reports on the busy channel `pi:busy`, such as subagents), the notification waits. When the agents finish, the main session usually starts a new run to read their results; the notification comes 20 seconds after that run ends, once.
+- When the main session finishes its work and you have not touched the keyboard for 20 seconds, it sends one notification: `pi is waiting for your input`. Each finished run notifies at most once; a key press or a new run cancels it; a busy extension holds it until the extension reports idle, then the full delay starts again.
+- While background agents run (any extension that reports on the busy channel `pi:busy`, such as subagents; payload and rules: [session-limits › Busy channel](../session-limits/README.md#busy-channel)), the notification waits. When the agents finish, the main session usually starts a new run to read their results; the notification comes 20 seconds after that run ends, once.
 - When a dialog waits for an answer (a confirmation, a choice or a text field of the main session; agents never ask), it sends `pi needs your input: <dialog title>` after 6 seconds without a key press. Each key press restarts the 6 seconds; answering or closing the dialog cancels it. Each dialog notifies at most once. Overlays such as `/agents` never notify.
 - Nothing is sent per agent, per batch or per tool.
 - Active only in the interactive TUI; `--mode rpc`, `--mode json` and `-p` write nothing.
@@ -38,4 +38,4 @@ Set `"channel": "off"`, or disable this extension's entry with `pi config` (it c
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/notifications.ts` holds the timers and the rules, `src/settings.ts` the settings files, both depending only on `core/adapter/contract.ts` and `core/manager/`. The busy channel name is shared in `core/manager/channels.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/notifications.ts` holds the timers and the rules, `src/settings.ts` the settings schema and defaults, both depending only on `core/adapter/contract.ts` and `core/manager/`; `watchSettings` in `core/manager/settings.ts` reads the files. The busy channel name is shared in `core/manager/channels.ts`. Tests are under `test/`.

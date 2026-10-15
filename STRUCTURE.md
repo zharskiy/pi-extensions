@@ -31,7 +31,7 @@ pi-extensions/
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/usage/totals channel names, payloads, parsers
 │   │   ├── format.ts            # token and duration formatters
-│   │   └── settings.ts / settle.ts  # settings, timeouts
+│   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
 │       │                        #   offline.ts (pi loaded offline for extension tests)
@@ -87,6 +87,7 @@ pi-extensions/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
 ├── research/                    # pi extension API and SDK notes (development only)
+├── plans/                       # UX spec and implementation plans (development only)
 ├── AGENTS.md                    # short guide for coding agents
 ├── ARCHITECTURE.md              # how it works
 ├── STRUCTURE.md                 # this file
@@ -128,7 +129,7 @@ usage-report/       # reports agent usage to the spending channel
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
 - Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,footer}/src/index.ts`.
-- Development-only: `core/test`, `extensions/*/test`, `test/`, `research/`, `.github/`, config files below.
+- Development-only: `core/test`, `extensions/*/test`, `test/`, `research/`, `plans/`, `.github/`, config files below.
 
 ### Config files
 

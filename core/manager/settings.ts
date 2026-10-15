@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Host } from "../adapter/contract.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
@@ -98,3 +99,49 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
 export const userSettingsPath = (agentDir: string, file: string) => join(agentDir, file);
 
 export const projectSettingsPath = (cwd: string, file: string) => join(cwd, ".pi", file);
+
+type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
+
+export const loadSettingsFiles = <T>(
+  schema: SettingsSchema<T>,
+  defaults: T,
+  file: string,
+  location: SettingsLocation,
+) => {
+  const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));
+
+  const project = location.projectTrusted
+    ? readSettingsFile(schema, projectSettingsPath(location.cwd, file))
+    : { patch: {}, errors: [] };
+
+  return {
+    settings: { ...defaults, ...user.patch, ...project.patch },
+    errors: [...user.errors, ...project.errors],
+  };
+};
+
+export const watchSettings = <T>(
+  host: Host,
+  label: string,
+  schema: SettingsSchema<T>,
+  defaults: T,
+  file: string,
+): (() => T) => {
+  let settings = defaults;
+  const reported = new Set<string>();
+
+  host.onSessionStart((info) => {
+    const loaded = loadSettingsFiles(schema, defaults, file, info);
+
+    settings = loaded.settings;
+
+    loaded.errors
+      .filter((error) => !reported.has(error))
+      .forEach((error) => {
+        reported.add(error);
+        host.ui.notify(`${label} settings: ${error}`, "warning");
+      });
+  });
+
+  return () => settings;
+};

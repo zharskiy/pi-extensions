@@ -1,31 +1,36 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
+import { watchSettings } from "../../../core/manager/settings.ts";
 import { createFakeHost, type FakeHost } from "../../../core/test/helpers/fakes.ts";
 import { createNotifications } from "../src/notifications.ts";
+import { defaults, SETTINGS_FILE, schema } from "../src/settings.ts";
 
 const IDLE = { message: "pi is waiting for your input", channel: "auto" };
+
+const roots: string[] = [];
 
 const prepare = (mode: RunMode = "tui", file?: unknown) => {
   const root = mkdtempSync(join(tmpdir(), "pi-notifications-"));
   const agentDir = join(root, "agent");
   const cwd = join(root, "project");
 
+  roots.push(root);
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
 
   if (file !== undefined) {
-    writeFileSync(join(agentDir, "pi-notifications.json"), JSON.stringify(file));
+    writeFileSync(join(agentDir, SETTINGS_FILE), JSON.stringify(file));
   }
 
   const host = createFakeHost({ mode, agentDir, cwd });
 
-  createNotifications(host);
+  createNotifications(host, watchSettings(host, "pi-notifications", schema, defaults, SETTINGS_FILE));
 
-  return { host, settingsFile: join(agentDir, "pi-notifications.json") };
+  return { host, settingsFile: join(agentDir, SETTINGS_FILE) };
 };
 
 const setup = (mode: RunMode = "tui", file?: unknown) => {
@@ -50,6 +55,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  roots.splice(0).forEach((root) => {
+    rmSync(root, { recursive: true, force: true });
+  });
 });
 
 describe("idle notification", () => {
@@ -318,9 +326,7 @@ describe("dialog notification", () => {
 
     expect(host.terminalNotices).toEqual([dialogNotice, IDLE]);
   });
-});
 
-describe("dialog end re-arm", () => {
   it("a dialog ending re-arms a fresh idle delay", () => {
     const host = setup();
 
@@ -336,6 +342,20 @@ describe("dialog end re-arm", () => {
     advance(1);
 
     expect(host.terminalNotices).toEqual([IDLE]);
+  });
+
+  it("a keystroke while a dialog is open cancels the pending idle notification", () => {
+    const host = setup();
+    const dialogNotice = { message: "pi needs your input: Allow?", channel: "auto" };
+
+    host.settle();
+    host.dialog("start", "confirm", "Allow?");
+    host.pressKey();
+    advance(6_000);
+    host.dialog("end", "confirm");
+    advance(60_000);
+
+    expect(host.terminalNotices).toEqual([dialogNotice]);
   });
 });
 

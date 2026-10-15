@@ -25,4 +25,4 @@ Constants at the top of `src/working-indicator.ts`:
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/working-indicator.ts` holds the spinners, the verbs and the prompt timer, and depends only on `core/adapter/contract.ts` and `core/manager/format.ts`, whose duration format (`12s`, `1m 5s`) it shares with subagents and footer. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/working-indicator.ts` holds the spinners, the verbs and the prompt timer, and depends only on `core/adapter/contract.ts` and `core/manager/format.ts`, whose duration format (`12s`, `1m 5s`) it shares with subagents. Tests are under `test/`.

@@ -4,15 +4,9 @@ import { formatTokens } from "../../../core/manager/format.ts";
 
 const PAD = " ";
 
-const PAD_TOP = 1;
-
-const PAD_BOTTOM = 1;
-
 const DOT = " · ";
 
 const MODE_MARK = "▶▶";
-
-const HIDDEN_STATUSES = [SPENDING_STATUS_KEY];
 
 const RESET = "\x1b[0m";
 
@@ -41,7 +35,7 @@ const paint = (color: string, text: string) => `${color}${text}${RESET}`;
 
 const paintBold = (color: string, text: string) => `${BOLD}${color}${text}${RESET}`;
 
-export const formatCost = (cost: number) => {
+const formatCost = (cost: number) => {
   if (cost <= 0) {
     return "$0.00";
   }
@@ -49,7 +43,7 @@ export const formatCost = (cost: number) => {
   return cost < 0.01 ? `$${cost.toFixed(3)}` : `$${cost.toFixed(2)}`;
 };
 
-export const formatWindow = (count: number) => {
+const formatWindow = (count: number) => {
   if (count >= 1_000_000) {
     const millions = count / 1_000_000;
 
@@ -92,7 +86,7 @@ const modelText = (context: ContextSnapshot, model: ModelInfo | undefined) => {
   return `${model.name} (${formatWindow(model.contextWindow || context.window)} context)`;
 };
 
-export const statsLine = (
+const statsLine = (
   theme: ThemeLike,
   context: ContextSnapshot,
   model: ModelInfo | undefined,
@@ -104,7 +98,7 @@ export const statsLine = (
     paint(COLORS.cyan, modelText(context, model)),
   ].join(theme.fg("dim", DOT));
 
-export const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
+const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   const all = [totals.main, ...totals.sources];
   const tokens = all.reduce((sum, spend) => sum + spend.tokens, 0);
   const cost = all.reduce((sum, spend) => sum + spend.cost, 0);
@@ -118,20 +112,15 @@ export const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   ].join("");
 };
 
-export const placeLine = (theme: ThemeLike, cwd: string, sessionName: string | undefined) => {
+const placeLine = (theme: ThemeLike, cwd: string, sessionName: string | undefined) => {
   const folder = paint(COLORS.blue, folderName(cwd));
 
   return sessionName ? `${folder}${theme.fg("dim", ` • ${sessionName}`)}` : folder;
 };
 
-export const branchLine = (branch: string) => paint(COLORS.yellow, branch);
+const branchLine = (branch: string) => paint(COLORS.yellow, branch);
 
-export const modeLine = (
-  theme: ThemeLike,
-  model: ModelInfo | undefined,
-  thinking: string,
-  cycleKey: string,
-) => {
+const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {
   const level =
     model?.reasoning === false
       ? theme.fg("dim", "thinking unavailable")
@@ -140,9 +129,9 @@ export const modeLine = (
   return `${paint(COLORS.gold, MODE_MARK)} ${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
 };
 
-export const statusLine = (statuses: ReadonlyMap<string, string>) => {
+const statusLine = (statuses: ReadonlyMap<string, string>) => {
   const texts = Array.from(statuses)
-    .filter(([key]) => !HIDDEN_STATUSES.includes(key))
+    .filter(([key]) => key !== SPENDING_STATUS_KEY)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, text]) => text.replace(/\s+/g, " ").trim())
     .filter((text) => text.length > 0);
@@ -161,9 +150,5 @@ export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterD
     ...(status ? ["", status] : []),
   ];
 
-  return [
-    ...Array.from({ length: PAD_TOP }, () => ""),
-    ...lines.map((line) => (line ? `${PAD}${line}` : line)),
-    ...Array.from({ length: PAD_BOTTOM }, () => ""),
-  ];
+  return ["", ...lines.map((line) => (line ? `${PAD}${line}` : line)), ""];
 };

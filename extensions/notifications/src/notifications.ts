@@ -1,49 +1,41 @@
 import type { Host, NotifyChannel } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
-import { watchSettings } from "./settings.ts";
+import type { NotificationSettings } from "./settings.ts";
 
-export const IDLE_TEXT = "pi is waiting for your input";
+const IDLE_TEXT = "pi is waiting for your input";
 
-export const dialogText = (title?: string) =>
-  title ? `pi needs your input: ${title}` : "pi needs your input";
+const dialogText = (title?: string) => (title ? `pi needs your input: ${title}` : "pi needs your input");
 
-const later = (run: () => void, ms: number) => {
-  const timer = setTimeout(run, ms);
+const slot = () => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  timer.unref?.();
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
 
-  return () => clearTimeout(timer);
+  const arm = (run: () => void, ms: number) => {
+    clear();
+    timer = setTimeout(run, ms);
+    timer.unref?.();
+  };
+
+  return { arm, clear };
 };
 
-export const createNotifications = (host: Host) => {
-  const settings = watchSettings(host);
+export const createNotifications = (host: Host, settings: () => NotificationSettings) => {
   const sources = new Set<string>();
-  let active = false;
-  let channel: NotifyChannel = "auto";
+  const idle = slot();
+  const dialogTimer = slot();
+  let channel: NotifyChannel | undefined;
   let pending = false;
   let dialog: { title?: string; fired: boolean } | undefined;
-  let idleTimer: (() => void) | undefined;
-  let dialogTimer: (() => void) | undefined;
   let offKeys: (() => void) | undefined;
 
-  const send = (text: string) => {
-    host.ui.terminalNotify(text, channel);
-  };
-
-  const clearIdle = () => {
-    idleTimer?.();
-    idleTimer = undefined;
-  };
-
-  const clearDialog = () => {
-    dialogTimer?.();
-    dialogTimer = undefined;
-  };
+  const send = (text: string) => channel && host.ui.terminalNotify(text, channel);
 
   const fireIdle = () => {
-    idleTimer = undefined;
-
-    if (!active || !pending || sources.size > 0 || dialog || !host.isIdle()) {
+    if (sources.size > 0 || dialog) {
       return;
     }
 
@@ -52,9 +44,7 @@ export const createNotifications = (host: Host) => {
   };
 
   const fireDialog = () => {
-    dialogTimer = undefined;
-
-    if (!active || !dialog || dialog.fired) {
+    if (!dialog) {
       return;
     }
 
@@ -62,19 +52,13 @@ export const createNotifications = (host: Host) => {
     send(dialogText(dialog.title));
   };
 
-  const armIdle = () => {
-    clearIdle();
-    idleTimer = later(fireIdle, settings().idleDelayMs);
-  };
+  const armIdle = () => idle.arm(fireIdle, settings().idleDelayMs);
 
-  const armDialog = () => {
-    clearDialog();
-    dialogTimer = later(fireDialog, settings().dialogDelayMs);
-  };
+  const armDialog = () => dialogTimer.arm(fireDialog, settings().dialogDelayMs);
 
   const key = () => {
     pending = false;
-    clearIdle();
+    idle.clear();
 
     if (dialog && !dialog.fired) {
       armDialog();
@@ -84,13 +68,9 @@ export const createNotifications = (host: Host) => {
   host.onSessionStart((info) => {
     const configured = settings().channel;
 
-    active = info.mode === "tui" && configured !== "off";
+    channel = info.mode === "tui" && configured !== "off" ? configured : undefined;
 
-    if (configured !== "off") {
-      channel = configured;
-    }
-
-    if (active && !offKeys) {
+    if (channel && !offKeys) {
       offKeys = host.ui.onKeyPress(key);
     }
   });
@@ -104,7 +84,7 @@ export const createNotifications = (host: Host) => {
 
     if (signal.busy) {
       sources.add(signal.source);
-      clearIdle();
+      idle.clear();
       return;
     }
 
@@ -116,7 +96,7 @@ export const createNotifications = (host: Host) => {
   });
 
   host.onIdle(() => {
-    if (!active) {
+    if (!channel) {
       return;
     }
 
@@ -129,7 +109,7 @@ export const createNotifications = (host: Host) => {
 
   host.onAgentStart(() => {
     pending = false;
-    clearIdle();
+    idle.clear();
   });
 
   host.onDialog((event) => {
@@ -138,7 +118,7 @@ export const createNotifications = (host: Host) => {
     }
 
     if (event.phase === "start") {
-      if (!active) {
+      if (!channel) {
         return;
       }
 
@@ -148,7 +128,7 @@ export const createNotifications = (host: Host) => {
     }
 
     dialog = undefined;
-    clearDialog();
+    dialogTimer.clear();
 
     if (pending && sources.size === 0) {
       armIdle();
@@ -156,11 +136,11 @@ export const createNotifications = (host: Host) => {
   });
 
   host.onSessionShutdown(() => {
-    active = false;
+    channel = undefined;
     pending = false;
     dialog = undefined;
-    clearIdle();
-    clearDialog();
+    idle.clear();
+    dialogTimer.clear();
     offKeys?.();
     offKeys = undefined;
   });
