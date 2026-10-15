@@ -109,12 +109,15 @@ describe("agents overlay", () => {
     expect(harness.host.overlays).toHaveLength(1);
   });
 
-  it("left without listed agents opens nothing", () => {
+  it("left on an empty editor with no agents opens the list", () => {
     const harness = setup();
 
-    harness.host.pressEmptyLeft();
+    expect(harness.host.pressEmptyLeft()).toBe(true);
+    expect(harness.host.overlays).toHaveLength(1);
 
-    expect(harness.host.overlays).toHaveLength(0);
+    const { lines } = harness.openLast();
+
+    expect(lines().join("\n")).toContain("No agents running");
   });
 
   it("drops the left hook on disable", async () => {

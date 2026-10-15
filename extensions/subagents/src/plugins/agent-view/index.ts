@@ -146,10 +146,6 @@ export const agentViewPlugin: Plugin = {
     });
 
     const offLeft = host.ui.onEmptyEditorLeft(() => {
-      if (listed().length === 0) {
-        return;
-      }
-
       openOverlay({ kind: "list" }).catch((error: unknown) => {
         host.ui.notify(`pi-subagents: cannot open the agents list: ${errorText(error)}`, "warning");
       });
