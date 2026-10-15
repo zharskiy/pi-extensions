@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { formatWindow, gridShape, renderSnapshot, summaryLine } from "../src/render.ts";
+import { formatWindow, gridLayout, renderSnapshot, summaryLine } from "../src/render.ts";
 import { breakdown, snapshot, usage } from "./fixtures.ts";
 
 const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
@@ -16,10 +16,10 @@ describe("renderSnapshot", () => {
   it("draws the grid beside the header, cache line and legend, then one summary per section", () => {
     expect(render()).toEqual([
       " Context Usage · 14:32",
-      " ⛁ ⛁ ⛀ ⛁ ⛁ ⛀ ⛀ ⛁ ⛀ ⛁   Test Model · 61.2k/200k tokens (31%)",
-      " ⛀ ⛀ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: 87% last turn · 91% session",
+      " ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁   Test Model · 61.2k/200k tokens (31%)",
+      " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: 87% last turn · 91% session",
       " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁",
-      " ⛁ ⛁ ⛁ ⛀ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Estimated usage by category",
+      " ⛀ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Estimated usage by category",
       " ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System prompt: 4.1k tokens (2.1%)",
       " ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System tools: 5.3k tokens (2.6%)",
       " ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ MCP tools: 1.8k tokens (0.9%)",
@@ -100,7 +100,7 @@ describe("renderSnapshot", () => {
   it("leaves the cache line out until the session reported cache activity", () => {
     const lines = render({ session: usage(1_000, 0), lastRequest: usage(500, 0) });
 
-    expect(lines[2]).toBe(" ⛀ ⛀ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁");
+    expect(lines[2]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁");
     expect(lines[3]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Estimated usage by category");
   });
 
@@ -154,13 +154,13 @@ describe("renderSnapshot", () => {
     expect(lines).toContain(" <error>Context exceeds the window by 10.0k tokens · /compact");
   });
 
-  it("puts the legend under the grid below 60 columns and uses a 5 x 5 grid below 50", () => {
+  it("puts the legend under the grid when it does not fit beside it and uses a 5 x 5 grid below 50", () => {
     const lines = render({}, { width: 45 });
 
     expect(lines.slice(1, 9)).toEqual([
-      " ⛀ ⛀ ⛀ ⛀ ⛀",
-      " ⛀ ⛁ ⛁ ⛁ ⛁",
-      " ⛁ ⛀ ⛶ ⛶ ⛶",
+      " ⛀ ⛀ ⛁ ⛁ ⛁",
+      " ⛁ ⛁ ⛀ ⛶ ⛶",
+      " ⛶ ⛶ ⛶ ⛶ ⛶",
       " ⛶ ⛶ ⛶ ⛶ ⛶",
       " ⛶ ⛶ ⛶ ⛝ ⛝",
       "",
@@ -168,18 +168,55 @@ describe("renderSnapshot", () => {
       " Cache hit: 87% last turn · 91% session",
     ]);
     expect(lines.every((line) => plainTheme.width(line) <= 45)).toBe(true);
-    expect(render({}, { width: 55 })[1]).toBe(" ⛁ ⛁ ⛀ ⛁ ⛁ ⛀ ⛀ ⛁ ⛀ ⛁");
+    expect(render({}, { width: 63 })[1]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁");
+    expect(render({}, { width: 63 })[12]).toBe(" Test Model · 61.2k/200k tokens (31%)");
+    expect(render({}, { width: 64 })[1]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁   Test Model · 61.2k/200k tokens (31%)");
   });
 
-  it("uses 20 columns for windows of 1M from 72 columns on", () => {
-    expect(gridShape(1_000_000, 80)).toEqual({ columns: 20, rows: 10 });
-    expect(gridShape(1_000_000, 71)).toEqual({ columns: 10, rows: 10 });
-    expect(gridShape(200_000, 120)).toEqual({ columns: 10, rows: 10 });
-    expect(gridShape(1_000_000, 49)).toEqual({ columns: 5, rows: 5 });
+  it("uses 20 columns for windows of 1M only when the legend fits beside them", () => {
+    expect(gridLayout(1_000_000, 84, 41)).toEqual({ columns: 20, rows: 10, beside: true });
+    expect(gridLayout(1_000_000, 83, 41)).toEqual({ columns: 10, rows: 10, beside: true });
+    expect(gridLayout(1_000_000, 63, 41)).toEqual({ columns: 10, rows: 10, beside: false });
+    expect(gridLayout(200_000, 120, 41)).toEqual({ columns: 10, rows: 10, beside: true });
+    expect(gridLayout(1_000_000, 49, 10)).toEqual({ columns: 5, rows: 5, beside: false });
 
     const wide = render({ breakdown: breakdown({ window: 1_000_000 }) }, { width: 100 });
 
     expect(wide[1]).toMatch(/^ (\S ){19}\S {3}Test Model · 61\.2k\/1M tokens \(6%\)$/);
+  });
+
+  it.each([60, 72, 80, 100, 120])(
+    "fits a long model name at %i columns without cutting the legend",
+    (width) => {
+      const long = breakdown({ model: "Long Model Name Preview Edition 1" });
+      const intact = (lines: string[], texts: string[]) =>
+        texts.filter((text) => !lines.some((line) => line.endsWith(` ${text}`)));
+      const lines = render({ breakdown: long }, { width });
+      const wide = render({ breakdown: { ...long, window: 1_000_000 } }, { width });
+
+      expect([...lines, ...wide].every((line) => plainTheme.width(line) <= width)).toBe(true);
+      expect(
+        intact(lines, [
+          "Long Model Name Preview Edition 1 · 61.2k/200k tokens (31%)",
+          "⛁ Extension tools: 2.6k tokens (1.3%)",
+          "⛝ Compaction reserve: 16.4k tokens (8.2%)",
+        ]),
+      ).toEqual([]);
+      expect(
+        intact(wide, [
+          "Long Model Name Preview Edition 1 · 61.2k/1M tokens (6%)",
+          "⛝ Compaction reserve: 16.4k tokens (1.6%)",
+        ]),
+      ).toEqual([]);
+    },
+  );
+
+  it("stacks the header and legend under the grid at 80 columns when the header does not fit beside it", () => {
+    const lines = render({ breakdown: breakdown({ model: "Long Model Name Preview Edition 1" }) });
+
+    expect(lines.slice(1, 3)).toEqual([" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁", " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁"]);
+    expect(lines[12]).toBe(" Long Model Name Preview Edition 1 · 61.2k/200k tokens (31%)");
+    expect(lines).toContain(" ⛝ Compaction reserve: 16.4k tokens (8.2%)");
   });
 
   it("cuts every line to the width", () => {

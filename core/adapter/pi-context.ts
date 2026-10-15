@@ -243,7 +243,7 @@ export const buildBreakdown = (pi: ContextApi, ctx: ExtensionContext): ContextBr
 
 const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width, "…"));
 
-type UsageCache = { leaf: string | null; usage: RequestUsage };
+type UsageCache = { session: string; file: string | undefined; leaf: string | null; usage: RequestUsage };
 
 export const contextHost = (
   pi: ContextApi & Pick<ExtensionAPI, "registerEntryRenderer">,
@@ -259,13 +259,16 @@ export const contextHost = (
       return requestUsageOf(undefined);
     }
 
-    const leaf = ctx.sessionManager.getLeafId();
+    const manager = ctx.sessionManager;
+    const session = manager.getSessionId();
+    const file = manager.getSessionFile();
+    const leaf = manager.getLeafId();
 
-    if (cache && cache.leaf === leaf) {
+    if (cache && cache.session === session && cache.file === file && cache.leaf === leaf) {
       return cache.usage;
     }
 
-    cache = { leaf, usage: sumAssistantUsage(ctx.sessionManager.getEntries()) };
+    cache = { session, file, leaf, usage: sumAssistantUsage(manager.getEntries()) };
 
     return cache.usage;
   };

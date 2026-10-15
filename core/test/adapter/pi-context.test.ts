@@ -253,6 +253,25 @@ describe("contextHost", () => {
     expect(host.lastRequestUsage()).toEqual({ input: 50, cacheRead: 0, cacheWrite: 0, output: 5 });
   });
 
+  it("does not serve one session's memoised usage to another session with the same leaf id", () => {
+    const first = pi.SessionManager.inMemory("/tmp");
+    const second = pi.SessionManager.inMemory("/tmp");
+
+    first.appendMessage(assistant(usage(10, 80, 10)));
+    second.appendMessage(assistant(usage(50, 0, 0)));
+    vi.spyOn(first, "getLeafId").mockReturnValue("same");
+    vi.spyOn(second, "getLeafId").mockReturnValue("same");
+
+    const state: HostState = { tools: new Map(), ctx: ctxOf(first) };
+    const host = contextHost(fakeApi().api, state);
+
+    expect(host.mainRequestUsage()).toEqual({ input: 10, cacheRead: 80, cacheWrite: 10, output: 5 });
+
+    state.ctx = ctxOf(second);
+
+    expect(host.mainRequestUsage()).toEqual({ input: 50, cacheRead: 0, cacheWrite: 0, output: 5 });
+  });
+
   it("measures nothing without a live session", () => {
     const host = contextHost(fakeApi().api, { tools: new Map() });
 

@@ -20,11 +20,7 @@ const GAP = "   ";
 
 const DOT = " · ";
 
-const SIDE_BY_SIDE_MIN = 60;
-
 const NARROW_MAX = 50;
-
-const WIDE_GRID_MIN = 72;
 
 const WIDE_WINDOW = 1_000_000;
 
@@ -44,14 +40,20 @@ const GLYPHS = { used: "⛁", partial: "⛀", free: "⛶", reserve: "⛝" } as c
 
 export type RenderOptions = { width: number; expanded: boolean; expandKey: string };
 
-export const gridShape = (window: number, width: number) => {
+export type GridLayout = { columns: number; rows: number; beside: boolean };
+
+const besideWidth = (columns: number, side: number) => PAD.length + columns * 2 - 1 + GAP.length + side;
+
+export const gridLayout = (window: number, width: number, side: number): GridLayout => {
   if (width < NARROW_MAX) {
-    return { columns: 5, rows: 5 };
+    return { columns: 5, rows: 5, beside: false };
   }
 
-  return window >= WIDE_WINDOW && width >= WIDE_GRID_MIN
-    ? { columns: 20, rows: 10 }
-    : { columns: 10, rows: 10 };
+  if (window >= WIDE_WINDOW && besideWidth(20, side) <= width) {
+    return { columns: 20, rows: 10, beside: true };
+  }
+
+  return { columns: 10, rows: 10, beside: besideWidth(10, side) <= width };
 };
 
 export const formatWindow = (count: number) => {
@@ -139,11 +141,12 @@ const sideLines = (theme: ThemeLike, model: UsageModel) => [
 ];
 
 const bodyLines = (theme: ThemeLike, model: UsageModel, width: number) => {
-  const shape = gridShape(model.window, width);
-  const grid = gridRows(theme, gridCells(model, shape.columns * shape.rows), shape.columns);
   const side = sideLines(theme, model);
+  const sideWidth = Math.max(...side.map((line) => theme.width(line)));
+  const shape = gridLayout(model.window, width, sideWidth);
+  const grid = gridRows(theme, gridCells(model, shape.columns * shape.rows), shape.columns);
 
-  if (width < SIDE_BY_SIDE_MIN) {
+  if (!shape.beside) {
     return [...grid.map((row) => `${PAD}${row}`), "", ...side.map((line) => (line ? `${PAD}${line}` : line))];
   }
 

@@ -39,10 +39,13 @@ describe("usageModel", () => {
     expect(model.used).toBe(18_400 + 42_800);
   });
 
-  it("floors messages at zero when the estimates exceed the measured total", () => {
-    const model = usageModel(snapshot({ breakdown: breakdown({ total: 10_000 }) }));
+  it("scales the estimates down to the measured total when they exceed it, leaving messages at zero", () => {
+    const model = usageModel(snapshot({ breakdown: breakdown({ total: 9_200 }) }));
+    const used = model.categories.filter((category) => !["free", "reserve"].includes(category.key));
 
     expect(model.categories.some((category) => category.key === "messages")).toBe(false);
+    expect(used.reduce((sum, category) => sum + category.tokens, 0)).toBe(9_200);
+    expect(totals(model)).toMatchObject({ systemPrompt: 2_050, systemTools: 2_650, skills: 700 });
   });
 
   it("keeps a zero free row and the overflow once the window is full", () => {
@@ -60,14 +63,30 @@ describe("gridCells", () => {
     const cells = gridCells(usageModel(snapshot()), 100);
 
     expect(cells).toHaveLength(100);
-    expect(cells.slice(0, 3).map((cell) => `${cell.key}${cell.partial ? "~" : ""}`)).toEqual([
+    expect(cells.slice(0, 10).map((cell) => `${cell.key}${cell.partial ? "~" : ""}`)).toEqual([
       "systemPrompt",
       "systemPrompt",
-      "systemPrompt~",
+      "systemTools",
+      "systemTools",
+      "systemTools~",
+      "mcpTools~",
+      "extensionTools",
+      "memoryFiles",
+      "skills~",
+      "messages",
     ]);
     expect(cells.filter((cell) => cell.key === "reserve")).toHaveLength(8);
     expect(cells.at(-1)?.key).toBe("reserve");
-    expect(cells.findIndex((cell) => cell.key === "free")).toBe(34);
+    expect(cells.findIndex((cell) => cell.key === "free")).toBe(31);
+  });
+
+  it("fills as many cells as the rounded percentage of the window", () => {
+    const cells = gridCells(usageModel(snapshot()), 100);
+    const used = cells.filter((cell) => cell.key !== "free" && cell.key !== "reserve");
+
+    expect(used).toHaveLength(31);
+    expect(used.at(-1)).toEqual({ key: "messages", partial: true });
+    expect(used.filter((cell) => cell.partial)).toHaveLength(4);
   });
 
   it("never lets used cells eat the reserve", () => {
