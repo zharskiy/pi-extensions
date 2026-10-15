@@ -1,6 +1,6 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { contextOf, sumUsage } from "../../adapter/usage.ts";
+import { contextOf, sumAssistantUsage, sumUsage } from "../../adapter/usage.ts";
 
 const usage = (total: number) => ({
   input: 1,
@@ -43,6 +43,22 @@ describe("usage", () => {
 
     expect(totals.cost.total).toBe(31);
     expect(totals.totalTokens).toBe(10);
+  });
+
+  it("sums only assistant messages for the request usage, leaving warm-ups, summaries and tool results out", () => {
+    const request = (input: number) => ({ ...usage(0), input, cacheRead: input * 2, cacheWrite: 1 });
+
+    expect(
+      sumAssistantUsage([
+        { type: "message", message: { role: "assistant", usage: request(1) } },
+        { type: "message", message: { role: "assistant" } },
+        { type: "message", message: { role: "toolResult", usage: request(100) } },
+        { type: "usage", usage: request(1_000) },
+        { type: "compaction", usage: request(1_000) },
+        { type: "branch_summary", usage: request(1_000) },
+        { type: "message", message: { role: "assistant", usage: request(10) } },
+      ]),
+    ).toEqual({ input: 11, cacheRead: 22, cacheWrite: 2, output: 2 });
   });
 
   it("keeps counting entries a compaction or a tree navigation leaves behind", () => {

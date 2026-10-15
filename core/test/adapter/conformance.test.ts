@@ -138,6 +138,9 @@ describe("pi adapter conformance", () => {
       "getDocsPath",
       "getExamplesPath",
       "getReadmePath",
+      "estimateTokens",
+      "getLastAssistantUsage",
+      "DEFAULT_COMPACTION_SETTINGS",
     ];
 
     const requiredTui = [

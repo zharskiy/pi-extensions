@@ -1,4 +1,5 @@
 import type { ContextSnapshot, FooterData, ModelInfo, ThemeLike } from "../../../core/adapter/contract.ts";
+import { cacheTone } from "../../../core/manager/cache.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
 
@@ -29,6 +30,7 @@ export type FooterState = {
   cwd: string;
   sessionName: string | undefined;
   totals: SpendingTotals | undefined;
+  cache: number | undefined;
 };
 
 const paint = (color: string, text: string) => `${color}${text}${RESET}`;
@@ -86,17 +88,21 @@ const modelText = (context: ContextSnapshot, model: ModelInfo | undefined) => {
   return `${model.name} (${formatWindow(model.contextWindow || context.window)} context)`;
 };
 
-const statsLine = (
-  theme: ThemeLike,
-  context: ContextSnapshot,
-  model: ModelInfo | undefined,
-  mainCost: number | undefined,
-) =>
-  [
-    contextTokens(theme, context),
-    ...(mainCost === undefined ? [] : [paint(COLORS.gold, formatCost(mainCost))]),
-    paint(COLORS.cyan, modelText(context, model)),
-  ].join(theme.fg("dim", DOT));
+const cacheSegment = (theme: ThemeLike, percent: number) =>
+  `${theme.fg("dim", "cache ")}${theme.fg(cacheTone(percent), `${Math.round(percent)}%`)}`;
+
+const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
+  const join = (cache: number | undefined) =>
+    [
+      contextTokens(theme, state.context),
+      ...(cache === undefined ? [] : [cacheSegment(theme, cache)]),
+      ...(state.totals === undefined ? [] : [paint(COLORS.gold, formatCost(state.totals.main.cost))]),
+      paint(COLORS.cyan, modelText(state.context, state.model)),
+    ].join(theme.fg("dim", DOT));
+  const full = join(state.cache);
+
+  return theme.width(`${PAD}${full}`) > width ? join(undefined) : full;
+};
 
 const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   const all = [totals.main, ...totals.sources];
@@ -135,10 +141,15 @@ const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
     .map(([, text]) => text.replace(/\s+/g, " ").trim())
     .filter((text) => text.length > 0);
 
-export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterData) => {
+export const renderFooter = (
+  theme: ThemeLike,
+  state: FooterState,
+  data: FooterData,
+  width = Number.POSITIVE_INFINITY,
+) => {
   const status = statusLines(data.statuses);
   const lines = [
-    statsLine(theme, state.context, state.model, state.totals?.main.cost),
+    statsLine(theme, state, width),
     ...(state.totals ? [sessionLine(theme, state.totals)] : []),
     placeLine(theme, state.cwd, data.branch, state.sessionName),
     modeLine(theme, state.model, state.thinking, state.cycleKey),

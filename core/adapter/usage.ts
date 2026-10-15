@@ -1,4 +1,10 @@
-import { addUsage, type ContextSnapshot, emptyUsage, type UsageTotals } from "./contract.ts";
+import {
+  addUsage,
+  type ContextSnapshot,
+  emptyUsage,
+  type RequestUsage,
+  type UsageTotals,
+} from "./contract.ts";
 
 type RawEntry = {
   type: string;
@@ -25,6 +31,26 @@ export const sumUsage = (entries: readonly unknown[]): UsageTotals =>
     .map((entry) => entryUsage(entry as RawEntry))
     .filter((usage) => usage !== undefined)
     .reduce(addUsage, emptyUsage());
+
+export const requestUsageOf = (usage: Partial<RequestUsage> | undefined): RequestUsage => ({
+  input: usage?.input ?? 0,
+  cacheRead: usage?.cacheRead ?? 0,
+  cacheWrite: usage?.cacheWrite ?? 0,
+  output: usage?.output ?? 0,
+});
+
+const addRequestUsage = (left: RequestUsage, right: RequestUsage): RequestUsage => ({
+  input: left.input + right.input,
+  cacheRead: left.cacheRead + right.cacheRead,
+  cacheWrite: left.cacheWrite + right.cacheWrite,
+  output: left.output + right.output,
+});
+
+export const sumAssistantUsage = (entries: readonly unknown[]): RequestUsage =>
+  (entries as RawEntry[])
+    .filter((entry) => entry.type === "message" && entry.message?.role === "assistant")
+    .map((entry) => requestUsageOf(entry.message?.usage))
+    .reduce(addRequestUsage, requestUsageOf(undefined));
 
 type ContextSource = {
   getContextUsage(): { tokens: number | null; contextWindow: number; percent: number | null } | undefined;

@@ -3,11 +3,13 @@ import {
   type ChildEvent,
   type ChildSession,
   type CommandSpec,
+  type ContextBreakdown,
   type ContextSnapshot,
   type DialogEvent,
   type DialogKind,
   type EditorFrame,
   type EditorKeyHandler,
+  type EntryRender,
   emptyUsage,
   type FooterRender,
   type FormFactory,
@@ -21,6 +23,7 @@ import {
   type OverlayFactory,
   type Phase,
   type PhaseDetail,
+  type RequestUsage,
   type RoutedMessage,
   type SessionControl,
   type SessionInfo,
@@ -221,6 +224,15 @@ export type FakeHost = Host & {
   sessionTitle?: string;
   keyListeners: Set<() => void>;
   pressKey(): void;
+  entryRenderers: Map<string, EntryRender>;
+  renderEntry(
+    customType: string,
+    data: unknown,
+    options?: { width?: number; expanded?: boolean; theme?: ThemeLike },
+  ): string[];
+  breakdown?: ContextBreakdown;
+  lastUsage?: RequestUsage;
+  mainUsage: RequestUsage;
   dialog(phase: DialogEvent["phase"], kind: DialogKind, title?: string): void;
 };
 
@@ -711,6 +723,23 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
+    entryRenderers: new Map(),
+    registerEntryRenderer: (customType, render) => {
+      host.entryRenderers.set(customType, render);
+    },
+    renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme } = {}) => {
+      const render = host.entryRenderers.get(customType);
+
+      if (!render) {
+        throw new Error(`entry renderer ${customType} not registered`);
+      }
+
+      return render(structuredClone(data), width, expanded, theme).map((line) => theme.truncate(line, width));
+    },
+    mainUsage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+    contextBreakdown: () => (host.breakdown ? structuredClone(host.breakdown) : undefined),
+    lastRequestUsage: () => host.lastUsage,
+    mainRequestUsage: () => host.mainUsage,
     keyListeners: new Set(),
     pressKey: () => {
       Array.from(host.keyListeners).forEach((listener) => {
