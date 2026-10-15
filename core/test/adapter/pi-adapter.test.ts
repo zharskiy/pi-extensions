@@ -15,6 +15,7 @@ const fakeCtx = (mode: string, idle = true) => ({
   sessionManager: {
     getSessionId: () => "s1",
     getSessionFile: () => "/sessions/s1.jsonl",
+    buildContextEntries: () => [],
   },
   isProjectTrusted: () => true,
   isIdle: () => idle,
@@ -23,6 +24,7 @@ const fakeCtx = (mode: string, idle = true) => ({
     notify: () => {},
     setStatus: () => {},
     confirm: async () => true,
+    getEditorComponent: () => undefined,
     theme: { fg: (token: string, text: string) => `<${token}>${text}` },
   },
 });

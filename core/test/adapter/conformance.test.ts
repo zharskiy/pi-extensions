@@ -227,6 +227,20 @@ describe("pi adapter conformance", () => {
     ).toEqual([]);
   });
 
+  it("keeps the editor's input history in one array that addToHistory changes in place", () => {
+    const editor = new tui.Editor(
+      { terminal: { rows: 40 }, requestRender: () => {} } as never,
+      { borderColor: (text: string) => text, selectList: {} } as never,
+    );
+    const history: string[] = ["older"];
+
+    (editor as unknown as { history: string[] }).history = history;
+    editor.addToHistory("newer");
+
+    expect((editor as unknown as { history: string[] }).history).toBe(history);
+    expect(history).toEqual(["newer", "older"]);
+  });
+
   it("gives children in-memory settings with compaction off, a reserve and no cache warming", () => {
     const snapshot = { compaction: { enabled: true, keepRecentTokens: 20_000 }, defaultProvider: "beta" };
     const settings = pi.SettingsManager.inMemory(childSettings(snapshot, 16_384), { projectTrusted: false });

@@ -2,6 +2,8 @@ import {
   CustomEditor,
   type ExtensionContext,
   type KeybindingsManager,
+  type SessionEntry,
+  type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
@@ -15,6 +17,8 @@ type SharedEditor = {
   emptyDown: Set<() => void>;
   capture?: EditorKeyHandler;
   installed?: EditorFactory;
+  history: string[];
+  seed?: string[];
 };
 
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
@@ -22,11 +26,32 @@ const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
 const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor };
 
 const sharedEditor = (): SharedEditor =>
-  (shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set() });
+  (shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set(), history: [] });
 
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
+type EditorHistory = { history: string[] };
+
 type EmptyKey = "emptyLeft" | "emptyDown";
+
+const SEEDED_REASONS: ReadonlySet<SessionStartEvent["reason"]> = new Set(["resume", "fork"]);
+
+const userText = (entry: SessionEntry) => {
+  if (entry.type !== "message" || entry.message.role !== "user") {
+    return "";
+  }
+
+  const content = entry.message.content;
+
+  if (typeof content === "string") {
+    return content;
+  }
+
+  return content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+};
 
 class HostEditor extends CustomEditor {
   private readonly keys: KeybindingsManager;
@@ -36,6 +61,7 @@ class HostEditor extends CustomEditor {
 
   constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, hooks: SharedEditor) {
     super(tui, theme, keybindings, { embedWorkingStatus: true });
+    (this as unknown as EditorHistory).history = hooks.history;
     this.keys = keybindings;
     this.hooks = hooks;
   }
@@ -126,10 +152,16 @@ type EditorHooksUi = Pick<
   "setEditorFrame" | "onEmptyEditorLeft" | "onEmptyEditorDown" | "captureEditorKeys"
 >;
 
-export type EditorHooks = EditorHooksUi & { sync(): void; release(): void };
+export type EditorHooks = EditorHooksUi & {
+  sync(reason: SessionStartEvent["reason"], ctx: ExtensionContext): void;
+  release(): void;
+};
 
 export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): EditorHooks => {
-  const own: Omit<SharedEditor, "installed"> = { emptyLeft: new Set(), emptyDown: new Set() };
+  const own: Pick<SharedEditor, "frame" | "emptyLeft" | "emptyDown" | "capture"> = {
+    emptyLeft: new Set(),
+    emptyDown: new Set(),
+  };
 
   const inUse = (hooks: SharedEditor) =>
     Boolean(hooks.frame || hooks.emptyLeft.size > 0 || hooks.emptyDown.size > 0 || hooks.capture);
@@ -149,7 +181,18 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
     }
 
     if (!active) {
-      hooks.installed = (tui, theme, keybindings) => new HostEditor(tui, theme, keybindings, hooks);
+      const seed = hooks.seed ?? [];
+
+      hooks.seed = undefined;
+      hooks.installed = (tui, theme, keybindings) => {
+        const editor = new HostEditor(tui, theme, keybindings, hooks);
+
+        seed.splice(0).forEach((text) => {
+          editor.addToHistory(text);
+        });
+
+        return editor;
+      };
       ctx.ui.setEditorComponent(hooks.installed);
     }
   };
@@ -225,8 +268,17 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
         releaseIfUnused();
       };
     },
-    sync: () => {
-      if (inUse(sharedEditor())) {
+    sync: (reason, ctx) => {
+      const hooks = sharedEditor();
+      const ui = tuiCtx()?.ui;
+
+      if (ui && !ui.getEditorComponent()) {
+        hooks.seed = SEEDED_REASONS.has(reason)
+          ? ctx.sessionManager.buildContextEntries().map(userText).filter(Boolean)
+          : undefined;
+      }
+
+      if (inUse(hooks)) {
         ensureInstalled();
       }
     },

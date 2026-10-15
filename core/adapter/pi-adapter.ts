@@ -173,7 +173,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
-    editor.sync();
+    editor.sync(event.reason, ctx);
 
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
