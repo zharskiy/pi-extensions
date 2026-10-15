@@ -2,11 +2,16 @@ import type { ThemeLike, WidgetHandle } from "../../../../../core/adapter/contra
 import { errorText } from "../../components/format.ts";
 import { tickFor, watchAgents } from "../../components/refresh.ts";
 import type { TreeRow } from "../../components/tree.ts";
+import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type PanelActions, panelKeyHandler, selectFirst } from "./keys.ts";
 import { createPanelState, type PanelActionsAvailable, panelLines, panelRows, reconcile } from "./model.ts";
 
 const WIDGET_KEY = "pi-subagents-agents";
+
+const HINT_KEY = NAMESPACE;
+
+const HINT = "← to agents";
 
 export const agentPanelPlugin: Plugin = {
   id: "agent-panel",
@@ -17,6 +22,9 @@ export const agentPanelPlugin: Plugin = {
     let current: TreeRow[] = [];
     let handle: WidgetHandle | undefined;
     let capture: (() => void) | undefined;
+    let tui = false;
+    let enabled = true;
+    let shown: string | undefined;
 
     const available = (): PanelActionsAvailable => ({
       view: services.has("agentView"),
@@ -35,8 +43,22 @@ export const agentPanelPlugin: Plugin = {
       remove?.();
     };
 
+    const applyHint = (force = false) => {
+      const wanted =
+        enabled && tui && current.length === 0 && !settings.disabledPlugins.includes("agent-view");
+      const value = wanted ? host.ui.style("dim", HINT) : undefined;
+
+      if (force ? value === undefined && shown === undefined : value === shown) {
+        return;
+      }
+
+      shown = value;
+      host.ui.setStatus(HINT_KEY, value);
+    };
+
     const refresh = () => {
       current = rows();
+      applyHint();
 
       if (reconcile(current, state)) {
         release();
@@ -99,6 +121,12 @@ export const agentPanelPlugin: Plugin = {
       onChange: refresh,
     });
 
+    host.onSessionStart((info) => {
+      tui = info.mode === "tui";
+      current = rows();
+      applyHint(true);
+    });
+
     const offDown = host.ui.onEmptyEditorDown(() => {
       if (selectFirst(actions)) {
         install();
@@ -106,6 +134,12 @@ export const agentPanelPlugin: Plugin = {
     });
 
     return () => {
+      enabled = false;
+      if (shown !== undefined) {
+        shown = undefined;
+        host.ui.setStatus(HINT_KEY, undefined);
+      }
+
       offDown();
       release();
       unwatch();

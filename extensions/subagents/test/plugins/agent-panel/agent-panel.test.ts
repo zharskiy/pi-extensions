@@ -653,3 +653,151 @@ describe("agent panel", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("agents hint status", () => {
+  const hint = (panel: ReturnType<typeof setup>) => panel.host.statuses.get("pi-subagents");
+
+  it("is set while the panel shows no rows and unset while it lists any", () => {
+    const panel = setup();
+
+    expect(hint(panel)).toContain("← to agents");
+
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+
+    expect(hint(panel)).toBeUndefined();
+
+    panel.registry.close(record.id, { state: "done" });
+
+    expect(hint(panel)).toBeUndefined();
+
+    vi.advanceTimersByTime(9_999);
+
+    expect(hint(panel)).toBeUndefined();
+
+    vi.advanceTimersByTime(1_002);
+
+    expect(hint(panel)).toContain("← to agents");
+  });
+
+  it("returns when x clears the last lingering failed row", () => {
+    const panel = setup();
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+    panel.registry.close(record.id, { state: "failed" });
+    panel.host.pressEmptyDown();
+
+    expect(hint(panel)).toBeUndefined();
+
+    panel.type("x");
+
+    expect(hint(panel)).toContain("← to agents");
+  });
+
+  it("is never set with agent-view disabled", () => {
+    const panel = setup({ settings: { disabledPlugins: ["agent-view"] } });
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+    panel.registry.close(record.id, { state: "done" });
+    vi.advanceTimersByTime(12_000);
+
+    expect(hint(panel)).toBeUndefined();
+    expect(panel.host.statuses.get("pi-subagents")).toBeUndefined();
+  });
+
+  it("is never set outside tui", () => {
+    const panel = setup();
+
+    panel.host.statuses.clear();
+    panel.host.info.mode = "rpc";
+    panel.host.start();
+
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+    panel.registry.close(record.id, { state: "done" });
+    vi.advanceTimersByTime(12_000);
+
+    expect(hint(panel)).toBeUndefined();
+  });
+
+  it("never calls setStatus for a session started in rpc mode", async () => {
+    const root = tempDir();
+
+    const host = createFakeHost({
+      id: "rpc",
+      mode: "rpc",
+      file: join(root, "main.jsonl"),
+      agentDir: join(root, "agent"),
+    });
+
+    const { manager } = startPlugins(host, createFakeRuntime(), [agentRegistryPlugin, agentPanelPlugin]);
+
+    expect(host.statusCalls).toEqual([]);
+
+    await manager.disableAll();
+
+    expect(host.statusCalls).toEqual([]);
+  });
+
+  it("comes back at a new session start after pi clears statuses", () => {
+    const panel = setup();
+
+    panel.host.statuses.clear();
+
+    expect(hint(panel)).toBeUndefined();
+
+    panel.host.start();
+
+    expect(hint(panel)).toContain("← to agents");
+  });
+
+  it("is written only on change", () => {
+    const panel = setup();
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+    panel.host.statusCalls.length = 0;
+    vi.advanceTimersByTime(3_000);
+    panel.running(record.id);
+    vi.advanceTimersByTime(3_000);
+
+    expect(panel.host.statusCalls).toEqual([]);
+  });
+
+  it("is hidden while a queued row shows", () => {
+    const panel = setup();
+
+    panel.newAgent();
+
+    expect(panel.lines().join("\n")).toContain("queued");
+    expect(hint(panel)).toBeUndefined();
+  });
+
+  it("is hidden while a stopping row shows", () => {
+    const panel = setup();
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+    panel.registry.update(record.id, { state: "grace" });
+
+    expect(panel.lines().join("\n")).toContain("stopping");
+    expect(hint(panel)).toBeUndefined();
+  });
+
+  it("is cleared on disable and not set again", async () => {
+    const panel = setup();
+
+    await panel.manager.disableAll();
+
+    expect(hint(panel)).toBeUndefined();
+
+    panel.host.start();
+    panel.registry.create(newAgentInput(join(panel.root, "agents"), {}));
+
+    expect(hint(panel)).toBeUndefined();
+  });
+});
