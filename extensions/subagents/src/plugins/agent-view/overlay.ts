@@ -1,20 +1,18 @@
 import type { OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
-import type { AgentViewOrigin } from "../../model/types.ts";
+import type { AgentRecord } from "../../model/types.ts";
 
-export type OverlayStart = { kind: "list" } | { kind: "view"; id: string; from: AgentViewOrigin };
+export type OverlayStart = { kind: "list" } | { kind: "view"; id: string; found: AgentRecord };
 
 export type ListComponent = ViewComponent & { suspend(): void; resume(): void };
 
-export type ListHooks = { open(id: string): void; leave(): void; selected?: string };
+type ListHooks = { open(record: AgentRecord): void; leave(): void };
 
 export type OverlayParts = {
   list(hooks: ListHooks): ListComponent;
-  view(id: string, from: AgentViewOrigin, leave: () => void): ViewComponent | undefined;
+  view(id: string, found: AgentRecord, back: boolean, leave: () => void): ViewComponent;
 };
 
-const EMPTY: ViewComponent = { render: () => [], handleKey: () => {} };
-
-export type AgentsOverlay = ViewComponent & { close(): void };
+export type AgentsOverlay = ViewComponent & { close(): void; dispose(): void };
 
 export const createAgentsOverlay = (
   api: OverlayApi,
@@ -22,7 +20,6 @@ export const createAgentsOverlay = (
   parts: OverlayParts,
 ): AgentsOverlay => {
   let list: ListComponent | undefined;
-  let current: ViewComponent = EMPTY;
   let disposed = false;
 
   const dispose = () => {
@@ -43,46 +40,27 @@ export const createAgentsOverlay = (
     api.close();
   };
 
-  const showView = (id: string) => {
-    const view = parts.view(id, "list", () => showList());
-
-    if (!view) {
-      return;
-    }
-
-    list?.suspend();
-    current = view;
-    api.requestRender();
-  };
-
-  const showList = (selected?: string) => {
-    const previous = current;
-
-    list ??= parts.list({ open: showView, leave: close, selected });
+  const resumeList = () => {
+    list ??= parts.list({ open: showView, leave: close });
     list.resume();
 
-    if (previous !== list) {
-      previous.dispose?.();
-    }
+    return list;
+  };
 
-    current = list;
+  const showList = () => {
+    current.dispose?.();
+    current = resumeList();
     api.requestRender();
   };
 
-  if (start.kind === "list") {
-    showList();
-  } else {
-    const leave = start.from === "list" ? () => showList(start.id) : close;
+  const showView = (record: AgentRecord) => {
+    list?.suspend();
+    current = parts.view(record.id, record, true, showList);
+    api.requestRender();
+  };
 
-    current = parts.view(start.id, start.from, leave) ?? {
-      render: () => [],
-      handleKey: (key) => {
-        if (key.name === "escape") {
-          close();
-        }
-      },
-    };
-  }
+  let current: ViewComponent =
+    start.kind === "list" ? resumeList() : parts.view(start.id, start.found, false, close);
 
   return {
     render: (width) => current.render(width),

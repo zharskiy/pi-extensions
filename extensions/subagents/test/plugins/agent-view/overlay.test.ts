@@ -4,22 +4,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { agentsDirFor, MANIFEST_FILE } from "../../../src/model/paths.ts";
-import type { AgentRecord, NewAgent } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
-import { fakeOverlayApi, grepSession, key, plain } from "../../helpers/overlay.ts";
+import {
+  disposeOverlays,
+  fakeOverlayApi,
+  grepSession,
+  key,
+  openLastOverlay,
+  selectedRow,
+} from "../../helpers/overlay.ts";
+import { newAgentInput } from "../../helpers/records.ts";
 
 initRenderTheme();
 
-const views: ViewComponent[] = [];
-
 afterEach(() => {
-  views.splice(0).forEach((view) => {
-    view.dispose?.();
-  });
+  disposeOverlays();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -29,16 +32,7 @@ const setup = () => {
   const registry = harness.services.require("registry");
 
   const create = (description: string, createdAt: number) => {
-    const input: NewAgent = {
-      agent: "explorer",
-      description,
-      callerId: "main",
-      depth: 2,
-      batchId: "b-1",
-      dir: harness.root,
-      contextLimit: 100_000,
-    };
-    const record = registry.create(input);
+    const record = registry.create(newAgentInput(harness.root, { description }));
 
     registry.update(record.id, { state: "running", createdAt });
 
@@ -46,24 +40,13 @@ const setup = () => {
   };
 
   const openLast = () => {
-    const factory = harness.host.overlays.at(-1);
+    const { view, state, lines } = openLastOverlay(harness.host, 40);
 
-    if (!factory) {
-      throw new Error("no overlay opened");
-    }
-
-    const { api, state } = fakeOverlayApi(40);
-    const overlay = factory(api);
-
-    views.push(overlay);
-
-    return { overlay, state, lines: () => plain(overlay.render(100)) };
+    return { overlay: view, state, lines };
   };
 
   return { ...harness, registry, create, openLast };
 };
-
-const selected = (lines: string[]) => lines.find((line) => line.startsWith(" › "));
 
 describe("agents overlay", () => {
   it("Enter swaps to the view in the same overlay and Esc returns to the list with the selection kept", async () => {
@@ -88,7 +71,7 @@ describe("agents overlay", () => {
 
     overlay.handleKey(key("escape"));
 
-    expect(selected(lines())).toContain("second job");
+    expect(selectedRow(lines())).toContain("second job");
     expect(state.closed).toBe(false);
 
     overlay.handleKey(key("escape"));
@@ -106,7 +89,7 @@ describe("agents overlay", () => {
 
     const { lines } = harness.openLast();
 
-    expect(selected(lines())).toContain("first job");
+    expect(selectedRow(lines())).toContain("first job");
   });
 
   it("left on a selected panel row clears the selection and opens the list", () => {
@@ -117,15 +100,7 @@ describe("agents overlay", () => {
       agentViewPlugin,
     ]);
 
-    harness.services.require("registry").create({
-      agent: "explorer",
-      description: "job",
-      callerId: "main",
-      depth: 2,
-      batchId: "b-1",
-      dir: harness.root,
-      contextLimit: 100_000,
-    });
+    harness.services.require("registry").create(newAgentInput(harness.root));
 
     expect(harness.host.pressEmptyDown()).toBe(true);
     expect(harness.host.editorCapture).toBeDefined();
@@ -213,7 +188,7 @@ describe("agents overlay", () => {
     const harness = setup();
     const record = harness.create("job", 1);
 
-    await harness.services.require("agentView").open(record.id, { from: "panel" });
+    await harness.services.require("agentView").open(record.id);
 
     const { overlay, state, lines } = harness.openLast();
 
@@ -222,26 +197,6 @@ describe("agents overlay", () => {
     overlay.handleKey(key("escape"));
 
     expect(state.closed).toBe(true);
-  });
-
-  it("a view opened with from list goes back to a new list with that agent selected", async () => {
-    const harness = setup();
-
-    harness.create("first job", 1);
-
-    const second: AgentRecord = harness.create("second job", 2);
-
-    await harness.services.require("agentView").open(second.id, { from: "list" });
-
-    const { overlay, state, lines } = harness.openLast();
-
-    expect(lines().at(-2)?.startsWith(" esc to go back")).toBe(true);
-
-    overlay.handleKey(key("escape"));
-
-    expect(lines()[1]).toBe(" Agents · 2 running");
-    expect(selected(lines())).toContain("second job");
-    expect(state.closed).toBe(false);
   });
 
   it("only notifies for unknown agents and opens nothing", async () => {
@@ -326,6 +281,8 @@ describe("agents overlay", () => {
   });
 
   it("disposes the hidden list and the view when the overlay closes", async () => {
+    vi.useFakeTimers();
+
     const harness = setup();
     const record = harness.create("job", 1);
 
@@ -348,8 +305,22 @@ describe("agents overlay", () => {
     const renders = state.renders;
 
     harness.registry.update(record.id, { tokens: 5 });
-    await new Promise((done) => setTimeout(done, 1_000));
+    vi.advanceTimersByTime(1_000);
 
     expect(state.renders).toBe(renders);
+  });
+
+  it("forgets an overlay pi disposed, so disable does not close it again", async () => {
+    const harness = setup();
+
+    harness.create("job", 1);
+    await harness.host.runCommand("agents", "");
+
+    const { overlay, state } = harness.openLast();
+
+    overlay.dispose?.();
+    await harness.manager.disableAll();
+
+    expect(state.closed).toBe(false);
   });
 });

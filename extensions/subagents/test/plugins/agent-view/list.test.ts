@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { AgentRecord, NewAgent } from "../../../src/model/types.ts";
@@ -8,13 +8,20 @@ import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.t
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { createHarness, spawnAgents } from "../../helpers/harness.ts";
-import { char, fakeOverlayApi, key, plain, recordingTheme } from "../../helpers/overlay.ts";
+import {
+  char,
+  disposeOverlays,
+  key,
+  openLastOverlay,
+  plain,
+  recordingTheme,
+  selectedRow,
+} from "../../helpers/overlay.ts";
+import { newAgentInput } from "../../helpers/records.ts";
 
 initRenderTheme();
 
 const NOW = 1_000_000;
-
-const views: ViewComponent[] = [];
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -22,9 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  views.splice(0).forEach((view) => {
-    view.dispose?.();
-  });
+  disposeOverlays();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -38,20 +43,9 @@ const setup = () => {
   ]);
   const registry = harness.services.require("registry");
 
-  const newAgent = (patch: Partial<NewAgent> = {}): NewAgent => ({
-    agent: "explorer",
-    description: "look around",
-    callerId: "main",
-    depth: 2,
-    batchId: "b-1",
-    dir: harness.root,
-    contextLimit: 100_000,
-    ...patch,
-  });
-
   const create = (patch: Partial<NewAgent> & { state?: AgentRecord["state"]; createdAt?: number } = {}) => {
     const { state = "running", createdAt, ...input } = patch;
-    const record = registry.create(newAgent(input));
+    const record = registry.create(newAgentInput(harness.root, input));
 
     registry.update(record.id, { state, ...(createdAt === undefined ? {} : { createdAt }) });
 
@@ -66,26 +60,15 @@ const setup = () => {
   const openList = async (rows = 40, width = 100, theme?: ThemeLike) => {
     await harness.host.runCommand("agents", "");
 
-    const factory = harness.host.overlays.at(-1);
+    const { view, state, lines } = openLastOverlay(harness.host, rows, theme);
 
-    if (!factory) {
-      throw new Error("no overlay opened");
-    }
-
-    const { api, state } = fakeOverlayApi(rows, theme);
-    const view = factory(api);
-
-    views.push(view);
-
-    return { view, state, lines: () => plain(view.render(width)) };
+    return { view, state, lines: () => lines(width) };
   };
 
   const spawn = (count: number) => spawnAgents(harness, count);
 
   return { ...harness, registry, create, finish, openList, spawn };
 };
-
-const selectedLine = (lines: string[]) => lines.find((line) => line.startsWith(" › "));
 
 describe("agents list", () => {
   it("opens from /agents without an id and shows the empty state", async () => {
@@ -142,28 +125,30 @@ describe("agents list", () => {
 
   it("moves over rows, skipping headers, clamped at both ends", async () => {
     const harness = setup();
-    const first = harness.create({ description: "first", createdAt: 1 });
+    harness.create({ description: "first", createdAt: 1 });
+
     const closed = harness.create({ description: "closed one", createdAt: 2 });
 
     harness.finish(closed.id, NOW - 1_000);
 
     const { view, lines } = await harness.openList();
 
-    expect(selectedLine(lines())).toContain("first");
+    expect(selectedRow(lines())).toContain("first");
+    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to stop · X to stop all · esc to close");
 
     view.handleKey(key("down"));
 
-    expect(selectedLine(lines())).toContain("closed one");
+    expect(selectedRow(lines())).toContain("closed one");
+    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to clear · X to stop all · esc to close");
 
     view.handleKey(key("down"));
 
-    expect(selectedLine(lines())).toContain("closed one");
+    expect(selectedRow(lines())).toContain("closed one");
 
     view.handleKey(key("up"));
     view.handleKey(key("up"));
 
-    expect(selectedLine(lines())).toContain("first");
-    expect(first.id).toBeDefined();
+    expect(selectedRow(lines())).toContain("first");
   });
 
   it("stops the selected agent with x and closes it with a second x", async () => {
@@ -186,7 +171,7 @@ describe("agents list", () => {
     expect(harness.registry.get(record?.id ?? "")?.state).toBe("stopped");
   });
 
-  it("stops every running agent after X twice within 3 s", async () => {
+  it("stops the running and queued agents, leaves a grace agent and clears the prompt on the second X within 3 s", async () => {
     const harness = setup();
     const running = harness.create({ description: "running" });
     const queued = harness.create({ description: "queued", state: "queued" });
@@ -247,7 +232,7 @@ describe("agents list", () => {
     view.handleKey(key("down"));
 
     expect(lines()).not.toContain(feedback);
-    expect(selectedLine(lines())).toContain("look around");
+    expect(selectedRow(lines())).toContain("look around");
     expect(states()).toEqual(["running", "running"]);
 
     view.handleKey(char("X"));
@@ -293,12 +278,12 @@ describe("agents list", () => {
       view.handleKey(key("down"));
     });
 
-    expect(selectedLine(lines())).toContain("job 20");
+    expect(selectedRow(lines())).toContain("job 20");
 
     view.handleKey(key("home"));
 
     expect(lines()[3]).toBe(" Running");
-    expect(selectedLine(lines())).toContain("job 0");
+    expect(selectedRow(lines())).toContain("job 0");
   });
 
   it("pads every line and keeps the last column blank", async () => {
@@ -352,13 +337,13 @@ describe("agents list", () => {
     view.handleKey(key("end"));
     view.handleKey(key("up"));
 
-    expect(selectedLine(lines())).toContain("done root");
+    expect(selectedRow(lines())).toContain("done root");
 
     view.handleKey(char("x"));
 
     expect(lines().join("\n")).not.toContain("done root");
     expect(lines().join("\n")).not.toContain("done child");
-    expect(selectedLine(lines())).toContain("closed child");
+    expect(selectedRow(lines())).toContain("closed child");
 
     view.handleKey(char("x"));
 
@@ -366,28 +351,13 @@ describe("agents list", () => {
     expect(lines().join("\n")).toContain("running root");
   });
 
-  it("says No running agents for 2 s", async () => {
+  it("says No running agents for 2 s with only closed and grace agents and stops nothing", async () => {
     const harness = setup();
     const closed = harness.create();
-
-    harness.finish(closed.id, NOW - 1_000);
-
-    const { view, lines } = await harness.openList();
-
-    view.handleKey(char("X"));
-
-    expect(lines().at(-3)).toBe(" No running agents");
-
-    vi.advanceTimersByTime(2_000);
-
-    expect(lines().at(-3)).toBe("");
-  });
-
-  it("leaves grace agents alone on stop-all", async () => {
-    const harness = setup();
     const grace = harness.create({ state: "grace" });
     const stop = vi.fn(async () => true);
 
+    harness.finish(closed.id, NOW - 1_000);
     harness.services.provide("runner", {
       stop,
       route: async () => ({ ok: true, delivery: "steer" }),
@@ -398,16 +368,16 @@ describe("agents list", () => {
 
     view.handleKey(char("X"));
 
-    expect(lines().at(-3)).toBe(" Press X again to stop all agents");
+    expect(lines().at(-3)).toBe(" No running agents");
 
     view.handleKey(char("X"));
     await flush();
 
+    expect(lines().at(-3)).toBe(" No running agents");
     expect(stop).not.toHaveBeenCalled();
-    expect(lines().at(-3)).toBe(" Press X again to stop all agents");
     expect(harness.registry.get(grace.id)?.state).toBe("grace");
 
-    vi.advanceTimersByTime(3_000);
+    vi.advanceTimersByTime(2_000);
 
     expect(lines().at(-3)).toBe("");
   });
@@ -471,12 +441,12 @@ describe("agents list", () => {
 
     const { view, lines } = await harness.openList();
 
-    expect(selectedLine(lines())).toContain("first done");
+    expect(selectedRow(lines())).toContain("first done");
 
     view.handleKey(char("x"));
 
     expect(lines().join("\n")).not.toContain("first done");
-    expect(selectedLine(lines())).toContain("second done");
+    expect(selectedRow(lines())).toContain("second done");
 
     const reopened = await harness.openList();
 
@@ -496,19 +466,19 @@ describe("agents list", () => {
 
     view.handleKey(key("pageDown"));
 
-    expect(selectedLine(lines())).toContain(`job ${height - 1}`);
+    expect(selectedRow(lines())).toContain(`job ${height - 1}`);
 
     view.handleKey(key("end"));
 
-    expect(selectedLine(lines())).toContain("job 29");
+    expect(selectedRow(lines())).toContain("job 29");
 
     view.handleWheel?.(-3);
 
-    expect(selectedLine(lines())).toContain("job 26");
+    expect(selectedRow(lines())).toContain("job 26");
 
     view.handleKey(key("pageUp"));
 
-    expect(selectedLine(lines())).toContain(`job ${26 - (height - 1)}`);
+    expect(selectedRow(lines())).toContain(`job ${26 - (height - 1)}`);
   });
 
   it("refreshes when an agent changes", async () => {
@@ -544,5 +514,103 @@ describe("agents list", () => {
     expect(values).toEqual([open.id]);
     expect(command?.complete?.("zzz")).toEqual([]);
     expect((command?.complete?.("") ?? [])[0]?.label).toBe(`${open.id} · running · open`);
+  });
+
+  it("moves the selection to the next row when the selected row lingers out", async () => {
+    const harness = setup();
+    const root = harness.create({ description: "open root", createdAt: 1 });
+    const child = harness.create({ callerId: root.id, description: "closed child", createdAt: 2 });
+    const grandchild = harness.create({
+      callerId: child.id,
+      description: "lingering grandchild",
+      createdAt: 3,
+    });
+
+    harness.create({ callerId: root.id, description: "open sibling", createdAt: 4 });
+    harness.finish(grandchild.id, NOW - 29_500);
+    harness.finish(child.id, NOW - 29_500);
+
+    const { view, lines } = await harness.openList();
+
+    view.handleKey(key("down"));
+    view.handleKey(key("down"));
+
+    expect(selectedRow(lines())).toContain("lingering grandchild");
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(lines().join("\n")).not.toContain("lingering grandchild");
+    expect(lines().join("\n")).toContain("closed child");
+    expect(selectedRow(lines())).toContain("open sibling");
+  });
+
+  it("keeps a closed child under its open caller past lingerMs, and its own children for lingerMs", async () => {
+    const harness = setup();
+    const root = harness.create({ description: "open root", createdAt: 1 });
+    const child = harness.create({ callerId: root.id, description: "old child", createdAt: 2 });
+    const stale = harness.create({ callerId: child.id, description: "stale grandchild", createdAt: 3 });
+    const recent = harness.create({ callerId: child.id, description: "recent grandchild", createdAt: 4 });
+
+    harness.finish(stale.id, NOW - 60_000);
+    harness.finish(recent.id, NOW - 1_000);
+    harness.finish(child.id, NOW - 60_000);
+
+    const { lines } = await harness.openList();
+    const text = lines().join("\n");
+
+    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running · 2 done", "", " Running"]);
+    expect(lines()[4]).toMatch(/^ › ⠋ explorer +open root/);
+    expect(lines()[5]).toMatch(/^ └─ ✓ explorer +old child +done/);
+    expect(lines()[6]).toMatch(/^ {4}└─ ✓ explorer +recent grandchild +done/);
+    expect(text).not.toContain("stale grandchild");
+    expect(text).not.toContain("Completed");
+  });
+
+  it("moves a closed subtree to Completed and lingers it from the root's endedAt", async () => {
+    const harness = setup();
+    const root = harness.create({ description: "done root", createdAt: 1 });
+    const child = harness.create({ callerId: root.id, description: "early child", createdAt: 2 });
+
+    harness.finish(child.id, NOW - 50_000);
+    harness.finish(root.id, NOW - 10_000);
+
+    const { lines } = await harness.openList();
+
+    expect(lines().slice(3, 6)).toEqual([
+      " Completed (1)",
+      expect.stringMatching(/^ › ✓ explorer +done root +done/),
+      expect.stringMatching(/^ └─ ✓ explorer +early child +done/),
+    ]);
+
+    vi.advanceTimersByTime(20_000);
+
+    expect(lines()).toContain(" No agents running");
+  });
+
+  it("shows a chain as one row, its terminal, under the caller of its first link", async () => {
+    const harness = setup();
+
+    harness.create({ description: "other root", createdAt: 1 });
+
+    const first = harness.create({ description: "chained job", createdAt: 2 });
+    const second = harness.create({
+      description: "chained job",
+      chainIndex: 2,
+      predecessorId: first.id,
+      createdAt: 3,
+    });
+
+    harness.finish(first.id, NOW - 1_000, "handoff");
+    harness.registry.update(first.id, { successorId: second.id });
+    harness.create({ callerId: first.id, description: "child of the first link", createdAt: 4 });
+
+    const { lines } = await harness.openList();
+    const text = lines().join("\n");
+
+    expect(lines()[1]).toBe(" Agents · 3 running");
+    expect(lines()[4]).toMatch(/^ › ⠋ explorer +other root/);
+    expect(lines()[5]).toMatch(/^ ⠋ explorer #2 \(\+1\) +chained job/);
+    expect(lines()[6]).toMatch(/^ └─ ⠋ explorer +child of the first link/);
+    expect(text.match(/chained job/g)).toHaveLength(1);
   });
 });

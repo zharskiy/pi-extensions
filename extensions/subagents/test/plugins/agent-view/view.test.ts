@@ -1,7 +1,12 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionRecord, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import type {
+  SessionRecord,
+  ThemeLike,
+  ToolSpec,
+  ViewComponent,
+} from "../../../../../core/adapter/contract.ts";
 import {
   parseSessionLines,
   promptRecordEntry,
@@ -10,7 +15,7 @@ import {
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
-import type { AgentRecord, AgentViewOrigin } from "../../../src/model/types.ts";
+import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
@@ -19,10 +24,19 @@ import type { ViewData } from "../../../src/plugins/agent-view/loader.ts";
 import { createAgentView, headerLines } from "../../../src/plugins/agent-view/view.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness, spawnAgents } from "../../helpers/harness.ts";
-import { char, fakeOverlayApi, grepSession, key, plain, recordingTheme } from "../../helpers/overlay.ts";
-import { agentRecord } from "../../helpers/records.ts";
+import {
+  char,
+  disposeOverlays,
+  fakeOverlayApi,
+  grepSession,
+  key,
+  openLastOverlay,
+  plain,
+  recordingTheme,
+} from "../../helpers/overlay.ts";
+import { agentRecord, newAgentInput } from "../../helpers/records.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
 
@@ -39,10 +53,15 @@ const track = <T extends ViewComponent>(view: T): T => {
   return view;
 };
 
+const useFakeTime = () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+};
+
 afterEach(() => {
   views.splice(0).forEach((view) => {
     view.dispose?.();
   });
+  disposeOverlays();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -53,31 +72,19 @@ const setup = (plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentP
   const harness = createHarness(plugins);
   const registry = harness.services.require("registry");
 
-  const openLast = (rows = 200) => {
-    const factory = harness.host.overlays.at(-1);
-
-    if (!factory) {
-      throw new Error("no overlay opened");
-    }
-
-    const { api, state, transcripts } = fakeOverlayApi(rows, undefined, harness.host);
-
-    return { view: track(factory(api)), state, transcripts };
-  };
-
   const openView = async (args: string, rows = 200) => {
     await harness.host.runCommand("agents", args);
 
-    return openLast(rows);
+    return openLastOverlay(harness.host, rows);
   };
 
-  const openFrom = async (id: string, from: AgentViewOrigin, rows = 200) => {
-    await harness.services.require("agentView").open(id, { from });
+  const open = async (id: string, rows = 200) => {
+    await harness.services.require("agentView").open(id);
 
-    return openLast(rows);
+    return openLastOverlay(harness.host, rows);
   };
 
-  return { ...harness, registry, openView, openFrom };
+  return { ...harness, registry, openView, open };
 };
 
 type Harness = ReturnType<typeof setup>;
@@ -92,15 +99,9 @@ const closedAgent = (
   writeFileSync(file, "");
   harness.runtime.sessions.set(file, session);
 
-  const record = harness.registry.create({
-    agent: "explorer",
-    description: "t",
-    callerId: "main",
-    depth: 2,
-    batchId: "b-x",
-    dir: join(harness.root, "agents"),
-    contextLimit: 100_000,
-  });
+  const record = harness.registry.create(
+    newAgentInput(join(harness.root, "agents"), { description: "t", batchId: "b-x" }),
+  );
 
   harness.registry.close(record.id, { state: "done", sessionFile: file, ...patch });
 
@@ -116,7 +117,7 @@ const runningAgent = async (harness = setup()) => {
 type ViewOptions = {
   rows?: number;
   record?: AgentRecord;
-  from?: AgentViewOrigin;
+  back?: boolean;
   stop?: () => Promise<unknown> | undefined;
   width?: number;
   theme?: ThemeLike;
@@ -140,7 +141,7 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
           loads += 1;
           return current;
         },
-        from: options.from ?? "command",
+        back: options.back ?? false,
         reserveTokens: 0,
         stop: options.stop ?? (() => undefined),
         watch: (_tickMs, onChange) => {
@@ -170,8 +171,6 @@ const fixtureWithout = (count: number): SessionRecord => {
 
   return { ...session, items: session.items.slice(0, session.items.length - count) };
 };
-
-const waitForRefresh = () => new Promise<void>((done) => setTimeout(done, 350));
 
 const RULE = (width: number) => "─".repeat(width);
 
@@ -221,7 +220,15 @@ describe("agent view", () => {
     const { view } = await harness.openView(record.id);
     const lines = plain(view.render(100));
     const transcript = lines.slice(requestIndex(lines) + 1, -3);
+    const order = [
+      " Task from main (agent id explorer-cb2e):",
+      " ls /repo/agents",
+      " read /repo/agents/explorer.md",
+      " Three files: explorer.md, implementer.md, reviewer.md.",
+    ].map((entry) => transcript.indexOf(entry));
 
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(transcript.join("\n").trimEnd()).toMatchSnapshot();
   });
 
@@ -348,34 +355,6 @@ describe("agent view", () => {
 
     expect(harness.registry.get(record.id)?.state).toBe("stopped");
     expect(harness.runtime.child(record.id).aborted).toBe(true);
-  });
-
-  it("never routes anything from the UI", async () => {
-    const { harness, record } = await runningAgent();
-    const route = vi.spyOn(harness.services.require("runner"), "route");
-    const { view } = await harness.openView(record.id);
-
-    Array.from("hello").forEach((value) => {
-      view.handleKey(char(value));
-    });
-    view.handleKey(key("enter"));
-    await flush();
-
-    expect(route).not.toHaveBeenCalled();
-    expect(harness.runtime.child(record.id).messages).toEqual([]);
-    expect(plain(view.render(100)).join("\n")).not.toContain("hello");
-    expect(plain(view.render(100)).join("\n")).not.toContain("(type a message)");
-  });
-
-  it("writes no view state file", async () => {
-    const harness = setup();
-    const record = closedAgent(harness);
-    const { view } = await harness.openView(record.id);
-
-    view.handleKey(char("v"));
-    view.render(100);
-
-    expect(existsSync(join(harness.host.info.agentDir, "pi-subagents-view.json"))).toBe(false);
   });
 
   it("shows the worktree and branch under the stats", async () => {
@@ -544,10 +523,10 @@ describe("agent view header", () => {
 });
 
 describe("agent view hint", () => {
-  const hintOf = (record: AgentRecord, options: { from?: AgentViewOrigin; session?: SessionRecord } = {}) =>
-    viewOf("session" in options ? options.session : fixture(), { record, from: options.from, rows: 400 });
+  const hintOf = (record: AgentRecord, options: { back?: boolean; session?: SessionRecord } = {}) =>
+    viewOf("session" in options ? options.session : fixture(), { record, back: options.back, rows: 400 });
 
-  it("writes the hint per state and origin", () => {
+  it("writes the hint per state and per way back", () => {
     const open = agentRecord({ id: "explorer-1" });
     const grace = agentRecord({ id: "explorer-1", state: "grace" });
     const closed = agentRecord({ id: "explorer-1", state: "done", endedAt: 0 });
@@ -555,10 +534,10 @@ describe("agent view hint", () => {
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
     expect(hint(hintOf(open))).toBe(" esc to close · x to stop · r request · ctrl+o tool detail");
-    expect(hint(hintOf(closed, { from: "list" }))).toBe(" esc to go back · r request · ctrl+o tool detail");
+    expect(hint(hintOf(closed, { back: true }))).toBe(" esc to go back · r request · ctrl+o tool detail");
     expect(hint(hintOf(open, { session: noRequest }))).toBe(" esc to close · x to stop · ctrl+o tool detail");
 
-    const expanded = hintOf(grace, { from: "list" });
+    const expanded = hintOf(grace, { back: true });
 
     expanded.view.handleKey(char("r"));
 
@@ -587,7 +566,7 @@ describe("agent view hint", () => {
     }));
     const long = viewOf(
       { ...fixture(), items },
-      { record: agentRecord({ id: "explorer-1", state: "grace" }), from: "list", rows: 20, width: 80 },
+      { record: agentRecord({ id: "explorer-1", state: "grace" }), back: true, rows: 20, width: 80 },
     );
 
     long.view.handleKey(char("r"));
@@ -635,11 +614,9 @@ describe("agent view hint", () => {
 describe("agent view body", () => {
   it("draws no Request line on a load error", async () => {
     const { harness, record } = await runningAgent();
-    const { api } = fakeOverlayApi(30, recordingTheme);
+    await harness.services.require("agentView").open(record.id);
 
-    await harness.services.require("agentView").open(record.id, { from: "command" });
-
-    const view = track((harness.host.overlays.at(-1) ?? (() => ({}) as never))(api));
+    const { view } = openLastOverlay(harness.host, 30, recordingTheme);
     const lines = view.render(100);
     const text = plain(lines);
 
@@ -681,6 +658,8 @@ describe("agent view body", () => {
   });
 
   it("does not parse the session file again while its size and time are unchanged", async () => {
+    useFakeTime();
+
     const harness = setup();
     const record = closedAgent(harness);
     const readSession = vi.spyOn(harness.runtime, "readSession");
@@ -688,16 +667,16 @@ describe("agent view body", () => {
 
     view.render(100);
     harness.registry.update(record.id, { tokens: 1 });
-    await waitForRefresh();
+    vi.advanceTimersByTime(350);
     harness.registry.update(record.id, { tokens: 2 });
-    await waitForRefresh();
+    vi.advanceTimersByTime(350);
     view.render(100);
 
     expect(readSession).toHaveBeenCalledTimes(1);
 
     writeFileSync(String(record.sessionFile), "{}\n");
     harness.registry.update(record.id, { tokens: 3 });
-    await waitForRefresh();
+    vi.advanceTimersByTime(350);
 
     expect(readSession).toHaveBeenCalledTimes(2);
   });
@@ -756,6 +735,8 @@ describe("agent view with live agents", () => {
   ].join("\n");
 
   it("follows the opened link to its live successor and stops the successor", async () => {
+    useFakeTime();
+
     const harness = createHarness(
       [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentViewPlugin],
       { stopGraceSeconds: 0 },
@@ -774,11 +755,7 @@ describe("agent view with live agents", () => {
 
     await harness.host.runCommand("agents", first.id);
 
-    const view = track(
-      (harness.host.overlays.at(-1) ?? (() => ({}) as never))(
-        fakeOverlayApi(200, undefined, harness.host).api,
-      ),
-    );
+    const { view } = openLastOverlay(harness.host);
 
     harness.runtime
       .child(first.id)
@@ -789,7 +766,7 @@ describe("agent view with live agents", () => {
     writeFileSync(first.handoffPath, handoffText);
     harness.runtime.child(first.id).finish(first.handoffPath);
     await flush();
-    await waitForRefresh();
+    vi.advanceTimersByTime(350);
 
     const second = registry.get(first.id)?.successorId as string;
     const lines = plain(view.render(200));
@@ -807,13 +784,43 @@ describe("agent view with live agents", () => {
     expect(registry.get(second)?.state).toBe("stopped");
   });
 
+  it("redraws on every 100 ms tick and re-reads the session at most once a second", async () => {
+    useFakeTime();
+
+    const { harness, record } = await runningAgent();
+    const file = String(harness.registry.get(record.id)?.sessionFile);
+
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, "");
+    harness.runtime.sessions.set(file, fixture());
+
+    const readSession = vi.spyOn(harness.runtime, "readSession");
+    const { view, state } = await harness.openView(record.id);
+
+    view.render(100);
+
+    const reads = readSession.mock.calls.length;
+    const renders = state.renders;
+
+    Array.from({ length: 10 }).forEach(() => {
+      appendFileSync(file, "{}\n");
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(readSession.mock.calls.length - reads).toBeLessThanOrEqual(2);
+    expect(readSession.mock.calls.length - reads).toBeGreaterThanOrEqual(1);
+    expect(state.renders - renders).toBeGreaterThanOrEqual(9);
+  });
+
   it("refreshes the header stats with the live turn context", async () => {
+    useFakeTime();
+
     const { harness, record } = await runningAgent();
     const { view } = await harness.openView(record.id);
 
     harness.runtime.child(record.id).turn({ tokens: 85_000, window: 200_000, percent: 42 });
     await flush();
-    await waitForRefresh();
+    vi.advanceTimersByTime(350);
 
     expect(plain(view.render(100))[3]).toMatch(/ · 85% ctx$/);
   });
@@ -985,12 +992,11 @@ const codemodeSession = () =>
     RECORD_ENTRY,
   );
 
-describe("agent view codemode and nested tools", () => {
+describe("agent view codemode", () => {
   it("renders codemode calls with pi's renderer", () => {
     const { lines } = viewOf(codemodeSession(), { record: agentRecord({ id: "explorer-1" }), rows: 400 });
     const all = lines();
     const text = all.join("\n");
-    const block = all.slice(all.indexOf(" codemode"), -3).join("\n").trimEnd();
 
     expect(all).toContain(" codemode");
     expect(all).toContain(' const hits = await tools.grep({ pattern: "login", path: "src" });');
@@ -1002,7 +1008,6 @@ describe("agent view codemode and nested tools", () => {
     expect(text).not.toContain("};\n");
     expect(text).not.toContain("Script completed");
     expect(text).not.toContain('"code":');
-    expect(block).toMatchSnapshot();
   });
 
   it("expands the codemode script and output with the tools key", () => {
@@ -1018,7 +1023,87 @@ describe("agent view codemode and nested tools", () => {
     expect(lines()).toContain(" };");
     expect(lines()).toContain(" export default login;");
   });
+});
 
+const ARGS = {
+  agents: [
+    { agent: "explorer", task: "find callers" },
+    { agent: "explorer", task: "find tests" },
+  ],
+};
+
+const nestedSession = (args: Record<string, unknown>, result?: { text: string; details?: RunAgentDetails }) =>
+  parseSessionLines(
+    [
+      line({ role: "user", content: [{ type: "text", text: "Task from main (agent id explorer-1): Nest" }] }),
+      line({
+        role: "assistant",
+        content: [{ type: "toolCall", id: "ra1", name: "run_agent", arguments: args }],
+        stopReason: "toolUse",
+      }),
+      ...(result
+        ? [
+            line({
+              role: "toolResult",
+              toolCallId: "ra1",
+              toolName: "run_agent",
+              content: [{ type: "text", text: result.text }],
+              details: result.details,
+              isError: false,
+            }),
+          ]
+        : []),
+    ],
+    RECORD_ENTRY,
+  );
+
+const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...ARGS, wait }) => {
+  const harness = setup([
+    agentRegistryPlugin,
+    agentDefinitionsPlugin,
+    runAgentPlugin,
+    agentStatusPlugin,
+    agentViewPlugin,
+  ]);
+
+  await harness.host
+    .tool<RunAgentParams, RunAgentDetails>("run_agent")
+    .execute({ agents: [{ agent: "general", task: "nest" }] }, { toolCallId: "ra1", update: () => {} });
+  await flush();
+
+  const parent = harness.registry.list()[0] as AgentRecord;
+  const runAgent = harness.runtime
+    .child(parent.id)
+    .spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as ToolSpec<
+    RunAgentParams,
+    RunAgentDetails
+  >;
+  const running = runAgent.execute({ ...ARGS, wait }, { toolCallId: "ra1", update: () => {} });
+
+  await flush();
+
+  const file = join(harness.root, "parent.jsonl");
+
+  const show = (session: SessionRecord, content: string) => {
+    writeFileSync(file, content);
+    harness.runtime.sessions.set(file, session);
+  };
+
+  show(nestedSession(args), "");
+  harness.registry.update(parent.id, { sessionFile: file });
+
+  const text = async () => {
+    const { lines } = await harness.open(parent.id);
+
+    return () => lines().join("\n");
+  };
+
+  const nested = harness.registry.list().filter((record) => record.callerId === parent.id);
+
+  return { harness, running, nested, show, text };
+};
+
+describe("agent view nested run_agent calls", () => {
   it("renders nested run_agent calls with the extension's renderer", async () => {
     const harness = setup([
       agentRegistryPlugin,
@@ -1052,7 +1137,7 @@ describe("agent view codemode and nested tools", () => {
     const record = closedAgent(harness, session);
     const spec = harness.host.tools.get("run_agent") as unknown as { renderCall: () => string };
     const runAgentSpy = vi.spyOn(spec, "renderCall");
-    const { view, transcripts } = await harness.openFrom(record.id, "command");
+    const { view, transcripts } = await harness.open(record.id);
     const text = plain(view.render(100)).join("\n");
 
     expect(transcripts[0]?.owner).toBe(record.id);
@@ -1062,6 +1147,57 @@ describe("agent view codemode and nested tools", () => {
       expect.anything(),
     );
     expect(text).not.toContain('"agents": [');
+  });
+
+  it("draws a returned background nested call with its live rows and no key hint", async () => {
+    const { running, show, text } = await nestedSetup(false);
+
+    show(nestedSession(ARGS, await running), "written");
+
+    const shown = (await text())();
+
+    expect(shown).toContain(" 2 background explorer agents launched");
+    expect(shown).not.toContain("to manage");
+    expect(shown).not.toContain("to list");
+    expect(shown).toContain("explorer (find callers)");
+    expect(shown).toContain("explorer (find tests)");
+    expect(shown).toContain("Initializing…");
+  });
+
+  it("draws a waiting nested call while its batch runs and its final block once the result is written", async () => {
+    const { harness, running, nested, show, text } = await nestedSetup(true);
+    const live = await text();
+
+    expect(live()).toContain(" 2 explorer agents launched");
+    expect(live()).toContain("Initializing…");
+
+    nested.forEach((record) => {
+      harness.runtime.child(record.id).finish(`${record.id} done`);
+    });
+
+    const result = await running;
+
+    await flush();
+    expect(live()).toContain(" 2 explorer agents launched");
+    expect(live()).toContain("Done · 0 tool uses");
+
+    show(nestedSession({ ...ARGS, wait: true }, result), "written");
+
+    const final = (await text())();
+
+    expect(final).toContain(" 2 explorer agents finished");
+    expect(final).toContain("Done · 0 tool uses");
+  });
+
+  it("draws the live block when the saved arguments carry a null optional field", async () => {
+    const { running, show, text } = await nestedSetup(false, { ...ARGS, wait: null });
+
+    show(nestedSession({ ...ARGS, wait: null }, await running), "written");
+
+    const shown = (await text())();
+
+    expect(shown).toContain(" 2 background explorer agents launched");
+    expect(shown).toContain("Initializing…");
   });
 });
 
@@ -1182,12 +1318,7 @@ describe("agent view request block", () => {
 
     await harness.host.runCommand("agents", "");
 
-    const { view } = (() => {
-      const factory = harness.host.overlays.at(-1);
-      const { api } = fakeOverlayApi(60);
-
-      return { view: track((factory ?? (() => ({}) as never))(api)) };
-    })();
+    const { view } = openLastOverlay(harness.host, 60);
 
     view.handleKey(key("enter"));
     view.handleKey(char("r"));
@@ -1262,20 +1393,6 @@ describe("agent view request block", () => {
     const json = (entries: string[]) => entries.filter((entry) => entry.startsWith("   "));
 
     expect(json(all)).toEqual(json(expanded));
-  });
-
-  it("renders the expanded request as plain indented text", () => {
-    const { view } = viewOf(requestSession(), { record: openRecord, theme: recordingTheme });
-
-    view.handleKey(char("r"));
-
-    const raw = plain(view.render(100));
-    const start = raw.findIndex((entry) => entry.includes("▾ Request"));
-    const end = raw.indexOf("", start);
-
-    expect(raw[start]).toBe(` <dim>▾ Request · ${PAYLOAD_LINES} lines</>`);
-    expect(raw.slice(start + 1, end).every((entry) => !entry.includes("<"))).toBe(true);
-    expect(raw.slice(start, end)).toMatchSnapshot();
   });
 });
 

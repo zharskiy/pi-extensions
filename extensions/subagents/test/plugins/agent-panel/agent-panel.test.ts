@@ -211,7 +211,7 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
 
     expect(panel.key("enter")).toBe("consumed");
-    expect(panel.open).toHaveBeenCalledWith(record.id, { from: "panel" });
+    expect(panel.open).toHaveBeenCalledWith(record.id);
     expect(pointed(panel.lines())).toEqual([]);
     expect(panel.host.editorCapture).toBeUndefined();
   });

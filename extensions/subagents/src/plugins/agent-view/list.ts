@@ -6,7 +6,6 @@ import { carrySelection, type TreeRow } from "../../components/tree.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 import {
   clearTargets,
-  type ListSection,
   listedTerminals,
   listHint,
   listSections,
@@ -15,20 +14,19 @@ import {
 } from "./list-model.ts";
 import type { ListComponent } from "./overlay.ts";
 
-export type ListDeps = {
+type ListDeps = {
   records(): AgentRecord[];
   lingerMs: number;
   cleared: Set<string>;
   stop(id: string): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void): () => void;
-  open(id: string): void;
+  open(record: AgentRecord): void;
   leave(): void;
-  selected?: string;
 };
 
-export const STOP_ALL_CONFIRM_MS = 3_000;
+const STOP_ALL_CONFIRM_MS = 3_000;
 
-export const NO_AGENTS_MS = 2_000;
+const NO_AGENTS_MS = 2_000;
 
 const STOP_FAILED_MS = 3_000;
 
@@ -37,10 +35,11 @@ type Feedback = { text: string; token: ThemeToken };
 export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent => {
   const scroll = api.createScroll();
   let visible: AgentRecord[] = [];
-  let sections: ListSection[] = [];
+  let sections: ReturnType<typeof listSections> = [];
   let rows: TreeRow[] = [];
   let ids: string[] = [];
-  let selectedId: string | undefined = deps.selected;
+  let subtitleText = "";
+  let selectedId: string | undefined;
   let feedback: Feedback | undefined;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingStopAll = false;
@@ -52,6 +51,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
 
     visible = visibleRecords(deps.records(), Date.now(), deps.lingerMs, deps.cleared);
     sections = listSections(visible);
+    subtitleText = subtitle(visible);
     rows = sections.flatMap((section) => section.rows);
     ids = rows.map((row) => row.record.id);
     selectedId = carrySelection(previousIds, ids, selectedId) ?? ids[0];
@@ -116,7 +116,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
         theme,
         [
           ["Agents", (text) => theme.bold(text)],
-          [subtitle(visible), (text) => theme.fg("dim", text)],
+          [subtitleText, (text) => theme.fg("dim", text)],
         ],
         inner,
       )
@@ -220,10 +220,12 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
   };
 
   const stopAll = () => {
-    const open = listedTerminals(visible).filter((record) => !isClosed(record.state));
+    const stoppable = listedTerminals(visible).filter(
+      (record) => record.state === "queued" || record.state === "running",
+    );
 
     if (!pendingStopAll) {
-      if (open.length === 0) {
+      if (stoppable.length === 0) {
         showFeedback("No running agents", "muted", NO_AGENTS_MS);
         return;
       }
@@ -233,19 +235,13 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
       return;
     }
 
-    const stoppable = open.filter((record) => record.state === "queued" || record.state === "running");
-
-    if (stoppable.length === 0) {
-      return;
-    }
-
     clearFeedback();
     run(stoppable.map((record) => deps.stop(record.id)));
   };
 
   const page = () => Math.max(1, bodyHeight(feedback ? 2 : 1) - 1);
 
-  const actions: Partial<Record<KeyPress["name"], () => void>> = {
+  const names: Partial<Record<KeyPress["name"], () => void>> = {
     up: () => move(-1),
     down: () => move(1),
     pageUp: () => move(-page()),
@@ -253,29 +249,25 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     home: () => select(0),
     end: () => select(ids.length - 1),
     enter: () => {
-      if (selectedId !== undefined) {
-        deps.open(selectedId);
+      const record = selected();
+
+      if (record) {
+        deps.open(record);
       }
     },
     escape: () => deps.leave(),
   };
 
-  const handleKey = (key: KeyPress) => {
-    if (key.char === "X") {
-      stopAll();
-      return;
-    }
+  const chars: Record<string, () => void> = { x: stopSelected, X: stopAll };
 
-    if (pendingStopAll) {
+  const handleKey = (key: KeyPress) => {
+    const action = key.name === "other" && key.char ? chars[key.char] : names[key.name];
+
+    if (pendingStopAll && action !== stopAll) {
       clearFeedback();
     }
 
-    if (key.char === "x") {
-      stopSelected();
-      return;
-    }
-
-    actions[key.name]?.();
+    action?.();
   };
 
   const dispose = () => {
@@ -300,8 +292,6 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     unwatch?.();
     unwatch = deps.watch(tickMs, reload);
   };
-
-  compute();
 
   return {
     render,

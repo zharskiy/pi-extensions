@@ -57,6 +57,7 @@ type AgentWatch = {
   tickMs(): number | undefined;
   throttleMs(): number;
   onChange(): void;
+  onTick?(): void;
 };
 
 export const watchAgents = (bus: Bus, watch: AgentWatch): (() => void) => {
@@ -83,7 +84,7 @@ export const watchAgents = (bus: Bus, watch: AgentWatch): (() => void) => {
   const tick = () => {
     timer = undefined;
     armedMs = undefined;
-    watch.onChange();
+    (watch.onTick ?? watch.onChange)();
     arm();
   };
 

@@ -15,7 +15,7 @@ export type ViewData = {
 
 type CachedSession = { file: string; size: number; mtimeMs: number; session: SessionRecord };
 
-export type AgentSourceDeps = {
+type AgentSourceDeps = {
   host: Host;
   runtime: AgentRuntime;
   registry: AgentRegistry;

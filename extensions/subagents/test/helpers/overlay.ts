@@ -1,11 +1,17 @@
 import { stripVTControlCharacters } from "node:util";
-import type { AnyToolSpec, KeyPress, OverlayApi, ThemeLike } from "../../../../core/adapter/contract.ts";
+import type {
+  AnyToolSpec,
+  KeyPress,
+  OverlayApi,
+  ThemeLike,
+  ViewComponent,
+} from "../../../../core/adapter/contract.ts";
 import {
   parseSessionLines,
   promptRecordEntry,
   realOverlayParts,
 } from "../../../../core/test/adapter/offline.ts";
-import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { type FakeHost, plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 
 export const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
@@ -49,6 +55,31 @@ export const fakeOverlayApi = (
 
   return { api, state, transcripts };
 };
+
+const opened: ViewComponent[] = [];
+
+export const openLastOverlay = (host: FakeHost, rows = 200, theme: ThemeLike = plainTheme) => {
+  const factory = host.overlays.at(-1);
+
+  if (!factory) {
+    throw new Error("no overlay opened");
+  }
+
+  const { api, state, transcripts } = fakeOverlayApi(rows, theme, host);
+  const view = factory(api);
+
+  opened.push(view);
+
+  return { view, state, transcripts, lines: (width = 100) => plain(view.render(width)) };
+};
+
+export const disposeOverlays = () => {
+  opened.splice(0).forEach((view) => {
+    view.dispose?.();
+  });
+};
+
+export const selectedRow = (lines: string[]) => lines.find((line) => line.startsWith(" › "));
 
 export const recordingTheme: ThemeLike = {
   ...plainTheme,

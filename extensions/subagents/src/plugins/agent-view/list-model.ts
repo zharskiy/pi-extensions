@@ -5,7 +5,7 @@ import { type AgentRecord, chainLinks, chainTerminal, isClosed, MAIN_CALLER } fr
 
 type ById = ReadonlyMap<string, AgentRecord>;
 
-export type ListSection = { title: string; rows: TreeRow[] };
+type ListSection = { title: string; rows: TreeRow[] };
 
 const callerOf = (record: AgentRecord, byId: ById): AgentRecord | undefined => {
   const callerId = chainLinks(byId, record)[0].callerId;
@@ -19,7 +19,7 @@ const indexOf = (records: AgentRecord[]) => new Map(records.map((record) => [rec
 const terminalsOf = (records: AgentRecord[], byId: ById) =>
   records.filter((record) => isTerminal(record, byId));
 
-export const isListRoot = (record: AgentRecord, byId: ById): boolean => {
+const isListRoot = (record: AgentRecord, byId: ById): boolean => {
   const caller = callerOf(record, byId);
 
   return !caller || (!isClosed(record.state) && isClosed(caller.state));

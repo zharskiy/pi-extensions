@@ -68,7 +68,7 @@ export const agentPanelPlugin: Plugin = {
         if (services.has("agentView")) {
           services
             .require("agentView")
-            .open(id, { from: "panel" })
+            .open(id)
             .catch((error: unknown) => report("open", error));
         }
       },

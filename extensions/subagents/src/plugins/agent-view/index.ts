@@ -4,7 +4,7 @@ import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { type AgentRecord, type AgentViewOrigin, chainLinks } from "../../model/types.ts";
+import { type AgentRecord, chainLinks } from "../../model/types.ts";
 import { createAgentList } from "./list.ts";
 import { listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
@@ -31,8 +31,8 @@ export const agentViewPlugin: Plugin = {
 
     const watch =
       (relevant: (record: AgentRecord) => boolean) =>
-      (tickMs: () => number | undefined, onChange: () => void) =>
-        watchAgents(bus, { relevant, tickMs, throttleMs: () => settings.renderThrottleMs, onChange });
+      (tickMs: () => number | undefined, onChange: () => void, onTick?: () => void) =>
+        watchAgents(bus, { relevant, tickMs, throttleMs: () => settings.renderThrottleMs, onChange, onTick });
 
     const viewWatch = (id: string) =>
       watch((record) => chainLinks(registry, record).some((link) => link.id === id));
@@ -53,44 +53,33 @@ export const agentViewPlugin: Plugin = {
           },
           api,
         ),
-      view: (id, from, leave) => {
-        const found = (() => {
-          try {
-            return source.find(id);
-          } catch {
-            return undefined;
-          }
-        })();
-
-        if (!found) {
-          return undefined;
-        }
-
-        return createAgentView(
+      view: (id, found, back, leave) =>
+        createAgentView(
           {
             load: source.loader(id, found),
-            from,
+            back,
             reserveTokens: settings.reserveTokens,
             stop: () => stop(id),
             watch: viewWatch(id),
             leave,
           },
           api,
-        );
-      },
+        ),
     });
 
     let active: AgentsOverlay | undefined;
 
     const openOverlay = (start: OverlayStart) =>
       host.ui.openOverlay((outer) => {
+        const forget = () => {
+          if (active === overlay) {
+            active = undefined;
+          }
+        };
         const api: OverlayApi = {
           ...outer,
           close: () => {
-            if (active === overlay) {
-              active = undefined;
-            }
-
+            forget();
             outer.close();
           },
         };
@@ -98,7 +87,13 @@ export const agentViewPlugin: Plugin = {
 
         active = overlay;
 
-        return overlay;
+        return {
+          ...overlay,
+          dispose: () => {
+            forget();
+            overlay.dispose();
+          },
+        };
       });
 
     const terminalOrNotice = (id: string) => {
@@ -117,12 +112,14 @@ export const agentViewPlugin: Plugin = {
       }
     };
 
-    const open = async (id: string, options: { from: AgentViewOrigin }) => {
-      if (!terminalOrNotice(id)) {
+    const open = async (id: string) => {
+      const found = terminalOrNotice(id);
+
+      if (!found) {
         return;
       }
 
-      await openOverlay({ kind: "view", id, from: options.from });
+      await openOverlay({ kind: "view", id, found });
     };
 
     services.provide("agentView", { open });
@@ -140,7 +137,7 @@ export const agentViewPlugin: Plugin = {
         const id = args.trim();
 
         if (id) {
-          await open(id, { from: "command" });
+          await open(id);
           return;
         }
 

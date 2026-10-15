@@ -18,20 +18,22 @@ import {
 import { tickFor } from "../../components/refresh.ts";
 import { stateGlyph, stateToken, stateWord, stopHint } from "../../components/state-text.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
-import { type AgentRecord, type AgentViewOrigin, isClosed, worktreeText } from "../../model/types.ts";
+import { type AgentRecord, isClosed, worktreeText } from "../../model/types.ts";
 import type { ViewData } from "./loader.ts";
 import { requestLineCount, requestLines } from "./request-block.ts";
 
-export type ViewDeps = {
+type ViewDeps = {
   load(): ViewData;
-  from: AgentViewOrigin;
+  back: boolean;
   reserveTokens: number;
   stop(): Promise<unknown> | undefined;
-  watch(tickMs: () => number | undefined, onChange: () => void): () => void;
+  watch(tickMs: () => number | undefined, onChange: () => void, onTick: () => void): () => void;
   leave(): void;
 };
 
 const MIN_DESCRIPTION = 8;
+
+const RELOAD_TICK_MS = 1_000;
 
 const ctxPercent = (data: ViewData, reserveTokens: number) => {
   const { record } = data;
@@ -123,6 +125,7 @@ const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.se
 
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const scroll = api.createScroll();
+  let loadedAt = Date.now();
   let data = deps.load();
   let transcript = api.createTranscript({ owner: data.record.id });
   let transcriptKey = transcriptKeyOf(data);
@@ -160,12 +163,15 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       return;
     }
 
+    loadedAt = Date.now();
     data = deps.load();
     syncTranscript();
     api.requestRender();
   };
 
-  const unwatch = deps.watch(() => tickFor([data.record], false), reload);
+  const tick = () => (Date.now() - loadedAt >= RELOAD_TICK_MS ? reload() : api.requestRender());
+
+  const unwatch = deps.watch(() => tickFor([data.record], false), reload, tick);
 
   const bodyLines = (width: number) => {
     const theme = api.theme;
@@ -194,12 +200,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const stop = isOpen() ? stopHint(record.state) : undefined;
     const request = hasRequest() ? (requestExpanded ? "r hide request" : "r request") : undefined;
 
-    return [
-      deps.from === "list" ? "esc to go back" : "esc to close",
-      stop,
-      request,
-      `${api.toolsKey} tool detail`,
-    ]
+    return [deps.back ? "esc to go back" : "esc to close", stop, request, `${api.toolsKey} tool detail`]
       .filter((part) => part !== undefined)
       .join(SEP);
   };
