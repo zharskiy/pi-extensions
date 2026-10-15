@@ -83,14 +83,7 @@ const click = (x: number, y: number, width: number) => ({
   clickCount: 1,
 });
 
-const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v2");
-
-const EDITOR_KEY_V1 = Symbol.for("pi-extensions.editor-hooks.v1");
-
-const records = globalThis as Record<
-  symbol,
-  { emptyLeft: Set<unknown>; emptyDown?: Set<unknown> } | undefined
->;
+const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
 
 const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
 
@@ -103,8 +96,7 @@ const adapterCopy = async () => {
 };
 
 afterEach(() => {
-  delete records[EDITOR_KEY];
-  delete records[EDITOR_KEY_V1];
+  delete (globalThis as Record<symbol, unknown>)[EDITOR_KEY];
 });
 
 describe("createEditorHooks", () => {
@@ -485,49 +477,6 @@ describe("createEditorHooks", () => {
 
     expect(fired).toEqual(["left", "down", "left"]);
     expect(ui.factory).toBeDefined();
-  });
-
-  it("shares its hooks through the v2 record and publishes it under the v1 key too", () => {
-    const { ctx } = fakeCtx();
-
-    createEditorHooks(() => ctx).onEmptyEditorDown(() => {});
-
-    const record = records[EDITOR_KEY];
-
-    expect(record?.emptyLeft.size).toBe(0);
-    expect(record?.emptyDown?.size).toBe(1);
-    expect(records[EDITOR_KEY_V1]).toBe(record);
-  });
-
-  it("reuses an older copy's v1 record and keeps its editor, adding the down hooks to it", async () => {
-    const { ctx, ui } = fakeCtx();
-    const older = (await adapterCopy())(() => ctx);
-    let left = 0;
-    let down = 0;
-
-    older.onEmptyEditorLeft(() => {
-      left += 1;
-    });
-
-    const v1 = records[EDITOR_KEY] as { emptyLeft: Set<unknown>; emptyDown?: Set<unknown> };
-
-    delete v1.emptyDown;
-    delete records[EDITOR_KEY];
-    records[EDITOR_KEY_V1] = v1;
-
-    (await adapterCopy())(() => ctx).onEmptyEditorDown(() => {
-      down += 1;
-    });
-
-    const hooked = editor(ui.factory, piKeys());
-
-    hooked.handleInput(LEFT);
-    hooked.handleInput(DOWN);
-
-    expect(ui.sets).toBe(1);
-    expect(records[EDITOR_KEY]).toBe(v1);
-    expect(records[EDITOR_KEY_V1]?.emptyDown?.size).toBe(1);
-    expect([left, down]).toEqual([1, 1]);
   });
 
   it("routes keys to the capture, swallows consumed ones and lets a released key reach the editor", () => {

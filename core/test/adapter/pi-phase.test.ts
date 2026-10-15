@@ -97,13 +97,6 @@ describe("reducePhase", () => {
     });
   });
 
-  it("enters idle on shutdown", () => {
-    expect(view(run([{ type: "agent_start" }, toolStart("a", "bash"), { type: "shutdown" }]))).toEqual({
-      phase: "idle",
-      detail: { running: 0 },
-    });
-  });
-
   it("keeps tool with the last running tool while parallel calls drain", () => {
     const both = run([{ type: "agent_start" }, toolStart("a", "bash"), toolStart("b", "grep")]);
 
@@ -147,12 +140,6 @@ describe("reducePhase", () => {
     const writing = run([{ type: "agent_start" }, delta("text_start")]);
 
     expect(reducePhase(writing, delta("text_delta"))).toBe(writing);
-  });
-
-  it("returns the same state for a repeated tool start", () => {
-    const state = run([{ type: "agent_start" }, toolStart("a", "bash")]);
-
-    expect(reducePhase(state, toolStart("a", "bash"))).toBe(state);
   });
 
   it("emits the agent_start and turn_start pair once", () => {

@@ -1,12 +1,5 @@
-import { stripVTControlCharacters } from "node:util";
-import type { EntryRenderer, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-  type EditorTheme,
-  KeybindingsManager,
-  type TUI,
-  TUI_KEYBINDINGS,
-  visibleWidth,
-} from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 
@@ -37,8 +30,6 @@ const fakePi = () => {
   const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
   const sent: { text: string; options?: unknown }[] = [];
   const calls: { call: "sendMessage" | "sendUserMessage"; message: unknown; options?: unknown }[] = [];
-  const entryRenderers = new Map<string, EntryRenderer>();
-  const settings: { outputPad?: 0 | 1 } = { outputPad: 1 };
   const listeners = new Map<string, ((data: unknown) => void)[]>();
 
   const pi = {
@@ -55,10 +46,7 @@ const fakePi = () => {
     sendMessage: (message: unknown, options?: unknown) => {
       calls.push({ call: "sendMessage", message, options });
     },
-    registerEntryRenderer: (customType: string, renderer: EntryRenderer) => {
-      entryRenderers.set(customType, renderer);
-    },
-    getSettings: () => settings,
+    getSettings: () => ({}),
     events: {
       emit: (channel: string, data: unknown) => {
         listeners.get(channel)?.forEach((listener) => {
@@ -75,7 +63,7 @@ const fakePi = () => {
   const fire = (event: string, ctx: unknown, payload: unknown = {}) =>
     Promise.all((handlers.get(event) ?? []).map((handler) => handler(payload, ctx)));
 
-  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls, entryRenderers, settings };
+  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls };
 };
 
 describe("pi adapter", () => {
@@ -138,20 +126,6 @@ describe("pi adapter", () => {
       "idle handler",
       "idle",
     ]);
-    expect(host.phase()).toEqual({ phase: "idle", detail: { running: 0 } });
-  });
-
-  it("reports the current phase while a run is active", async () => {
-    const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
-    const ctx = fakeCtx("tui");
-
-    expect(host.phase()).toEqual({ phase: "idle", detail: { running: 0 } });
-
-    await fire("agent_start", ctx);
-    await fire("tool_execution_start", ctx, { toolCallId: "t1", toolName: "bash" });
-
-    expect(host.phase()).toEqual({ phase: "tool", detail: { toolName: "bash", running: 1 } });
   });
 
   it("resets the phase on shutdown without emitting", async () => {
@@ -162,16 +136,16 @@ describe("pi adapter", () => {
 
     host.onPhase((phase) => seen.push(phase));
     host.onSessionShutdown(() => {
-      seen.push(`shutdown ${host.phase().phase}`);
+      seen.push("shutdown");
     });
 
     await fire("session_start", ctx);
     await fire("agent_start", ctx);
-    await fire("tool_execution_start", ctx, { toolCallId: "t1", toolName: "bash" });
     await fire("session_shutdown", ctx, { reason: "quit" });
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
 
-    expect(seen).toEqual(["waiting", "tool", "shutdown idle"]);
-    expect(host.phase()).toEqual({ phase: "idle", detail: { running: 0 } });
+    expect(seen).toEqual(["waiting", "shutdown", "waiting"]);
   });
 
   it("passes the parent session file to start handlers only for a session created from another one", async () => {
@@ -330,6 +304,10 @@ describe("pi adapter", () => {
 
     host.sendHiddenMessage({ customType: "wake", text: "results" });
 
+    expect(calls).toEqual([]);
+
+    await Promise.resolve();
+
     expect(calls).toEqual([
       {
         call: "sendMessage",
@@ -367,6 +345,24 @@ describe("pi adapter", () => {
     }
   });
 
+  it("sends two hidden messages from one idle pass as one run", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, {});
+
+    await fire("session_start", fakeCtx("tui", true));
+
+    host.sendHiddenMessage({ customType: "wake", text: "first" });
+    host.sendHiddenMessage({ customType: "wake", text: "second" });
+    await Promise.resolve();
+
+    expect(
+      calls.map((call) => [call.call, (call.message as { content: string }).content, call.options]),
+    ).toEqual([
+      ["sendMessage", "second", { deliverAs: "nextTurn" }],
+      ["sendMessage", "first", { triggerTurn: true }],
+    ]);
+  });
+
   it("holds a hidden message while pi is busy without a run and delivers it the idle way once idle", async () => {
     vi.useFakeTimers();
 
@@ -398,7 +394,7 @@ describe("pi adapter", () => {
     }
   });
 
-  it("delivers a message held before a run starts when that run settles", async () => {
+  it("hands a message held before a run starts to that run as a follow-up", async () => {
     vi.useFakeTimers();
 
     try {
@@ -410,17 +406,24 @@ describe("pi adapter", () => {
       await fire("session_start", ctx);
 
       host.sendHiddenMessage({ customType: "wake", text: "early" });
-      await fire("agent_start", ctx);
-      await vi.advanceTimersByTimeAsync(500);
 
       expect(calls).toEqual([]);
 
+      await fire("agent_start", ctx);
+
+      expect(calls).toEqual([
+        {
+          call: "sendMessage",
+          message: { customType: "wake", content: "early", display: false, details: undefined },
+          options: { deliverAs: "followUp", triggerTurn: true },
+        },
+      ]);
+
       idle = true;
       await fire("agent_settled", ctx);
+      await vi.advanceTimersByTimeAsync(500);
 
-      expect(calls.map((call) => [call.call, call.options])).toEqual([
-        ["sendMessage", { triggerTurn: true }],
-      ]);
+      expect(calls).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -438,54 +441,6 @@ describe("pi adapter", () => {
     host.sendHiddenMessage({ customType: "wake", text: "late" });
 
     expect(calls).toEqual([]);
-  });
-
-  it("renders entry lines indented by outputPad and cut at width - 2 * outputPad, and hides on undefined", () => {
-    const { pi, entryRenderers, settings } = fakePi();
-    const host = createPiHost(pi, {});
-    const theme = { fg: (_token: string, text: string) => text, bold: (text: string) => text } as never;
-    const long = "y".repeat(100);
-
-    host.registerEntryRenderer<{ text?: string }>("line", (data, { expanded }) =>
-      data.text === undefined ? undefined : [`${data.text}${expanded ? "!" : ""}`],
-    );
-
-    const render = (data: unknown, expanded = false) =>
-      entryRenderers.get("line")?.(
-        { type: "custom", customType: "line", data } as never,
-        { expanded },
-        theme,
-      );
-
-    const padded = (render({ text: long })?.render(40) ?? []).map(stripVTControlCharacters);
-
-    settings.outputPad = 0;
-
-    const flush = (render({ text: long })?.render(40) ?? []).map(stripVTControlCharacters);
-    const expanded = render({ text: "a" }, true)?.render(40);
-
-    expect(padded).toHaveLength(1);
-    expect(padded[0]?.startsWith(" y")).toBe(true);
-    expect(visibleWidth(padded[0] ?? "")).toBe(39);
-    expect(padded[0]?.endsWith("…")).toBe(true);
-    expect(flush[0]?.startsWith("y")).toBe(true);
-    expect(visibleWidth(flush[0] ?? "")).toBe(40);
-    expect(expanded).toEqual(["a!"]);
-    expect(render({})).toBeUndefined();
-  });
-
-  it("splits entry lines containing a newline into separately padded lines", () => {
-    const { pi, entryRenderers } = fakePi();
-    const host = createPiHost(pi, {});
-    const theme = { fg: (_token: string, text: string) => text, bold: (text: string) => text } as never;
-
-    host.registerEntryRenderer("multi", () => ["a\nb"]);
-
-    const lines = entryRenderers
-      .get("multi")?.({ type: "custom", customType: "multi", data: {} } as never, { expanded: false }, theme)
-      ?.render(20);
-
-    expect(lines).toEqual([" a", " b"]);
   });
 
   it("forwards dialog start and end with kind and title", async () => {
@@ -610,7 +565,7 @@ describe("pi adapter", () => {
 
 describe("editor hooks boot order", () => {
   afterEach(() => {
-    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks.v2")];
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.editor-hooks")];
   });
 
   it.each([

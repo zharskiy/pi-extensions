@@ -1,15 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RunMode, SpawnSpec } from "../../../core/adapter/contract.ts";
-import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
-import { createFakeHost, createFakeRuntime } from "../../../core/test/helpers/fakes.ts";
-import {
-  createWorkingIndicator,
-  spinner,
-  TICK_MS,
-  VERB_MS,
-  VERBS,
-  workingMessage,
-} from "../src/working-indicator.ts";
+import type { RunMode } from "../../../core/adapter/contract.ts";
+import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import { createWorkingIndicator, spinner, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
 
 const setup = (mode: RunMode = "tui") => {
   const host = createFakeHost({ mode });
@@ -28,17 +20,6 @@ const message = (verb: string | undefined, elapsed: string, tool?: string) =>
   `${verb}… (${tool ? `${tool} · ` : ""}${elapsed} · <app.interrupt> to interrupt)`;
 
 const V0 = VERBS[0];
-
-const spec: SpawnSpec = {
-  id: "explorer-1",
-  cwd: "/tmp/pi-extensions-test",
-  sessionDir: "/tmp/pi-extensions-test/agents/explorer-1",
-  model: "fake/model",
-  thinking: "off",
-  promptAppend: [],
-  reserveTokens: 0,
-  customTools: [],
-};
 
 describe("working indicator", () => {
   beforeEach(() => {
@@ -66,13 +47,18 @@ describe("working indicator", () => {
     expect(host.workingMessages).toEqual([message(V0, "0s")]);
   });
 
-  it("advances the elapsed seconds every tick", () => {
+  it("advances the elapsed seconds every tick and switches to minutes after one minute", () => {
     const host = setup();
 
     host.agentStart();
     vi.advanceTimersByTime(TICK_MS * 3);
 
     expect(host.workingMessages.at(-1)).toBe(message(V0, "3s"));
+
+    vi.advanceTimersByTime(TICK_MS * 62);
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "1m 5s"));
+    expect(host.workingMessages.some((text) => text?.includes("65s"))).toBe(false);
   });
 
   it("picks a new verb every VERB_MS", () => {
@@ -147,11 +133,6 @@ describe("working indicator", () => {
     expect(host.workingMessages.slice(-2)).toEqual([undefined, message(V0, "0s")]);
   });
 
-  it("formats the verb, the elapsed time, the tool and the interrupt key", () => {
-    expect(workingMessage("Musing", 12_345, "esc")).toBe("Musing… (12s · esc to interrupt)");
-    expect(workingMessage("Musing", 65_000, "esc", "bash")).toBe("Musing… (bash · 1m 5s · esc to interrupt)");
-  });
-
   it("nothing outside tui", () => {
     const host = setup("print");
 
@@ -162,22 +143,6 @@ describe("working indicator", () => {
 
     expect(host.workingMessages).toEqual([]);
     expect(host.workingVisibility).toEqual([]);
-  });
-
-  it("formats elapsed times with the shared duration format", () => {
-    expect(workingMessage("Musing", 45_000, "esc")).toBe("Musing… (45s · esc to interrupt)");
-    expect(workingMessage("Musing", 3_723_000, "esc")).toBe("Musing… (1h 2m · esc to interrupt)");
-  });
-
-  it("switches to minutes after one minute", () => {
-    const host = setup();
-
-    host.agentStart();
-    pickIndex(0);
-    vi.advanceTimersByTime(TICK_MS * 65);
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1m 5s"));
-    expect(host.workingMessages.some((text) => text?.includes("65s"))).toBe(false);
   });
 
   it("hides while the assistant writes text and shows again when a tool starts", () => {
@@ -252,16 +217,6 @@ describe("working indicator", () => {
     expect(host.workingMessages.at(-1)).toBe(message(V0, "1s"));
   });
 
-  it("shows run_agent for a waiting batch", () => {
-    const host = setup();
-
-    host.agentStart();
-    host.setPhase("tool", { toolName: "run_agent", running: 1 });
-    vi.advanceTimersByTime(TICK_MS * 65);
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1m 5s", "run_agent"));
-  });
-
   it("keeps ticking while hidden", () => {
     const host = setup();
 
@@ -328,35 +283,5 @@ describe("working indicator", () => {
     expect(host.workingVisibility).toEqual([false]);
     expect(host.workingMessages.at(-1)).toBeUndefined();
     expect(host.workingMessages).toHaveLength(written);
-  });
-
-  it("ignores child sessions, channels and other host events", async () => {
-    const host = setup();
-    const runtime = createFakeRuntime();
-    const child = await runtime.spawn(spec);
-    const fake = runtime.child(child.id);
-
-    host.agentStart();
-    host.setPhase("tool", { toolName: "run_agent", running: 1 });
-
-    const messages = host.workingMessages.length;
-    const visibility = host.workingVisibility.length;
-    const phases = host.phases.length;
-
-    fake.emit({ type: "tool_start", toolName: "bash" });
-    fake.turn({ tokens: 10 });
-    fake.finish("done");
-    host.emit(BUSY_CHANNEL, { source: "subagents", busy: false });
-    host.turnEnd({ tokens: 10, window: 100 });
-    host.compact();
-
-    expect(host.workingMessages).toHaveLength(messages);
-    expect(host.workingVisibility).toHaveLength(visibility);
-    expect(host.phases).toHaveLength(phases);
-    expect(host.phase()).toEqual({ phase: "tool", detail: { toolName: "run_agent", running: 1 } });
-
-    vi.advanceTimersByTime(TICK_MS);
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "run_agent"));
   });
 });

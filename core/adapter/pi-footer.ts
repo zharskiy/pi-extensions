@@ -41,15 +41,15 @@ export const createFooterSetter = (
       truncateToWidth(line, width, theme.fg("dim", "…")),
     );
 
-  const mountFooter = (ctx: ExtensionContext, drawn: boolean) => {
-    ctx.ui.setFooter((tui, theme, data) => {
+  const mountFooter = (ctx: ExtensionContext) => {
+    ctx.ui.setFooter((tui, _theme, data) => {
       const unsubscribe = data.onBranchChange(() => tui.requestRender());
 
       footerTui = tui;
       footerData = data;
 
       return {
-        render: (width: number) => (drawn ? draw(width, theme, data) : []),
+        render: () => [],
         invalidate: () => {},
         dispose: () => {
           unsubscribe();
@@ -90,7 +90,7 @@ export const createFooterSetter = (
     );
   };
 
-  return (render, options) => {
+  return (render) => {
     const ctx = tuiCtx();
 
     if (!ctx) {
@@ -106,18 +106,12 @@ export const createFooterSetter = (
       return handle;
     }
 
-    if ((options?.slot ?? "footer") === "footer") {
-      removeWidget(ctx);
-      mountFooter(ctx, true);
-      return handle;
-    }
-
     if (widgetTui) {
       handle.refresh();
       return handle;
     }
 
-    mountFooter(ctx, false);
+    mountFooter(ctx);
     mountWidget(ctx);
 
     return handle;

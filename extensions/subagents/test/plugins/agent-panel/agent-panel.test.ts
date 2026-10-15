@@ -85,7 +85,7 @@ describe("agent panel", () => {
 
     expect(panel.host.belowEditor).toEqual([]);
 
-    panel.host.ui.setFooter(() => ["usage"], { slot: "belowEditor" });
+    panel.host.ui.setFooter(() => ["usage"]);
 
     const record = panel.newAgent();
 

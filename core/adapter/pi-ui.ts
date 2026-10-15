@@ -20,12 +20,9 @@ import {
   type ToolRenderers,
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import * as tui from "@earendil-works/pi-tui";
 import {
   type Component,
   Container,
-  CURSOR_MARKER,
-  Input,
   isKeyRelease,
   Key,
   type Keybinding,
@@ -39,7 +36,6 @@ import {
 import type {
   AnyToolSpec,
   HostUi,
-  InputPane,
   KeyPress,
   NotifyChannel,
   OverlayFactory,
@@ -346,75 +342,6 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
   };
 };
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const fakeCursorMarkers = (): [string, string] => {
-  const render = (tui as { renderFakeCursor?: (text: string) => string }).renderFakeCursor;
-  const [start = "", end = ""] = render?.("\0").split("\0") ?? [];
-
-  return [start, end];
-};
-
-export const createFakeCursorResolver = (
-  start: string,
-  end: string,
-): ((lines: string[], hardwareCursor: boolean) => string[]) => {
-  if (start === "" || end === "") {
-    return (lines) => lines;
-  }
-
-  const focused = new RegExp(
-    `(${escapeRegExp(CURSOR_MARKER)})${escapeRegExp(start)}(.*?)(?:${escapeRegExp(end)}|$)`,
-    "s",
-  );
-
-  return (lines, hardwareCursor) =>
-    lines.map((line) => {
-      if (!line.includes(start)) {
-        return line;
-      }
-
-      const resolved = hardwareCursor ? line.replace(focused, "$1$2") : line;
-
-      return resolved.replaceAll(start, "\x1b[7m").replaceAll(end, "\x1b[27m");
-    });
-};
-
-export const resolveFakeCursors = createFakeCursorResolver(...fakeCursorMarkers());
-
-export const createInputPane = (
-  placeholder: string,
-  hardwareCursor: () => boolean = () => false,
-): InputPane => {
-  const input = new Input({ placeholder });
-  let outcome: "submitted" | "cancelled" | undefined;
-
-  input.focused = true;
-  input.onSubmit = () => {
-    outcome = "submitted";
-  };
-  input.onEscape = () => {
-    outcome = "cancelled";
-  };
-
-  return {
-    feed: (key) => {
-      outcome = undefined;
-      input.handleInput(key.raw ?? key.char ?? "");
-
-      return outcome ?? "changed";
-    },
-    value: () => input.getValue(),
-    setValue: (value) => {
-      input.setValue(value);
-    },
-    setFocused: (focused) => {
-      input.focused = focused;
-    },
-    render: (width) => resolveFakeCursors(input.render(width), hardwareCursor()),
-  };
-};
-
 type TerminalOut = { write(data: string): unknown };
 
 const CONTROL_CHARS = new RegExp(
@@ -521,7 +448,6 @@ export const createUi = (
           createTranscript: (options) =>
             createTranscriptPane(tui, cwd, { tools: options?.tools, owner: options?.owner }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
-          createInput: (placeholder) => createInputPane(placeholder, () => tui.getShowHardwareCursor()),
         });
 
         const isToolsToggle = (data: string) => keybindings.matches(data, "app.tools.expand");
@@ -569,26 +495,8 @@ export const createUi = (
 
       return ctx.ui.confirm(title, message);
     },
-    input: async (title, placeholder) => {
-      const ctx = state.ctx;
-
-      if (!ctx?.hasUI) {
-        return undefined;
-      }
-
-      return ctx.ui.input(title, placeholder);
-    },
     setWidget,
     openOverlay,
-    select: async (title, options) => {
-      const ctx = state.ctx;
-
-      if (!ctx?.hasUI) {
-        return undefined;
-      }
-
-      return ctx.ui.select(title, options);
-    },
     style: (token, text) => state.ctx?.ui.theme.fg(token, text) ?? text,
     terminalNotify: (message, channel) => {
       if (!tuiCtx()) {

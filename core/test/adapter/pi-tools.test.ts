@@ -15,6 +15,7 @@ initTheme("dark", false);
 const theme = {
   fg: (_token: string, text: string) => text,
   bold: (text: string) => text,
+  bg: (_token: string, text: string) => text,
 } as unknown as Theme;
 
 const invalidate = () => {};
@@ -33,13 +34,12 @@ const context = (patch: Partial<PiToolRenderContext> = {}) =>
     expanded: false,
     showImages: false,
     isError: false,
-    durationMs: 42,
     outputPad: 1,
     ...patch,
   }) as PiToolRenderContext;
 
 type Renderers = {
-  renderShell?: "default" | "self" | "box";
+  renderShell?: "self";
   renderCall(args: unknown, theme: Theme, context: PiToolRenderContext): Component;
   renderResult(
     result: unknown,
@@ -89,9 +89,9 @@ describe("toPiTool render state", () => {
     tool.renderResult(piResult("x"), options, theme, context({ isError: true }));
 
     expect(states).toHaveLength(2);
-    expect(states.map((state) => [state.toolCallId, state.durationMs, state.isError])).toEqual([
-      ["call-7", 42, true],
-      ["call-7", 42, true],
+    expect(states.map((state) => [state.toolCallId, state.isError])).toEqual([
+      ["call-7", true],
+      ["call-7", true],
     ]);
     expect(states.every((state) => state.invalidate === invalidate)).toBe(true);
   });
@@ -116,7 +116,7 @@ describe("toPiTool render state", () => {
     expect(seen).toEqual([{ wait: true }, { wait: true }]);
   });
 
-  it("copies isError into the result renderResult receives", () => {
+  it("passes pi's isError through the result and the state renderResult receives", () => {
     const seen: [ToolResult<unknown>, boolean][] = [];
     const tool = piTool({
       ...baseSpec,
@@ -127,11 +127,9 @@ describe("toPiTool render state", () => {
     });
 
     tool.renderResult(piResult("bad", { isError: true }), options, theme, context({ isError: true }));
-    tool.renderResult(piResult("bad"), options, theme, context({ isError: true }));
     tool.renderResult(piResult("fine"), options, theme, context());
 
     expect(seen.map(([result, isError]) => [result.isError ?? false, isError])).toEqual([
-      [true, true],
       [true, true],
       [false, false],
     ]);
@@ -188,76 +186,23 @@ describe("toPiTool render state", () => {
     expect(result.render(40)[0]?.trimEnd()).toBe("out closed");
   });
 
-  it("sets renderShell", () => {
-    expect(piTool({ ...baseSpec, renderShell: "self" }).renderShell).toBe("self");
-    expect(piTool(baseSpec).renderShell).toBeUndefined();
-  });
-
-  it("passes outputPad and pads self-shell lines by it", () => {
-    const pads: number[] = [];
-    const long = "x".repeat(100);
-    const spec: ToolSpec<unknown, unknown> = {
-      ...baseSpec,
-      renderShell: "self",
-      renderCall: (_params, _theme, state) => {
-        pads.push(state.outputPad);
-        return `head\n${long}`;
-      },
-      renderResult: () => "",
-    };
-
-    const padded = piTool(spec)
-      .renderCall({}, theme, context({ outputPad: 1 }))
-      .render(40)
-      .map(stripVTControlCharacters);
-    const flush = piTool(spec)
-      .renderCall({}, theme, context({ outputPad: 0 }))
-      .render(40)
-      .map(stripVTControlCharacters);
-    const empty = piTool(spec).renderResult(piResult(""), options, theme, context()).render(40);
-    const boxed = piTool({ ...spec, renderShell: "default" }).renderCall({}, theme, context());
-
-    expect(pads).toEqual([1, 0, 1]);
-    expect(padded).toHaveLength(2);
-    expect(padded[0]).toBe(" head");
-    expect(padded.every((line) => line.startsWith(" ") && visibleWidth(line) <= 39)).toBe(true);
-    expect(padded[1]?.endsWith("…")).toBe(true);
-    expect(flush[0]).toBe("head");
-    expect(visibleWidth(flush[1] ?? "")).toBe(40);
-    expect(flush[1]?.endsWith("…")).toBe(true);
-    expect(empty).toEqual([]);
-    expect(boxed).toBeInstanceOf(Text);
-  });
-
-  it("calls a width-function render with the width minus outputPad on both sides on every render", () => {
+  it("renders a width-function render as text at the full width", () => {
     const widths: number[] = [];
     const spec: ToolSpec<unknown, unknown> = {
       ...baseSpec,
-      renderShell: "self",
       renderResult: () => (width) => {
         widths.push(width);
-        return width < 50 ? "" : `head\n${"y".repeat(width + 5)}`;
+        return `head ${width}`;
       },
     };
-    const component = piTool(spec).renderResult(piResult("x"), options, theme, context({ outputPad: 1 }));
 
-    const wide = component.render(80).map(stripVTControlCharacters);
-    const narrow = component.render(40);
-    const flush = piTool(spec)
-      .renderResult(piResult("x"), options, theme, context({ outputPad: 0 }))
-      .render(60);
-    const boxed = piTool({ ...spec, renderShell: "default" })
+    const lines = piTool(spec)
       .renderResult(piResult("x"), options, theme, context())
       .render(60)
       .map(stripVTControlCharacters);
 
-    expect(widths).toEqual([78, 38, 60, 60]);
-    expect(wide[0]).toBe(" head");
-    expect(visibleWidth(wide[1] ?? "")).toBe(79);
-    expect(wide[1]?.endsWith("…")).toBe(true);
-    expect(narrow).toEqual([]);
-    expect(flush).toHaveLength(2);
-    expect(boxed[0]?.trimEnd()).toBe("head");
+    expect(widths).toEqual([60]);
+    expect(lines[0]?.trimEnd()).toBe("head 60");
   });
 });
 
@@ -305,10 +250,6 @@ const boxed = (tone: () => ToolTone | undefined, phase: Phase, renderCall = () =
   );
 
 describe("toPiTool box shell", () => {
-  it("hands pi the self shell", () => {
-    expect(piTool({ ...baseSpec, renderShell: "box" }).renderShell).toBe("self");
-  });
-
   it("draws pi's tool box with the background of the chosen tone, like a native tool", () => {
     const tones = { pending: native("partial"), success: native("final"), error: native("error") };
 
@@ -342,6 +283,32 @@ describe("toPiTool box shell", () => {
 
     expect(lines).toHaveLength(5);
     expect(withCall).toHaveLength(8);
+  });
+
+  it("calls a width-function render with the width inside the box padding on every render", () => {
+    const widths: number[] = [];
+    const tool = piTool<unknown, unknown>({
+      ...baseSpec,
+      renderShell: "box",
+      renderResult: () => (width) => {
+        widths.push(width);
+        return width < 50 ? "" : `head\n${"y".repeat(width + 5)}`;
+      },
+    });
+    const component = tool.renderResult(piResult("x"), options, theme, context({ outputPad: 1 }));
+
+    const wide = component.render(80).map(stripVTControlCharacters);
+    const narrow = component.render(40).map(stripVTControlCharacters);
+    const flush = tool
+      .renderResult(piResult("x"), options, theme, context({ outputPad: 0 }))
+      .render(60)
+      .map(stripVTControlCharacters);
+
+    expect(widths).toEqual([78, 38, 60]);
+    expect(wide.map((line) => line.trimEnd())).toEqual(["", " head", ` ${"y".repeat(77)}…`, ""]);
+    expect(wide.every((line) => visibleWidth(line) === 80)).toBe(true);
+    expect(narrow).toEqual([]);
+    expect(flush.map((line) => line.trimEnd())).toEqual(["", "head", `${"y".repeat(59)}…`, ""]);
   });
 
   it("passes the render state and the result to renderTone and reuses the box", () => {

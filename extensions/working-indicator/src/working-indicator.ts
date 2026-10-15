@@ -81,7 +81,7 @@ export const VERBS = [
 
 const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
 
-export const workingMessage = (verb: string, elapsedMs: number, interruptKey: string, toolName?: string) =>
+const workingMessage = (verb: string, elapsedMs: number, interruptKey: string, toolName?: string) =>
   `${verb}… (${toolName ? `${toolName} · ` : ""}${formatDuration(elapsedMs)} · ${interruptKey} to interrupt)`;
 
 type Run = {
@@ -94,38 +94,40 @@ type Run = {
 
 export const createWorkingIndicator = (host: Host) => {
   let run: Run | undefined;
-  let phase: Phase = "idle";
   let toolName: string | undefined;
   let hidden = false;
+  let written: string | undefined;
 
-  const message = (active: Run) =>
-    workingMessage(active.verb, Date.now() - active.startedAt, active.interruptKey, toolName);
+  const write = (active: Run) => {
+    const text = workingMessage(active.verb, Date.now() - active.startedAt, active.interruptKey, toolName);
 
-  const write = () => {
-    if (!run) {
+    if (text === written) {
       return;
     }
 
-    host.ui.setWorkingMessage(message(run));
+    written = text;
+    host.ui.setWorkingMessage(text);
   };
 
   const tick = () => {
-    if (!run) {
+    const active = run;
+
+    if (!active) {
       return;
     }
 
-    const elapsedMs = Date.now() - run.startedAt;
+    const elapsedMs = Date.now() - active.startedAt;
 
-    if (elapsedMs >= run.nextVerbAt) {
-      run.verb = pickVerb();
-      run.nextVerbAt = elapsedMs + VERB_MS;
+    if (elapsedMs >= active.nextVerbAt) {
+      active.verb = pickVerb();
+      active.nextVerbAt = elapsedMs + VERB_MS;
     }
 
-    write();
+    write(active);
   };
 
-  const applyVisibility = () => {
-    const visible = phase !== "writing";
+  const applyVisibility = (next: Phase) => {
+    const visible = next !== "writing";
 
     if (visible === !hidden) {
       return;
@@ -136,15 +138,10 @@ export const createWorkingIndicator = (host: Host) => {
   };
 
   const begin = () => {
-    const current = host.phase();
-
-    phase = current.phase === "idle" ? "waiting" : current.phase;
-    toolName = phase === "tool" ? current.detail.toolName : undefined;
-
     const timer = setInterval(tick, TICK_MS);
 
     timer.unref?.();
-
+    toolName = undefined;
     run = {
       startedAt: Date.now(),
       interruptKey: host.ui.keyText(INTERRUPT_BINDING),
@@ -153,7 +150,7 @@ export const createWorkingIndicator = (host: Host) => {
       timer,
     };
 
-    write();
+    write(run);
   };
 
   const stop = () => {
@@ -163,18 +160,14 @@ export const createWorkingIndicator = (host: Host) => {
 
     clearInterval(run.timer);
     run = undefined;
+    written = undefined;
     host.ui.setWorkingMessage(undefined);
   };
 
   const end = () => {
-    if (hidden) {
-      host.ui.setWorkingVisible(true);
-      hidden = false;
-    }
-
-    stop();
-    phase = "idle";
     toolName = undefined;
+    applyVisibility("idle");
+    stop();
   };
 
   host.onSessionStart(() => {
@@ -199,16 +192,9 @@ export const createWorkingIndicator = (host: Host) => {
       return;
     }
 
-    const nextTool = next === "tool" ? detail.toolName : undefined;
-
-    if (next === phase && nextTool === toolName) {
-      return;
-    }
-
-    phase = next;
-    toolName = nextTool;
-    write();
-    applyVisibility();
+    toolName = next === "tool" ? detail.toolName : undefined;
+    write(run);
+    applyVisibility(next);
   });
 
   host.onSessionShutdown(() => {

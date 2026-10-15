@@ -102,7 +102,6 @@ const renderResult = (
         toolCallId: "call-1",
         expanded: false,
         isPartial: false,
-        executionStarted: true,
         isError: result.isError ?? false,
         args: params,
         outputPad: 1,
@@ -119,13 +118,11 @@ const renderCall = (
   params: Partial<RunAgentParams>,
   isPartial: boolean,
   theme: ThemeLike = plainTheme,
-  executionStarted = true,
 ) =>
   harness.tool.renderCall?.(params as RunAgentParams, theme, {
     toolCallId: "call-1",
     expanded: false,
     isPartial,
-    executionStarted,
     isError: false,
     args: params,
     outputPad: 1,
@@ -153,7 +150,6 @@ describe("run_agent block", () => {
     const harness = setup();
 
     expect(renderCall(harness, { agents: THREE }, true)).toBe("");
-    expect(renderCall(harness, { agents: THREE }, true, plainTheme, false)).toBe("");
     expect(renderCall(harness, {}, true)).toBe("");
     expect(renderCall(harness, { agents: THREE }, false)).toBe("");
   });
@@ -449,7 +445,6 @@ describe("run_agent block", () => {
           toolCallId: "c",
           expanded: false,
           isPartial: false,
-          executionStarted: true,
           isError: false,
           args: { agents: THREE },
           outputPad: 1,

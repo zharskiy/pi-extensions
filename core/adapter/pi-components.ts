@@ -48,40 +48,20 @@ export const textComponent = (previous: unknown, text: ToolRender): Component =>
   return new Text(text, 0, 0);
 };
 
-export type PaddedSource = string[] | ((width: number) => string);
+const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
 
 export class PaddedLines implements Component {
-  private lines: PaddedSource;
-  private outputPad: number;
+  private readonly source: ToolRender;
 
-  constructor(lines: PaddedSource, outputPad: number) {
-    this.lines = lines;
-    this.outputPad = outputPad;
-  }
-
-  set(lines: PaddedSource, outputPad: number) {
-    this.lines = lines;
-    this.outputPad = outputPad;
+  constructor(source: ToolRender) {
+    this.source = source;
   }
 
   render(width: number): string[] {
-    const pad = " ".repeat(this.outputPad);
-    const inner = Math.max(1, width - 2 * this.outputPad);
-    const lines = typeof this.lines === "function" ? splitText(this.lines(inner)) : this.lines;
+    const text = typeof this.source === "function" ? this.source(width) : this.source;
 
-    return lines.flatMap((line) => line.split("\n")).map((line) => pad + truncateToWidth(line, inner, "…"));
+    return splitLines(text).map((line) => truncateToWidth(line, width, "…"));
   }
 
   invalidate() {}
 }
-
-const splitText = (text: string) => (text === "" ? [] : text.split("\n"));
-
-export const padLines = (lines: PaddedSource, outputPad: number, previous?: unknown): Component => {
-  if (previous instanceof PaddedLines) {
-    previous.set(lines, outputPad);
-    return previous;
-  }
-
-  return new PaddedLines(lines, outputPad);
-};

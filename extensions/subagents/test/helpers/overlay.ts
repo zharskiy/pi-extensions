@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { AnyToolSpec, KeyPress, OverlayApi, ThemeLike } from "../../../../core/adapter/contract.ts";
 import { createScrollPane, createTranscriptPane } from "../../../../core/adapter/pi-ui.ts";
 import { parseSessionLines, promptRecordEntry } from "../../../../core/adapter/session-file.ts";
-import { createFakeInputPane, plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 
 export const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
@@ -37,7 +37,6 @@ export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
       });
     },
     createScroll: () => createScrollPane(requestRender),
-    createInput: createFakeInputPane,
   };
 
   return { api, state, transcripts };

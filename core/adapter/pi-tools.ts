@@ -2,7 +2,7 @@ import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi
 import { Box, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
-import { padLines, textComponent, themeLike } from "./pi-components.ts";
+import { PaddedLines, textComponent, themeLike } from "./pi-components.ts";
 
 export const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
@@ -27,26 +27,15 @@ export type PiToolRenderContext = Parameters<NonNullable<ToolDefinition["renderC
 
 type RenderContext = Pick<
   PiToolRenderContext,
-  | "toolCallId"
-  | "expanded"
-  | "isPartial"
-  | "executionStarted"
-  | "isError"
-  | "args"
-  | "durationMs"
-  | "outputPad"
-  | "invalidate"
-  | "lastComponent"
+  "toolCallId" | "expanded" | "isPartial" | "isError" | "args" | "outputPad" | "invalidate" | "lastComponent"
 >;
 
 const renderState = (context: RenderContext): ToolRenderState => ({
   toolCallId: context.toolCallId,
   expanded: context.expanded,
   isPartial: context.isPartial,
-  executionStarted: context.executionStarted,
   isError: context.isError,
   args: context.args,
-  durationMs: context.durationMs,
   outputPad: context.outputPad,
   invalidate: context.invalidate,
 });
@@ -60,18 +49,21 @@ const TONE_BG = {
 const piTone = (context: RenderContext): ToolTone =>
   context.isPartial ? "pending" : context.isError ? "error" : "success";
 
-const lineSource = (text: ToolRender) =>
-  typeof text === "function" ? text : text === "" ? [] : text.split("\n");
-
-const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
-  const pad = context.outputPad ?? 1;
-  const bg = (line: string) => theme.bg(TONE_BG[tone], line);
-  const box = context.lastComponent instanceof Box ? context.lastComponent : new Box(pad, 1, bg);
-
+const reuseBox = (box: Box, pad: number, bg: (line: string) => string) => {
   box.clear();
   box.setBgFn(bg);
   box.setPaddingX(pad);
-  box.addChild(padLines(lineSource(text), 0));
+
+  return box;
+};
+
+const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
+  const pad = context.outputPad;
+  const bg = (line: string) => theme.bg(TONE_BG[tone], line);
+  const box =
+    context.lastComponent instanceof Box ? reuseBox(context.lastComponent, pad, bg) : new Box(pad, 1, bg);
+
+  box.addChild(new PaddedLines(text));
 
   return box;
 };
@@ -87,11 +79,7 @@ const shellComponent = <P, D>(
     return toolBox(theme, context, text, spec.renderTone?.(renderState(context), result) ?? piTone(context));
   }
 
-  if (spec.renderShell !== "self") {
-    return textComponent(context.lastComponent, text);
-  }
-
-  return padLines(lineSource(text), context.outputPad ?? 1, context.lastComponent);
+  return textComponent(context.lastComponent, text);
 };
 
 export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionContext) => void = () => {}) =>
@@ -101,7 +89,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     description: spec.description,
     promptSnippet: spec.promptSnippet,
     parameters: Type.Unsafe<P>(spec.parameters),
-    renderShell: spec.renderShell === "box" ? "self" : spec.renderShell,
+    renderShell: spec.renderShell === "box" ? "self" : undefined,
     execute: async (
       toolCallId: string,
       params: unknown,
@@ -133,14 +121,13 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     renderResult: spec.renderResult
       ? (result: unknown, _options: { expanded: boolean }, theme: Theme, context: RenderContext) => {
           const converted = fromPiResult(result as never) as ToolResult<D>;
-          const final = context.isError ? { ...converted, isError: true } : converted;
 
           return shellComponent(
             spec,
             theme,
             context,
-            spec.renderResult?.(final, renderState(context), themeLike(theme)) ?? "",
-            final,
+            spec.renderResult?.(converted, renderState(context), themeLike(theme)) ?? "",
+            converted,
           );
         }
       : undefined,

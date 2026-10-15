@@ -201,10 +201,8 @@ describe("pi adapter conformance", () => {
       toolCallId: context.toolCallId,
       expanded: context.expanded,
       isPartial: context.isPartial,
-      executionStarted: context.executionStarted,
       isError: context.isError,
       args: context.args,
-      durationMs: context.durationMs,
       outputPad: context.outputPad,
     });
     const invalidate: ToolRenderState["invalidate"] = (() => {}) satisfies PiToolRenderContext["invalidate"];

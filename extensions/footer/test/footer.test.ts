@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
-import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { createFakeHost, FAKE_FOOTER_KEY, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createFooter } from "../src/footer.ts";
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -26,8 +26,7 @@ describe("footer", () => {
   it("installs the footer below the editor and hides the cost figures until spending publishes", () => {
     const { host, lines } = setup();
 
-    expect(host.published).toEqual([]);
-    expect(host.footerSlot).toBe("belowEditor");
+    expect(host.belowEditor).toEqual([FAKE_FOOTER_KEY]);
     expect(lines()).toEqual([
       "",
       " 50.0k · test-model (200k context)",

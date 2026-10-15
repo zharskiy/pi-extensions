@@ -12,7 +12,6 @@ import {
   type FooterRender,
   type HiddenMessage,
   type Host,
-  type InputPane,
   type KeyPress,
   type MessageDelivery,
   type ModelInfo,
@@ -41,8 +40,6 @@ import { type CatalogModel, type ModelPreferences, resolveModel } from "../../ad
 
 export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text };
 
-type EntryRender = (data: unknown, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined;
-
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
 export type FakeHost = Host & {
@@ -52,10 +49,7 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
-  hidden: { message: HiddenMessage; delivery: "followUp" | "nextTurn" | "run" }[];
-  heldHidden: HiddenMessage[];
-  entryRenderers: Map<string, EntryRender>;
-  renderEntry(customType: string, data: unknown, expanded?: boolean): string[] | undefined;
+  hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
@@ -74,8 +68,6 @@ export type FakeHost = Host & {
   pressEmptyDown(): boolean;
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   idle: boolean;
-  compacting: boolean;
-  finishCompacting(): void;
   usage: UsageTotals;
   info: SessionInfo;
   confirmations: { title: string; message: string }[];
@@ -104,14 +96,12 @@ export type FakeHost = Host & {
   workingVisibility: boolean[];
   agentStart(): void;
   phases: { phase: Phase; detail: PhaseDetail }[];
-  currentPhase: { phase: Phase; detail: PhaseDetail };
   setPhase(phase: Phase, detail?: PhaseDetail): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
   editorReachable: boolean;
   footer?: FooterRender;
-  footerSlot?: "footer" | "belowEditor";
   footerRefreshes: number;
   contextUsage: ContextSnapshot;
   activeModel?: ModelInfo;
@@ -155,6 +145,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   };
   let stale = false;
   let settling = false;
+  let currentPhase: { phase: Phase; detail: PhaseDetail } = { phase: "idle", detail: { running: 0 } };
 
   const control: SessionControl = {
     newSession: async (options) => {
@@ -177,16 +168,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const sessionFile = (file: string | undefined): FakeSessionFile =>
     file ? (host.files.get(file) as FakeSessionFile) : host;
 
-  const deliverHeldHidden = () => {
-    if (!host.idle || host.compacting) {
-      return;
-    }
-
-    host.heldHidden.splice(0).forEach((message, index) => {
-      host.hidden.push({ message, delivery: index === 0 ? "run" : "nextTurn" });
-    });
-  };
-
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
@@ -194,17 +175,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     files: new Map(),
     sent: [],
     hidden: [],
-    heldHidden: [],
-    entryRenderers: new Map(),
-    renderEntry: (customType, data, expanded = false) => {
-      const render = host.entryRenderers.get(customType);
-
-      if (!render) {
-        throw new Error(`no entry renderer for ${customType}`);
-      }
-
-      return render(data, { expanded }, plainTheme);
-    },
     dispatched: [],
     published: [],
     notices: [],
@@ -242,11 +212,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       return outcome;
     },
     idle: true,
-    compacting: false,
-    finishCompacting: () => {
-      host.compacting = false;
-      deliverHeldHidden();
-    },
     usage: emptyUsage(),
     confirmations: [],
     confirmAnswer: true,
@@ -280,7 +245,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           ? host.confirmAnswer(title, message)
           : host.confirmAnswer;
       },
-      input: async () => undefined,
       setWidget: (key, render) => {
         host.widgets.set(key, render);
         host.belowEditor = host.belowEditor.filter((entry) => entry !== key);
@@ -297,7 +261,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       openOverlay: async (factory) => {
         host.overlays.push(factory);
       },
-      select: async () => undefined,
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (message, channel) => {
         host.terminalNotices.push({ message, channel });
@@ -360,13 +323,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           }
         };
       },
-      setFooter: (render, options) => {
-        const slot = render ? (options?.slot ?? "footer") : undefined;
-
+      setFooter: (render) => {
         host.footer = render;
-        host.footerSlot = slot;
 
-        if (slot !== "belowEditor") {
+        if (!render) {
           host.belowEditor = host.belowEditor.filter((entry) => entry !== FAKE_FOOTER_KEY);
         } else if (!host.belowEditor.includes(FAKE_FOOTER_KEY)) {
           host.belowEditor.push(FAKE_FOOTER_KEY);
@@ -413,7 +373,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     onCompact: (handler) => {
       compactHandlers.push(handler);
     },
-    isIdle: () => started && host.idle && !host.compacting,
+    isIdle: () => started && host.idle,
     sendUserMessage: (text) => {
       if (stale) {
         return;
@@ -422,24 +382,11 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       host.sent.push(text);
     },
     sendHiddenMessage: (message) => {
-      if (stale) {
+      if (!started) {
         return;
       }
 
-      if (!host.idle) {
-        host.hidden.push({ message: structuredClone(message), delivery: "followUp" });
-        return;
-      }
-
-      if (host.compacting) {
-        host.heldHidden.push(structuredClone(message));
-        return;
-      }
-
-      host.hidden.push({ message: structuredClone(message), delivery: "run" });
-    },
-    registerEntryRenderer: (customType, render) => {
-      host.entryRenderers.set(customType, render as EntryRender);
+      host.hidden.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
     },
     dispatchCommand: (name, args) => {
       host.dispatched.push(args ? `${name} ${args}` : name);
@@ -512,7 +459,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     settle: () => {
       host.idle = true;
-      deliverHeldHidden();
       settling = true;
 
       idleHandlers.forEach((handler) => {
@@ -537,8 +483,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       await spec.run(args, control);
     },
     shutdown: async (reason = "quit") => {
-      host.currentPhase = { phase: "idle", detail: { running: 0 } };
-      host.heldHidden.length = 0;
+      currentPhase = { phase: "idle", detail: { running: 0 } };
 
       await shutdownHandlers.reduce<Promise<void>>(
         (chain, handler) => chain.then(() => handler(reason)),
@@ -563,7 +508,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         toolCallId: "call-1",
         expanded: false,
         isPartial: false,
-        executionStarted: true,
         isError: result?.isError ?? false,
         args: call,
         outputPad: 1,
@@ -571,7 +515,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         ...overrides,
       };
 
-      const shelled = spec.renderShell === "self" || spec.renderShell === "box";
+      const shelled = spec.renderShell === "box";
       const inner = shelled ? Math.max(1, width - 2 * state.outputPad) : width;
       const piTone: ToolTone = state.isPartial ? "pending" : state.isError ? "error" : "success";
       const resolve = (render: ToolRender | undefined) =>
@@ -600,23 +544,19 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       host.setPhase("waiting");
     },
     phases: [],
-    currentPhase: { phase: "idle", detail: { running: 0 } },
     onPhase: (handler) => {
       phaseHandlers.push(handler);
     },
-    phase: () => host.currentPhase,
     setPhase: (phase, detail = { running: 0 }) => {
-      const current = host.currentPhase;
-
       if (
-        current.phase === phase &&
-        current.detail.toolName === detail.toolName &&
-        current.detail.running === detail.running
+        currentPhase.phase === phase &&
+        currentPhase.detail.toolName === detail.toolName &&
+        currentPhase.detail.running === detail.running
       ) {
         return;
       }
 
-      host.currentPhase = { phase, detail };
+      currentPhase = { phase, detail };
       host.phases.push({ phase, detail });
 
       phaseHandlers.forEach((handler) => {
@@ -647,41 +587,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   };
 
   return host;
-};
-
-export const createFakeInputPane = (): InputPane & { isFocused(): boolean } => {
-  let value = "";
-  let focused = true;
-
-  return {
-    feed: (key) => {
-      if (key.name === "enter") {
-        return "submitted";
-      }
-
-      if (key.name === "escape") {
-        return "cancelled";
-      }
-
-      if (key.raw === "\x7f") {
-        value = value.slice(0, -1);
-        return "changed";
-      }
-
-      value += key.char ?? "";
-
-      return "changed";
-    },
-    value: () => value,
-    setValue: (next) => {
-      value = next;
-    },
-    setFocused: (next) => {
-      focused = next;
-    },
-    isFocused: () => focused,
-    render: () => [value.length > 0 ? value : "(type a message)"],
-  };
 };
 
 export type FakeChild = ChildSession & {

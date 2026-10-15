@@ -6,7 +6,7 @@ type DeltaBlock = "text" | "thinking" | "toolcall";
 
 type DeltaEdge = "start" | "delta" | "end";
 
-type ClearingType = "agent_start" | "turn_start" | "agent_end" | "agent_settled" | "shutdown";
+type ClearingType = "agent_start" | "turn_start" | "agent_end" | "agent_settled";
 
 export type PhaseEvent =
   | { type: ClearingType }
@@ -42,7 +42,6 @@ const CLEARING: Record<ClearingType, Phase> = {
   turn_start: "waiting",
   agent_end: "waiting",
   agent_settled: "idle",
-  shutdown: "idle",
 };
 
 export const initialPhase = (): PhaseState => ({ phase: "idle", running: new Map() });
@@ -66,10 +65,6 @@ export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState =>
   }
 
   if (event.type === "tool_start") {
-    if (state.running.has(event.id)) {
-      return state;
-    }
-
     return { phase: "tool", running: new Map(state.running).set(event.id, event.name) };
   }
 

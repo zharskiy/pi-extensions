@@ -51,79 +51,17 @@ const fakeFooter = (mode: string) => {
 
 describe("setFooter", () => {
   it("does nothing outside tui mode", () => {
-    const { installed, setFooter } = fakeFooter("rpc");
+    const { installed, widgets, setFooter } = fakeFooter("rpc");
 
     expect(() => setFooter(() => ["x"]).refresh()).not.toThrow();
     expect(installed).toEqual([]);
+    expect(widgets).toEqual([]);
   });
 
-  it("renders with the branch and statuses and truncates every line to the width", () => {
-    const { setFooter, mount } = fakeFooter("tui");
-
-    setFooter((_width, _theme, { branch, statuses }) => [`${branch} ${statuses.get("k")}`, "0123456789"]);
-
-    expect(
-      mount()
-        ?.render(6)
-        .map((line) => line.replace(ANSI, "")),
-    ).toEqual(["main v", "01234…"]);
-  });
-
-  it("paints the ellipsis with the current theme on each render", () => {
-    const { installed, setFooter, tui } = fakeFooter("tui");
-    const theme = { fg: (_token: string, text: string) => text };
-
-    setFooter(() => ["0123456789"]);
-
-    const component = installed.at(-1)?.(tui, theme, {
-      getGitBranch: () => null,
-      getExtensionStatuses: () => new Map(),
-      onBranchChange: () => () => {},
-    });
-
-    theme.fg = (_token, text) => `\x1b[2m${text}\x1b[0m`;
-
-    const [line = ""] = component?.render(6) ?? [];
-
-    expect(line).toContain("\x1b[2m…");
-    expect(line.replace(ANSI, "")).toBe("01234…");
-  });
-
-  it("re-renders on branch changes and refresh, and unsubscribes on dispose", () => {
-    const { setFooter, mount, tui, branchListeners } = fakeFooter("tui");
-    const handle = setFooter(() => []);
-    const component = mount();
-
-    branchListeners.forEach((listener) => {
-      listener();
-    });
-    handle.refresh();
-
-    expect(tui.renders).toBe(2);
-
-    component?.dispose();
-    handle.refresh();
-
-    expect(branchListeners.size).toBe(0);
-    expect(tui.renders).toBe(2);
-  });
-
-  it("restores pi's footer when cleared", () => {
-    const { installed, setFooter } = fakeFooter("tui");
-
-    setFooter(undefined);
-
-    expect(installed).toEqual([undefined]);
-  });
-});
-
-describe("setFooter below the editor", () => {
-  it("draws the block as a below-editor widget and leaves pi's footer slot empty", () => {
+  it("draws the block as a below-editor widget with the branch and statuses, cut to the width, and leaves pi's footer slot empty", () => {
     const { installed, widgets, setFooter, mount, mountWidget } = fakeFooter("tui");
 
-    setFooter((_width, _theme, { branch, statuses }) => [`${branch} ${statuses.get("k")}`, "0123456789"], {
-      slot: "belowEditor",
-    });
+    setFooter((_width, _theme, { branch, statuses }) => [`${branch} ${statuses.get("k")}`, "0123456789"]);
 
     expect(installed).toHaveLength(1);
     expect(widgets.map(({ key, placement }) => ({ key, placement }))).toEqual([
@@ -137,14 +75,29 @@ describe("setFooter below the editor", () => {
     ).toEqual(["main v", "01234…"]);
   });
 
-  it("re-renders on refresh and branch changes without setting the widget again", () => {
+  it("paints the ellipsis with the current theme on each render", () => {
+    const { setFooter, widgets, tui } = fakeFooter("tui");
+    const theme = { fg: (_token: string, text: string) => text };
+
+    setFooter(() => ["0123456789"]);
+
+    const component = widgets.at(-1)?.factory?.(tui, theme);
+
+    theme.fg = (_token, text) => `\x1b[2m${text}\x1b[0m`;
+
+    const [line = ""] = component?.render(6) ?? [];
+
+    expect(line).toContain("\x1b[2m…");
+    expect(line.replace(ANSI, "")).toBe("01234…");
+  });
+
+  it("re-renders on refresh and branch changes without setting the widget again, and unsubscribes on dispose", () => {
     const { widgets, branchListeners, setFooter, mount, mountWidget, tui } = fakeFooter("tui");
-    const handle = setFooter(() => ["a"], { slot: "belowEditor" });
+    const handle = setFooter(() => ["a"]);
     const component = mountWidget();
+    const footer = mount();
 
-    mount();
-
-    const again = setFooter(() => ["b"], { slot: "belowEditor" });
+    const again = setFooter(() => ["b"]);
 
     expect(widgets).toHaveLength(1);
     expect(component?.render(10)).toEqual(["b"]);
@@ -156,34 +109,31 @@ describe("setFooter below the editor", () => {
     again.refresh();
 
     expect(tui.renders).toBe(4);
+
+    footer?.dispose();
+
+    expect(branchListeners.size).toBe(0);
   });
 
   it("sets the widget again once pi has disposed it", () => {
     const { widgets, setFooter, mountWidget } = fakeFooter("tui");
 
-    setFooter(() => ["a"], { slot: "belowEditor" });
+    setFooter(() => ["a"]);
     mountWidget()?.dispose();
-    setFooter(() => ["a"], { slot: "belowEditor" });
+    setFooter(() => ["a"]);
 
     expect(widgets).toHaveLength(2);
   });
 
-  it("removes the widget when cleared or moved back to the footer slot", () => {
+  it("removes the widget and restores pi's footer when cleared", () => {
     const { installed, widgets, setFooter, mountWidget } = fakeFooter("tui");
 
-    setFooter(() => ["a"], { slot: "belowEditor" });
+    setFooter(() => ["a"]);
     mountWidget();
     setFooter(undefined);
 
     expect(widgets.at(-1)).toEqual({ key: FOOTER_WIDGET_KEY, factory: undefined, placement: undefined });
     expect(installed.at(-1)).toBeUndefined();
-
-    setFooter(() => ["a"], { slot: "belowEditor" });
-    mountWidget();
-    setFooter(() => ["a"]);
-
-    expect(widgets.at(-1)?.factory).toBeUndefined();
-    expect(installed.at(-1)).toBeDefined();
   });
 });
 
@@ -224,9 +174,7 @@ describe("setFooter with pi's interactive layout", () => {
     const ui = createUi(state, { write: () => {} }, {});
     const setFooter = createFooterSetter(() => state.ctx, themeLike);
     const footer = () =>
-      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("pi-subagents") ?? ""], {
-        slot: "belowEditor",
-      });
+      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("pi-subagents") ?? ""]);
     const below = () => [...mode.widgetContainerBelow.render(40), ...mode.footerContainer.render(40)];
     const reset = () => {
       mode.setExtensionFooter(undefined);

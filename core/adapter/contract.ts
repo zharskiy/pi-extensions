@@ -24,10 +24,8 @@ export type ToolRenderState = {
   toolCallId: string;
   expanded: boolean;
   isPartial: boolean;
-  executionStarted: boolean;
   isError: boolean;
   args: unknown;
-  durationMs?: number;
   outputPad: number;
   invalidate(): void;
 };
@@ -42,7 +40,7 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   description: string;
   promptSnippet?: string;
   parameters: Record<string, unknown>;
-  renderShell?: "default" | "self" | "box";
+  renderShell?: "default" | "box";
   execute(
     params: P,
     ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
@@ -73,14 +71,6 @@ export type KeyPress = {
     | "other";
   char?: string;
   raw?: string;
-};
-
-export type InputPane = {
-  feed(key: KeyPress): "submitted" | "cancelled" | "changed";
-  value(): string;
-  setValue(value: string): void;
-  setFocused(focused: boolean): void;
-  render(width: number): string[];
 };
 
 export type ViewComponent = {
@@ -128,7 +118,6 @@ export type OverlayApi = {
   wheelScrolling: boolean;
   createTranscript(options?: { tools?: AnyToolSpec[]; owner?: string }): TranscriptPane;
   createScroll(): ScrollPane;
-  createInput(placeholder: string): InputPane;
 };
 
 export type OverlayFactory = (api: OverlayApi) => ViewComponent;
@@ -154,10 +143,8 @@ export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
   confirm(title: string, message: string): Promise<boolean>;
-  input(title: string, placeholder?: string): Promise<string | undefined>;
   setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;
-  select(title: string, options: string[]): Promise<string | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(message: string, channel: NotifyChannel): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
@@ -170,7 +157,7 @@ export type HostUi = {
   onEmptyEditorLeft(handler: () => void): () => void;
   onEmptyEditorDown(handler: () => void): () => void;
   captureEditorKeys(handler: EditorKeyHandler): () => void;
-  setFooter(render: FooterRender | undefined, options?: FooterOptions): WidgetHandle;
+  setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
 };
@@ -226,10 +213,6 @@ export type Host = {
   isIdle(): boolean;
   sendUserMessage(text: string): void;
   sendHiddenMessage(message: HiddenMessage): void;
-  registerEntryRenderer<T>(
-    customType: string,
-    render: (data: T, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined,
-  ): void;
   dispatchCommand(name: string, args?: string): void;
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;
@@ -239,7 +222,6 @@ export type Host = {
   session(): SessionInfo;
   onAgentStart(handler: () => void): void;
   onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
-  phase(): { phase: Phase; detail: PhaseDetail };
   onDialog(handler: (event: DialogEvent) => void): void;
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;
@@ -390,7 +372,5 @@ export const addUsage = (left: UsageTotals, right: UsageTotals): UsageTotals => 
 export type FooterData = { branch: string | null; statuses: ReadonlyMap<string, string> };
 
 export type FooterRender = (width: number, theme: ThemeLike, data: FooterData) => string[];
-
-export type FooterOptions = { slot?: "footer" | "belowEditor" };
 
 export type ModelInfo = { name: string; contextWindow: number; reasoning: boolean };

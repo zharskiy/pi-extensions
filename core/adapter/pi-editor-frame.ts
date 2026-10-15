@@ -17,26 +17,12 @@ type SharedEditor = {
   installed?: EditorFactory;
 };
 
-const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks.v2");
+const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
 
-const EDITOR_KEY_V1 = Symbol.for("pi-extensions.editor-hooks.v1");
+const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor };
 
-type SharedEditorV1 = Omit<SharedEditor, "emptyDown"> & { emptyDown?: Set<() => void> };
-
-const shared = globalThis as typeof globalThis & {
-  [EDITOR_KEY]?: SharedEditor;
-  [EDITOR_KEY_V1]?: SharedEditorV1;
-};
-
-const sharedEditor = (): SharedEditor => {
-  const record = shared[EDITOR_KEY] ?? shared[EDITOR_KEY_V1] ?? { emptyLeft: new Set() };
-
-  record.emptyDown ??= new Set();
-  shared[EDITOR_KEY] = record as SharedEditor;
-  shared[EDITOR_KEY_V1] = record;
-
-  return record as SharedEditor;
-};
+const sharedEditor = (): SharedEditor =>
+  (shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set() });
 
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean; historyIndex?: number };
 

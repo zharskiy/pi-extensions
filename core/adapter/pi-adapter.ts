@@ -16,12 +16,10 @@ import type {
   SessionControl,
   SessionInfo,
   ShutdownReason,
-  ThemeLike,
   ToolSpec,
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
-import { padLines, themeLike } from "./pi-components.ts";
 import { createEditorHooks } from "./pi-editor-frame.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
@@ -147,6 +145,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     heldTimer = undefined;
   };
 
+  const pollHeld = () => {
+    heldTimer = setTimeout(deliverHeld, HELD_POLL_MS);
+    heldTimer.unref();
+  };
+
   const deliverHeld = () => {
     stopHeldPoll();
 
@@ -155,7 +158,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     if (!state.ctx.isIdle()) {
-      heldTimer = setTimeout(deliverHeld, HELD_POLL_MS);
+      pollHeld();
       return;
     }
 
@@ -165,7 +168,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
     editor.sync();
-    runActive = false;
 
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
@@ -216,6 +218,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     capture(ctx);
     runActive = true;
     stopHeldPoll();
+    held.splice(0).forEach((custom) => {
+      pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+    });
 
     agentStartHandlers.forEach((handler) => {
       handler();
@@ -392,23 +397,16 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
         return;
       }
 
-      if (!ctx.isIdle()) {
-        held.push(custom);
-        heldTimer ??= setTimeout(deliverHeld, HELD_POLL_MS);
+      held.push(custom);
+
+      if (ctx.isIdle()) {
+        queueMicrotask(deliverHeld);
         return;
       }
 
-      startHidden([custom]);
-    },
-    registerEntryRenderer: <T>(
-      customType: string,
-      render: (data: T, state: { expanded: boolean }, theme: ThemeLike) => string[] | undefined,
-    ) => {
-      pi.registerEntryRenderer<T>(customType, (entry, { expanded }, theme) => {
-        const lines = render(entry.data as T, { expanded }, themeLike(theme));
-
-        return lines ? padLines(lines, pi.getSettings().outputPad ?? 1) : undefined;
-      });
+      if (!heldTimer) {
+        pollHeld();
+      }
     },
     dispatchCommand: (name, args) => {
       sendUser(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
@@ -437,10 +435,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onPhase: (handler) => {
       phaseHandlers.push(handler);
     },
-    phase: () =>
-      state.ctx
-        ? { phase: phaseState.phase, detail: detailOf(phaseState) }
-        : { phase: "idle", detail: { running: 0 } },
     onDialog: (handler) => {
       dialogHandlers.push(handler);
     },

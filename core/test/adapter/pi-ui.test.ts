@@ -4,13 +4,10 @@ import {
   createToolSearchExtension,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, renderFakeCursor, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { AnyToolSpec, TranscriptItem, ViewComponent } from "../../adapter/contract.ts";
 import {
   capturePiRenderers,
-  createFakeCursorResolver,
-  createInputPane,
   createTranscriptPane,
   createUi,
   editorKeyPress,
@@ -31,102 +28,6 @@ const APC = new RegExp(
 const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
 const visibleText = (lines: string[]) => lines.join("\n").replace(APC, "").replace(SGR, "");
-
-const typeText = (pane: ReturnType<typeof createInputPane>, text: string) =>
-  text.split("").map((char) => pane.feed({ name: "other", char, raw: char }));
-
-describe("createInputPane", () => {
-  it("collects typed characters as changes", () => {
-    const pane = createInputPane("type");
-    const outcomes = typeText(pane, "hi");
-
-    expect(outcomes).toEqual(["changed", "changed"]);
-    expect(pane.value()).toBe("hi");
-    expect(visibleText(pane.render(30))).toContain("hi");
-  });
-
-  it("reports submitted on enter and cancelled on escape", () => {
-    const pane = createInputPane("type");
-
-    expect(pane.feed({ name: "enter", raw: "\r" })).toBe("submitted");
-    expect(pane.feed({ name: "escape", raw: "\x1b" })).toBe("cancelled");
-    expect(pane.feed({ name: "other", char: "a", raw: "a" })).toBe("changed");
-  });
-
-  it("deletes the last character on backspace", () => {
-    const pane = createInputPane("type");
-
-    typeText(pane, "abc");
-
-    expect(pane.feed({ name: "other", raw: "\x7f" })).toBe("changed");
-    expect(pane.value()).toBe("ab");
-  });
-
-  it("sets the value and renders it", () => {
-    const pane = createInputPane("type");
-
-    pane.setValue("preset");
-
-    expect(pane.value()).toBe("preset");
-    expect(visibleText(pane.render(30))).toContain("preset");
-  });
-});
-
-describe("createInputPane focus", () => {
-  it("draws the cursor marker only while focused", () => {
-    const pane = createInputPane("type");
-
-    pane.setValue("hi");
-    pane.setFocused(false);
-
-    expect(pane.render(30).join("")).not.toContain(CURSOR_MARKER);
-
-    pane.setFocused(true);
-
-    expect(pane.render(30).join("")).toContain(CURSOR_MARKER);
-  });
-});
-
-describe("createInputPane fake cursor", () => {
-  const [fakeStart = "", fakeEnd = ""] = renderFakeCursor("|").split("|");
-  const CSI = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
-  const columns = (line: string) => Array.from(line.replaceAll(CURSOR_MARKER, "").replace(CSI, "")).length;
-
-  const rendered = (hardwareCursor: boolean, focused: boolean) => {
-    const pane = createInputPane("type", () => hardwareCursor);
-
-    pane.setValue("hi");
-    pane.setFocused(focused);
-
-    return pane.render(30);
-  };
-
-  it.each([
-    [false, true],
-    [true, true],
-    [false, false],
-  ])("returns lines without fake cursor markers (hardware cursor %s, focused %s)", (hardware, focused) => {
-    const lines = rendered(hardware, focused);
-
-    expect(fakeStart).toContain("pi:fc");
-    expect(lines.join("")).not.toContain(fakeStart);
-    expect(lines.join("")).not.toContain(fakeEnd);
-    expect(lines.map((line) => visibleWidth(line))).toEqual(lines.map(() => 30));
-    expect(lines.map(columns)).toEqual(lines.map(() => 30));
-  });
-
-  it("draws the cursor in reverse video unless the hardware cursor shows", () => {
-    expect(rendered(false, true).join("")).toContain(`${CURSOR_MARKER}${ESC}[7mh${ESC}[27mi`);
-    expect(rendered(true, true).join("")).toContain(`${CURSOR_MARKER}hi`);
-  });
-
-  it("leaves lines untouched when pi-tui has no fake cursor markers", () => {
-    const lines = [`${CURSOR_MARKER}hi`, "plain"];
-
-    expect(createFakeCursorResolver("", "")(lines, false)).toEqual(lines);
-    expect(createFakeCursorResolver(fakeStart, "")(lines, true)).toEqual(lines);
-  });
-});
 
 describe("editorKeyPress", () => {
   it("editorKeyPress names up and down through the keybindings manager", () => {
@@ -440,27 +341,6 @@ describe("pi renderers in the transcript pane", () => {
     expect(text).toContain("RUN-AGENT-ROW");
     expect(text).toContain("RESULT ids");
     expect(text).not.toContain('"agents"');
-  });
-
-  it("renders a recorded call without a result as started, since its arguments are complete", () => {
-    const states: boolean[] = [];
-    const spec = {
-      name: "run_agent",
-      label: "Run agent",
-      description: "run",
-      parameters: {},
-      execute: async () => ({ text: "" }),
-      renderCall: (_params: unknown, _theme: unknown, state: { executionStarted: boolean }) => {
-        states.push(state.executionStarted);
-        return "RUN-AGENT-ROW";
-      },
-    } as unknown as AnyToolSpec;
-    const pane = createTranscriptPane(tui, "/repo", { tools: [spec] });
-
-    pane.sync([assistantCall("run_agent", { agents: [] })]);
-    pane.render(80);
-
-    expect(states.at(-1)).toBe(true);
   });
 
   it("keeps the raw fallback for unknown tools", () => {
