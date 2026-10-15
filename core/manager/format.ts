@@ -27,3 +27,5 @@ export const formatDuration = (ms: number): string => {
 
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
+
+export const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));

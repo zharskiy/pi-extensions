@@ -113,7 +113,7 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
           ? { record, openedId, chain, session }
           : { record, openedId, chain, error: "session file not written yet" };
       } catch (error) {
-        return { record, openedId, chain, error: `cannot read session: ${(error as Error).message}` };
+        return { record, openedId, chain, error: `cannot read session: ${errorText(error)}` };
       }
     };
   };

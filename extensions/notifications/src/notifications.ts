@@ -35,7 +35,7 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
   const send = (text: string) => channel && host.ui.terminalNotify(text, channel);
 
   const fireIdle = () => {
-    if (sources.size > 0 || dialog) {
+    if (dialog) {
       return;
     }
 

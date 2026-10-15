@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBus } from "../../../../core/manager/bus.ts";
-import { createThrottle, tickFor, watchAgents } from "../../src/components/refresh.ts";
+import { tickFor, watchAgents } from "../../src/components/refresh.ts";
 import type { BusEvents } from "../../src/model/events.ts";
 import type { AgentRecord, AgentState } from "../../src/model/types.ts";
 
@@ -37,39 +37,6 @@ describe("tick cadence", () => {
   );
 });
 
-describe("throttle", () => {
-  it("runs at most once per interval and keeps a trailing call", () => {
-    const run = vi.fn();
-    const throttled = createThrottle(run, () => 250);
-
-    throttled.call();
-    throttled.call();
-    throttled.call();
-
-    expect(run).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(249);
-
-    expect(run).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(1);
-
-    expect(run).toHaveBeenCalledTimes(2);
-  });
-
-  it("cancel drops the trailing call", () => {
-    const run = vi.fn();
-    const throttled = createThrottle(run, () => 250);
-
-    throttled.call();
-    throttled.call();
-    throttled.cancel();
-    vi.advanceTimersByTime(1_000);
-
-    expect(run).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe("agent watch", () => {
   it("throttles relevant changes by throttleMs and ignores irrelevant ones", () => {
     const bus = createBus<BusEvents>();
@@ -84,10 +51,15 @@ describe("agent watch", () => {
 
     bus.emit("agent:changed", record("a"));
     bus.emit("agent:changed", record("a"));
+    bus.emit("agent:changed", record("a"));
 
     expect(onChange).toHaveBeenCalledTimes(1);
 
-    vi.advanceTimersByTime(250);
+    vi.advanceTimersByTime(249);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
 
     expect(onChange).toHaveBeenCalledTimes(2);
 

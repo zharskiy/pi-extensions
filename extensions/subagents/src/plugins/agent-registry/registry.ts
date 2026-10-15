@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { errorText } from "../../components/format.ts";
 import type { Bus } from "../../model/events.ts";
 import { MANIFEST_FILE } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../../model/types.ts";
@@ -62,7 +63,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     try {
       writeManifest(record);
     } catch (error) {
-      record.error ??= `manifest not written: ${(error as Error).message}`;
+      record.error ??= `manifest not written: ${errorText(error)}`;
     }
   };
 

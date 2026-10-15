@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 
-export { formatDuration, formatTokens } from "../../../../core/manager/format.ts";
+export { errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
 
 export const SEP = " · ";
 
@@ -26,8 +26,6 @@ export const elapsedOf = (
 
 export const cutChars = (text: string, limit: number): string =>
   text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
-
-export const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 type Painted = readonly [text: string, paint: (text: string) => string];
 

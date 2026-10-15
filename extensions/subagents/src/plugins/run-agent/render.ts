@@ -256,9 +256,9 @@ const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, widt
   }
 
   const fits = theme.width(`${n} background ${named} launched ${full}`) <= width;
-  const hint = fits ? full : hintText(hints, true) || full;
+  const hint = fits ? full : hintText(hints, true);
 
-  return `${text} ${theme.fg("dim", hint)}`;
+  return hint ? `${text} ${theme.fg("dim", hint)}` : text;
 };
 
 const renderBlockAt = (input: BlockInput, renderWidth: number): string => {

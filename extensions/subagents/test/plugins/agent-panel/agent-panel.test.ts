@@ -13,6 +13,7 @@ import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../src
 import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { createHarness, startPlugins, tempDir } from "../../helpers/harness.ts";
+import { selectedRow } from "../../helpers/overlay.ts";
 import { newAgentInput } from "../../helpers/records.ts";
 
 const WIDGET = "pi-subagents-agents";
@@ -57,8 +58,6 @@ const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {
 
   return { ...harness, ...stub, registry, newAgent, running, widget, lines, key, type };
 };
-
-const pointed = (lines: string[]) => lines.filter((line) => line.startsWith(" › "));
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -151,7 +150,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0].startsWith(" › ")).toBe(true);
+    expect(selectedRow(lines)).toBe(lines[0]);
     expect(lines.at(-2)).toBe(HINT);
     expect(lines.at(-1)).toBe("");
     expect(panel.host.editorCapture).toBeDefined();
@@ -163,7 +162,7 @@ describe("agent panel", () => {
     panel.newAgent();
 
     expect(panel.host.pressEmptyDown()).toBe(true);
-    expect(pointed(panel.lines())).toHaveLength(1);
+    expect(selectedRow(panel.lines())).toBeDefined();
   });
 
   it("down with no rows does nothing", () => {
@@ -185,8 +184,7 @@ describe("agent panel", () => {
     const lines = panel.lines();
 
     expect(lines[0]).toBe(" ↑ 1 more");
-    expect(lines[5].startsWith(" › ")).toBe(true);
-    expect(pointed(lines)).toHaveLength(1);
+    expect(selectedRow(lines)).toBe(lines[5]);
   });
 
   it("scrolls the window up to keep the selection visible", () => {
@@ -200,8 +198,7 @@ describe("agent panel", () => {
     const lines = panel.lines();
 
     expect(lines[0]).toBe(" ↑ 1 more");
-    expect(lines[1].startsWith(" › ")).toBe(true);
-    expect(pointed(lines)).toHaveLength(1);
+    expect(selectedRow(lines)).toBe(lines[1]);
   });
 
   it("enter opens the agent view from the panel and deselects", () => {
@@ -212,7 +209,7 @@ describe("agent panel", () => {
 
     expect(panel.key("enter")).toBe("consumed");
     expect(panel.open).toHaveBeenCalledWith(record.id);
-    expect(pointed(panel.lines())).toEqual([]);
+    expect(selectedRow(panel.lines())).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
   });
 
@@ -245,11 +242,11 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
     panel.key("down");
 
-    const before = pointed(panel.lines());
+    const before = selectedRow(panel.lines());
 
     expect(panel.type("x")).toBe("consumed");
     expect(panel.stop).toHaveBeenCalledWith(panel.registry.list()[1].id);
-    expect(pointed(panel.lines())).toEqual(before);
+    expect(selectedRow(panel.lines())).toEqual(before);
     expect(panel.host.editorCapture).toBeDefined();
   });
 
@@ -263,7 +260,7 @@ describe("agent panel", () => {
     expect(panel.lines().at(-2)).toBe(" enter to view · x to close now · esc to deselect");
     expect(panel.type("x")).toBe("consumed");
     expect(panel.stop).toHaveBeenCalledWith(record.id);
-    expect(pointed(panel.lines())).toHaveLength(1);
+    expect(selectedRow(panel.lines())).toBeDefined();
   });
 
   it("x on a done row clears it and keeps the selection on the next row", () => {
@@ -279,7 +276,7 @@ describe("agent panel", () => {
     const lines = panel.lines();
 
     expect(lines.join("\n")).not.toContain("finished");
-    expect(pointed(lines)).toEqual([expect.stringContaining("second")]);
+    expect(selectedRow(lines)).toContain("second");
     expect(lines).toContain(HINT);
     expect(panel.host.editorCapture).toBeDefined();
   });
@@ -296,7 +293,7 @@ describe("agent panel", () => {
     panel.key("down");
     panel.type("x");
 
-    expect(pointed(panel.lines())).toEqual([expect.stringContaining("first")]);
+    expect(selectedRow(panel.lines())).toContain("first");
     expect(panel.host.editorCapture).toBeDefined();
   });
 
@@ -338,7 +335,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(pointed(lines)).toEqual([]);
+    expect(selectedRow(lines)).toBeUndefined();
     expect(lines).not.toContain(HINT);
     expect(panel.host.editorCapture).toBeUndefined();
   });
@@ -351,7 +348,7 @@ describe("agent panel", () => {
     panel.key("down");
 
     expect(panel.key("left")).toBe("release");
-    expect(pointed(panel.lines())).toEqual([]);
+    expect(selectedRow(panel.lines())).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
   });
 
@@ -361,7 +358,7 @@ describe("agent panel", () => {
     panel.newAgent();
 
     expect(panel.host.pressEmptyLeft()).toBe(false);
-    expect(pointed(panel.lines())).toEqual([]);
+    expect(selectedRow(panel.lines())).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
   });
 
@@ -376,7 +373,7 @@ describe("agent panel", () => {
 
     expect(panel.key("down")).toBe("consumed");
     expect(panel.lines()).toEqual(before);
-    expect(pointed(before)).toHaveLength(1);
+    expect(selectedRow(before)).toBeDefined();
   });
 
   it("right on a selected row deselects and releases the capture", () => {
@@ -386,7 +383,7 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
 
     expect(panel.key("right")).toBe("release");
-    expect(pointed(panel.lines())).toEqual([]);
+    expect(selectedRow(panel.lines())).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
   });
 
@@ -397,7 +394,7 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
 
     expect(panel.key("escape")).toBe("consumed");
-    expect(pointed(panel.lines())).toEqual([]);
+    expect(selectedRow(panel.lines())).toBeUndefined();
   });
 
   it("deselects and releases the capture when the selected row leaves", () => {
@@ -409,12 +406,12 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
     panel.running(panel.newAgent({ description: "second" }).id);
 
-    expect(pointed(panel.lines())).toEqual([expect.stringContaining("first")]);
+    expect(selectedRow(panel.lines())).toContain("first");
 
     vi.advanceTimersByTime(10_001);
 
     expect(panel.host.editorCapture).toBeUndefined();
-    expect(pointed(panel.lines())).toEqual([]);
+    expect(selectedRow(panel.lines())).toBeUndefined();
     expect(panel.lines().join("\n")).toContain("second");
   });
 
@@ -431,7 +428,7 @@ describe("agent panel", () => {
 
     const after = panel.lines();
 
-    expect(pointed(after)).toEqual([]);
+    expect(selectedRow(after)).toBeUndefined();
     expect(after).not.toContain(HINT);
     expect(after[0]).toBe(" ↑ 2 more");
 
@@ -439,7 +436,7 @@ describe("agent panel", () => {
 
     const reselected = panel.lines();
 
-    expect(reselected[0].startsWith(" › ")).toBe(true);
+    expect(selectedRow(reselected)).toBe(reselected[0]);
 
     panel.type("a");
 

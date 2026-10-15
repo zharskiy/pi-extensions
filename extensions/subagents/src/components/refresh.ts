@@ -19,7 +19,7 @@ export const tickFor = (records: AgentRecord[], linger: boolean): number | undef
 
 type Throttle = { call(): void; cancel(): void };
 
-export const createThrottle = (run: () => void, intervalMs: () => number): Throttle => {
+const createThrottle = (run: () => void, intervalMs: () => number): Throttle => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last = Number.NEGATIVE_INFINITY;
 

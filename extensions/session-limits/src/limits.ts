@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ContextSnapshot, Host, SessionControl } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
+import { errorText } from "../../../core/manager/format.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
 import {
   contextLevel,
@@ -55,8 +56,6 @@ const readHandoff = (path: string) => {
   }
 };
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
 export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }: LimitsOptions) => {
   const sources = new Set<string>();
   let state: LimitsState = {
@@ -98,7 +97,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
       mkdirSync(dirname(path), { recursive: true });
     } catch (error) {
       state = { ...state, phase: "stuck" };
-      host.ui.notify(`Session handoff cannot use ${path}: ${messageOf(error)}.`, "warning");
+      host.ui.notify(`Session handoff cannot use ${path}: ${errorText(error)}.`, "warning");
       return;
     }
 

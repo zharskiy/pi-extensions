@@ -3,7 +3,6 @@ import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   alignRight,
   cutChars,
-  errorText,
   firstLine,
   singleLine,
   truncatePainted,
@@ -21,12 +20,6 @@ describe("format helpers", () => {
     expect(cutChars("Map the auth module", 8)).toBe("Map the…");
     expect(cutChars("short", 10)).toBe("short");
     expect(cutChars("x", 0)).toBe("…");
-  });
-
-  it("reads the message of an error and stringifies anything else", () => {
-    expect(errorText(new Error("boom"))).toBe("boom");
-    expect(errorText("plain")).toBe("plain");
-    expect(errorText(undefined)).toBe("undefined");
   });
 
   it("aligns right inside the given columns", () => {

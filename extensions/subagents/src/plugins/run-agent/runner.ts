@@ -12,6 +12,7 @@ import {
   splitModelRequest,
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
+import { errorText } from "../../components/format.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -138,7 +139,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const batchText = (batchId: string) =>
-    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars, Date.now());
+    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars);
 
   const settledTerminals = (batch: Batch) => {
     const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
@@ -224,7 +225,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       await deliver(child);
       await sendHeld(live, child);
     } catch (error) {
-      deps.registry.close(id, { state: "failed", error: `wake failed: ${(error as Error).message}` });
+      deps.registry.close(id, { state: "failed", error: `wake failed: ${errorText(error)}` });
       await releaseLive(id);
     }
   };
@@ -598,7 +599,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       .catch((error: unknown) => {
         deps.registry.close(record.id, {
           state: "failed",
-          error: `spawn failed: ${(error as Error).message}`,
+          error: `spawn failed: ${errorText(error)}`,
         });
         return undefined;
       });
@@ -634,7 +635,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       child.start(composeTask(record, slot.item, predecessor, slot.undelivered));
       await sendHeld(live, child);
     } catch (error) {
-      deps.registry.close(record.id, { state: "failed", error: `start failed: ${(error as Error).message}` });
+      deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });
       await releaseLive(record.id);
     }
   };

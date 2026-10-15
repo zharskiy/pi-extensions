@@ -23,7 +23,7 @@ import { themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
-const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
+const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width, "…"));
 
 export type HostState = { ctx?: ExtensionContext; tools: Map<string, AnyToolSpec> };
 
@@ -78,11 +78,7 @@ const usesOsc777 = (env: TerminalEnv) =>
 
 const OSC_777_TITLE = "pi";
 
-export const notificationSequence = (
-  message: string,
-  channel: NotifyChannel,
-  env: TerminalEnv = process.env,
-) => {
+export const notificationSequence = (message: string, channel: NotifyChannel, env: TerminalEnv) => {
   const text = cleanText(message);
 
   if (channel === "bell") {
@@ -162,7 +158,6 @@ export const createUi = (
           close: () => done(),
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
-          wheelScrolling: tui.mode === "fullscreen",
           createTranscript: (options) =>
             createTranscriptPane(tui, cwd, { tools: [...state.tools.values()], owner: options?.owner }),
           createScroll: () => createScrollPane(() => tui.requestRender()),

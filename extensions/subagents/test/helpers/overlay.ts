@@ -41,7 +41,6 @@ export const fakeOverlayApi = (
     },
     requestRender,
     toolsKey: "ctrl+o",
-    wheelScrolling: true,
     createTranscript: (options) => {
       transcripts.push(options ?? {});
 

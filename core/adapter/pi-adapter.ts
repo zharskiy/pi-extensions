@@ -105,9 +105,14 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
+    const previous = phaseState;
+    const detail = detailOf(next);
+
     phaseState = next;
 
-    const detail = detailOf(next);
+    if (previous.phase === next.phase && detailOf(previous).toolName === detail.toolName) {
+      return;
+    }
 
     phaseHandlers.forEach((handler) => {
       handler(next.phase, detail);
@@ -305,7 +310,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("agent_settled", (_event, ctx) => {
     capture(ctx);
     runActive = false;
-    deliverHeld();
 
     idleHandlers.forEach((handler) => {
       handler();

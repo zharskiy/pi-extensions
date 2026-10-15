@@ -138,7 +138,7 @@ describe("working indicator", () => {
 
     host.agentStart();
     host.setPhase("writing");
-    host.setPhase("tool", { toolName: "bash", running: 1 });
+    host.setPhase("tool", { toolName: "bash" });
     vi.advanceTimersByTime(TICK_MS * 3);
 
     expect(host.workingMessages).toEqual([]);
@@ -153,7 +153,7 @@ describe("working indicator", () => {
 
     expect(host.workingVisibility).toEqual([false]);
 
-    host.setPhase("tool", { toolName: "bash", running: 1 });
+    host.setPhase("tool", { toolName: "bash" });
 
     expect(host.workingVisibility).toEqual([false, true]);
     expect(host.workingMessages.at(-1)).toBe(message(V0, "0s", "bash"));
@@ -166,7 +166,7 @@ describe("working indicator", () => {
 
     host.agentStart();
     host.setPhase("writing");
-    host.setPhase("tool", { toolName: "bash", running: 1 });
+    host.setPhase("tool", { toolName: "bash" });
 
     const showCall = show.mock.calls.findIndex(([visible]) => visible);
     const lastWrite = write.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY;
@@ -193,7 +193,7 @@ describe("working indicator", () => {
     host.setPhase("waiting");
     host.setPhase("thinking");
     host.setPhase("toolArgs");
-    host.setPhase("tool", { toolName: "bash", running: 1 });
+    host.setPhase("tool", { toolName: "bash" });
     host.setPhase("waiting");
 
     expect(host.workingVisibility).toEqual([]);
@@ -203,12 +203,12 @@ describe("working indicator", () => {
     const host = setup();
 
     host.agentStart();
-    host.setPhase("tool", { toolName: "bash", running: 1 });
+    host.setPhase("tool", { toolName: "bash" });
     vi.advanceTimersByTime(TICK_MS);
 
     expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "bash"));
 
-    host.setPhase("tool", { toolName: "grep", running: 2 });
+    host.setPhase("tool", { toolName: "grep" });
 
     expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "grep"));
 
@@ -247,7 +247,7 @@ describe("working indicator", () => {
     const host = setup();
 
     host.setPhase("writing");
-    host.setPhase("tool", { toolName: "bash", running: 1 });
+    host.setPhase("tool", { toolName: "bash" });
 
     expect(host.workingMessages).toEqual([]);
     expect(host.workingVisibility).toEqual([]);

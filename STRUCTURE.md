@@ -13,7 +13,7 @@ pi-extensions/
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
 │   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
-│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics, padded lines
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics, line cutting
 │   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
 │   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
@@ -30,7 +30,7 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # token and duration formatters
+│   │   ├── format.ts            # token, duration and error-text formatters
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,

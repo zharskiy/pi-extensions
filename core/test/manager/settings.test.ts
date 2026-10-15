@@ -66,6 +66,9 @@ describe("settings helpers", () => {
 
   it("reads files, treats a missing file as empty and reports unreadable JSON", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
+
+    roots.push(root);
+
     const user = userSettingsPath(join(root, "agent"), "example.json");
     const project = projectSettingsPath(join(root, "project"), "example.json");
 

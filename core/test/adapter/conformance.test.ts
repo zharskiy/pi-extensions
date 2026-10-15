@@ -154,7 +154,7 @@ describe("pi adapter conformance", () => {
     expect(requiredTui.filter((name) => !(name in tui))).toEqual([]);
   });
 
-  it("fires message_update only with assistantMessageEvent types the phase reducer knows", () => {
+  it("names only assistant event types pi has", () => {
     void (ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][]);
   });
 

@@ -146,7 +146,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   };
   let stale = false;
   let settling = false;
-  let currentPhase: { phase: Phase; detail: PhaseDetail } = { phase: "idle", detail: { running: 0 } };
+  let currentPhase: { phase: Phase; detail: PhaseDetail } = { phase: "idle", detail: {} };
 
   const control: SessionControl = {
     newSession: async (options) => {
@@ -484,7 +484,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       await spec.run(args, control);
     },
     shutdown: async (reason = "quit") => {
-      currentPhase = { phase: "idle", detail: { running: 0 } };
+      currentPhase = { phase: "idle", detail: {} };
 
       await shutdownHandlers.reduce<Promise<void>>(
         (chain, handler) => chain.then(() => handler(reason)),
@@ -511,13 +511,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         isPartial: false,
         isError: result?.isError ?? false,
         args: call,
-        outputPad: 1,
         invalidate: () => {},
         ...overrides,
       };
 
       const shelled = spec.renderShell === "box";
-      const inner = shelled ? Math.max(1, width - 2 * state.outputPad) : width;
+      const inner = shelled ? Math.max(1, width - 2) : width;
       const piTone: ToolTone = state.isPartial ? "pending" : state.isError ? "error" : "success";
       const resolve = (render: ToolRender | undefined) =>
         typeof render === "function" ? render(inner) : render;
@@ -548,12 +547,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     onPhase: (handler) => {
       phaseHandlers.push(handler);
     },
-    setPhase: (phase, detail = { running: 0 }) => {
-      if (
-        currentPhase.phase === phase &&
-        currentPhase.detail.toolName === detail.toolName &&
-        currentPhase.detail.running === detail.running
-      ) {
+    setPhase: (phase, detail = {}) => {
+      if (currentPhase.phase === phase && currentPhase.detail.toolName === detail.toolName) {
         return;
       }
 
@@ -733,7 +728,6 @@ export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
     defaultThinking: () => "medium",
-    estimateTokens: (text) => Math.ceil(text.length / 4),
     children: [],
     sessions: new Map(),
     spawn: async (spec) => {

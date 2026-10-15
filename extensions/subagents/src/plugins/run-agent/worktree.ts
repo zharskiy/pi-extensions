@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { errorText } from "../../components/format.ts";
 import type { Worktree, WorktreeCleanup } from "../../model/types.ts";
 
 type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
@@ -49,7 +50,7 @@ export const createWorktree = async (cwd: string, agentId: string): Promise<Work
   try {
     ignoreWorktrees(root);
   } catch (error) {
-    return { ok: false, error: (error as Error).message };
+    return { ok: false, error: errorText(error) };
   }
 
   const added = await runGit(cwd, ["worktree", "add", "-b", branch, path, base]);

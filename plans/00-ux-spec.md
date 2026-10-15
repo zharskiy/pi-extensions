@@ -231,7 +231,7 @@ Revised 2026-10-14: the panel sets no footer status (no `N agents` counter, no `
 
 ### Refresh
 
-Re-render on `agent:changed` throttled by `renderThrottleMs` (default 250), plus the shared ticker (section 2). Closed rows are cached by `id`, `version`, width, theme and the row layout (name column and info column).
+Re-render on `agent:changed` throttled by `renderThrottleMs` (default 250), plus the shared ticker (section 2). The rows are computed once per refresh and every render draws its lines from them; no row is cached across refreshes.
 
 ### Mockups
 
@@ -319,7 +319,7 @@ Open records are always listed. A closed record under an open root stays listed 
 | `Home` / `End` | First / last row. |
 | `Enter` | Open the selected agent's view inside this overlay (section 6). |
 | `x` | Open row: stop (grace); grace row: close now; closed row: clear it from the list. A closed root in `Completed` is cleared with its whole subtree; a closed child is cleared alone (with its own closed descendants, so no row loses its caller). |
-| `X` | Stop all: first press shows the feedback `Press X again to stop all agents`; a second `X` within `stopAllConfirmMs` (fixed 3 000) stops every open agent (each enters grace) and clears the feedback. With no open agent the feedback is `No running agents`. Any other key cancels the pending confirmation. |
+| `X` | Stop all: first press shows the feedback `Press X again to stop all agents`; a second `X` within `stopAllConfirmMs` (fixed 3 000) stops every queued or running agent (each running one enters grace) and clears the feedback. With no queued or running agent (agents in grace count as none) the feedback is `No running agents`. Any other key cancels the pending confirmation. |
 | `Esc` | Close the overlay (a pending stop-all confirmation is cancelled as well). |
 
 Feedback line: `warning` for `Press X again to stop all agents`, `muted` for `No running agents`; shown above the hint line for 3 000 ms (the confirmation window) or 2 000 ms (`No running agents`), then removed.

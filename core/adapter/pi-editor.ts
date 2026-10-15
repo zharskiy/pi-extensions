@@ -92,10 +92,11 @@ class HostEditor extends CustomEditor {
   }
 
   handleInput(data: string) {
+    const key = keyPress(data, this.keys);
     const capture = this.hooks.capture;
 
     if (capture) {
-      if (capture(keyPress(data, this.keys)) === "consumed") {
+      if (capture(key) === "consumed") {
         return;
       }
 
@@ -106,12 +107,12 @@ class HostEditor extends CustomEditor {
 
     const idle = !this.pendingKeyState() && this.getText() === "" && !this.isShowingAutocomplete();
 
-    if (idle && this.hooks.emptyLeft.size > 0 && this.keys.matches(data, "tui.editor.cursorLeft")) {
+    if (idle && this.hooks.emptyLeft.size > 0 && key.name === "left") {
       this.fire("emptyLeft");
       return;
     }
 
-    if (idle && this.hooks.emptyDown.size > 0 && this.keys.matches(data, "tui.editor.cursorDown")) {
+    if (idle && this.hooks.emptyDown.size > 0 && key.name === "down") {
       this.fire("emptyDown");
       return;
     }

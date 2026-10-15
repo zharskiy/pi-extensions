@@ -85,8 +85,8 @@ export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState =>
 
 export const detailOf = (state: PhaseState): PhaseDetail => {
   if (state.running.size === 0) {
-    return { running: 0 };
+    return {};
   }
 
-  return { toolName: [...state.running.values()].at(-1), running: state.running.size };
+  return { toolName: [...state.running.values()].at(-1) };
 };

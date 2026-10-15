@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
 import { createExtensionManager } from "../../../core/manager/extension-manager.ts";
+import { errorText } from "./components/format.ts";
 import { NAMESPACE } from "./model/paths.ts";
 import { defaultSettings, disabledPlugins, loadSettings } from "./model/settings.ts";
 import { plugins } from "./plugins.ts";
@@ -11,15 +12,19 @@ export default createPiExtension(
   (host, runtime, paths) => {
     const disabled = disabledPlugins(paths.agentDir);
     const settings = { ...defaultSettings(), disabledPlugins: disabled };
+    const reported = new Set<string>();
 
     host.onSessionStart((info) => {
       const loaded = loadSettings(info.agentDir, info.cwd, info.projectTrusted);
 
       Object.assign(settings, loaded.settings);
 
-      loaded.errors.forEach((message) => {
-        host.ui.notify(`${NAMESPACE} settings: ${message}`, "warning");
-      });
+      loaded.errors
+        .filter((message) => !reported.has(message))
+        .forEach((message) => {
+          reported.add(message);
+          host.ui.notify(`${NAMESPACE} settings: ${message}`, "warning");
+        });
     });
 
     const manager = createExtensionManager({
@@ -29,8 +34,7 @@ export default createPiExtension(
       plugins,
       root: paths.root,
       disabled,
-      onError: (error) =>
-        host.ui.notify(`${NAMESPACE}: ${error instanceof Error ? error.message : String(error)}`, "error"),
+      onError: (error) => host.ui.notify(`${NAMESPACE}: ${errorText(error)}`, "error"),
     });
 
     host.onSessionShutdown(async () => {

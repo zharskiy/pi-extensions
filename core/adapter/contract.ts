@@ -28,7 +28,6 @@ export type ToolRenderState = {
   isPartial: boolean;
   isError: boolean;
   args: unknown;
-  outputPad: number;
   invalidate(): void;
 };
 
@@ -117,7 +116,6 @@ export type OverlayApi = {
   close(): void;
   requestRender(): void;
   toolsKey: string;
-  wheelScrolling: boolean;
   createTranscript(options?: { owner?: string }): TranscriptPane;
   createScroll(): ScrollPane;
 };
@@ -194,7 +192,7 @@ export type CommandSpec = {
 
 export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "idle";
 
-export type PhaseDetail = { toolName?: string; running: number };
+export type PhaseDetail = { toolName?: string };
 
 export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
@@ -344,7 +342,6 @@ export type AgentRuntime = {
   readSession(file: string): SessionRecord;
   resolveModel(request: string | undefined): ModelResolution;
   defaultThinking(): string;
-  estimateTokens(text: string): number;
 };
 
 export const emptyUsage = (): UsageTotals => ({

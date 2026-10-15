@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   cutChars,
   elapsedOf,
+  errorText,
   formatDuration,
   formatTokens,
   formatToolUses,
@@ -11,15 +12,15 @@ import {
 import { isTerminal } from "../../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 
-const statsText = (record: AgentRecord, now: number) =>
+const statsText = (record: AgentRecord) =>
   [
     formatToolUses(record.toolCalls),
     `${formatTokens(record.tokens)} tokens`,
-    formatDuration(elapsedOf(record, now)),
+    formatDuration(elapsedOf(record, record.endedAt ?? record.createdAt)),
   ].join(" · ");
 
-const finishSummary = (record: AgentRecord, now: number) => {
-  const stats = statsText(record, now);
+const finishSummary = (record: AgentRecord) => {
+  const stats = statsText(record);
 
   if (record.state === "done") {
     return `Done (${stats})`;
@@ -47,7 +48,7 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
 
     return { resultText: text, resultPath };
   } catch (error) {
-    return { resultText: text, error: `result file not written: ${(error as Error).message}` };
+    return { resultText: text, error: `result file not written: ${errorText(error)}` };
   }
 };
 
@@ -67,7 +68,7 @@ export const chainTotals = (links: AgentRecord[]): AgentRecord => {
 const chainLine = (links: AgentRecord[]) =>
   `Chain: ${links.map((link) => link.id).join(" → ")} (${links.length} sessions)`;
 
-const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, links: AgentRecord[]) => {
+const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecord[]) => {
   const chained = links.length > 1;
   const lines = [
     `## ${record.id} (${record.agent}) - ${record.state}`,
@@ -78,7 +79,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, link
     lines.push(chainLine(links));
   }
 
-  lines.push(finishSummary(chained ? chainTotals(links) : record, now));
+  lines.push(finishSummary(chained ? chainTotals(links) : record));
 
   if (record.worktree) {
     lines.push(`Worktree: ${worktreeText(record.worktree)}`);
@@ -123,12 +124,12 @@ const countByState = (records: AgentRecord[]) => {
     .join(", ");
 };
 
-export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number, now: number) => {
+export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number) => {
   const byId = new Map(records.map((record) => [record.id, record]));
   const terminals = records.filter((record) => isTerminal(record, byId));
   const header = `[pi-subagents] Batch ${batchId} finished: ${countByState(terminals)}.`;
 
-  const entries = terminals.map((record) => resultEntry(record, inlineLimit, now, chainLinks(byId, record)));
+  const entries = terminals.map((record) => resultEntry(record, inlineLimit, chainLinks(byId, record)));
 
   entries.unshift(header);
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Host } from "../adapter/contract.ts";
+import { errorText } from "./format.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
@@ -92,7 +93,7 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
   try {
     return parseSettings(schema, JSON.parse(readFileSync(path, "utf8")), path);
   } catch (error) {
-    return { patch: {}, errors: [`${path}: ${error instanceof Error ? error.message : String(error)}`] };
+    return { patch: {}, errors: [`${path}: ${errorText(error)}`] };
   }
 };
 

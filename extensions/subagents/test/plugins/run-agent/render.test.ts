@@ -108,7 +108,6 @@ const renderResult = (
         isPartial: false,
         isError: result.isError ?? false,
         args: params,
-        outputPad: 1,
         invalidate: () => {},
         ...state,
       },
@@ -129,7 +128,6 @@ const renderCall = (
     isPartial,
     isError: false,
     args: params,
-    outputPad: 1,
     invalidate: () => {},
   });
 
@@ -247,16 +245,19 @@ describe("run_agent block", () => {
   });
 
   it("names only the keys of the enabled panel and list plugins", async () => {
-    const header = async (disabledPlugins: string[]) => {
+    const header = async (disabledPlugins: string[], width?: number) => {
       const harness = withWorker({ disabledPlugins });
       const result = await launched(harness, THREE);
 
-      return lines(harness.host.renderTool("run_agent", { call: { agents: THREE }, result }).result ?? "")[0];
+      return lines(
+        harness.host.renderTool("run_agent", { call: { agents: THREE }, result, width }).result ?? "",
+      )[0];
     };
 
     expect(await header([])).toBe("3 background agents launched (↓ to manage · ← to list)");
     expect(await header(["agent-view"])).toBe("3 background agents launched (↓ to manage)");
     expect(await header(["agent-panel"])).toBe("3 background agents launched (← to list)");
+    expect(await header(["agent-panel"], 40)).toBe("3 background agents launched");
     expect(await header(["agent-panel", "agent-view"])).toBe("3 background agents launched");
   });
 
@@ -520,7 +521,6 @@ describe("run_agent block", () => {
           isPartial: false,
           isError: false,
           args: { agents: THREE },
-          outputPad: 1,
           invalidate: () => {},
         },
         plainTheme,

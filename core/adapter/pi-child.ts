@@ -8,7 +8,6 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type ExtensionFactory,
-  estimateTokens,
   getAgentDir,
   type InlineExtension,
   ModelRuntime,
@@ -364,6 +363,5 @@ export const createPiRuntime = (
     readSession: (file) => readSessionFile(file, recordEntry),
     resolveModel: (request) => resolveFromCatalog(parent.ctx(), request, defaultProvider()).resolution,
     defaultThinking: () => parent.thinking(),
-    estimateTokens: (text) => estimateTokens({ role: "user", content: text, timestamp: 0 }),
   };
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatTokens } from "../../manager/format.ts";
+import { errorText, formatDuration, formatTokens } from "../../manager/format.ts";
 
 describe("shared formatters", () => {
   it("formats tokens as 999, 1.0k, 1.2M", () => {
@@ -20,5 +20,11 @@ describe("shared formatters", () => {
     expect(formatDuration(62_000)).toBe("1m 2s");
     expect(formatDuration(3_720_000)).toBe("1h 2m");
     expect(formatDuration(-5)).toBe("0s");
+  });
+
+  it("reads the message of an error and stringifies anything else", () => {
+    expect(errorText(new Error("boom"))).toBe("boom");
+    expect(errorText("plain")).toBe("plain");
+    expect(errorText(undefined)).toBe("undefined");
   });
 });

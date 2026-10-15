@@ -145,7 +145,7 @@ type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
-export type AgentViewService = {
+type AgentViewService = {
   open(id: string): Promise<void>;
 };
 

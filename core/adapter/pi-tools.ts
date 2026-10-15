@@ -64,7 +64,7 @@ const textComponent = (previous: unknown, text: ToolRender): Component => {
 
 const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
 
-class PaddedLines implements Component {
+class CutLines implements Component {
   private readonly source: ToolRender;
 
   constructor(source: ToolRender) {
@@ -112,7 +112,6 @@ const renderState = (context: RenderContext): ToolRenderState => ({
   isPartial: context.isPartial,
   isError: context.isError,
   args: context.args,
-  outputPad: context.outputPad,
   invalidate: context.invalidate,
 });
 
@@ -139,7 +138,7 @@ const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: T
   const box =
     context.lastComponent instanceof Box ? reuseBox(context.lastComponent, pad, bg) : new Box(pad, 1, bg);
 
-  box.addChild(new PaddedLines(text));
+  box.addChild(new CutLines(text));
 
   return box;
 };

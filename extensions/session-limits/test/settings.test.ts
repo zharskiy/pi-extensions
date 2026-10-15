@@ -1,14 +1,25 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { userSettingsPath, watchSettings } from "../../../core/manager/settings.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
 import { DEFAULT_RATIOS, SETTINGS_FILE, schema } from "../src/settings.ts";
 
+const roots: string[] = [];
+
+afterEach(() => {
+  roots.splice(0).forEach((root) => {
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
 describe("session-limits settings", () => {
   it("reports an invalid ratio and keeps the default", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-session-limits-settings-"));
+
+    roots.push(root);
+
     const agentDir = join(root, "agent");
     const file = userSettingsPath(agentDir, SETTINGS_FILE);
     const host = createFakeHost({ id: "s", cwd: join(root, "project"), agentDir, projectTrusted: false });
@@ -25,7 +36,5 @@ describe("session-limits settings", () => {
         level: "warning",
       },
     ]);
-
-    rmSync(root, { recursive: true, force: true });
   });
 });

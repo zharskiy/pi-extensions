@@ -97,9 +97,7 @@ describe("pi adapter", () => {
     const assistant = (type: string) => ({ message: { role: "assistant" }, assistantMessageEvent: { type } });
 
     host.onIdle(() => seen.push("idle handler"));
-    host.onPhase((phase, detail) =>
-      seen.push(detail.toolName ? `${phase} ${detail.toolName} ${detail.running}` : phase),
-    );
+    host.onPhase((phase, detail) => seen.push(detail.toolName ? `${phase} ${detail.toolName}` : phase));
 
     await fire("session_start", ctx);
     await fire("agent_start", ctx);
@@ -124,11 +122,29 @@ describe("pi adapter", () => {
       "waiting",
       "writing",
       "waiting",
-      "tool codemode 1",
+      "tool codemode",
       "waiting",
       "idle handler",
       "idle",
     ]);
+  });
+
+  it("emits a tool phase only when the named tool changes", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: string[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onPhase((phase, detail) => seen.push(detail.toolName ? `${phase} ${detail.toolName}` : phase));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+    await fire("tool_execution_start", ctx, { toolCallId: "a", toolName: "bash" });
+    await fire("tool_execution_start", ctx, { toolCallId: "b", toolName: "grep" });
+    await fire("tool_execution_end", ctx, { toolCallId: "a", toolName: "bash" });
+    await fire("tool_execution_end", ctx, { toolCallId: "b", toolName: "grep" });
+
+    expect(seen).toEqual(["waiting", "tool bash", "tool grep", "waiting"]);
   });
 
   it("resets the phase on shutdown without emitting", async () => {

@@ -5,8 +5,7 @@ import { type RowInput, type RowLayout, renderRow, rowLayout } from "../../src/c
 import type { AgentRecord } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
 
-const rec = (patch: Partial<AgentRecord> = {}): AgentRecord =>
-  agentRecord({ id: "explorer-1a2b", description: "Map the auth module", ...patch });
+const AUTH = { id: "explorer-1a2b", description: "Map the auth module" };
 
 const row = (record: AgentRecord, patch: Partial<RowInput> = {}): RowInput => ({
   record,
@@ -30,30 +29,44 @@ type Case = {
 const layoutOf = ({ input, now, width, layout }: Case) =>
   layout ?? rowLayout([input], now, width, input.selected, plainTheme);
 
-const grepping = rec({ tokens: 12_300, activity: "grep" });
-const queued = rec({ agent: "worker", description: "Rename parseDate callers", state: "queued" });
-const done = rec({ state: "done", endedAt: 65_000 });
-const failed = rec({
+const grepping = agentRecord({ ...AUTH, tokens: 12_300, activity: "grep" });
+const queued = agentRecord({
+  ...AUTH,
+  agent: "worker",
+  description: "Rename parseDate callers",
+  state: "queued",
+});
+const done = agentRecord({ ...AUTH, state: "done", endedAt: 65_000 });
+const failed = agentRecord({
+  ...AUTH,
   agent: "worker",
   description: "Fix the login redirect",
   state: "failed",
   endedAt: 130_000,
 });
-const grace = rec({ agent: "worker", description: "Fix the login redirect", state: "grace" });
-const stopped = rec({
+const grace = agentRecord({
+  ...AUTH,
+  agent: "worker",
+  description: "Fix the login redirect",
+  state: "grace",
+});
+const stopped = agentRecord({
+  ...AUTH,
   agent: "worker",
   description: "Fix the login redirect",
   state: "stopped",
   endedAt: 3_000,
 });
-const handedOff = rec({ state: "handoff", endedAt: 3_720_000 });
-const chained = rec({ chainIndex: 2, tokens: 30_100, activity: "bash" });
-const child = rec({
+const handedOff = agentRecord({ ...AUTH, state: "handoff", endedAt: 3_720_000 });
+const chained = agentRecord({ ...AUTH, chainIndex: 2, tokens: 30_100, activity: "bash" });
+const child = agentRecord({
+  ...AUTH,
   description: "Find callers of login",
   tokens: 1_100,
   activity: "read",
 });
-const reviewer = rec({
+const reviewer = agentRecord({
+  ...AUTH,
   agent: "reviewer",
   description: "Review the diff of PR 5",
   tokens: 8_200,
@@ -200,7 +213,7 @@ const cases: Case[] = [
   },
   {
     name: "omits zero tokens",
-    input: row(rec()),
+    input: row(agentRecord(AUTH)),
     now: 3_000,
     width: 80,
     expected: " ⠋ explorer  Map the auth module  3s",
@@ -222,7 +235,13 @@ describe("agent row", () => {
   it("advances the spinner of a running row with the clock", () => {
     const frames = [0, 250, 950, 1_000].map(
       (now) =>
-        renderRow(row(rec()), now, 80, plainTheme, rowLayout([row(rec())], now, 80, false, plainTheme))[1],
+        renderRow(
+          row(agentRecord(AUTH)),
+          now,
+          80,
+          plainTheme,
+          rowLayout([row(agentRecord(AUTH))], now, 80, false, plainTheme),
+        )[1],
     );
 
     expect(frames).toEqual(["⠋", "⠹", "⠏", "⠋"]);
@@ -253,7 +272,7 @@ describe("agent row", () => {
   });
 
   it("caps the description column at 48 and cuts longer descriptions", () => {
-    const long = row(rec({ state: "done", endedAt: 65_000, description: "d".repeat(60) }));
+    const long = row(agentRecord({ ...AUTH, state: "done", endedAt: 65_000, description: "d".repeat(60) }));
     const layout = rowLayout([long], 99_000, 200, false, plainTheme);
     const line = renderRow(long, 99_000, 200, plainTheme, layout);
 
@@ -276,7 +295,7 @@ describe("agent row", () => {
 
   it("keeps the info column still while the activity and elapsed change", () => {
     const at = (activity: string, tokens: number) =>
-      row(rec({ tokens, activity: activity, description: "d".repeat(60) }));
+      row(agentRecord({ ...AUTH, tokens, activity: activity, description: "d".repeat(60) }));
     const first = [at("ls", 1_000), row(child, { depth: 1 })];
     const second = [at("tool_search", 123_500), row(child, { depth: 1 })];
 
@@ -291,10 +310,10 @@ describe("agent row", () => {
   });
 
   it("keeps a readable description on a deep row next to a root with long stats", () => {
-    const root = row(rec({ tokens: 123_500, activity: "tool_search" }), {
+    const root = row(agentRecord({ ...AUTH, tokens: 123_500, activity: "tool_search" }), {
       openDescendants: 1,
     });
-    const deep = row(rec({ tokens: 10, activity: "ls" }), {
+    const deep = row(agentRecord({ ...AUTH, tokens: 10, activity: "ls" }), {
       depth: 4,
       ancestorsContinue: [true, true, true],
     });
@@ -309,7 +328,7 @@ describe("agent row", () => {
   });
 
   it("keeps the stats of a row with a short description", () => {
-    const short = row(rec({ description: "ab", tokens: 12_300, activity: "grep" }));
+    const short = row(agentRecord({ ...AUTH, description: "ab", tokens: 12_300, activity: "grep" }));
     const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, false, plainTheme));
 
     expect(line).toBe(" ⠋ explorer  ab  grep · 1m 5s · ↓ 12.3k tokens");
@@ -364,9 +383,9 @@ describe("agent row", () => {
   });
 
   it("measures the name column over names, chain suffixes and counts, capped at 24", () => {
-    const first = row(rec());
-    const second = row(rec({ chainIndex: 2 }), { openDescendants: 3 });
-    const third = row(rec({ agent: "a".repeat(40) }));
+    const first = row(agentRecord(AUTH));
+    const second = row(agentRecord({ ...AUTH, chainIndex: 2 }), { openDescendants: 3 });
+    const third = row(agentRecord({ ...AUTH, agent: "a".repeat(40) }));
     const nameCols = (rows: RowInput[]) => rowLayout(rows, 0, 80, false, plainTheme).nameCols;
 
     expect(nameCols([])).toBe(0);
@@ -376,7 +395,7 @@ describe("agent row", () => {
   });
 
   it("collapses whitespace in the description", () => {
-    const input = row(rec({ description: "a\n  b" }));
+    const input = row(agentRecord({ ...AUTH, description: "a\n  b" }));
 
     expect(
       renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, false, plainTheme)),
