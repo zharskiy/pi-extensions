@@ -20,7 +20,7 @@ import { createAgentView, headerLines } from "../../../src/plugins/agent-view/vi
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, spawnAgents } from "../../helpers/harness.ts";
 import { char, fakeOverlayApi, grepSession, key, plain, recordingTheme } from "../../helpers/overlay.ts";
 import { agentRecord } from "../../helpers/records.ts";
 
@@ -108,13 +108,7 @@ const closedAgent = (
 };
 
 const runningAgent = async (harness = setup()) => {
-  const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
-
-  await runAgent.execute({ agents: [{ agent: "explorer", task: "long job" }] }, { update: () => {} });
-  await flush();
-  harness.host.settle();
-
-  const record = harness.registry.list()[0] as AgentRecord;
+  const [record] = await spawnAgents(harness, 1);
 
   return { harness, record };
 };

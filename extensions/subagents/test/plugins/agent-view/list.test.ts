@@ -7,8 +7,7 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, spawnAgents } from "../../helpers/harness.ts";
 import { char, fakeOverlayApi, key, plain, recordingTheme } from "../../helpers/overlay.ts";
 
 initRenderTheme();
@@ -81,16 +80,7 @@ const setup = () => {
     return { view, state, lines: () => plain(view.render(width)) };
   };
 
-  const spawn = async (count: number) => {
-    const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
-    const agents = Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `job ${index}` }));
-
-    await runAgent.execute({ agents }, { update: () => {} });
-    await flush();
-    harness.host.settle();
-
-    return registry.list();
-  };
+  const spawn = (count: number) => spawnAgents(harness, count);
 
   return { ...harness, registry, create, finish, openList, spawn };
 };

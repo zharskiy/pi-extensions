@@ -3,20 +3,10 @@ import { errorText } from "../../components/format.ts";
 import { tickFor, watchAgents } from "../../components/refresh.ts";
 import type { TreeRow } from "../../components/tree.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { isClosed } from "../../model/types.ts";
 import { type PanelActions, panelKeyHandler, selectFirst } from "./keys.ts";
-import {
-  createClosedRowCache,
-  createPanelState,
-  type PanelActionsAvailable,
-  panelLines,
-  panelRows,
-  reconcile,
-} from "./model.ts";
+import { createPanelState, type PanelActionsAvailable, panelLines, panelRows, reconcile } from "./model.ts";
 
 const WIDGET_KEY = "pi-subagents-agents";
-
-type Rendered = { width: number; theme: ThemeLike; output: string; lines: string[] };
 
 export const agentPanelPlugin: Plugin = {
   id: "agent-panel",
@@ -24,10 +14,8 @@ export const agentPanelPlugin: Plugin = {
   enable: ({ host, bus, settings, services }) => {
     const registry = services.require("registry");
     const state = createPanelState();
-    const rowCache = createClosedRowCache();
+    let current: TreeRow[] = [];
     let handle: WidgetHandle | undefined;
-    let shownSignature = "";
-    let rendered: Rendered | undefined;
     let capture: (() => void) | undefined;
 
     const available = (): PanelActionsAvailable => ({
@@ -37,21 +25,8 @@ export const agentPanelPlugin: Plugin = {
 
     const rows = () => panelRows(registry.list(), Date.now(), settings, state.cleared);
 
-    const linesFor = (current: TreeRow[], width: number, theme: ThemeLike) =>
-      panelLines(current, state, Date.now(), width, theme, rowCache, available());
-
-    const render = (width: number, theme: ThemeLike) => {
-      const lines = linesFor(rows(), width, theme);
-      const output = lines.join("\n");
-
-      if (rendered && rendered.width === width && rendered.theme === theme && rendered.output === output) {
-        return rendered.lines;
-      }
-
-      rendered = { width, theme, output, lines };
-
-      return lines;
-    };
+    const render = (width: number, theme: ThemeLike) =>
+      panelLines(current, state, Date.now(), width, theme, available());
 
     const release = () => {
       const remove = capture;
@@ -60,17 +35,10 @@ export const agentPanelPlugin: Plugin = {
       remove?.();
     };
 
-    const signatureOf = (current: TreeRow[]) =>
-      current.every((row) => isClosed(row.record.state))
-        ? `${current.map((row) => `${row.record.id}@${row.record.version}`).join(",")}|${state.selectedId}|${state.top}`
-        : "";
-
     const refresh = () => {
-      const current = rows();
+      current = rows();
 
-      rowCache.prune(current);
-
-      if (reconcile(current, state).deselected) {
+      if (reconcile(current, state)) {
         release();
       }
 
@@ -80,35 +48,11 @@ export const agentPanelPlugin: Plugin = {
         }
 
         handle = undefined;
-        shownSignature = "";
-        rendered = undefined;
 
         return;
       }
 
-      if (!handle) {
-        handle = host.ui.setWidget(WIDGET_KEY, render);
-      }
-
-      const signature = signatureOf(current);
-
-      if (signature !== "" && signature === shownSignature) {
-        return;
-      }
-
-      shownSignature = signature;
-
-      if (rendered) {
-        const lines = linesFor(current, rendered.width, rendered.theme);
-        const output = lines.join("\n");
-
-        if (output === rendered.output) {
-          return;
-        }
-
-        rendered = { ...rendered, output, lines };
-      }
-
+      handle ??= host.ui.setWidget(WIDGET_KEY, render);
       handle.refresh();
     };
 
@@ -144,15 +88,13 @@ export const agentPanelPlugin: Plugin = {
       capture = host.ui.captureEditorKeys(panelKeyHandler(actions));
     };
 
-    const tickMs = () =>
-      tickFor(
-        rows().map((row) => row.record),
-        true,
-      );
-
     const unwatch = watchAgents(bus, {
       relevant: () => true,
-      tickMs,
+      tickMs: () =>
+        tickFor(
+          current.map((row) => row.record),
+          true,
+        ),
       throttleMs: () => settings.renderThrottleMs,
       onChange: refresh,
     });

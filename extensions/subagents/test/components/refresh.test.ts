@@ -150,6 +150,28 @@ describe("agent watch", () => {
     expect(onChange).toHaveBeenCalledTimes(4);
   });
 
+  it("arms the ticker from the cadence a trailing change computed", () => {
+    const bus = createBus<BusEvents>();
+    let seen: number | undefined;
+    let tick: number | undefined;
+    const onChange = vi.fn(() => {
+      tick = seen;
+    });
+
+    watchAgents(bus, { relevant: () => true, tickMs: () => tick, throttleMs: () => 250, onChange });
+
+    bus.emit("agent:changed", record("a"));
+    seen = 100;
+    bus.emit("agent:changed", record("a"));
+    vi.advanceTimersByTime(250);
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(300);
+
+    expect(onChange).toHaveBeenCalledTimes(5);
+  });
+
   it("clears everything on unsubscribe", () => {
     const bus = createBus<BusEvents>();
     const onChange = vi.fn();

@@ -1,4 +1,4 @@
-import type { AgentRecord } from "../../src/model/types.ts";
+import type { AgentRecord, NewAgent } from "../../src/model/types.ts";
 
 export const agentRecord = (patch: Partial<AgentRecord> & { id: string }): AgentRecord => ({
   agent: "explorer",
@@ -19,5 +19,16 @@ export const agentRecord = (patch: Partial<AgentRecord> & { id: string }): Agent
   contextLimit: 100_000,
   handoffRequested: false,
   version: 0,
+  ...patch,
+});
+
+export const newAgentInput = (dir: string, patch: Partial<NewAgent> = {}): NewAgent => ({
+  agent: "explorer",
+  description: "look around",
+  callerId: "main",
+  depth: 2,
+  batchId: "b-1",
+  dir,
+  contextLimit: 100_000,
   ...patch,
 });

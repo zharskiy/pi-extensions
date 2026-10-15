@@ -9,10 +9,12 @@ import {
   createFakeHost,
   createFakeRuntime,
   type FakeHost,
+  flush,
 } from "../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Plugin } from "../../src/model/plugin.ts";
 import { defaultSettings, type Settings } from "../../src/model/settings.ts";
+import type { RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");
 
@@ -82,4 +84,17 @@ export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = 
   });
 
   return { root, ...startPlugins(host, createFakeRuntime(shippedModels()), plugins, overrides) };
+};
+
+export const spawnAgents = async (
+  harness: Pick<ReturnType<typeof startPlugins>, "host" | "services">,
+  count: number,
+) => {
+  const agents = Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `job ${index}` }));
+
+  await harness.host.tool<RunAgentParams, unknown>("run_agent").execute({ agents }, { update: () => {} });
+  await flush();
+  harness.host.settle();
+
+  return harness.services.require("registry").list();
 };

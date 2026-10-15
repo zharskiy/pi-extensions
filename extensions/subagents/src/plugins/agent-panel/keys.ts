@@ -1,4 +1,4 @@
-import type { EditorKeyHandler } from "../../../../../core/adapter/contract.ts";
+import type { EditorKeyHandler, KeyPress } from "../../../../../core/adapter/contract.ts";
 import { carrySelection, type TreeRow } from "../../components/tree.ts";
 import { isClosed } from "../../model/types.ts";
 import { type PanelState, selectedIndex } from "./model.ts";
@@ -7,10 +7,14 @@ export type PanelActions = {
   rows(): TreeRow[];
   state: PanelState;
   refresh(): void;
-  view?: (id: string) => void;
-  stop?: (id: string) => void;
+  view(id: string): void;
+  stop(id: string): void;
   release(): void;
 };
+
+type Outcome = "consumed" | "release";
+
+type Press = { actions: PanelActions; rows: TreeRow[]; index: number };
 
 const deselect = (actions: PanelActions) => {
   actions.state.selectedId = undefined;
@@ -18,96 +22,72 @@ const deselect = (actions: PanelActions) => {
   actions.refresh();
 };
 
-const move = (actions: PanelActions, step: 1 | -1) => {
-  const rows = actions.rows();
-  const index = selectedIndex(rows, actions.state);
-
-  if (step < 0 && index <= 0) {
+const move = ({ actions, rows, index }: Press, step: 1 | -1): Outcome => {
+  if (step < 0 && index === 0) {
     deselect(actions);
-    return;
+    return "consumed";
   }
 
-  const next = rows[Math.min(index + step, rows.length - 1)];
-
-  actions.state.selectedId = next?.record.id;
+  actions.state.selectedId = rows[Math.min(index + step, rows.length - 1)].record.id;
   actions.refresh();
+
+  return "consumed";
 };
 
 const ids = (rows: TreeRow[]) => rows.map((row) => row.record.id);
 
-const clear = (actions: PanelActions, before: TreeRow[], id: string) => {
-  actions.state.cleared.add(id);
+const stopOrClear = ({ actions, rows, index }: Press): Outcome => {
+  const { record } = rows[index];
 
-  const next = carrySelection(ids(before), ids(actions.rows()), id);
+  if (!isClosed(record.state)) {
+    actions.stop(record.id);
+    return "consumed";
+  }
+
+  actions.state.cleared.add(record.id);
+
+  const next = carrySelection(ids(rows), ids(actions.rows()), record.id);
 
   if (!next) {
     deselect(actions);
-    return;
+    return "consumed";
   }
 
   actions.state.selectedId = next;
   actions.refresh();
+
+  return "consumed";
 };
 
-const stopOrClear = (actions: PanelActions) => {
-  const rows = actions.rows();
-  const record = rows[selectedIndex(rows, actions.state)]?.record;
-
-  if (!record) {
-    return;
-  }
-
-  if (isClosed(record.state)) {
-    clear(actions, rows, record.id);
-    return;
-  }
-
-  actions.stop?.(record.id);
+const names: Partial<Record<KeyPress["name"], (press: Press) => Outcome>> = {
+  down: (press) => move(press, 1),
+  up: (press) => move(press, -1),
+  enter: ({ actions, rows, index }) => {
+    deselect(actions);
+    actions.view(rows[index].record.id);
+    return "consumed";
+  },
+  escape: ({ actions }) => {
+    deselect(actions);
+    return "consumed";
+  },
 };
+
+const chars: Record<string, (press: Press) => Outcome> = { x: stopOrClear };
 
 export const panelKeyHandler =
   (actions: PanelActions): EditorKeyHandler =>
   (key) => {
-    if (selectedIndex(actions.rows(), actions.state) < 0) {
+    const rows = actions.rows();
+    const index = selectedIndex(rows, actions.state);
+    const binding = key.name === "other" && key.char ? chars[key.char] : names[key.name];
+
+    if (index < 0 || !binding) {
       deselect(actions);
       return "release";
     }
 
-    if (key.name === "down") {
-      move(actions, 1);
-      return "consumed";
-    }
-
-    if (key.name === "up") {
-      move(actions, -1);
-      return "consumed";
-    }
-
-    if (key.name === "enter") {
-      const id = actions.state.selectedId;
-
-      deselect(actions);
-
-      if (id !== undefined) {
-        actions.view?.(id);
-      }
-
-      return "consumed";
-    }
-
-    if (key.name === "escape") {
-      deselect(actions);
-      return "consumed";
-    }
-
-    if (key.name === "other" && key.char === "x") {
-      stopOrClear(actions);
-      return "consumed";
-    }
-
-    deselect(actions);
-
-    return "release";
+    return binding({ actions, rows, index });
   };
 
 export const selectFirst = (actions: PanelActions): boolean => {

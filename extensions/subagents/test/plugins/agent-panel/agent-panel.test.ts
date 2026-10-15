@@ -9,14 +9,13 @@ import {
 } from "../../../../../core/test/helpers/fakes.ts";
 import type { Plugin } from "../../../src/model/plugin.ts";
 import type { Settings } from "../../../src/model/settings.ts";
-import type { AgentRunner, NewAgent, ServiceMap } from "../../../src/model/types.ts";
+import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../src/model/types.ts";
 import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { createHarness, startPlugins, tempDir } from "../../helpers/harness.ts";
+import { newAgentInput } from "../../helpers/records.ts";
 
 const WIDGET = "pi-subagents-agents";
-
-const STATUS = "pi-subagents";
 
 const HINT = " enter to view · x to stop · esc to deselect";
 
@@ -47,16 +46,7 @@ const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {
   const { host } = harness;
 
   const newAgent = (patch: Partial<NewAgent> = {}) =>
-    registry.create({
-      agent: "explorer",
-      description: "look around",
-      callerId: "main",
-      depth: 2,
-      batchId: "b-1",
-      dir: join(harness.root, "agents"),
-      contextLimit: 100_000,
-      ...patch,
-    });
+    registry.create(newAgentInput(join(harness.root, "agents"), patch));
 
   const running = (id: string) => registry.update(id, { state: "running", startedAt: Date.now() });
   const widget = () => host.widgets.get(WIDGET);
@@ -246,6 +236,34 @@ describe("agent panel", () => {
 
     expect(panel.widget()).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("x keeps the selection on a running row it stops", () => {
+    const panel = setup();
+
+    Array.from({ length: 2 }, () => panel.running(panel.newAgent().id));
+    panel.host.pressEmptyDown();
+    panel.key("down");
+
+    const before = pointed(panel.lines());
+
+    expect(panel.type("x")).toBe("consumed");
+    expect(panel.stop).toHaveBeenCalledWith(panel.registry.list()[1].id);
+    expect(pointed(panel.lines())).toEqual(before);
+    expect(panel.host.editorCapture).toBeDefined();
+  });
+
+  it("x on a grace row closes it now through the runner", () => {
+    const panel = setup();
+    const record = panel.newAgent();
+
+    panel.registry.update(record.id, { state: "grace" });
+    panel.host.pressEmptyDown();
+
+    expect(panel.lines().at(-2)).toBe(" enter to view · x to close now · esc to deselect");
+    expect(panel.type("x")).toBe("consumed");
+    expect(panel.stop).toHaveBeenCalledWith(record.id);
+    expect(pointed(panel.lines())).toHaveLength(1);
   });
 
   it("x on a done row clears it and keeps the selection on the next row", () => {
@@ -443,9 +461,13 @@ describe("agent panel", () => {
 
     const queuedStart = panel.host.widgetRefreshes;
 
-    vi.advanceTimersByTime(1_000);
+    vi.advanceTimersByTime(999);
 
     expect(panel.host.widgetRefreshes).toBe(queuedStart);
+
+    vi.advanceTimersByTime(1);
+
+    expect(panel.host.widgetRefreshes).toBe(queuedStart + 1);
 
     panel.running(record.id);
 
@@ -471,92 +493,110 @@ describe("agent panel", () => {
     expect(idle.lines().join("\n")).toContain("waiting");
   });
 
-  it("ticks once a second with only queued rows", () => {
+  it("renders from the rows of the last refresh: ten render calls between ticks read the registry zero times", () => {
     const panel = setup();
 
-    panel.newAgent();
+    panel.running(panel.newAgent().id);
 
     const list = vi.spyOn(panel.registry, "list");
-
-    vi.advanceTimersByTime(999);
+    const frames = Array.from({ length: 10 }, () => panel.lines());
 
     expect(list).not.toHaveBeenCalled();
+    expect(new Set(frames.map((lines) => lines.join("\n"))).size).toBe(1);
+
+    vi.advanceTimersByTime(100);
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(panel.lines()).not.toEqual(frames[0]);
+  });
+
+  it("builds the rows once per throttle window across five updates", () => {
+    const panel = setup({ settings: { renderThrottleMs: 250 } });
+    const record = panel.newAgent();
+
+    vi.advanceTimersByTime(500);
+
+    const start = panel.host.widgetRefreshes;
+
+    Array.from({ length: 5 }, (_, index) => panel.registry.update(record.id, { tokens: (index + 1) * 100 }));
+
+    expect(panel.host.widgetRefreshes).toBe(start + 1);
+
+    vi.advanceTimersByTime(249);
+
+    expect(panel.host.widgetRefreshes).toBe(start + 1);
 
     vi.advanceTimersByTime(1);
 
-    expect(list).toHaveBeenCalled();
+    expect(panel.host.widgetRefreshes).toBe(start + 2);
   });
 
-  it("skips the redraw when the panel output is unchanged", () => {
+  it.each([
+    ["queued", " enter to view · x to stop · esc to deselect"],
+    ["running", " enter to view · x to stop · esc to deselect"],
+    ["grace", " enter to view · x to close now · esc to deselect"],
+    ["done", " enter to view · x to clear · esc to deselect"],
+  ] as [AgentState, string][])("hints the actions for a selected %s row", (state, hint) => {
     const panel = setup();
     const record = panel.newAgent();
-    const first = panel.lines();
-    const start = panel.host.widgetRefreshes;
 
-    panel.registry.update(record.id, { tokens: 500 });
-
-    expect(panel.host.widgetRefreshes).toBe(start);
-    expect(panel.lines()).toBe(first);
-
-    panel.running(record.id);
-
-    expect(panel.host.widgetRefreshes).toBe(start + 1);
-  });
-
-  it("stops redrawing on ticks once every row is closed and unchanged", () => {
-    const panel = setup();
-    const first = panel.newAgent();
-    const second = panel.newAgent();
-
-    panel.running(first.id);
-    vi.advanceTimersByTime(3_000);
-
-    const whileOpen = panel.host.widgetRefreshes;
-
-    expect(whileOpen).toBeGreaterThanOrEqual(3);
-
-    panel.registry.close(first.id, { state: "done" });
-    panel.registry.close(second.id, { state: "done" });
-
-    const afterClose = panel.host.widgetRefreshes;
-
-    vi.advanceTimersByTime(5_000);
-
-    expect(panel.host.widgetRefreshes).toBe(afterClose);
+    if (state === "done") {
+      panel.registry.close(record.id, { state });
+    } else {
+      panel.registry.update(record.id, { state });
+    }
 
     panel.host.pressEmptyDown();
 
-    const selected = panel.host.widgetRefreshes;
-
-    panel.key("down");
-
-    expect(panel.host.widgetRefreshes).toBe(selected + 1);
+    expect(panel.lines().at(-2)).toBe(hint);
   });
 
-  it("reuses the closed-row cache across renders", () => {
+  it("aligns the info column across the window and keeps it when the window scrolls", () => {
     const panel = setup();
-    const record = panel.newAgent();
-    let calls = 0;
-    const counting: ThemeLike = {
-      ...plainTheme,
-      fg: (_token, text) => {
-        calls += 1;
-        return text;
-      },
-      bold: (text) => {
-        calls += 1;
-        return text;
-      },
-    };
 
-    panel.registry.close(record.id, { state: "done" });
-    panel.lines(80, counting);
+    Array.from({ length: 7 }, (_, index) =>
+      panel.running(panel.newAgent({ description: "d".repeat(10 + index * 3) }).id),
+    );
+    panel.host.pressEmptyDown();
 
-    const before = calls;
+    const infoColumns = (lines: string[]) =>
+      lines.filter((line) => line.includes("⠋")).map((line) => line.lastIndexOf("  ") + 2);
+    const top = infoColumns(panel.lines(120));
 
-    panel.lines(80, counting);
+    Array.from({ length: 6 }, () => panel.key("down"));
 
-    expect(calls).toBe(before);
+    const bottom = infoColumns(panel.lines(120));
+
+    expect(top).toHaveLength(5);
+    expect(new Set([...top, ...bottom]).size).toBe(1);
+    expect(top[0]).toBe(" › ".length + 2 + plainTheme.width("explorer") + 2 + 28 + 2);
+  });
+
+  it("puts the scroll markers in the glyph column and ends every line before the last column", () => {
+    const panel = setup();
+
+    Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
+    panel.host.pressEmptyDown();
+    Array.from({ length: 5 }, () => panel.key("down"));
+
+    const lines = panel.lines();
+    const glyphColumn = lines[1].indexOf("⠋");
+
+    expect(glyphColumn).toBe(1);
+    expect(lines[0].indexOf("↑")).toBe(glyphColumn);
+    expect(lines[6].indexOf("↓")).toBe(glyphColumn);
+
+    [80, 30].forEach((width) => {
+      const drawn = panel.lines(width);
+
+      drawn.forEach((line) => {
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
+      });
+      expect(drawn.slice(0, -1).every((line) => line.startsWith(" "))).toBe(true);
+      expect(drawn.at(-1)).toBe("");
+    });
+
+    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop ·…");
   });
 
   it("degrades without agent-view and run-agent", () => {
@@ -597,15 +637,7 @@ describe("agent panel", () => {
 
     const { services } = startPlugins(host, createFakeRuntime(), [agentRegistryPlugin, agentPanelPlugin]);
 
-    services.require("registry").create({
-      agent: "explorer",
-      description: "look around",
-      callerId: "main",
-      depth: 2,
-      batchId: "b-1",
-      dir: join(root, "agents"),
-      contextLimit: 100_000,
-    });
+    services.require("registry").create(newAgentInput(join(root, "agents")));
 
     expect(host.pressEmptyDown()).toBe(false);
     expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(2);
@@ -622,18 +654,5 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
-  });
-});
-
-describe("footer status", () => {
-  it("sets no footer status", () => {
-    const panel = setup();
-    const done = panel.newAgent();
-
-    panel.newAgent();
-    panel.registry.close(done.id, { state: "done" });
-    vi.advanceTimersByTime(60_000);
-
-    expect(panel.host.statuses.has(STATUS)).toBe(false);
   });
 });

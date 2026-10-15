@@ -60,7 +60,6 @@ type AgentWatch = {
 };
 
 export const watchAgents = (bus: Bus, watch: AgentWatch): (() => void) => {
-  const throttled = createThrottle(watch.onChange, watch.throttleMs);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let armedMs: number | undefined;
 
@@ -87,6 +86,11 @@ export const watchAgents = (bus: Bus, watch: AgentWatch): (() => void) => {
     watch.onChange();
     arm();
   };
+
+  const throttled = createThrottle(() => {
+    watch.onChange();
+    arm();
+  }, watch.throttleMs);
 
   const off = bus.on("agent:changed", (record) => {
     if (watch.relevant(record)) {

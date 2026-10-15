@@ -1,24 +1,22 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { type RowInput, type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
+import { renderRow, rowLayout } from "../../components/agent-row.ts";
 import { innerWidth, PAD, SEP } from "../../components/format.ts";
 import { stopHint } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
 import type { Settings } from "../../model/settings.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
 
-export const WINDOW = 5;
+const WINDOW = 5;
 
-export type PanelSettings = Pick<Settings, "doneLingerMs" | "failedLingerMs">;
+type PanelSettings = Pick<Settings, "doneLingerMs" | "failedLingerMs">;
 
 export type PanelState = { selectedId?: string; top: number; cleared: Set<string> };
 
 export type PanelActionsAvailable = { view: boolean; stop: boolean };
 
-export type RowRenderer = typeof renderRow;
-
 export const createPanelState = (): PanelState => ({ top: 0, cleared: new Set() });
 
-export const isVisible = (
+const isVisible = (
   record: AgentRecord,
   now: number,
   settings: PanelSettings,
@@ -56,7 +54,7 @@ const clampTop = (rows: TreeRow[], state: PanelState) => {
   state.top = Math.min(Math.max(0, state.top), Math.max(0, rows.length - WINDOW));
 };
 
-export const reconcile = (rows: TreeRow[], state: PanelState): { deselected: boolean } => {
+export const reconcile = (rows: TreeRow[], state: PanelState): boolean => {
   const index = selectedIndex(rows, state);
   const deselected = state.selectedId !== undefined && index < 0;
 
@@ -74,17 +72,17 @@ export const reconcile = (rows: TreeRow[], state: PanelState): { deselected: boo
 
   clampTop(rows, state);
 
-  return { deselected };
+  return deselected;
 };
 
-export const windowOf = (rows: TreeRow[], state: PanelState) => {
+const windowOf = (rows: TreeRow[], state: PanelState) => {
   const start = state.top;
   const end = Math.min(rows.length, state.top + WINDOW);
 
-  return { start, end, above: start, below: rows.length - end };
+  return { start, end, below: rows.length - end };
 };
 
-export const hintText = (record: AgentRecord, actions: PanelActionsAvailable): string =>
+const hintText = (record: AgentRecord, actions: PanelActionsAvailable): string =>
   [
     actions.view ? "enter to view" : undefined,
     actions.stop || isClosed(record.state) ? stopHint(record.state) : undefined,
@@ -99,25 +97,20 @@ export const panelLines = (
   now: number,
   width: number,
   theme: ThemeLike,
-  row: RowRenderer,
   actions: PanelActionsAvailable,
 ): string[] => {
-  if (rows.length === 0) {
-    return [];
-  }
-
-  const { start, end, above, below } = windowOf(rows, state);
+  const { start, end, below } = windowOf(rows, state);
   const marker = (text: string) => `${PAD}${theme.fg("dim", text)}`;
   const selected = rows.find((entry) => entry.record.id === state.selectedId);
   const layout = rowLayout(rows, now, width, selected !== undefined, theme);
   const lines = rows
     .slice(start, end)
     .map((entry) =>
-      row({ ...entry, selected: entry.record.id === state.selectedId }, now, width, theme, layout),
+      renderRow({ ...entry, selected: entry.record.id === state.selectedId }, now, width, theme, layout),
     );
 
-  if (above > 0) {
-    lines.unshift(marker(`↑ ${above} more`));
+  if (start > 0) {
+    lines.unshift(marker(`↑ ${start} more`));
   }
 
   if (below > 0) {
@@ -131,54 +124,4 @@ export const panelLines = (
   lines.push("");
 
   return lines;
-};
-
-type CachedRow = { key: string; theme: ThemeLike; line: string };
-
-const cacheKey = (input: RowInput, width: number, layout: RowLayout) =>
-  [
-    input.record.version,
-    width,
-    input.selected,
-    input.depth,
-    input.last,
-    input.ancestorsContinue.join(""),
-    input.openDescendants,
-    layout.nameCols,
-    layout.infoAt,
-  ].join("|");
-
-export const createClosedRowCache = (): RowRenderer & { prune(rows: TreeRow[]): void } => {
-  const cache = new Map<string, CachedRow>();
-
-  const row: RowRenderer = (input, now, width, theme, layout) => {
-    if (!isClosed(input.record.state)) {
-      return renderRow(input, now, width, theme, layout);
-    }
-
-    const key = cacheKey(input, width, layout);
-    const cached = cache.get(input.record.id);
-
-    if (cached && cached.key === key && cached.theme === theme) {
-      return cached.line;
-    }
-
-    const line = renderRow(input, now, width, theme, layout);
-
-    cache.set(input.record.id, { key, theme, line });
-
-    return line;
-  };
-
-  const prune = (rows: TreeRow[]) => {
-    const ids = new Set(rows.map((entry) => entry.record.id));
-
-    cache.forEach((_, id) => {
-      if (!ids.has(id)) {
-        cache.delete(id);
-      }
-    });
-  };
-
-  return Object.assign(row, { prune });
 };
