@@ -39,7 +39,7 @@ type PromptRecordData = {
   model?: string;
 };
 
-type Replay = { sections: Map<string, string>; tools: Map<string, PromptTool> };
+export type Replay = { sections: Map<string, string>; tools: Map<string, PromptTool> };
 
 const replaySystemMessage = (replay: Replay, message: RawMessage) => {
   Object.entries(message.sections ?? {}).forEach(([name, text]) => {
@@ -62,6 +62,18 @@ const replaySystemMessage = (replay: Replay, message: RawMessage) => {
       parameters: tool.parameters,
     });
   });
+};
+
+export const replaySystemMessages = (messages: readonly unknown[]): Replay => {
+  const replay: Replay = { sections: new Map(), tools: new Map() };
+
+  (messages as RawMessage[])
+    .filter((message) => message.role === "system")
+    .forEach((message) => {
+      replaySystemMessage(replay, message);
+    });
+
+  return replay;
 };
 
 const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
@@ -158,13 +170,9 @@ export const readSessionEntries = (file: string): unknown[] => parseEntries(read
 export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord => {
   const entries = parseEntries(lines);
 
-  const replay: Replay = { sections: new Map(), tools: new Map() };
-
-  entries
-    .filter((entry) => entry.type === "message" && entry.message?.role === "system")
-    .forEach((entry) => {
-      replaySystemMessage(replay, entry.message as RawMessage);
-    });
+  const replay = replaySystemMessages(
+    entries.filter((entry) => entry.type === "message").map((entry) => entry.message ?? {}),
+  );
 
   const recordData = entries
     .filter((entry) => entry.type === "custom" && entry.customType === recordEntry)

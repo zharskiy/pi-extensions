@@ -21,6 +21,7 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
+import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
@@ -445,6 +446,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       dialogHandlers.push(handler);
     },
     ...footerHost(pi, state),
+    ...contextHost(pi, state),
   };
 };
 

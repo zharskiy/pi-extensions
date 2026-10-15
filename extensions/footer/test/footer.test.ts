@@ -36,6 +36,18 @@ describe("footer", () => {
     ]);
   });
 
+  it("shows the session cache hit read on each render once the session reported cache activity", () => {
+    const { host, lines } = setup();
+
+    host.mainUsage = { input: 1_000, cacheRead: 0, cacheWrite: 0, output: 10 };
+
+    expect(lines()[1]).toBe(" 50.0k · test-model (200k context)");
+
+    host.mainUsage = { input: 100, cacheRead: 870, cacheWrite: 30, output: 10 };
+
+    expect(lines()[1]).toBe(" 50.0k · cache 87% · test-model (200k context)");
+  });
+
   it("shows the published totals and refreshes", () => {
     const { host, lines } = setup();
 

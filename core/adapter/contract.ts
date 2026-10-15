@@ -7,7 +7,21 @@ export type UsageTotals = {
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 };
 
-export type ThemeToken = "accent" | "muted" | "dim" | "success" | "warning" | "error" | "text";
+export type ThemeToken =
+  | "accent"
+  | "muted"
+  | "dim"
+  | "success"
+  | "warning"
+  | "error"
+  | "text"
+  | "syntaxComment"
+  | "syntaxKeyword"
+  | "syntaxFunction"
+  | "syntaxString"
+  | "syntaxNumber"
+  | "syntaxType"
+  | "mdHeading";
 
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
@@ -198,6 +212,32 @@ export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
 
+export type RequestUsage = { input: number; cacheRead: number; cacheWrite: number; output: number };
+
+export type ContextPart = { name: string; tokens: number };
+
+export type ContextBreakdown = {
+  model: string | undefined;
+  window: number;
+  total: number | null;
+  reserve: number;
+  systemPrompt: number;
+  memoryFiles: ContextPart[];
+  skills: ContextPart[];
+  tools: { builtin: ContextPart[]; mcp: ContextPart[]; extension: ContextPart[] };
+  messages: {
+    count: number;
+    user: number;
+    assistant: number;
+    thinking: number;
+    toolCalls: number;
+    toolResults: number;
+    other: number;
+  };
+};
+
+export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
+
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
 
 export type Host = {
@@ -217,6 +257,7 @@ export type Host = {
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;
   appendEntry(customType: string, data: unknown): void;
+  registerEntryRenderer(customType: string, render: EntryRender): void;
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
@@ -227,6 +268,9 @@ export type Host = {
   model(): ModelInfo | undefined;
   thinkingLevel(): string;
   sessionName(): string | undefined;
+  contextBreakdown(): ContextBreakdown | undefined;
+  lastRequestUsage(): RequestUsage | undefined;
+  mainRequestUsage(): RequestUsage;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";

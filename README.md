@@ -9,7 +9,8 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [notifications](extensions/notifications/README.md): one terminal notification when pi waits for your input (after the work and any background agents are done) and one when a dialog waits unanswered.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 - [composer](extensions/composer/README.md): the input drawn between two full-width rules in the editor's colour, with a chevron prompt.
-- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
+- [context](extensions/context/README.md): `/context` prints what fills the context window into the transcript, like Claude Code's: a usage grid, the estimated tokens per category (system prompt, tools, memory files, skills, messages, free space, compaction reserve), the cache hit rate of the last turn and the session, and every file, skill and tool with `Ctrl+O`.
+- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, session cache hit rate, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
 
 ## Install
 
@@ -28,6 +29,7 @@ pi -e ./pi-extensions/extensions/working-indicator/src/index.ts
 pi -e ./pi-extensions/extensions/notifications/src/index.ts
 pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
 pi -e ./pi-extensions/extensions/composer/src/index.ts
+pi -e ./pi-extensions/extensions/context/src/index.ts
 pi -e ./pi-extensions/extensions/footer/src/index.ts
 ```
 

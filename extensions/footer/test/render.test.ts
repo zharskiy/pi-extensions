@@ -26,6 +26,7 @@ const state = (patch: Partial<FooterState> = {}): FooterState => ({
   cwd: "/work/my-project",
   sessionName: undefined,
   totals,
+  cache: undefined,
   ...patch,
 });
 
@@ -107,6 +108,25 @@ describe("renderFooter", () => {
     expect(at(95)).toContain("<error>1.0k");
     expect(at(80)).toContain("<warning>1.0k");
     expect(at(50)).not.toMatch(/<(error|warning)>/);
+  });
+
+  it("shows the session cache hit after the context tokens, coloured by rate", () => {
+    expect(statsOf({ cache: 91.4 })).toBe(" 150.1k · cache 91% · $4.00 · test-model (1M context)");
+
+    const painted = (cache: number) =>
+      renderFooter(tokenTheme, state({ cache }), { branch: null, statuses: new Map() })[1];
+
+    expect(painted(91)).toContain("<dim>cache <success>91%");
+    expect(painted(50)).toContain("<warning>50%");
+    expect(painted(12)).toContain("<error>12%");
+  });
+
+  it("drops the cache segment first when the line is too narrow", () => {
+    const at = (width: number) =>
+      plain(renderFooter(plainTheme, state({ cache: 91 }), { branch: null, statuses: new Map() }, width)[1]);
+
+    expect(at(53)).toBe(" 150.1k · cache 91% · $4.00 · test-model (1M context)");
+    expect(at(52)).toBe(" 150.1k · $4.00 · test-model (1M context)");
   });
 
   it("marks unknown context and a missing model", () => {
