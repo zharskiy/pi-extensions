@@ -13,7 +13,7 @@ import {
 import { createFakeHost } from "../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Settings } from "../../src/model/settings.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/tools.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 import { plugins } from "../../src/plugins.ts";
 import { PACKAGE_ROOT, startPlugins, tempDir, wakeTexts } from "./harness.ts";
 

@@ -1,10 +1,4 @@
-import type {
-  AnyToolSpec,
-  KeyPress,
-  OverlayApi,
-  ThemeLike,
-  ViewComponent,
-} from "../../../../../core/adapter/contract.ts";
+import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
   alignRight,
@@ -31,7 +25,6 @@ import { requestLineCount, requestLines } from "./request-block.ts";
 export type ViewDeps = {
   load(): ViewData;
   from: AgentViewOrigin;
-  tools: AnyToolSpec[];
   reserveTokens: number;
   stop(): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void): () => void;
@@ -131,7 +124,7 @@ const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.se
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const scroll = api.createScroll();
   let data = deps.load();
-  let transcript = api.createTranscript({ tools: deps.tools, owner: data.record.id });
+  let transcript = api.createTranscript({ owner: data.record.id });
   let transcriptKey = transcriptKeyOf(data);
   let toolsExpanded = false;
   let requestExpanded = false;
@@ -153,7 +146,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     if (key !== transcriptKey) {
       transcriptKey = key;
       requestExpanded = false;
-      transcript = api.createTranscript({ tools: deps.tools, owner: data.record.id });
+      transcript = api.createTranscript({ owner: data.record.id });
       transcript.setToolsExpanded(toolsExpanded);
     }
 

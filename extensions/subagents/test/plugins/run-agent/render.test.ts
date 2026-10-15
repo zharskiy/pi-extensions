@@ -2,21 +2,19 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike, ToolRender, ToolResult } from "../../../../../core/adapter/contract.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import type { AgentRecord, AgentRegistry } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import { BLOCK_WIDTH } from "../../../src/plugins/run-agent/render.ts";
-import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import {
+  BLOCK_WIDTH,
   type RunAgentDetails,
   type RunAgentParams,
-  runAgentTool,
-} from "../../../src/plugins/run-agent/tools.ts";
+} from "../../../src/plugins/run-agent/render.ts";
+import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
+import { createPendingCalls, runAgentTool } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness, tempDir } from "../../helpers/harness.ts";
-
-const NOW = 250;
 
 type Agent = RunAgentParams["agents"][number];
 
@@ -40,11 +38,18 @@ const WORKER = [
   "Work.",
 ].join("\n");
 
+const toolDeps = (runner: Runner, registry: AgentRegistry) => ({
+  runner,
+  registry,
+  calls: createPendingCalls(),
+  hints: { manage: () => true, list: () => true },
+});
+
 const setup = (overrides = {}) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;
-  const tool = runAgentTool({ runner, registry, now: () => NOW }, "run agents");
+  const tool = runAgentTool(toolDeps(runner, registry), "run agents");
 
   return { ...harness, registry, runner, tool };
 };
@@ -241,6 +246,74 @@ describe("run_agent block", () => {
     );
   });
 
+  it("names only the keys of the enabled panel and list plugins", async () => {
+    const header = async (disabledPlugins: string[]) => {
+      const harness = withWorker({ disabledPlugins });
+      const result = await launched(harness, THREE);
+
+      return lines(harness.host.renderTool("run_agent", { call: { agents: THREE }, result }).result ?? "")[0];
+    };
+
+    expect(await header([])).toBe("3 background agents launched (↓ to manage · ← to list)");
+    expect(await header(["agent-view"])).toBe("3 background agents launched (↓ to manage)");
+    expect(await header(["agent-panel"])).toBe("3 background agents launched (← to list)");
+    expect(await header(["agent-panel", "agent-view"])).toBe("3 background agents launched");
+  });
+
+  it("points Status unavailable at /agents only while the list plugin is on", () => {
+    const details: RunAgentDetails = {
+      batchId: "b-old",
+      ids: ["explorer-abc"],
+      agents: [{ id: "explorer-abc", agent: "explorer", description: "Map the auth module" }],
+    };
+    const status = (disabledPlugins: string[]) =>
+      lines(
+        setup({ disabledPlugins }).host.renderTool("run_agent", {
+          call: { agents: [THREE[0]] },
+          result: { text: "Started batch", details },
+        }).result ?? "",
+      )[2];
+
+    expect(status([])).toBe("   Status unavailable · /agents explorer-abc");
+    expect(status(["agent-view"])).toBe("   Status unavailable");
+  });
+
+  it("draws no hint for a batch an agent started", async () => {
+    const harness = withWorker();
+
+    await launched(harness, [item("general", "Lead the fix")]);
+
+    const [parent] = ids(harness);
+    const nested = harness.runtime
+      .child(parent)
+      .spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as typeof harness.tool;
+    const agents = [item("explorer", "Find the callers")];
+    const result = await nested.execute({ agents }, { update: () => {} });
+
+    expect(lines(renderResult(harness, result, { agents }))[0]).toBe("1 background explorer agent launched");
+  });
+
+  it("keeps a drawn block until it is rendered again", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, [THREE[0]]);
+    const [id] = ids(harness);
+    const draw = harness.tool.renderResult?.(
+      result,
+      { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [THREE[0]] } },
+      plainTheme,
+    );
+    const at = (width: number) => (typeof draw === "function" ? draw(width) : "");
+    const before = at(BLOCK_WIDTH);
+
+    expect(before).toContain("Initializing…");
+
+    patch(harness, id, { turns: 1, toolCalls: 2 });
+
+    expect(at(BLOCK_WIDTH)).toBe(before);
+    expect(at(80)).toContain("Running in the background");
+    expect(renderResult(harness, result, { agents: [THREE[0]] })).toContain("Running in the background");
+  });
+
   it("keeps every line within BLOCK_WIDTH and leaves the padding to the adapter", async () => {
     const harness = withWorker();
     const long = [item("explorer", "x".repeat(300)), item("worker", "y".repeat(300))];
@@ -372,7 +445,7 @@ describe("run_agent block", () => {
     expect(row).toMatch(/d…\) · \S+\/\S+:\w+$/);
 
     const rebuilt = runAgentTool(
-      { runner: harness.runner, registry: createRegistry({ bus: harness.bus, handoffPath: (id) => id }) },
+      toolDeps(harness.runner, createRegistry({ bus: harness.bus, handoffPath: (id) => id })),
       "run agents",
     );
     const name = "n".repeat(70);
@@ -423,7 +496,7 @@ describe("run_agent block", () => {
       bus: harness.bus,
       handoffPath: (id: string) => `/tmp/${id}-handoff.md`,
     });
-    const tool = runAgentTool({ runner: harness.runner, registry, now: () => NOW }, "run agents");
+    const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
     const details: RunAgentDetails = {
       batchId: "b-old",
       ids: ["explorer-abc", "worker-def", "reviewer-123"],
@@ -461,7 +534,7 @@ describe("run_agent block", () => {
     ]);
   });
 
-  it("invalidates at most once per renderThrottleMs and stops at batch:settled", async () => {
+  it("invalidates at once, then at most once per renderThrottleMs, and stops at batch:settled", async () => {
     const harness = withWorker({ renderThrottleMs: 50 });
     const main = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
 
@@ -479,21 +552,27 @@ describe("run_agent block", () => {
     const [id] = ids(harness);
 
     patch(harness, id, { turns: 1 });
-    patch(harness, id, { turns: 2 });
-    patch(harness, id, { turns: 3 });
-    vi.advanceTimersByTime(60);
 
     expect(invalidate).toHaveBeenCalledTimes(1);
 
-    harness.runtime.children[0].finish("done");
+    patch(harness, id, { turns: 2 });
+    patch(harness, id, { turns: 3 });
+
+    expect(invalidate).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(60);
 
     expect(invalidate).toHaveBeenCalledTimes(2);
+
+    harness.runtime.children[0].finish("done");
+
+    expect(invalidate).toHaveBeenCalledTimes(3);
 
     vi.advanceTimersByTime(60);
     patch(harness, id, { turns: 9 });
     vi.advanceTimersByTime(60);
 
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
   });
 
   it("registers no invalidate for a settled batch or an unknown batch", async () => {
@@ -519,7 +598,8 @@ describe("run_agent block", () => {
     render(second, other);
     harness.runtime.children[0].finish("done");
 
-    expect(settled).toHaveBeenCalledTimes(1);
+    expect(settled).toHaveBeenCalledTimes(2);
+    expect(other).toHaveBeenCalledTimes(1);
 
     render(first, redrawn);
     render({ text: "Started batch", details: { batchId: "b-unknown", ids: [], agents: [] } }, unknown);
@@ -529,10 +609,10 @@ describe("run_agent block", () => {
     patch(harness, b, { turns: 1 });
     vi.advanceTimersByTime(60);
 
-    expect(other).toHaveBeenCalledTimes(1);
+    expect(other).toHaveBeenCalledTimes(2);
     expect(redrawn).not.toHaveBeenCalled();
     expect(unknown).not.toHaveBeenCalled();
-    expect(settled).toHaveBeenCalledTimes(1);
+    expect(settled).toHaveBeenCalledTimes(2);
   });
 
   it("keeps invalidating other batches when one stored invalidate throws", async () => {
@@ -754,7 +834,7 @@ describe("run_agent block colours", () => {
   it("paints Status unavailable dim", () => {
     const harness = setup();
     const registry = createRegistry({ bus: harness.bus, handoffPath: (id: string) => id });
-    const tool = runAgentTool({ runner: harness.runner, registry, now: () => NOW }, "run agents");
+    const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
     const details: RunAgentDetails = {
       batchId: "b-old",
       ids: ["explorer-abc"],

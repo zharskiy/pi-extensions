@@ -12,7 +12,6 @@ import {
   splitModelRequest,
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
-import { firstLine } from "../../components/format.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -45,7 +44,7 @@ type RunnerDeps = {
   bus: Bus;
   settings: Settings;
   definitions: AgentDefinitions;
-  outbox: Outbox;
+  outbox: Pick<Outbox, "post">;
   session: () => SessionInfo;
   handoff: HandoffService;
   toolsFor: (record: AgentRecord) => AnyToolSpec[];
@@ -159,16 +158,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     batches.delete(batch.id);
     batch.resolve(terminals);
-    deps.bus.emit("batch:settled", { batchId: batch.id, callerId: batch.callerId, terminals });
+    deps.bus.emit("batch:settled", { batchId: batch.id });
 
     if (batch.wait || shuttingDown) {
       return;
     }
 
-    callerOutbox(batch.callerId)?.post({
-      batchId: batch.id,
-      text: batchText(batch.id),
-    });
+    callerOutbox(batch.callerId)?.post(batchText(batch.id));
   };
 
   const stopChildrenOf = (record: AgentRecord) => {
@@ -233,7 +229,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
   };
 
-  const callerOutbox = (callerId: string): Outbox | undefined => {
+  const callerOutbox = (callerId: string): Pick<Outbox, "post"> | undefined => {
     if (callerId === MAIN_CALLER) {
       return deps.outbox;
     }
@@ -339,12 +335,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const batch = batches.get(record.batchId);
 
     if (validation.status === "partial" && slot && batch && canContinue(record)) {
-      return continueChain(
-        record,
-        text,
-        { ...slot, undelivered: live.outbox?.clear().map((item) => item.text) },
-        batch,
-      );
+      return continueChain(record, text, { ...slot, undelivered: live.outbox?.clear() }, batch);
     }
 
     return deps.registry.close(record.id, { state: "handoff", resultText: text });
@@ -505,7 +496,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
       if (event.text.trim()) {
         live.lastText = event.text;
-        deps.registry.update(id, { activity: { kind: "text", text: firstLine(event.text), at: Date.now() } });
+
+        if (record.activity !== "writing") {
+          deps.registry.update(id, { activity: "writing" });
+        }
       }
 
       return;
@@ -514,7 +508,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     if (event.type === "tool_start") {
       deps.registry.update(id, {
         toolCalls: record.toolCalls + 1,
-        activity: { kind: "tool", text: event.toolName, at: Date.now() },
+        activity: event.toolName,
       });
       return;
     }
@@ -540,6 +534,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
 
       if (waiting) {
+        deps.registry.update(id, { activity: undefined });
         goIdle(live);
         return;
       }

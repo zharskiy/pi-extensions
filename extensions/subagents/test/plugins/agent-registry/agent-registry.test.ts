@@ -8,8 +8,8 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const HANDOFF = [

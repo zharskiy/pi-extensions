@@ -8,7 +8,7 @@ import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.t
 import { contextStep } from "../../../src/plugins/limits/context-step.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { VALID_HANDOFF } from "../../helpers/handoff.ts";
 import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 

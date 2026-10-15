@@ -118,7 +118,7 @@ export type OverlayApi = {
   requestRender(): void;
   toolsKey: string;
   wheelScrolling: boolean;
-  createTranscript(options?: { tools?: AnyToolSpec[]; owner?: string }): TranscriptPane;
+  createTranscript(options?: { owner?: string }): TranscriptPane;
   createScroll(): ScrollPane;
 };
 

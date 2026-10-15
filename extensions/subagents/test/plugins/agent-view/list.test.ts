@@ -7,7 +7,7 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../helpers/harness.ts";
 import { char, fakeOverlayApi, key, plain, recordingTheme } from "../../helpers/overlay.ts";
 

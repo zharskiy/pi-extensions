@@ -57,7 +57,6 @@ describe("subagents settings", () => {
 
   it("has a chain length of 3 by default", () => {
     expect(defaultSettings()).toMatchObject({ maxChainLength: 3 });
-    expect(defaultSettings()).not.toHaveProperty("notifications");
   });
 
   it("defaults the panel lingers", () => {
@@ -76,17 +75,6 @@ describe("subagents settings", () => {
 
     expect(loaded.settings).toMatchObject({ doneLingerMs: 10_000 });
     expect(loaded.errors).toEqual([`${userFile}: doneLingerMs must be a number between 0 and 3600000`]);
-  });
-
-  it("ignores the removed agentsHintMs key without an error", () => {
-    const { agentDir, cwd, userFile } = dirs();
-
-    writeJson(userFile, { agentsHintMs: 5_000 });
-
-    const loaded = loadSettings(agentDir, cwd, false);
-
-    expect(loaded.errors).toEqual([]);
-    expect(loaded.settings).not.toHaveProperty("agentsHintMs");
   });
 
   it("merges defaults, the user file and a trusted project file, project last", () => {

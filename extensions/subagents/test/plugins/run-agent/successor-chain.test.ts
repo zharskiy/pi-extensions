@@ -13,8 +13,8 @@ import {
 } from "../../../src/plugins/agent-status/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const handoffText = (status: string) =>
@@ -200,7 +200,7 @@ describe("successor chain", () => {
     expect(wakeTexts(host)[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
     expect(wakeTexts(host)[0]).toContain(`Handoff file: ${current(second).handoffPath}`);
     expect(host.hidden.map((entry) => entry.message.customType)).toEqual(["pi-subagents:wake"]);
-    expect((host.hidden[0].message.details as { batches: string[] }).batches).toHaveLength(1);
+    expect(wakeTexts(host)[0].split("\n\n---\n\n")).toHaveLength(1);
   });
 
   it("never continues after a user stop during link 2 and wakes once", async () => {

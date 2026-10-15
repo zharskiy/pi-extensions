@@ -160,6 +160,7 @@ describe("setFooter with pi's interactive layout", () => {
       footerContainer: Container;
     };
     const state: HostState = {
+      tools: new Map(),
       ctx: {
         mode: "tui",
         ui: {
@@ -228,6 +229,7 @@ describe("setFooter with pi's interactive layout", () => {
 describe("footerHost", () => {
   it("maps the live context, model, thinking level and session name", () => {
     const state: HostState = {
+      tools: new Map(),
       ctx: {
         model: { name: "test-model", contextWindow: 200_000, reasoning: true, id: "x" },
         getContextUsage: () => ({ tokens: 1_000, contextWindow: 200_000, percent: 0.5 }),
@@ -251,6 +253,7 @@ describe("footerHost", () => {
 
   it("prefers the context's thinking level", () => {
     const state: HostState = {
+      tools: new Map(),
       ctx: { thinkingLevel: "low", sessionManager: {} } as unknown as ExtensionContext,
     };
 
@@ -267,7 +270,13 @@ describe("footerHost", () => {
       },
       sessionManager: { getLeafId: () => session.leaf },
     };
-    const host = footerHost({ getThinkingLevel: () => "off" }, { ctx: ctx as unknown as ExtensionContext });
+    const host = footerHost(
+      { getThinkingLevel: () => "off" },
+      {
+        tools: new Map(),
+        ctx: ctx as unknown as ExtensionContext,
+      },
+    );
 
     host.context();
 

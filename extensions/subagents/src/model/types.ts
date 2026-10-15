@@ -51,7 +51,7 @@ export type AgentRecord = {
   chainIndex: number;
   predecessorId?: string;
   successorId?: string;
-  activity?: { kind: "tool" | "text"; text: string; at: number };
+  activity?: string;
   state: AgentState;
   createdAt: number;
   startedAt?: number;
@@ -141,8 +141,6 @@ export type HandoffService = {
   validate(text: string): HandoffValidation;
 };
 
-export type ToolsService = { list(): AnyToolSpec[]; add(spec: AnyToolSpec): void };
-
 type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
@@ -160,5 +158,4 @@ export type ServiceMap = {
   runner: AgentRunner;
   handoff: HandoffService;
   agentStatus: AgentStatusService;
-  tools: ToolsService;
 };

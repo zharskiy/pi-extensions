@@ -9,7 +9,7 @@ import {
 } from "../../../src/plugins/agent-status/index.ts";
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const setup = () => {

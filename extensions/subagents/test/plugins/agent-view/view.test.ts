@@ -19,7 +19,7 @@ import type { ViewData } from "../../../src/plugins/agent-view/loader.ts";
 import { createAgentView, headerLines } from "../../../src/plugins/agent-view/view.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../helpers/harness.ts";
 import { char, fakeOverlayApi, grepSession, key, plain, recordingTheme } from "../../helpers/overlay.ts";
 import { agentRecord } from "../../helpers/records.ts";
@@ -60,7 +60,7 @@ const setup = (plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentP
       throw new Error("no overlay opened");
     }
 
-    const { api, state, transcripts } = fakeOverlayApi(rows);
+    const { api, state, transcripts } = fakeOverlayApi(rows, undefined, harness.host);
 
     return { view: track(factory(api)), state, transcripts };
   };
@@ -147,7 +147,6 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
           return current;
         },
         from: options.from ?? "command",
-        tools: [],
         reserveTokens: 0,
         stop: options.stop ?? (() => undefined),
         watch: (_tickMs, onChange) => {
@@ -781,7 +780,11 @@ describe("agent view with live agents", () => {
 
     await harness.host.runCommand("agents", first.id);
 
-    const view = track((harness.host.overlays.at(-1) ?? (() => ({}) as never))(fakeOverlayApi(200).api));
+    const view = track(
+      (harness.host.overlays.at(-1) ?? (() => ({}) as never))(
+        fakeOverlayApi(200, undefined, harness.host).api,
+      ),
+    );
 
     harness.runtime
       .child(first.id)
@@ -1053,15 +1056,12 @@ describe("agent view codemode and nested tools", () => {
       RECORD_ENTRY,
     );
     const record = closedAgent(harness, session);
-    const specs = harness.services.require("tools").list();
-    const spies = specs.map((spec) => (spec.renderCall ? vi.spyOn(spec, "renderCall") : undefined));
-    const runAgentSpy = spies[specs.findIndex((spec) => spec.name === "run_agent")];
+    const spec = harness.host.tools.get("run_agent") as unknown as { renderCall: () => string };
+    const runAgentSpy = vi.spyOn(spec, "renderCall");
     const { view, transcripts } = await harness.openFrom(record.id, "command");
     const text = plain(view.render(100)).join("\n");
 
-    expect(transcripts[0]?.tools?.map((spec) => spec.name)).toEqual(
-      expect.arrayContaining(["run_agent", "message_agent", "agent_status"]),
-    );
+    expect(transcripts[0]?.owner).toBe(record.id);
     expect(runAgentSpy).toHaveBeenCalledWith(
       expect.objectContaining(args),
       expect.anything(),

@@ -30,7 +30,7 @@ type Case = {
 const layoutOf = ({ input, now, width, layout }: Case) =>
   layout ?? rowLayout([input], now, width, input.selected, plainTheme);
 
-const grepping = rec({ tokens: 12_300, activity: { kind: "tool", text: "grep", at: 0 } });
+const grepping = rec({ tokens: 12_300, activity: "grep" });
 const queued = rec({ agent: "worker", description: "Rename parseDate callers", state: "queued" });
 const done = rec({ state: "done", endedAt: 65_000 });
 const failed = rec({
@@ -47,17 +47,17 @@ const stopped = rec({
   endedAt: 3_000,
 });
 const handedOff = rec({ state: "handoff", endedAt: 3_720_000 });
-const chained = rec({ chainIndex: 2, tokens: 30_100, activity: { kind: "tool", text: "bash", at: 0 } });
+const chained = rec({ chainIndex: 2, tokens: 30_100, activity: "bash" });
 const child = rec({
   description: "Find callers of login",
   tokens: 1_100,
-  activity: { kind: "tool", text: "read", at: 0 },
+  activity: "read",
 });
 const reviewer = rec({
   agent: "reviewer",
   description: "Review the diff of PR 5",
   tokens: 8_200,
-  activity: { kind: "text", text: "Looking at the diff", at: 0 },
+  activity: "writing",
 });
 
 const cases: Case[] = [
@@ -276,7 +276,7 @@ describe("agent row", () => {
 
   it("keeps the info column still while the activity and elapsed change", () => {
     const at = (activity: string, tokens: number) =>
-      row(rec({ tokens, activity: { kind: "tool", text: activity, at: 0 }, description: "d".repeat(60) }));
+      row(rec({ tokens, activity: activity, description: "d".repeat(60) }));
     const first = [at("ls", 1_000), row(child, { depth: 1 })];
     const second = [at("tool_search", 123_500), row(child, { depth: 1 })];
 
@@ -291,10 +291,10 @@ describe("agent row", () => {
   });
 
   it("keeps a readable description on a deep row next to a root with long stats", () => {
-    const root = row(rec({ tokens: 123_500, activity: { kind: "tool", text: "tool_search", at: 0 } }), {
+    const root = row(rec({ tokens: 123_500, activity: "tool_search" }), {
       openDescendants: 1,
     });
-    const deep = row(rec({ tokens: 10, activity: { kind: "tool", text: "ls", at: 0 } }), {
+    const deep = row(rec({ tokens: 10, activity: "ls" }), {
       depth: 4,
       ancestorsContinue: [true, true, true],
     });
@@ -309,9 +309,7 @@ describe("agent row", () => {
   });
 
   it("keeps the stats of a row with a short description", () => {
-    const short = row(
-      rec({ description: "ab", tokens: 12_300, activity: { kind: "tool", text: "grep", at: 0 } }),
-    );
+    const short = row(rec({ description: "ab", tokens: 12_300, activity: "grep" }));
     const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, false, plainTheme));
 
     expect(line).toBe(" ⠋ explorer  ab  grep · 1m 5s · ↓ 12.3k tokens");

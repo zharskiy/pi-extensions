@@ -6,10 +6,10 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import { createOutbox, joinTexts, type OutboxItem } from "../../../src/plugins/run-agent/outbox.ts";
+import { createOutbox, joinTexts } from "../../../src/plugins/run-agent/outbox.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import { createSemaphore } from "../../../src/plugins/run-agent/semaphore.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness, PACKAGE_ROOT, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = (overrides = {}) => {
@@ -158,9 +158,7 @@ describe("run_agent batches", () => {
     expect(wakeTexts(host)[0]).toContain("batch one");
     expect(wakeTexts(host)[1]).toContain("batch two");
     expect(host.hidden.map((entry) => entry.delivery)).toEqual(["followUp", "followUp"]);
-    expect(
-      host.hidden.map((entry) => (entry.message.details as { batches: string[] }).batches.length),
-    ).toEqual([1, 1]);
+    expect(wakeTexts(host).map((text) => text.split("\n\n---\n\n").length)).toEqual([1, 1]);
   });
 
   it("merges batches that settle in the same tick while idle into one wake", async () => {
@@ -181,8 +179,8 @@ describe("run_agent batches", () => {
     expect(host.hidden[0].delivery).toBe("run");
     expect(host.hidden[0].message.text).toContain("batch one");
     expect(host.hidden[0].message.text).toContain("batch two");
-    expect(host.hidden[0].message.text).toContain("\n\n---\n\n");
-    expect((host.hidden[0].message.details as { batches: string[] }).batches).toHaveLength(2);
+    expect(host.hidden[0].message.text.split("\n\n---\n\n")).toHaveLength(2);
+    expect(host.hidden[0].message.details).toBeUndefined();
   });
 
   it("caps concurrency with the semaphore and starts queued agents as slots free up", async () => {
@@ -343,11 +341,11 @@ describe("run_agent batches", () => {
 
     const record = registry.list()[0];
 
-    expect(record.activity).toEqual({ kind: "tool", text: "grep", at: expect.any(Number) });
+    expect(record.activity).toBe("grep");
     expect(record.toolCalls).toBe(1);
   });
 
-  it("records the first line of an assistant message as text activity", async () => {
+  it("records writing for an assistant message with text and keeps it through blank messages", async () => {
     const { run, runtime, registry } = setup();
 
     await run(tasks(1));
@@ -357,54 +355,36 @@ describe("run_agent batches", () => {
 
     emit("Looking at auth.\nMore");
 
-    expect(registry.list()[0].activity).toEqual({
-      kind: "text",
-      text: "Looking at auth.",
-      at: expect.any(Number),
-    });
+    expect(registry.list()[0].activity).toBe("writing");
 
+    runtime.children[0].emit({ type: "tool_start", toolName: "grep" });
     emit("   ");
 
-    expect(registry.list()[0].activity?.text).toBe("Looking at auth.");
+    expect(registry.list()[0].activity).toBe("grep");
   });
 
-  it("emits agent:changed for activity", async () => {
+  it("emits agent:changed only when the activity changes", async () => {
     const { run, runtime, bus } = setup();
 
     await run(tasks(1));
 
     const seen: (string | undefined)[] = [];
+    const write = () =>
+      runtime.children[0].emit({
+        type: "assistant_message",
+        text: "More.",
+        stopReason: "toolUse",
+        toolCalls: 1,
+      });
 
     bus.on("agent:changed", (record) => {
-      seen.push(record.activity?.text);
+      seen.push(record.activity);
     });
     runtime.children[0].emit({ type: "tool_start", toolName: "bash" });
+    write();
+    write();
 
-    expect(seen).toEqual(["bash"]);
-  });
-
-  it("exposes run_agent, message_agent and agent_status through the tools service", () => {
-    const withStatus = createHarness([
-      agentRegistryPlugin,
-      agentDefinitionsPlugin,
-      runAgentPlugin,
-      agentStatusPlugin,
-    ]);
-    const without = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin]);
-    const tools = withStatus.services.require("tools");
-    const listed = tools.list();
-
-    expect(listed.map((spec) => spec.name)).toEqual(["run_agent", "message_agent", "agent_status"]);
-    expect(
-      without.services
-        .require("tools")
-        .list()
-        .map((spec) => spec.name),
-    ).toEqual(["run_agent", "message_agent"]);
-
-    listed.pop();
-
-    expect(tools.list()).toHaveLength(3);
+    expect(seen).toEqual(["bash", "writing"]);
   });
 
   it("marks running agents failed on shutdown and never wakes for them", async () => {
@@ -571,10 +551,8 @@ describe("semaphore", () => {
 });
 
 describe("outbox", () => {
-  const item = (text: string) => ({ batchId: `b-${text}`, text });
-
   it("delivers at once when idle and holds while busy", () => {
-    const delivered: OutboxItem[][] = [];
+    const delivered: string[][] = [];
     let busy = false;
     let idleHandler = () => {};
 
@@ -586,17 +564,17 @@ describe("outbox", () => {
       },
     });
 
-    outbox.post(item("one"));
+    outbox.post("one");
 
     busy = true;
-    outbox.post(item("two"));
-    outbox.post(item("three"));
+    outbox.post("two");
+    outbox.post("three");
 
-    expect(delivered).toEqual([[item("one")]]);
+    expect(delivered).toEqual([["one"]]);
 
     idleHandler();
 
-    expect(delivered).toEqual([[item("one")], [item("two"), item("three")]]);
+    expect(delivered).toEqual([["one"], ["two", "three"]]);
     expect(joinTexts(delivered[1])).toBe("two\n\n---\n\nthree");
   });
 });

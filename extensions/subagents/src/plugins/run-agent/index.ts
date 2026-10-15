@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
+import { watchAgents } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
 import { createHandoff } from "./handoff.ts";
-import { createOutbox, joinTexts, type OutboxItem } from "./outbox.ts";
+import { joinTexts } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
-import { describeRunAgent, messageAgentTool, type PendingCalls, runAgentTool } from "./tools.ts";
+import { createPendingCalls, describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 
@@ -17,34 +18,30 @@ export const runAgentPlugin: Plugin = {
     const registry = services.require("registry");
     const definitions = services.require("definitions");
 
-    const waking: OutboxItem[] = [];
-    const calls: PendingCalls = new Map();
-
-    const wake = () => {
-      const items = waking.splice(0);
-
-      if (items.length === 0) {
-        return;
-      }
-
-      host.sendHiddenMessage({
-        customType: "pi-subagents:wake",
-        text: joinTexts(items),
-        details: { v: 1, batches: items.map((item) => item.batchId) },
-      });
+    const waking: string[] = [];
+    const calls = createPendingCalls();
+    const hints = {
+      manage: () => !settings.disabledPlugins.includes("agent-panel"),
+      list: () => !settings.disabledPlugins.includes("agent-view"),
     };
 
-    const outbox = createOutbox({
-      isBusy: () => false,
-      deliver: (items) => {
+    const wake = () => {
+      const texts = waking.splice(0);
+
+      if (texts.length > 0) {
+        host.sendHiddenMessage({ customType: "pi-subagents:wake", text: joinTexts(texts) });
+      }
+    };
+
+    const outbox = {
+      post: (text: string) => {
         if (waking.length === 0) {
           queueMicrotask(wake);
         }
 
-        waking.push(...items);
+        waking.push(text);
       },
-      onIdle: () => {},
-    });
+    };
 
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
       const own = definitions.get(record.agent);
@@ -63,7 +60,7 @@ export const runAgentPlugin: Plugin = {
         maxConcurrent: settings.maxConcurrent,
       });
 
-      const childDeps = { runner, registry, calls };
+      const childDeps = { runner, registry, calls, hints };
 
       const tools: AnyToolSpec[] = [
         runAgentTool(childDeps, description, record.id),
@@ -95,7 +92,6 @@ export const runAgentPlugin: Plugin = {
     services.provide("handoff", handoff);
 
     const invalidators = new Map<string, () => void>();
-    let pendingRender: ReturnType<typeof setTimeout> | undefined;
 
     const safeInvalidate = (batchId: string) => {
       try {
@@ -105,54 +101,29 @@ export const runAgentPlugin: Plugin = {
       }
     };
 
-    const scheduleRender = () => {
-      if (pendingRender) {
-        return;
-      }
-
-      pendingRender = setTimeout(() => {
-        pendingRender = undefined;
-
-        Array.from(invalidators.keys()).forEach(safeInvalidate);
-      }, settings.renderThrottleMs);
-    };
-
-    const offChanged = bus.on("agent:changed", (record) => {
-      if (invalidators.has(record.batchId)) {
-        scheduleRender();
-      }
+    const offChanged = watchAgents(bus, {
+      relevant: (record) => invalidators.has(record.batchId),
+      tickMs: () => undefined,
+      throttleMs: () => settings.renderThrottleMs,
+      onChange: () => Array.from(invalidators.keys()).forEach(safeInvalidate),
     });
 
     const offSettled = bus.on("batch:settled", ({ batchId }) => {
       safeInvalidate(batchId);
       invalidators.delete(batchId);
-
-      calls.forEach((call, id) => {
-        if (call.details.batchId === batchId) {
-          calls.delete(id);
-        }
-      });
     });
 
     const toolDeps = {
       runner,
       registry,
       calls,
+      hints,
       onRendered: (batchId: string, invalidate: () => void) => {
-        if (registry.batch(batchId).some((record) => !isClosed(record.state))) {
+        if (invalidators.has(batchId) || registry.batch(batchId).some((record) => !isClosed(record.state))) {
           invalidators.set(batchId, invalidate);
         }
       },
     };
-
-    const specs: AnyToolSpec[] = [];
-
-    services.provide("tools", {
-      list: () => [...specs],
-      add: (spec) => {
-        specs.push(spec);
-      },
-    });
 
     let registeredDescription: string | undefined;
 
@@ -169,27 +140,20 @@ export const runAgentPlugin: Plugin = {
 
       registeredDescription = description;
 
-      const spec = runAgentTool(toolDeps, description);
-
-      specs[0] = spec as unknown as AnyToolSpec;
-      host.registerTool(spec);
+      host.registerTool(runAgentTool(toolDeps, description));
     };
 
     const mainPrompt = readPrompt(root, "main-session.md");
     const statusPrompt = readPrompt(root, "main-session-agent-status.md");
 
-    const messageAgent = messageAgentTool(toolDeps);
-
     registerRunAgent();
-    specs[1] = messageAgent as unknown as AnyToolSpec;
-    host.registerTool(messageAgent);
+    host.registerTool(messageAgentTool(toolDeps));
     host.onSessionStart(() => {
       registerRunAgent();
       host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
     });
 
     host.onSessionShutdown(async (reason) => {
-      outbox.clear();
       waking.length = 0;
       calls.clear();
       await runner.shutdown(`session ${reason}`);
@@ -198,11 +162,6 @@ export const runAgentPlugin: Plugin = {
     return () => {
       offChanged();
       offSettled();
-
-      if (pendingRender) {
-        clearTimeout(pendingRender);
-      }
-
       invalidators.clear();
       calls.clear();
     };

@@ -4,29 +4,52 @@ import {
   type AgentInternals,
   type AgentRegistry,
   grantText,
-  isClosed,
   isNone,
   MAIN_CALLER,
 } from "../../model/types.ts";
-import { blockTone, type RunAgentDetails, renderBlock } from "./render.ts";
-import type { BatchItem, Runner } from "./runner.ts";
-
-export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
-
-export type { RunAgentDetails } from "./render.ts";
+import {
+  type BlockHints,
+  blockTone,
+  type RunAgentDetails,
+  type RunAgentParams,
+  renderBlock,
+} from "./render.ts";
+import type { Runner } from "./runner.ts";
 
 export type MessageAgentParams = { id: string; message: string };
 
-export type PendingCalls = Map<string, { details: RunAgentDetails }>;
+type PendingCalls = {
+  set(callerId: string, toolCallId: string, details: RunAgentDetails): void;
+  get(owner: string, toolCallId: string): RunAgentDetails | undefined;
+  delete(callerId: string, toolCallId: string): void;
+  clear(): void;
+};
 
 const callKey = (callerId: string, toolCallId: string) => `${callerId}\n${toolCallId}`;
+
+export const createPendingCalls = (): PendingCalls => {
+  const calls = new Map<string, RunAgentDetails>();
+
+  return {
+    set: (callerId, toolCallId, details) => {
+      calls.set(callKey(callerId, toolCallId), details);
+    },
+    get: (owner, toolCallId) => calls.get(callKey(owner, toolCallId)),
+    delete: (callerId, toolCallId) => {
+      calls.delete(callKey(callerId, toolCallId));
+    },
+    clear: () => {
+      calls.clear();
+    },
+  };
+};
 
 type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
-  calls?: PendingCalls;
+  calls: PendingCalls;
+  hints: BlockHints;
   onRendered?: (batchId: string, invalidate: () => void) => void;
-  now?: () => number;
 };
 
 type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
@@ -153,38 +176,34 @@ export const runAgentTool = (
   deps: ToolDeps,
   description: string,
   callerId: string = MAIN_CALLER,
-): ToolSpec<RunAgentParams, RunAgentDetails> => {
-  const now = deps.now ?? Date.now;
+): ToolSpec<RunAgentParams, RunAgentDetails> => ({
+  name: "run_agent",
+  label: "Run agent",
+  description,
+  promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
+  parameters: runAgentParameters,
+  renderShell: "box",
+  execute: async (params, ctx) => {
+    const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
 
-  return {
-    name: "run_agent",
-    label: "Run agent",
-    description,
-    promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
-    parameters: runAgentParameters,
-    renderShell: "box",
-    execute: async (params, ctx) => {
-      const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
+    const details: RunAgentDetails = {
+      batchId: started.batchId,
+      ids: started.records.map((record) => record.id),
+      agents: started.records.map((record) => ({
+        id: record.id,
+        agent: record.agent,
+        description: record.description,
+        model: record.model,
+      })),
+    };
 
-      const details: RunAgentDetails = {
-        batchId: started.batchId,
-        ids: started.records.map((record) => record.id),
-        agents: started.records.map((record) => ({
-          id: record.id,
-          agent: record.agent,
-          description: record.description,
-          model: record.model,
-        })),
-      };
+    const pending = callerId !== MAIN_CALLER && ctx.toolCallId ? ctx.toolCallId : undefined;
 
-      if (
-        callerId !== MAIN_CALLER &&
-        ctx.toolCallId &&
-        started.records.some((record) => !isClosed(record.state))
-      ) {
-        deps.calls?.set(callKey(callerId, ctx.toolCallId), { details });
-      }
+    if (pending) {
+      deps.calls.set(callerId, pending, details);
+    }
 
+    try {
       ctx.update("", details);
 
       if (params.wait !== true) {
@@ -209,33 +228,37 @@ export const runAgentTool = (
       ctx.signal?.removeEventListener("abort", onAbort);
 
       return { text: deps.runner.batchText(started.batchId), details };
-    },
-    renderCall: () => "",
-    renderResult: (result, state, theme) => {
-      if (result.details?.batchId) {
-        deps.onRendered?.(result.details.batchId, state.invalidate);
+    } finally {
+      if (pending) {
+        deps.calls.delete(callerId, pending);
       }
+    }
+  },
+  renderCall: () => "",
+  renderResult: (result, state, theme) => {
+    if (result.details?.batchId) {
+      deps.onRendered?.(result.details.batchId, state.invalidate);
+    }
 
-      return renderBlock({
-        params: state.args as RunAgentParams | undefined,
-        result,
-        state,
-        registry: deps.registry,
-        theme,
-        now: now(),
-      });
-    },
-    renderTone: (state, result) => blockTone(deps.registry, state, result),
-    pendingResult: (toolCallId, owner) => {
-      const call = owner === undefined ? undefined : deps.calls?.get(callKey(owner, toolCallId));
+    return renderBlock({
+      params: state.args as RunAgentParams | undefined,
+      result,
+      state,
+      registry: deps.registry,
+      theme,
+      hints: deps.hints,
+    });
+  },
+  renderTone: (state, result) => blockTone(deps.registry, state, result),
+  pendingResult: (toolCallId, owner) => {
+    const details = owner === undefined ? undefined : deps.calls.get(owner, toolCallId);
 
-      return call ? { text: "", details: call.details } : undefined;
-    },
-  };
-};
+    return details ? { text: "", details } : undefined;
+  },
+});
 
 export const messageAgentTool = (
-  deps: ToolDeps,
+  deps: Pick<ToolDeps, "runner" | "registry">,
   callerId: string = MAIN_CALLER,
 ): ToolSpec<MessageAgentParams, { delivery?: string }> => ({
   name: "message_agent",

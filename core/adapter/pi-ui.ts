@@ -7,7 +7,14 @@ import {
   type TuiMouseEvent,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import type { HostUi, NotifyChannel, OverlayFactory, ScrollPane, WidgetHandle } from "./contract.ts";
+import type {
+  AnyToolSpec,
+  HostUi,
+  NotifyChannel,
+  OverlayFactory,
+  ScrollPane,
+  WidgetHandle,
+} from "./contract.ts";
 import type { EditorHooks } from "./pi-editor.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
@@ -18,7 +25,7 @@ import { createWorkingUi } from "./pi-working.ts";
 
 const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
 
-export type HostState = { ctx?: ExtensionContext };
+export type HostState = { ctx?: ExtensionContext; tools: Map<string, AnyToolSpec> };
 
 export const createScrollPane = (requestRender: () => void): ScrollPane => {
   let content: string[] = [];
@@ -157,7 +164,7 @@ export const createUi = (
           toolsKey: keyText("app.tools.expand"),
           wheelScrolling: tui.mode === "fullscreen",
           createTranscript: (options) =>
-            createTranscriptPane(tui, cwd, { tools: options?.tools, owner: options?.owner }),
+            createTranscriptPane(tui, cwd, { tools: [...state.tools.values()], owner: options?.owner }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
         });
 

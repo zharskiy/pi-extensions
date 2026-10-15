@@ -11,8 +11,8 @@ import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.t
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createWorktree } from "../../../src/plugins/run-agent/worktree.ts";
 import { createHarness, tempDir, wakeTexts } from "../../helpers/harness.ts";
 

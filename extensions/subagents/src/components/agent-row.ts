@@ -80,14 +80,9 @@ const statsVariants = (record: AgentRecord, now: number): Stats[] => {
     return [plainStats(stateWord(record.state), stateToken(record.state))];
   }
 
-  const activity = record.activity
-    ? record.activity.kind === "tool"
-      ? record.activity.text
-      : "writing"
-    : undefined;
   const tokens = record.tokens > 0 ? `↓ ${formatTokens(record.tokens)} tokens` : undefined;
 
-  return [join([activity, elapsed, tokens]), join([elapsed, tokens]), elapsed, ""].map((text) =>
+  return [join([record.activity, elapsed, tokens]), join([elapsed, tokens]), elapsed, ""].map((text) =>
     plainStats(text, "dim"),
   );
 };

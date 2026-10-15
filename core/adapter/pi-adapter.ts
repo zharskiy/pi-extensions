@@ -7,6 +7,7 @@ import type {
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AgentRuntime,
+  AnyToolSpec,
   CommandSpec,
   ContextSnapshot,
   DialogEvent,
@@ -330,6 +331,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   });
 
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
+    state.tools.set(spec.name, spec as AnyToolSpec);
     pi.registerTool(toPiTool(spec, capture));
   };
 
@@ -452,7 +454,7 @@ export const createPiExtension =
       return;
     }
 
-    const state: HostState = {};
+    const state: HostState = { tools: new Map() };
     const host = createPiHost(pi, state);
 
     const runtime = createPiRuntime(

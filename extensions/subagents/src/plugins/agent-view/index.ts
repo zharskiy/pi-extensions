@@ -29,8 +29,6 @@ export const agentViewPlugin: Plugin = {
 
     const stop = (id: string) => (services.has("runner") ? services.require("runner").stop(id) : undefined);
 
-    const tools = () => (services.has("tools") ? services.require("tools").list() : []);
-
     const watch =
       (relevant: (record: AgentRecord) => boolean) =>
       (tickMs: () => number | undefined, onChange: () => void) =>
@@ -72,7 +70,6 @@ export const agentViewPlugin: Plugin = {
           {
             load: source.loader(id, found),
             from,
-            tools: tools(),
             reserveTokens: settings.reserveTokens,
             stop: () => stop(id),
             watch: viewWatch(id),

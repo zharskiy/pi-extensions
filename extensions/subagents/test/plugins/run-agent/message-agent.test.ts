@@ -4,7 +4,8 @@ import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { MessageAgentParams, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
+import type { MessageAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = async (maxConcurrent = 4) => {

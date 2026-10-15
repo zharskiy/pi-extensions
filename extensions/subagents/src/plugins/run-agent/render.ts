@@ -22,10 +22,13 @@ import {
   chainLinks,
   chainTerminal,
   isClosed,
+  MAIN_CALLER,
   type WorktreeCleanup,
 } from "../../model/types.ts";
 import { chainTotals } from "./result.ts";
-import type { RunAgentParams } from "./tools.ts";
+import type { BatchItem } from "./runner.ts";
+
+export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
 
 export type RunAgentDetails = {
   batchId?: string;
@@ -33,18 +36,20 @@ export type RunAgentDetails = {
   agents: { id: string; agent: string; description: string; model?: string }[];
 };
 
-export type BlockInput = {
+export type BlockHints = { manage(): boolean; list(): boolean };
+
+type BlockInput = {
   params: RunAgentParams | undefined;
   result?: ToolResult<RunAgentDetails>;
   state: ToolRenderState;
   registry: Pick<AgentRegistry, "get" | "batch">;
   theme: ThemeLike;
-  now: number;
+  hints: BlockHints;
 };
 
 export const BLOCK_WIDTH = 100;
 
-export const blockWidth = (width: number) => Math.max(1, Math.min(width, BLOCK_WIDTH));
+const blockWidth = (width: number) => Math.max(1, Math.min(width, BLOCK_WIDTH));
 
 const CONTINUATION = 3;
 
@@ -54,7 +59,7 @@ const DESCRIPTION_MIN = 8;
 
 const agentsWord = (n: number) => (n === 1 ? "agent" : "agents");
 
-export const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
+const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
   const first = agents[0]?.agent;
 
   if (!first || agents.some((entry) => entry.agent !== first)) {
@@ -84,19 +89,18 @@ const cleanupText = (record: AgentRecord) => {
     : undefined;
 };
 
-const statsOf = (totals: AgentRecord, now: number, withDuration: boolean) =>
+const statsOf = (totals: AgentRecord, withDuration: boolean) =>
   [
     formatToolUses(totals.toolCalls),
     totals.tokens > 0 ? `${formatTokens(totals.tokens)} tokens` : undefined,
-    withDuration ? formatDuration(elapsedOf(totals, now)) : undefined,
+    withDuration ? formatDuration(elapsedOf(totals, totals.endedAt ?? totals.createdAt)) : undefined,
   ]
     .filter((part): part is string => part !== undefined)
     .join(SEP);
 
-type Status = { lead: string; leadToken: Parameters<ThemeLike["fg"]>[0]; rest?: string; restToken?: "dim" };
+type Status = { lead: string; leadToken: Parameters<ThemeLike["fg"]>[0]; rest?: string };
 
-const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now: number): Status => {
-  const stats = statsOf(totals, now, true);
+const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean): Status => {
   const token = stateToken(terminal.state);
 
   if (terminal.state === "queued") {
@@ -109,7 +113,7 @@ const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now
     }
 
     return wait
-      ? { lead: ["Running", statsOf(totals, now, false)].join(SEP), leadToken: "muted" }
+      ? { lead: ["Running", statsOf(totals, false)].join(SEP), leadToken: "muted" }
       : { lead: "Running in the background", leadToken: "muted" };
   }
 
@@ -118,7 +122,7 @@ const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now
   }
 
   if (terminal.state === "done") {
-    return { lead: "Done", leadToken: token, rest: `${SEP}${stats}`, restToken: "dim" };
+    return { lead: "Done", leadToken: token, rest: `${SEP}${statsOf(totals, true)}` };
   }
 
   if (terminal.state === "failed") {
@@ -126,10 +130,10 @@ const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean, now
   }
 
   if (terminal.state === "stopped") {
-    return { lead: `Stopped${SEP}${stats}`, leadToken: token };
+    return { lead: `Stopped${SEP}${statsOf(totals, true)}`, leadToken: token };
   }
 
-  return { lead: `Handed off${SEP}${stats}`, leadToken: token };
+  return { lead: `Handed off${SEP}${statsOf(totals, true)}`, leadToken: token };
 };
 
 const statusLine = (
@@ -137,16 +141,15 @@ const statusLine = (
   totals: AgentRecord,
   wait: boolean,
   theme: ThemeLike,
-  now: number,
   width: number,
 ) => {
-  const status = statusOf(terminal, totals, wait, now);
+  const status = statusOf(terminal, totals, wait);
   const cleanup = cleanupText(terminal);
   const suffix = cleanup ? `${SEP}${cleanup}` : "";
   const budget = width - CONTINUATION - theme.width(suffix);
   const lead = theme.truncate(status.lead, budget);
   const rest = status.rest ? theme.truncate(status.rest, Math.max(0, budget - theme.width(lead))) : "";
-  const painted = `${theme.fg(status.leadToken, lead)}${rest ? theme.fg(status.restToken ?? "dim", rest) : ""}`;
+  const painted = `${theme.fg(status.leadToken, lead)}${rest ? theme.fg("dim", rest) : ""}`;
 
   return suffix ? `${painted}${theme.fg("dim", suffix)}` : painted;
 };
@@ -172,7 +175,7 @@ const nameLine = (
 };
 
 const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
-  const { registry, theme, now } = input;
+  const { registry, theme, hints } = input;
 
   return details.agents.flatMap((entry, index) => {
     const last = index === details.agents.length - 1;
@@ -183,7 +186,7 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, w
     if (!record) {
       return [
         nameLine(connector, entry.agent, entry.description, entry.model, theme, width),
-        `${continuation}${theme.fg("dim", `Status unavailable${SEP}/agents ${entry.id}`)}`,
+        `${continuation}${theme.fg("dim", hints.list() ? `Status unavailable${SEP}/agents ${entry.id}` : "Status unavailable")}`,
       ];
     }
 
@@ -198,7 +201,7 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, w
         theme,
         width,
       ),
-      `${continuation}${statusLine(terminal, totals, wait, theme, now, width)}`,
+      `${continuation}${statusLine(terminal, totals, wait, theme, width)}`,
     ];
   });
 };
@@ -225,40 +228,40 @@ const errorBlock = (
   return [header, ...body].join("\n");
 };
 
-const MANAGE_HINT = `(↓ to manage${SEP}← to list)`;
-const MANAGE_HINT_SHORT = "(↓ to manage)";
+const hintText = (hints: BlockHints, short: boolean) => {
+  const parts = [hints.manage() && "↓ to manage", !short && hints.list() && "← to list"].filter(
+    (part): part is string => typeof part === "string",
+  );
 
-const finalHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
-  const { theme, registry } = input;
+  return parts.length > 0 ? `(${parts.join(SEP)})` : "";
+};
+
+const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
+  const { theme, registry, hints, state } = input;
   const n = details.agents.length;
   const named = namedAgents(details.agents, n);
   const count = theme.bold(String(n));
 
   if (wait) {
-    return `${count} ${named} finished`;
+    return `${count} ${named} ${state.isPartial ? "launched" : "finished"}`;
   }
 
-  const open =
-    details.batchId !== undefined &&
-    registry.batch(details.batchId).some((record) => !isClosed(record.state));
-
   const text = `${count} background ${named} launched`;
+  const records = details.batchId ? registry.batch(details.batchId) : [];
+  const hinted = records[0]?.callerId === MAIN_CALLER && records.some((record) => !isClosed(record.state));
+  const full = hinted ? hintText(hints, false) : "";
 
-  if (!open) {
+  if (!full) {
     return text;
   }
 
-  const fits = theme.width(`${n} background ${named} launched ${MANAGE_HINT}`) <= width;
+  const fits = theme.width(`${n} background ${named} launched ${full}`) <= width;
+  const hint = fits ? full : hintText(hints, true) || full;
 
-  return `${text} ${theme.fg("dim", fits ? MANAGE_HINT : MANAGE_HINT_SHORT)}`;
+  return `${text} ${theme.fg("dim", hint)}`;
 };
 
-const partialHeader = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) =>
-  wait
-    ? `${input.theme.bold(String(details.agents.length))} ${namedAgents(details.agents, details.agents.length)} launched`
-    : finalHeader(input, details, false, width);
-
-export const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
+const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
   const { result, state, theme } = input;
   const width = blockWidth(renderWidth);
 
@@ -277,19 +280,21 @@ export const renderBlockAt = (input: BlockInput, renderWidth: number): string =>
   }
 
   const wait = input.params?.wait === true;
-  const rows = agentRows(input, details, wait, width);
 
-  if (state.isPartial) {
-    return [partialHeader(input, details, wait, width), ...rows].join("\n");
-  }
-
-  return [finalHeader(input, details, wait, width), ...rows].join("\n");
+  return [header(input, details, wait, width), ...agentRows(input, details, wait, width)].join("\n");
 };
 
-export const renderBlock =
-  (input: BlockInput) =>
-  (width: number): string =>
-    renderBlockAt(input, width);
+export const renderBlock = (input: BlockInput) => {
+  let last: { width: number; text: string } | undefined;
+
+  return (width: number): string => {
+    if (last?.width !== width) {
+      last = { width, text: renderBlockAt(input, width) };
+    }
+
+    return last.text;
+  };
+};
 
 export const blockTone = (
   registry: Pick<AgentRegistry, "get">,

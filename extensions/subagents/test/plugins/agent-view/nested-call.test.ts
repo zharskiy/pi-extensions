@@ -11,7 +11,7 @@ import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.t
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../helpers/harness.ts";
 import { fakeOverlayApi, plain } from "../../helpers/overlay.ts";
 
@@ -107,7 +107,7 @@ const setup = async (wait: boolean, args: Record<string, unknown> = { ...ARGS, w
       throw new Error("no overlay opened");
     }
 
-    const view = factory(fakeOverlayApi(200).api);
+    const view = factory(fakeOverlayApi(200, undefined, harness.host).api);
 
     views.push(view);
 
@@ -120,11 +120,16 @@ const setup = async (wait: boolean, args: Record<string, unknown> = { ...ARGS, w
 };
 
 describe("agent view nested run_agent calls", () => {
-  it("draws a background nested call that is still executing with its live rows", async () => {
-    const { open } = await setup(false);
+  it("draws a returned background nested call with its live rows and no key hint", async () => {
+    const { running, show, open } = await setup(false);
+
+    show(nestedSession(ARGS, await running), "written");
+
     const shown = (await open())();
 
-    expect(shown).toContain(" 2 background explorer agents launched (↓ to manage · ← to list)");
+    expect(shown).toContain(" 2 background explorer agents launched");
+    expect(shown).not.toContain("to manage");
+    expect(shown).not.toContain("to list");
     expect(shown).toContain("explorer (find callers)");
     expect(shown).toContain("explorer (find tests)");
     expect(shown).toContain("Initializing…");
@@ -156,7 +161,10 @@ describe("agent view nested run_agent calls", () => {
   });
 
   it("draws the live block when the saved arguments carry a null optional field", async () => {
-    const { open } = await setup(false, { ...ARGS, wait: null });
+    const { running, show, open } = await setup(false, { ...ARGS, wait: null });
+
+    show(nestedSession({ ...ARGS, wait: null }, await running), "written");
+
     const shown = (await open())();
 
     expect(shown).toContain(" 2 background explorer agents launched");

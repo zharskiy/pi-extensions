@@ -14,9 +14,13 @@ export const key = (name: KeyPress["name"], char?: string): KeyPress => ({ name,
 
 export const char = (value: string): KeyPress => ({ name: "other", char: value });
 
-export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
+export const fakeOverlayApi = (
+  rows = 200,
+  theme: ThemeLike = plainTheme,
+  host?: { tools: Map<string, unknown> },
+) => {
   const state = { closed: false, renders: 0 };
-  const transcripts: { tools?: AnyToolSpec[] }[] = [];
+  const transcripts: { owner?: string }[] = [];
 
   const requestRender = () => {
     state.renders += 1;
@@ -35,7 +39,10 @@ export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
     createTranscript: (options) => {
       transcripts.push(options ?? {});
 
-      return parts.createTranscript(options);
+      return parts.createTranscript({
+        tools: [...(host?.tools.values() ?? [])] as AnyToolSpec[],
+        owner: options?.owner,
+      });
     },
     createScroll: parts.createScroll,
   };

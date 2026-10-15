@@ -1,7 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
+import { initRenderTheme } from "./render-theme.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -39,6 +41,7 @@ const fakePi = () => {
     registerCommand: (name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
       commands.set(name, options);
     },
+    registerTool: () => {},
     sendUserMessage: (text: string, options?: unknown) => {
       sent.push({ text, options });
       calls.push({ call: "sendUserMessage", message: text, options });
@@ -69,7 +72,7 @@ const fakePi = () => {
 describe("pi adapter", () => {
   it("forwards session start, agent start, turn end and idle with the run mode", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
 
     host.onSessionStart((info) => seen.push(`start ${info.file} ${info.mode}`));
@@ -88,7 +91,7 @@ describe("pi adapter", () => {
 
   it("emits phases from pi events and idle after the idle handlers", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
     const ctx = fakeCtx("tui");
     const assistant = (type: string) => ({ message: { role: "assistant" }, assistantMessageEvent: { type } });
@@ -130,7 +133,7 @@ describe("pi adapter", () => {
 
   it("resets the phase on shutdown without emitting", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
     const ctx = fakeCtx("tui");
 
@@ -150,7 +153,7 @@ describe("pi adapter", () => {
 
   it("passes the parent session file to start handlers only for a session created from another one", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: (string | undefined)[] = [];
     const withHeader = (parentSession?: string) => {
       const ctx = fakeCtx("tui");
@@ -179,14 +182,14 @@ describe("pi adapter", () => {
 
   it("throws when asked for the session before session_start", () => {
     const { pi } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     expect(() => host.session()).toThrow("no live pi session");
   });
 
   it("takes the subscription flag from pi's OAuth check and the provider's subscription mark", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const registry = (isSubscription?: boolean) => ({
       isUsingOAuth: () => true,
       getProvider: () => ({ auth: { oauth: { isSubscription } } }),
@@ -207,7 +210,7 @@ describe("pi adapter", () => {
 
   it("queues user messages and commands as follow-ups while busy", async () => {
     const { pi, fire, sent } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     host.dispatchCommand("ignored");
 
@@ -225,7 +228,7 @@ describe("pi adapter", () => {
 
   it("sends user messages and commands as prompts while idle", async () => {
     const { pi, fire, sent } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
     host.sendUserMessage("write it");
@@ -239,7 +242,7 @@ describe("pi adapter", () => {
 
   it("seeds the new session with a displayed message that triggers no turn", async () => {
     const { pi, commands } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seeded: unknown[] = [];
     const calls: unknown[] = [];
     const received: string[] = [];
@@ -280,7 +283,7 @@ describe("pi adapter", () => {
 
   it("sends a hidden follow-up while a run is active", async () => {
     const { pi, fire, calls } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", false));
     await fire("agent_start", fakeCtx("tui", false));
@@ -298,7 +301,7 @@ describe("pi adapter", () => {
 
   it("starts a run with the hidden message when idle and sends no user message", async () => {
     const { pi, fire, calls } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
 
@@ -322,7 +325,7 @@ describe("pi adapter", () => {
 
     try {
       const { pi, fire, calls } = fakePi();
-      const host = createPiHost(pi, {});
+      const host = createPiHost(pi, { tools: new Map() });
       let idle = false;
       const ctx = { ...fakeCtx("tui"), isIdle: () => idle };
 
@@ -347,7 +350,7 @@ describe("pi adapter", () => {
 
   it("sends two hidden messages from one idle pass as one run", async () => {
     const { pi, fire, calls } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
 
@@ -368,7 +371,7 @@ describe("pi adapter", () => {
 
     try {
       const { pi, fire, calls } = fakePi();
-      const host = createPiHost(pi, {});
+      const host = createPiHost(pi, { tools: new Map() });
       let idle = false;
       const ctx = { ...fakeCtx("tui"), isIdle: () => idle };
 
@@ -399,7 +402,7 @@ describe("pi adapter", () => {
 
     try {
       const { pi, fire, calls } = fakePi();
-      const host = createPiHost(pi, {});
+      const host = createPiHost(pi, { tools: new Map() });
       let idle = false;
       const ctx = { ...fakeCtx("tui"), isIdle: () => idle };
 
@@ -431,7 +434,7 @@ describe("pi adapter", () => {
 
   it("sends nothing without a live session", async () => {
     const { pi, fire, calls } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     host.sendHiddenMessage({ customType: "wake", text: "early" });
 
@@ -445,7 +448,7 @@ describe("pi adapter", () => {
 
   it("forwards dialog start and end with kind and title", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: unknown[] = [];
     const ctx = fakeCtx("tui");
 
@@ -475,7 +478,7 @@ describe("pi adapter", () => {
 
   it("subscribes to pi's event bus and publishes only with a live session", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const received: unknown[] = [];
 
     host.subscribe("channel", (data) => received.push(data));
@@ -490,7 +493,7 @@ describe("pi adapter", () => {
 
   it("styles text with pi's theme and falls back to plain text without a session", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
 
     expect(host.ui.style("warning", "ctx")).toBe("ctx");
 
@@ -501,7 +504,7 @@ describe("pi adapter", () => {
 
   it("is not idle without a live session and runs shutdown handlers before the session goes stale", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: unknown[] = [];
 
     host.onSessionShutdown((reason) => {
@@ -523,7 +526,7 @@ describe("pi adapter", () => {
 
   it("runs shutdown handlers one after another in registration order", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
 
     host.onSessionShutdown(async () => {
@@ -544,7 +547,7 @@ describe("pi adapter", () => {
 
   it("runs every shutdown handler and goes stale even when one throws, then rethrows the error", async () => {
     const { pi, fire } = fakePi();
-    const host = createPiHost(pi, {});
+    const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
 
     host.onSessionShutdown(async () => {
@@ -560,6 +563,60 @@ describe("pi adapter", () => {
     await expect(fire("session_shutdown", fakeCtx("tui"), { reason: "quit" })).rejects.toThrow("boom");
     expect(seen).toEqual(["second"]);
     expect(() => host.session()).toThrow("no live pi session");
+  });
+
+  it("renders the tools registered on the host in an overlay's transcript", async () => {
+    initRenderTheme();
+
+    const { pi } = fakePi();
+    const shown: string[] = [];
+    const ctx = {
+      mode: "tui",
+      cwd: "/project",
+      ui: {
+        custom: async (factory: (...args: unknown[]) => unknown) => {
+          factory(
+            { terminal: { rows: 40 }, mode: "fullscreen", requestRender: () => {} },
+            {},
+            { matches: () => false },
+            () => {},
+          );
+        },
+      },
+    } as unknown as ExtensionContext;
+    const host = createPiHost(pi, { tools: new Map(), ctx });
+
+    host.registerTool({
+      name: "probe",
+      label: "Probe",
+      description: "probe",
+      parameters: { type: "object" },
+      execute: async () => ({ text: "" }),
+      renderCall: () => "PROBE-CALL",
+    });
+
+    await host.ui.openOverlay((api) => {
+      const pane = api.createTranscript({ owner: "agent-1" });
+
+      pane.sync([
+        {
+          kind: "assistant",
+          text: "",
+          toolCalls: [{ name: "probe", args: {} }],
+          raw: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "call-1", name: "probe", arguments: {} }],
+            stopReason: "toolUse",
+            timestamp: 0,
+          },
+        },
+      ]);
+      shown.push(stripVTControlCharacters(pane.render(80).join("\n")));
+
+      return { render: () => [], handleKey: () => {} };
+    });
+
+    expect(shown[0]).toContain("PROBE-CALL");
   });
 });
 

@@ -11,6 +11,7 @@ const keyContext = (mode: string) => {
   const inputs: ((data: string) => unknown)[] = [];
   const removed: number[] = [];
   const state: HostState = {
+    tools: new Map(),
     ctx: {
       mode,
       ui: {
@@ -73,7 +74,7 @@ describe("onKeyPress", () => {
 
 const captured = (mode: string, env = {}) => {
   const writes: string[] = [];
-  const state: HostState = { ctx: { mode } as unknown as ExtensionContext };
+  const state: HostState = { tools: new Map(), ctx: { mode } as unknown as ExtensionContext };
   const ui = createUi(
     state,
     { write: (data: string) => writes.push(data) },
@@ -153,6 +154,7 @@ describe("overlay input routing", () => {
   const overlayFor = (view: ViewComponent) => {
     const components: OverlayComponent[] = [];
     const state: HostState = {
+      tools: new Map(),
       ctx: {
         mode: "tui",
         cwd: "/repo",
