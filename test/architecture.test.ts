@@ -66,6 +66,11 @@ const coreCode = () => sourceFiles(CORE).filter((file) => !isInside(CORE_TESTS)(
 
 const extensionCode = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "src")));
 
+const extensionTests = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "test")));
+
+const isPiPackage = (specifier: string) =>
+  specifier.startsWith("@earendil-works/") || specifier === "typebox";
+
 const isEntry = (file: string) =>
   extensionDirs().some((extension) => file === join(extension, "src", "index.ts"));
 
@@ -76,6 +81,18 @@ describe("architecture", () => {
       .filter((entry) => entry.target !== undefined && isInside(ADAPTER)(entry.target))
       .filter((entry) => entry.target !== CONTRACT)
       .filter((entry) => !(entry.target === PI_ADAPTER && isEntry(entry.file)))
+      .map(describeImport);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("extension tests reach the adapter only through the contract and core/test/adapter", () => {
+    const offenders = importsIn(extensionTests())
+      .filter(
+        (entry) =>
+          isPiPackage(entry.specifier) ||
+          (entry.target !== undefined && isInside(ADAPTER)(entry.target) && entry.target !== CONTRACT),
+      )
       .map(describeImport);
 
     expect(offenders).toEqual([]);

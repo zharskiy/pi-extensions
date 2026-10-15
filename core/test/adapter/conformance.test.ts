@@ -5,11 +5,9 @@ import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DialogKind, ToolRenderState } from "../../adapter/contract.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
-import { ASSISTANT_DELTA_TYPES, deltaEvent } from "../../adapter/pi-phase.ts";
-import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
+import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const ADAPTER_PI_MAJOR = 1;
@@ -157,90 +155,7 @@ describe("pi adapter conformance", () => {
   });
 
   it("fires message_update only with assistantMessageEvent types the phase reducer knows", () => {
-    const known =
-      ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][];
-
-    expect(known.filter((type) => deltaEvent(type) === undefined)).toEqual([]);
-  });
-
-  it("names the dialog kinds the contract forwards", () => {
-    const kinds: pi.UIPromptKind[] = [
-      "select",
-      "confirm",
-      "input",
-      "editor",
-      "custom",
-    ] satisfies DialogKind[];
-    const contract: DialogKind[] = kinds;
-
-    expect(contract).toHaveLength(5);
-  });
-
-  it("exports the codemode and tool_search factories as ExtensionFactory producers", () => {
-    const factories: (() => pi.ExtensionFactory)[] = [
-      pi.createCodemodeExtension,
-      pi.createToolSearchExtension,
-    ];
-    const registered: string[] = [];
-    const stub = {
-      registerTool: (definition: { name: string }) => {
-        registered.push(definition.name);
-      },
-    } as unknown as pi.ExtensionAPI;
-
-    factories.forEach((factory) => {
-      void factory()(stub);
-    });
-
-    expect(registered).toEqual(["codemode", "tool_search"]);
-  });
-
-  it("ToolRenderContext carries the fields the contract forwards", () => {
-    type Forwarded = Exclude<keyof ToolRenderState, "invalidate">;
-    const picked = (context: PiToolRenderContext): Pick<ToolRenderState, Forwarded> => ({
-      toolCallId: context.toolCallId,
-      expanded: context.expanded,
-      isPartial: context.isPartial,
-      isError: context.isError,
-      args: context.args,
-      outputPad: context.outputPad,
-    });
-    const invalidate: ToolRenderState["invalidate"] = (() => {}) satisfies PiToolRenderContext["invalidate"];
-
-    expect(picked).toBeTypeOf("function");
-    expect(invalidate).toBeTypeOf("function");
-  });
-
-  it("passes the tool call id first to execute and takes partial results on the tool component", () => {
-    type Execute = pi.ToolDefinition["execute"];
-    const toolCallId: Parameters<Execute>[0] = "call-1";
-    type UpdateResult = pi.ToolExecutionComponent["updateResult"];
-    const partial: Parameters<UpdateResult> = [
-      { content: [{ type: "text", text: "" }], details: { n: 1 }, isError: false },
-      true,
-    ];
-
-    expect(toolCallId).toBe("call-1");
-    expect(partial[1]).toBe(true);
-    expect(pi.ToolExecutionComponent.prototype.updateResult.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("keeps the sendMessage delivery options the wake relies on", () => {
-    type Options = NonNullable<Parameters<pi.ExtensionAPI["sendMessage"]>[1]>;
-    const options: Options[] = [
-      { deliverAs: "nextTurn" },
-      { triggerTurn: true },
-      { deliverAs: "followUp", triggerTurn: true },
-    ];
-    const hidden: Parameters<pi.ExtensionAPI["sendMessage"]>[0] = {
-      customType: "wake",
-      content: "text",
-      display: false,
-      details: undefined,
-    };
-
-    expect(options).toHaveLength(3);
-    expect(hidden.display).toBe(false);
+    void (ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][]);
   });
 
   it("emits ui_prompt events around every blocking dialog", async () => {

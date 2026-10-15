@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../../../../../core/adapter/route.ts";
-import { parseSessionLines } from "../../../../../core/adapter/session-file.ts";
+import { formatRoutedMessage, parseSessionLines } from "../../../../../core/test/adapter/offline.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";

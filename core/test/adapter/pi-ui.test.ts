@@ -1,76 +1,11 @@
-import { stripVTControlCharacters } from "node:util";
-import {
-  createCodemodeExtension,
-  createToolSearchExtension,
-  type ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import type { AnyToolSpec, TranscriptItem, ViewComponent } from "../../adapter/contract.ts";
-import {
-  capturePiRenderers,
-  createTranscriptPane,
-  createUi,
-  editorKeyPress,
-  type HostState,
-  notificationSequence,
-} from "../../adapter/pi-ui.ts";
-import { initRenderTheme } from "./render-theme.ts";
-
-initRenderTheme();
+import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
+import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
-
-const APC = new RegExp(
-  `${String.fromCharCode(27)}_[^${String.fromCharCode(7)}]*${String.fromCharCode(7)}`,
-  "g",
-);
-const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
-const visibleText = (lines: string[]) => lines.join("\n").replace(APC, "").replace(SGR, "");
-
-describe("editorKeyPress", () => {
-  it("editorKeyPress names up and down through the keybindings manager", () => {
-    const ctrlP = String.fromCharCode(16);
-    const ctrlN = String.fromCharCode(14);
-    const ctrlO = String.fromCharCode(15);
-    const map: Record<string, string> = {
-      [ctrlP]: "tui.editor.cursorUp",
-      [ctrlN]: "tui.editor.cursorDown",
-      [ctrlO]: "app.tools.expand",
-    };
-    const keys = { matches: (data: string, id: string) => map[data] === id };
-
-    const names = [ctrlP, ctrlN, ctrlO, `${ESC}[A`, `${ESC}[B`, ESC, "\r", " ", "x"].map(
-      (data) => editorKeyPress(data, keys).name,
-    );
-
-    expect(names).toEqual([
-      "up",
-      "down",
-      "toggleTools",
-      "other",
-      "other",
-      "escape",
-      "enter",
-      "space",
-      "other",
-    ]);
-    expect(editorKeyPress("x", keys).char).toBe("x");
-  });
-
-  it("editorKeyPress names left and right through the keybindings manager", () => {
-    const map: Record<string, string> = {
-      [`${ESC}[D`]: "tui.editor.cursorLeft",
-      [`${ESC}[C`]: "tui.editor.cursorRight",
-    };
-    const keys = { matches: (data: string, id: string) => map[data] === id };
-
-    expect(editorKeyPress(`${ESC}[D`, keys).name).toBe("left");
-    expect(editorKeyPress(`${ESC}[C`, keys).name).toBe("right");
-    expect(editorKeyPress(`${ESC}[D`, { matches: () => false }).name).toBe("other");
-  });
-});
 
 const keyContext = (mode: string) => {
   const inputs: ((data: string) => unknown)[] = [];
@@ -89,7 +24,16 @@ const keyContext = (mode: string) => {
     } as unknown as ExtensionContext,
   };
 
-  return { ui: createUi(state, { write: () => {} }, {}), inputs, removed };
+  return {
+    ui: createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+    ),
+    inputs,
+    removed,
+  };
 };
 
 describe("onKeyPress", () => {
@@ -130,7 +74,12 @@ describe("onKeyPress", () => {
 const captured = (mode: string, env = {}) => {
   const writes: string[] = [];
   const state: HostState = { ctx: { mode } as unknown as ExtensionContext };
-  const ui = createUi(state, { write: (data: string) => writes.push(data) }, env);
+  const ui = createUi(
+    state,
+    { write: (data: string) => writes.push(data) },
+    env,
+    createEditorHooks(() => undefined),
+  );
 
   return { ui, writes, state };
 };
@@ -193,330 +142,27 @@ describe("terminalNotify", () => {
   });
 });
 
-const tui = { requestRender: () => {} } as never;
+type OverlayComponent = { handleMouse(event: object): unknown; handleInput(data: string): void };
 
-const assistantCall = (name: string, args: unknown, id = "call-1"): TranscriptItem => ({
-  kind: "assistant",
-  text: "",
-  toolCalls: [{ name, args }],
-  raw: {
-    role: "assistant",
-    content: [{ type: "toolCall", id, name, arguments: args }],
-    stopReason: "toolUse",
-    timestamp: 0,
-  },
-});
-
-const toolResult = (name: string, text: string, details?: unknown, id = "call-1"): TranscriptItem => ({
-  kind: "tool",
-  toolName: name,
-  toolCallId: id,
-  text,
-  isError: false,
-  raw: {
-    role: "toolResult",
-    toolCallId: id,
-    toolName: name,
-    content: [{ type: "text", text }],
-    details,
-    isError: false,
-  },
-});
-
-describe("transcript pane spacing", () => {
-  it("puts pi's spacer between items and none before the first", () => {
-    const pane = createTranscriptPane(tui, "/repo");
-
-    pane.sync([
-      { kind: "user", text: "find the files" },
-      { kind: "user", text: "and the tests" },
-    ]);
-
-    const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
-
-    expect(lines[0]?.trim()).toBe("");
-    expect(lines[1]).toContain("find the files");
-    expect(lines.findIndex((line) => line.includes("and the tests"))).toBeGreaterThan(3);
-    expect(lines[lines.findIndex((line) => line.includes("and the tests")) - 2]).toBe("");
-  });
-});
-
-describe("transcript pane terminal marks", () => {
-  it("drops prompt marks from pi's message lines and keeps colours", () => {
-    const pane = createTranscriptPane(tui, "/repo");
-
-    pane.sync([
-      { kind: "user", text: "find the files" },
-      {
-        kind: "assistant",
-        text: "Three files",
-        toolCalls: [],
-        raw: {
-          role: "assistant",
-          content: [{ type: "text", text: "Three files" }],
-          stopReason: "stop",
-          timestamp: 0,
-        },
-      },
-    ]);
-
-    const raw = pane.render(60).join("\n");
-
-    expect(raw).not.toContain(`${ESC}]133;`);
-    expect(raw).toContain("find the files");
-    expect(raw).toContain("Three files");
-    expect(raw).toMatch(SGR);
-  });
-});
-
-describe("pi renderers in the transcript pane", () => {
-  it("captures codemode and tool_search renderers from pi's factories", () => {
-    const captured = capturePiRenderers({
-      codemode: createCodemodeExtension,
-      tool_search: createToolSearchExtension,
-    });
-
-    expect(captured.codemode?.renderCall).toBeTypeOf("function");
-    expect(captured.codemode?.renderResult).toBeTypeOf("function");
-    expect(captured.tool_search?.renderCall).toBeUndefined();
-  });
-
-  it("falls back to the generic display when a factory throws", () => {
-    const captured = capturePiRenderers({
-      broken: () => {
-        throw new Error("boom");
-      },
-      silent: () => () => {},
-    });
-
-    expect(captured).toEqual({});
-
-    const pane = createTranscriptPane(tui, "/repo", { piRenderers: captured });
-
-    pane.sync([assistantCall("broken", { a: 1 }), toolResult("broken", "raw output")]);
-
-    const text = visibleText(pane.render(80));
-
-    expect(text).toContain("broken");
-    expect(text).toContain('"a": 1');
-    expect(text).toContain("raw output");
-  });
-
-  it("renders a codemode call with pi's renderer in the transcript pane", () => {
-    const pane = createTranscriptPane(tui, "/repo");
-    const code = 'const hits = await tools.grep({ pattern: "login" });\nreturn hits;';
-
-    pane.sync([
-      assistantCall("codemode", { code }),
-      toolResult("codemode", "src/auth/login.ts", {
-        calls: [{ id: "n1", name: "grep", args: "{}", status: "ok", durationMs: 12 }],
-      }),
-    ]);
-
-    const text = visibleText(pane.render(80));
-
-    expect(text).toContain("codemode");
-    expect(text).toContain("tools.grep");
-    expect(text).toContain("✓ grep {} 12ms");
-    expect(text).toContain("src/auth/login.ts");
-    expect(text).not.toContain('"code"');
-  });
-
-  it("renders custom specs passed to createTranscript with their own renderers", () => {
-    const spec = {
-      name: "run_agent",
-      label: "Run agent",
-      description: "run",
-      parameters: {},
-      execute: async () => ({ text: "" }),
-      renderCall: () => "RUN-AGENT-ROW",
-      renderResult: (result: { text: string }) => `RESULT ${result.text}`,
-    } as unknown as AnyToolSpec;
-    const pane = createTranscriptPane(tui, "/repo", { tools: [spec] });
-
-    pane.sync([assistantCall("run_agent", { agents: [] }), toolResult("run_agent", "ids")]);
-
-    const text = visibleText(pane.render(80));
-
-    expect(text).toContain("RUN-AGENT-ROW");
-    expect(text).toContain("RESULT ids");
-    expect(text).not.toContain('"agents"');
-  });
-
-  it("keeps the raw fallback for unknown tools", () => {
-    const pane = createTranscriptPane(tui, "/repo");
-
-    pane.sync([assistantCall("mystery", { q: "x" }), toolResult("mystery", "found it")]);
-
-    const text = visibleText(pane.render(80));
-
-    expect(text).toContain("mystery");
-    expect(text).toContain('"q": "x"');
-    expect(text).toContain("found it");
-  });
-});
-
-describe("transcript pane pending results", () => {
-  const pendingSpec = (pendingResult: (id: string, owner: string | undefined) => unknown) =>
-    ({
-      name: "run_agent",
-      label: "Run agent",
-      description: "run",
-      parameters: {},
-      renderShell: "box",
-      execute: async () => ({ text: "" }),
-      renderCall: () => "",
-      renderResult: (result: { details?: { n: number } }, state: { isPartial: boolean }) =>
-        `BATCH ${result.details?.n} partial ${state.isPartial}`,
-      pendingResult,
-    }) as unknown as AnyToolSpec;
-
-  it("fills an executing call once with the spec's partial result until its result arrives", () => {
-    const asked: [string, string | undefined][] = [];
-    const pane = createTranscriptPane(tui, "/repo", {
-      owner: "explorer-1",
-      tools: [
-        pendingSpec((id, owner) => {
-          asked.push([id, owner]);
-          return { text: "", details: { n: 1 } };
-        }),
-      ],
-    });
-    const call = assistantCall("run_agent", { agents: [] }, "ra1");
-
-    pane.sync([call]);
-
-    expect(visibleText(pane.render(80))).toContain("BATCH 1 partial true");
-    expect(visibleText(pane.render(80))).toContain("BATCH 1 partial true");
-    expect(asked).toEqual([["ra1", "explorer-1"]]);
-
-    pane.sync([call, toolResult("run_agent", "done", { n: 2 }, "ra1")]);
-
-    const text = visibleText(pane.render(80));
-
-    expect(text).toContain("BATCH 2 partial false");
-    expect(text).not.toContain("partial true");
-  });
-
-  it("leaves the call blank and asks again on the next render while the spec has nothing", () => {
-    let partial: unknown;
-    let asked = 0;
-    const pane = createTranscriptPane(tui, "/repo", {
-      tools: [
-        pendingSpec(() => {
-          asked += 1;
-          return partial;
-        }),
-      ],
-    });
-
-    pane.sync([assistantCall("run_agent", { agents: [] }, "ra1")]);
-
-    expect(visibleText(pane.render(80))).not.toContain("BATCH");
-
-    partial = { text: "", details: { n: 3 } };
-
-    expect(visibleText(pane.render(80))).toContain("BATCH 3 partial true");
-    expect(asked).toBe(2);
-  });
-
-  it("never asks for a call whose result is already in the transcript", () => {
-    let asked = 0;
-    const pane = createTranscriptPane(tui, "/repo", {
-      tools: [
-        pendingSpec(() => {
-          asked += 1;
-          return { text: "", details: { n: 1 } };
-        }),
-      ],
-    });
-
-    pane.sync([
-      assistantCall("run_agent", { agents: [] }, "ra1"),
-      toolResult("run_agent", "done", { n: 2 }, "ra1"),
-    ]);
-
-    expect(visibleText(pane.render(80))).toContain("BATCH 2 partial false");
-    expect(asked).toBe(0);
-  });
-});
-
-const grepOutput = Array.from({ length: 40 }, (_, index) => `src/file.ts:${index}: line ${index}`).join("\n");
-
-const grepPane = () => {
-  const pane = createTranscriptPane(tui, "/repo");
-
-  pane.sync([
-    { kind: "user", text: "find the lines" },
-    assistantCall("grep", { pattern: "line", path: "src" }, "g1"),
-    toolResult("grep", grepOutput, {}, "g1"),
-    assistantCall("grep", { pattern: "other", path: "src" }, "g2"),
-  ]);
-
-  return pane;
+const ARROW_BINDINGS: Record<string, string> = {
+  [`${ESC}[A`]: "tui.editor.cursorUp",
+  [`${ESC}[B`]: "tui.editor.cursorDown",
 };
 
-const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
-
-describe("transcript pane clicks", () => {
-  it("expands one tool result on a click and collapses it on a second click", () => {
-    const pane = grepPane();
-    const collapsed = plainLines(pane.render(80));
-    const row = collapsed.findIndex((line) => line.includes("line 3"));
-
-    expect(collapsed.join("\n")).toContain("25 more lines");
-    expect(pane.click(row, 4, 80)).toBe(true);
-
-    const expanded = plainLines(pane.render(80));
-
-    expect(expanded.length).toBeGreaterThan(collapsed.length);
-    expect(expanded.join("\n")).toContain("line 39");
-    expect(expanded.join("\n")).not.toContain("25 more lines");
-    expect(pane.click(row, 4, 80)).toBe(true);
-    expect(plainLines(pane.render(80))).toEqual(collapsed);
-  });
-
-  it("ignores clicks on a user message, on a call without a result and outside the transcript", () => {
-    const pane = grepPane();
-    const lines = plainLines(pane.render(80));
-    const user = lines.findIndex((line) => line.includes("find the lines"));
-    const pending = lines.findIndex((line) => line.includes("other"));
-
-    expect(pane.click(user, 4, 80)).toBe(false);
-    expect(pane.click(pending, 4, 80)).toBe(false);
-    expect(pane.click(lines.length + 5, 4, 80)).toBe(false);
-    expect(plainLines(pane.render(80))).toEqual(lines);
-  });
-
-  it("lets the global toggle reset a call opened by a click", () => {
-    const pane = grepPane();
-    const collapsed = plainLines(pane.render(80));
-
-    pane.click(
-      collapsed.findIndex((line) => line.includes("line 3")),
-      4,
-      80,
-    );
-    pane.setToolsExpanded(false);
-
-    expect(plainLines(pane.render(80))).toEqual(collapsed);
-  });
-});
-
-describe("overlay mouse routing", () => {
+describe("overlay input routing", () => {
   const overlayFor = (view: ViewComponent) => {
-    const components: { handleMouse(event: object): unknown }[] = [];
+    const components: OverlayComponent[] = [];
     const state: HostState = {
       ctx: {
         mode: "tui",
         cwd: "/repo",
         ui: {
-          custom: async (factory: (...args: unknown[]) => { handleMouse(event: object): unknown }) => {
+          custom: async (factory: (...args: unknown[]) => OverlayComponent) => {
             components.push(
               factory(
                 { terminal: { rows: 40 }, mode: "fullscreen", requestRender: () => {} },
                 {},
-                { matches: () => false },
+                { matches: (data: string, id: string) => ARROW_BINDINGS[data] === id },
                 () => {},
               ),
             );
@@ -525,9 +171,14 @@ describe("overlay mouse routing", () => {
       } as unknown as ExtensionContext,
     };
 
-    void createUi(state, { write: () => {} }, {}).openOverlay(() => view);
+    void createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+    ).openOverlay(() => view);
 
-    return components[0] as { handleMouse(event: object): unknown };
+    return components[0] as OverlayComponent;
   };
 
   const mouse = (type: string, extra: object = {}) => ({
@@ -543,6 +194,27 @@ describe("overlay mouse routing", () => {
     alt: false,
     ctrl: false,
     ...extra,
+  });
+
+  it("names keys through pi's keybindings before the view sees them", () => {
+    const keys: KeyPress[] = [];
+    const component = overlayFor({
+      render: () => [],
+      handleKey: (key) => {
+        keys.push(key);
+      },
+    });
+
+    [`${ESC}[A`, `${ESC}[B`, `${ESC}[D`, "x"].forEach((data) => {
+      component.handleInput(data);
+    });
+
+    expect(keys.map((key) => [key.name, key.char])).toEqual([
+      ["up", undefined],
+      ["down", undefined],
+      ["other", undefined],
+      ["other", "x"],
+    ]);
   });
 
   it("forwards a left click to the view and reports whether it used it", () => {

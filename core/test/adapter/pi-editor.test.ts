@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EditorFrame, KeyPress } from "../../adapter/contract.ts";
-import { createEditorHooks } from "../../adapter/pi-editor-frame.ts";
+import { createEditorHooks } from "../../adapter/pi-editor.ts";
 
 type Factory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
@@ -48,6 +48,7 @@ const ESC = String.fromCharCode(27);
 const LEFT = `${ESC}[D`;
 const DOWN = `${ESC}[B`;
 const UP = `${ESC}[A`;
+const JUMP = String.fromCharCode(29);
 
 const bindings = (map: Record<string, string>) => ({
   matches: (data: string, id: string) => map[data] === id,
@@ -90,7 +91,7 @@ const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
 const adapterCopy = async () => {
   vi.resetModules();
 
-  const copy = await import("../../adapter/pi-editor-frame.ts");
+  const copy = await import("../../adapter/pi-editor.ts");
 
   return copy.createEditorHooks;
 };
@@ -286,13 +287,15 @@ describe("createEditorHooks", () => {
     });
 
     const hooked = editor(ui.factory);
-    const pending = hooked as unknown as { jumpMode: "forward" | "backward" | null };
 
-    pending.jumpMode = "forward";
+    hooked.handleInput(JUMP);
     hooked.handleInput(LEFT);
 
     expect(fired).toBe(0);
-    expect(pending.jumpMode).toBeNull();
+
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(1);
   });
 
   it("fires the empty-down hook on an empty editor with pi's keybindings and consumes the key", () => {
@@ -365,28 +368,6 @@ describe("createEditorHooks", () => {
     expect(fired).toBe(1);
   });
 
-  it("does not fire while browsing history even if the shown text is empty", () => {
-    const { ctx, ui } = fakeCtx();
-    let fired = 0;
-
-    createEditorHooks(() => ctx).onEmptyEditorDown(() => {
-      fired += 1;
-    });
-
-    const hooked = editor(ui.factory, piKeys());
-    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
-
-    try {
-      (hooked as unknown as { historyIndex: number }).historyIndex = 0;
-      hooked.handleInput(DOWN);
-
-      expect(fired).toBe(0);
-      expect(reached).toHaveBeenCalledWith(DOWN);
-    } finally {
-      reached.mockRestore();
-    }
-  });
-
   it("does not fire with a non-empty draft after browsing history", () => {
     const { ctx, ui } = fakeCtx();
     let fired = 0;
@@ -421,15 +402,21 @@ describe("createEditorHooks", () => {
 
     try {
       hooked.handleInput(DOWN);
-      autocomplete.mockReturnValue(false);
-      (hooked as unknown as { jumpMode: "forward" | "backward" | null }).jumpMode = "forward";
-      hooked.handleInput(DOWN);
 
-      expect(fired).toBe(0);
-      expect(reached).toHaveBeenCalledTimes(2);
+      expect(reached).toHaveBeenCalledWith(DOWN);
     } finally {
       reached.mockRestore();
     }
+
+    autocomplete.mockReturnValue(false);
+    hooked.handleInput(JUMP);
+    hooked.handleInput(DOWN);
+
+    expect(fired).toBe(0);
+
+    hooked.handleInput(DOWN);
+
+    expect(fired).toBe(1);
   });
 
   it("gives down to a capture first and to the empty-down hook once the capture releases it", () => {
@@ -579,67 +566,6 @@ describe("createEditorHooks", () => {
     expect(() => hooks.onEmptyEditorLeft(() => {})()).not.toThrow();
     expect(() => hooks.onEmptyEditorDown(() => {})()).not.toThrow();
     expect(() => hooks.captureEditorKeys(() => "consumed")()).not.toThrow();
-  });
-
-  it("keeps an empty-left hook registered before the session and installs the editor at session start", () => {
-    const { ctx, ui } = fakeCtx();
-    let current: ExtensionContext | undefined;
-    let fired = 0;
-    const hooks = createEditorHooks(() => current);
-
-    hooks.onEmptyEditorLeft(() => {
-      fired += 1;
-    });
-
-    expect(ui.sets).toBe(0);
-
-    current = ctx;
-    hooks.sync();
-
-    expect(ui.sets).toBe(1);
-
-    editor(ui.factory, piKeys()).handleInput(LEFT);
-
-    expect(fired).toBe(1);
-  });
-
-  it("keeps an empty-down hook registered before the session and installs the editor at session start", () => {
-    const { ctx, ui } = fakeCtx();
-    let current: ExtensionContext | undefined;
-    let fired = 0;
-    const hooks = createEditorHooks(() => current);
-
-    hooks.onEmptyEditorDown(() => {
-      fired += 1;
-    });
-
-    expect(ui.sets).toBe(0);
-
-    current = ctx;
-    hooks.sync();
-    editor(ui.factory, piKeys()).handleInput(DOWN);
-
-    expect(ui.sets).toBe(1);
-    expect(fired).toBe(1);
-  });
-
-  it("keeps a capture registered before the session and installs the editor at session start", () => {
-    const { ctx, ui } = fakeCtx();
-    let current: ExtensionContext | undefined;
-    const seen: string[] = [];
-    const hooks = createEditorHooks(() => current);
-
-    hooks.captureEditorKeys((key) => {
-      seen.push(key.name);
-
-      return "consumed";
-    });
-
-    current = ctx;
-    hooks.sync();
-    editor(ui.factory, piKeys()).handleInput(DOWN);
-
-    expect(seen).toEqual(["down"]);
   });
 
   it("installs nothing at session start when no frame or hook is registered", () => {

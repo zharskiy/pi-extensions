@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
-import { editorKeyPress } from "./pi-keys.ts";
+import { keyPress } from "./pi-keys.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
@@ -24,7 +24,7 @@ const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor }
 const sharedEditor = (): SharedEditor =>
   (shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set() });
 
-type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean; historyIndex?: number };
+type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
 type EmptyKey = "emptyLeft" | "emptyDown";
 
@@ -85,10 +85,6 @@ class HostEditor extends CustomEditor {
     return pending.jumpMode !== null || pending.isInPaste;
   }
 
-  private browsingHistory() {
-    return ((this as unknown as EditorPending).historyIndex ?? -1) > -1;
-  }
-
   private fire(key: EmptyKey) {
     Array.from(this.hooks[key]).forEach((handler) => {
       handler();
@@ -99,7 +95,7 @@ class HostEditor extends CustomEditor {
     const capture = this.hooks.capture;
 
     if (capture) {
-      if (capture(editorKeyPress(data, this.keys)) === "consumed") {
+      if (capture(keyPress(data, this.keys)) === "consumed") {
         return;
       }
 
@@ -115,12 +111,7 @@ class HostEditor extends CustomEditor {
       return;
     }
 
-    if (
-      idle &&
-      this.hooks.emptyDown.size > 0 &&
-      !this.browsingHistory() &&
-      this.keys.matches(data, "tui.editor.cursorDown")
-    ) {
+    if (idle && this.hooks.emptyDown.size > 0 && this.keys.matches(data, "tui.editor.cursorDown")) {
       this.fire("emptyDown");
       return;
     }

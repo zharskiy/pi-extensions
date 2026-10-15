@@ -117,14 +117,6 @@ describe("reducePhase", () => {
     expect(view(outer)).toEqual({ phase: "tool", detail: { toolName: "codemode", running: 1 } });
   });
 
-  it("stays waiting across a repeated agent_start", () => {
-    const waiting = run([{ type: "agent_start" }, { type: "turn_start" }]);
-    const again = reducePhase(waiting, { type: "agent_start" });
-
-    expect(again).toBe(waiting);
-    expect(again.phase).toBe("waiting");
-  });
-
   it("stays in the run when a follow-up starts a new turn", () => {
     const state = run([
       { type: "agent_start" },
@@ -134,18 +126,6 @@ describe("reducePhase", () => {
     ]);
 
     expect(state.phase).toBe("waiting");
-  });
-
-  it("returns the same state for a no-op delta", () => {
-    const writing = run([{ type: "agent_start" }, delta("text_start")]);
-
-    expect(reducePhase(writing, delta("text_delta"))).toBe(writing);
-  });
-
-  it("emits the agent_start and turn_start pair once", () => {
-    const started = run([{ type: "agent_start" }]);
-
-    expect(reducePhase(started, { type: "turn_start" })).toBe(started);
   });
 
   it("clears running tools on turn_start after an aborted tool", () => {

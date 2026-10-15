@@ -1,13 +1,13 @@
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import type { KeyPress } from "./contract.ts";
 
-export type KeyMatchers = {
-  isToolsToggle(data: string): boolean;
-  isUp(data: string): boolean;
-  isDown(data: string): boolean;
-  isLeft?(data: string): boolean;
-  isRight?(data: string): boolean;
-};
+const BINDINGS = [
+  ["toggleTools", "app.tools.expand"],
+  ["up", "tui.editor.cursorUp"],
+  ["down", "tui.editor.cursorDown"],
+  ["left", "tui.editor.cursorLeft"],
+  ["right", "tui.editor.cursorRight"],
+] as const;
 
 const KEY_NAMES = [
   ["pageUp", Key.pageUp],
@@ -20,43 +20,14 @@ const KEY_NAMES = [
   ["tab", Key.tab],
 ] as const;
 
-export const keyPressWith = (data: string, matchers: KeyMatchers): KeyPress => {
-  if (matchers.isToolsToggle(data)) {
-    return { name: "toggleTools", raw: data };
-  }
+export const keyPress = (data: string, keys: { matches(data: string, id: string): boolean }): KeyPress => {
+  const name =
+    BINDINGS.find(([, id]) => keys.matches(data, id))?.[0] ??
+    KEY_NAMES.find(([, key]) => matchesKey(data, key))?.[0];
 
-  if (matchers.isUp(data)) {
-    return { name: "up", raw: data };
-  }
-
-  if (matchers.isDown(data)) {
-    return { name: "down", raw: data };
-  }
-
-  if (matchers.isLeft?.(data)) {
-    return { name: "left", raw: data };
-  }
-
-  if (matchers.isRight?.(data)) {
-    return { name: "right", raw: data };
-  }
-
-  const match = KEY_NAMES.find(([, key]) => matchesKey(data, key));
-
-  if (match) {
-    return { name: match[0], raw: data };
+  if (name) {
+    return { name, raw: data };
   }
 
   return { name: "other", char: data.length === 1 ? data : undefined, raw: data };
 };
-
-type KeyMatcher = { matches(data: string, binding: string): boolean };
-
-export const editorKeyPress = (data: string, keys: KeyMatcher): KeyPress =>
-  keyPressWith(data, {
-    isToolsToggle: (input) => keys.matches(input, "app.tools.expand"),
-    isUp: (input) => keys.matches(input, "tui.editor.cursorUp"),
-    isDown: (input) => keys.matches(input, "tui.editor.cursorDown"),
-    isLeft: (input) => keys.matches(input, "tui.editor.cursorLeft"),
-    isRight: (input) => keys.matches(input, "tui.editor.cursorRight"),
-  });

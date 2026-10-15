@@ -1,8 +1,71 @@
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Box, type Component } from "@earendil-works/pi-tui";
+import { Box, type Component, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
-import { PaddedLines, textComponent, themeLike } from "./pi-components.ts";
+import type { ThemeLike, ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
+
+export const themeLike = (theme: Theme): ThemeLike => ({
+  fg: (token, text) => theme.fg(token, text),
+  bold: (text) => theme.bold(text),
+});
+
+class WidthText implements Component {
+  private source: (width: number) => string;
+  private readonly text = new Text("", 0, 0);
+
+  constructor(source: (width: number) => string) {
+    this.source = source;
+  }
+
+  set(source: (width: number) => string) {
+    this.source = source;
+  }
+
+  render(width: number): string[] {
+    this.text.setText(this.source(width));
+
+    return this.text.render(width);
+  }
+
+  invalidate() {
+    this.text.invalidate();
+  }
+}
+
+const textComponent = (previous: unknown, text: ToolRender): Component => {
+  if (typeof text === "function") {
+    if (previous instanceof WidthText) {
+      previous.set(text);
+      return previous;
+    }
+
+    return new WidthText(text);
+  }
+
+  if (previous instanceof Text) {
+    previous.setText(text);
+    return previous;
+  }
+
+  return new Text(text, 0, 0);
+};
+
+const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
+
+class PaddedLines implements Component {
+  private readonly source: ToolRender;
+
+  constructor(source: ToolRender) {
+    this.source = source;
+  }
+
+  render(width: number): string[] {
+    const text = typeof this.source === "function" ? this.source(width) : this.source;
+
+    return splitLines(text).map((line) => truncateToWidth(line, width, "…"));
+  }
+
+  invalidate() {}
+}
 
 export const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],

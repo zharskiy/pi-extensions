@@ -1,7 +1,10 @@
 import { stripVTControlCharacters } from "node:util";
 import type { AnyToolSpec, KeyPress, OverlayApi, ThemeLike } from "../../../../core/adapter/contract.ts";
-import { createScrollPane, createTranscriptPane } from "../../../../core/adapter/pi-ui.ts";
-import { parseSessionLines, promptRecordEntry } from "../../../../core/adapter/session-file.ts";
+import {
+  parseSessionLines,
+  promptRecordEntry,
+  realOverlayParts,
+} from "../../../../core/test/adapter/offline.ts";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 
@@ -18,6 +21,7 @@ export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
   const requestRender = () => {
     state.renders += 1;
   };
+  const parts = realOverlayParts(requestRender);
 
   const api: OverlayApi = {
     theme,
@@ -31,12 +35,9 @@ export const fakeOverlayApi = (rows = 200, theme: ThemeLike = plainTheme) => {
     createTranscript: (options) => {
       transcripts.push(options ?? {});
 
-      return createTranscriptPane({ requestRender } as never, "/repo", {
-        tools: options?.tools,
-        owner: options?.owner,
-      });
+      return parts.createTranscript(options);
     },
-    createScroll: () => createScrollPane(requestRender),
+    createScroll: parts.createScroll,
   };
 
   return { api, state, transcripts };

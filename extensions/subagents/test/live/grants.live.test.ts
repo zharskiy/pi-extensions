@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { codemodeCalls, describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
+import type { TranscriptItem } from "../../../../core/adapter/contract.ts";
+import { describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
 import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
@@ -16,6 +17,17 @@ const FIXTURE = resolve(import.meta.dirname, "fixtures", "mcp-server.ts");
 
 const skill = (name: string, body: string) =>
   `---\nname: ${name}\ndescription: Use when asked for the ${name} code word.\n---\n${body}\n`;
+
+type CodemodeResult = { details?: { calls?: { name?: string; status?: string }[] } };
+
+const codemodeCalls = (items: readonly TranscriptItem[]) =>
+  items
+    .flatMap((item) =>
+      item.kind === "tool" && item.toolName === "codemode" ? [item.raw as CodemodeResult] : [],
+    )
+    .flatMap((raw) => raw.details?.calls ?? [])
+    .filter((call) => call.status === "ok")
+    .map((call) => call.name ?? "tool");
 
 describeLive("live grants", () => {
   let live: LiveHarness;

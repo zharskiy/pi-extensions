@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionRecord, ToolSpec, ViewComponent } from "../../../../../core/adapter/contract.ts";
-import { parseSessionLines, promptRecordEntry } from "../../../../../core/adapter/session-file.ts";
+import { parseSessionLines, promptRecordEntry } from "../../../../../core/test/adapter/offline.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../../src/model/paths.ts";

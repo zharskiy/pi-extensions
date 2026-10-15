@@ -1,313 +1,24 @@
+import { type ExtensionContext, keyText } from "@earendil-works/pi-coding-agent";
 import {
-  AssistantMessageComponent,
-  CustomMessageComponent,
-  createBashToolDefinition,
-  createCodemodeExtension,
-  createEditToolDefinition,
-  createFindToolDefinition,
-  createGrepToolDefinition,
-  createLsToolDefinition,
-  createPowerShellToolDefinition,
-  createReadToolDefinition,
-  createToolSearchExtension,
-  createWriteToolDefinition,
-  type ExtensionAPI,
-  type ExtensionContext,
-  type ExtensionFactory,
-  getMarkdownTheme,
-  keyText,
-  ToolExecutionComponent,
-  type ToolRenderers,
-  UserMessageComponent,
-} from "@earendil-works/pi-coding-agent";
-import {
-  type Component,
-  Container,
   isKeyRelease,
-  Key,
   type Keybinding,
-  matchesKey,
   ScrollView,
-  Spacer,
   type TUI,
   type TuiMouseEvent,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import type {
-  AnyToolSpec,
-  HostUi,
-  KeyPress,
-  NotifyChannel,
-  OverlayFactory,
-  ScrollPane,
-  TranscriptItem,
-  TranscriptPane,
-  WidgetHandle,
-} from "./contract.ts";
-import { themeLike } from "./pi-components.ts";
-import { createEditorHooks, type EditorHooks } from "./pi-editor-frame.ts";
+import type { HostUi, NotifyChannel, OverlayFactory, ScrollPane, WidgetHandle } from "./contract.ts";
+import type { EditorHooks } from "./pi-editor.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
-import { keyPressWith } from "./pi-keys.ts";
-import { toPiResult, toPiTool } from "./pi-tools.ts";
+import { keyPress } from "./pi-keys.ts";
+import { themeLike } from "./pi-tools.ts";
+import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
-
-export { editorKeyPress } from "./pi-keys.ts";
-
-const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPress =>
-  keyPressWith(data, {
-    isToolsToggle,
-    isUp: (input) => matchesKey(input, Key.up),
-    isDown: (input) => matchesKey(input, Key.down),
-  });
 
 const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
 
 export type HostState = { ctx?: ExtensionContext };
-
-const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
-  read: createReadToolDefinition,
-  bash: createBashToolDefinition,
-  powershell: createPowerShellToolDefinition,
-  edit: createEditToolDefinition,
-  write: createWriteToolDefinition,
-  grep: createGrepToolDefinition,
-  find: createFindToolDefinition,
-  ls: createLsToolDefinition,
-};
-
-type RawToolCall = { type: string; id: string; name: string; arguments: unknown };
-
-type RawAssistant = { content: RawToolCall[]; stopReason: string; errorMessage?: string };
-
-type Expandable = Component & { setExpanded(expanded: boolean): void };
-
-export const capturePiRenderers = (
-  factories: Record<string, () => ExtensionFactory>,
-): Record<string, ToolRenderers> =>
-  Object.fromEntries(
-    Object.entries(factories).flatMap(([name, factory]) => {
-      try {
-        let captured: ToolRenderers | undefined;
-        const stub = {
-          registerTool: (definition: ToolRenderers) => {
-            captured = definition;
-          },
-        } as unknown as ExtensionAPI;
-
-        Promise.resolve(factory()(stub)).catch(() => {});
-
-        if (!captured?.renderCall && !captured?.renderResult) {
-          return [];
-        }
-
-        const { renderShell, renderCall, renderResult } = captured;
-
-        return [[name, { renderShell, renderCall, renderResult }]];
-      } catch {
-        return [];
-      }
-    }),
-  );
-
-let piRenderers: Record<string, ToolRenderers> | undefined;
-
-const defaultPiRenderers = () => {
-  piRenderers ??= capturePiRenderers({
-    codemode: createCodemodeExtension,
-    tool_search: createToolSearchExtension,
-  });
-
-  return piRenderers;
-};
-
-export type TranscriptPaneOptions = {
-  tools?: AnyToolSpec[];
-  owner?: string;
-  piRenderers?: Record<string, ToolRenderers>;
-};
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
-const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
-
-export const createTranscriptPane = (
-  tui: TUI,
-  cwd: string,
-  options: TranscriptPaneOptions = {},
-): TranscriptPane => {
-  const container = new Container();
-  const pendingTools = new Map<string, ToolExecutionComponent>();
-  const pendingCalls = new Map<string, RawToolCall>();
-  const definitions = new Map<string, object | undefined>();
-  const expandables: Expandable[] = [];
-  const renderers = options.piRenderers ?? defaultPiRenderers();
-  let toolsExpanded = false;
-  let synced = 0;
-  let rendered = 0;
-
-  const resolveDefinition = (name: string): object | undefined => {
-    const builtin = toolDefinitionFactories[name];
-
-    if (builtin) {
-      return builtin(cwd);
-    }
-
-    const spec = options.tools?.find((tool) => tool.name === name);
-
-    if (spec) {
-      const { renderShell, renderCall, renderResult } = toPiTool(spec);
-
-      return { renderShell, renderCall, renderResult };
-    }
-
-    return renderers[name];
-  };
-
-  const definitionFor = (name: string) => {
-    if (!definitions.has(name)) {
-      definitions.set(name, resolveDefinition(name));
-    }
-
-    return definitions.get(name);
-  };
-
-  const addExpandable = (component: Expandable) => {
-    component.setExpanded(toolsExpanded);
-    expandables.push(component);
-    container.addChild(component);
-  };
-
-  const addToolCall = (call: RawToolCall, message: RawAssistant) => {
-    const component = new ToolExecutionComponent(
-      call.name,
-      call.id,
-      call.arguments,
-      {},
-      definitionFor(call.name) as never,
-      tui,
-      cwd,
-    );
-
-    addExpandable(component);
-
-    if (message.stopReason === "aborted" || message.stopReason === "error") {
-      const text = message.stopReason === "aborted" ? "Operation aborted" : message.errorMessage || "Error";
-
-      component.updateResult({ content: [{ type: "text", text }], isError: true });
-      return;
-    }
-
-    component.markExecutionStarted();
-    pendingTools.set(call.id, component);
-
-    if (options.tools?.some((tool) => tool.name === call.name && tool.pendingResult)) {
-      pendingCalls.set(call.id, call);
-    }
-  };
-
-  const addItem = (item: TranscriptItem) => {
-    if (item.kind === "user") {
-      if (container.children.length > 0) {
-        container.addChild(new Spacer(1));
-      }
-
-      container.addChild(new UserMessageComponent(item.text, getMarkdownTheme()));
-      return;
-    }
-
-    if (item.kind === "assistant") {
-      const message = item.raw as RawAssistant;
-
-      container.addChild(new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme()));
-
-      message.content
-        .filter((part) => part.type === "toolCall")
-        .forEach((call) => {
-          addToolCall(call, message);
-        });
-
-      return;
-    }
-
-    if (item.kind === "tool") {
-      pendingTools.get(item.toolCallId)?.updateResult(item.raw as never);
-      pendingTools.delete(item.toolCallId);
-      pendingCalls.delete(item.toolCallId);
-      return;
-    }
-
-    if ((item.raw as { display?: boolean }).display !== false) {
-      addExpandable(new CustomMessageComponent(item.raw as never, undefined, getMarkdownTheme()));
-    }
-  };
-
-  const seedPendingResults = () => {
-    pendingCalls.forEach((call, id) => {
-      const spec = options.tools?.find((tool) => tool.name === call.name);
-      const partial = spec?.pendingResult?.(id, options.owner);
-
-      if (!partial) {
-        return;
-      }
-
-      pendingCalls.delete(id);
-      pendingTools.get(id)?.updateResult(toPiResult(partial) as never, true);
-    });
-  };
-
-  const reset = () => {
-    container.clear();
-    pendingTools.clear();
-    pendingCalls.clear();
-    expandables.length = 0;
-    synced = 0;
-  };
-
-  return {
-    sync: (items) => {
-      if (items.length < synced) {
-        reset();
-      }
-
-      items.slice(synced).forEach(addItem);
-      synced = items.length;
-    },
-    setToolsExpanded: (value) => {
-      toolsExpanded = value;
-
-      expandables.forEach((component) => {
-        component.setExpanded(value);
-      });
-    },
-    render: (width) => {
-      seedPendingResults();
-
-      const lines = container.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX, ""));
-
-      rendered = lines.length;
-
-      return lines;
-    },
-    click: (line, column, width) => {
-      const result = container.handleMouse({
-        type: "click",
-        button: "left",
-        x: column,
-        y: line,
-        screenX: column,
-        screenY: line,
-        width,
-        height: rendered,
-        shift: false,
-        alt: false,
-        ctrl: false,
-        clickCount: 1,
-      });
-
-      return result?.handled === true;
-    },
-  };
-};
 
 export const createScrollPane = (requestRender: () => void): ScrollPane => {
   let content: string[] = [];
@@ -382,9 +93,9 @@ export const tuiContext = (state: HostState) => (state.ctx?.mode === "tui" ? sta
 
 export const createUi = (
   state: HostState,
-  stdout: TerminalOut = process.stdout,
-  env: TerminalEnv = process.env,
-  editor: EditorHooks = createEditorHooks(() => tuiContext(state)),
+  stdout: TerminalOut,
+  env: TerminalEnv,
+  editor: EditorHooks,
 ): HostUi => {
   const widgetTuis = new Map<string, TUI>();
   let lastTui: TUI | undefined;
@@ -450,12 +161,10 @@ export const createUi = (
           createScroll: () => createScrollPane(() => tui.requestRender()),
         });
 
-        const isToolsToggle = (data: string) => keybindings.matches(data, "app.tools.expand");
-
         return {
           render: (width: number) => fitLines(view.render(width), width),
           handleInput: (data: string) => {
-            view.handleKey(keyPress(data, isToolsToggle));
+            view.handleKey(keyPress(data, keybindings));
             tui.requestRender();
           },
           handleMouse: (event: TuiMouseEvent) => {
@@ -518,7 +227,7 @@ export const createUi = (
     onEmptyEditorLeft: editor.onEmptyEditorLeft,
     onEmptyEditorDown: editor.onEmptyEditorDown,
     captureEditorKeys: editor.captureEditorKeys,
-    setFooter: createFooterSetter(tuiCtx, themeLike),
+    setFooter: createFooterSetter(tuiCtx),
     keyText: (binding) => keyText(binding as Keybinding),
     onKeyPress: (listener) =>
       tuiCtx()?.ui.onTerminalInput((data) => {

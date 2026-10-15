@@ -11,10 +11,11 @@ pi-extensions/
 │   │   ├── contract.ts          # host/runtime interfaces and shared types
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
-│   │   ├── pi-ui.ts / pi-tools.ts   # pi TUI components, tool wrapping
-│   │   ├── pi-components.ts     # themeLike, textComponent, PaddedLines (imports only contract types)
-│   │   ├── pi-keys.ts           # KeyPress naming, editorKeyPress (imports only contract types)
-│   │   ├── pi-editor-frame.ts   # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
+│   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
+│   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike, padded lines
+│   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
+│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
@@ -32,7 +33,8 @@ pi-extensions/
 │   │   ├── format.ts            # token and duration formatters
 │   │   └── settings.ts / settle.ts  # settings, timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
-│       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts
+│       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
+│       │                        #   offline.ts (pi loaded offline for extension tests)
 │       ├── manager/
 │       └── helpers/fakes.ts     # fake host, runtime and child session
 ├── extensions/
@@ -112,7 +114,7 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Conventions
 
-- Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules.
+- Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules, including that extension tests reach the adapter only through `contract.ts` and `core/test/adapter`.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).

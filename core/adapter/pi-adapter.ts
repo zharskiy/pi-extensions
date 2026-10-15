@@ -20,7 +20,7 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
-import { createEditorHooks } from "./pi-editor-frame.ts";
+import { createEditorHooks } from "./pi-editor.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe } from "vitest";
-import type { AgentRuntime, TranscriptItem, UsageTotals } from "../../adapter/contract.ts";
+import type { AgentRuntime, UsageTotals } from "../../adapter/contract.ts";
 import { createPiRuntime, type SkillFile } from "../../adapter/pi-child.ts";
 
 export const LIVE_TIMEOUT_MS = 180_000;
@@ -160,17 +160,6 @@ export const sessionLines = (file: string) =>
     .map((line) => JSON.parse(line) as SessionLine);
 
 export const sessionHeader = (file: string) => sessionLines(file).find((line) => line.type === "session");
-
-type CodemodeResult = { details?: { calls?: { name?: string; status?: string }[] } };
-
-export const codemodeCalls = (items: readonly TranscriptItem[]) =>
-  items
-    .flatMap((item) =>
-      item.kind === "tool" && item.toolName === "codemode" ? [item.raw as CodemodeResult] : [],
-    )
-    .flatMap((raw) => raw.details?.calls ?? [])
-    .filter((call) => call.status === "ok")
-    .map((call) => call.name ?? "tool");
 
 export const quiet = (ms: number) => new Promise((done) => setTimeout(done, ms));
 

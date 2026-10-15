@@ -1,10 +1,9 @@
 import { type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { themeLike } from "../../adapter/pi-components.ts";
+import { createEditorHooks } from "../../adapter/pi-editor.ts";
 import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../../adapter/pi-footer.ts";
 import { createUi, type HostState } from "../../adapter/pi-ui.ts";
-import { plainTheme } from "../helpers/fakes.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -38,9 +37,8 @@ const fakeFooter = (mode: string) => {
       return () => branchListeners.delete(listener);
     },
   };
-  const setFooter = createFooterSetter(
-    () => (ctx.mode === "tui" ? (ctx as unknown as ExtensionContext) : undefined),
-    () => plainTheme,
+  const setFooter = createFooterSetter(() =>
+    ctx.mode === "tui" ? (ctx as unknown as ExtensionContext) : undefined,
   );
   const mount = () => installed.at(-1)?.(tui, { fg: (_token: string, text: string) => text }, data);
 
@@ -171,8 +169,13 @@ describe("setFooter with pi's interactive layout", () => {
         },
       } as unknown as ExtensionContext,
     };
-    const ui = createUi(state, { write: () => {} }, {});
-    const setFooter = createFooterSetter(() => state.ctx, themeLike);
+    const ui = createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+    );
+    const setFooter = createFooterSetter(() => state.ctx);
     const footer = () =>
       setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("pi-subagents") ?? ""]);
     const below = () => [...mode.widgetContainerBelow.render(40), ...mode.footerContainer.render(40)];

@@ -5,24 +5,14 @@ import type {
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import type {
-  ContextSnapshot,
-  FooterData,
-  FooterRender,
-  Host,
-  HostUi,
-  ThemeLike,
-  WidgetHandle,
-} from "./contract.ts";
+import type { ContextSnapshot, FooterData, FooterRender, Host, HostUi, WidgetHandle } from "./contract.ts";
+import { themeLike } from "./pi-tools.ts";
 import type { HostState } from "./pi-ui.ts";
 import { contextOf } from "./usage.ts";
 
 export const FOOTER_WIDGET_KEY = "pi-footer";
 
-export const createFooterSetter = (
-  tuiCtx: () => ExtensionContext | undefined,
-  themeOf: (theme: Theme) => ThemeLike,
-): HostUi["setFooter"] => {
+export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): HostUi["setFooter"] => {
   let footerTui: TUI | undefined;
   let widgetTui: TUI | undefined;
   let footerData: ReadonlyFooterDataProvider | undefined;
@@ -37,7 +27,7 @@ export const createFooterSetter = (
   });
 
   const draw = (width: number, theme: Theme, data: ReadonlyFooterDataProvider | undefined) =>
-    (current?.(width, themeOf(theme), dataOf(data)) ?? []).map((line) =>
+    (current?.(width, themeLike(theme), dataOf(data)) ?? []).map((line) =>
       truncateToWidth(line, width, theme.fg("dim", "…")),
     );
 

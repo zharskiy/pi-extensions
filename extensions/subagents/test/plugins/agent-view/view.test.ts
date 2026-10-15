@@ -6,7 +6,7 @@ import {
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
-} from "../../../../../core/adapter/session-file.ts";
+} from "../../../../../core/test/adapter/offline.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { displayWidth } from "../../../src/components/format.ts";
