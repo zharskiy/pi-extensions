@@ -39,16 +39,17 @@ A model context window of 0, or unknown token usage, disables the extension for 
 Any extension can hold the switch while its work runs by emitting on pi's event bus:
 
 ```ts
-pi.events.emit("session-limits:busy", { source: "my-extension", busy: true });
-pi.events.emit("session-limits:busy", { source: "my-extension", busy: false });
+pi.events.emit("pi:busy", { source: "my-extension", busy: true });
+pi.events.emit("pi:busy", { source: "my-extension", busy: false });
 ```
 
 - `source` is a non-empty string naming the extension; it is shown to the user in the confirmation of `/session-handoff`. `busy` is a boolean. Other payloads are ignored.
 - The extension keeps the set of sources whose last signal was `busy: true`. The automatic switch waits while the set is not empty.
 - Send `busy: true` when work starts and `busy: false` when the last piece ends; repeated signals are harmless. The set starts empty in every session (pi creates a new extension instance per session), so a source that is busy when a session starts must announce it after session start, for example in its own `session_start` handler.
 - The switch ends the old session, so work that is still running when the user confirms a manual switch gets pi's normal `session_shutdown` with reason `new`.
-- Nothing is imported from this extension; when it is not installed the signals simply go unheard.
+- Nothing is imported from this extension; when it is not installed the switch simply does not exist; other consumers, such as the notifications extension, still hear the signals.
+- Changed in 0.4.0: the channel was named `session-limits:busy`; publishers using that literal name must switch to `pi:busy`.
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/conversation.ts` limits the extension to the conversational modes (`tui`, `rpc`). `src/limits.ts` holds the flow, `src/thresholds.ts` the pure decisions, `src/handoff.ts` the path and seed, `src/settings.ts` the settings files. The handoff sections and validator and the busy channel name are shared in `core/manager/handoff.ts` and `core/manager/channels.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); everything else depends on `core/adapter/contract.ts`. `src/conversation.ts` limits the extension to the conversational modes (`tui`, `rpc`). `src/limits.ts` holds the flow, `src/thresholds.ts` the pure decisions, `src/handoff.ts` the path and seed, `src/settings.ts` the settings schema and defaults; `watchSettings` in `core/manager/settings.ts` reads the files. The handoff sections and validator and the busy channel name are shared in `core/manager/handoff.ts` and `core/manager/channels.ts`. Tests are under `test/`.

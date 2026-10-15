@@ -96,6 +96,12 @@ export const liveAgentModel = () => {
   return `${provider}/${modelId}${thinking ? `:${thinking}` : ""}`;
 };
 
+export const liveModel = () => {
+  const { model, thinking } = liveState();
+
+  return { model, thinking };
+};
+
 export const realContextMarkers = () =>
   CONTEXT_FILES.map((name) => join(liveState().realAgentDir, name))
     .filter((path) => existsSync(path))

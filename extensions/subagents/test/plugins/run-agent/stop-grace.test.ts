@@ -5,8 +5,9 @@ import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { MessageAgentParams, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
+import type { MessageAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const GRACE_MS = 60_000;
 
@@ -47,7 +48,7 @@ describe("stop grace period", () => {
     expect(await runner.stop(id)).toBe(true);
     expect(child.aborted).toBe(true);
     expect(registry.get(id)).toMatchObject({ state: "grace", graceEndsAt: Date.now() + GRACE_MS });
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     vi.advanceTimersByTime(30_000);
 
@@ -60,7 +61,7 @@ describe("stop grace period", () => {
     vi.advanceTimersByTime(5 * GRACE_MS);
 
     expect(registry.get(id)?.state).toBe("grace");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     child.finish("the handler lives in src/auth.ts");
 
@@ -68,15 +69,15 @@ describe("stop grace period", () => {
 
     vi.advanceTimersByTime(GRACE_MS - 1);
 
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     vi.advanceTimersByTime(1);
     await flush();
 
     expect(registry.get(id)).toMatchObject({ state: "stopped", graceEndsAt: undefined });
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("finished: 1 stopped");
-    expect(host.sent[0]).toContain("the handler lives in src/auth.ts");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("finished: 1 stopped");
+    expect(wakeTexts(host)[0]).toContain("the handler lives in src/auth.ts");
     expect(child.disposed).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -92,14 +93,14 @@ describe("stop grace period", () => {
     vi.advanceTimersByTime(GRACE_MS - 1);
 
     expect(registry.get(id)?.state).toBe("grace");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     vi.advanceTimersByTime(1);
     await flush();
 
     expect(registry.get(id)?.state).toBe("stopped");
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("partial findings");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("partial findings");
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -111,14 +112,14 @@ describe("stop grace period", () => {
     runtime.child(running).finish("second result");
 
     expect(registry.get(running)?.state).toBe("done");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     vi.advanceTimersByTime(GRACE_MS);
     await flush();
 
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("finished: 1 stopped, 1 done");
-    expect(host.sent[0]).toContain("second result");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("finished: 1 stopped, 1 done");
+    expect(wakeTexts(host)[0]).toContain("second result");
   });
 
   it("closes at once and wakes on a second stop during grace", async () => {
@@ -130,12 +131,12 @@ describe("stop grace period", () => {
     await flush();
 
     expect(registry.get(id)?.state).toBe("stopped");
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
 
     vi.advanceTimersByTime(GRACE_MS);
 
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
   });
 
   it("closes as stopped and never wakes when the session shuts down during grace", async () => {
@@ -151,7 +152,7 @@ describe("stop grace period", () => {
 
     vi.advanceTimersByTime(GRACE_MS);
 
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
   });
 
   it("stops waiting for an abort the child never answers, then disposes it on stop and shutdown", async () => {
@@ -190,7 +191,7 @@ describe("stop grace period", () => {
 
     expect(registry.get(id)).toMatchObject({ state: "stopped", error: "stopped by the user" });
     expect(runtime.child(id).aborted).toBe(true);
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -209,8 +210,8 @@ describe("stop grace period", () => {
     await flush();
 
     expect(registry.get(id)?.state).toBe("handoff");
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("Handoff file:");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("Handoff file:");
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -228,7 +229,7 @@ describe("stop grace period", () => {
       error: "context hard limit reached before the handoff was finished",
     });
     expect(runtime.child(id).disposed).toBe(true);
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -241,7 +242,7 @@ describe("stop grace period", () => {
     await runner.stop(queued);
 
     expect(registry.get(queued)?.state).toBe("stopped");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
   });
 

@@ -1,9 +1,86 @@
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Box, type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ToolResult, ToolSpec } from "./contract.ts";
-import { textComponent, themeLike } from "./pi-ui.ts";
+import type { ThemeLike, ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
 
-const toPiResult = (result: ToolResult) => ({
+const ESC = "\x1b";
+
+export const textMetrics: Pick<ThemeLike, "width" | "truncate"> = {
+  width: visibleWidth,
+  truncate: (text, cols) => {
+    const cut = truncateToWidth(text, cols, "…");
+
+    return text.includes(ESC) ? cut : stripVTControlCharacters(cut);
+  },
+};
+
+export const themeLike = (theme: Theme): ThemeLike => ({
+  fg: (token, text) => theme.fg(token, text),
+  bold: (text) => theme.bold(text),
+  ...textMetrics,
+});
+
+class WidthText implements Component {
+  private source: (width: number) => string;
+  private readonly text = new Text("", 0, 0);
+
+  constructor(source: (width: number) => string) {
+    this.source = source;
+  }
+
+  set(source: (width: number) => string) {
+    this.source = source;
+  }
+
+  render(width: number): string[] {
+    this.text.setText(this.source(width));
+
+    return this.text.render(width);
+  }
+
+  invalidate() {
+    this.text.invalidate();
+  }
+}
+
+const textComponent = (previous: unknown, text: ToolRender): Component => {
+  if (typeof text === "function") {
+    if (previous instanceof WidthText) {
+      previous.set(text);
+      return previous;
+    }
+
+    return new WidthText(text);
+  }
+
+  if (previous instanceof Text) {
+    previous.setText(text);
+    return previous;
+  }
+
+  return new Text(text, 0, 0);
+};
+
+const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
+
+class CutLines implements Component {
+  private readonly source: ToolRender;
+
+  constructor(source: ToolRender) {
+    this.source = source;
+  }
+
+  render(width: number): string[] {
+    const text = typeof this.source === "function" ? this.source(width) : this.source;
+
+    return splitLines(text).map((line) => truncateToWidth(line, width, "…"));
+  }
+
+  invalidate() {}
+}
+
+export const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
@@ -12,13 +89,73 @@ const toPiResult = (result: ToolResult) => ({
 const fromPiResult = (result: {
   content: { type: string; text?: string }[];
   details?: unknown;
+  isError?: boolean;
 }): ToolResult => ({
   text: result.content
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n"),
   details: result.details,
+  ...(result.isError ? { isError: true } : {}),
 });
+
+export type PiToolRenderContext = Parameters<NonNullable<ToolDefinition["renderCall"]>>[2];
+
+type RenderContext = Pick<
+  PiToolRenderContext,
+  "toolCallId" | "expanded" | "isPartial" | "isError" | "args" | "outputPad" | "invalidate" | "lastComponent"
+>;
+
+const renderState = (context: RenderContext): ToolRenderState => ({
+  toolCallId: context.toolCallId,
+  expanded: context.expanded,
+  isPartial: context.isPartial,
+  isError: context.isError,
+  args: context.args,
+  invalidate: context.invalidate,
+});
+
+const TONE_BG = {
+  pending: "toolPendingBg",
+  success: "toolSuccessBg",
+  error: "toolErrorBg",
+} as const satisfies Record<ToolTone, Parameters<Theme["bg"]>[0]>;
+
+const piTone = (context: RenderContext): ToolTone =>
+  context.isPartial ? "pending" : context.isError ? "error" : "success";
+
+const reuseBox = (box: Box, pad: number, bg: (line: string) => string) => {
+  box.clear();
+  box.setBgFn(bg);
+  box.setPaddingX(pad);
+
+  return box;
+};
+
+const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
+  const pad = context.outputPad;
+  const bg = (line: string) => theme.bg(TONE_BG[tone], line);
+  const box =
+    context.lastComponent instanceof Box ? reuseBox(context.lastComponent, pad, bg) : new Box(pad, 1, bg);
+
+  box.addChild(new CutLines(text));
+
+  return box;
+};
+
+const shellComponent = <P, D>(
+  spec: ToolSpec<P, D>,
+  theme: Theme,
+  context: RenderContext,
+  text: ToolRender,
+  result?: ToolResult<D>,
+): Component => {
+  if (spec.renderShell === "box") {
+    return toolBox(theme, context, text, spec.renderTone?.(renderState(context), result) ?? piTone(context));
+  }
+
+  return textComponent(context.lastComponent, text);
+};
 
 export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionContext) => void = () => {}) =>
   ({
@@ -27,40 +164,46 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     description: spec.description,
     promptSnippet: spec.promptSnippet,
     parameters: Type.Unsafe<P>(spec.parameters),
+    renderShell: spec.renderShell === "box" ? "self" : undefined,
     execute: async (
-      _toolCallId: string,
+      toolCallId: string,
       params: unknown,
       signal: AbortSignal | undefined,
-      onUpdate: ((update: { content: { type: "text"; text: string }[]; details: never }) => void) | undefined,
+      onUpdate:
+        | ((update: { content: { type: "text"; text: string }[]; details: D | undefined }) => void)
+        | undefined,
       ctx: ExtensionContext,
     ) => {
       onContext(ctx);
 
       const result = await spec.execute(params as P, {
         signal,
-        update: (text) => onUpdate?.({ content: [{ type: "text", text }], details: undefined as never }),
+        toolCallId,
+        update: (text, details) => onUpdate?.({ content: [{ type: "text", text }], details }),
       });
 
       return toPiResult(result) as never;
     },
     renderCall: spec.renderCall
-      ? (args: unknown, theme: Theme, context: { lastComponent?: unknown }) =>
-          textComponent(context.lastComponent, spec.renderCall?.(args as P, themeLike(theme)) ?? "")
+      ? (args: unknown, theme: Theme, context: RenderContext) =>
+          shellComponent(
+            spec,
+            theme,
+            context,
+            spec.renderCall?.(args as P, themeLike(theme), renderState(context)) ?? "",
+          )
       : undefined,
     renderResult: spec.renderResult
-      ? (
-          result: unknown,
-          options: { expanded: boolean },
-          theme: Theme,
-          context: { lastComponent?: unknown; invalidate: () => void },
-        ) =>
-          textComponent(
-            context.lastComponent,
-            spec.renderResult?.(
-              fromPiResult(result as never) as ToolResult<D>,
-              { expanded: options.expanded, invalidate: context.invalidate },
-              themeLike(theme),
-            ) ?? "",
-          )
+      ? (result: unknown, _options: { expanded: boolean }, theme: Theme, context: RenderContext) => {
+          const converted = fromPiResult(result as never) as ToolResult<D>;
+
+          return shellComponent(
+            spec,
+            theme,
+            context,
+            spec.renderResult?.(converted, renderState(context), themeLike(theme)) ?? "",
+            converted,
+          );
+        }
       : undefined,
   }) as unknown as ToolDefinition;

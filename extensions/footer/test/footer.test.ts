@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
-import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { createFakeHost, FAKE_FOOTER_KEY, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createFooter } from "../src/footer.ts";
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -23,14 +23,14 @@ const setup = () => {
 };
 
 describe("footer", () => {
-  it("installs the footer and hides the cost figures until spending publishes", () => {
+  it("installs the footer below the editor and hides the cost figures until spending publishes", () => {
     const { host, lines } = setup();
 
-    expect(host.published).toEqual([]);
+    expect(host.belowEditor).toEqual([FAKE_FOOTER_KEY]);
     expect(lines()).toEqual([
+      "",
       " 50.0k · test-model (200k context)",
-      " my-project",
-      " main",
+      " my-project git:(main)",
       " ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
       "",
     ]);
@@ -46,7 +46,7 @@ describe("footer", () => {
     });
 
     expect(host.footerRefreshes).toBe(1);
-    expect(lines().slice(0, 2)).toEqual([
+    expect(lines().slice(1, 3)).toEqual([
       " 50.0k · $1.50 · test-model (200k context)",
       " Session total (agents included): 50.0k / $2.00",
     ]);
@@ -65,7 +65,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines().slice(0, 2)).toEqual([" 50.0k · test-model (200k context)", " my-project"]);
+    expect(lines().slice(1, 3)).toEqual([" 50.0k · test-model (200k context)", " my-project git:(main)"]);
   });
 
   it("refreshes on idle", () => {
@@ -84,7 +84,7 @@ describe("footer", () => {
     host.sessionTitle = "refactor";
 
     expect(lines()).toContain(" 190.0k · test-model (200k context)");
-    expect(lines()).toContain(" my-project • refactor");
+    expect(lines()).toContain(" my-project git:(main) • refactor");
     expect(lines()).toContain(" ▶▶ thinking high (<app.thinking.cycle> to cycle)");
   });
 });

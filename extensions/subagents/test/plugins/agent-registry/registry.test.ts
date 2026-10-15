@@ -1,8 +1,9 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../core/manager/bus.ts";
 import type { BusEvents } from "../../../src/model/events.ts";
+import { MANIFEST_FILE } from "../../../src/model/paths.ts";
 import { MAIN_CALLER } from "../../../src/model/types.ts";
 import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts";
 import { tempDir } from "../../helpers/harness.ts";
@@ -69,5 +70,21 @@ describe("agent registry", () => {
     });
 
     expect(registry.create(newAgent(tempDir())).id).toMatch(/^explorer-[0-9a-f]{12}$/);
+  });
+
+  it("writes the final turns, tool calls and tokens to the manifest on close", () => {
+    const registry = createRegistry({
+      bus: createBus<BusEvents>(),
+      handoffPath: (id) => `/tmp/${id}-handoff.md`,
+    });
+    const record = registry.create(newAgent(tempDir()));
+
+    registry.update(record.id, { state: "running" });
+    registry.update(record.id, { turns: 3, toolCalls: 4, tokens: 12_300 });
+    registry.close(record.id, { state: "done" });
+
+    const manifest = JSON.parse(readFileSync(join(record.dir, MANIFEST_FILE), "utf8"));
+
+    expect(manifest).toMatchObject({ turns: 3, toolCalls: 4, tokens: 12_300, state: "done" });
   });
 });

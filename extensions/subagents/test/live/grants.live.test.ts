@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import type { TranscriptItem } from "../../../../core/adapter/contract.ts";
 import { describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
+import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
 const code = () => randomUUID().slice(0, 8);
@@ -16,6 +18,17 @@ const FIXTURE = resolve(import.meta.dirname, "fixtures", "mcp-server.ts");
 const skill = (name: string, body: string) =>
   `---\nname: ${name}\ndescription: Use when asked for the ${name} code word.\n---\n${body}\n`;
 
+type CodemodeResult = { details?: { calls?: { name?: string; status?: string }[] } };
+
+const codemodeCalls = (items: readonly TranscriptItem[]) =>
+  items
+    .flatMap((item) =>
+      item.kind === "tool" && item.toolName === "codemode" ? [item.raw as CodemodeResult] : [],
+    )
+    .flatMap((raw) => raw.details?.calls ?? [])
+    .filter((call) => call.status === "ok")
+    .map((call) => call.name ?? "tool");
+
 describeLive("live grants", () => {
   let live: LiveHarness;
 
@@ -28,7 +41,7 @@ describeLive("live grants", () => {
       record,
       tools: session.prompt.tools.map((tool) => tool.name).toSorted(),
       skills: session.prompt.skills.map((entry) => entry.name).toSorted(),
-      calls: calls.map((call) => call.name),
+      calls: [...calls.map((call) => call.name), ...codemodeCalls(session.items)],
       payload: JSON.stringify(session.prompt.providerPayload),
       leaks: realContextMarkers().filter((marker) => JSON.stringify(session.prompt).includes(marker)),
     };
@@ -90,7 +103,7 @@ describeLive("live grants", () => {
   });
 
   it("gives tools: [] and skills: [] no tool, no skill and no MCP tool", async () => {
-    const before = live.host.sent.length;
+    const before = wakeTexts(live.host).length;
     const id = await live.run("bare", "Reply with the alpha code word, or NONE if you do not know it.");
 
     await live.waitForWakes(before + 1);
@@ -107,7 +120,7 @@ describeLive("live grants", () => {
   });
 
   it("gives skills: all every main session skill", async () => {
-    const before = live.host.sent.length;
+    const before = wakeTexts(live.host).length;
     const id = await live.run("all-skills", "Reply with the single word OK. Do not call any tool.");
 
     await live.waitForWakes(before + 1);

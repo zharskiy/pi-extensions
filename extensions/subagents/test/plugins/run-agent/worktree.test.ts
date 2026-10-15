@@ -11,10 +11,10 @@ import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.t
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createWorktree } from "../../../src/plugins/run-agent/worktree.ts";
-import { createHarness, tempDir } from "../../helpers/harness.ts";
+import { createHarness, tempDir, wakeTexts } from "../../helpers/harness.ts";
 
 const fixedBytes = vi.hoisted(() => ({ value: undefined as Buffer | undefined }));
 
@@ -162,7 +162,7 @@ describe("worktree agents", () => {
     prepare(path);
     harness.host.settle();
     harness.runtime.child(record.id).finish("Renamed.");
-    await vi.waitFor(() => expect(harness.host.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(wakeTexts(harness.host)).toHaveLength(1));
 
     return { ...harness, record, path, branch };
   };
@@ -204,7 +204,7 @@ describe("worktree agents", () => {
     expect(JSON.parse(readFileSync(join(record.dir, MANIFEST_FILE), "utf8")).worktree.cleanup).toBe(
       "removed",
     );
-    expect(host.sent[0]).toContain("Worktree: removed");
+    expect(wakeTexts(host)[0]).toContain("Worktree: removed");
     expect(snapshotLine(snapshotOf(current(record.id), Date.now()))).toContain("  worktree: removed");
   });
 
@@ -218,7 +218,7 @@ describe("worktree agents", () => {
     expect(existsSync(path)).toBe(false);
     expect(git(repo, "branch", "--list", branch)).toContain(branch);
     expect(current(record.id).worktree?.cleanup).toBe("branch kept");
-    expect(host.sent[0]).toContain(`Worktree: removed; branch ${branch} kept`);
+    expect(wakeTexts(host)[0]).toContain(`Worktree: removed; branch ${branch} kept`);
   });
 
   it("keeps the worktree and its branch when the agent left uncommitted changes", async () => {
@@ -230,7 +230,7 @@ describe("worktree agents", () => {
     expect(existsSync(join(path, "notes.txt"))).toBe(true);
     expect(git(repo, "branch", "--list", branch)).toContain(branch);
     expect(current(record.id).worktree?.cleanup).toBe("kept");
-    expect(host.sent[0]).toContain(`Worktree: kept: ${path} (branch ${branch})`);
+    expect(wakeTexts(host)[0]).toContain(`Worktree: kept: ${path} (branch ${branch})`);
   });
 
   it("removes an unchanged branch even when the main checkout moved to an unrelated branch", async () => {
@@ -266,10 +266,10 @@ describe("worktree agents", () => {
 
     runtime.child(first.id).finish("A.");
     runtime.child(second.id).finish("B.");
-    await vi.waitFor(() => expect(host.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(1));
 
-    expect(host.sent[0].match(/Worktree: removed/g)).toHaveLength(2);
-    expect(host.sent[0]).not.toContain(".pi/worktrees");
+    expect(wakeTexts(host)[0].match(/Worktree: removed/g)).toHaveLength(2);
+    expect(wakeTexts(host)[0]).not.toContain(".pi/worktrees");
   });
 
   it("removes the worktree of a stopped agent only after its child is gone", async () => {
@@ -305,7 +305,7 @@ describe("worktree agents", () => {
     const { run, runtime, current, host } = setup(repo);
     const record = await run();
 
-    await vi.waitFor(() => expect(host.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(1));
 
     expect(current(record.id).state).toBe("failed");
     expect(current(record.id).error).toContain("worktree failed: ENOTDIR");
@@ -359,13 +359,13 @@ describe("worktree agents", () => {
     const [running, waiting] = registry.list();
 
     await (services.require("runner") as Runner).stop(waiting.id, { immediate: true });
-    await vi.waitFor(() => expect(host.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(1));
 
-    expect(host.sent[0]).toContain(`${waiting.id} (explorer) - stopped`);
+    expect(wakeTexts(host)[0]).toContain(`${waiting.id} (explorer) - stopped`);
 
     host.settle();
     runtime.child(running.id).finish("Done.");
-    await vi.waitFor(() => expect(host.sent).toHaveLength(2));
+    await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(2));
     await start("explorer");
     await vi.waitFor(() => expect(runtime.children).toHaveLength(2));
   });
@@ -450,7 +450,7 @@ describe("worktree agents", () => {
     expect(git(repo, "worktree", "list").split("\n")).toHaveLength(2);
 
     runtime.child(second).finish("Renamed.");
-    await vi.waitFor(() => expect(host.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(1));
 
     expect(existsSync(path)).toBe(false);
     expect(git(repo, "branch", "--list", branch)).toBe("");

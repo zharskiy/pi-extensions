@@ -1,7 +1,41 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { finishSummary, singleLine, truncate } from "../../components/agent-row.ts";
+import {
+  cutChars,
+  elapsedOf,
+  errorText,
+  formatDuration,
+  formatTokens,
+  formatToolUses,
+  singleLine,
+} from "../../components/format.ts";
+import { isTerminal } from "../../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
+
+const statsText = (record: AgentRecord) =>
+  [
+    formatToolUses(record.toolCalls),
+    `${formatTokens(record.tokens)} tokens`,
+    formatDuration(elapsedOf(record, record.endedAt ?? record.createdAt)),
+  ].join(" · ");
+
+const finishSummary = (record: AgentRecord) => {
+  const stats = statsText(record);
+
+  if (record.state === "done") {
+    return `Done (${stats})`;
+  }
+
+  if (record.state === "handoff") {
+    return `Handoff (${stats})`;
+  }
+
+  if (record.state === "stopped") {
+    return `Stopped (${stats})`;
+  }
+
+  return `Failed: ${record.error ?? "unknown error"} (${stats})`;
+};
 
 type StoredResult = { resultText: string; resultPath?: string; error?: string };
 
@@ -14,11 +48,11 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
 
     return { resultText: text, resultPath };
   } catch (error) {
-    return { resultText: text, error: `result file not written: ${(error as Error).message}` };
+    return { resultText: text, error: `result file not written: ${errorText(error)}` };
   }
 };
 
-const chainTotals = (links: AgentRecord[]): AgentRecord => {
+export const chainTotals = (links: AgentRecord[]): AgentRecord => {
   const first = links[0];
   const last = links[links.length - 1];
 
@@ -34,18 +68,18 @@ const chainTotals = (links: AgentRecord[]): AgentRecord => {
 const chainLine = (links: AgentRecord[]) =>
   `Chain: ${links.map((link) => link.id).join(" → ")} (${links.length} sessions)`;
 
-const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, links: AgentRecord[]) => {
+const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecord[]) => {
   const chained = links.length > 1;
   const lines = [
     `## ${record.id} (${record.agent}) - ${record.state}`,
-    `Task: ${truncate(singleLine(record.description), 200)}`,
+    `Task: ${cutChars(singleLine(record.description), 200)}`,
   ];
 
   if (chained) {
     lines.push(chainLine(links));
   }
 
-  lines.push(finishSummary(chained ? chainTotals(links) : record, now));
+  lines.push(finishSummary(chained ? chainTotals(links) : record));
 
   if (record.worktree) {
     lines.push(`Worktree: ${worktreeText(record.worktree)}`);
@@ -73,7 +107,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, now: number, link
 
   lines.push(
     `Result file: ${record.resultPath} (${text.length} chars)`,
-    `Preview: ${truncate(singleLine(text), 300)}`,
+    `Preview: ${cutChars(singleLine(text), 300)}`,
   );
 
   return lines.join("\n");
@@ -90,15 +124,12 @@ const countByState = (records: AgentRecord[]) => {
     .join(", ");
 };
 
-export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number, now: number) => {
+export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number) => {
   const byId = new Map(records.map((record) => [record.id, record]));
-  const lookup = { get: (id: string) => byId.get(id) };
-  const terminals = records.filter((record) => !(record.successorId && byId.has(record.successorId)));
+  const terminals = records.filter((record) => isTerminal(record, byId));
   const header = `[pi-subagents] Batch ${batchId} finished: ${countByState(terminals)}.`;
 
-  const entries = terminals.map((record) =>
-    resultEntry(record, inlineLimit, now, chainLinks(lookup, record)),
-  );
+  const entries = terminals.map((record) => resultEntry(record, inlineLimit, chainLinks(byId, record)));
 
   entries.unshift(header);
 

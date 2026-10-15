@@ -6,7 +6,7 @@ const agents = [
     name: "reviewer",
     description: "Reviews a change.",
     limit: 80000,
-    model: "openai/gpt-6-luna",
+    model: "beta/nova-6-luna",
     thinking: "high",
   },
   { name: "explorer", description: "Searches the repo.", limit: 100000 },
@@ -16,7 +16,7 @@ const general = {
   name: "general",
   description: "Use only when no other agent fits the work.",
   limit: 100000,
-  model: "openai/gpt-6.1-sol",
+  model: "beta/nova-6.1-sol",
   subagents: ["explorer", "reviewer"],
 };
 
@@ -25,7 +25,7 @@ describe("run_agent description", () => {
     const text = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
 
     expect(text).toContain(
-      "- explorer: Searches the repo. (model of the main session, context limit 100000 tokens)\n- reviewer: Reviews a change. (model openai/gpt-6-luna:high, context limit 80000 tokens)",
+      "- explorer: Searches the repo. (model of the main session, context limit 100000 tokens)\n- reviewer: Reviews a change. (model beta/nova-6-luna:high, context limit 80000 tokens)",
     );
     expect(text).toContain("agents you start run at depth 2 of at most 3. They may start only the subagents");
     expect(text).toContain("at most 4 agents run at the same time");
@@ -41,7 +41,7 @@ describe("run_agent description", () => {
     const text = describeRunAgent([general, ...agents], { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
 
     expect(text).toContain(
-      "Agents you may start:\n\n- explorer: Searches the repo. (model of the main session, context limit 100000 tokens)\n- general: Use only when no other agent fits the work. (model openai/gpt-6.1-sol, context limit 100000 tokens, may start explorer, reviewer)\n- reviewer: ",
+      "Agents you may start:\n\n- explorer: Searches the repo. (model of the main session, context limit 100000 tokens)\n- general: Use only when no other agent fits the work. (model beta/nova-6.1-sol, context limit 100000 tokens, may start explorer, reviewer)\n- reviewer: ",
     );
     expect(text).not.toContain("allback");
     expect(text).toContain(
@@ -58,7 +58,7 @@ describe("run_agent description", () => {
     const text = describeRunAgent([lead, ...agents], { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
 
     expect(text).toContain(
-      "- lead: Use only when no other agent fits the work. (model openai/gpt-6.1-sol, context limit 100000 tokens, may start any other agent)\n",
+      "- lead: Use only when no other agent fits the work. (model beta/nova-6.1-sol, context limit 100000 tokens, may start any other agent)\n",
     );
     expect(text).not.toContain("MCP");
   });

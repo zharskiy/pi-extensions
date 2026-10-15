@@ -1,214 +1,31 @@
+import { type ExtensionContext, keyText } from "@earendil-works/pi-coding-agent";
 import {
-  AssistantMessageComponent,
-  CustomMessageComponent,
-  createBashToolDefinition,
-  createEditToolDefinition,
-  createFindToolDefinition,
-  createGrepToolDefinition,
-  createLsToolDefinition,
-  createPowerShellToolDefinition,
-  createReadToolDefinition,
-  createWriteToolDefinition,
-  type ExtensionContext,
-  getMarkdownTheme,
-  keyText,
-  type Theme,
-  ToolExecutionComponent,
-  UserMessageComponent,
-} from "@earendil-works/pi-coding-agent";
-import {
-  type Component,
-  Container,
-  Input,
-  Key,
+  isKeyRelease,
   type Keybinding,
-  matchesKey,
   ScrollView,
-  Text,
   type TUI,
   type TuiMouseEvent,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import type {
+  AnyToolSpec,
   HostUi,
-  InputPane,
-  KeyPress,
+  NotifyChannel,
   OverlayFactory,
   ScrollPane,
-  ThemeLike,
-  TranscriptItem,
-  TranscriptPane,
   WidgetHandle,
 } from "./contract.ts";
-import { createEditorFrame } from "./pi-editor-frame.ts";
+import type { EditorHooks } from "./pi-editor.ts";
 import { createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
+import { keyPress } from "./pi-keys.ts";
+import { themeLike } from "./pi-tools.ts";
+import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
-export const themeLike = (theme: Theme): ThemeLike => ({
-  fg: (token, text) => theme.fg(token, text),
-  bold: (text) => theme.bold(text),
-});
+const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width, "…"));
 
-const keyPress = (data: string, isToolsToggle: (data: string) => boolean): KeyPress => {
-  if (isToolsToggle(data)) {
-    return { name: "toggleTools", raw: data };
-  }
-
-  const names = [
-    ["up", Key.up],
-    ["down", Key.down],
-    ["pageUp", Key.pageUp],
-    ["pageDown", Key.pageDown],
-    ["home", Key.home],
-    ["end", Key.end],
-    ["enter", Key.enter],
-    ["escape", Key.escape],
-    ["space", Key.space],
-    ["tab", Key.tab],
-  ] as const;
-
-  const match = names.find(([, key]) => matchesKey(data, key));
-
-  if (match) {
-    return { name: match[0], raw: data };
-  }
-
-  return { name: "other", char: data.length === 1 ? data : undefined, raw: data };
-};
-
-export const textComponent = (previous: unknown, text: string): Component => {
-  if (previous instanceof Text) {
-    previous.setText(text);
-    return previous;
-  }
-
-  return new Text(text, 0, 0);
-};
-
-const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width));
-
-export type HostState = { ctx?: ExtensionContext };
-
-const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
-  read: createReadToolDefinition,
-  bash: createBashToolDefinition,
-  powershell: createPowerShellToolDefinition,
-  edit: createEditToolDefinition,
-  write: createWriteToolDefinition,
-  grep: createGrepToolDefinition,
-  find: createFindToolDefinition,
-  ls: createLsToolDefinition,
-};
-
-type RawToolCall = { type: string; id: string; name: string; arguments: unknown };
-
-type RawAssistant = { content: RawToolCall[]; stopReason: string; errorMessage?: string };
-
-type Expandable = Component & { setExpanded(expanded: boolean): void };
-
-export const createTranscriptPane = (tui: TUI, cwd: string): TranscriptPane => {
-  const container = new Container();
-  const pendingTools = new Map<string, ToolExecutionComponent>();
-  const definitions = new Map<string, object | undefined>();
-  const expandables: Expandable[] = [];
-  let toolsExpanded = false;
-  let synced = 0;
-
-  const definitionFor = (name: string) => {
-    if (!definitions.has(name)) {
-      definitions.set(name, toolDefinitionFactories[name]?.(cwd));
-    }
-
-    return definitions.get(name);
-  };
-
-  const addExpandable = (component: Expandable) => {
-    component.setExpanded(toolsExpanded);
-    expandables.push(component);
-    container.addChild(component);
-  };
-
-  const addToolCall = (call: RawToolCall, message: RawAssistant) => {
-    const component = new ToolExecutionComponent(
-      call.name,
-      call.id,
-      call.arguments,
-      {},
-      definitionFor(call.name) as never,
-      tui,
-      cwd,
-    );
-
-    addExpandable(component);
-
-    if (message.stopReason === "aborted" || message.stopReason === "error") {
-      const text = message.stopReason === "aborted" ? "Operation aborted" : message.errorMessage || "Error";
-
-      component.updateResult({ content: [{ type: "text", text }], isError: true });
-      return;
-    }
-
-    pendingTools.set(call.id, component);
-  };
-
-  const addItem = (item: TranscriptItem) => {
-    if (item.kind === "user") {
-      container.addChild(new UserMessageComponent(item.text, getMarkdownTheme()));
-      return;
-    }
-
-    if (item.kind === "assistant") {
-      const message = item.raw as RawAssistant;
-
-      container.addChild(new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme()));
-
-      message.content
-        .filter((part) => part.type === "toolCall")
-        .forEach((call) => {
-          addToolCall(call, message);
-        });
-
-      return;
-    }
-
-    if (item.kind === "tool") {
-      pendingTools.get(item.toolCallId)?.updateResult(item.raw as never);
-      pendingTools.delete(item.toolCallId);
-      return;
-    }
-
-    if ((item.raw as { display?: boolean }).display !== false) {
-      addExpandable(new CustomMessageComponent(item.raw as never, undefined, getMarkdownTheme()));
-    }
-  };
-
-  const reset = () => {
-    container.clear();
-    pendingTools.clear();
-    expandables.length = 0;
-    synced = 0;
-  };
-
-  return {
-    sync: (items) => {
-      if (items.length < synced) {
-        reset();
-      }
-
-      items.slice(synced).forEach(addItem);
-      synced = items.length;
-    },
-    setToolsExpanded: (value) => {
-      toolsExpanded = value;
-
-      expandables.forEach((component) => {
-        component.setExpanded(value);
-      });
-    },
-    render: (width) => container.render(width),
-  };
-};
+export type HostState = { ctx?: ExtensionContext; tools: Map<string, AnyToolSpec> };
 
 export const createScrollPane = (requestRender: () => void): ScrollPane => {
   let content: string[] = [];
@@ -225,8 +42,8 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
     scrollBy: (lines) => {
       view.scrollBy(lines);
     },
-    scrollTo: (top) => {
-      view.scrollTo(top);
+    scrollTo: (top, options) => {
+      view.scrollTo(top, options);
     },
     scrollToStart: () => {
       view.scrollToStart();
@@ -240,36 +57,6 @@ export const createScrollPane = (requestRender: () => void): ScrollPane => {
       total: content.length,
       following: view.isFollowingEnd,
     }),
-  };
-};
-
-export const createInputPane = (placeholder: string): InputPane => {
-  const input = new Input({ placeholder });
-  let outcome: "submitted" | "cancelled" | undefined;
-
-  input.focused = true;
-  input.onSubmit = () => {
-    outcome = "submitted";
-  };
-  input.onEscape = () => {
-    outcome = "cancelled";
-  };
-
-  return {
-    feed: (key) => {
-      outcome = undefined;
-      input.handleInput(key.raw ?? key.char ?? "");
-
-      return outcome ?? "changed";
-    },
-    value: () => input.getValue(),
-    setValue: (value) => {
-      input.setValue(value);
-    },
-    setFocused: (focused) => {
-      input.focused = focused;
-    },
-    render: (width) => input.render(width),
   };
 };
 
@@ -289,32 +76,34 @@ const OSC_777_TERMINALS = /rxvt/i;
 const usesOsc777 = (env: TerminalEnv) =>
   [env.TERM, env.TERM_PROGRAM].some((name) => OSC_777_TERMINALS.test(name ?? ""));
 
-export const notificationSequence = (title: string, body: string, env: TerminalEnv = process.env) => {
-  const heading = cleanText(title).replace(/;/g, ",");
-  const text = cleanText(body);
+const OSC_777_TITLE = "pi";
 
-  if (usesOsc777(env)) {
-    return `\x07\x1b]777;notify;${heading};${text}\x07`;
+export const notificationSequence = (message: string, channel: NotifyChannel, env: TerminalEnv) => {
+  const text = cleanText(message);
+
+  if (channel === "bell") {
+    return "\x07";
   }
 
-  return `\x07\x1b]9;${text ? `${heading}: ${text}` : heading}\x07`;
+  if (usesOsc777(env)) {
+    return `\x1b]777;notify;${OSC_777_TITLE};${text}\x07`;
+  }
+
+  return `\x1b]9;${text}\x07`;
 };
+
+export const tuiContext = (state: HostState) => (state.ctx?.mode === "tui" ? state.ctx : undefined);
 
 export const createUi = (
   state: HostState,
-  stdout: TerminalOut = process.stdout,
-  env: TerminalEnv = process.env,
+  stdout: TerminalOut,
+  env: TerminalEnv,
+  editor: EditorHooks,
 ): HostUi => {
   const widgetTuis = new Map<string, TUI>();
   let lastTui: TUI | undefined;
 
-  const tuiCtx = () => {
-    if (state.ctx?.mode !== "tui") {
-      return undefined;
-    }
-
-    return state.ctx;
-  };
+  const tuiCtx = () => tuiContext(state);
 
   const setWidget: HostUi["setWidget"] = (key, render) => {
     const ctx = tuiCtx();
@@ -369,21 +158,22 @@ export const createUi = (
           close: () => done(),
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
-          wheelScrolling: tui.mode === "fullscreen",
-          createTranscript: () => createTranscriptPane(tui, cwd),
+          createTranscript: (options) =>
+            createTranscriptPane(tui, cwd, { tools: [...state.tools.values()], owner: options?.owner }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
-          createInput: createInputPane,
         });
-
-        const isToolsToggle = (data: string) => keybindings.matches(data, "app.tools.expand");
 
         return {
           render: (width: number) => fitLines(view.render(width), width),
           handleInput: (data: string) => {
-            view.handleKey(keyPress(data, isToolsToggle));
+            view.handleKey(keyPress(data, keybindings));
             tui.requestRender();
           },
           handleMouse: (event: TuiMouseEvent) => {
+            if (event.type === "click" && event.button === "left") {
+              return view.handleClick?.(event.x, event.y) ? { handled: true } : undefined;
+            }
+
             if (event.type !== "wheel" || !view.handleWheel) {
               return undefined;
             }
@@ -416,33 +206,15 @@ export const createUi = (
 
       return ctx.ui.confirm(title, message);
     },
-    input: async (title, placeholder) => {
-      const ctx = state.ctx;
-
-      if (!ctx?.hasUI) {
-        return undefined;
-      }
-
-      return ctx.ui.input(title, placeholder);
-    },
     setWidget,
     openOverlay,
-    select: async (title, options) => {
-      const ctx = state.ctx;
-
-      if (!ctx?.hasUI) {
-        return undefined;
-      }
-
-      return ctx.ui.select(title, options);
-    },
     style: (token, text) => state.ctx?.ui.theme.fg(token, text) ?? text,
-    terminalNotify: (title, body) => {
+    terminalNotify: (message, channel) => {
       if (!tuiCtx()) {
         return;
       }
 
-      const sequence = notificationSequence(title, body, env);
+      const sequence = notificationSequence(message, channel, env);
 
       if (lastTui) {
         lastTui.terminal.write(sequence);
@@ -453,8 +225,19 @@ export const createUi = (
     },
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
-    setEditorFrame: createEditorFrame(tuiCtx),
-    setFooter: createFooterSetter(tuiCtx, themeLike),
+    setEditorFrame: editor.setEditorFrame,
+    onEmptyEditorLeft: editor.onEmptyEditorLeft,
+    onEmptyEditorDown: editor.onEmptyEditorDown,
+    captureEditorKeys: editor.captureEditorKeys,
+    setFooter: createFooterSetter(tuiCtx),
     keyText: (binding) => keyText(binding as Keybinding),
+    onKeyPress: (listener) =>
+      tuiCtx()?.ui.onTerminalInput((data) => {
+        if (!isKeyRelease(data) && !data.startsWith("\x1b[<") && !data.startsWith("\x1b[M")) {
+          listener();
+        }
+
+        return undefined;
+      }) ?? (() => {}),
   };
 };

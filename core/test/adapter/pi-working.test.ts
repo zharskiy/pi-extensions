@@ -5,6 +5,7 @@ import { createWorkingUi } from "../../adapter/pi-working.ts";
 const fakeCtx = () => {
   const indicators: unknown[] = [];
   const messages: (string | undefined)[] = [];
+  const visibility: boolean[] = [];
 
   const ctx = {
     ui: {
@@ -15,10 +16,13 @@ const fakeCtx = () => {
       setWorkingMessage: (message?: string) => {
         messages.push(message);
       },
+      setWorkingVisible: (visible: boolean) => {
+        visibility.push(visible);
+      },
     },
   } as unknown as ExtensionContext;
 
-  return { ctx, indicators, messages };
+  return { ctx, indicators, messages, visibility };
 };
 
 describe("createWorkingUi", () => {
@@ -42,12 +46,26 @@ describe("createWorkingUi", () => {
     expect(messages).toEqual(["Musing", undefined]);
   });
 
+  it("forwards setWorkingVisible in tui only", () => {
+    const { ctx, visibility } = fakeCtx();
+    let tui = true;
+    const ui = createWorkingUi(() => (tui ? ctx : undefined));
+
+    ui.setWorkingVisible(false);
+    ui.setWorkingVisible(true);
+    tui = false;
+    ui.setWorkingVisible(false);
+
+    expect(visibility).toEqual([false, true]);
+  });
+
   it("does nothing outside tui mode", () => {
     const ui = createWorkingUi(() => undefined);
 
     expect(() => {
       ui.setWorkingIndicator({ frames: ["a"], intervalMs: 80 });
       ui.setWorkingMessage("Musing");
+      ui.setWorkingVisible(false);
     }).not.toThrow();
   });
 });

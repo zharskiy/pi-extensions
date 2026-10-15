@@ -5,7 +5,7 @@ import { type FakeChild, flush, usageOf } from "../../../../../core/test/helpers
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { usageReportPlugin } from "../../../src/plugins/usage-report/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
 

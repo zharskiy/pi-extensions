@@ -5,9 +5,9 @@ import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/i
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentStatusPlugin];
 
@@ -121,16 +121,32 @@ describe("nested agents", () => {
     expect(child.wakes).toHaveLength(1);
     expect(child.wakes[0]).toContain("a is in src/a.ts");
     expect(child.wakes[0]).toContain("b looks fine");
-    expect(host.sent).toEqual([]);
+    expect(wakeTexts(host)).toEqual([]);
 
     host.settle();
     child.finish("fixed it");
     await flush();
 
     expect(registry.get(record.id)?.state).toBe("done");
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("fixed it");
+    expect(wakeTexts(host)).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain("fixed it");
     expect(child.wakes).toHaveLength(1);
+  });
+
+  it("clears the activity while an agent waits for its own batch", async () => {
+    const { startGeneral, spawnFrom, registry } = setup();
+    const { record, child } = await startGeneral();
+
+    child.emit({ type: "tool_start", toolName: "run_agent" });
+    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+
+    expect(registry.get(record.id)?.activity).toBe("run_agent");
+
+    child.finish("Started batch, waiting.");
+    await flush();
+
+    expect(registry.get(record.id)?.state).toBe("running");
+    expect(registry.get(record.id)?.activity).toBeUndefined();
   });
 
   it("holds a child's wake until its current turn ends", async () => {
@@ -180,7 +196,7 @@ describe("nested agents", () => {
     await flush();
 
     expect(registry.get(record.id)?.state).toBe("done");
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
   });
 
   it("releases a waiting child's slot while it blocks on a batch with wait", async () => {
@@ -314,5 +330,76 @@ describe("nested agents", () => {
 
     expect(registry.get(record.id)?.state).toBe("stopped");
     expect(explorer.state).toBe("stopped");
+  });
+});
+
+describe("pending nested calls", () => {
+  it("shares a nested call's partial result with the main spec until the call returns", async () => {
+    const { startGeneral, host, registry, runtime } = setup();
+    const { record, child } = await startGeneral();
+    const params = { agents: [{ agent: "explorer", task: "find callers" }], wait: true };
+    const running = childTool<RunAgentParams>(child, "run_agent").execute(params, {
+      toolCallId: "ra1",
+      update: () => {},
+    });
+
+    await flush();
+
+    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+    const nested = registry.list().filter((entry) => entry.callerId === record.id);
+    const shared = main.pendingResult?.("ra1", record.id);
+
+    expect(shared?.details?.ids).toEqual(nested.map((entry) => entry.id));
+    expect(main.pendingResult?.("ra1", undefined)).toBeUndefined();
+    expect(main.pendingResult?.("ra1", "main")).toBeUndefined();
+    expect(main.pendingResult?.("ra2", record.id)).toBeUndefined();
+
+    runtime.child(String(nested[0]?.id)).finish("callers found");
+
+    const result = await running;
+
+    expect(result.details).toEqual(shared?.details);
+    expect(main.pendingResult?.("ra1", record.id)).toBeUndefined();
+  });
+
+  it("keeps the calls of two agents that reuse a tool call id apart", async () => {
+    const { runMain, host, registry, runtime } = setup();
+
+    await runMain([
+      { agent: "general", task: "fix a" },
+      { agent: "general", task: "fix b" },
+    ]);
+
+    const [first, second] = registry.list();
+    const run = (id: string, task: string) =>
+      childTool<RunAgentParams>(runtime.child(id), "run_agent").execute(
+        { agents: [{ agent: "explorer", task }], wait: true },
+        { toolCallId: "call_0", update: () => {} },
+      );
+
+    void run(first.id, "find a");
+    void run(second.id, "find b");
+    await flush();
+
+    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+    const batchOf = (callerId: string) =>
+      registry.list().find((entry) => entry.callerId === callerId)?.batchId;
+
+    expect(batchOf(first.id)).not.toBe(batchOf(second.id));
+    expect(main.pendingResult?.("call_0", first.id)?.details?.batchId).toBe(batchOf(first.id));
+    expect(main.pendingResult?.("call_0", second.id)?.details?.batchId).toBe(batchOf(second.id));
+  });
+
+  it("keeps nothing for a main-session call, whose transcript gets pi's own partial results", async () => {
+    const { host } = setup();
+    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
+
+    void main.execute(
+      { agents: [{ agent: "explorer", task: "look" }], wait: true },
+      { toolCallId: "ra1", update: () => {} },
+    );
+    await flush();
+
+    expect(main.pendingResult?.("ra1", "main")).toBeUndefined();
   });
 });

@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`agent view > renders the transcript with pi's message and tool components 1`] = `
+"
+
+ Task from main (agent id explorer-cb2e):
+ List the files in /repo/agents.
+
+
+
+ ls /repo/agents
+
+ explorer.md
+ implementer.md
+ reviewer.md
+
+
+ Reading the explorer definition.
+
+
+ read /repo/agents/explorer.md
+
+
+ Three files: explorer.md, implementer.md, reviewer.md."
+`;

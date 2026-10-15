@@ -1,15 +1,12 @@
 import type { ContextSnapshot, FooterData, ModelInfo, ThemeLike } from "../../../core/adapter/contract.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
+import { formatTokens } from "../../../core/manager/format.ts";
 
 const PAD = " ";
-
-const PAD_BOTTOM = 1;
 
 const DOT = " · ";
 
 const MODE_MARK = "▶▶";
-
-const HIDDEN_STATUSES = [SPENDING_STATUS_KEY];
 
 const RESET = "\x1b[0m";
 
@@ -38,19 +35,7 @@ const paint = (color: string, text: string) => `${color}${text}${RESET}`;
 
 const paintBold = (color: string, text: string) => `${BOLD}${color}${text}${RESET}`;
 
-export const formatTokens = (count: number) => {
-  if (count < 1000) {
-    return `${count}`;
-  }
-
-  if (count < 1_000_000) {
-    return `${(count / 1000).toFixed(1)}k`;
-  }
-
-  return `${(count / 1_000_000).toFixed(1)}M`;
-};
-
-export const formatCost = (cost: number) => {
+const formatCost = (cost: number) => {
   if (cost <= 0) {
     return "$0.00";
   }
@@ -58,7 +43,7 @@ export const formatCost = (cost: number) => {
   return cost < 0.01 ? `$${cost.toFixed(3)}` : `$${cost.toFixed(2)}`;
 };
 
-export const formatWindow = (count: number) => {
+const formatWindow = (count: number) => {
   if (count >= 1_000_000) {
     const millions = count / 1_000_000;
 
@@ -101,7 +86,7 @@ const modelText = (context: ContextSnapshot, model: ModelInfo | undefined) => {
   return `${model.name} (${formatWindow(model.contextWindow || context.window)} context)`;
 };
 
-export const statsLine = (
+const statsLine = (
   theme: ThemeLike,
   context: ContextSnapshot,
   model: ModelInfo | undefined,
@@ -113,7 +98,7 @@ export const statsLine = (
     paint(COLORS.cyan, modelText(context, model)),
   ].join(theme.fg("dim", DOT));
 
-export const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
+const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   const all = [totals.main, ...totals.sources];
   const tokens = all.reduce((sum, spend) => sum + spend.tokens, 0);
   const cost = all.reduce((sum, spend) => sum + spend.cost, 0);
@@ -127,20 +112,14 @@ export const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   ].join("");
 };
 
-export const placeLine = (theme: ThemeLike, cwd: string, sessionName: string | undefined) => {
+const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
   const folder = paint(COLORS.blue, folderName(cwd));
+  const place = branch ? `${folder} ${paint(COLORS.yellow, `git:(${branch})`)}` : folder;
 
-  return sessionName ? `${folder}${theme.fg("dim", ` • ${sessionName}`)}` : folder;
+  return sessionName ? `${place}${theme.fg("dim", ` • ${sessionName}`)}` : place;
 };
 
-export const branchLine = (branch: string) => paint(COLORS.yellow, branch);
-
-export const modeLine = (
-  theme: ThemeLike,
-  model: ModelInfo | undefined,
-  thinking: string,
-  cycleKey: string,
-) => {
+const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {
   const level =
     model?.reasoning === false
       ? theme.fg("dim", "thinking unavailable")
@@ -149,29 +128,22 @@ export const modeLine = (
   return `${paint(COLORS.gold, MODE_MARK)} ${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
 };
 
-export const statusLine = (statuses: ReadonlyMap<string, string>) => {
-  const texts = Array.from(statuses)
-    .filter(([key]) => !HIDDEN_STATUSES.includes(key))
+const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
+  Array.from(statuses)
+    .filter(([key]) => key !== SPENDING_STATUS_KEY)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, text]) => text.replace(/\s+/g, " ").trim())
     .filter((text) => text.length > 0);
 
-  return texts.length > 0 ? texts.join(" ") : undefined;
-};
-
 export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterData) => {
-  const status = statusLine(data.statuses);
+  const status = statusLines(data.statuses);
   const lines = [
     statsLine(theme, state.context, state.model, state.totals?.main.cost),
     ...(state.totals ? [sessionLine(theme, state.totals)] : []),
-    placeLine(theme, state.cwd, state.sessionName),
-    ...(data.branch ? [branchLine(data.branch)] : []),
+    placeLine(theme, state.cwd, data.branch, state.sessionName),
     modeLine(theme, state.model, state.thinking, state.cycleKey),
-    ...(status ? ["", status] : []),
+    ...(status.length > 0 ? ["", ...status] : []),
   ];
 
-  return [
-    ...lines.map((line) => (line ? `${PAD}${line}` : line)),
-    ...Array.from({ length: PAD_BOTTOM }, () => ""),
-  ];
+  return ["", ...lines.map((line) => (line ? `${PAD}${line}` : line)), ""];
 };

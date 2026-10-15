@@ -5,7 +5,6 @@ import {
   type AgentRuntime,
   type AnyToolSpec,
   type ChildEvent,
-  type ChildPrompts,
   type ChildSession,
   type RoutedMessage,
   type SessionInfo,
@@ -13,6 +12,7 @@ import {
   splitModelRequest,
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
+import { errorText } from "../../components/format.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -31,7 +31,7 @@ import {
   subagentNames,
 } from "../../model/types.ts";
 import { resolutionError } from "./model-text.ts";
-import { createOutbox, type Outbox } from "./outbox.ts";
+import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
 import { batchMessage, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
@@ -45,11 +45,10 @@ type RunnerDeps = {
   bus: Bus;
   settings: Settings;
   definitions: AgentDefinitions;
-  outbox: Outbox;
+  outbox: Pick<Outbox, "post">;
   session: () => SessionInfo;
   handoff: HandoffService;
   toolsFor: (record: AgentRecord) => AnyToolSpec[];
-  promptsFor: (record: AgentRecord) => ChildPrompts;
 };
 
 export type BatchItem = {
@@ -140,7 +139,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const batchText = (batchId: string) =>
-    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars, Date.now());
+    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars);
 
   const settledTerminals = (batch: Batch) => {
     const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
@@ -148,12 +147,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const settled = records.every((entry) => isClosed(entry.state) && !releasing.has(entry.id));
 
     return settled ? records.filter((entry) => !entry.successorId) : undefined;
-  };
-
-  const batchSettled = (batchId: string) => {
-    const records = deps.registry.batch(batchId);
-
-    return records.length > 0 && records.every((record) => isClosed(record.state));
   };
 
   const checkBatch = (record: AgentRecord) => {
@@ -166,7 +159,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     batches.delete(batch.id);
     batch.resolve(terminals);
-    deps.bus.emit("batch:settled", { batchId: batch.id, callerId: batch.callerId, terminals });
+    deps.bus.emit("batch:settled", { batchId: batch.id });
 
     if (batch.wait || shuttingDown) {
       return;
@@ -232,12 +225,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       await deliver(child);
       await sendHeld(live, child);
     } catch (error) {
-      deps.registry.close(id, { state: "failed", error: `wake failed: ${(error as Error).message}` });
+      deps.registry.close(id, { state: "failed", error: `wake failed: ${errorText(error)}` });
       await releaseLive(id);
     }
   };
 
-  const callerOutbox = (callerId: string): Outbox | undefined => {
+  const callerOutbox = (callerId: string): Pick<Outbox, "post"> | undefined => {
     if (callerId === MAIN_CALLER) {
       return deps.outbox;
     }
@@ -251,8 +244,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     live.outbox ??= createOutbox({
       isBusy: () => live.turn !== "idle",
-      deliver: (text) => {
-        void resume(callerId, (child) => child.wake(text));
+      deliver: (items) => {
+        void resume(callerId, (child) => child.wake(joinTexts(items)));
       },
       onIdle: (handler) => {
         live.idleHandlers.push(handler);
@@ -504,13 +497,20 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
       if (event.text.trim()) {
         live.lastText = event.text;
+
+        if (record.activity !== "writing") {
+          deps.registry.update(id, { activity: "writing" });
+        }
       }
 
       return;
     }
 
     if (event.type === "tool_start") {
-      deps.registry.update(id, { toolCalls: record.toolCalls + 1 });
+      deps.registry.update(id, {
+        toolCalls: record.toolCalls + 1,
+        activity: event.toolName,
+      });
       return;
     }
 
@@ -535,6 +535,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
 
       if (waiting) {
+        deps.registry.update(id, { activity: undefined });
         goIdle(live);
         return;
       }
@@ -591,7 +592,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
         customTools: deps.toolsFor(record),
-        prompts: deps.promptsFor(record),
         skills: allowlist(definition.skills),
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
@@ -599,7 +599,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       .catch((error: unknown) => {
         deps.registry.close(record.id, {
           state: "failed",
-          error: `spawn failed: ${(error as Error).message}`,
+          error: `spawn failed: ${errorText(error)}`,
         });
         return undefined;
       });
@@ -635,7 +635,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       child.start(composeTask(record, slot.item, predecessor, slot.undelivered));
       await sendHeld(live, child);
     } catch (error) {
-      deps.registry.close(record.id, { state: "failed", error: `start failed: ${(error as Error).message}` });
+      deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });
       await releaseLive(record.id);
     }
   };
@@ -898,8 +898,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const shutdown = async (reason: string) => {
     shuttingDown = true;
 
-    deps.bus.emit("session:closing", undefined);
-
     const open = deps.registry.list().filter((record) => !isClosed(record.state));
 
     open.forEach((record) => {
@@ -929,7 +927,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   return {
     startBatch,
     batchText,
-    batchSettled,
     stop,
     route,
     abort,

@@ -1,4 +1,5 @@
-import type { Host, WorkingIndicator } from "../../../core/adapter/contract.ts";
+import type { Host, Phase, WorkingIndicator } from "../../../core/adapter/contract.ts";
+import { formatDuration } from "../../../core/manager/format.ts";
 
 const SPINNER: keyof typeof SPINNERS = "braille";
 
@@ -9,11 +10,11 @@ export const TICK_MS = 1000;
 const INTERRUPT_BINDING = "app.interrupt";
 
 const SPINNERS = {
-  braille: { frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], intervalMs: 80 },
+  braille: undefined,
   dots: { frames: ["∴", "∷", "∵", "∷"], intervalMs: 200 },
   bar: { frames: ["·|·", "·/·", "·—·", "·\\·"], intervalMs: 200 },
   mark: { frames: ["✻"], intervalMs: 500 },
-} satisfies Record<string, WorkingIndicator>;
+} satisfies Record<string, WorkingIndicator | undefined>;
 
 export const spinner = SPINNERS[SPINNER];
 
@@ -80,44 +81,93 @@ export const VERBS = [
 
 const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
 
-export const workingMessage = (verb: string, elapsedMs: number, interruptKey: string) =>
-  `${verb}… (${Math.floor(elapsedMs / 1000)}s · ${interruptKey} to interrupt)`;
+const workingMessage = (verb: string, elapsedMs: number, interruptKey: string, toolName?: string) =>
+  `${verb}… (${toolName ? `${toolName} · ` : ""}${formatDuration(elapsedMs)} · ${interruptKey} to interrupt)`;
+
+type Run = {
+  startedAt: number;
+  interruptKey: string;
+  verb: string;
+  nextVerbAt: number;
+  timer: ReturnType<typeof setInterval>;
+};
 
 export const createWorkingIndicator = (host: Host) => {
-  let timer: ReturnType<typeof setInterval> | undefined;
+  let run: Run | undefined;
+  let toolName: string | undefined;
+  let hidden = false;
+  let written: string | undefined;
 
-  const stop = () => {
-    if (!timer) {
+  const write = (active: Run) => {
+    const text = workingMessage(active.verb, Date.now() - active.startedAt, active.interruptKey, toolName);
+
+    if (text === written) {
       return;
     }
 
-    clearInterval(timer);
-    timer = undefined;
+    written = text;
+    host.ui.setWorkingMessage(text);
+  };
+
+  const tick = () => {
+    const active = run;
+
+    if (!active) {
+      return;
+    }
+
+    const elapsedMs = Date.now() - active.startedAt;
+
+    if (elapsedMs >= active.nextVerbAt) {
+      active.verb = pickVerb();
+      active.nextVerbAt = elapsedMs + VERB_MS;
+    }
+
+    write(active);
+  };
+
+  const applyVisibility = (next: Phase) => {
+    const visible = next !== "writing";
+
+    if (visible === !hidden) {
+      return;
+    }
+
+    host.ui.setWorkingVisible(visible);
+    hidden = !visible;
+  };
+
+  const begin = () => {
+    const timer = setInterval(tick, TICK_MS);
+
+    timer.unref?.();
+    toolName = undefined;
+    run = {
+      startedAt: Date.now(),
+      interruptKey: host.ui.keyText(INTERRUPT_BINDING),
+      verb: pickVerb(),
+      nextVerbAt: VERB_MS,
+      timer,
+    };
+
+    write(run);
+  };
+
+  const stop = () => {
+    if (!run) {
+      return;
+    }
+
+    clearInterval(run.timer);
+    run = undefined;
+    written = undefined;
     host.ui.setWorkingMessage(undefined);
   };
 
-  const start = () => {
+  const end = () => {
+    toolName = undefined;
+    applyVisibility("idle");
     stop();
-
-    const startedAt = Date.now();
-    const interruptKey = host.ui.keyText(INTERRUPT_BINDING);
-    let verb = pickVerb();
-    let nextVerbAt = VERB_MS;
-
-    const tick = () => {
-      const elapsedMs = Date.now() - startedAt;
-
-      if (elapsedMs >= nextVerbAt) {
-        verb = pickVerb();
-        nextVerbAt = elapsedMs + VERB_MS;
-      }
-
-      host.ui.setWorkingMessage(workingMessage(verb, elapsedMs, interruptKey));
-    };
-
-    tick();
-    timer = setInterval(tick, TICK_MS);
-    timer.unref?.();
   };
 
   host.onSessionStart(() => {
@@ -125,15 +175,26 @@ export const createWorkingIndicator = (host: Host) => {
   });
 
   host.onAgentStart(() => {
-    if (host.session().mode !== "tui") {
+    if (host.session().mode !== "tui" || run) {
       return;
     }
 
-    start();
+    begin();
   });
 
-  host.onIdle(() => {
-    stop();
+  host.onPhase((next, detail) => {
+    if (next === "idle") {
+      end();
+      return;
+    }
+
+    if (!run) {
+      return;
+    }
+
+    toolName = next === "tool" ? detail.toolName : undefined;
+    write(run);
+    applyVisibility(next);
   });
 
   host.onSessionShutdown(() => {

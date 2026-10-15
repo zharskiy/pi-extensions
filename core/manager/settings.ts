@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Host } from "../adapter/contract.ts";
+import { errorText } from "./format.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
@@ -7,7 +9,9 @@ type ListRule = { type: "list"; of: string };
 
 type BooleanRule = { type: "boolean" };
 
-type SettingsRule = NumberRule | ListRule | BooleanRule;
+type ChoiceRule = { type: "choice"; values: readonly string[] };
+
+type SettingsRule = NumberRule | ListRule | BooleanRule | ChoiceRule;
 
 export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 
@@ -27,6 +31,10 @@ const isValid = (rule: SettingsRule, value: unknown) => {
     return typeof value === "boolean";
   }
 
+  if (rule.type === "choice") {
+    return typeof value === "string" && rule.values.includes(value);
+  }
+
   return rule.type === "number" ? validNumber(rule, value) : validList(value);
 };
 
@@ -37,6 +45,10 @@ const expectation = (rule: SettingsRule) => {
 
   if (rule.type === "list") {
     return `a list of ${rule.of}`;
+  }
+
+  if (rule.type === "choice") {
+    return `one of ${rule.values.map((value) => `"${value}"`).join(", ")}`;
   }
 
   return rule.minExclusive
@@ -81,10 +93,56 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
   try {
     return parseSettings(schema, JSON.parse(readFileSync(path, "utf8")), path);
   } catch (error) {
-    return { patch: {}, errors: [`${path}: ${error instanceof Error ? error.message : String(error)}`] };
+    return { patch: {}, errors: [`${path}: ${errorText(error)}`] };
   }
 };
 
 export const userSettingsPath = (agentDir: string, file: string) => join(agentDir, file);
 
 export const projectSettingsPath = (cwd: string, file: string) => join(cwd, ".pi", file);
+
+type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
+
+export const loadSettingsFiles = <T>(
+  schema: SettingsSchema<T>,
+  defaults: T,
+  file: string,
+  location: SettingsLocation,
+) => {
+  const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));
+
+  const project = location.projectTrusted
+    ? readSettingsFile(schema, projectSettingsPath(location.cwd, file))
+    : { patch: {}, errors: [] };
+
+  return {
+    settings: { ...defaults, ...user.patch, ...project.patch },
+    errors: [...user.errors, ...project.errors],
+  };
+};
+
+export const watchSettings = <T>(
+  host: Host,
+  label: string,
+  schema: SettingsSchema<T>,
+  defaults: T,
+  file: string,
+): (() => T) => {
+  let settings = defaults;
+  const reported = new Set<string>();
+
+  host.onSessionStart((info) => {
+    const loaded = loadSettingsFiles(schema, defaults, file, info);
+
+    settings = loaded.settings;
+
+    loaded.errors
+      .filter((error) => !reported.has(error))
+      .forEach((error) => {
+        reported.add(error);
+        host.ui.notify(`${label} settings: ${error}`, "warning");
+      });
+  });
+
+  return () => settings;
+};

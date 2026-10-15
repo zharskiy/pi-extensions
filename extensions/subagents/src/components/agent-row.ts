@@ -1,186 +1,175 @@
 import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
-import { type AgentRecord, type AgentState, isClosed } from "../model/types.ts";
+import { type AgentRecord, isClosed } from "../model/types.ts";
+import {
+  elapsedOf,
+  formatDuration,
+  formatTokens,
+  innerWidth,
+  PAD,
+  padEndCols,
+  SEP,
+  singleLine,
+} from "./format.ts";
+import { stateGlyph, stateToken, stateWord } from "./state-text.ts";
+import type { TreeRow } from "./tree.ts";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const NAME_COLS_MAX = 24;
 
-const STATE_ICONS: Record<Exclude<AgentState, "running">, string> = {
-  queued: "○",
-  grace: "◐",
-  done: "✓",
-  failed: "✗",
-  stopped: "■",
-  handoff: "↪",
+const DESCRIPTION_COLS_MAX = 48;
+
+const MIN_DESCRIPTION = 12;
+
+const MIN_ROOM = 8;
+
+const STATS_COLS = 30;
+
+const POINTER_COLS = 2;
+
+export type RowInput = TreeRow & { selected: boolean };
+
+export type RowLayout = { nameCols: number; infoAt: number };
+
+type NamedRow = Pick<TreeRow, "record" | "openDescendants">;
+
+export const agentName = (record: AgentRecord): string =>
+  record.chainIndex > 1 ? `${record.agent} #${record.chainIndex}` : record.agent;
+
+const countSuffix = (openDescendants: number) => (openDescendants > 0 ? ` (+${openDescendants})` : "");
+
+const rowName = (row: NamedRow): string => agentName(row.record) + countSuffix(row.openDescendants);
+
+const nameColumn = (rows: NamedRow[], theme: ThemeLike): number =>
+  Math.min(
+    NAME_COLS_MAX,
+    rows.reduce((widest, row) => Math.max(widest, theme.width(rowName(row))), 0),
+  );
+
+const treePrefix = (row: Pick<TreeRow, "depth" | "last" | "ancestorsContinue">) =>
+  row.depth === 0
+    ? ""
+    : row.ancestorsContinue.map((more) => (more ? "│  " : "   ")).join("") + (row.last ? "└─ " : "├─ ");
+
+type Stats = { plain: string; token: ThemeToken; paint(theme: ThemeLike): string };
+
+const plainStats = (text: string, token: ThemeToken): Stats => ({
+  plain: text,
+  token,
+  paint: (theme) => (text ? theme.fg(token, text) : ""),
+});
+
+const join = (parts: (string | undefined)[]) => parts.filter((part) => part !== undefined).join(SEP);
+
+const statsVariants = (record: AgentRecord, now: number): Stats[] => {
+  const elapsed = formatDuration(elapsedOf(record, now));
+
+  if (isClosed(record.state)) {
+    const word = stateWord(record.state);
+
+    return [
+      {
+        plain: word + SEP + elapsed,
+        token: stateToken(record.state),
+        paint: (theme) =>
+          theme.fg(stateToken(record.state), word) + theme.fg("dim", SEP) + theme.fg("dim", elapsed),
+      },
+      plainStats(word, stateToken(record.state)),
+    ];
+  }
+
+  if (record.state === "grace" || record.state === "queued") {
+    return [plainStats(stateWord(record.state), stateToken(record.state))];
+  }
+
+  const tokens = record.tokens > 0 ? `↓ ${formatTokens(record.tokens)} tokens` : undefined;
+
+  return [join([record.activity, elapsed, tokens]), join([elapsed, tokens]), elapsed, ""].map((text) =>
+    plainStats(text, "dim"),
+  );
 };
 
-const STATE_COLORS: Record<AgentState, ThemeToken> = {
-  queued: "muted",
-  running: "accent",
-  grace: "warning",
-  done: "success",
-  failed: "error",
-  stopped: "muted",
-  handoff: "warning",
+const roomFor = (theme: ThemeLike, width: number, fixed: number, stats: string) =>
+  innerWidth(width) - fixed - (stats ? 2 + theme.width(stats) : 0);
+
+const pickStats = (theme: ThemeLike, variants: Stats[], width: number, infoAt: number) =>
+  variants.find((stats) => !stats.plain || infoAt + 2 + theme.width(stats.plain) <= innerWidth(width)) ??
+  (variants.at(-1) as Stats);
+
+const statsReserve = (theme: ThemeLike, record: AgentRecord, now: number) =>
+  record.state === "running" ? STATS_COLS : theme.width((statsVariants(record, now)[0] as Stats).plain);
+
+const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
+  const base = agentName(input.record);
+  const suffix = countSuffix(input.openDescendants);
+  const token = isClosed(input.record.state) ? "muted" : "text";
+  const cut = theme.truncate(base + suffix, cols);
+  const painted =
+    cut === base + suffix
+      ? theme.fg(token, base) + (suffix ? theme.fg("dim", suffix) : "")
+      : theme.fg(token, cut);
+
+  return painted + " ".repeat(Math.max(0, cols - theme.width(cut)));
 };
 
-export const formatTokens = (count: number) => {
-  if (count < 1_000) {
-    return `${count}`;
-  }
+const leadOf = (theme: ThemeLike, row: TreeRow, nameCols: number, pointerCols: number) =>
+  pointerCols + theme.width(treePrefix(row)) + 2 + nameCols + 2;
 
-  if (count < 1_000_000) {
-    return `${(count / 1_000).toFixed(1)}k`;
-  }
-
-  return `${(count / 1_000_000).toFixed(1)}M`;
-};
-
-export const formatElapsed = (ms: number) => {
-  const seconds = Math.max(0, Math.floor(ms / 1_000));
-
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-
-  const minutes = Math.floor(seconds / 60);
-
-  if (minutes < 60) {
-    return `${minutes}m ${seconds % 60}s`;
-  }
-
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-};
-
-export const elapsedOf = (record: AgentRecord, now: number) => {
-  const start = record.startedAt ?? record.createdAt;
-  const end = record.endedAt ?? now;
-
-  return end - start;
-};
-
-export const stateIcon = (state: AgentState, frame: number) => {
-  if (state === "running") {
-    return SPINNER_FRAMES[frame % SPINNER_FRAMES.length];
-  }
-
-  return STATE_ICONS[state];
-};
-
-export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-
-const statsText = (record: AgentRecord, now: number) =>
-  [
-    plural(record.toolCalls, "tool call"),
-    `${formatTokens(record.tokens)} tokens`,
-    formatElapsed(elapsedOf(record, now)),
-  ].join(" · ");
-
-export const finishSummary = (record: AgentRecord, now: number) => {
-  const stats = statsText(record, now);
-
-  if (record.state === "done") {
-    return `Done (${stats})`;
-  }
-
-  if (record.state === "handoff") {
-    return `Handoff (${stats})`;
-  }
-
-  if (record.state === "stopped") {
-    return `Stopped (${stats})`;
-  }
-
-  return `Failed: ${record.error ?? "unknown error"} (${stats})`;
-};
-
-export const progressText = (record: AgentRecord, now: number) => {
-  if (record.state === "queued") {
-    return "queued";
-  }
-
-  const percent = record.context?.percent;
-  const stats = statsText(record, now);
-
-  if (percent === null || percent === undefined) {
-    return stats;
-  }
-
-  return `${stats} · ${Math.round(percent)}% ctx`;
-};
-
-export const truncate = (text: string, width: number) => {
-  if (width <= 0) {
-    return "";
-  }
-
-  if (text.length <= width) {
-    return text;
-  }
-
-  return `${text.slice(0, Math.max(0, width - 1))}…`;
-};
-
-export const singleLine = (text: string) => text.replace(/\s+/g, " ").trim();
-
-export const chainLabel = (record: AgentRecord) => (record.chainIndex > 1 ? ` #${record.chainIndex}` : "");
-
-export const attentionText = (record: AgentRecord) => {
-  if (!record.attention || isClosed(record.state)) {
-    return undefined;
-  }
-
-  return `needs input: ${singleLine(record.attention.title)}`;
-};
-
-export const graceSecondsLeft = (record: AgentRecord, now: number) => {
-  if (record.state !== "grace" || record.graceEndsAt === undefined) {
-    return undefined;
-  }
-
-  return Math.max(0, Math.ceil((record.graceEndsAt - now) / 1_000));
-};
-
-const graceCountdown = (record: AgentRecord, now: number) => {
-  if (record.state !== "grace") {
-    return undefined;
-  }
-
-  const seconds = graceSecondsLeft(record, now);
-
-  return seconds === undefined ? "stopping · answering" : `stopping in ${seconds}s`;
-};
-
-export const agentRow = (
-  record: AgentRecord,
+export const rowLayout = (
+  rows: TreeRow[],
   now: number,
-  frame: number,
-  theme: ThemeLike,
   width: number,
-) => {
-  const icon = theme.fg(STATE_COLORS[record.state], stateIcon(record.state, frame));
-  const detail = isClosed(record.state) ? finishSummary(record, now) : progressText(record, now);
-  const description = singleLine(record.description);
-  const name = `${record.id}${chainLabel(record)}`;
-  const model = record.model ? ` (${record.model})` : "";
-  const attention = attentionText(record);
-  const alert = attention ? ` · ${attention}` : "";
-  const head = `${name}${model} · `;
-  const tail = ` · ${detail}`;
-  const room = Math.max(8, width - 2 - head.length - tail.length - alert.length);
-  const row = `${icon} ${theme.bold(name)}${theme.fg("dim", model)} · ${theme.fg("muted", truncate(description, room))}${theme.fg("dim", tail)}`;
+  selecting: boolean,
+  theme: ThemeLike,
+): RowLayout => {
+  const nameCols = nameColumn(rows, theme);
+  const reserve = selecting ? POINTER_COLS : 0;
+  const widest = (measure: (row: TreeRow) => number) =>
+    rows.reduce((most, row) => Math.max(most, measure(row)), 0);
+  const wants = (row: TreeRow, cap: number) =>
+    leadOf(theme, row, nameCols, 0) + Math.min(cap, theme.width(singleLine(row.record.description)));
+  const wanted = widest((row) => wants(row, DESCRIPTION_COLS_MAX));
+  const floor = widest((row) => wants(row, MIN_DESCRIPTION));
+  const limit = innerWidth(width) - 2 - widest((row) => statsReserve(theme, row.record, now));
+  const infoAt = Math.max(floor + reserve, Math.min(wanted + reserve, limit));
 
-  return attention ? `${row}${theme.fg("warning", alert)}` : row;
+  return { nameCols, infoAt: Math.min(innerWidth(width), infoAt) };
 };
 
-export const treeRow = (record: AgentRecord, now: number, frame: number, theme: ThemeLike, width: number) => {
-  const indent = "  ".repeat(Math.max(0, record.depth - 2));
-  const countdown = graceCountdown(record, now);
+export const renderRow = (
+  input: RowInput,
+  now: number,
+  width: number,
+  theme: ThemeLike,
+  layout: RowLayout,
+): string => {
+  const { record } = input;
+  const { nameCols, infoAt } = layout;
+  const pointerCols = input.selected ? POINTER_COLS : 0;
+  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : "";
+  const tree = treePrefix(input);
+  const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
+  const fixed = leadOf(theme, input, nameCols, pointerCols);
+  const stats = pickStats(theme, statsVariants(record, now), width, infoAt);
+  const room = roomFor(theme, width, fixed, stats.plain);
+  const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
 
-  if (countdown === undefined) {
-    return `${indent}${agentRow(record, now, frame, theme, width - indent.length)}`;
+  if (room < MIN_ROOM) {
+    const after = innerWidth(width) - pointerCols - theme.width(tree) - 2;
+
+    if (stats.plain && 2 + theme.width(stats.plain) > after) {
+      const cut = theme.truncate(stats.plain, Math.max(0, after - 2));
+
+      return `${head}  ${theme.fg(stats.token, cut)}`;
+    }
+
+    const nameRoom = after - (stats.plain ? 2 + theme.width(stats.plain) : 0);
+
+    return head + paintName(input, Math.max(0, nameRoom), theme) + tail;
   }
 
-  const suffix = ` · ${countdown}`;
-  const row = agentRow(record, now, frame, theme, width - indent.length - suffix.length);
+  const cols = Math.max(0, Math.min(room, stats.plain ? infoAt - fixed : DESCRIPTION_COLS_MAX));
+  const description = theme.truncate(singleLine(record.description), cols);
+  const shown = stats.plain ? padEndCols(theme, description, cols) : description;
+  const padding = shown.slice(description.length);
 
-  return `${indent}${row}${theme.fg("warning", suffix)}`;
+  return `${head}${paintName(input, nameCols, theme)}  ${theme.fg("muted", description)}${padding}${tail}`;
 };

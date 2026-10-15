@@ -9,7 +9,7 @@ import {
 } from "../../../src/plugins/agent-status/index.ts";
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
 const setup = () => {
@@ -108,7 +108,7 @@ describe("agent_status", () => {
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
     expect(result.text).toContain(`${first.id} (explorer, ${first.model}) running`);
     expect(result.text).toContain("ctx 15%");
-    expect(result.text).toContain(" · 1 tool call · ctx 15%");
+    expect(result.text).toContain(" · 1 tool use · ctx 15%");
     expect(result.text).toContain("ghost-0000: unknown agent");
 
     harness.host.settle();

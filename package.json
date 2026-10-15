@@ -1,7 +1,7 @@
 {
   "name": "pi-extensions-mz",
-  "version": "0.3.0",
-  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session, session limits that hand the main conversation over to a new session before its context fills up, a spending total of the session's cost including subagents, a working line with a spinner, a playful verb and the elapsed turn time, friendlier aliases for built-in commands, a framed input box with a chevron prompt, and a multi-line status footer with session totals.",
+  "version": "0.4.0",
+  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session (a panel below the editor and an /agents overlay), session limits that hand the main conversation over to a new session before its context fills up, a spending total of the session's cost including subagents, a working line with a spinner, a playful verb and the elapsed time of the current prompt, terminal notifications when pi waits for your input or a dialog waits unanswered, friendlier aliases for built-in commands, a framed input box with a chevron prompt, and a multi-line status footer with session totals.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -11,6 +11,7 @@
     "session-limits",
     "spending",
     "working-indicator",
+    "notifications",
     "command-aliases",
     "composer",
     "footer"
@@ -34,6 +35,7 @@
       "./extensions/session-limits/src/index.ts",
       "./extensions/spending/src/index.ts",
       "./extensions/working-indicator/src/index.ts",
+      "./extensions/notifications/src/index.ts",
       "./extensions/command-aliases/src/index.ts",
       "./extensions/composer/src/index.ts",
       "./extensions/footer/src/index.ts"
@@ -54,8 +56,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@earendil-works/pi-coding-agent": "1.1.0",
-    "@earendil-works/pi-tui": "1.1.0",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-tui": "^1.2.0",
     "@types/node": "^24.0.0",
     "typebox": "1.3.27",
     "typescript": "7.0.2",

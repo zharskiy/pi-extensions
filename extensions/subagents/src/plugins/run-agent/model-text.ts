@@ -1,5 +1,5 @@
 import type { ModelChoice, ModelResolution } from "../../../../../core/adapter/contract.ts";
-import { formatTokens } from "../../components/agent-row.ts";
+import { formatTokens } from "../../components/format.ts";
 
 const choiceLine = (choice: ModelChoice) =>
   `- ${choice.ref} (context ${formatTokens(choice.contextWindow)}, $${choice.cost.input}/$${choice.cost.output} per Mtok in/out)`;

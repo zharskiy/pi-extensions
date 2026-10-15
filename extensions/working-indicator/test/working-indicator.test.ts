@@ -1,14 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
-import {
-  createWorkingIndicator,
-  spinner,
-  TICK_MS,
-  VERB_MS,
-  VERBS,
-  workingMessage,
-} from "../src/working-indicator.ts";
+import { createWorkingIndicator, spinner, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
 
 const setup = (mode: RunMode = "tui") => {
   const host = createFakeHost({ mode });
@@ -23,8 +16,10 @@ const pickIndex = (index: number) => {
   vi.spyOn(Math, "random").mockReturnValue(index / VERBS.length);
 };
 
-const message = (verb: string | undefined, seconds: number) =>
-  `${verb}… (${seconds}s · <app.interrupt> to interrupt)`;
+const message = (verb: string | undefined, elapsed: string, tool?: string) =>
+  `${verb}… (${tool ? `${tool} · ` : ""}${elapsed} · <app.interrupt> to interrupt)`;
+
+const V0 = VERBS[0];
 
 describe("working indicator", () => {
   beforeEach(() => {
@@ -37,14 +32,17 @@ describe("working indicator", () => {
     vi.restoreAllMocks();
   });
 
-  it("formats the verb, the elapsed seconds and the interrupt key", () => {
-    expect(workingMessage("Musing", 12_345, "esc")).toBe("Musing… (12s · esc to interrupt)");
-  });
-
   it("applies the spinner at session start", () => {
     const host = setup();
 
     expect(host.workingIndicators).toEqual([spinner]);
+  });
+
+  it("keeps pi's own spinner by default so it is drawn in the input's colour", () => {
+    const host = setup();
+
+    expect(spinner).toBeUndefined();
+    expect(host.workingIndicators).toEqual([undefined]);
   });
 
   it("shows the first message on agent start without re-setting the spinner", () => {
@@ -53,16 +51,21 @@ describe("working indicator", () => {
     host.agentStart();
 
     expect(host.workingIndicators).toEqual([spinner]);
-    expect(host.workingMessages).toEqual([message(VERBS[0], 0)]);
+    expect(host.workingMessages).toEqual([message(V0, "0s")]);
   });
 
-  it("advances the elapsed seconds every tick", () => {
+  it("advances the elapsed seconds every tick and switches to minutes after one minute", () => {
     const host = setup();
 
     host.agentStart();
     vi.advanceTimersByTime(TICK_MS * 3);
 
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[0], 3));
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "3s"));
+
+    vi.advanceTimersByTime(TICK_MS * 62);
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "1m 5s"));
+    expect(host.workingMessages.some((text) => text?.includes("65s"))).toBe(false);
   });
 
   it("picks a new verb every VERB_MS", () => {
@@ -72,16 +75,16 @@ describe("working indicator", () => {
     pickIndex(1);
     vi.advanceTimersByTime(VERB_MS - TICK_MS);
 
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[0], 7));
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "7s"));
 
     vi.advanceTimersByTime(TICK_MS);
 
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[1], 8));
+    expect(host.workingMessages.at(-1)).toBe(message(VERBS[1], "8s"));
 
     pickIndex(2);
     vi.advanceTimersByTime(VERB_MS);
 
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[2], 16));
+    expect(host.workingMessages.at(-1)).toBe(message(VERBS[2], "16s"));
   });
 
   it("keeps counting across turns of one run", () => {
@@ -91,7 +94,7 @@ describe("working indicator", () => {
     vi.advanceTimersByTime(TICK_MS * 5);
     host.turnEnd({ tokens: 10, window: 100 });
 
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[0], 5));
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "5s"));
     expect(host.workingMessages).not.toContain(undefined);
   });
 
@@ -102,7 +105,7 @@ describe("working indicator", () => {
     host.settle();
     vi.advanceTimersByTime(TICK_MS * 3);
 
-    expect(host.workingMessages).toEqual([message(VERBS[0], 0), undefined]);
+    expect(host.workingMessages).toEqual([message(V0, "0s"), undefined]);
   });
 
   it("clears the message on shutdown", async () => {
@@ -123,6 +126,7 @@ describe("working indicator", () => {
     await host.shutdown();
 
     expect(host.workingMessages).toEqual([]);
+    expect(host.workingVisibility).toEqual([]);
   });
 
   it("restarts the clock on the next run", () => {
@@ -133,15 +137,158 @@ describe("working indicator", () => {
     host.settle();
     host.agentStart();
 
-    expect(host.workingMessages.slice(-2)).toEqual([undefined, message(VERBS[0], 0)]);
+    expect(host.workingMessages.slice(-2)).toEqual([undefined, message(V0, "0s")]);
   });
 
-  it("does nothing outside tui mode", () => {
+  it("nothing outside tui", () => {
     const host = setup("print");
 
     host.agentStart();
+    host.setPhase("writing");
+    host.setPhase("tool", { toolName: "bash" });
     vi.advanceTimersByTime(TICK_MS * 3);
 
     expect(host.workingMessages).toEqual([]);
+    expect(host.workingVisibility).toEqual([]);
+  });
+
+  it("hides while the assistant writes text and shows again when a tool starts", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("writing");
+
+    expect(host.workingVisibility).toEqual([false]);
+
+    host.setPhase("tool", { toolName: "bash" });
+
+    expect(host.workingVisibility).toEqual([false, true]);
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "0s", "bash"));
+  });
+
+  it("writes the fresh message before showing the row again", () => {
+    const host = setup();
+    const write = vi.spyOn(host.ui, "setWorkingMessage");
+    const show = vi.spyOn(host.ui, "setWorkingVisible");
+
+    host.agentStart();
+    host.setPhase("writing");
+    host.setPhase("tool", { toolName: "bash" });
+
+    const showCall = show.mock.calls.findIndex(([visible]) => visible);
+    const lastWrite = write.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY;
+
+    expect(write.mock.calls.at(-1)).toEqual([message(V0, "0s", "bash")]);
+    expect(lastWrite).toBeLessThan(show.mock.invocationCallOrder[showCall] ?? 0);
+  });
+
+  it("shows again when the text ends without a tool", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("writing");
+    host.setPhase("waiting");
+
+    expect(host.workingVisibility).toEqual([false, true]);
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "0s"));
+  });
+
+  it("keeps the row for thinking, tool arguments and tools", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("waiting");
+    host.setPhase("thinking");
+    host.setPhase("toolArgs");
+    host.setPhase("tool", { toolName: "bash" });
+    host.setPhase("waiting");
+
+    expect(host.workingVisibility).toEqual([]);
+  });
+
+  it("names the running tool", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("tool", { toolName: "bash" });
+    vi.advanceTimersByTime(TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "bash"));
+
+    host.setPhase("tool", { toolName: "grep" });
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "grep"));
+
+    host.setPhase("waiting");
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s"));
+  });
+
+  it("keeps ticking while hidden", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("writing");
+    vi.advanceTimersByTime(TICK_MS * 3);
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "3s"));
+    expect(host.workingVisibility).toEqual([false]);
+  });
+
+  it("keeps the clock across a repeated agent_start", () => {
+    const host = setup();
+    const keyText = vi.spyOn(host.ui, "keyText");
+
+    host.agentStart();
+    vi.advanceTimersByTime(TICK_MS * 5);
+    pickIndex(3);
+    host.agentStart();
+
+    expect(host.workingMessages.at(-1)).toBe(message(V0, "5s"));
+    expect(host.workingMessages.slice(1)).not.toContain(message(V0, "0s"));
+    expect(host.workingMessages.slice(1)).not.toContain(message(VERBS[3], "0s"));
+    expect(keyText).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores phases before a run starts", () => {
+    const host = setup();
+
+    host.setPhase("writing");
+    host.setPhase("tool", { toolName: "bash" });
+
+    expect(host.workingMessages).toEqual([]);
+    expect(host.workingVisibility).toEqual([]);
+  });
+
+  it("restores the row flag and clears the message on settle", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("writing");
+    host.settle();
+
+    const written = host.workingMessages.length;
+
+    vi.advanceTimersByTime(TICK_MS * 3);
+
+    expect(host.workingVisibility).toEqual([false, true]);
+    expect(host.workingMessages.at(-1)).toBeUndefined();
+    expect(host.workingMessages).toHaveLength(written);
+  });
+
+  it("leaves visibility to pi on shutdown", async () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("writing");
+    await host.shutdown();
+
+    const written = host.workingMessages.length;
+
+    vi.advanceTimersByTime(TICK_MS * 3);
+
+    expect(host.workingVisibility).toEqual([false]);
+    expect(host.workingMessages.at(-1)).toBeUndefined();
+    expect(host.workingMessages).toHaveLength(written);
   });
 });

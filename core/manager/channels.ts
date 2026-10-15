@@ -1,6 +1,6 @@
 import type { UsageTotals } from "../adapter/contract.ts";
 
-export const BUSY_CHANNEL = "session-limits:busy";
+export const BUSY_CHANNEL = "pi:busy";
 
 export const USAGE_CHANNEL = "spending:usage";
 

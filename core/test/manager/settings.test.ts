@@ -1,14 +1,17 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  loadSettingsFiles,
   parseSettings,
   projectSettingsPath,
   readSettingsFile,
   type SettingsSchema,
   userSettingsPath,
+  watchSettings,
 } from "../../manager/settings.ts";
+import { createFakeHost } from "../helpers/fakes.ts";
 
 type Example = { count: number; ratio: number; names: string[]; loud?: boolean };
 
@@ -43,6 +46,19 @@ describe("settings helpers", () => {
     expect(parseSettings(schema, { loud: 0 }, "f").patch).toEqual({});
   });
 
+  it("accepts only listed strings for a choice rule", () => {
+    const choice: SettingsSchema<{ mode: string }> = { mode: { type: "choice", values: ["a", "b"] } };
+
+    expect(parseSettings(choice, { mode: "b" }, "f.json").patch).toEqual({ mode: "b" });
+    expect(parseSettings(choice, { mode: "c" }, "f.json").errors).toEqual([
+      'f.json: mode must be one of "a", "b"',
+    ]);
+    expect(parseSettings(choice, { mode: 1 }, "f.json")).toEqual({
+      patch: {},
+      errors: ['f.json: mode must be one of "a", "b"'],
+    });
+  });
+
   it("rejects anything but a JSON object", () => {
     expect(parseSettings(schema, [], "f").errors).toEqual(["f: expected a JSON object"]);
     expect(parseSettings(schema, null, "f").errors).toEqual(["f: expected a JSON object"]);
@@ -50,6 +66,9 @@ describe("settings helpers", () => {
 
   it("reads files, treats a missing file as empty and reports unreadable JSON", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
+
+    roots.push(root);
+
     const user = userSettingsPath(join(root, "agent"), "example.json");
     const project = projectSettingsPath(join(root, "project"), "example.json");
 
@@ -65,5 +84,82 @@ describe("settings helpers", () => {
     writeFileSync(user, "{ nope");
 
     expect(readSettingsFile(schema, user).errors[0]).toContain(user);
+  });
+});
+
+const FILE = "example.json";
+
+const DEFAULTS: Example = { count: 5, ratio: 0.5, names: [] };
+
+const roots: string[] = [];
+
+const location = (projectTrusted: boolean) => {
+  const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
+
+  roots.push(root);
+
+  return { agentDir: join(root, "agent"), cwd: join(root, "project"), projectTrusted };
+};
+
+const write = (path: string, content: unknown) => {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, JSON.stringify(content));
+};
+
+const withFiles = (projectTrusted: boolean) => {
+  const where = location(projectTrusted);
+
+  write(userSettingsPath(where.agentDir, FILE), { count: 2, ratio: 0.2 });
+  write(projectSettingsPath(where.cwd, FILE), { ratio: 0.9 });
+
+  return where;
+};
+
+afterEach(() => {
+  roots.splice(0).forEach((root) => {
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("settings files", () => {
+  it("merges defaults, the user file and a trusted project file, project last", () => {
+    expect(loadSettingsFiles(schema, DEFAULTS, FILE, withFiles(true))).toEqual({
+      settings: { count: 2, ratio: 0.9, names: [] },
+      errors: [],
+    });
+  });
+
+  it("ignores the project file when the project is not trusted", () => {
+    expect(loadSettingsFiles(schema, DEFAULTS, FILE, withFiles(false)).settings).toEqual({
+      count: 2,
+      ratio: 0.2,
+      names: [],
+    });
+  });
+
+  it("re-reads on session start and reports each invalid value once", () => {
+    const where = location(false);
+    const host = createFakeHost({ id: "s", ...where });
+    const settings = watchSettings(host, "example", schema, DEFAULTS, FILE);
+    const file = userSettingsPath(where.agentDir, FILE);
+
+    expect(settings()).toEqual(DEFAULTS);
+
+    write(file, { count: 3, ratio: 2 });
+    host.start();
+    host.start();
+
+    expect(settings()).toEqual({ count: 3, ratio: 0.5, names: [] });
+    expect(host.notices).toEqual([
+      {
+        message: `example settings: ${file}: ratio must be a number above 0 and at most 1`,
+        level: "warning",
+      },
+    ]);
+
+    write(file, { ratio: 0.8 });
+    host.start();
+
+    expect(settings()).toEqual({ count: 5, ratio: 0.8, names: [] });
   });
 });

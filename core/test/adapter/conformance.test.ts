@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as pi from "@earendil-works/pi-coding-agent";
@@ -7,9 +7,29 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
+import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
-const PINNED_PI_VERSION = "1.1.0";
+const ADAPTER_PI_MAJOR = 1;
+
+const PI_PACKAGES = ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
+
+const readJson = (url: URL) => JSON.parse(readFileSync(url, "utf8"));
+
+const declaredPiRanges = (): Record<string, string> =>
+  readJson(new URL("../../../package.json", import.meta.url)).devDependencies;
+
+const installedVersion = (name: string): string =>
+  readJson(new URL("../package.json", import.meta.resolve(name))).version;
+
+const versionParts = (version: string) => version.split(".").map(Number);
+
+const satisfiesCaret = (version: string, range: string) => {
+  const [major, minor, patch] = versionParts(version);
+  const [floorMajor, floorMinor, floorPatch] = versionParts(range.slice(1));
+
+  return major === floorMajor && (minor > floorMinor || (minor === floorMinor && patch >= floorPatch));
+};
 
 type Handler = (event: unknown) => unknown;
 
@@ -75,8 +95,18 @@ const fakeExtensionApi = () => {
 };
 
 describe("pi adapter conformance", () => {
-  it(`is pinned to pi ${PINNED_PI_VERSION}`, () => {
-    expect(pi.VERSION).toBe(PINNED_PI_VERSION);
+  it.each(PI_PACKAGES)("installs a %s inside the declared caret range", (name) => {
+    const range = declaredPiRanges()[name];
+    const version = installedVersion(name);
+
+    expect(range).toMatch(/^\^\d+\.\d+\.\d+$/);
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(satisfiesCaret(version, range)).toBe(true);
+    expect(versionParts(version)[0]).toBe(ADAPTER_PI_MAJOR);
+  });
+
+  it("reports the installed pi version as its VERSION", () => {
+    expect(pi.VERSION).toBe(installedVersion("@earendil-works/pi-coding-agent"));
   });
 
   it("finds every pi export the adapter uses", () => {
@@ -110,10 +140,83 @@ describe("pi adapter conformance", () => {
       "getReadmePath",
     ];
 
-    const requiredTui = ["Container", "Key", "matchesKey", "ScrollView", "Text", "truncateToWidth"];
+    const requiredTui = [
+      "Container",
+      "isKeyRelease",
+      "Key",
+      "matchesKey",
+      "ScrollView",
+      "Text",
+      "truncateToWidth",
+    ];
 
     expect(required.filter((name) => !(name in pi))).toEqual([]);
     expect(requiredTui.filter((name) => !(name in tui))).toEqual([]);
+  });
+
+  it("names only assistant event types pi has", () => {
+    void (ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][]);
+  });
+
+  it("emits ui_prompt events around every blocking dialog", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+    const seen: unknown[] = [];
+    let answer: boolean | undefined;
+
+    try {
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "asker",
+            factory: (api) => {
+              api.on("ui_prompt_start", (event) => {
+                seen.push(event);
+              });
+              api.on("ui_prompt_end", (event) => {
+                seen.push(event);
+              });
+              api.on("session_start", async (_event, ctx) => {
+                answer = await ctx.ui.confirm("Allow bash?", "rm -rf build");
+              });
+            },
+          },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      const uiContext = { confirm: async () => true } as unknown as pi.ExtensionUIContext;
+
+      await session.bindExtensions({ mode: "print", uiContext });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      session.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(answer).toBe(true);
+    expect(seen).toEqual([
+      { type: "ui_prompt_start", reason: "ui_prompt", kind: "confirm", title: "Allow bash?" },
+      { type: "ui_prompt_end", reason: "ui_prompt", kind: "confirm", title: "Allow bash?" },
+    ]);
   });
 
   it("exposes the model registry methods the model resolver reads", () => {
@@ -125,7 +228,7 @@ describe("pi adapter conformance", () => {
   });
 
   it("gives children in-memory settings with compaction off, a reserve and no cache warming", () => {
-    const snapshot = { compaction: { enabled: true, keepRecentTokens: 20_000 }, defaultProvider: "openai" };
+    const snapshot = { compaction: { enabled: true, keepRecentTokens: 20_000 }, defaultProvider: "beta" };
     const settings = pi.SettingsManager.inMemory(childSettings(snapshot, 16_384), { projectTrusted: false });
 
     expect(settings.getCompactionEnabled()).toBe(false);
@@ -133,7 +236,7 @@ describe("pi adapter conformance", () => {
     expect(childSettings(snapshot, 16_384)).toMatchObject({
       compaction: { enabled: false, reserveTokens: 16_384, keepRecentTokens: 20_000 },
       cacheWarming: "off",
-      defaultProvider: "openai",
+      defaultProvider: "beta",
     });
   });
 

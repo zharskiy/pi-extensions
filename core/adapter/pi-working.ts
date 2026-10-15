@@ -3,7 +3,7 @@ import type { HostUi } from "./contract.ts";
 
 export const createWorkingUi = (
   tuiCtx: () => ExtensionContext | undefined,
-): Pick<HostUi, "setWorkingIndicator" | "setWorkingMessage"> => ({
+): Pick<HostUi, "setWorkingIndicator" | "setWorkingMessage" | "setWorkingVisible"> => ({
   setWorkingIndicator: (indicator) => {
     const ctx = tuiCtx();
 
@@ -23,5 +23,8 @@ export const createWorkingUi = (
   },
   setWorkingMessage: (text) => {
     tuiCtx()?.ui.setWorkingMessage(text);
+  },
+  setWorkingVisible: (visible) => {
+    tuiCtx()?.ui.setWorkingVisible(visible);
   },
 });

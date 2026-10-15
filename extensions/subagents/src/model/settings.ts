@@ -15,10 +15,10 @@ export type Settings = {
   inlineResultChars: number;
   lingerMs: number;
   failedLingerMs: number;
+  doneLingerMs: number;
   renderThrottleMs: number;
   stopGraceSeconds: number;
   maxChainLength: number;
-  notifications: boolean;
   disabledPlugins: string[];
 };
 
@@ -32,11 +32,11 @@ export const defaultSettings = (): Settings => ({
   reserveTokens: 16_384,
   inlineResultChars: 4_000,
   lingerMs: 30_000,
-  failedLingerMs: 60_000,
+  failedLingerMs: 30_000,
+  doneLingerMs: 10_000,
   renderThrottleMs: 250,
   stopGraceSeconds: 60,
   maxChainLength: 3,
-  notifications: true,
   disabledPlugins: [],
 });
 
@@ -51,10 +51,10 @@ const settingsSchema: SettingsSchema<Settings> = {
   inlineResultChars: range(0, 1_000_000),
   lingerMs: range(0, 3_600_000),
   failedLingerMs: range(0, 3_600_000),
+  doneLingerMs: range(0, 3_600_000),
   renderThrottleMs: range(0, 10_000),
   stopGraceSeconds: range(0, 3_600),
   maxChainLength: range(1, 20),
-  notifications: { type: "boolean" },
   disabledPlugins: { type: "list", of: "plugin ids" },
 };
 

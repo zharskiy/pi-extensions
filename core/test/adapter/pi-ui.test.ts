@@ -1,104 +1,124 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { createInputPane, createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
+import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
+import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
 
-const APC = new RegExp(
-  `${String.fromCharCode(27)}_[^${String.fromCharCode(7)}]*${String.fromCharCode(7)}`,
-  "g",
-);
-const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const keyContext = (mode: string) => {
+  const inputs: ((data: string) => unknown)[] = [];
+  const removed: number[] = [];
+  const state: HostState = {
+    tools: new Map(),
+    ctx: {
+      mode,
+      ui: {
+        onTerminalInput: (handler: (data: string) => unknown) => {
+          inputs.push(handler);
+          return () => {
+            removed.push(inputs.indexOf(handler));
+          };
+        },
+      },
+    } as unknown as ExtensionContext,
+  };
 
-const visibleText = (lines: string[]) => lines.join("\n").replace(APC, "").replace(SGR, "");
+  return {
+    ui: createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+    ),
+    inputs,
+    removed,
+  };
+};
 
-const typeText = (pane: ReturnType<typeof createInputPane>, text: string) =>
-  text.split("").map((char) => pane.feed({ name: "other", char, raw: char }));
+describe("onKeyPress", () => {
+  it("onKeyPress calls the listener for keys, skips SGR and X10 mouse reports and key releases, and never consumes", () => {
+    const { ui, inputs, removed } = keyContext("tui");
+    let presses = 0;
 
-describe("createInputPane", () => {
-  it("collects typed characters as changes", () => {
-    const pane = createInputPane("type");
-    const outcomes = typeText(pane, "hi");
+    const off = ui.onKeyPress(() => {
+      presses += 1;
+    });
 
-    expect(outcomes).toEqual(["changed", "changed"]);
-    expect(pane.value()).toBe("hi");
-    expect(visibleText(pane.render(30))).toContain("hi");
+    const results = ["a", `${ESC}[A`, `${ESC}[<0;10;5M`, `${ESC}[M abc`, `${ESC}[97;1:3u`, "\r"].map((data) =>
+      inputs[0]?.(data),
+    );
+
+    off();
+
+    expect(inputs).toHaveLength(1);
+    expect(presses).toBe(3);
+    expect(results).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+    expect(removed).toEqual([0]);
   });
 
-  it("reports submitted on enter and cancelled on escape", () => {
-    const pane = createInputPane("type");
+  it("onKeyPress is a no-op outside tui", () => {
+    const silent = ["rpc", "print", "json"].map((mode) => {
+      const { ui, inputs } = keyContext(mode);
+      const off = ui.onKeyPress(() => {});
 
-    expect(pane.feed({ name: "enter", raw: "\r" })).toBe("submitted");
-    expect(pane.feed({ name: "escape", raw: "\x1b" })).toBe("cancelled");
-    expect(pane.feed({ name: "other", char: "a", raw: "a" })).toBe("changed");
-  });
+      off();
 
-  it("deletes the last character on backspace", () => {
-    const pane = createInputPane("type");
+      return inputs.length;
+    });
 
-    typeText(pane, "abc");
-
-    expect(pane.feed({ name: "other", raw: "\x7f" })).toBe("changed");
-    expect(pane.value()).toBe("ab");
-  });
-
-  it("sets the value and renders it", () => {
-    const pane = createInputPane("type");
-
-    pane.setValue("preset");
-
-    expect(pane.value()).toBe("preset");
-    expect(visibleText(pane.render(30))).toContain("preset");
-  });
-});
-
-describe("createInputPane focus", () => {
-  it("draws the cursor marker only while focused", () => {
-    const pane = createInputPane("type");
-
-    pane.setValue("hi");
-    pane.setFocused(false);
-
-    expect(pane.render(30).join("")).not.toContain(CURSOR_MARKER);
-
-    pane.setFocused(true);
-
-    expect(pane.render(30).join("")).toContain(CURSOR_MARKER);
+    expect(silent).toEqual([0, 0, 0]);
   });
 });
 
 const captured = (mode: string, env = {}) => {
   const writes: string[] = [];
-  const state: HostState = { ctx: { mode } as unknown as ExtensionContext };
-  const ui = createUi(state, { write: (data: string) => writes.push(data) }, env);
+  const state: HostState = { tools: new Map(), ctx: { mode } as unknown as ExtensionContext };
+  const ui = createUi(
+    state,
+    { write: (data: string) => writes.push(data) },
+    env,
+    createEditorHooks(() => undefined),
+  );
 
   return { ui, writes, state };
 };
 
 describe("terminalNotify", () => {
-  it("writes the bell and one OSC 9 notification in tui mode", () => {
+  it("writes one OSC 9 notification without a bell in tui mode", () => {
     const { ui, writes } = captured("tui", { TERM: "xterm-ghostty", TERM_PROGRAM: "ghostty" });
 
-    ui.terminalNotify("pi-subagents: scout done", "Found three files");
+    ui.terminalNotify("pi is waiting for your input", "auto");
 
-    expect(writes).toEqual([`${BEL}${ESC}]9;pi-subagents: scout done: Found three files${BEL}`]);
+    expect(writes).toEqual([`${ESC}]9;pi is waiting for your input${BEL}`]);
   });
 
-  it("writes OSC 777 instead of OSC 9 for rxvt terminals", () => {
+  it("writes OSC 777 titled pi for rxvt terminals", () => {
     const { ui, writes } = captured("tui", { TERM: "rxvt-unicode-256color" });
 
-    ui.terminalNotify("pi-subagents: scout done", "Found three files");
+    ui.terminalNotify("pi is waiting for your input", "auto");
 
-    expect(writes).toEqual([`${BEL}${ESC}]777;notify;pi-subagents: scout done;Found three files${BEL}`]);
+    expect(writes).toEqual([`${ESC}]777;notify;pi;pi is waiting for your input${BEL}`]);
+  });
+
+  it("writes only the bell for the bell channel", () => {
+    const ghostty = captured("tui", { TERM: "xterm-ghostty", TERM_PROGRAM: "ghostty" });
+    const rxvt = captured("tui", { TERM: "rxvt-unicode-256color" });
+
+    ghostty.ui.terminalNotify("pi is waiting for your input", "bell");
+    rxvt.ui.terminalNotify("pi is waiting for your input", "bell");
+
+    expect(ghostty.writes).toEqual([BEL]);
+    expect(rxvt.writes).toEqual([BEL]);
   });
 
   it("writes nothing in rpc, print or json mode, or once the session is stale", () => {
     const silent = ["rpc", "print", "json"].map((mode) => {
       const { ui, writes } = captured(mode);
 
-      ui.terminalNotify("title", "body");
+      ui.terminalNotify("message", "auto");
+      ui.terminalNotify("message", "bell");
 
       return writes.length;
     });
@@ -106,19 +126,137 @@ describe("terminalNotify", () => {
     const stale = captured("tui");
 
     stale.state.ctx = undefined;
-    stale.ui.terminalNotify("title", "body");
+    stale.ui.terminalNotify("message", "auto");
+    stale.ui.terminalNotify("message", "bell");
 
     expect(silent).toEqual([0, 0, 0]);
     expect(stale.writes).toEqual([]);
   });
 
-  it("strips control characters and keeps the title free of separators", () => {
-    const title = `a;b${ESC}]0;x`;
-    const body = `line one${BEL}\nline two`;
+  it("replaces control characters in the message", () => {
+    const message = `a${ESC}]0;x\nline${BEL}`;
 
-    expect(notificationSequence(title, body, {})).toBe(`${BEL}${ESC}]9;a,b ]0,x: line one line two${BEL}`);
-    expect(notificationSequence(title, body, { TERM_PROGRAM: "urxvt" })).toBe(
-      `${BEL}${ESC}]777;notify;a,b ]0,x;line one line two${BEL}`,
+    expect(notificationSequence(message, "auto", {})).toBe(`${ESC}]9;a ]0;x line${BEL}`);
+    expect(notificationSequence(message, "auto", { TERM_PROGRAM: "urxvt" })).toBe(
+      `${ESC}]777;notify;pi;a ]0;x line${BEL}`,
     );
+  });
+});
+
+type OverlayComponent = { handleMouse(event: object): unknown; handleInput(data: string): void };
+
+const ARROW_BINDINGS: Record<string, string> = {
+  [`${ESC}[A`]: "tui.editor.cursorUp",
+  [`${ESC}[B`]: "tui.editor.cursorDown",
+};
+
+describe("overlay input routing", () => {
+  const overlayFor = (view: ViewComponent) => {
+    const components: OverlayComponent[] = [];
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "tui",
+        cwd: "/repo",
+        ui: {
+          custom: async (factory: (...args: unknown[]) => OverlayComponent) => {
+            components.push(
+              factory(
+                { terminal: { rows: 40 }, mode: "fullscreen", requestRender: () => {} },
+                {},
+                { matches: (data: string, id: string) => ARROW_BINDINGS[data] === id },
+                () => {},
+              ),
+            );
+          },
+        },
+      } as unknown as ExtensionContext,
+    };
+
+    void createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+    ).openOverlay(() => view);
+
+    return components[0] as OverlayComponent;
+  };
+
+  const mouse = (type: string, extra: object = {}) => ({
+    type,
+    button: "left",
+    x: 3,
+    y: 7,
+    screenX: 3,
+    screenY: 7,
+    width: 80,
+    height: 40,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    ...extra,
+  });
+
+  it("names keys through pi's keybindings before the view sees them", () => {
+    const keys: KeyPress[] = [];
+    const component = overlayFor({
+      render: () => [],
+      handleKey: (key) => {
+        keys.push(key);
+      },
+    });
+
+    [`${ESC}[A`, `${ESC}[B`, `${ESC}[D`, "x"].forEach((data) => {
+      component.handleInput(data);
+    });
+
+    expect(keys.map((key) => [key.name, key.char])).toEqual([
+      ["up", undefined],
+      ["down", undefined],
+      ["other", undefined],
+      ["other", "x"],
+    ]);
+  });
+
+  it("forwards a left click to the view and reports whether it used it", () => {
+    const clicks: [number, number][] = [];
+    let used = true;
+    const component = overlayFor({
+      render: () => [],
+      handleKey: () => {},
+      handleClick: (x, y) => {
+        clicks.push([x, y]);
+        return used;
+      },
+    });
+
+    expect(component.handleMouse(mouse("click", { clickCount: 1 }))).toEqual({ handled: true });
+
+    used = false;
+
+    expect(component.handleMouse(mouse("click", { clickCount: 1 }))).toBeUndefined();
+    expect(component.handleMouse(mouse("click", { button: "right", clickCount: 1 }))).toBeUndefined();
+    expect(component.handleMouse(mouse("press"))).toBeUndefined();
+    expect(clicks).toEqual([
+      [3, 7],
+      [3, 7],
+    ]);
+  });
+
+  it("still scrolls with the wheel", () => {
+    const wheels: number[] = [];
+    const component = overlayFor({
+      render: () => [],
+      handleKey: () => {},
+      handleWheel: (lines) => {
+        wheels.push(lines);
+      },
+    });
+
+    expect(component.handleMouse(mouse("wheel", { button: "none", wheelDelta: 3 }))).toEqual({
+      handled: true,
+    });
+    expect(wheels).toEqual([3]);
   });
 });

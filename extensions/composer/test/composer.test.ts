@@ -17,27 +17,9 @@ describe("composer", () => {
 
     host.start();
 
-    expect(host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1]?.startsWith(` ${ESC}[1m`)).toBe(
-      true,
-    );
-  });
+    const prompt = host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1] ?? "";
 
-  it("leaves an editor another extension set alone", () => {
-    const host = createFakeHost();
-
-    host.foreignEditor = true;
-    createComposer(host);
-    host.start();
-
-    expect(host.editorFrame).toBeUndefined();
-  });
-
-  it("uses the chevron constant", () => {
-    const host = createFakeHost();
-
-    createComposer(host);
-    host.start();
-
-    expect(host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1]).toContain(CHEVRON);
+    expect(prompt.startsWith(` ${ESC}[1m`)).toBe(true);
+    expect(prompt).toContain(CHEVRON);
   });
 });

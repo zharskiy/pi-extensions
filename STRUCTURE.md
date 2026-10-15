@@ -8,14 +8,18 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 pi-extensions/
 ├── core/                        # shared code, no extension-specific logic
 │   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types
+│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg, bold, width, truncate)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
-│   │   ├── pi-ui.ts / pi-tools.ts   # pi TUI components, tool wrapping
-│   │   ├── pi-editor-frame.ts   # editor subclass drawing an EditorFrame
+│   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
+│   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics, line cutting
+│   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
+│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
+│   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
 │   │   ├── pi-working.ts        # working indicator and message (HostUi)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
@@ -26,9 +30,11 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/usage/totals channel names, payloads, parsers
-│   │   └── settings.ts / settle.ts  # settings, timeouts
+│   │   ├── format.ts            # token, duration and error-text formatters
+│   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
-│       ├── adapter/             # adapter tests, live.ts, render-theme.ts
+│       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
+│       │                        #   offline.ts (pi loaded offline for extension tests)
 │       ├── manager/
 │       └── helpers/fakes.ts     # fake host, runtime and child session
 ├── extensions/
@@ -38,9 +44,11 @@ pi-extensions/
 │   │   │   ├── plugins.ts       # ordered plugin list
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
 │   │   │   │                    #   agent-schema, context-limit
-│   │   │   ├── components/      # pure TUI render helpers (agent-row, agent-list,
-│   │   │   │                    #   collapsible, context-breakdown,
-│   │   │   │                    #   system-prompt-block, refresh.ts throttle/ticker, hints.ts)
+│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters, padding and
+│   │   │   │                    #   wrapping over the theme, state-text.ts glyphs, spinner, words
+│   │   │   │                    #   and stop hint, agent-row, tree.ts (chain links, terminals,
+│   │   │   │                    #   tree order, connectors, selection carry), refresh.ts
+│   │   │   │                    #   throttle/ticker and tick cadence)
 │   │   │   └── plugins/         # one folder per feature, see below
 │   │   ├── agents/              # bundled agent definitions (*.md)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
@@ -57,8 +65,12 @@ pi-extensions/
 │   │   ├── src/                 # index, ledger, footer, spending
 │   │   ├── test/
 │   │   └── README.md
-│   ├── working-indicator/       # spinner, verb and turn time in the working line
+│   ├── working-indicator/       # spinner, verb and prompt time in the working line
 │   │   ├── src/                 # index, working-indicator
+│   │   ├── test/
+│   │   └── README.md
+│   ├── notifications/           # terminal notification when pi waits for you
+│   │   ├── src/                 # index, notifications, settings
 │   │   ├── test/
 │   │   └── README.md
 │   ├── command-aliases/         # friendlier names for built-in commands
@@ -74,7 +86,6 @@ pi-extensions/
 │       ├── test/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
-├── research/                    # pi extension API and SDK notes (development only)
 ├── AGENTS.md                    # short guide for coding agents
 ├── ARCHITECTURE.md              # how it works
 ├── STRUCTURE.md                 # this file
@@ -89,34 +100,34 @@ pi-extensions/
 agent-definitions/  # loads agents/*.md: loader.ts, fields.ts (field rules),
                     #   yaml-lite.ts (frontmatter parser), prompt assembly
 agent-registry/     # in-memory agent records (registry.ts)
-run-agent/          # runner.ts, tools.ts (run_agent, message_agent), placement.ts
-                    #   + worktree.ts, task.ts (task text), outbox.ts, result.ts,
-                    #   prompts.ts (forwarded dialogs), model-text.ts, semaphore.ts,
-                    #   handoff.ts (handoff template and schema service)
+run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts, tools.ts (run_agent, message_agent), render.ts (block),
+                    #   placement.ts + worktree.ts,
+                    #   task.ts (task text), outbox.ts, result.ts, model-text.ts,
+                    #   semaphore.ts, handoff.ts (handoff template and schema service)
 agent-status/       # status tool and snapshots
-agent-view/         # /agents command view, view-mode store
-agent-list-view/    # agent list overlay
-progress-widget/    # live progress widget below the editor
-notifications/      # completion notifications
+agent-view/         # /agents overlay: index (command, service), overlay.ts (list/view host),
+                    #   list.ts + list-model.ts (tree sections), view.ts, loader.ts,
+                    #   request-block.ts (the view's Request block)
+agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel
 ```
 
 ### Conventions
 
-- Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules.
+- Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules, including that extension tests reach the adapter only through `contract.ts` and `core/test/adapter`.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
-- `*.live.test.ts` (in `extensions/subagents/test/live/`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
+- `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
 - Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
 - No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
 
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,command-aliases,composer,footer}/src/index.ts`.
-- Development-only: `core/test`, `extensions/*/test`, `test/`, `research/`, `.github/`, config files below.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,footer}/src/index.ts`.
+- Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files
 

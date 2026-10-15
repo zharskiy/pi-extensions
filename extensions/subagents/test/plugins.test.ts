@@ -3,7 +3,7 @@ import { plugins } from "../src/plugins.ts";
 import { createHarness } from "./helpers/harness.ts";
 
 describe("subagents plugin set", () => {
-  it("enables the release 0.3 plugin set and registers its tools and command", () => {
+  it("enables the plugin set and registers its tools and command", () => {
     const harness = createHarness(plugins);
 
     expect(harness.errors).toEqual([]);
@@ -12,15 +12,13 @@ describe("subagents plugin set", () => {
     expect([...harness.host.commands.keys()]).toEqual(["agents"]);
   });
 
-  it("skips plugins disabled in settings and tells the user about the plugins that need them", () => {
-    const harness = createHarness(plugins, { disabledPlugins: ["agent-view"] });
+  it("skips plugins disabled in settings and names the plugins that needed them", () => {
+    const harness = createHarness(plugins, { disabledPlugins: ["agent-registry"] });
 
+    expect(harness.host.tools.size).toBe(0);
     expect(harness.host.commands.has("agents")).toBe(false);
-    expect(harness.host.notices).toEqual([
-      {
-        message: "plugins skipped because a plugin they need is off: agent-list-view (needs agent-view)",
-        level: "warning",
-      },
-    ]);
+    expect(harness.host.notices).toHaveLength(1);
+    expect(harness.host.notices[0]?.message).toContain("agent-panel (needs agent-registry)");
+    expect(harness.host.notices[0]?.message).toContain("agent-view (needs agent-registry)");
   });
 });

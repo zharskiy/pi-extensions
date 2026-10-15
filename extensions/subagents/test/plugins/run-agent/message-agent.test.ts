@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../../../../../core/adapter/route.ts";
-import { parseSessionLines } from "../../../../../core/adapter/session-file.ts";
+import { formatRoutedMessage, parseSessionLines } from "../../../../../core/test/adapter/offline.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { MessageAgentParams, RunAgentParams } from "../../../src/plugins/run-agent/tools.ts";
-import { createHarness } from "../../helpers/harness.ts";
+import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
+import type { MessageAgentParams } from "../../../src/plugins/run-agent/tools.ts";
+import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = async (maxConcurrent = 4) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], {
@@ -97,7 +97,7 @@ describe("message_agent", () => {
     await services.require("runner").stop(first.id);
     await flush();
 
-    expect(host.sent).toHaveLength(1);
+    expect(wakeTexts(host)).toHaveLength(1);
 
     await host
       .tool<RunAgentParams, unknown>("run_agent")

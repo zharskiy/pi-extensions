@@ -4,15 +4,22 @@ import {
   type ChildSession,
   type CommandSpec,
   type ContextSnapshot,
+  type DialogEvent,
+  type DialogKind,
   type EditorFrame,
+  type EditorKeyHandler,
   emptyUsage,
   type FooterRender,
+  type HiddenMessage,
   type Host,
-  type InputPane,
+  type KeyPress,
   type MessageDelivery,
   type ModelInfo,
   type NewSessionOptions,
+  type NotifyChannel,
   type OverlayFactory,
+  type Phase,
+  type PhaseDetail,
   type RoutedMessage,
   type SessionControl,
   type SessionInfo,
@@ -21,13 +28,18 @@ import {
   type SpawnSpec,
   type StopReason,
   type ThemeLike,
+  type ToolRender,
+  type ToolRenderState,
+  type ToolResult,
   type ToolSpec,
+  type ToolTone,
   type UsageTotals,
   type WorkingIndicator,
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
+import { textMetrics } from "../../adapter/pi-tools.ts";
 
-export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text };
+export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text, ...textMetrics };
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
@@ -38,16 +50,25 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
+  hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
-  terminalNotices: { title: string; body: string }[];
+  terminalNotices: { message: string; channel: NotifyChannel }[];
   statuses: Map<string, string | undefined>;
+  statusCalls: { key: string; text: string | undefined }[];
   widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
+  belowEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
   editorFrame?: EditorFrame;
   foreignEditor: boolean;
+  emptyLeftHandlers: Set<() => void>;
+  emptyDownHandlers: Set<() => void>;
+  editorCapture?: EditorKeyHandler;
+  pressEmptyLeft(): boolean;
+  pressEmptyDown(): boolean;
+  pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   idle: boolean;
   usage: UsageTotals;
   info: SessionInfo;
@@ -63,9 +84,21 @@ export type FakeHost = Host & {
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
   tool<P, D>(name: string): ToolSpec<P, D>;
+  renderTool(
+    name: string,
+    input: {
+      call?: unknown;
+      result?: ToolResult<unknown>;
+      state?: Partial<ToolRenderState>;
+      width?: number;
+    },
+  ): { call?: string; result?: string; state: ToolRenderState; tone?: ToolTone };
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
+  workingVisibility: boolean[];
   agentStart(): void;
+  phases: { phase: Phase; detail: PhaseDetail }[];
+  setPhase(phase: Phase, detail?: PhaseDetail): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
@@ -76,9 +109,14 @@ export type FakeHost = Host & {
   activeModel?: ModelInfo;
   thinking: string;
   sessionTitle?: string;
+  keyListeners: Set<() => void>;
+  pressKey(): void;
+  dialog(phase: DialogEvent["phase"], kind: DialogKind, title?: string): void;
 };
 
 export const flushTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+export const FAKE_FOOTER_KEY = "footer";
 
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
@@ -87,11 +125,29 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
+  const editorLive = () => started && !host.foreignEditor;
+
+  const pressEmpty = (registered: Set<() => void>) => {
+    if (!editorLive()) {
+      return false;
+    }
+
+    const handlers = Array.from(registered);
+
+    handlers.forEach((handler) => {
+      handler();
+    });
+
+    return handlers.length > 0;
+  };
   let stale = false;
   let settling = false;
+  let currentPhase: { phase: Phase; detail: PhaseDetail } = { phase: "idle", detail: {} };
 
   const control: SessionControl = {
     newSession: async (options) => {
@@ -120,15 +176,44 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     entries: [],
     files: new Map(),
     sent: [],
+    hidden: [],
     dispatched: [],
     published: [],
     notices: [],
     terminalNotices: [],
     statuses: new Map(),
+    statusCalls: [],
     widgets: new Map(),
+    belowEditor: [],
     widgetRefreshes: 0,
     overlays: [],
     foreignEditor: false,
+    emptyLeftHandlers: new Set(),
+    emptyDownHandlers: new Set(),
+    pressEmptyLeft: () => pressEmpty(host.emptyLeftHandlers),
+    pressEmptyDown: () => pressEmpty(host.emptyDownHandlers),
+    pressEditorKey: (key) => {
+      if (!editorLive()) {
+        return "editor";
+      }
+
+      const capture = host.editorCapture;
+      const outcome = capture ? capture(key) : "editor";
+
+      if (outcome === "release" && host.editorCapture === capture) {
+        host.editorCapture = undefined;
+      }
+
+      if (outcome !== "consumed" && key.name === "left") {
+        host.pressEmptyLeft();
+      }
+
+      if (outcome !== "consumed" && key.name === "down") {
+        host.pressEmptyDown();
+      }
+
+      return outcome;
+    },
     idle: true,
     usage: emptyUsage(),
     confirmations: [],
@@ -154,6 +239,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         host.notices.push({ message, level });
       },
       setStatus: (key, text) => {
+        host.statusCalls.push({ key, text });
         host.statuses.set(key, text);
       },
       confirm: async (title, message) => {
@@ -163,9 +249,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           ? host.confirmAnswer(title, message)
           : host.confirmAnswer;
       },
-      input: async () => undefined,
       setWidget: (key, render) => {
         host.widgets.set(key, render);
+        host.belowEditor = host.belowEditor.filter((entry) => entry !== key);
+
+        if (render) {
+          host.belowEditor.push(key);
+        }
         return {
           refresh: () => {
             host.widgetRefreshes += 1;
@@ -175,16 +265,18 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       openOverlay: async (factory) => {
         host.overlays.push(factory);
       },
-      select: async () => undefined,
       style: (token, text) => `<${token}>${text}`,
-      terminalNotify: (title, body) => {
-        host.terminalNotices.push({ title, body });
+      terminalNotify: (message, channel) => {
+        host.terminalNotices.push({ message, channel });
       },
       setWorkingIndicator: (indicator) => {
         host.workingIndicators.push(indicator);
       },
       setWorkingMessage: (text) => {
         host.workingMessages.push(text);
+      },
+      setWorkingVisible: (visible) => {
+        host.workingVisibility.push(visible);
       },
       onEditorSubmit: (rewrite) => {
         host.submitRewrites.push(rewrite);
@@ -208,8 +300,42 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
         host.editorFrame = frame;
       },
+      onEmptyEditorLeft: (handler) => {
+        const entry = () => handler();
+
+        host.emptyLeftHandlers.add(entry);
+
+        return () => {
+          host.emptyLeftHandlers.delete(entry);
+        };
+      },
+      onEmptyEditorDown: (handler) => {
+        const entry = () => handler();
+
+        host.emptyDownHandlers.add(entry);
+
+        return () => {
+          host.emptyDownHandlers.delete(entry);
+        };
+      },
+      captureEditorKeys: (handler) => {
+        host.editorCapture = handler;
+
+        return () => {
+          if (host.editorCapture === handler) {
+            host.editorCapture = undefined;
+          }
+        };
+      },
       setFooter: (render) => {
         host.footer = render;
+
+        if (!render) {
+          host.belowEditor = host.belowEditor.filter((entry) => entry !== FAKE_FOOTER_KEY);
+        } else if (!host.belowEditor.includes(FAKE_FOOTER_KEY)) {
+          host.belowEditor.push(FAKE_FOOTER_KEY);
+        }
+
         return {
           refresh: () => {
             host.footerRefreshes += 1;
@@ -217,6 +343,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         };
       },
       keyText: (binding) => `<${binding}>`,
+      onKeyPress: (listener) => {
+        const entry = () => listener();
+
+        host.keyListeners.add(entry);
+
+        return () => {
+          host.keyListeners.delete(entry);
+        };
+      },
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -249,6 +384,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       host.sent.push(text);
+    },
+    sendHiddenMessage: (message) => {
+      if (!started) {
+        return;
+      }
+
+      host.hidden.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
     },
     dispatchCommand: (name, args) => {
       host.dispatched.push(args ? `${name} ${args}` : name);
@@ -328,6 +470,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       });
 
       settling = false;
+      host.setPhase("idle");
 
       deferred.splice(0).forEach(({ name, args }) => {
         void host.runCommand(name, args);
@@ -344,6 +487,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       await spec.run(args, control);
     },
     shutdown: async (reason = "quit") => {
+      currentPhase = { phase: "idle", detail: {} };
+
       await shutdownHandlers.reduce<Promise<void>>(
         (chain, handler) => chain.then(() => handler(reason)),
         Promise.resolve(),
@@ -361,8 +506,34 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       return spec as unknown as ToolSpec<P, D>;
     },
+    renderTool: (name, { call, result, state: overrides, width = 80 }) => {
+      const spec = host.tool<unknown, unknown>(name);
+      const state: ToolRenderState = {
+        toolCallId: "call-1",
+        expanded: false,
+        isPartial: false,
+        isError: result?.isError ?? false,
+        args: call,
+        invalidate: () => {},
+        ...overrides,
+      };
+
+      const shelled = spec.renderShell === "box";
+      const inner = shelled ? Math.max(1, width - 2) : width;
+      const piTone: ToolTone = state.isPartial ? "pending" : state.isError ? "error" : "success";
+      const resolve = (render: ToolRender | undefined) =>
+        typeof render === "function" ? render(inner) : render;
+
+      return {
+        call: call === undefined ? undefined : resolve(spec.renderCall?.(call, plainTheme, state)),
+        result: result === undefined ? undefined : resolve(spec.renderResult?.(result, state, plainTheme)),
+        state,
+        ...(spec.renderShell === "box" ? { tone: spec.renderTone?.(state, result) ?? piTone } : {}),
+      };
+    },
     workingIndicators: [],
     workingMessages: [],
+    workingVisibility: [],
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
     },
@@ -372,6 +543,24 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       agentStartHandlers.forEach((handler) => {
         handler();
       });
+
+      host.setPhase("waiting");
+    },
+    phases: [],
+    onPhase: (handler) => {
+      phaseHandlers.push(handler);
+    },
+    setPhase: (phase, detail = {}) => {
+      if (currentPhase.phase === phase && currentPhase.detail.toolName === detail.toolName) {
+        return;
+      }
+
+      currentPhase = { phase, detail };
+      host.phases.push({ phase, detail });
+
+      phaseHandlers.forEach((handler) => {
+        handler(phase, detail);
+      });
     },
     footerRefreshes: 0,
     contextUsage: { tokens: null, window: 0, percent: null },
@@ -380,44 +569,23 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
+    keyListeners: new Set(),
+    pressKey: () => {
+      Array.from(host.keyListeners).forEach((listener) => {
+        listener();
+      });
+    },
+    onDialog: (handler) => {
+      dialogHandlers.push(handler);
+    },
+    dialog: (phase, kind, title) => {
+      dialogHandlers.forEach((handler) => {
+        handler({ phase, kind, title });
+      });
+    },
   };
 
   return host;
-};
-
-export const createFakeInputPane = (): InputPane & { isFocused(): boolean } => {
-  let value = "";
-  let focused = true;
-
-  return {
-    feed: (key) => {
-      if (key.name === "enter") {
-        return "submitted";
-      }
-
-      if (key.name === "escape") {
-        return "cancelled";
-      }
-
-      if (key.raw === "\x7f") {
-        value = value.slice(0, -1);
-        return "changed";
-      }
-
-      value += key.char ?? "";
-
-      return "changed";
-    },
-    value: () => value,
-    setValue: (next) => {
-      value = next;
-    },
-    setFocused: (next) => {
-      focused = next;
-    },
-    isFocused: () => focused,
-    render: () => [value.length > 0 ? value : "(type a message)"],
-  };
 };
 
 export type FakeChild = ChildSession & {
@@ -547,22 +715,22 @@ type FakeRuntime = AgentRuntime & {
   child(id: string): FakeChild;
 };
 
-export const createFakeRuntime = (): FakeRuntime => {
+export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime => {
   const runtime: FakeRuntime = {
     catalog: [
       catalogModel("fake/model"),
-      catalogModel("openai/gpt-6-luna"),
-      catalogModel("openai/gpt-6-sol"),
-      catalogModel("openai/gpt-6.1-sol"),
-      catalogModel("anthropic/claude-haiku-4-5"),
-      catalogModel("anthropic/claude-haiku-4-5-20251001"),
-      catalogModel("anthropic/claude-haiku-5-5", true, { cost: { input: 0.1, output: 0.5 } }),
-      catalogModel("locked/claude-haiku-9-0", false),
+      catalogModel("beta/nova-6-luna"),
+      catalogModel("beta/nova-6-sol"),
+      catalogModel("beta/nova-6.1-sol"),
+      catalogModel("acme/lyra-4-5"),
+      catalogModel("acme/lyra-4-5-20251001"),
+      catalogModel("acme/lyra-5-5", true, { cost: { input: 0.1, output: 0.5 } }),
+      catalogModel("locked/lyra-9-0", false),
+      ...extraModels,
     ],
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
     defaultThinking: () => "medium",
-    estimateTokens: (text) => Math.ceil(text.length / 4),
     children: [],
     sessions: new Map(),
     spawn: async (spec) => {

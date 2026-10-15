@@ -7,9 +7,13 @@ import type {
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AgentRuntime,
+  AnyToolSpec,
   CommandSpec,
   ContextSnapshot,
+  DialogEvent,
   Host,
+  Phase,
+  PhaseDetail,
   SessionControl,
   SessionInfo,
   ShutdownReason,
@@ -17,10 +21,12 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
+import { createEditorHooks } from "./pi-editor.ts";
 import { footerHost } from "./pi-footer.ts";
+import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createUi, type HostState } from "./pi-ui.ts";
+import { createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -68,6 +74,10 @@ const liveCtx = (state: HostState) => {
   return state.ctx;
 };
 
+type HiddenCustom = { customType: string; content: string; display: false; details: unknown };
+
+const HELD_POLL_MS = 100;
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
@@ -76,13 +86,94 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const dialogHandlers: ((event: DialogEvent) => void)[] = [];
+  let phaseState = initialPhase();
+  let runActive = false;
+  const held: HiddenCustom[] = [];
+  let heldTimer: ReturnType<typeof setTimeout> | undefined;
+  const editor = createEditorHooks(() => tuiContext(state));
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
   };
 
+  const applyPhase = (event: PhaseEvent) => {
+    const next = reducePhase(phaseState, event);
+
+    if (next === phaseState) {
+      return;
+    }
+
+    const previous = phaseState;
+    const detail = detailOf(next);
+
+    phaseState = next;
+
+    if (previous.phase === next.phase && detailOf(previous).toolName === detail.toolName) {
+      return;
+    }
+
+    phaseHandlers.forEach((handler) => {
+      handler(next.phase, detail);
+    });
+  };
+
+  const sendUser = (text: string, options?: { expandPromptTemplates: boolean }) => {
+    const ctx = state.ctx;
+
+    if (!ctx) {
+      return;
+    }
+
+    if (ctx.isIdle()) {
+      pi.sendUserMessage(text, options);
+      return;
+    }
+
+    pi.sendUserMessage(text, { ...options, deliverAs: "followUp" });
+  };
+
+  const startHidden = (customs: HiddenCustom[]) => {
+    const [first, ...rest] = customs;
+
+    rest.forEach((custom) => {
+      pi.sendMessage(custom, { deliverAs: "nextTurn" });
+    });
+
+    if (first) {
+      pi.sendMessage(first, { triggerTurn: true });
+    }
+  };
+
+  const stopHeldPoll = () => {
+    clearTimeout(heldTimer);
+    heldTimer = undefined;
+  };
+
+  const pollHeld = () => {
+    heldTimer = setTimeout(deliverHeld, HELD_POLL_MS);
+    heldTimer.unref();
+  };
+
+  const deliverHeld = () => {
+    stopHeldPoll();
+
+    if (!state.ctx || runActive || held.length === 0) {
+      return;
+    }
+
+    if (!state.ctx.isIdle()) {
+      pollHeld();
+      return;
+    }
+
+    startHidden(held.splice(0));
+  };
+
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
+    editor.sync();
 
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
@@ -96,6 +187,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("session_shutdown", async (event) => {
     const errors: unknown[] = [];
 
+    phaseState = initialPhase();
+    runActive = false;
+    held.length = 0;
+    stopHeldPoll();
+
     await shutdownHandlers.reduce<Promise<void>>(
       (chain, handler) =>
         chain.then(async () => {
@@ -108,6 +204,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       Promise.resolve(),
     );
 
+    editor.release();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -125,10 +222,71 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("agent_start", (_event, ctx) => {
     capture(ctx);
+    runActive = true;
+    stopHeldPoll();
+    held.splice(0).forEach((custom) => {
+      pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+    });
 
     agentStartHandlers.forEach((handler) => {
       handler();
     });
+
+    applyPhase({ type: "agent_start" });
+  });
+
+  pi.on("turn_start", (_event, ctx) => {
+    capture(ctx);
+    applyPhase({ type: "turn_start" });
+  });
+
+  pi.on("message_update", (event, ctx) => {
+    capture(ctx);
+
+    if (event.message.role !== "assistant") {
+      return;
+    }
+
+    const delta = deltaEvent(event.assistantMessageEvent.type);
+
+    if (delta) {
+      applyPhase(delta);
+    }
+  });
+
+  pi.on("message_end", (event, ctx) => {
+    capture(ctx);
+
+    if (event.message.role !== "assistant") {
+      return;
+    }
+
+    applyPhase({ type: "message_end" });
+  });
+
+  pi.on("tool_execution_start", (event, ctx) => {
+    capture(ctx);
+
+    if (event.parentToolCallId !== undefined) {
+      return;
+    }
+
+    applyPhase({ type: "tool_start", id: event.toolCallId, name: event.toolName });
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    capture(ctx);
+
+    if (event.parentToolCallId !== undefined) {
+      return;
+    }
+
+    applyPhase({ type: "tool_end", id: event.toolCallId });
+  });
+
+  pi.on("agent_end", (_event, ctx) => {
+    capture(ctx);
+    applyPhase({ type: "agent_end" });
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -151,13 +309,33 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("agent_settled", (_event, ctx) => {
     capture(ctx);
+    runActive = false;
 
     idleHandlers.forEach((handler) => {
       handler();
     });
+
+    applyPhase({ type: "agent_settled" });
+  });
+
+  pi.on("ui_prompt_start", (event, ctx) => {
+    capture(ctx);
+
+    dialogHandlers.forEach((handler) => {
+      handler({ phase: "start", kind: event.kind, title: event.title });
+    });
+  });
+
+  pi.on("ui_prompt_end", (event, ctx) => {
+    capture(ctx);
+
+    dialogHandlers.forEach((handler) => {
+      handler({ phase: "end", kind: event.kind, title: event.title });
+    });
   });
 
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
+    state.tools.set(spec.name, spec as AnyToolSpec);
     pi.registerTool(toPiTool(spec, capture));
   };
 
@@ -181,7 +359,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       .map((entry) => entry.data as T);
 
   return {
-    ui: createUi(state),
+    ui: createUi(state, process.stdout, process.env, editor),
     registerTool,
     registerCommand,
     setMainPrompt: (text) => {
@@ -204,25 +382,40 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendUserMessage: (text) => {
+      sendUser(text);
+    },
+    sendHiddenMessage: (message) => {
       const ctx = state.ctx;
 
       if (!ctx) {
         return;
       }
 
-      if (ctx.isIdle()) {
-        pi.sendUserMessage(text);
+      const custom: HiddenCustom = {
+        customType: message.customType,
+        content: message.text,
+        display: false,
+        details: message.details,
+      };
+
+      if (runActive) {
+        pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
         return;
       }
 
-      pi.sendUserMessage(text, { deliverAs: "followUp" });
+      held.push(custom);
+
+      if (ctx.isIdle()) {
+        queueMicrotask(deliverHeld);
+        return;
+      }
+
+      if (!heldTimer) {
+        pollHeld();
+      }
     },
     dispatchCommand: (name, args) => {
-      if (!state.ctx) {
-        return;
-      }
-
-      pi.sendUserMessage(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
+      sendUser(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
     },
     publish: (channel, data) => {
       if (!state.ctx) {
@@ -245,6 +438,12 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
     },
+    onPhase: (handler) => {
+      phaseHandlers.push(handler);
+    },
+    onDialog: (handler) => {
+      dialogHandlers.push(handler);
+    },
     ...footerHost(pi, state),
   };
 };
@@ -259,7 +458,7 @@ export const createPiExtension =
       return;
     }
 
-    const state: HostState = {};
+    const state: HostState = { tools: new Map() };
     const host = createPiHost(pi, state);
 
     const runtime = createPiRuntime(

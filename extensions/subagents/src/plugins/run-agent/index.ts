@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
+import { watchAgents } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
 import { createHandoff } from "./handoff.ts";
-import { createOutbox } from "./outbox.ts";
-import { childPromptsFor, createPromptQueue } from "./prompts.ts";
+import { joinTexts } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
-import { describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
+import { createPendingCalls, describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 
@@ -18,11 +18,30 @@ export const runAgentPlugin: Plugin = {
     const registry = services.require("registry");
     const definitions = services.require("definitions");
 
-    const outbox = createOutbox({
-      isBusy: () => !host.isIdle(),
-      deliver: (text) => host.sendUserMessage(text),
-      onIdle: (handler) => host.onIdle(handler),
-    });
+    const waking: string[] = [];
+    const calls = createPendingCalls();
+    const hints = {
+      manage: () => !settings.disabledPlugins.includes("agent-panel"),
+      list: () => !settings.disabledPlugins.includes("agent-view"),
+    };
+
+    const wake = () => {
+      const texts = waking.splice(0);
+
+      if (texts.length > 0) {
+        host.sendHiddenMessage({ customType: "pi-subagents:wake", text: joinTexts(texts) });
+      }
+    };
+
+    const outbox = {
+      post: (text: string) => {
+        if (waking.length === 0) {
+          queueMicrotask(wake);
+        }
+
+        waking.push(text);
+      },
+    };
 
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
       const own = definitions.get(record.agent);
@@ -41,7 +60,7 @@ export const runAgentPlugin: Plugin = {
         maxConcurrent: settings.maxConcurrent,
       });
 
-      const childDeps = { runner, registry };
+      const childDeps = { runner, registry, calls, hints };
 
       const tools: AnyToolSpec[] = [
         runAgentTool(childDeps, description, record.id),
@@ -55,7 +74,6 @@ export const runAgentPlugin: Plugin = {
       return tools;
     };
 
-    const promptQueue = createPromptQueue();
     const handoff = createHandoff(root);
 
     const runner = createRunner({
@@ -68,46 +86,42 @@ export const runAgentPlugin: Plugin = {
       session: () => host.session(),
       handoff,
       toolsFor: childTools,
-      promptsFor: (record) => childPromptsFor({ ui: host.ui, registry, queue: promptQueue }, record),
     });
 
     services.provide("runner", runner);
     services.provide("handoff", handoff);
 
     const invalidators = new Map<string, () => void>();
-    let pendingRender: ReturnType<typeof setTimeout> | undefined;
 
-    const scheduleRender = () => {
-      if (pendingRender) {
-        return;
+    const safeInvalidate = (batchId: string) => {
+      try {
+        invalidators.get(batchId)?.();
+      } catch {
+        invalidators.delete(batchId);
       }
-
-      pendingRender = setTimeout(() => {
-        pendingRender = undefined;
-
-        invalidators.forEach((invalidate, batchId) => {
-          invalidate();
-
-          const finished = registry.batch(batchId).every((record) => isClosed(record.state));
-
-          if (finished) {
-            invalidators.delete(batchId);
-          }
-        });
-      }, settings.renderThrottleMs);
     };
 
-    const offChanged = bus.on("agent:changed", (record) => {
-      if (invalidators.has(record.batchId)) {
-        scheduleRender();
-      }
+    const offChanged = watchAgents(bus, {
+      relevant: (record) => invalidators.has(record.batchId),
+      tickMs: () => undefined,
+      throttleMs: () => settings.renderThrottleMs,
+      onChange: () => Array.from(invalidators.keys()).forEach(safeInvalidate),
+    });
+
+    const offSettled = bus.on("batch:settled", ({ batchId }) => {
+      safeInvalidate(batchId);
+      invalidators.delete(batchId);
     });
 
     const toolDeps = {
       runner,
       registry,
+      calls,
+      hints,
       onRendered: (batchId: string, invalidate: () => void) => {
-        invalidators.set(batchId, invalidate);
+        if (invalidators.has(batchId) || registry.batch(batchId).some((record) => !isClosed(record.state))) {
+          invalidators.set(batchId, invalidate);
+        }
       },
     };
 
@@ -125,6 +139,7 @@ export const runAgentPlugin: Plugin = {
       }
 
       registeredDescription = description;
+
       host.registerTool(runAgentTool(toolDeps, description));
     };
 
@@ -139,18 +154,16 @@ export const runAgentPlugin: Plugin = {
     });
 
     host.onSessionShutdown(async (reason) => {
-      outbox.clear();
+      waking.length = 0;
+      calls.clear();
       await runner.shutdown(`session ${reason}`);
     });
 
     return () => {
       offChanged();
-
-      if (pendingRender) {
-        clearTimeout(pendingRender);
-      }
-
+      offSettled();
       invalidators.clear();
+      calls.clear();
     };
   },
 };

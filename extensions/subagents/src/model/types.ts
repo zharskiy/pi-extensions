@@ -23,10 +23,6 @@ export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRe
   return earlier;
 };
 
-export type AttentionKind = "confirm" | "select" | "input";
-
-export type Attention = { kind: AttentionKind; title: string; since: number };
-
 export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 
 export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
@@ -55,7 +51,7 @@ export type AgentRecord = {
   chainIndex: number;
   predecessorId?: string;
   successorId?: string;
-  attention?: Attention;
+  activity?: string;
   state: AgentState;
   createdAt: number;
   startedAt?: number;
@@ -135,7 +131,6 @@ export type RouteResult =
   | { ok: false; error: string };
 
 export type AgentRunner = {
-  batchSettled(batchId: string): boolean;
   stop(id: string): Promise<boolean>;
   route(id: string, message: RoutedMessage): Promise<RouteResult>;
   abort(id: string, reason: string): Promise<void>;
@@ -154,14 +149,9 @@ type AgentViewService = {
   open(id: string): Promise<void>;
 };
 
-type AgentListService = {
-  open(): Promise<void>;
-};
-
 export type ServiceMap = {
   registry: AgentRegistry;
   agentView: AgentViewService;
-  agentList: AgentListService;
   definitions: AgentDefinitions;
   runner: AgentRunner;
   handoff: HandoffService;

@@ -1,464 +1,289 @@
-import type {
-  InputPane,
-  KeyPress,
-  OverlayApi,
-  SessionRecord,
-  ThemeLike,
-  ViewComponent,
-} from "../../../../../core/adapter/contract.ts";
+import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import { agentName } from "../../components/agent-row.ts";
 import {
-  attentionText,
-  chainLabel,
-  finishSummary,
-  progressText,
-  stateIcon,
-  truncate,
-} from "../../components/agent-row.ts";
-import {
-  type CollapsibleSection,
-  renderSections,
-  setAllCollapsed,
-  toggleSection,
-} from "../../components/collapsible.ts";
-import { contextBreakdown, renderBreakdown } from "../../components/context-breakdown.ts";
-import { scrollHint, stopHint } from "../../components/hints.ts";
-import { promptSections } from "../../components/system-prompt-block.ts";
+  alignRight,
+  elapsedOf,
+  errorText,
+  firstLine,
+  formatCtx,
+  formatDuration,
+  formatTokens,
+  formatToolUses,
+  innerWidth,
+  PAD,
+  SEP,
+  singleLine,
+  truncatePainted,
+} from "../../components/format.ts";
+import { tickFor } from "../../components/refresh.ts";
+import { stateGlyph, stateToken, stateWord, stopHint } from "../../components/state-text.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
-import { type AgentRecord, isClosed, type RouteResult, worktreeText } from "../../model/types.ts";
-import type { ModeStore, ViewMode } from "./mode-store.ts";
-
-export type ViewData = { record: AgentRecord; openedId?: string; session?: SessionRecord; error?: string };
-
-type ContextSettings = {
-  softRatio: number;
-  reserveTokens: number;
-  estimate(text: string): number;
-};
+import { type AgentRecord, isClosed, worktreeText } from "../../model/types.ts";
+import type { ViewData } from "./loader.ts";
+import { requestLineCount, requestLines } from "./request-block.ts";
 
 type ViewDeps = {
   load(): ViewData;
-  context: ContextSettings;
+  back: boolean;
+  reserveTokens: number;
   stop(): Promise<unknown> | undefined;
-  send(text: string): Promise<RouteResult>;
-  subscribe(onChange: () => void): () => void;
-  modes: ModeStore;
+  watch(tickMs: () => number | undefined, onChange: () => void, onTick: () => void): () => void;
+  leave(): void;
 };
 
-const wrapPlain = (text: string, width: number) => {
-  const size = Math.max(10, width);
+const MIN_DESCRIPTION = 8;
 
-  if (text.length <= size) {
-    return [text];
+const RELOAD_TICK_MS = 1_000;
+
+const ctxPercent = (data: ViewData, reserveTokens: number) => {
+  const { record } = data;
+  const tokens = record.context?.tokens ?? data.session?.contextTokens;
+  const limit = effectiveContextLimit(record.contextLimit, record.context?.window ?? 0, reserveTokens);
+
+  return tokens === null || tokens === undefined || limit <= 0 ? undefined : (tokens / limit) * 100;
+};
+
+const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) => {
+  const glyph = stateGlyph(record.state, now);
+  const name = agentName(record);
+  const prefix = `${glyph} ${name} › `;
+  const description = singleLine(record.description);
+  const room = inner - theme.width(prefix);
+
+  if (room < MIN_DESCRIPTION) {
+    return (
+      PAD +
+      truncatePainted(
+        theme,
+        [
+          [glyph, (text) => theme.fg(stateToken(record.state), text)],
+          [" ", (text) => text],
+          [name, (text) => theme.bold(text)],
+          [` › ${description}`, (text) => text],
+        ],
+        inner,
+      )
+    );
   }
 
-  return Array.from({ length: Math.ceil(text.length / size) }, (_, index) =>
-    text.slice(index * size, (index + 1) * size),
-  );
+  return `${PAD}${theme.fg(stateToken(record.state), glyph)} ${theme.bold(name)} › ${theme.truncate(description, room)}`;
 };
 
-const inputHintText = (api: OverlayApi) =>
-  [
-    "Message box: Enter send",
-    "Esc clear, again leaves the box",
-    "Tab prompt sections",
-    `${api.toolsKey} tool detail`,
-    scrollHint(api.wheelScrolling),
-  ].join(" · ");
-
-const CONTEXT_KEY = "c";
-
-const MODE_KEY = "v";
-
-const modeHint = (mode: ViewMode) =>
-  mode === "focus" ? `focus view, ${MODE_KEY} verbose` : `verbose view, ${MODE_KEY} focus`;
-
-type HintOptions = { openedId?: string; contextShown: boolean; mode: ViewMode };
-
-const hintText = (api: OverlayApi, record: AgentRecord, options: HintOptions) => {
-  const closed = isClosed(record.state);
-  const { openedId, contextShown, mode } = options;
+const statsText = (data: ViewData, now: number, reserveTokens: number) => {
+  const { record } = data;
 
   return [
-    "Esc close",
-    openedId ? `opened ${openedId}, following the chain` : undefined,
-    stopHint(record),
-    `${api.toolsKey} tool detail`,
-    scrollHint(api.wheelScrolling),
-    contextShown ? `${CONTEXT_KEY} hide context` : `${CONTEXT_KEY} context breakdown`,
-    closed ? "Tab/Enter prompt sections" : "Tab/Enter prompt sections, Tab to the message box",
-    modeHint(mode),
-    closed ? "agent closed, messages disabled" : undefined,
+    formatToolUses(record.toolCalls),
+    record.tokens > 0 ? `${formatTokens(record.tokens)} tokens` : undefined,
+    formatDuration(elapsedOf(record, now)),
+    formatCtx(ctxPercent(data, reserveTokens)),
   ]
     .filter((part) => part !== undefined)
-    .join(" · ");
+    .join(SEP);
 };
 
-const titleText = (record: AgentRecord, theme: ThemeLike, frame: number) => {
-  const links = [
-    record.predecessorId ? `continues ${record.predecessorId}` : undefined,
-    record.successorId ? `continued by ${record.successorId}` : undefined,
-  ]
-    .filter((part) => part !== undefined)
-    .map((part) => ` · ${part}`)
-    .join("");
+const outcomeLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
+  if (record.state === "failed") {
+    return [
+      PAD + theme.fg("error", theme.truncate(`error: ${firstLine(record.error ?? "unknown error")}`, inner)),
+    ];
+  }
 
-  const attention = attentionText(record);
-  const alert = attention ? theme.fg("warning", ` · ${attention}`) : "";
-  const name = theme.bold(`${record.id}${chainLabel(record)}`);
+  if (record.state === "handoff") {
+    const invalid = record.error ? ` (invalid: ${record.error})` : "";
 
-  return `${stateIcon(record.state, frame)} ${name} (${record.agent}) · ${record.state} · ${record.model ?? "model n/a"}${links}${alert}`;
+    return [PAD + theme.fg("warning", theme.truncate(`handoff: ${record.handoffPath}${invalid}`, inner))];
+  }
+
+  return [];
 };
 
-type Status = { tone: "warning" | "dim"; text: string };
+export const headerLines = (
+  data: ViewData,
+  theme: ThemeLike,
+  width: number,
+  now: number,
+  reserveTokens: number,
+): string[] => {
+  const { record, chain, openedId } = data;
+  const inner = innerWidth(width);
+  const dim = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
+  const opened = openedId ? ` · opened ${openedId}` : "";
 
-type ContextCache = {
-  session?: SessionRecord;
-  record: AgentRecord;
-  version: number;
-  width: number;
-  theme: ThemeLike;
-  lines: string[];
-};
-
-const promptKeyOf = (data: ViewData) => (data.session ? JSON.stringify(data.session.prompt) : "");
-
-const deliveryText: Record<"steer" | "followUp" | "held", string> = {
-  steer: "sent: steered into the current run",
-  followUp: "sent: the agent answers in a new turn",
-  held: "sent: held until the agent starts",
-};
-
-const mergeCollapsed = (previous: CollapsibleSection[], next: CollapsibleSection[]) => {
-  const collapsedByTitle = new Map(previous.map((section) => [section.title, section.collapsed]));
-
-  return next.map((section) => ({
-    ...section,
-    collapsed: collapsedByTitle.get(section.title) ?? section.collapsed,
-  }));
-};
-
-type PromptBlock = {
-  sections: CollapsibleSection[];
-  focused: number;
-  width: number;
-  theme: ThemeLike;
-  error?: string;
-  lines: string[];
-  headerRows: number[];
+  return [
+    titleLine(record, theme, inner, now),
+    dim(`${stateWord(record.state)} · ${record.model ?? "model n/a"} · id ${record.id}`),
+    dim(statsText(data, now, reserveTokens)),
+    ...outcomeLines(record, theme, inner),
+    ...(chain.length > 1 ? [dim(`chain: ${chain.join(" → ")} (${chain.length} sessions)${opened}`)] : []),
+    ...(record.worktree ? [dim(`worktree: ${worktreeText(record.worktree)}`)] : []),
+    theme.fg("dim", "─".repeat(Math.max(0, width))),
+  ];
 };
 
 const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.sessionFile ?? ""}`;
 
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
-  let transcript = api.createTranscript();
   const scroll = api.createScroll();
-  let mode = deps.modes.read();
+  let loadedAt = Date.now();
   let data = deps.load();
-  let promptKey = promptKeyOf(data);
+  let transcript = api.createTranscript({ owner: data.record.id });
   let transcriptKey = transcriptKeyOf(data);
-  let sections = data.session ? promptSections(data.session.prompt) : [];
-  let frame = 0;
-  let closed = false;
   let toolsExpanded = false;
-  let focused = 0;
-  let inputFocused = false;
-  let input: InputPane | undefined;
-  let status: Status | undefined;
-  let headerRows: number[] = [];
-  let promptCache: PromptBlock | undefined;
-  let contextShown = false;
-  let contextCache: ContextCache | undefined;
+  let requestExpanded = false;
+  let pendingTop = false;
+  let notice: string | undefined;
+  let lastHeight = 1;
+  let layout = { width: 0, headerRows: 0, requestRows: 0, bodyRows: 0 };
+  let disposed = false;
 
-  const applyMode = () => {
-    const verbose = mode === "verbose";
+  const payload = () => data.session?.prompt.providerPayload;
 
-    sections = setAllCollapsed(sections, !verbose);
-    toolsExpanded = verbose;
-    contextShown = verbose;
+  const hasRequest = () => data.error === undefined && requestLineCount(payload()) > 0;
 
-    transcript.setToolsExpanded(verbose);
-  };
-
-  const toggleMode = () => {
-    mode = mode === "focus" ? "verbose" : "focus";
-
-    applyMode();
-    deps.modes.write(mode);
-  };
+  const isOpen = () => !isClosed(data.record.state);
 
   const syncTranscript = () => {
     const key = transcriptKeyOf(data);
 
     if (key !== transcriptKey) {
       transcriptKey = key;
-      transcript = api.createTranscript();
+      requestExpanded = false;
+      transcript = api.createTranscript({ owner: data.record.id });
       transcript.setToolsExpanded(toolsExpanded);
     }
 
     transcript.sync(data.session?.items ?? []);
   };
 
-  applyMode();
   syncTranscript();
 
-  const messageBox = () => {
-    if (isClosed(data.record.state)) {
-      return undefined;
-    }
-
-    if (!input) {
-      input = api.createInput("message the agent…");
-      input.setFocused(inputFocused);
-    }
-
-    return input;
-  };
-
-  const setInputFocus = (value: boolean) => {
-    inputFocused = value;
-    input?.setFocused(value);
-  };
-
   const reload = () => {
-    if (closed) {
+    if (disposed) {
       return;
     }
 
-    const previous = data.session;
-
+    loadedAt = Date.now();
     data = deps.load();
-    frame += 1;
-
-    const key = data.session === previous ? promptKey : promptKeyOf(data);
-
-    if (key !== promptKey) {
-      const fresh = data.session ? promptSections(data.session.prompt) : [];
-
-      promptKey = key;
-      sections = mergeCollapsed(sections, setAllCollapsed(fresh, mode === "focus"));
-    }
-
-    if (isClosed(data.record.state)) {
-      setInputFocus(false);
-    }
-
     syncTranscript();
     api.requestRender();
   };
 
-  const unsubscribe = deps.subscribe(reload);
+  const tick = () => (Date.now() - loadedAt >= RELOAD_TICK_MS ? reload() : api.requestRender());
 
-  const headerLines = (width: number) => {
-    const record = data.record;
-    const theme = api.theme;
-    const detail = isClosed(record.state)
-      ? finishSummary(record, Date.now())
-      : progressText(record, Date.now());
-
-    const worktree = record.worktree
-      ? [theme.fg("muted", truncate(`worktree: ${worktreeText(record.worktree)}`, width))]
-      : [];
-
-    return [
-      titleText(record, theme, frame),
-      theme.fg("muted", truncate(`Task: ${record.description}`, width)),
-      ...worktree,
-      theme.fg("dim", truncate(detail, width)),
-      theme.fg("dim", "─".repeat(Math.max(0, width))),
-    ];
-  };
-
-  const contextLines = (width: number) => {
-    const settings = deps.context;
-    const theme = api.theme;
-    const cached = contextCache;
-    const record = data.record;
-
-    const reusable =
-      cached !== undefined &&
-      cached.session === data.session &&
-      cached.record === record &&
-      cached.version === record.version &&
-      cached.width === width &&
-      cached.theme === theme;
-
-    if (reusable) {
-      return cached.lines;
-    }
-
-    const window = record.context?.window ?? 0;
-    const prompt = data.session?.prompt ?? { sections: [], tools: [], skills: [], guidelines: [] };
-
-    const breakdown = contextBreakdown({
-      prompt,
-      items: data.session?.items ?? [],
-      measured: record.context?.tokens ?? data.session?.contextTokens,
-      limit: effectiveContextLimit(record.contextLimit, window, settings.reserveTokens),
-      window,
-      softRatio: settings.softRatio,
-      estimate: settings.estimate,
-    });
-
-    const lines = renderBreakdown(breakdown, theme, width, `${CONTEXT_KEY} hides`).concat(
-      theme.fg("dim", "─".repeat(Math.max(0, width))),
-    );
-
-    contextCache = { session: data.session, record, version: record.version, width, theme, lines };
-
-    return lines;
-  };
-
-  const promptBlock = (width: number) => {
-    const theme = api.theme;
-    const cached = promptCache;
-    const sectionFocus = inputFocused ? -1 : focused;
-
-    const reusable =
-      cached?.sections === sections &&
-      cached.focused === sectionFocus &&
-      cached.width === width &&
-      cached.theme === theme &&
-      cached.error === data.error;
-
-    if (reusable) {
-      return cached;
-    }
-
-    const rendered = renderSections(sections, sectionFocus, theme, (text) => wrapPlain(text, width - 4));
-
-    rendered.lines.unshift(theme.bold("Effective prompt"));
-
-    if (data.error) {
-      rendered.lines.push(theme.fg("warning", data.error));
-    }
-
-    rendered.lines.push("", theme.bold("Transcript"));
-
-    promptCache = {
-      sections,
-      focused: sectionFocus,
-      width,
-      theme,
-      error: data.error,
-      lines: rendered.lines,
-      headerRows: rendered.headerRows.map((row) => row + 1),
-    };
-
-    return promptCache;
-  };
+  const unwatch = deps.watch(() => tickFor([data.record], false), reload, tick);
 
   const bodyLines = (width: number) => {
-    const prompt = promptBlock(width);
-    const transcriptLines = transcript.render(width);
+    const theme = api.theme;
+    const inner = innerWidth(width);
 
-    headerRows = prompt.headerRows;
-
-    if (transcriptLines.length === 0) {
-      return prompt.lines.concat(api.theme.fg("dim", "(no transcript yet)"));
+    if (data.error !== undefined) {
+      return {
+        request: [],
+        lines: [PAD + theme.fg("warning", theme.truncate(data.error, inner))],
+        clickable: 0,
+      };
     }
 
-    return prompt.lines.concat(transcriptLines);
+    const request = [...requestLines(payload(), isOpen(), requestExpanded, width, theme), ""];
+    const lines = transcript.render(width);
+
+    if (lines.length === 0) {
+      return { request, lines: [PAD + theme.fg("dim", "(no transcript yet)")], clickable: 0 };
+    }
+
+    return { request, lines, clickable: lines.length };
+  };
+
+  const hintText = () => {
+    const record = data.record;
+    const stop = isOpen() ? stopHint(record.state) : undefined;
+    const request = hasRequest() ? (requestExpanded ? "r hide request" : "r request") : undefined;
+
+    return [deps.back ? "esc to go back" : "esc to close", stop, request, `${api.toolsKey} tool detail`]
+      .filter((part) => part !== undefined)
+      .join(SEP);
   };
 
   const positionText = () => {
-    const position = scroll.state();
-    const last = Math.min(position.total, position.top + position.height);
-    const follow = position.following ? " · following" : "";
+    const { top, height, total, following } = scroll.state();
 
-    return `${position.top + 1}-${last}/${position.total}${follow}`;
-  };
-
-  const messageLines = (width: number) => {
-    const theme = api.theme;
-    const box = messageBox();
-    const lines: string[] = [];
-
-    if (box) {
-      const marker = inputFocused ? theme.fg("accent", "›") : " ";
-      const line = box.render(width - 2)[0] ?? "";
-
-      lines.push(`${marker} ${inputFocused ? line : theme.fg("dim", line)}`);
+    if (total === 0) {
+      return undefined;
     }
 
-    if (status) {
-      lines.push(theme.fg(status.tone, truncate(status.text, width)));
-    }
+    const follow = isOpen() && !following ? " · end to follow" : "";
 
-    return lines;
+    return `${top + 1}-${Math.min(total, top + height)}/${total}${follow}`;
   };
 
-  const hintLine = () => {
-    const hint = inputFocused
-      ? inputHintText(api)
-      : hintText(api, data.record, { openedId: data.openedId, contextShown, mode });
+  const hintLine = (inner: number) => {
+    const hint = hintText();
+    const position = positionText();
+    const text =
+      (position && alignRight(api.theme, hint, position, inner)) || api.theme.truncate(hint, inner);
 
-    return `${api.theme.fg("dim", hint)}  ${api.theme.fg("dim", positionText())}`;
+    return PAD + api.theme.fg("dim", text);
   };
 
   const render = (width: number) => {
-    const header = headerLines(width).concat(contextShown ? contextLines(width) : []);
-    const message = messageLines(width);
-    const height = Math.max(3, api.rows() - header.length - message.length - 1);
+    const theme = api.theme;
+    const inner = innerWidth(width);
+    const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
+    const footer = notice ? [PAD + theme.fg("warning", theme.truncate(notice, inner))] : [];
+    const height = Math.max(3, api.rows() - header.length - 3 - (footer.length + 1));
+    const { request, lines, clickable } = bodyLines(width);
+    const body = request.concat(lines);
+    let window = scroll.window(body, height);
 
-    const window = scroll.window(bodyLines(width), height);
+    if (pendingTop) {
+      pendingTop = false;
+      scroll.scrollToStart();
+      window = scroll.window(body, height);
+    }
+
+    lastHeight = height;
+    layout = {
+      width,
+      headerRows: header.length,
+      requestRows: request.length,
+      bodyRows: request.length + clickable,
+    };
+
     const padding = Array.from({ length: height - window.length }, () => "");
 
-    return header.concat(window, padding, message, hintLine());
-  };
-
-  const focusSection = (index: number) => {
-    if (sections.length === 0) {
-      return;
-    }
-
-    focused = (index + sections.length) % sections.length;
-
-    const row = headerRows[focused] ?? 0;
-    const position = scroll.state();
-
-    if (row < position.top || row >= position.top + position.height) {
-      scroll.scrollTo(row);
-    }
-  };
-
-  const cycleFocus = () => {
-    if (inputFocused) {
-      setInputFocus(false);
-      focusSection(0);
-      return;
-    }
-
-    const lastSection = focused >= sections.length - 1;
-
-    if (lastSection && messageBox()) {
-      setInputFocus(true);
-      return;
-    }
-
-    focusSection(focused + 1);
-  };
-
-  const dispose = () => {
-    closed = true;
-    unsubscribe();
-  };
-
-  const close = () => {
-    dispose();
-    api.close();
+    return ["", ...header, ...window, ...padding, "", ...footer, hintLine(inner), ""];
   };
 
   const fail = (error: unknown) => {
-    if (closed) {
+    if (disposed) {
       return;
     }
 
-    status = { tone: "warning", text: `stop failed: ${(error as Error).message}` };
+    notice = `stop failed: ${errorText(error)}`;
+    api.requestRender();
+  };
+
+  const toggleRequest = () => {
+    if (!hasRequest()) {
+      return;
+    }
+
+    requestExpanded = !requestExpanded;
+
+    if (requestExpanded) {
+      pendingTop = true;
+      scroll.scrollToStart();
+    } else {
+      pendingTop = false;
+      scroll.scrollToEnd();
+    }
+
     api.requestRender();
   };
 
   const stop = () => {
-    if (!isClosed(data.record.state)) {
+    if (isOpen()) {
       void Promise.resolve(deps.stop()).then(reload).catch(fail);
     }
   };
@@ -468,115 +293,66 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     transcript.setToolsExpanded(toolsExpanded);
   };
 
-  const showRouteResult = (result: RouteResult, text: string, box: InputPane) => {
-    status = result.ok
-      ? { tone: "dim", text: deliveryText[result.delivery] }
-      : { tone: "warning", text: result.error };
+  const handleClick = (x: number, y: number) => {
+    const row = y - 1 - layout.headerRows;
 
-    if (!result.ok && box.value() === "") {
-      box.setValue(text);
+    if (row < 0 || row >= lastHeight) {
+      return false;
     }
 
-    reload();
-  };
+    const { top } = scroll.state();
+    const index = top + row;
 
-  const submit = (box: InputPane) => {
-    const text = box.value().trim();
+    if (index < layout.requestRows) {
+      const toggles = index === 0 && hasRequest();
 
-    if (text.length === 0) {
-      return;
+      if (toggles) {
+        toggleRequest();
+      }
+
+      return toggles;
     }
 
-    box.setValue("");
-
-    void deps
-      .send(text)
-      .catch((error: unknown): RouteResult => ({ ok: false, error: (error as Error).message }))
-      .then((result) => showRouteResult(result, text, box));
-  };
-
-  const escapeInput = (box: InputPane) => {
-    if (box.value() !== "") {
-      box.setValue("");
-      return;
+    if (index >= layout.bodyRows || !transcript.click(index - layout.requestRows, x, layout.width)) {
+      return false;
     }
 
-    setInputFocus(false);
+    scroll.scrollTo(top, { disableFollow: true });
+    api.requestRender();
+
+    return true;
   };
 
-  const page = () => Math.max(1, scroll.state().height - 1);
+  const page = () => Math.max(1, lastHeight - 1);
 
-  const scrollActions: Partial<Record<KeyPress["name"], () => void>> = {
-    toggleTools,
+  const actions: Partial<Record<KeyPress["name"], () => void>> = {
+    up: () => scroll.scrollBy(-1),
+    down: () => scroll.scrollBy(1),
     pageUp: () => scroll.scrollBy(-page()),
     pageDown: () => scroll.scrollBy(page()),
     home: () => scroll.scrollToStart(),
     end: () => scroll.scrollToEnd(),
+    toggleTools,
+    escape: () => deps.leave(),
   };
 
-  const toggleFocused = () => {
-    sections = toggleSection(sections, focused);
-  };
-
-  const actions: Partial<Record<KeyPress["name"], () => void>> = {
-    ...scrollActions,
-    escape: close,
-    enter: toggleFocused,
-    space: toggleFocused,
-    tab: cycleFocus,
-    up: () => scroll.scrollBy(-1),
-    down: () => scroll.scrollBy(1),
-  };
-
-  const handleInputKey = (key: KeyPress, box: InputPane) => {
-    const scrollAction = scrollActions[key.name];
-
-    if (scrollAction) {
-      scrollAction();
-      return;
-    }
-
-    if (key.name === "escape") {
-      escapeInput(box);
-      return;
-    }
-
-    if (key.name === "tab") {
-      cycleFocus();
-      return;
-    }
-
-    if (box.feed(key) === "submitted") {
-      submit(box);
-    }
-  };
+  const chars: Record<string, () => void> = { r: toggleRequest, x: stop };
 
   const handleKey = (key: KeyPress) => {
-    const box = messageBox();
+    notice = undefined;
 
-    status = undefined;
+    const action = key.name === "other" && key.char ? chars[key.char] : actions[key.name];
 
-    if (inputFocused && box) {
-      handleInputKey(key, box);
+    action?.();
+  };
+
+  const dispose = () => {
+    if (disposed) {
       return;
     }
 
-    if (key.char === "x") {
-      stop();
-      return;
-    }
-
-    if (key.char === CONTEXT_KEY) {
-      contextShown = !contextShown;
-      return;
-    }
-
-    if (key.char === MODE_KEY) {
-      toggleMode();
-      return;
-    }
-
-    actions[key.name]?.();
+    disposed = true;
+    unwatch();
   };
 
   return {
@@ -585,6 +361,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     handleWheel: (lines) => {
       scroll.scrollBy(lines);
     },
+    handleClick,
     dispose,
   };
 };
