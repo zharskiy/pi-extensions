@@ -36,13 +36,15 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
   const dialogTimer = slot();
   let channel: NotifyChannel | undefined;
   let pending = false;
-  let dialog: { owner: string; title?: string; fired: boolean } | undefined;
+  const waits = new Map<string, { title?: string; fired: boolean }>();
   let offKeys: (() => void) | undefined;
 
   const send = (text: string) => channel && host.ui.terminalNotify(text, channel);
 
+  const unfired = () => Array.from(waits.values()).some((wait) => !wait.fired);
+
   const fireIdle = () => {
-    if (dialog) {
+    if (waits.size > 0) {
       return;
     }
 
@@ -51,12 +53,17 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
   };
 
   const fireDialog = () => {
-    if (!dialog) {
+    const open = Array.from(waits.values());
+    const latest = open.at(-1);
+
+    if (!latest) {
       return;
     }
 
-    dialog.fired = true;
-    send(dialogText(dialog.title));
+    open.forEach((wait) => {
+      wait.fired = true;
+    });
+    send(dialogText(latest.title));
   };
 
   const armIdle = () => idle.arm(fireIdle, settings().idleDelayMs);
@@ -68,19 +75,24 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
       return;
     }
 
-    dialog = { owner, title, fired: false };
+    waits.delete(owner);
+    waits.set(owner, { title, fired: false });
     armDialog();
   };
 
   const closeDialog = (owner: string) => {
-    if (dialog?.owner !== owner) {
+    if (!waits.delete(owner)) {
       return;
     }
 
-    dialog = undefined;
+    if (unfired()) {
+      armDialog();
+      return;
+    }
+
     dialogTimer.clear();
 
-    if (pending && sources.size === 0) {
+    if (waits.size === 0 && pending && sources.size === 0) {
       armIdle();
     }
   };
@@ -89,7 +101,7 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     pending = false;
     idle.clear();
 
-    if (dialog && !dialog.fired) {
+    if (unfired()) {
       armDialog();
     }
   };
@@ -172,7 +184,7 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
   host.onSessionShutdown(() => {
     channel = undefined;
     pending = false;
-    dialog = undefined;
+    waits.clear();
     idle.clear();
     dialogTimer.clear();
     offKeys?.();

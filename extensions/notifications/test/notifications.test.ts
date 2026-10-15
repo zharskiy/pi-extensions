@@ -418,6 +418,57 @@ describe("awaiting-input notification", () => {
     expect(host.terminalNotices).toEqual([notice, IDLE]);
   });
 
+  it("still notifies a waiting source after a pi dialog opens and closes over it", () => {
+    const host = setup();
+
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    advance(2_000);
+    host.dialog("start", "confirm", "Allow?");
+    advance(1_000);
+    host.dialog("end", "confirm");
+    advance(5_999);
+
+    expect(host.terminalNotices).toEqual([]);
+
+    advance(1);
+
+    expect(host.terminalNotices).toEqual([notice]);
+  });
+
+  it("still notifies a pi dialog after a waiting source opens and closes over it", () => {
+    const host = setup();
+
+    host.dialog("start", "confirm", "Allow?");
+    advance(2_000);
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    advance(1_000);
+    waiting(host, "pi-questionnaire", false);
+    advance(5_999);
+
+    expect(host.terminalNotices).toEqual([]);
+
+    advance(1);
+
+    expect(host.terminalNotices).toEqual([{ message: "pi needs your input: Allow?", channel: "auto" }]);
+  });
+
+  it("holds the idle notification until every wait has closed", () => {
+    const host = setup();
+
+    host.settle();
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    host.dialog("start", "confirm", "Allow?");
+    host.dialog("end", "confirm");
+    advance(60_000);
+
+    expect(host.terminalNotices).toEqual([notice]);
+
+    waiting(host, "pi-questionnaire", false);
+    advance(20_000);
+
+    expect(host.terminalNotices).toEqual([notice, IDLE]);
+  });
+
   it("ignores malformed payloads and sends nothing with the off channel", () => {
     const host = setup();
     const off = setup("tui", { channel: "off" });
