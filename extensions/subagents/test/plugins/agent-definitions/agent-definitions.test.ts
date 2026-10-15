@@ -105,7 +105,7 @@ describe("agent definition parsing", () => {
 
   it("reports every problem of an invalid file", () => {
     const parsed = parseDefinition(
-      "---\nname: bad name\nthinking: high\nlimit: 10\nsubagents: 3\nmodel: gpt 6\nworktree: maybe\n---\n",
+      "---\nname: bad name\nthinking: high\nlimit: 10\nsubagents: 3\nmodel: nova 6\nworktree: maybe\n---\n",
       "/x/bad.md",
       "user",
     );
@@ -117,7 +117,7 @@ describe("agent definition parsing", () => {
         "name must be a plain name of letters, digits, '_' and '-', not starting with '-'",
         "limit must be an integer of at least 5000",
         "subagents must be a list or a comma-separated string",
-        'model must be name[:thinking] without spaces, got "gpt 6"',
+        'model must be name[:thinking] without spaces, got "nova 6"',
         "worktree must be true or false",
       ]),
     );
@@ -346,14 +346,9 @@ describe("definition loading", () => {
       ["explorer", "reviewer", "implementer", "general"].map((name) => {
         const definition = result.definitions.get(name);
 
-        return `${definition?.model}:${definition?.thinking}`;
+        return `${definition?.model?.replace(/^[^/]+\/.+$/, "provider/id")}:${definition?.thinking}`;
       }),
-    ).toEqual([
-      "openai/gpt-6-luna:low",
-      "openai/gpt-6-luna:high",
-      "openai/gpt-6.1-sol:medium",
-      "openai/gpt-6.1-sol:medium",
-    ]);
+    ).toEqual(["provider/id:low", "provider/id:high", "provider/id:medium", "provider/id:medium"]);
 
     result.definitions.forEach((definition) => {
       expect(definition.limit).toBeGreaterThanOrEqual(5000);

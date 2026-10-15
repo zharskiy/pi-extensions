@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { afterAll } from "vitest";
@@ -27,6 +27,29 @@ export const tempDir = (prefix = "pi-subagents-") => {
   return dir;
 };
 
+const FAKE_MODELS: Record<string, string> = { luna: "beta/nova-6-luna", sol: "beta/nova-6.1-sol" };
+
+const fakeModelLine = (line: string) =>
+  line.replace(
+    /^model: \S*-(luna|sol)(:\S+)?$/,
+    (_, family: string, thinking = "") => `model: ${FAKE_MODELS[family]}${thinking}`,
+  );
+
+const fakeRoot = () => {
+  const dir = tempDir("pi-subagents-root-");
+
+  symlinkSync(join(PACKAGE_ROOT, "prompts"), join(dir, "prompts"));
+  cpSync(join(PACKAGE_ROOT, "agents"), join(dir, "agents"), { recursive: true });
+
+  readdirSync(join(dir, "agents")).forEach((file) => {
+    const path = join(dir, "agents", file);
+
+    writeFileSync(path, readFileSync(path, "utf8").split("\n").map(fakeModelLine).join("\n"));
+  });
+
+  return dir;
+};
+
 export const wakeTexts = (host: FakeHost) => host.hidden.map((entry) => entry.message.text);
 
 export const startPlugins = <R extends AgentRuntime>(
@@ -45,7 +68,7 @@ export const startPlugins = <R extends AgentRuntime>(
     runtime,
     settings,
     plugins,
-    root: PACKAGE_ROOT,
+    root: fakeRoot(),
     disabled: settings.disabledPlugins,
     onError: (error) => errors.push(error),
   });

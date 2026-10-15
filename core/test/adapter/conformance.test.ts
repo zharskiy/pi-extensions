@@ -228,7 +228,7 @@ describe("pi adapter conformance", () => {
   });
 
   it("gives children in-memory settings with compaction off, a reserve and no cache warming", () => {
-    const snapshot = { compaction: { enabled: true, keepRecentTokens: 20_000 }, defaultProvider: "openai" };
+    const snapshot = { compaction: { enabled: true, keepRecentTokens: 20_000 }, defaultProvider: "beta" };
     const settings = pi.SettingsManager.inMemory(childSettings(snapshot, 16_384), { projectTrusted: false });
 
     expect(settings.getCompactionEnabled()).toBe(false);
@@ -236,7 +236,7 @@ describe("pi adapter conformance", () => {
     expect(childSettings(snapshot, 16_384)).toMatchObject({
       compaction: { enabled: false, reserveTokens: 16_384, keepRecentTokens: 20_000 },
       cacheWarming: "off",
-      defaultProvider: "openai",
+      defaultProvider: "beta",
     });
   });
 
