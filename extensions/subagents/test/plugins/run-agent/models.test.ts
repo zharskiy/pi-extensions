@@ -38,7 +38,8 @@ describe("per-call model override", () => {
   });
 
   it("keeps the agent's own model and thinking without an override, and changes only thinking with :level", async () => {
-    const { run, runtime, registry } = setup();
+    const { run, runtime, registry, services } = setup();
+    const own = services.require("definitions").get("reviewer")?.model;
 
     await run([
       { agent: "reviewer", task: "a" },
@@ -47,13 +48,13 @@ describe("per-call model override", () => {
     ]);
 
     expect(runtime.children.map((child) => [child.spec.model, child.spec.thinking])).toEqual([
-      ["beta/nova-6-luna", "high"],
-      ["beta/nova-6-luna", "low"],
+      [own, "high"],
+      [own, "low"],
       ["acme/lyra-5-5", "high"],
     ]);
     expect(registry.list().map((record) => record.model)).toEqual([
-      "beta/nova-6-luna:high",
-      "beta/nova-6-luna:low",
+      `${own}:high`,
+      `${own}:low`,
       "acme/lyra-5-5:high",
     ]);
   });

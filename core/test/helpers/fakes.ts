@@ -716,7 +716,7 @@ type FakeRuntime = AgentRuntime & {
   child(id: string): FakeChild;
 };
 
-export const createFakeRuntime = (): FakeRuntime => {
+export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime => {
   const runtime: FakeRuntime = {
     catalog: [
       catalogModel("fake/model"),
@@ -727,6 +727,7 @@ export const createFakeRuntime = (): FakeRuntime => {
       catalogModel("acme/lyra-4-5-20251001"),
       catalogModel("acme/lyra-5-5", true, { cost: { input: 0.1, output: 0.5 } }),
       catalogModel("locked/lyra-9-0", false),
+      ...extraModels,
     ],
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
