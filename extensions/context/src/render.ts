@@ -322,6 +322,7 @@ const plainText: ThemeLike = {
   bold: (text) => text,
   width: (text) => text.length,
   truncate: (text) => text,
+  wrap: (text) => [text],
 };
 
 export const summaryLine = (snapshot: Snapshot) => {
