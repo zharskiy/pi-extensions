@@ -152,6 +152,8 @@ export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
   commands: Map<string, CommandSpec>;
   mainPrompt?: string;
+  promptSections: Map<string, string>;
+  promptSectionCalls: { name: string; text: string | undefined }[];
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
@@ -281,6 +283,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
+    promptSections: new Map(),
+    promptSectionCalls: [],
     entries: [],
     files: new Map(),
     sent: [],
@@ -489,6 +493,16 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     setMainPrompt: (text) => {
       host.mainPrompt = text;
+    },
+    setPromptSection: (name, text) => {
+      host.promptSectionCalls.push({ name, text });
+
+      if (text === undefined) {
+        host.promptSections.delete(name);
+        return;
+      }
+
+      host.promptSections.set(name, text);
     },
     onSessionStart: (handler) => {
       startHandlers.push(handler);
