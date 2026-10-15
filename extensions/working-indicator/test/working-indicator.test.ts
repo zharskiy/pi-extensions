@@ -38,6 +38,13 @@ describe("working indicator", () => {
     expect(host.workingIndicators).toEqual([spinner]);
   });
 
+  it("keeps pi's own spinner by default so it is drawn in the input's colour", () => {
+    const host = setup();
+
+    expect(spinner).toBeUndefined();
+    expect(host.workingIndicators).toEqual([undefined]);
+  });
+
   it("shows the first message on agent start without re-setting the spinner", () => {
     const host = setup();
 

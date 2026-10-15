@@ -10,11 +10,11 @@ export const TICK_MS = 1000;
 const INTERRUPT_BINDING = "app.interrupt";
 
 const SPINNERS = {
-  braille: { frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], intervalMs: 80 },
+  braille: undefined,
   dots: { frames: ["∴", "∷", "∵", "∷"], intervalMs: 200 },
   bar: { frames: ["·|·", "·/·", "·—·", "·\\·"], intervalMs: 200 },
   mark: { frames: ["✻"], intervalMs: 500 },
-} satisfies Record<string, WorkingIndicator>;
+} satisfies Record<string, WorkingIndicator | undefined>;
 
 export const spinner = SPINNERS[SPINNER];
 
