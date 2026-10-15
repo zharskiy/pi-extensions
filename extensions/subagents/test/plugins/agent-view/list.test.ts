@@ -77,7 +77,7 @@ describe("agents list", () => {
     expect(lines()[0]).toBe("");
     expect(lines()[1]).toBe(" Agents");
     expect(lines()).toContain(" No agents running");
-    expect(lines().at(-2)).toBe(" esc to close");
+    expect(lines().at(-2)).toBe(" → to main");
     expect(lines().at(-1)).toBe("");
   });
 
@@ -134,12 +134,12 @@ describe("agents list", () => {
     const { view, lines } = await harness.openList();
 
     expect(selectedRow(lines())).toContain("first");
-    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to stop · X to stop all · esc to close");
+    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to stop · X to stop all · → to main");
 
     view.handleKey(key("down"));
 
     expect(selectedRow(lines())).toContain("closed one");
-    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to clear · X to stop all · esc to close");
+    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to clear · X to stop all · → to main");
 
     view.handleKey(key("down"));
 

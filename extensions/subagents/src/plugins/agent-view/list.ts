@@ -255,6 +255,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
         deps.open(record);
       }
     },
+    right: () => deps.leave(),
     escape: () => deps.leave(),
   };
 

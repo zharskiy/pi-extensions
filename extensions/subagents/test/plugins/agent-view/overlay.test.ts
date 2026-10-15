@@ -120,6 +120,50 @@ describe("agents overlay", () => {
     expect(lines().join("\n")).toContain("No agents running");
   });
 
+  it("right closes the list opened with left and returns to the editor", () => {
+    const harness = setup();
+
+    harness.create("first job", 1);
+    harness.host.pressEmptyLeft();
+
+    const { overlay, state, lines } = harness.openLast();
+
+    expect(lines().at(-2)?.endsWith("→ to main")).toBe(true);
+
+    overlay.handleKey(key("right"));
+
+    expect(state.closed).toBe(true);
+  });
+
+  it("Esc still closes the list without being advertised", () => {
+    const harness = setup();
+
+    harness.host.pressEmptyLeft();
+
+    const { overlay, state, lines } = harness.openLast();
+
+    expect(lines().join("\n")).not.toMatch(/esc/i);
+
+    overlay.handleKey(key("escape"));
+
+    expect(state.closed).toBe(true);
+  });
+
+  it("right in a view opened from the list does not close the overlay", async () => {
+    const harness = setup();
+
+    harness.create("first job", 1);
+    await harness.host.runCommand("agents", "");
+
+    const { overlay, state, lines } = harness.openLast();
+
+    overlay.handleKey(key("enter"));
+    overlay.handleKey(key("right"));
+
+    expect(state.closed).toBe(false);
+    expect(lines().at(-2)?.startsWith(" esc to go back")).toBe(true);
+  });
+
   it("drops the left hook on disable", async () => {
     const harness = setup();
 

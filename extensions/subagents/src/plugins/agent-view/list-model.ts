@@ -151,10 +151,8 @@ export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
 
 export const listHint = (selected: AgentRecord | undefined): string => {
   if (!selected) {
-    return "esc to close";
+    return "→ to main";
   }
 
-  return ["↑/↓ to select", "enter to view", stopHint(selected.state), "X to stop all", "esc to close"].join(
-    SEP,
-  );
+  return ["↑/↓ to select", "enter to view", stopHint(selected.state), "X to stop all", "→ to main"].join(SEP);
 };
