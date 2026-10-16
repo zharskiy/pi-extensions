@@ -1,7 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
 import { createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
@@ -258,5 +259,49 @@ describe("overlay input routing", () => {
       handled: true,
     });
     expect(wheels).toEqual([3]);
+  });
+});
+
+describe("showForm", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("waits for an overlay seen through the screen before any widget was set", async () => {
+    vi.useFakeTimers();
+
+    const screen = { overlay: true, requestRender: () => {}, hasOverlay: () => screen.overlay };
+    const shown: string[][] = [];
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "tui",
+        ui: {
+          setWidget: (_key: string, factory?: (tui: unknown) => unknown) => {
+            factory?.(screen);
+          },
+          custom: (factory: (...args: unknown[]) => { render(width: number): string[] }) =>
+            new Promise((resolve) => {
+              shown.push(factory(screen, {}, { matches: () => false }, resolve).render(20));
+            }),
+        },
+      } as unknown as ExtensionContext,
+    };
+    const ui = createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+    );
+
+    void ui.showForm(() => ({ render: () => ["question"], handleKey: () => {} }));
+    await vi.advanceTimersByTimeAsync(OVERLAY_POLL_MS * 3);
+
+    expect(shown).toEqual([]);
+
+    screen.overlay = false;
+    await vi.advanceTimersByTimeAsync(OVERLAY_POLL_MS);
+
+    expect(shown).toEqual([["question"]]);
   });
 });

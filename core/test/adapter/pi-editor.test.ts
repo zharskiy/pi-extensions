@@ -579,7 +579,7 @@ describe("createEditorHooks", () => {
   it("installs nothing at session start when no frame or hook is registered", () => {
     const { ctx, ui } = fakeCtx();
 
-    createEditorHooks(() => ctx).sync("startup", ctx);
+    createEditorHooks(() => ctx).sync("startup");
 
     expect(ui.sets).toBe(0);
   });
@@ -695,7 +695,7 @@ describe("createEditorHooks", () => {
       fired += "new";
     });
     current = ctx;
-    fresh.sync("reload", ctx);
+    fresh.sync("reload");
     editor(ui.factory, piKeys()).handleInput(LEFT);
 
     expect(fired).toBe("new");
@@ -772,7 +772,7 @@ describe("createEditorHooks", () => {
       }
 
       current = ctx;
-      fresh.sync(reason, ctx);
+      fresh.sync(reason);
 
       if (!early) {
         fresh.setEditorFrame(frame);
@@ -803,9 +803,9 @@ describe("createEditorHooks", () => {
 
     subagents.onEmptyEditorLeft(() => {});
     current = ctx;
-    subagents.sync("resume", ctx);
+    subagents.sync("resume");
     editor(ui.factory, piKeys());
-    composer.sync("resume", ctx);
+    composer.sync("resume");
     composer.setEditorFrame(frame);
     subagents.release();
     composer.release();
@@ -826,7 +826,7 @@ describe("createEditorHooks", () => {
     const { ctx, ui } = fakeCtx(undefined, [userEntry("prior"), userEntry("one")]);
     const fresh = (await adapterCopy())(() => ctx);
 
-    fresh.sync(reason, ctx);
+    fresh.sync(reason);
     fresh.setEditorFrame(frame);
 
     expect(historyOf(editor(ui.factory, piKeys()))).toEqual(["prior"]);

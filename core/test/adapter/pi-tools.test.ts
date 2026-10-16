@@ -340,6 +340,28 @@ describe("toPiTool box shell", () => {
   });
 });
 
+describe("themeLike colours", () => {
+  it("paints role tokens with pi's matching theme colours", () => {
+    const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
+    const like = themeLike(recording);
+
+    expect(
+      (["warning", "comment", "keyword", "function", "string", "number", "type", "heading"] as const).map(
+        (token) => like.fg(token, "x"),
+      ),
+    ).toEqual([
+      "<warning>x",
+      "<syntaxComment>x",
+      "<syntaxKeyword>x",
+      "<syntaxFunction>x",
+      "<syntaxString>x",
+      "<syntaxNumber>x",
+      "<syntaxType>x",
+      "<mdHeading>x",
+    ]);
+  });
+});
+
 describe("themeLike text metrics", () => {
   it("measures and truncates with pi-tui", () => {
     const like = themeLike(theme);
@@ -371,13 +393,13 @@ describe("themeLike text metrics", () => {
 });
 
 describe("toPiTool declaration fields", () => {
-  it("forwards prompt guidelines, execution mode and exposure to pi", () => {
+  it("forwards prompt guidelines and execution mode, and exposes a model-only tool as pi's model-only", () => {
     const tool = toPiTool({
       ...baseSpec,
       promptSnippet: "Probe things",
       promptGuidelines: ["Probe first."],
       executionMode: "sequential",
-      exposure: "model-only",
+      modelOnly: true,
     });
 
     expect(tool).toMatchObject({

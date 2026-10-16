@@ -2,7 +2,8 @@ import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, truncateToWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FormApi, KeyPress, TextInput, ViewComponent } from "../../adapter/contract.ts";
-import { createShowForm, OVERLAY_POLL_MS } from "../../adapter/pi-form.ts";
+import { createShowForm } from "../../adapter/pi-form.ts";
+import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
 
 const ESC = String.fromCharCode(27);
 
@@ -181,6 +182,18 @@ describe("showForm", () => {
     controller.abort();
 
     expect(await showForm(() => recordingView([]), { signal: controller.signal })).toBeUndefined();
+    expect(shown).toEqual([]);
+  });
+
+  it("does not show the form when the signal aborts before the form opens", async () => {
+    const { shown, showForm } = formContext();
+    const controller = new AbortController();
+
+    const pending = showForm(() => recordingView([]), { signal: controller.signal });
+
+    controller.abort();
+
+    expect(await pending).toBeUndefined();
     expect(shown).toEqual([]);
   });
 

@@ -23,6 +23,7 @@ import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
 import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
+import { entryHost } from "./pi-entries.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
@@ -176,7 +177,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
-    editor.sync(event.reason, ctx);
+    editor.sync(event.reason);
 
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
@@ -455,6 +456,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     ...footerHost(pi, state),
     ...contextHost(pi, state),
+    ...entryHost(pi),
   };
 };
 

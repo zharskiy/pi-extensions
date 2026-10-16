@@ -35,6 +35,7 @@ const fakePi = () => {
   const sent: { text: string; options?: unknown }[] = [];
   const calls: { call: "sendMessage" | "sendUserMessage"; message: unknown; options?: unknown }[] = [];
   const listeners = new Map<string, ((data: unknown) => void)[]>();
+  const renderers: string[] = [];
 
   const pi = {
     on: (event: string, handler: Handler) => {
@@ -52,6 +53,9 @@ const fakePi = () => {
       calls.push({ call: "sendMessage", message, options });
     },
     getSettings: () => ({}),
+    registerEntryRenderer: (customType: string) => {
+      renderers.push(customType);
+    },
     events: {
       emit: (channel: string, data: unknown) => {
         listeners.get(channel)?.forEach((listener) => {
@@ -68,7 +72,7 @@ const fakePi = () => {
   const fire = (event: string, ctx: unknown, payload: unknown = {}) =>
     Promise.all((handlers.get(event) ?? []).map((handler) => handler(payload, ctx)));
 
-  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls };
+  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls, renderers };
 };
 
 describe("pi adapter", () => {
@@ -518,6 +522,7 @@ describe("pi adapter", () => {
     await fire("session_start", fakeCtx("tui"));
 
     expect(host.ui.style("warning", "ctx")).toBe("<warning>ctx");
+    expect(host.ui.style("heading", "ctx")).toBe("<mdHeading>ctx");
   });
 
   it("is not idle without a live session and runs shutdown handlers before the session goes stale", async () => {
@@ -542,7 +547,7 @@ describe("pi adapter", () => {
     expect(() => host.session()).toThrow("no live pi session");
   });
 
-  it("applies every adapter copy's prompt sections on each run, with or without the main prompt", async () => {
+  describe("prompt sections", () => {
     const promptOptions = () => ({
       selectedTools: [],
       hiddenTools: [],
@@ -552,54 +557,99 @@ describe("pi adapter", () => {
       sections: {} as Record<string, string>,
     });
 
-    const style = fakePi();
-    const agents = fakePi();
-    const styleHost = createPiHost(style.pi, { tools: new Map() });
-    const agentsHost = createPiHost(agents.pi, { tools: new Map() });
+    const copies = async () => {
+      const style = fakePi();
+      const agents = fakePi();
+      const styleHost = createPiHost(style.pi, { tools: new Map() });
+      const agentsHost = createPiHost(agents.pi, { tools: new Map() });
 
-    await style.fire("session_start", fakeCtx("tui"));
-    await agents.fire("session_start", fakeCtx("tui"));
-    styleHost.setPromptSection("output_style", "Be brief.");
+      await style.fire("session_start", fakeCtx("tui"));
+      await agents.fire("session_start", fakeCtx("tui"));
 
-    const plain = promptOptions();
+      const run = async (copy: typeof style) => {
+        const options = promptOptions();
 
-    await style.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: plain });
+        await copy.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: options });
 
-    expect(plain.sections).toEqual({ output_style: "Be brief." });
+        return options.sections;
+      };
 
-    agentsHost.setMainPrompt("# Main");
+      return { style, agents, styleHost, agentsHost, run };
+    };
 
-    const replaced = promptOptions();
+    afterEach(() => {
+      delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.owned-prompt-sections")];
+    });
 
-    await agents.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: replaced });
+    it("applies a section to a run without a main prompt", async () => {
+      const { style, styleHost, run } = await copies();
 
-    expect(Object.keys(replaced.sections)).toEqual(["tools", "rules", "docs", "output_style"]);
-    expect(replaced.sections.output_style).toBe("Be brief.");
+      styleHost.setPromptSection("output_style", "Be brief.");
 
-    await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+      expect(await run(style)).toEqual({ output_style: "Be brief." });
+    });
 
-    const kept = promptOptions();
+    it("applies another copy's section to a run with a main prompt", async () => {
+      const { agents, styleHost, agentsHost, run } = await copies();
 
-    await agents.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: kept });
+      styleHost.setPromptSection("output_style", "Be brief.");
+      agentsHost.setMainPrompt("# Main");
 
-    expect(kept.sections.output_style).toBe("Be brief.");
+      const sections = await run(agents);
 
-    styleHost.setPromptSection("output_style", undefined);
+      expect(sections.output_style).toBe("Be brief.");
+      expect(sections.tools).toBeDefined();
+    });
 
-    const cleared = promptOptions();
+    it("keeps a section when another copy shuts down", async () => {
+      const { agents, styleHost, run } = await copies();
 
-    await style.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: cleared });
+      styleHost.setPromptSection("output_style", "Be brief.");
+      await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
 
-    expect(cleared.sections).toEqual({});
+      expect((await run(agents)).output_style).toBe("Be brief.");
+    });
 
-    styleHost.setPromptSection("output_style", "Be brief.");
-    await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+    it("clears a section set to undefined", async () => {
+      const { style, styleHost, run } = await copies();
 
-    const dropped = promptOptions();
+      styleHost.setPromptSection("output_style", "Be brief.");
+      styleHost.setPromptSection("output_style", undefined);
 
-    await agents.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: dropped });
+      expect(await run(style)).toEqual({});
+    });
 
-    expect(dropped.sections.output_style).toBeUndefined();
+    it("drops a section when its owner shuts down", async () => {
+      const { style, agents, styleHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBeUndefined();
+    });
+
+    it("keeps a section another copy set to the same text when the first owner shuts down", async () => {
+      const { style, agents, styleHost, agentsHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      agentsHost.setPromptSection("output_style", "Be brief.");
+      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBe("Be brief.");
+
+      await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBeUndefined();
+    });
+  });
+
+  it("registers each entry renderer with pi once", () => {
+    const { pi, renderers } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+
+    host.registerEntryRenderer("x:entry", () => ["line"]);
+
+    expect(renderers).toEqual(["x:entry"]);
   });
 
   it("runs shutdown handlers one after another in registration order", async () => {

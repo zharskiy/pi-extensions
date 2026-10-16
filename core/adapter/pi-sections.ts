@@ -1,24 +1,27 @@
 type SectionOptions = { sections: Record<string, string> };
 
-const SECTIONS_KEY = Symbol.for("pi-extensions.prompt-sections");
+type Section = { text: string; owner: symbol };
 
-const shared = globalThis as typeof globalThis & { [SECTIONS_KEY]?: Map<string, string> };
+const SECTIONS_KEY = Symbol.for("pi-extensions.owned-prompt-sections");
 
-const sharedSections = (): Map<string, string> => (shared[SECTIONS_KEY] ??= new Map());
+const shared = globalThis as typeof globalThis & { [SECTIONS_KEY]?: Map<string, Section> };
+
+const sharedSections = (): Map<string, Section> => (shared[SECTIONS_KEY] ??= new Map());
 
 export const applyPromptSections = (options: SectionOptions) => {
-  sharedSections().forEach((text, name) => {
+  sharedSections().forEach(({ text }, name) => {
     options.sections[name] = text;
   });
 };
 
 export const createPromptSections = () => {
-  const own = new Map<string, string>();
+  const owner = Symbol("prompt-sections");
+  const own = new Set<string>();
 
   const drop = (name: string) => {
     const sections = sharedSections();
 
-    if (sections.get(name) === own.get(name)) {
+    if (sections.get(name)?.owner === owner) {
       sections.delete(name);
     }
 
@@ -32,11 +35,11 @@ export const createPromptSections = () => {
         return;
       }
 
-      sharedSections().set(name, text);
-      own.set(name, text);
+      sharedSections().set(name, { text, owner });
+      own.add(name);
     },
     release: () => {
-      Array.from(own.keys()).forEach(drop);
+      Array.from(own).forEach(drop);
     },
   };
 };

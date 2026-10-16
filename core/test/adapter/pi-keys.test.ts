@@ -53,4 +53,8 @@ describe("keyPress", () => {
     expect(keyPress("\t", keys).name).toBe("tab");
     expect(keyPress(`${ESC}[Z`, keys)).toEqual({ name: "backTab", raw: `${ESC}[Z` });
   });
+
+  it("names Backspace and keeps its raw bytes", () => {
+    expect(keyPress("\x7f", { matches: () => false })).toEqual({ name: "backspace", raw: "\x7f" });
+  });
 });

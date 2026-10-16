@@ -2,23 +2,21 @@ import {
   CustomEditor,
   type ExtensionContext,
   type KeybindingsManager,
-  type SessionEntry,
   type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
+import { type EditorHistory, type HistoryRecord, seedHistory, takeHistory } from "./pi-editor-history.ts";
 import { keyPress } from "./pi-keys.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-type SharedEditor = {
+type SharedEditor = HistoryRecord & {
   frame?: EditorFrame;
   emptyLeft: Set<() => void>;
   emptyDown: Set<() => void>;
   capture?: EditorKeyHandler;
   installed?: EditorFactory;
-  history: string[];
-  seed?: string[];
 };
 
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
@@ -32,35 +30,13 @@ const sharedEditor = (): SharedEditor => {
 
   hooks.emptyLeft ??= new Set();
   hooks.emptyDown ??= new Set();
-  hooks.history ??= [];
 
   return hooks as SharedEditor;
 };
 
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
-type EditorHistory = { history: string[] };
-
 type EmptyKey = "emptyLeft" | "emptyDown";
-
-const SEEDED_REASONS: ReadonlySet<SessionStartEvent["reason"]> = new Set(["resume", "fork"]);
-
-const userText = (entry: SessionEntry) => {
-  if (entry.type !== "message" || entry.message.role !== "user") {
-    return "";
-  }
-
-  const content = entry.message.content;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  return content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
-};
 
 class HostEditor extends CustomEditor {
   private readonly keys: KeybindingsManager;
@@ -68,11 +44,17 @@ class HostEditor extends CustomEditor {
   private bottomBorder = "";
   private scrolled = false;
 
-  constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, hooks: SharedEditor) {
+  constructor(
+    tui: TUI,
+    theme: EditorTheme,
+    keybindings: KeybindingsManager,
+    hooks: SharedEditor,
+    history: EditorHistory,
+  ) {
     super(tui, theme, keybindings, { embedWorkingStatus: true });
-    (this as unknown as EditorHistory).history = hooks.history;
     this.keys = keybindings;
     this.hooks = hooks;
+    history.attach(this);
   }
 
   protected renderTopBorder(width: number, hidden: number): string {
@@ -162,7 +144,7 @@ type EditorHooksUi = Pick<
 >;
 
 export type EditorHooks = EditorHooksUi & {
-  sync(reason: SessionStartEvent["reason"], ctx: ExtensionContext): void;
+  sync(reason: SessionStartEvent["reason"]): void;
   release(): void;
 };
 
@@ -190,18 +172,9 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
     }
 
     if (!active) {
-      const seed = hooks.seed ?? [];
+      const history = takeHistory(hooks);
 
-      hooks.seed = undefined;
-      hooks.installed = (tui, theme, keybindings) => {
-        const editor = new HostEditor(tui, theme, keybindings, hooks);
-
-        seed.splice(0).forEach((text) => {
-          editor.addToHistory(text);
-        });
-
-        return editor;
-      };
+      hooks.installed = (tui, theme, keybindings) => new HostEditor(tui, theme, keybindings, hooks, history);
       ctx.ui.setEditorComponent(hooks.installed);
     }
   };
@@ -277,14 +250,12 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
         releaseIfUnused();
       };
     },
-    sync: (reason, ctx) => {
+    sync: (reason) => {
+      const ctx = tuiCtx();
       const hooks = sharedEditor();
-      const ui = tuiCtx()?.ui;
 
-      if (ui && !ui.getEditorComponent()) {
-        hooks.seed = SEEDED_REASONS.has(reason)
-          ? ctx.sessionManager.buildContextEntries().map(userText).filter(Boolean)
-          : undefined;
+      if (ctx && !ctx.ui.getEditorComponent()) {
+        seedHistory(hooks, reason, ctx);
       }
 
       if (inUse(hooks)) {

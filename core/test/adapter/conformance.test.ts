@@ -141,20 +141,93 @@ describe("pi adapter conformance", () => {
       "estimateTokens",
       "getLastAssistantUsage",
       "DEFAULT_COMPACTION_SETTINGS",
+      "CustomEditor",
     ];
 
     const requiredTui = [
       "Container",
+      "Editor",
       "isKeyRelease",
       "Key",
       "matchesKey",
       "ScrollView",
       "Text",
       "truncateToWidth",
+      "TuiMainScreen",
+      "wrapTextWithAnsi",
     ];
 
     expect(required.filter((name) => !(name in pi))).toEqual([]);
     expect(requiredTui.filter((name) => !(name in tui))).toEqual([]);
+  });
+
+  it("has the session manager and TUI methods the adapter calls", () => {
+    const session = ["buildSessionProjection", "buildContextEntries", "getEntries", "getBranch", "getLeafId"];
+    const screen = ["hasOverlay", "showOverlay", "hideOverlay", "requestRender"];
+
+    expect(
+      session.filter((name) => typeof Reflect.get(pi.SessionManager.prototype, name) !== "function"),
+    ).toEqual([]);
+    expect(
+      screen.filter((name) => typeof Reflect.get(tui.TuiMainScreen.prototype, name) !== "function"),
+    ).toEqual([]);
+  });
+
+  it("gives extensions the API and UI methods the adapter calls, and tools their source path and exposure", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+    const seen: { api?: pi.ExtensionAPI; ui?: pi.ExtensionUIContext } = {};
+
+    try {
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "probe",
+            factory: (api) => {
+              seen.api = api;
+              api.registerTool({ ...namedTool("probe_tool"), exposure: "model-only" } as never);
+              api.on("session_start", (_event, ctx) => {
+                seen.ui = ctx.ui;
+              });
+            },
+          },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const api = ["registerEntryRenderer", "getSettings", "getAllTools", "getActiveTools", "getCommands"];
+      const ui = ["custom", "getEditorComponent", "setEditorComponent", "setWidget", "onTerminalInput"];
+      const probe = seen.api?.getAllTools().find((tool) => tool.name === "probe_tool");
+
+      expect(api.filter((name) => typeof Reflect.get(seen.api ?? {}, name) !== "function")).toEqual([]);
+      expect(ui.filter((name) => typeof Reflect.get(seen.ui ?? {}, name) !== "function")).toEqual([]);
+      expect(typeof seen.api?.getSettings()).toBe("object");
+      expect(typeof probe?.sourceInfo.path).toBe("string");
+      expect(probe?.exposure).toBe("model-only");
+
+      session.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("names only assistant event types pi has", () => {

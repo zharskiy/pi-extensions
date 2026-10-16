@@ -9,7 +9,15 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ThemeLike, ToolRender, ToolRenderState, ToolResult, ToolSpec, ToolTone } from "./contract.ts";
+import type {
+  ThemeLike,
+  ThemeToken,
+  ToolRender,
+  ToolRenderState,
+  ToolResult,
+  ToolSpec,
+  ToolTone,
+} from "./contract.ts";
 
 const ESC = "\x1b";
 
@@ -23,8 +31,30 @@ export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
   wrap: (text, cols) => wrapTextWithAnsi(text, Math.max(1, cols)),
 };
 
+export const fitLines = (lines: string[], width: number) =>
+  lines.map((line) => truncateToWidth(line, width, "…"));
+
+const PI_COLORS = {
+  accent: "accent",
+  muted: "muted",
+  dim: "dim",
+  success: "success",
+  warning: "warning",
+  error: "error",
+  text: "text",
+  comment: "syntaxComment",
+  keyword: "syntaxKeyword",
+  function: "syntaxFunction",
+  string: "syntaxString",
+  number: "syntaxNumber",
+  type: "syntaxType",
+  heading: "mdHeading",
+} as const satisfies Record<ThemeToken, Parameters<Theme["fg"]>[0]>;
+
+export const piColor = (token: ThemeToken) => PI_COLORS[token];
+
 export const themeLike = (theme: Theme): ThemeLike => ({
-  fg: (token, text) => theme.fg(token, text),
+  fg: (token, text) => theme.fg(piColor(token), text),
   bold: (text) => theme.bold(text),
   ...textMetrics,
 });
@@ -82,7 +112,7 @@ class CutLines implements Component {
   render(width: number): string[] {
     const text = typeof this.source === "function" ? this.source(width) : this.source;
 
-    return splitLines(text).map((line) => truncateToWidth(line, width, "…"));
+    return fitLines(splitLines(text), width);
   }
 
   invalidate() {}
@@ -174,7 +204,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     promptGuidelines: spec.promptGuidelines,
     parameters: Type.Unsafe<P>(spec.parameters),
     executionMode: spec.executionMode,
-    exposure: spec.exposure,
+    exposure: spec.modelOnly ? "model-only" : undefined,
     renderShell: spec.renderShell === "box" ? "self" : undefined,
     execute: async (
       toolCallId: string,

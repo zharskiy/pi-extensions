@@ -15,13 +15,13 @@ export type ThemeToken =
   | "warning"
   | "error"
   | "text"
-  | "syntaxComment"
-  | "syntaxKeyword"
-  | "syntaxFunction"
-  | "syntaxString"
-  | "syntaxNumber"
-  | "syntaxType"
-  | "mdHeading";
+  | "comment"
+  | "keyword"
+  | "function"
+  | "string"
+  | "number"
+  | "type"
+  | "heading";
 
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
@@ -58,7 +58,7 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   promptGuidelines?: string[];
   parameters: Record<string, unknown>;
   executionMode?: "sequential" | "parallel";
-  exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+  modelOnly?: boolean;
   renderShell?: "default" | "box";
   execute(
     params: P,
@@ -87,6 +87,7 @@ export type KeyPress = {
     | "space"
     | "tab"
     | "backTab"
+    | "backspace"
     | "toggleTools"
     | "other";
   char?: string;
@@ -235,28 +236,26 @@ export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
 
-export type RequestUsage = { input: number; cacheRead: number; cacheWrite: number; output: number };
+export type PromptTokens = { input: number; cacheRead: number; cacheWrite: number; output: number };
 
-export type ContextPart = { name: string; tokens: number };
+export type ContextSection = { name: string; text: string };
 
-export type ContextBreakdown = {
+export type ToolSource = "builtin" | "mcp" | "extension";
+
+export type ContextTool = { name: string; source: ToolSource; onDemand: boolean; chars: number };
+
+export type MessageBlock = { type: string; tokens: number };
+
+export type ContextMessage = { role: string; tokens: number; blocks: MessageBlock[] };
+
+export type ContextFacts = {
   model: string | undefined;
   window: number;
   total: number | null;
   reserve: number;
-  systemPrompt: number;
-  memoryFiles: ContextPart[];
-  skills: ContextPart[];
-  tools: { builtin: ContextPart[]; mcp: ContextPart[]; extension: ContextPart[] };
-  messages: {
-    count: number;
-    user: number;
-    assistant: number;
-    thinking: number;
-    toolCalls: number;
-    toolResults: number;
-    other: number;
-  };
+  sections: ContextSection[];
+  tools: ContextTool[];
+  messages: ContextMessage[];
 };
 
 export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
@@ -292,9 +291,9 @@ export type Host = {
   model(): ModelInfo | undefined;
   thinkingLevel(): string;
   sessionName(): string | undefined;
-  contextBreakdown(): ContextBreakdown | undefined;
-  lastRequestUsage(): RequestUsage | undefined;
-  mainRequestUsage(): RequestUsage;
+  contextFacts(): ContextFacts | undefined;
+  lastRequestUsage(): PromptTokens | undefined;
+  mainRequestUsage(): PromptTokens;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";

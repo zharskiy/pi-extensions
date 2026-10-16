@@ -5,7 +5,6 @@ import {
   ScrollView,
   type TUI,
   type TuiMouseEvent,
-  truncateToWidth,
 } from "@earendil-works/pi-tui";
 import type {
   AnyToolSpec,
@@ -20,11 +19,9 @@ import { captureTui, createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
 import { createShowForm } from "./pi-form.ts";
 import { keyPress } from "./pi-keys.ts";
-import { themeLike } from "./pi-tools.ts";
+import { fitLines, piColor, themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
-
-const fitLines = (lines: string[], width: number) => lines.map((line) => truncateToWidth(line, width, "…"));
 
 export type HostState = { ctx?: ExtensionContext; tools: Map<string, AnyToolSpec> };
 
@@ -210,7 +207,7 @@ export const createUi = (
     setWidget,
     openOverlay,
     showForm: createShowForm(tuiCtx, (ctx) => lastTui ?? captureTui(ctx)),
-    style: (token, text) => state.ctx?.ui.theme.fg(token, text) ?? text,
+    style: (token, text) => state.ctx?.ui.theme.fg(piColor(token), text) ?? text,
     terminalNotify: (message, channel) => {
       if (!tuiCtx()) {
         return;
