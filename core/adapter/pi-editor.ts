@@ -2,14 +2,16 @@ import {
   CustomEditor,
   type ExtensionContext,
   type KeybindingsManager,
+  type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
+import { type EditorHistory, type HistoryRecord, seedHistory, takeHistory } from "./pi-editor-history.ts";
 import { keyPress } from "./pi-keys.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-type SharedEditor = {
+type SharedEditor = HistoryRecord & {
   frame?: EditorFrame;
   emptyLeft: Set<() => void>;
   emptyDown: Set<() => void>;
@@ -19,10 +21,18 @@ type SharedEditor = {
 
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
 
-const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: SharedEditor };
+const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: Partial<SharedEditor> };
 
-const sharedEditor = (): SharedEditor =>
-  (shared[EDITOR_KEY] ??= { emptyLeft: new Set(), emptyDown: new Set() });
+const sharedEditor = (): SharedEditor => {
+  const hooks = shared[EDITOR_KEY] ?? {};
+
+  shared[EDITOR_KEY] = hooks;
+
+  hooks.emptyLeft ??= new Set();
+  hooks.emptyDown ??= new Set();
+
+  return hooks as SharedEditor;
+};
 
 type EditorPending = { jumpMode: "forward" | "backward" | null; isInPaste: boolean };
 
@@ -34,10 +44,17 @@ class HostEditor extends CustomEditor {
   private bottomBorder = "";
   private scrolled = false;
 
-  constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, hooks: SharedEditor) {
+  constructor(
+    tui: TUI,
+    theme: EditorTheme,
+    keybindings: KeybindingsManager,
+    hooks: SharedEditor,
+    history: EditorHistory,
+  ) {
     super(tui, theme, keybindings, { embedWorkingStatus: true });
     this.keys = keybindings;
     this.hooks = hooks;
+    history.attach(this);
   }
 
   protected renderTopBorder(width: number, hidden: number): string {
@@ -126,10 +143,16 @@ type EditorHooksUi = Pick<
   "setEditorFrame" | "onEmptyEditorLeft" | "onEmptyEditorDown" | "captureEditorKeys"
 >;
 
-export type EditorHooks = EditorHooksUi & { sync(): void; release(): void };
+export type EditorHooks = EditorHooksUi & {
+  sync(reason: SessionStartEvent["reason"]): void;
+  release(): void;
+};
 
 export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): EditorHooks => {
-  const own: Omit<SharedEditor, "installed"> = { emptyLeft: new Set(), emptyDown: new Set() };
+  const own: Pick<SharedEditor, "frame" | "emptyLeft" | "emptyDown" | "capture"> = {
+    emptyLeft: new Set(),
+    emptyDown: new Set(),
+  };
 
   const inUse = (hooks: SharedEditor) =>
     Boolean(hooks.frame || hooks.emptyLeft.size > 0 || hooks.emptyDown.size > 0 || hooks.capture);
@@ -149,7 +172,9 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
     }
 
     if (!active) {
-      hooks.installed = (tui, theme, keybindings) => new HostEditor(tui, theme, keybindings, hooks);
+      const history = takeHistory(hooks);
+
+      hooks.installed = (tui, theme, keybindings) => new HostEditor(tui, theme, keybindings, hooks, history);
       ctx.ui.setEditorComponent(hooks.installed);
     }
   };
@@ -225,8 +250,15 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
         releaseIfUnused();
       };
     },
-    sync: () => {
-      if (inUse(sharedEditor())) {
+    sync: (reason) => {
+      const ctx = tuiCtx();
+      const hooks = sharedEditor();
+
+      if (ctx && !ctx.ui.getEditorComponent()) {
+        seedHistory(hooks, reason, ctx);
+      }
+
+      if (inUse(hooks)) {
         ensureInstalled();
       }
     },

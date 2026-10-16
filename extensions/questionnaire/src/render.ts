@@ -1,0 +1,130 @@
+import type { ThemeLike } from "../../../core/adapter/contract.ts";
+import { hintLines, PAD, padded, rule } from "../../../core/manager/layout.ts";
+import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
+import {
+  allAnswered,
+  answerOf,
+  currentQuestion,
+  type FormState,
+  formOptions,
+  isMulti,
+  onSubmitTab,
+  unanswered,
+} from "./form.ts";
+
+const tabBar = (state: FormState, theme: ThemeLike) => {
+  const active = (text: string) => theme.fg("accent", theme.bold(text));
+
+  const tabs = state.questions.map((question, index) => {
+    const answered = Boolean(answerOf(state, question.id));
+    const box = answered ? "■" : "□";
+
+    if (index === state.tab) {
+      return active(`${box} ${question.label}`);
+    }
+
+    return `${theme.fg(answered ? "success" : "muted", box)} ${theme.fg(answered ? "text" : "muted", question.label)}`;
+  });
+
+  const submit = onSubmitTab(state)
+    ? active("✓ Submit")
+    : theme.fg(allAnswered(state) ? "success" : "dim", "✓ Submit");
+
+  return `${theme.fg("dim", "←")} ${[...tabs, submit].join("  ")} ${theme.fg("dim", "→")}`;
+};
+
+const optionLines = (state: FormState, theme: ThemeLike, width: number) => {
+  const options = formOptions(currentQuestion(state)).map((option) => {
+    const typing = Boolean(option.other) && state.typing;
+
+    return { ...option, mark: typing ? "✎" : undefined, active: typing };
+  });
+
+  return listLines(theme, options, state.option, width);
+};
+
+const SWITCH_HINT = "Tab/←→ switch";
+
+const hints = (state: FormState) => {
+  if (state.typing) {
+    return ["Enter save", "Esc back to options"];
+  }
+
+  if (onSubmitTab(state)) {
+    return [SWITCH_HINT, ...(allAnswered(state) ? ["Enter submit"] : []), CANCEL_HINT];
+  }
+
+  const actions = isMulti(state) ? [SWITCH_HINT, "Enter confirm"] : ["Enter submit"];
+
+  return [...SELECT_HINTS, ...actions, CANCEL_HINT];
+};
+
+const submitLines = (state: FormState, theme: ThemeLike, width: number) => {
+  const answers = state.questions.flatMap((question) => {
+    const answer = answerOf(state, question.id);
+
+    if (!answer) {
+      return [];
+    }
+
+    const text = answer.wasCustom ? `(wrote) ${answer.label}` : answer.label;
+
+    return padded(theme, `${theme.fg("muted", `${question.label}:`)} ${theme.fg("text", text)}`, width);
+  });
+
+  const missing = unanswered(state).map((question) => question.label);
+  const status = missing.length
+    ? theme.fg("warning", `Unanswered: ${missing.join(", ")}`)
+    : theme.fg("success", "Press Enter to submit");
+  const title = missing.length ? "Answers" : "Ready to submit";
+
+  return [
+    ...padded(theme, theme.fg("accent", theme.bold(title)), width),
+    "",
+    ...answers,
+    ...(answers.length > 0 ? [""] : []),
+    ...padded(theme, status, width),
+  ];
+};
+
+const questionLines = (state: FormState, theme: ThemeLike, width: number, input: string[]) => {
+  const question = currentQuestion(state);
+
+  if (!question) {
+    return [];
+  }
+
+  const answer = state.typing
+    ? [
+        "",
+        ...padded(theme, theme.fg("muted", "Your answer:"), width),
+        ...input.map((line) => `${PAD}${line}`),
+      ]
+    : [];
+
+  return [
+    ...padded(theme, theme.fg("text", question.prompt), width),
+    "",
+    ...optionLines(state, theme, width),
+    ...answer,
+  ];
+};
+
+export const inputWidth = (width: number) => Math.max(1, width - 2);
+
+export const renderForm = (state: FormState, theme: ThemeLike, width: number, input: string[] = []) => {
+  const tabs = isMulti(state) ? [...padded(theme, tabBar(state, theme), width), ""] : [];
+
+  const body = onSubmitTab(state)
+    ? submitLines(state, theme, width)
+    : questionLines(state, theme, width, input);
+
+  return [
+    rule(theme, width),
+    ...tabs,
+    ...body,
+    "",
+    ...hintLines(theme, hints(state), width),
+    rule(theme, width),
+  ];
+};

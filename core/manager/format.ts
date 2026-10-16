@@ -12,6 +12,16 @@ export const formatTokens = (n: number): string => {
   return `${(n / 1_000_000).toFixed(1)}M`;
 };
 
+export const formatWindow = (count: number): string => {
+  if (count >= 1_000_000) {
+    const millions = count / 1_000_000;
+
+    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
+  }
+
+  return count >= 1_000 ? `${Math.round(count / 1_000)}k` : `${count}`;
+};
+
 export const formatDuration = (ms: number): string => {
   const seconds = Math.max(0, Math.floor(ms / 1_000));
 

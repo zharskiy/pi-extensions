@@ -5,7 +5,13 @@ import {
   type ToolDefinition,
   ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  Text,
+  truncateToWidth,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { ToolRenderState, ToolResult, ToolSpec, ToolTone } from "../../adapter/contract.ts";
 import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
@@ -334,6 +340,28 @@ describe("toPiTool box shell", () => {
   });
 });
 
+describe("themeLike colours", () => {
+  it("paints role tokens with pi's matching theme colours", () => {
+    const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
+    const like = themeLike(recording);
+
+    expect(
+      (["warning", "comment", "keyword", "function", "string", "number", "type", "heading"] as const).map(
+        (token) => like.fg(token, "x"),
+      ),
+    ).toEqual([
+      "<warning>x",
+      "<syntaxComment>x",
+      "<syntaxKeyword>x",
+      "<syntaxFunction>x",
+      "<syntaxString>x",
+      "<syntaxNumber>x",
+      "<syntaxType>x",
+      "<mdHeading>x",
+    ]);
+  });
+});
+
 describe("themeLike text metrics", () => {
   it("measures and truncates with pi-tui", () => {
     const like = themeLike(theme);
@@ -351,5 +379,44 @@ describe("themeLike text metrics", () => {
     const painted = "\x1b[31mMap the auth module\x1b[0m";
 
     expect(themeLike(theme).truncate(painted, 8)).toBe(truncateToWidth(painted, 8, "…"));
+  });
+
+  it("wraps with pi-tui at word boundaries and keeps at least one column", () => {
+    const like = themeLike(theme);
+    const painted = "\x1b[31mMap the auth module and its callers\x1b[0m";
+
+    expect(like.wrap("Map the auth module", 8)).toEqual(["Map the", "auth", "module"]);
+    expect(like.wrap(painted, 10)).toEqual(wrapTextWithAnsi(painted, 10));
+    expect(like.wrap("ab", 0)).toEqual(wrapTextWithAnsi("ab", 1));
+    expect(like.wrap("", 10)).toEqual([""]);
+  });
+});
+
+describe("toPiTool declaration fields", () => {
+  it("forwards prompt guidelines and execution mode, and exposes a model-only tool as pi's model-only", () => {
+    const tool = toPiTool({
+      ...baseSpec,
+      promptSnippet: "Probe things",
+      promptGuidelines: ["Probe first."],
+      executionMode: "sequential",
+      modelOnly: true,
+    });
+
+    expect(tool).toMatchObject({
+      promptSnippet: "Probe things",
+      promptGuidelines: ["Probe first."],
+      executionMode: "sequential",
+      exposure: "model-only",
+    });
+  });
+
+  it("leaves them unset when the spec has none", () => {
+    const tool = toPiTool(baseSpec);
+
+    expect([tool.promptGuidelines, tool.executionMode, tool.exposure]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 });

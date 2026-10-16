@@ -7,13 +7,28 @@ export type UsageTotals = {
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 };
 
-export type ThemeToken = "accent" | "muted" | "dim" | "success" | "warning" | "error" | "text";
+export type ThemeToken =
+  | "accent"
+  | "muted"
+  | "dim"
+  | "success"
+  | "warning"
+  | "error"
+  | "text"
+  | "comment"
+  | "keyword"
+  | "function"
+  | "string"
+  | "number"
+  | "type"
+  | "heading";
 
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
   bold(text: string): string;
   width(text: string): number;
   truncate(text: string, cols: number): string;
+  wrap(text: string, cols: number): string[];
 };
 
 export type ToolResult<D = unknown> = {
@@ -40,7 +55,10 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   label: string;
   description: string;
   promptSnippet?: string;
+  promptGuidelines?: string[];
   parameters: Record<string, unknown>;
+  executionMode?: "sequential" | "parallel";
+  modelOnly?: boolean;
   renderShell?: "default" | "box";
   execute(
     params: P,
@@ -68,6 +86,8 @@ export type KeyPress = {
     | "escape"
     | "space"
     | "tab"
+    | "backTab"
+    | "backspace"
     | "toggleTools"
     | "other";
   char?: string;
@@ -122,6 +142,23 @@ export type OverlayApi = {
 
 export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 
+export type TextInput = {
+  render(width: number): string[];
+  handleKey(key: KeyPress): void;
+  text(): string;
+  setText(text: string): void;
+  onSubmit(handler: (text: string) => void): void;
+};
+
+export type FormApi<T> = {
+  theme: ThemeLike;
+  requestRender(): void;
+  done(result: T): void;
+  createTextInput(): TextInput;
+};
+
+export type FormFactory<T> = (api: FormApi<T>) => ViewComponent;
+
 export type WidgetHandle = { refresh(): void };
 
 export type WorkingIndicator = { frames: string[]; intervalMs: number };
@@ -145,6 +182,7 @@ export type HostUi = {
   confirm(title: string, message: string): Promise<boolean>;
   setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;
+  showForm<T>(factory: FormFactory<T>, options?: { signal?: AbortSignal }): Promise<T | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(message: string, channel: NotifyChannel): void;
   setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
@@ -198,6 +236,30 @@ export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
 
+export type PromptTokens = { input: number; cacheRead: number; cacheWrite: number; output: number };
+
+export type ContextSection = { name: string; text: string };
+
+export type ToolSource = "builtin" | "mcp" | "extension";
+
+export type ContextTool = { name: string; source: ToolSource; onDemand: boolean; chars: number };
+
+export type MessageBlock = { type: string; tokens: number };
+
+export type ContextMessage = { role: string; tokens: number; blocks: MessageBlock[] };
+
+export type ContextFacts = {
+  model: string | undefined;
+  window: number;
+  total: number | null;
+  reserve: number;
+  sections: ContextSection[];
+  tools: ContextTool[];
+  messages: ContextMessage[];
+};
+
+export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
+
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
 
 export type Host = {
@@ -205,6 +267,7 @@ export type Host = {
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
   registerCommand(name: string, spec: CommandSpec): void;
   setMainPrompt(text: string): void;
+  setPromptSection(name: string, text: string | undefined): void;
   onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: () => void): void;
@@ -217,6 +280,7 @@ export type Host = {
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;
   appendEntry(customType: string, data: unknown): void;
+  registerEntryRenderer(customType: string, render: EntryRender): void;
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
@@ -227,6 +291,9 @@ export type Host = {
   model(): ModelInfo | undefined;
   thinkingLevel(): string;
   sessionName(): string | undefined;
+  contextFacts(): ContextFacts | undefined;
+  lastRequestUsage(): PromptTokens | undefined;
+  mainRequestUsage(): PromptTokens;
 };
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending" | "deferred";

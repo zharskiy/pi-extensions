@@ -15,6 +15,7 @@ const fakeCtx = (mode: string, idle = true) => ({
   sessionManager: {
     getSessionId: () => "s1",
     getSessionFile: () => "/sessions/s1.jsonl",
+    buildContextEntries: () => [],
   },
   isProjectTrusted: () => true,
   isIdle: () => idle,
@@ -23,6 +24,7 @@ const fakeCtx = (mode: string, idle = true) => ({
     notify: () => {},
     setStatus: () => {},
     confirm: async () => true,
+    getEditorComponent: () => undefined,
     theme: { fg: (token: string, text: string) => `<${token}>${text}` },
   },
 });
@@ -33,6 +35,7 @@ const fakePi = () => {
   const sent: { text: string; options?: unknown }[] = [];
   const calls: { call: "sendMessage" | "sendUserMessage"; message: unknown; options?: unknown }[] = [];
   const listeners = new Map<string, ((data: unknown) => void)[]>();
+  const renderers: string[] = [];
 
   const pi = {
     on: (event: string, handler: Handler) => {
@@ -50,6 +53,9 @@ const fakePi = () => {
       calls.push({ call: "sendMessage", message, options });
     },
     getSettings: () => ({}),
+    registerEntryRenderer: (customType: string) => {
+      renderers.push(customType);
+    },
     events: {
       emit: (channel: string, data: unknown) => {
         listeners.get(channel)?.forEach((listener) => {
@@ -66,7 +72,7 @@ const fakePi = () => {
   const fire = (event: string, ctx: unknown, payload: unknown = {}) =>
     Promise.all((handlers.get(event) ?? []).map((handler) => handler(payload, ctx)));
 
-  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls };
+  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls, renderers };
 };
 
 describe("pi adapter", () => {
@@ -516,6 +522,7 @@ describe("pi adapter", () => {
     await fire("session_start", fakeCtx("tui"));
 
     expect(host.ui.style("warning", "ctx")).toBe("<warning>ctx");
+    expect(host.ui.style("heading", "ctx")).toBe("<mdHeading>ctx");
   });
 
   it("is not idle without a live session and runs shutdown handlers before the session goes stale", async () => {
@@ -538,6 +545,111 @@ describe("pi adapter", () => {
     expect(seen).toEqual(["new", "s1"]);
     expect(host.isIdle()).toBe(false);
     expect(() => host.session()).toThrow("no live pi session");
+  });
+
+  describe("prompt sections", () => {
+    const promptOptions = () => ({
+      selectedTools: [],
+      hiddenTools: [],
+      toolSnippets: {},
+      toolGuidelines: {},
+      promptGuidelines: [],
+      sections: {} as Record<string, string>,
+    });
+
+    const copies = async () => {
+      const style = fakePi();
+      const agents = fakePi();
+      const styleHost = createPiHost(style.pi, { tools: new Map() });
+      const agentsHost = createPiHost(agents.pi, { tools: new Map() });
+
+      await style.fire("session_start", fakeCtx("tui"));
+      await agents.fire("session_start", fakeCtx("tui"));
+
+      const run = async (copy: typeof style) => {
+        const options = promptOptions();
+
+        await copy.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: options });
+
+        return options.sections;
+      };
+
+      return { style, agents, styleHost, agentsHost, run };
+    };
+
+    afterEach(() => {
+      delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.owned-prompt-sections")];
+    });
+
+    it("applies a section to a run without a main prompt", async () => {
+      const { style, styleHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+
+      expect(await run(style)).toEqual({ output_style: "Be brief." });
+    });
+
+    it("applies another copy's section to a run with a main prompt", async () => {
+      const { agents, styleHost, agentsHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      agentsHost.setMainPrompt("# Main");
+
+      const sections = await run(agents);
+
+      expect(sections.output_style).toBe("Be brief.");
+      expect(sections.tools).toBeDefined();
+    });
+
+    it("keeps a section when another copy shuts down", async () => {
+      const { agents, styleHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBe("Be brief.");
+    });
+
+    it("clears a section set to undefined", async () => {
+      const { style, styleHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      styleHost.setPromptSection("output_style", undefined);
+
+      expect(await run(style)).toEqual({});
+    });
+
+    it("drops a section when its owner shuts down", async () => {
+      const { style, agents, styleHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBeUndefined();
+    });
+
+    it("keeps a section another copy set to the same text when the first owner shuts down", async () => {
+      const { style, agents, styleHost, agentsHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      agentsHost.setPromptSection("output_style", "Be brief.");
+      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBe("Be brief.");
+
+      await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect((await run(agents)).output_style).toBeUndefined();
+    });
+  });
+
+  it("registers each entry renderer with pi once", () => {
+    const { pi, renderers } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+
+    host.registerEntryRenderer("x:entry", () => ["line"]);
+
+    expect(renderers).toEqual(["x:entry"]);
   });
 
   it("runs shutdown handlers one after another in registration order", async () => {

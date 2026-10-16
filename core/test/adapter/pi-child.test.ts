@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpawnSpec } from "../../adapter/contract.ts";
 import { childToolNames, createPiRuntime, type ParentSource } from "../../adapter/pi-child.ts";
+import { createPromptSections } from "../../adapter/pi-sections.ts";
 
 type InlineEntry = {
   name: string;
@@ -397,5 +398,55 @@ describe("child prompting", () => {
 
     await expect(runtime.spawn(spec({ tools: [] }))).rejects.toThrow("bind failed");
     expect(scripted.calls).toEqual(["emit session_shutdown", "dispose"]);
+  });
+});
+
+describe("child prompt sections", () => {
+  beforeEach(() => {
+    captured.session = undefined;
+  });
+
+  it("gives every run of the child the prompt sections registered at that moment", async () => {
+    const before = captured.loaderOptions.length;
+
+    await runtime.spawn(spec({ tools: [] }));
+
+    const child = factoriesOf(before).find((entry) => entry.name === "test-ext-child") as InlineEntry;
+    const handlers: ((event: unknown) => void)[] = [];
+    const api = {
+      on: (event: string, handler: (event: unknown) => void) => {
+        if (event === "before_agent_start") {
+          handlers.push(handler);
+        }
+      },
+      appendEntry: () => {},
+    };
+
+    (child.factory as (pi: unknown) => void)(api);
+
+    const run = () => {
+      const systemPromptOptions = {
+        sections: { cwd: "/x" } as Record<string, string>,
+        skills: [],
+        promptGuidelines: [],
+        toolGuidelines: {},
+      };
+
+      handlers.forEach((handler) => {
+        handler({ systemPromptOptions });
+      });
+
+      return systemPromptOptions.sections;
+    };
+
+    const sections = createPromptSections();
+
+    sections.set("output_style", "Be brief.");
+
+    expect(run()).toEqual({ cwd: "/x", output_style: "Be brief." });
+
+    sections.release();
+
+    expect(run()).toEqual({ cwd: "/x" });
   });
 });

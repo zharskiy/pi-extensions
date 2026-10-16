@@ -4,8 +4,8 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 
 ```
 
- 150.1k · $4.00 · <model name> (1M context)
- Session total (agents included): 162.4k / $4.42
+ 150.1k · cache 91% · $4.00 · <model name> (1M context)
+ session total (agents included) 162.4k / $4.42
  my-project git:(feature-branch) • <session name>
  ▶▶ thinking high (shift+tab to cycle)
 
@@ -15,7 +15,9 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 
 ## What it does
 
-- Line 1: the main session's context-window occupancy (warning colour above 70 percent, error above 90, `?` while pi does not know it, for example right after a compaction), the main session's cost, and the model name pi reports with its context window.
+- Field labels (`cache`, `session total (agents included)`) are dim and the values keep their colours; the thinking line (`thinking high`) is bold gold as a whole.
+- Line 1: the main session's context-window occupancy (warning colour above 70 percent, error above 90, `?` while pi does not know it, for example right after a compaction), the session's cache hit rate, the main session's cost, and the model name pi reports with its context window.
+- `cache 91%` is the share of the main session's prompt tokens read from the provider's cache, `cacheRead / (input + cacheRead + cacheWrite)` summed over every main-session request (agents, cache warming and compaction summaries left out), as an integer: success colour from 70 percent, warning from 30, error below. It stays hidden until the session reported any cache read or write (some providers never do), and it is the first segment dropped when the line does not fit the terminal. `/context` shows the same figure next to the last turn's: both compute and paint it with `sessionCacheHit` and `cachePercentText` from `core/manager/cache.ts`.
 - Line 2: the cumulative chargeable tokens (`input + output + cacheRead + cacheWrite`) and cost of the whole session, the main session plus everything reported to the spending extension, such as subagents at every depth.
 - Line 3: the current folder name followed by `git:(<branch>)` when pi reports a git branch (just the folder name otherwise), plus the session name when one is set.
 - Line 4: the thinking level and the key that cycles it, or `thinking unavailable` for models without reasoning.
@@ -26,8 +28,8 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 
 ## Where the figures come from
 
-Cost and token figures come only from the spending extension, over the `spending:totals` channel: spending publishes them on session start, every turn end, every accepted report, compaction and idle, and the footer keeps the last payload. pi sets up every extension before it starts the session, so the footer hears the first publish whatever the load order. Until spending publishes (or without spending installed) the main cost on line 1 and the whole of line 2 are hidden. Line 2 ends with a dim ` (sub)` when pi reports a subscription for the model. Context, model, thinking level, session name, branch and statuses are read live from pi on each render (the context usage is recomputed only when the session leaf or the model changes); the footer re-renders when the totals arrive, when the session goes idle and when the git branch changes.
+Cost and token figures come only from the spending extension, over the `spending:totals` channel: spending publishes them on session start, every turn end, every accepted report, compaction and idle, and the footer keeps the last payload. pi sets up every extension before it starts the session, so the footer hears the first publish whatever the load order. Until spending publishes (or without spending installed) the main cost on line 1 and the whole of line 2 are hidden. Line 2 ends with a dim ` (sub)` when pi reports a subscription for the model. Context, cache usage, model, thinking level, session name, branch and statuses are read live from pi on each render (the context usage is recomputed only when the session leaf or the model changes, the cache usage only when the leaf changes); the footer re-renders when the totals arrive, when the session goes idle and when the git branch changes.
 
 ## Layout
 
-`src/index.ts` is the pi entry on the shared adapter in `core/adapter/` (repository root). `src/footer.ts` wires the channel and the footer, `src/render.ts` holds the pure formatting and line builders behind `renderFooter`. The channel names, the totals parser and spending's status key are shared in `core/manager/channels.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry on the shared adapter in `core/adapter/` (repository root). `src/footer.ts` wires the channel and the footer, `src/render.ts` holds the pure formatting and line builders behind `renderFooter`; the token and window formats (`formatTokens`, `formatWindow`) come from `core/manager/format.ts`, the padding and separator from `core/manager/layout.ts`, both shared with `/context`. The channel names, the totals parser and spending's status key are shared in `core/manager/channels.ts`. Tests are under `test/`.

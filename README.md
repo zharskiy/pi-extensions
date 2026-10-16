@@ -9,7 +9,10 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [notifications](extensions/notifications/README.md): one terminal notification when pi waits for your input (after the work and any background agents are done) and one when a dialog waits unanswered.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
 - [composer](extensions/composer/README.md): the input drawn between two full-width rules in the editor's colour, with a chevron prompt.
-- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
+- [questionnaire](extensions/questionnaire/README.md): a `questionnaire` tool the main session's model uses to ask you a batch of independent multiple-choice questions in one inline form (tabs, number keys, a typed answer per question), with a notification when it waits.
+- [style](extensions/style/README.md): `/style concise` makes the main session and every subagent answer in short, result-first replies; `/style normal` turns it off, and `/style` alone opens a list of the styles to pick from.
+- [context](extensions/context/README.md): `/context` prints what fills the context window into the transcript: a usage grid, the estimated tokens per category (system prompt, tools, memory files, skills, messages, free space, compaction reserve), the cache hit rate of the last turn and the session, and every file, skill and tool with `Ctrl+O`.
+- [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, session cache hit rate, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
 
 ## Install
 
@@ -28,6 +31,9 @@ pi -e ./pi-extensions/extensions/working-indicator/src/index.ts
 pi -e ./pi-extensions/extensions/notifications/src/index.ts
 pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
 pi -e ./pi-extensions/extensions/composer/src/index.ts
+pi -e ./pi-extensions/extensions/questionnaire/src/index.ts
+pi -e ./pi-extensions/extensions/style/src/index.ts
+pi -e ./pi-extensions/extensions/context/src/index.ts
 pi -e ./pi-extensions/extensions/footer/src/index.ts
 ```
 
@@ -55,6 +61,6 @@ PI_LIVE_MODEL=provider/id:low npm run test:live   # real agents, local only, cos
 - `core/test/`: mirrors `core/`; `core/test/helpers/fakes.ts` holds the fake host, runtime and child shared by every extension's tests, and only `core/test/adapter/` tests import pi packages directly; the fake theme measures with the adapter's `textMetrics`.
 - `extensions/<name>/{src,test,prompts}`: one folder per extension, with its own README. `src/index.ts` is the single entry that connects the extension's parts; `package.json` lists every entry file under `pi.extensions`.
 - Outside `core/adapter` code imports only `core/adapter/contract.ts` and the shared `core/manager/` modules; each extension's `src/index.ts` may also import `core/adapter/pi-adapter.ts`. `core/` never imports from `extensions/`.
-- Extensions never import each other. They talk over pi's event bus (`pi.events`), for example the `pi:busy` and `spending:usage` channels.
+- Extensions never import each other. They talk over pi's event bus (`pi.events`), for example the `pi:busy`, `pi:awaiting-input` and `spending:usage` channels.
 - `test/architecture.test.ts` enforces these rules, and that extension tests reach the adapter only through `contract.ts` and `core/test/adapter/`; biome (`biome.json`) enforces that only `core/adapter/` and `core/test/adapter/` import pi packages.
 - [ARCHITECTURE.md](ARCHITECTURE.md) explains how it works, [STRUCTURE.md](STRUCTURE.md) shows where things are, [AGENTS.md](AGENTS.md) is the short guide for coding agents.

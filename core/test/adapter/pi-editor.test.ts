@@ -12,9 +12,15 @@ import { createEditorHooks } from "../../adapter/pi-editor.ts";
 
 type Factory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-const fakeCtx = (existing?: Factory) => {
+const userEntry = (content: string | { type: string; text?: string }[]) => ({
+  type: "message",
+  message: { role: "user", content },
+});
+
+const fakeCtx = (existing?: Factory, entries: object[] = []) => {
   const ui = { factory: existing, sets: 0 };
   const ctx = {
+    sessionManager: { buildContextEntries: () => entries },
     ui: {
       getEditorComponent: () => ui.factory,
       setEditorComponent: (factory: Factory) => {
@@ -87,6 +93,8 @@ const click = (x: number, y: number, width: number) => ({
 const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
 
 const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
+
+const historyOf = (hooked: CustomEditor) => (hooked as unknown as { history: string[] }).history;
 
 const adapterCopy = async () => {
   vi.resetModules();
@@ -571,7 +579,7 @@ describe("createEditorHooks", () => {
   it("installs nothing at session start when no frame or hook is registered", () => {
     const { ctx, ui } = fakeCtx();
 
-    createEditorHooks(() => ctx).sync();
+    createEditorHooks(() => ctx).sync("startup");
 
     expect(ui.sets).toBe(0);
   });
@@ -687,9 +695,140 @@ describe("createEditorHooks", () => {
       fired += "new";
     });
     current = ctx;
-    fresh.sync();
+    fresh.sync("reload");
     editor(ui.factory, piKeys()).handleInput(LEFT);
 
     expect(fired).toBe("new");
+  });
+
+  it("recalls submitted input when an older copy left a record without history", () => {
+    (globalThis as Record<symbol, unknown>)[EDITOR_KEY] = { emptyLeft: new Set(), emptyDown: new Set() };
+
+    const { ctx, ui } = fakeCtx();
+
+    createEditorHooks(() => ctx).setEditorFrame(frame);
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.addToHistory("sent");
+    hooked.handleInput(UP);
+
+    expect(hooked.getText()).toBe("sent");
+  });
+
+  it("keeps input history when pi rebuilds the editor after a reload", async () => {
+    const { ctx, ui } = fakeCtx();
+    const first = createEditorHooks(() => ctx);
+
+    first.setEditorFrame(frame);
+
+    const before = editor(ui.factory, piKeys());
+
+    before.addToHistory("first");
+    before.addToHistory("second");
+    first.release();
+    ui.factory = undefined;
+
+    const second = (await adapterCopy())(() => ctx);
+
+    second.setEditorFrame(frame);
+
+    const after = editor(ui.factory, piKeys());
+
+    after.handleInput(UP);
+
+    expect(after.getText()).toBe("second");
+
+    after.handleInput(UP);
+
+    expect(after.getText()).toBe("first");
+  });
+
+  it.each([
+    ["resume", "at session start", true],
+    ["fork", "at session start", true],
+    ["resume", "by a start handler", false],
+  ] as const)(
+    "adds the %s session's user messages when the editor is installed %s",
+    async (reason, _, early) => {
+      const prior = fakeCtx();
+      const first = createEditorHooks(() => prior.ctx);
+
+      first.setEditorFrame(frame);
+      editor(prior.ui.factory, piKeys()).addToHistory("prior");
+      first.release();
+
+      const { ctx, ui } = fakeCtx(undefined, [
+        userEntry("one"),
+        { type: "message", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } },
+        { type: "custom", customType: "note" },
+        userEntry([{ type: "text", text: "tw" }, { type: "image" }, { type: "text", text: "o" }]),
+      ]);
+      let current: ExtensionContext | undefined;
+      const fresh = (await adapterCopy())(() => current);
+
+      if (early) {
+        fresh.setEditorFrame(frame);
+      }
+
+      current = ctx;
+      fresh.sync(reason);
+
+      if (!early) {
+        fresh.setEditorFrame(frame);
+      }
+
+      const resumed = editor(ui.factory, piKeys());
+
+      resumed.handleInput(UP);
+
+      expect(resumed.getText()).toBe("two");
+
+      resumed.handleInput(UP);
+
+      expect(resumed.getText()).toBe("one");
+
+      resumed.handleInput(UP);
+
+      expect(resumed.getText()).toBe("prior");
+      expect(historyOf(resumed)).toEqual(["two", "one", "prior"]);
+    },
+  );
+
+  it("adds the resumed session's messages only once across adapter copies", async () => {
+    const { ctx, ui } = fakeCtx(undefined, [userEntry("one"), userEntry("two")]);
+    let current: ExtensionContext | undefined;
+    const composer = (await adapterCopy())(() => current);
+    const subagents = (await adapterCopy())(() => current);
+
+    subagents.onEmptyEditorLeft(() => {});
+    current = ctx;
+    subagents.sync("resume");
+    editor(ui.factory, piKeys());
+    composer.sync("resume");
+    composer.setEditorFrame(frame);
+    subagents.release();
+    composer.release();
+    ui.factory = undefined;
+    composer.setEditorFrame(frame);
+
+    expect(historyOf(editor(ui.factory, piKeys()))).toEqual(["two", "one"]);
+  });
+
+  it.each(["startup", "reload", "new"] as const)("adds no session messages on %s", async (reason) => {
+    const prior = fakeCtx();
+    const first = createEditorHooks(() => prior.ctx);
+
+    first.setEditorFrame(frame);
+    editor(prior.ui.factory, piKeys()).addToHistory("prior");
+    first.release();
+
+    const { ctx, ui } = fakeCtx(undefined, [userEntry("prior"), userEntry("one")]);
+    const fresh = (await adapterCopy())(() => ctx);
+
+    fresh.sync(reason);
+    fresh.setEditorFrame(frame);
+
+    expect(historyOf(editor(ui.factory, piKeys()))).toEqual(["prior"]);
   });
 });

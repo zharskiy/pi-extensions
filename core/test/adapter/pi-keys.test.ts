@@ -46,4 +46,15 @@ describe("keyPress", () => {
     expect(keyPress(`${ESC}[C`, keys).name).toBe("right");
     expect(keyPress(`${ESC}[D`, { matches: () => false }).name).toBe("other");
   });
+
+  it("names Tab and Shift+Tab apart", () => {
+    const keys = { matches: () => false };
+
+    expect(keyPress("\t", keys).name).toBe("tab");
+    expect(keyPress(`${ESC}[Z`, keys)).toEqual({ name: "backTab", raw: `${ESC}[Z` });
+  });
+
+  it("names Backspace and keeps its raw bytes", () => {
+    expect(keyPress("\x7f", { matches: () => false })).toEqual({ name: "backspace", raw: "\x7f" });
+  });
 });

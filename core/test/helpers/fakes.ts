@@ -3,11 +3,13 @@ import {
   type ChildEvent,
   type ChildSession,
   type CommandSpec,
+  type ContextFacts,
   type ContextSnapshot,
   type DialogEvent,
   type DialogKind,
   type EditorFrame,
   type EditorKeyHandler,
+  type EntryRender,
   emptyUsage,
   type FooterRender,
   type HiddenMessage,
@@ -20,6 +22,7 @@ import {
   type OverlayFactory,
   type Phase,
   type PhaseDetail,
+  type PromptTokens,
   type RoutedMessage,
   type SessionControl,
   type SessionInfo,
@@ -38,6 +41,7 @@ import {
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
 import { textMetrics } from "../../adapter/pi-tools.ts";
+import { type FakeForm, openFakeForm } from "./fake-form.ts";
 
 export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text, ...textMetrics };
 
@@ -47,6 +51,8 @@ export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
   commands: Map<string, CommandSpec>;
   mainPrompt?: string;
+  promptSections: Map<string, string>;
+  promptSectionCalls: { name: string; text: string | undefined }[];
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
@@ -61,6 +67,9 @@ export type FakeHost = Host & {
   belowEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
+  forms: FakeForm[];
+  formTheme: ThemeLike;
+  form(): FakeForm;
   editorFrame?: EditorFrame;
   foreignEditor: boolean;
   emptyLeftHandlers: Set<() => void>;
@@ -111,6 +120,15 @@ export type FakeHost = Host & {
   sessionTitle?: string;
   keyListeners: Set<() => void>;
   pressKey(): void;
+  entryRenderers: Map<string, EntryRender>;
+  renderEntry(
+    customType: string,
+    data: unknown,
+    options?: { width?: number; expanded?: boolean; theme?: ThemeLike },
+  ): string[];
+  facts?: ContextFacts;
+  lastUsage?: PromptTokens;
+  mainUsage: PromptTokens;
   dialog(phase: DialogEvent["phase"], kind: DialogKind, title?: string): void;
 };
 
@@ -173,6 +191,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
+    promptSections: new Map(),
+    promptSectionCalls: [],
     entries: [],
     files: new Map(),
     sent: [],
@@ -187,6 +207,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     belowEditor: [],
     widgetRefreshes: 0,
     overlays: [],
+    forms: [],
+    formTheme: plainTheme,
+    form: () => {
+      const open = host.forms.at(-1);
+
+      if (!open) {
+        throw new Error("no form shown");
+      }
+
+      return open;
+    },
     foreignEditor: false,
     emptyLeftHandlers: new Set(),
     emptyDownHandlers: new Set(),
@@ -264,6 +295,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       },
       openOverlay: async (factory) => {
         host.overlays.push(factory);
+      },
+      showForm: async (factory, options = {}) => {
+        if (!started || host.info.mode !== "tui" || options.signal?.aborted) {
+          return undefined;
+        }
+
+        return openFakeForm(factory, host.formTheme, options.signal, (form) => {
+          host.forms.push(form);
+        });
       },
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (message, channel) => {
@@ -361,6 +401,16 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     setMainPrompt: (text) => {
       host.mainPrompt = text;
+    },
+    setPromptSection: (name, text) => {
+      host.promptSectionCalls.push({ name, text });
+
+      if (text === undefined) {
+        host.promptSections.delete(name);
+        return;
+      }
+
+      host.promptSections.set(name, text);
     },
     onSessionStart: (handler) => {
       startHandlers.push(handler);
@@ -569,6 +619,23 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
+    entryRenderers: new Map(),
+    registerEntryRenderer: (customType, render) => {
+      host.entryRenderers.set(customType, render);
+    },
+    renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme } = {}) => {
+      const render = host.entryRenderers.get(customType);
+
+      if (!render) {
+        throw new Error(`entry renderer ${customType} not registered`);
+      }
+
+      return render(structuredClone(data), width, expanded, theme).map((line) => theme.truncate(line, width));
+    },
+    mainUsage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+    contextFacts: () => (host.facts ? structuredClone(host.facts) : undefined),
+    lastRequestUsage: () => host.lastUsage,
+    mainRequestUsage: () => host.mainUsage,
     keyListeners: new Set(),
     pressKey: () => {
       Array.from(host.keyListeners).forEach((listener) => {

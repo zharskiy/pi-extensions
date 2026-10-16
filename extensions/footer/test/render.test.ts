@@ -26,6 +26,7 @@ const state = (patch: Partial<FooterState> = {}): FooterState => ({
   cwd: "/work/my-project",
   sessionName: undefined,
   totals,
+  cache: undefined,
   ...patch,
 });
 
@@ -41,7 +42,7 @@ describe("renderFooter", () => {
     expect(render()).toEqual([
       "",
       " 150.1k · $4.00 · test-model (1M context)",
-      " Session total (agents included): 162.4k / $4.42",
+      " session total (agents included) 162.4k / $4.42",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",
       "",
@@ -54,7 +55,7 @@ describe("renderFooter", () => {
     expect(lines).toEqual([
       "",
       " 150.1k · $4.00 · test-model (1M context)",
-      " Session total (agents included): 162.4k / $4.42",
+      " session total (agents included) 162.4k / $4.42",
       " my-project git:(feature-branch) • refactor",
       " ▶▶ thinking high (shift+tab to cycle)",
       "",
@@ -109,6 +110,39 @@ describe("renderFooter", () => {
     expect(at(50)).not.toMatch(/<(error|warning)>/);
   });
 
+  it("shows the session cache hit after the context tokens, coloured by rate", () => {
+    expect(statsOf({ cache: 91.4 })).toBe(" 150.1k · cache 91% · $4.00 · test-model (1M context)");
+
+    const painted = (cache: number) =>
+      renderFooter(tokenTheme, state({ cache }), { branch: null, statuses: new Map() })[1];
+
+    expect(painted(91)).toContain("<dim>cache <success>91%");
+    expect(painted(50)).toContain("<warning>50%");
+    expect(painted(12)).toContain("<error>12%");
+  });
+
+  it("renders the session total label dim before its values", () => {
+    const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[2];
+
+    expect(plain(line)).toBe(" <dim>session total (agents included) 162.4k<dim> / $4.42");
+  });
+
+  it("paints the thinking label and its level in one bold span", () => {
+    const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[4];
+
+    const bold = line.slice(line.indexOf("\x1b[1m"));
+
+    expect(plain(bold.slice(0, bold.indexOf("\x1b[0m")))).toBe("thinking high");
+  });
+
+  it("drops the cache segment first when the line is too narrow", () => {
+    const at = (width: number) =>
+      plain(renderFooter(plainTheme, state({ cache: 91 }), { branch: null, statuses: new Map() }, width)[1]);
+
+    expect(at(53)).toBe(" 150.1k · cache 91% · $4.00 · test-model (1M context)");
+    expect(at(52)).toBe(" 150.1k · $4.00 · test-model (1M context)");
+  });
+
   it("marks unknown context and a missing model", () => {
     expect(statsOf({ context: { tokens: null, window: 0, percent: null }, model: undefined })).toBe(
       " ? · $4.00 · no model",
@@ -118,7 +152,7 @@ describe("renderFooter", () => {
   it("marks subscription sessions on the session total", () => {
     const sub = { ...totals, subscription: true };
 
-    expect(render({ totals: sub })[2]).toBe(" Session total (agents included): 162.4k / $4.42 (sub)");
+    expect(render({ totals: sub })[2]).toBe(" session total (agents included) 162.4k / $4.42 (sub)");
     expect(
       renderFooter(tokenTheme, state({ totals: sub }), { branch: null, statuses: new Map() })[2],
     ).toContain("<dim> (sub)");

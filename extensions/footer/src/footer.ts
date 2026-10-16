@@ -1,4 +1,5 @@
 import type { Host, WidgetHandle } from "../../../core/adapter/contract.ts";
+import { sessionCacheHit } from "../../../core/manager/cache.ts";
 import { parseTotals, type SpendingTotals, TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
 import { renderFooter } from "./render.ts";
 
@@ -26,7 +27,7 @@ export const createFooter = (host: Host) => {
   host.onSessionStart((info) => {
     const cycleKey = host.ui.keyText(CYCLE_BINDING);
 
-    footer = host.ui.setFooter((_width, theme, data) =>
+    footer = host.ui.setFooter((width, theme, data) =>
       renderFooter(
         theme,
         {
@@ -37,8 +38,10 @@ export const createFooter = (host: Host) => {
           cwd: info.cwd,
           sessionName: host.sessionName(),
           totals,
+          cache: sessionCacheHit(host.mainRequestUsage()),
         },
         data,
+        width,
       ),
     );
   });

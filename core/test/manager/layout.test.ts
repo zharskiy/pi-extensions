@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import type { ThemeLike } from "../../adapter/contract.ts";
+import { hintLines, padded, prefixed, rule } from "../../manager/layout.ts";
+import { plainTheme } from "../helpers/fakes.ts";
+
+const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
+
+describe("rule", () => {
+  it("draws an accent line across the width, at least one column wide", () => {
+    expect(rule(plainTheme, 5)).toBe("─────");
+    expect(rule(plainTheme, 0)).toBe("─");
+    expect(rule(tagged, 3)).toContain("<accent>");
+  });
+});
+
+describe("prefixed", () => {
+  it("puts the prefix before the first line and indents the wrapped rest under it", () => {
+    expect(prefixed(plainTheme, " > ", "one two three four", 12)).toEqual([
+      " > one two",
+      "   three",
+      "   four",
+    ]);
+  });
+});
+
+describe("padded", () => {
+  it("indents every wrapped line by one column", () => {
+    expect(padded(plainTheme, "alpha beta gamma", 12)).toEqual([" alpha beta", " gamma"]);
+  });
+});
+
+describe("hintLines", () => {
+  it("joins the hints with a dot in the dim colour", () => {
+    expect(hintLines(plainTheme, ["Enter save", "Esc back"], 40)).toEqual([" Enter save · Esc back"]);
+    expect(hintLines(tagged, ["Enter save"], 40)[0]).toContain("<dim>Enter save");
+  });
+});

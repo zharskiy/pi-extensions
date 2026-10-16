@@ -21,10 +21,13 @@ import type {
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
 import { createPiRuntime } from "./pi-child.ts";
+import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
+import { entryHost } from "./pi-entries.ts";
 import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
+import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -93,6 +96,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const held: HiddenCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
+  const sections = createPromptSections();
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -173,7 +177,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
-    editor.sync();
+    editor.sync(event.reason);
 
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
@@ -205,6 +209,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     );
 
     editor.release();
+    sections.release();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -218,6 +223,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     if (mainPrompt) {
       replaceMainPrompt(event.systemPromptOptions, mainPrompt);
     }
+
+    applyPromptSections(event.systemPromptOptions);
   });
 
   pi.on("agent_start", (_event, ctx) => {
@@ -365,6 +372,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     setMainPrompt: (text) => {
       mainPrompt = text;
     },
+    setPromptSection: (name, text) => {
+      sections.set(name, text);
+    },
     onSessionStart: (handler) => {
       startHandlers.push(handler);
     },
@@ -445,6 +455,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       dialogHandlers.push(handler);
     },
     ...footerHost(pi, state),
+    ...contextHost(pi, state),
+    ...entryHost(pi),
   };
 };
 
