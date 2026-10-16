@@ -8,22 +8,30 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 pi-extensions/
 ├── core/                        # shared code, no extension-specific logic
 │   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg, bold, width, truncate, wrap)
+│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, width, truncate, wrap)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
-│   │   ├── pi-form.ts           # HostUi.showForm: inline form, overlay wait, text input (pi-tui Editor)
+│   │   ├── pi-form.ts           # HostUi.showForm: the inline form shell
+│   │   ├── pi-overlay.ts        # overlaysCleared: waits until no overlay is visible
+│   │   ├── pi-text-input.ts     # form TextInput over pi-tui's Editor, its theme and focus
 │   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
-│   │   ├── pi-tools.ts          # tool wrapping, themeLike and textMetrics (width, truncate, wrap), line cutting
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike (role tokens -> pi colours) and textMetrics
+│   │   │                        #   (width, truncate, wrap), fitLines (cut lines to a width)
 │   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
 │   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
+│   │   ├── pi-editor-history.ts # ↑ input history shared by every editor, seeded on resume and fork
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
-│   │   ├── pi-context.ts        # context breakdown, request usage, entry renderer
+│   │   ├── pi-context.ts        # Host.contextFacts and request usage, composed
+│   │   ├── pi-context-prompt.ts # prompt sections (replay or system prompt) and tools with source and exposure
+│   │   ├── pi-context-messages.ts # per-message and per-block token estimates
+│   │   ├── pi-usage.ts          # last and main request usage, main memoised on session and leaf
+│   │   ├── pi-entries.ts        # Host.registerEntryRenderer over pi's entry renderers
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
 │   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
-│   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents)
+│   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
 │   │   ├── pi-working.ts        # working indicator and message (HostUi)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
 │   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
@@ -33,14 +41,17 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # token, duration and error-text formatters
-│   │   ├── cache.ts             # cache hit rate and its colour thresholds
+│   │   ├── format.ts            # token, window, duration and error-text formatters
+│   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
+│   │   ├── layout.ts            # padding, dot separator, accent rule, wrapped and hint lines
+│   │   ├── list.ts              # selectable list: lines, keys, shared hints
+│   │   ├── select.ts            # single-choice form over the list
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
 │       │                        #   offline.ts (pi loaded offline for extension tests)
 │       ├── manager/
-│       └── helpers/fakes.ts     # fake host, runtime and child session
+│       └── helpers/             # fakes.ts (fake host, runtime and child session), fake-form.ts (fake showForm)
 ├── extensions/
 │   ├── subagents/               # background agents (main extension)
 │   │   ├── src/
@@ -86,18 +97,22 @@ pi-extensions/
 │   │   ├── test/
 │   │   └── README.md
 │   ├── questionnaire/           # questionnaire tool: batch of multiple-choice questions in one form
-│   │   ├── src/                 # index, questionnaire (tool spec, form view), form (pure state),
-│   │   │                        #   render (pure line builders), result (normalising, model text)
+│   │   ├── src/                 # index, questionnaire (tool spec, execute), view (form view, arm delay),
+│   │   │                        #   form (pure state), render (form lines), summary (call and result
+│   │   │                        #   renderers), result (types, normalising, model text)
 │   │   ├── test/
 │   │   └── README.md
 │   ├── style/                   # /style: output style for the main session and every agent
-│   │   ├── src/                 # index, style, settings
-│   │   ├── prompts/concise.md   # one file per style
+│   │   ├── src/                 # index, style (wiring), styles (prompt files), settings (file I/O),
+│   │   │                        #   pick (the list)
+│   │   ├── prompts/concise.md   # one file per style, front matter `description:`
 │   │   ├── test/
 │   │   └── README.md
 │   ├── context/                 # /context: context window breakdown and cache hits
-│   │   ├── src/                 # index, context (command, entry renderer), breakdown (pure model),
-│   │   │                        #   render (grid, legend, sections)
+│   │   ├── src/                 # index, context (command, entry renderer, short paths), buckets (facts
+│   │   │                        #   to breakdown), breakdown (usage model, cache figures), snapshot
+│   │   │                        #   (stored entry validation), grid, details (sections, message buckets),
+│   │   │                        #   render (compose), summary (plain one-line summary)
 │   │   ├── test/
 │   │   └── README.md
 │   └── footer/                  # multi-line status footer with session totals
@@ -139,7 +154,7 @@ usage-report/       # reports agent usage to the spending channel
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
 - `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
-- Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. Only `<agentDir>/pi-style.json` is written by an extension (`/style`); the full list of written files is in ARCHITECTURE.md (Persistence summary).
+- Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. `<agentDir>/pi-style.json` is the only settings file an extension writes (`/style`); the full list of written files is in ARCHITECTURE.md (Persistence summary).
 - Custom entries in the main session file are named `<namespace>:<kind>`, for example `pi-spending:usage` and `pi-context:snapshot` (one per `/context` in tui mode).
 - Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
 - No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
@@ -158,4 +173,4 @@ usage-report/       # reports agent usage to the spending channel
 - `vitest.live.config.ts`: only live tests, serial, long timeouts.
 - `biome.json`: format/lint, plus the pi-import restriction outside the adapter.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests.
-- `.gitignore`: node_modules, .DS_Store, .claude.
+- `.gitignore`: node_modules, .DS_Store, .claude, docs/.
