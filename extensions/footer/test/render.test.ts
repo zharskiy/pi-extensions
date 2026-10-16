@@ -121,12 +121,11 @@ describe("renderFooter", () => {
     expect(painted(12)).toContain("<error>12%");
   });
 
-  it("renders the session total label dim, leaves the thinking label plain and keeps the values coloured", () => {
+  it("renders the session total label dim, paints the thinking label and level in one bold gold span and keeps the values coloured", () => {
     const lines = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() });
 
     expect(lines[2]).toContain("<dim>session total (agents included) ");
-    expect(lines[4]).toContain(" thinking ");
-    expect(lines[4]).not.toContain("<dim>thinking");
+    expect(lines[4]).toContain("\x1b[1m\x1b[38;5;186mthinking high\x1b[0m");
   });
 
   it("drops the cache segment first when the line is too narrow", () => {
