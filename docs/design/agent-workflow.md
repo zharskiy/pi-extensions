@@ -8,10 +8,10 @@ Abbreviations: S = `extensions/subagents`, A = `core/adapter`. Anchors are from 
 
 Goals:
 
-- The main session is a coordinator that can run on a cheap model. Its decisions are reduced to a routing table, a fixed brief template and fixed result handling; anything that needs judgement goes to a strong `plan` agent.
+- The main session is a coordinator that can run on a cheap model. Its decisions are reduced to a routing table, a fixed brief template and fixed result handling; anything that needs judgement goes to a strong `planner` agent.
 - Delegate-only is enforced by the tool set, not by prose.
-- A roster of eight agents with non-overlapping descriptions: scout, plan, implementer, reviewer, general, fetch, shell, image.
-- Strong role agents (plan, implementer, reviewer) may start cheap scouts, damped by prompt rules and by a per-agent spawn cap in code.
+- A roster of eight agents with non-overlapping descriptions: scout, planner, implementer, reviewer, general, fetch, shell, image.
+- Strong role agents (planner, implementer, reviewer) may start cheap scouts, damped by prompt rules and by a per-agent spawn cap in code.
 - One result contract for every agent, defined once.
 - A call-time `skills` parameter on `run_agent`.
 - A `fetch` tool so a fetch agent can read web pages without new dependencies.
@@ -30,7 +30,7 @@ Non-goals:
 
 ## Second opinion
 
-The premise (a cheap main session that only delegates) runs against the published success cases. orchestration-best-practices.md Q1 summarises Anthropic, Cognition and NVIDIA: the working splits are a strong lead with cheap workers, a cheap executor with a strong advisor, or a trained router. A prompted weak model is poor at the one judgement a coordinator must make: is this hard, and who should take it (Cognition 2026-04-22, ToolOrchestra). The same section's synthesis also says when it can work: remove almost every decision. This design does that with the routing table, the mandatory brief, the `plan` escalation for anything ambiguous, tool removal (Roo Code's Orchestrator mode, Q1), and fixed result shapes (MAST, Q1). My verdict: viable, but it is an experiment, not a known-good shape. The live routing suite is the gate. If the chosen cheap model misroutes or writes thin briefs, the remedy is a stronger main-session model, not more prompt text. The weakest link is the first row of the table ("is this ambiguous or multi-step?"), because that is still a judgement; the prompt makes `plan` the first row so that doubt resolves upward.
+The premise (a cheap main session that only delegates) runs against the published success cases. orchestration-best-practices.md Q1 summarises Anthropic, Cognition and NVIDIA: the working splits are a strong lead with cheap workers, a cheap executor with a strong advisor, or a trained router. A prompted weak model is poor at the one judgement a coordinator must make: is this hard, and who should take it (Cognition 2026-04-22, ToolOrchestra). The same section's synthesis also says when it can work: remove almost every decision. This design does that with the routing table, the mandatory brief, the `planner` escalation for anything ambiguous, tool removal (Roo Code's Orchestrator mode, Q1), and fixed result shapes (MAST, Q1). My verdict: viable, but it is an experiment, not a known-good shape. The live routing suite is the gate. If the chosen cheap model misroutes or writes thin briefs, the remedy is a stronger main-session model, not more prompt text. The weakest link is the first row of the table ("is this ambiguous or multi-step?"), because that is still a judgement; the prompt makes `planner` the first row so that doubt resolves upward.
 
 Two smaller points. The research recommends `maxDepth` 2 below the user (orchestration Q2, recommendation 4); the owner keeps 3. With scouts holding `subagents: []` and the new per-agent cap, the tree is bounded anyway (main, role agent, scout; general → reviewer → scout stops at depth 3 because the reviewer started by general runs at depth 3 and gets no `run_agent`). The rename explorer → scout goes against agent-roles-and-skills.md Q3, which cites arXiv 2510.07248 (small models do better with familiar names). The same section rates the effect as small next to descriptions (arXiv 2610.14334), and "scout" has OpenCode precedent; the routing suite will show it.
 
@@ -40,9 +40,11 @@ Rejected alternative (ceiling). Treat the definition's `skills` as the maximum a
 
 ## Roster
 
-Models reuse only strings already in the shipped files: the explorer's `openai/gpt-6-luna:low` for scout, fetch, shell and image; the reviewer's `openai/gpt-6-luna:high` for plan; existing roles keep theirs. Note: the image agent needs a vision-capable model; whether `openai/gpt-6-luna` accepts image input must be confirmed by the user before shipping (pi drops images silently for models without image input, dist/core/tools/read.js:41-53).
+The model choice for each role is argued in [docs/research/model-tiers.md](../research/model-tiers.md).
 
-Descriptions follow "use for / not for / returns" (agent-roles-and-skills.md Q3) and do not overlap: scout is the codebase, fetch is the web, shell runs commands, image reads images, plan decides splits, general is the fallback. Role bodies contain only the role statement, scout rules, stop criteria and role sections; the shared contract lives in the base prompt.
+Models: scout, fetch, shell and image reuse the former explorer's `openai/gpt-6-luna:low`; implementer and general keep `openai/gpt-6.1-sol:medium`; planner and reviewer run on `anthropic/claude-opus-5-5:high` (see docs/research/model-tiers.md). The catalog confirms `openai/gpt-6-luna` accepts image input, so the image agent can use it (pi drops images silently for models without image input, dist/core/tools/read.js:41-53).
+
+Descriptions follow "use for / not for / returns" (agent-roles-and-skills.md Q3) and do not overlap: scout is the codebase, fetch is the web, shell runs commands, image reads images, planner decides splits, general is the fallback. Role bodies contain only the role statement, scout rules, stop criteria and role sections; the shared contract lives in the base prompt.
 
 ### agents/scout.md (replaces agents/explorer.md)
 
@@ -68,13 +70,13 @@ Answer: one paragraph.
 Findings: one per line, `path:line - why it matters`.
 ```
 
-### agents/plan.md (new)
+### agents/planner.md (new)
 
 ```markdown
 ---
-name: plan
+name: planner
 description: Use first for requests that are ambiguous or multi-step, need a design choice, or change several modules. Read-only; may start scouts. Returns an ordered plan of agent batches with a full brief per task.
-model: openai/gpt-6-luna:high
+model: anthropic/claude-opus-5-5:high
 limit: 120000
 tools: [read, grep, find, ls]
 skills: []
@@ -128,7 +130,7 @@ Changes: one per line, `path - change`.
 ---
 name: reviewer
 description: Use to review a diff, branch or area of code, usually after an implementer. Read-only. Not for making fixes. Returns findings ranked by severity with path:line and a ship verdict.
-model: openai/gpt-6-luna:high
+model: anthropic/claude-opus-5-5:high
 limit: 80000
 tools: [read, grep, find, ls, bash]
 skills: []
@@ -244,7 +246,7 @@ Answer: the answer to the question.
 Details: one line per image, `path - what it shows`.
 ```
 
-Cycle check (loader.ts:54-144): general → scout, reviewer; reviewer → scout; implementer → scout; plan → scout; no cycles. General → reviewer → scout reaches depth 4 only if `maxDepth` were 4; at 3 the reviewer started by general gets no agent tools (`childTools`, run-agent/index.ts:47-72).
+Cycle check (loader.ts:54-144): general → scout, reviewer; reviewer → scout; implementer → scout; planner → scout; no cycles. General → reviewer → scout reaches depth 4 only if `maxDepth` were 4; at 3 the reviewer started by general gets no agent tools (`childTools`, run-agent/index.ts:47-72).
 
 ## Main-session prompt
 
@@ -255,7 +257,7 @@ You are the coordinator of pi, a coding agent harness. You talk to the user and 
 
 # Routing (take the first row that fits; "then" means a later call, after the result arrives)
 
-- Ambiguous or multi-step, a design choice, or changes in several modules: `plan`, then run its batches (see Results).
+- Ambiguous or multi-step, a design choice, or changes in several modules: `planner`, then run its batches (see Results).
 - A question about this codebase (where, how, why, what calls what): `scout`. Several independent areas: several scouts in one call.
 - A change whose files or behaviour are named: `implementer`, then `reviewer` on the change.
 - A review of a diff, branch or area of code: `reviewer`.
@@ -275,7 +277,7 @@ Where to look: files, directories, symbols, URLs or commands.
 Scope: in and out (for example: do not commit, do not touch tests).
 Done when: the check that shows it is finished.
 Return: the sections you need back.
-Also give each agent a short `description`, and pass `skills` only when the user named or invoked a skill for this work.
+Also give each agent a short `description`, and pass in `skills` the main-session skills whose descriptions fit the task, plus any skill the user named; chores (scout, fetch, shell, image) take none.
 
 # After starting a batch
 
@@ -289,7 +291,7 @@ End your turn. You are woken once with every result, in a message the user does 
 - failed: retry once with a corrected or narrower task when the cause is in the task; otherwise report it.
 - stopped: do not restart unless the user asks.
 - handoff: start a new agent of the same kind with the same Goal and the handoff file in `files`; do not read the handoff. A blocked handoff counts as `Status: blocked`.
-- A `plan` result lists numbered batches of rows (agent, description, files, task); read its result file if it is not inline. Run batch 1 as one `run_agent` call, passing each row's task verbatim. When its results arrive, add what they found to the Known line of the next batch's tasks and run that batch. Stop and ask the user when a result is blocked, failed twice or contradicts the plan.
+- A `planner` result lists numbered batches of rows (agent, description, files, task); read its result file if it is not inline. Run batch 1 as one `run_agent` call, passing each row's task verbatim. When its results arrive, add what they found to the Known line of the next batch's tasks and run that batch. Stop and ask the user when a result is blocked, failed twice or contradicts the plan.
 
 # Session handoffs
 
@@ -341,7 +343,7 @@ Agents you may start:
 Rules:
 - Choosing: pick the agent whose description fits the work, never because a model was named. "Review X with model M" is the reviewing agent with a model override.
 - Model: each agent runs on the model shown next to it. Set `model` only when the user (or, for an agent, its task) explicitly names a model or thinking level for this work; never choose or change a model yourself, for cost, speed or any other reason. Pass the words unchanged as `name[:thinking]` (a name, a name with `:high`, or `:low` alone). The harness resolves the name, tolerating misspellings and picking the newest version, and reports the model it runs. If it reports an ambiguous or unknown model, nothing was started: ask the user with the listed candidates and reuse the answer for the rest of the conversation. If the only matches lack credentials, tell the user (they can log in with `/login`) and ask whether to run the agent on its own model; never drop a requested model silently.
-- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass it only when the user named or invoked a skill for this work. An unknown name starts nothing, and the error lists the valid names.
+- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass the main-session skills whose descriptions fit the task, plus any skill the user named; chores (scout, fetch, shell, image) take none. An unknown name starts nothing, and the error lists the valid names.
 {depth rule, unchanged}
 {only for agent callers} - Cap: you may start at most {maxChildrenPerAgent} agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.
 - Concurrency: at most {maxConcurrent} agents run at the same time across the whole tree; extra agents wait in a queue.
@@ -358,7 +360,7 @@ Result contract: one message per batch with one section per agent, headed `## <i
 
 Removed: the old "Tasks: each task must stand alone ..." rule (the brief now lives in `main-session.md` for the main session and in each spawning role's scout rule for agents), and "Read the file either way" for handoffs (the main prompt says not to read it).
 
-Schema change (tools.ts:121-163): each item gains `skills?: string[]` (`items: { type: "string" }`, description "Skill names to add for this agent. Only when the user named or invoked a skill."). `additionalProperties: false` stays.
+Schema change (tools.ts:121-163): each item gains `skills?: string[]` (`items: { type: "string" }`, description "Skill names to add for this agent. main-session skills whose descriptions fit the task, plus any the user named. None for chores."). `additionalProperties: false` stays.
 
 ## Settings
 
@@ -389,7 +391,7 @@ All are read at session start like the other keys; none is user-file-only.
 ### Subagents extension
 
 - `S/src/model/settings.ts`: the six keys above (type, defaults, schema).
-- `S/agents/`: delete `explorer.md`; add `scout.md`, `plan.md`, `fetch.md`, `shell.md`, `image.md`; rewrite `implementer.md`, `reviewer.md`, `general.md` as in Roster.
+- `S/agents/`: delete `explorer.md`; add `scout.md`, `planner.md`, `fetch.md`, `shell.md`, `image.md`; rewrite `implementer.md`, `reviewer.md`, `general.md` as in Roster.
 - `S/prompts/main-session.md`, `S/prompts/base-system-prompt.md`: replaced as above.
 - `S/src/plugins/agent-definitions/prompt.ts:3-12`: drop `OUTPUT_CONTRACT`; the agent section is `# Agent: <name>` plus the body.
 - `S/src/plugins/run-agent/tools.ts:96-163`: description text as above; `RunAgentLimits` gains `childCap?: number` (set only for agent callers) for the Cap line; the item schema gains `skills`; `RunAgentParams` item type gains `skills?: string[]`.
@@ -431,7 +433,7 @@ None that makes the tool redundant. pi 1.3 has no web fetch or search tool (inve
 - Scouts → their role agent only: a scout's result wakes the agent that started it, never the main session. The main session sees the role agent's result, which cites what the scouts found. Scout result paths are in the role agent's wake text, so the role agent can pass them on in its Open or Verification lines.
 - Plan → main: the plan result is usually over 4000 chars, so the main session reads `result.md` with `read` (allowed by its prompt) and passes each row's task verbatim. The main context grows by one plan per plan run; that is the intended cost.
 - Shell → caller: digest inline, full logs under `<agent folder>/<n>.log` in the session dir. Fetch → caller: answer with extracts; raw pages never leave the fetch agent. Image → caller: text only.
-- Nesting bounds: depth 3 (main 1, role agent 2, scout 3); `maxChildrenPerAgent` 6 per run; prompt caps lower (scouts: plan 3, implementer 2, reviewer 2, general 3 agents); concurrency 4 tree-wide, a waiting parent holds no slot.
+- Nesting bounds: depth 3 (main 1, role agent 2, scout 3); `maxChildrenPerAgent` 6 per run; prompt caps lower (scouts: planner 3, implementer 2, reviewer 2, general 3 agents); concurrency 4 tree-wide, a waiting parent holds no slot.
 - Byte stability: `main-session.md` is static; the `run_agent` description changes only when the roster or settings change at session start (re-registered only on change, index.ts:128-144); tool restriction happens before the first model request and is a no-op afterwards.
 
 ## Tests
@@ -453,7 +455,7 @@ Unit (vitest, `npm run test`):
 
 Live (`npm run test:live`, never in CI):
 
-- `S/test/live/routing.live.test.ts` (new): a real main session on `PI_LIVE_MODEL` with `main-session.md` as its system prompt and a recording `run_agent` (same schema and `describeRunAgent` text, returns the "Started batch ... End your turn now." text without starting anything). One case per request, asserting the first call's agent names and that each task has the Goal, Known, Scope, Done when and Return lines: "where do we parse the settings file?" → scout; "rename the `lingerMs` setting to `listLingerMs` in extensions/subagents" → implementer; "review my last commit" → reviewer; "make the subagents extension support cancelling a batch" → plan; "what does https://example.com say?" → fetch; "run npm run test and tell me what fails" → shell; "what does screenshot.png show?" → image; "draft release notes from the git log" → general; "use my tdd skill to add a test for X" → skills contains `tdd` (with a temporary `tdd` skill). Report the hit rate per case; a miss fails the case. Needs a test helper that builds a main-like session (A/test side only, see implementation plan).
+- `S/test/live/routing.live.test.ts` (new): a real main session on `PI_LIVE_MODEL` with `main-session.md` as its system prompt and a recording `run_agent` (same schema and `describeRunAgent` text, returns the "Started batch ... End your turn now." text without starting anything). One case per request, asserting the first call's agent names and that each task has the Goal, Known, Scope, Done when and Return lines: "where do we parse the settings file?" → scout; "rename the `lingerMs` setting to `listLingerMs` in extensions/subagents" → implementer; "review my last commit" → reviewer; "make the subagents extension support cancelling a batch" → planner; "what does https://example.com say?" → fetch; "run npm run test and tell me what fails" → shell; "what does screenshot.png show?" → image; "draft release notes from the git log" → general; "use my tdd skill to add a test for X" → skills contains `tdd` (with a temporary `tdd` skill). Report the hit rate per case; a miss fails the case. Needs a test helper that builds a main-like session (A/test side only, see implementation plan).
 - Existing live suites: `run-agent.live.test.ts` and `nesting.live.test.ts` switch from explorer to scout; `grants.live.test.ts` unchanged except names. Optional later: a fetch live case against a stable public page.
 
 ## Docs

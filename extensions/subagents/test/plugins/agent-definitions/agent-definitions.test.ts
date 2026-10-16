@@ -324,6 +324,35 @@ describe("definition loading", () => {
     expect(result.definitions.get("solo")?.source).toBe("builtin");
   });
 
+  it("reads agent files in subfolders and warns about a name defined twice in one location", () => {
+    const root = tempDir();
+    const builtin = join(root, "builtin");
+    const user = join(root, "user");
+
+    writeAgent(join(builtin, "chores"), "scout.md", agentFile("scout", "builtin scout"));
+    writeAgent(join(user, "team", "nested"), "helper.md", agentFile("helper", "nested helper"));
+    writeAgent(join(user, "a"), "one.md", agentFile("twin", "first twin"));
+    writeAgent(join(user, "b"), "two.md", agentFile("twin", "second twin"));
+    writeAgent(join(user, "b"), "notes.txt", "not an agent");
+
+    const result = loadDefinitions([
+      { path: builtin, source: "builtin" },
+      { path: user, source: "user" },
+    ]);
+
+    expect(result.errors).toEqual([]);
+    expect([...result.definitions.keys()].sort()).toEqual(["helper", "scout", "twin"]);
+    expect(result.definitions.get("scout")?.path).toBe(join(builtin, "chores", "scout.md"));
+    expect(result.definitions.get("helper")?.path).toBe(join(user, "team", "nested", "helper.md"));
+    expect(result.definitions.get("twin")?.description).toBe("second twin");
+    expect(result.warnings).toEqual([
+      {
+        path: join(user, "b", "two.md"),
+        message: `agent "twin" is also defined in ${join(user, "a", "one.md")}; this file wins`,
+      },
+    ]);
+  });
+
   it("collects invalid files as errors and keeps loading the rest", () => {
     const dir = tempDir();
 
@@ -338,17 +367,34 @@ describe("definition loading", () => {
 
   it("ships the eight agents with the design's field order and models", () => {
     const result = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
-    const names = ["fetch", "general", "image", "implementer", "plan", "reviewer", "scout", "shell"];
+    const names = ["fetch", "general", "image", "implementer", "planner", "reviewer", "scout", "shell"];
+    const folders: Record<string, string> = {
+      fetch: "chores",
+      general: "leads",
+      image: "chores",
+      implementer: "leads",
+      planner: "leads",
+      reviewer: "leads",
+      scout: "chores",
+      shell: "chores",
+    };
     const fields = ["name", "description", "model", "limit", "tools", "skills", "subagents", "worktree"];
 
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect([...result.definitions.keys()].sort()).toEqual(names);
     expect(result.definitions.has("explorer")).toBe(false);
-    expect(readdirSync(join(PACKAGE_ROOT, "agents")).sort()).toEqual(names.map((name) => `${name}.md`));
+    expect(
+      readdirSync(join(PACKAGE_ROOT, "agents"), { recursive: true, encoding: "utf8" })
+        .filter((file) => file.endsWith(".md"))
+        .sort(),
+    ).toEqual(names.map((name) => `${folders[name]}/${name}.md`).sort());
 
     names.forEach((name) => {
-      const head = readFileSync(join(PACKAGE_ROOT, "agents", `${name}.md`), "utf8").split("---")[1] as string;
+      const head = readFileSync(
+        join(PACKAGE_ROOT, "agents", folders[name] as string, `${name}.md`),
+        "utf8",
+      ).split("---")[1] as string;
       const keys = head
         .split("\n")
         .map((line) => /^([a-z]+):/.exec(line)?.[1])
@@ -358,7 +404,7 @@ describe("definition loading", () => {
     });
 
     expect(
-      ["scout", "fetch", "shell", "image", "plan", "reviewer", "implementer", "general"].map((name) => {
+      ["scout", "fetch", "shell", "image", "planner", "reviewer", "implementer", "general"].map((name) => {
         const definition = result.definitions.get(name);
 
         return `${definition?.model?.replace(/^[^/]+\/.+$/, "provider/id")}:${definition?.thinking}`;
@@ -386,7 +432,7 @@ describe("definition loading", () => {
     };
 
     expect(grants("scout")).toEqual([["read", "grep", "find", "ls"], [], []]);
-    expect(grants("plan")).toEqual([["read", "grep", "find", "ls"], [], ["scout"]]);
+    expect(grants("planner")).toEqual([["read", "grep", "find", "ls"], [], ["scout"]]);
     expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], ["scout"]]);
     expect(grants("implementer")).toEqual([
       ["read", "grep", "find", "ls", "edit", "write", "bash"],
@@ -404,9 +450,11 @@ describe("definition loading", () => {
     const dir = join(PACKAGE_ROOT, "agents");
     const keys = FRONTMATTER_FIELDS.map((spec) => spec.key);
 
-    readdirSync(dir).forEach((file) => {
-      expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
-    });
+    readdirSync(dir, { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".md"))
+      .forEach((file) => {
+        expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
+      });
   });
 
   it("documents the frontmatter schema in the README table, row by row", () => {

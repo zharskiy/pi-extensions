@@ -37,11 +37,13 @@ export const tempDir = (prefix = "pi-subagents-") => {
 const shippedModels = () =>
   [
     ...new Set(
-      readdirSync(join(PACKAGE_ROOT, "agents")).flatMap((file) =>
-        readFileSync(join(PACKAGE_ROOT, "agents", file), "utf8")
-          .split("\n")
-          .flatMap((line) => /^model:\s*([^\s:]+)/.exec(line)?.[1] ?? []),
-      ),
+      readdirSync(join(PACKAGE_ROOT, "agents"), { recursive: true, encoding: "utf8" })
+        .filter((file) => file.endsWith(".md"))
+        .flatMap((file) =>
+          readFileSync(join(PACKAGE_ROOT, "agents", file), "utf8")
+            .split("\n")
+            .flatMap((line) => /^model:\s*([^\s:]+)/.exec(line)?.[1] ?? []),
+        ),
     ),
   ].map((ref) => catalogModel(ref));
 

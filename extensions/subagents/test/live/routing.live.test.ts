@@ -29,7 +29,7 @@ const cases: Case[] = [
     agent: "implementer",
   },
   { request: "review my last commit", agent: "reviewer" },
-  { request: "make the subagents extension support cancelling a batch", agent: "plan" },
+  { request: "make the subagents extension support cancelling a batch", agent: "planner" },
   { request: "what does https://example.com say?", agent: "fetch" },
   { request: "run npm run test and tell me what fails", agent: "shell" },
   { request: "what does screenshot.png show?", agent: "image" },

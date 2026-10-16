@@ -65,8 +65,8 @@ pi-extensions/
 │   │   │   │                    #   tree order, connectors, selection carry), refresh.ts
 │   │   │   │                    #   throttle/ticker and tick cadence)
 │   │   │   └── plugins/         # one folder per feature, see below
-│   │   ├── agents/              # bundled agent definitions (*.md): scout, plan, implementer, reviewer,
-│   │   │                        #   fetch, shell, image, general
+│   │   ├── agents/              # bundled agent definitions (*.md): leads/ (planner, implementer,
+│   │   │                        #   reviewer, general), chores/ (scout, fetch, shell, image)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
 │   │   │                        #   base-system-prompt.md, handoff.md
 │   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures; routing.live.test.ts
@@ -135,7 +135,7 @@ pi-extensions/
 ```
 fetch-tool/         # the fetch tool: index.ts (plugin, `fetchTool` service, tool spec), fetch.ts (request,
                     #   limits, redirects), text.ts (readable text, title)
-agent-definitions/  # loads agents/*.md: loader.ts, fields.ts (field rules),
+agent-definitions/  # loads agents/**/*.md: loader.ts, fields.ts (field rules),
                     #   yaml-lite.ts (frontmatter parser), prompt assembly
 agent-registry/     # in-memory agent records (registry.ts)
 run-agent/          # index.ts (plugin, wake, block invalidation, delegate-only restriction), runner.ts (skills and spawn-cap checks), tools.ts (run_agent, message_agent), render.ts (block),
@@ -160,7 +160,7 @@ usage-report/       # reports agent usage to the spending channel
 - `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
 - Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. `<agentDir>/pi-style.json` is the only settings file an extension writes (`/style`); the full list of written files is in ARCHITECTURE.md (Persistence summary).
 - Custom entries in the main session file are named `<namespace>:<kind>`, for example `pi-spending:usage` and `pi-context:snapshot` (one per `/context` in tui mode).
-- Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
+- Prompts (`prompts/*.md`) and agent definitions (`agents/**/*.md`) are markdown read at runtime.
 - No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
 
 ### Published vs development-only

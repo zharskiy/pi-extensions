@@ -227,7 +227,7 @@ describe("run_agent batches", () => {
     await expect(
       runAgent.execute({ agents: [{ agent: "nope", task: "x" }] }, { update: () => {} }),
     ).rejects.toThrow(
-      /unknown agent\(s\): nope. Available: fetch, general, image, implementer, plan, reviewer, scout, shell/,
+      /unknown agent\(s\): nope. Available: fetch, general, image, implementer, planner, reviewer, scout, shell/,
     );
     expect(runtime.children).toEqual([]);
   });
@@ -347,7 +347,8 @@ describe("run_agent batches", () => {
     expect(item.properties.skills).toEqual({
       type: "array",
       items: { type: "string" },
-      description: "Skill names to add for this agent. Only when the user named or invoked a skill.",
+      description:
+        "Skill names to add for this agent: main-session skills whose descriptions fit the task, plus any the user named. None for chores. An unknown name starts nothing; the error lists the valid names.",
     });
     expect(item.additionalProperties).toBe(false);
   });
@@ -517,7 +518,7 @@ describe("allowed subagents", () => {
       runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
 
     expect(() => spawn("lead")).toThrow(
-      "agent(s) not allowed for this caller: lead. Allowed: fetch, general, image, implementer, plan, reviewer, scout, shell",
+      "agent(s) not allowed for this caller: lead. Allowed: fetch, general, image, implementer, planner, reviewer, scout, shell",
     );
 
     spawn("implementer");

@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Use to review a diff, branch or area of code, usually after an implementer. Read-only. Not for making fixes. Returns findings ranked by severity with path:line and a ship verdict.
-model: openai/gpt-6-luna:high
+model: anthropic/claude-opus-5-5:high
 limit: 80000
 tools: [read, grep, find, ls, bash]
 skills: []

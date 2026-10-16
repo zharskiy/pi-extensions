@@ -143,15 +143,22 @@ const pruneSubagentGraph = (definitions: Map<string, AgentDefinition>, errors: D
   pruneSubagentGraph(definitions, errors);
 };
 
-const markdownFiles = (dir: string) => {
+const markdownFiles = (dir: string): string[] => {
   if (!existsSync(dir)) {
     return [];
   }
 
-  return readdirSync(dir)
-    .filter((file) => file.endsWith(".md"))
-    .sort()
-    .map((file) => join(dir, file));
+  return readdirSync(dir, { withFileTypes: true })
+    .sort((left, right) => (left.name < right.name ? -1 : 1))
+    .flatMap((entry) => {
+      const path = join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        return markdownFiles(path);
+      }
+
+      return entry.isFile() && entry.name.endsWith(".md") ? [path] : [];
+    });
 };
 
 export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
@@ -160,6 +167,8 @@ export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
   const warnings: DefinitionError[] = [];
 
   dirs.forEach((dir) => {
+    const seen = new Map<string, string>();
+
     markdownFiles(dir.path).forEach((path) => {
       const parsed = parseDefinition(readFileSync(path, "utf8"), path, dir.source);
 
@@ -168,7 +177,15 @@ export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
         return;
       }
 
-      definitions.set(parsed.definition.name, parsed.definition);
+      const { name } = parsed.definition;
+      const earlier = seen.get(name);
+
+      if (earlier) {
+        warnings.push({ path, message: `agent "${name}" is also defined in ${earlier}; this file wins` });
+      }
+
+      seen.set(name, path);
+      definitions.set(name, parsed.definition);
 
       parsed.warnings.forEach((message) => {
         warnings.push({ path, message });
