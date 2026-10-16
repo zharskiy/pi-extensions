@@ -128,7 +128,7 @@ const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: stri
   const level =
     model?.reasoning === false
       ? theme.fg("dim", "thinking unavailable")
-      : `${theme.fg("dim", "thinking ")}${paintBold(COLORS.gold, thinking || "off")}`;
+      : `thinking ${paintBold(COLORS.gold, thinking || "off")}`;
 
   return `${paint(COLORS.gold, MODE_MARK)} ${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
 };
