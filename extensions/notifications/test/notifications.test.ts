@@ -383,7 +383,7 @@ describe("awaiting-input notification", () => {
     expect(host.terminalNotices).toEqual([notice]);
   });
 
-  it("the source clearing cancels it, and another source clearing does not", () => {
+  it("another source clearing does not cancel it", () => {
     const host = setup();
 
     waiting(host, "pi-questionnaire", true, "questionnaire");
@@ -391,15 +391,17 @@ describe("awaiting-input notification", () => {
     advance(6_000);
 
     expect(host.terminalNotices).toEqual([notice]);
+  });
 
-    const later = setup();
+  it("the source clearing cancels it", () => {
+    const host = setup();
 
-    waiting(later, "pi-questionnaire", true, "questionnaire");
+    waiting(host, "pi-questionnaire", true, "questionnaire");
     advance(3_000);
-    waiting(later, "pi-questionnaire", false);
+    waiting(host, "pi-questionnaire", false);
     advance(60_000);
 
-    expect(later.terminalNotices).toEqual([]);
+    expect(host.terminalNotices).toEqual([]);
   });
 
   it("holds the idle notification while waiting and re-arms it when waiting clears", () => {
@@ -469,16 +471,43 @@ describe("awaiting-input notification", () => {
     expect(host.terminalNotices).toEqual([notice, IDLE]);
   });
 
-  it("ignores malformed payloads and sends nothing with the off channel", () => {
+  it("notifies an overlapping wait and dialog once, then idles after both close", () => {
     const host = setup();
-    const off = setup("tui", { channel: "off" });
+
+    host.settle();
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    host.dialog("start", "confirm", "Allow?");
+    advance(6_000);
+
+    expect(host.terminalNotices).toEqual([{ message: "pi needs your input: Allow?", channel: "auto" }]);
+
+    host.dialog("end", "confirm");
+    advance(60_000);
+
+    expect(host.terminalNotices).toHaveLength(1);
+
+    waiting(host, "pi-questionnaire", false);
+    advance(20_000);
+
+    expect(host.terminalNotices.at(-1)).toEqual(IDLE);
+  });
+
+  it("ignores malformed payloads", () => {
+    const host = setup();
 
     host.emit(AWAITING_INPUT_CHANNEL, { source: "", waiting: true });
-    waiting(off, "pi-questionnaire", true, "questionnaire");
     advance(60_000);
 
     expect(host.terminalNotices).toEqual([]);
-    expect(off.terminalNotices).toEqual([]);
+  });
+
+  it("sends nothing for a waiting source with the off channel", () => {
+    const host = setup("tui", { channel: "off" });
+
+    waiting(host, "pi-questionnaire", true, "questionnaire");
+    advance(60_000);
+
+    expect(host.terminalNotices).toEqual([]);
   });
 });
 

@@ -9,7 +9,9 @@ import type { NotificationSettings } from "./settings.ts";
 
 const IDLE_TEXT = "pi is waiting for your input";
 
-const PI_DIALOG = "";
+const DIALOG = "dialog";
+
+const sourceKey = (source: string) => `source:${source}`;
 
 const dialogText = (title?: string) => (title ? `pi needs your input: ${title}` : "pi needs your input");
 
@@ -33,15 +35,15 @@ const slot = () => {
 export const createNotifications = (host: Host, settings: () => NotificationSettings) => {
   const sources = new Set<string>();
   const idle = slot();
-  const dialogTimer = slot();
+  const waitTimer = slot();
+  const waits = new Map<string, { title?: string; fired: boolean }>();
   let channel: NotifyChannel | undefined;
   let pending = false;
-  const waits = new Map<string, { title?: string; fired: boolean }>();
   let offKeys: (() => void) | undefined;
 
   const send = (text: string) => channel && host.ui.terminalNotify(text, channel);
 
-  const unfired = () => Array.from(waits.values()).some((wait) => !wait.fired);
+  const hasUnnotified = () => Array.from(waits.values()).some((wait) => !wait.fired);
 
   const fireIdle = () => {
     if (waits.size > 0) {
@@ -52,7 +54,7 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     send(IDLE_TEXT);
   };
 
-  const fireDialog = () => {
+  const fireWait = () => {
     const open = Array.from(waits.values());
     const latest = open.at(-1);
 
@@ -68,29 +70,29 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
 
   const armIdle = () => idle.arm(fireIdle, settings().idleDelayMs);
 
-  const armDialog = () => dialogTimer.arm(fireDialog, settings().dialogDelayMs);
+  const armWait = () => waitTimer.arm(fireWait, settings().dialogDelayMs);
 
-  const openDialog = (owner: string, title?: string) => {
+  const openWait = (owner: string, title?: string) => {
     if (!channel) {
       return;
     }
 
     waits.delete(owner);
     waits.set(owner, { title, fired: false });
-    armDialog();
+    armWait();
   };
 
-  const closeDialog = (owner: string) => {
+  const closeWait = (owner: string) => {
     if (!waits.delete(owner)) {
       return;
     }
 
-    if (unfired()) {
-      armDialog();
+    if (hasUnnotified()) {
+      armWait();
       return;
     }
 
-    dialogTimer.clear();
+    waitTimer.clear();
 
     if (waits.size === 0 && pending && sources.size === 0) {
       armIdle();
@@ -101,8 +103,8 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     pending = false;
     idle.clear();
 
-    if (unfired()) {
-      armDialog();
+    if (hasUnnotified()) {
+      armWait();
     }
   };
 
@@ -159,11 +161,11 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     }
 
     if (event.phase === "start") {
-      openDialog(PI_DIALOG, event.title);
+      openWait(DIALOG, event.title);
       return;
     }
 
-    closeDialog(PI_DIALOG);
+    closeWait(DIALOG);
   });
 
   host.subscribe(AWAITING_INPUT_CHANNEL, (data) => {
@@ -174,11 +176,11 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     }
 
     if (signal.waiting) {
-      openDialog(signal.source, signal.title);
+      openWait(sourceKey(signal.source), signal.title);
       return;
     }
 
-    closeDialog(signal.source);
+    closeWait(sourceKey(signal.source));
   });
 
   host.onSessionShutdown(() => {
@@ -186,7 +188,7 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     pending = false;
     waits.clear();
     idle.clear();
-    dialogTimer.clear();
+    waitTimer.clear();
     offKeys?.();
     offKeys = undefined;
   });
