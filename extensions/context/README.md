@@ -5,7 +5,7 @@ A pi extension that adds `/context`: a block printed into the transcript that sh
 ```
  Context Usage · 14:32
  ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁   <model name> · 61.2k/200k tokens (31%)
- ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: 87% last turn · 91% session
+ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: last turn 87% · session 91%
  ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁
  ⛀ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Estimated usage by category
  ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System prompt: 4.1k tokens (2.1%)
@@ -45,7 +45,7 @@ A pi extension that adds `/context`: a block printed into the transcript that sh
 
 - A request's hit rate is `cacheRead / (input + cacheRead + cacheWrite)`: the share of its prompt tokens read from the provider's cache. pi reports the four buckets without overlap for every provider, and its `/session` uses the same formula.
 - `last turn` is the last completed request on the current branch (aborted and failed requests skipped). `session` sums every request of the main session. Cache-warming reads, compaction and branch summaries and agents are left out, so it can differ a little from pi's `/session`, which counts warming reads and summaries too.
-- Shown only once the session reported a cache read or write; providers that never do show no cache line. A last request that missed the cache entirely in a session that had it shows `0% last turn` in the warning colour; pi's own cache-miss notices explain big misses when `showCacheMissNotices` is on.
+- Shown only once the session reported a cache read or write; providers that never do show no cache line. A last request that missed the cache entirely in a session that had it shows `last turn 0%` in the warning colour; pi's own cache-miss notices explain big misses when `showCacheMissNotices` is on.
 - Colours: success from 70 percent, warning from 30, error below. The footer extension shows the session figure as `cache 91%` on its first line.
 
 ## Main session only

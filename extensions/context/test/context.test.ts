@@ -47,7 +47,7 @@ describe("/context", () => {
     const lines = host.renderEntry(SNAPSHOT_ENTRY, host.entries[0].data);
 
     expect(lines[0]).toBe(" Context Usage · 14:32");
-    expect(lines[2]).toContain("Cache hit: 87% last turn · 91% session");
+    expect(lines[2]).toContain("Cache hit: last turn 87% · session 91%");
     expect(lines.at(-1)).toBe(" <app.tools.expand> to expand");
     expect(host.renderEntry(SNAPSHOT_ENTRY, host.entries[0].data, { expanded: true })).toContain(
       " └ ./AGENTS.md: 2.1k tokens",
@@ -73,7 +73,7 @@ describe("/context", () => {
     expect(host.entries).toEqual([]);
     expect(host.notices).toEqual([
       {
-        message: "Context: Test Model · 61.2k/200k tokens (31%) · Cache hit: 87% last turn · 91% session",
+        message: "Context: Test Model · 61.2k/200k tokens (31%) · Cache hit: last turn 87% · session 91%",
         level: undefined,
       },
     ]);

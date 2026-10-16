@@ -17,7 +17,7 @@ describe("renderSnapshot", () => {
     expect(render()).toEqual([
       " Context Usage · 14:32",
       " ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁   Test Model · 61.2k/200k tokens (31%)",
-      " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: 87% last turn · 91% session",
+      " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: last turn 87% · session 91%",
       " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁",
       " ⛀ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Estimated usage by category",
       " ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System prompt: 4.1k tokens (2.1%)",
@@ -111,14 +111,14 @@ describe("renderSnapshot", () => {
       tokenTheme,
     );
 
-    expect(lines[2]).toContain("Cache hit: <warning>0% last turn<dim> · <warning>50% session");
+    expect(lines[2]).toContain("Cache hit: last turn <warning>0%<dim> · session <warning>50%");
     expect(
       render({ lastRequest: usage(80, 20), session: usage(10, 90) }, { width: 300 }, tokenTheme)[2],
-    ).toContain("<error>20% last turn<dim> · <success>90% session");
+    ).toContain("last turn <error>20%<dim> · session <success>90%");
   });
 
   it("shows only the session figure before any valid request on the branch", () => {
-    expect(render({ lastRequest: undefined })[2]).toContain("Cache hit: 91% session");
+    expect(render({ lastRequest: undefined })[2]).toContain("Cache hit: session 91%");
   });
 
   it("colours each category from the theme", () => {
@@ -165,7 +165,7 @@ describe("renderSnapshot", () => {
       " ⛶ ⛶ ⛶ ⛝ ⛝",
       "",
       " Test Model · 61.2k/200k tokens (31%)",
-      " Cache hit: 87% last turn · 91% session",
+      " Cache hit: last turn 87% · session 91%",
     ]);
     expect(lines.every((line) => plainTheme.width(line) <= 45)).toBe(true);
     expect(render({}, { width: 63 })[1]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁");
@@ -235,7 +235,7 @@ describe("renderSnapshot", () => {
 
   it("summarises the snapshot in one line for modes without a transcript", () => {
     expect(summaryLine(snapshot())).toBe(
-      "Context: Test Model · 61.2k/200k tokens (31%) · Cache hit: 87% last turn · 91% session",
+      "Context: Test Model · 61.2k/200k tokens (31%) · Cache hit: last turn 87% · session 91%",
     );
   });
 });

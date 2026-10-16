@@ -126,10 +126,10 @@ export const cacheText = (theme: ThemeLike, cache: CacheFigures) => {
     cache.lastTurn === undefined
       ? []
       : [
-          `${hitText(theme, cache.lastTurn, cache.lastMissed ? "warning" : cacheTone(cache.lastTurn))} last turn`,
+          `last turn ${hitText(theme, cache.lastTurn, cache.lastMissed ? "warning" : cacheTone(cache.lastTurn))}`,
         ];
 
-  return `Cache hit: ${[...last, `${hitText(theme, cache.session, cacheTone(cache.session))} session`].join(theme.fg("dim", DOT))}`;
+  return `Cache hit: ${[...last, `session ${hitText(theme, cache.session, cacheTone(cache.session))}`].join(theme.fg("dim", DOT))}`;
 };
 
 const sideLines = (theme: ThemeLike, model: UsageModel) => [
