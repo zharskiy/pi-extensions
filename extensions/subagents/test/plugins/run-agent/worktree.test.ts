@@ -112,11 +112,11 @@ describe("createWorktree", () => {
   it("adds a worktree under .pi/worktrees on a pi-agents branch and maps a subdirectory cwd into it", async () => {
     const repo = createRepo();
     const cwd = join(repo, "src");
-    const result = await createWorktree(cwd, "explorer-ab12");
+    const result = await createWorktree(cwd, "scout-ab12");
     const branch = result.ok ? result.worktree.branch : "";
     const path = join(cwd, ".pi", "worktrees", branch.replace("pi-agents/", ""));
 
-    expect(branch).toMatch(/^pi-agents\/explorer-ab12-[0-9a-z]+$/);
+    expect(branch).toMatch(/^pi-agents\/scout-ab12-[0-9a-z]+$/);
     expect(result).toEqual({
       ok: true,
       worktree: { path, branch, base: git(repo, "rev-parse", "HEAD"), cwd: join(path, "src") },
@@ -133,7 +133,7 @@ describe("createWorktree", () => {
 
     mkdirSync(join(repo, ".pi", "worktrees"), { recursive: true });
     writeFileSync(join(repo, ".pi", "worktrees", ".gitignore"), "custom\n");
-    await createWorktree(repo, "explorer-ab12");
+    await createWorktree(repo, "scout-ab12");
 
     expect(readFileSync(join(repo, ".pi", "worktrees", ".gitignore"), "utf8")).toBe("custom\n");
   });
@@ -143,7 +143,7 @@ describe("createWorktree", () => {
 
     writeFileSync(join(repo, ".pi"), "not a folder\n");
 
-    const result = await createWorktree(repo, "explorer-ab12");
+    const result = await createWorktree(repo, "scout-ab12");
 
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.error).toContain("ENOTDIR");
@@ -352,8 +352,8 @@ describe("worktree agents", () => {
     const repo = createRepo();
     const { start, runtime, registry, services, host } = setup(repo, { maxConcurrent: 1 });
 
-    await start("explorer");
-    await start("explorer");
+    await start("scout");
+    await start("scout");
     await vi.waitFor(() => expect(runtime.children).toHaveLength(1));
 
     const [running, waiting] = registry.list();
@@ -361,12 +361,12 @@ describe("worktree agents", () => {
     await (services.require("runner") as Runner).stop(waiting.id, { immediate: true });
     await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(1));
 
-    expect(wakeTexts(host)[0]).toContain(`${waiting.id} (explorer) - stopped`);
+    expect(wakeTexts(host)[0]).toContain(`${waiting.id} (scout) - stopped`);
 
     host.settle();
     runtime.child(running.id).finish("Done.");
     await vi.waitFor(() => expect(wakeTexts(host)).toHaveLength(2));
-    await start("explorer");
+    await start("scout");
     await vi.waitFor(() => expect(runtime.children).toHaveLength(2));
   });
 
@@ -415,7 +415,7 @@ describe("worktree agents", () => {
   it("leaves agents without the field in the session cwd", async () => {
     const outside = tempDir("pi-subagents-plain-");
     const { run, runtime } = setup(outside);
-    const record = await run("explorer");
+    const record = await run("scout");
 
     expect(runtime.child(record.id).spec.cwd).toBe(outside);
   });

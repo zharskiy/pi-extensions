@@ -268,6 +268,7 @@ export type Host = {
   registerCommand(name: string, spec: CommandSpec): void;
   setMainPrompt(text: string): void;
   setPromptSection(name: string, text: string | undefined): void;
+  restrictTools(keep: readonly string[]): void;
   onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: () => void): void;
@@ -409,6 +410,7 @@ export type AgentRuntime = {
   readSession(file: string): SessionRecord;
   resolveModel(request: string | undefined): ModelResolution;
   defaultThinking(): string;
+  skillNames(): string[];
 };
 
 export const emptyUsage = (): UsageTotals => ({

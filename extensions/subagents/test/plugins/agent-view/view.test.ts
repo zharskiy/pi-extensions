@@ -183,7 +183,7 @@ describe("agent view", () => {
     const harness = setup();
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
 
-    await runAgent.execute({ agents: [{ agent: "explorer", task: "list agents" }] }, { update: () => {} });
+    await runAgent.execute({ agents: [{ agent: "scout", task: "list agents" }] }, { update: () => {} });
     await flush();
 
     const record = harness.registry.list()[0] as AgentRecord;
@@ -201,7 +201,7 @@ describe("agent view", () => {
     const lines = plain(view.render(100));
 
     expect(lines[0]).toBe("");
-    expect(lines[1]).toBe(" ✓ explorer › list agents");
+    expect(lines[1]).toBe(" ✓ scout › list agents");
     expect(lines[2]).toBe(` done · ${record.model} · id ${record.id}`);
     expect(lines[3]).toMatch(/^ \d+ tool uses? · /);
     expect(lines[4]).toBe(RULE(100));
@@ -744,10 +744,7 @@ describe("agent view with live agents", () => {
     const registry = harness.services.require("registry");
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
 
-    await runAgent.execute(
-      { agents: [{ agent: "explorer", task: "map the auth flow" }] },
-      { update: () => {} },
-    );
+    await runAgent.execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
     await flush();
     harness.host.settle();
 
@@ -772,7 +769,7 @@ describe("agent view with live agents", () => {
     const lines = plain(view.render(200));
 
     expect(second).toBeDefined();
-    expect(lines[1]).toMatch(/^ \S explorer #2 › /);
+    expect(lines[1]).toMatch(/^ \S scout #2 › /);
     expect(lines[2]?.endsWith(`id ${second}`)).toBe(true);
     expect(lines).toContain(` chain: ${first.id} → ${second} (2 sessions) · opened ${first.id}`);
     expect(lines.at(-2)).toContain("x to stop");
@@ -854,13 +851,13 @@ describe("agent view past sessions", () => {
   };
 
   it("opens from the manifest with the definition's limit", async () => {
-    const lines = await openFromManifest({ id: "explorer-dead", agent: "explorer" });
+    const lines = await openFromManifest({ id: "explorer-dead", agent: "scout" });
 
     expect(lines[3]).toMatch(/ · 2% ctx$/);
   });
 
   it("prefers the limit stored in the manifest, and shows no ctx without a known limit", async () => {
-    const stored = await openFromManifest({ id: "explorer-old", agent: "explorer", contextLimit: 70_000 });
+    const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
     const gone = await openFromManifest({ id: "removed-old", agent: "removed" });
 
     expect(stored[3]).toMatch(/ · 3% ctx$/);
@@ -870,7 +867,7 @@ describe("agent view past sessions", () => {
   it("shows persisted counters for agents known only from their manifest", async () => {
     const lines = await openFromManifest({
       id: "explorer-past",
-      agent: "explorer",
+      agent: "scout",
       toolCalls: 4,
       tokens: 12_300,
       turns: 3,
@@ -884,7 +881,7 @@ describe("agent view past sessions", () => {
   it("shows 0 tool uses for a manifest written before counters were stored", async () => {
     const lines = await openFromManifest({
       id: "explorer-older",
-      agent: "explorer",
+      agent: "scout",
       startedAt: 0,
       endedAt: 3_000,
     });
@@ -900,14 +897,14 @@ describe("agent view past sessions", () => {
     harness.runtime.sessions.set(file, fixture());
     writeManifest(harness, {
       id: "explorer-old1",
-      agent: "explorer",
+      agent: "scout",
       description: "old",
       state: "handoff",
       successorId: "explorer-old2",
     });
     writeManifest(harness, {
       id: "explorer-old2",
-      agent: "explorer",
+      agent: "scout",
       description: "old",
       state: "done",
       chainIndex: 2,
@@ -918,7 +915,7 @@ describe("agent view past sessions", () => {
     const { view } = await harness.openView("explorer-old1");
     const lines = plain(view.render(200));
 
-    expect(lines[1]).toContain("explorer #2 › ");
+    expect(lines[1]).toContain("scout #2 › ");
     expect(lines[2]?.endsWith("id explorer-old2")).toBe(true);
     expect(lines).toContain(" chain: explorer-old1 → explorer-old2 (2 sessions) · opened explorer-old1");
   });
@@ -1027,8 +1024,8 @@ describe("agent view codemode", () => {
 
 const ARGS = {
   agents: [
-    { agent: "explorer", task: "find callers" },
-    { agent: "explorer", task: "find tests" },
+    { agent: "scout", task: "find callers" },
+    { agent: "scout", task: "find tests" },
   ],
 };
 
@@ -1112,7 +1109,7 @@ describe("agent view nested run_agent calls", () => {
       agentStatusPlugin,
       agentViewPlugin,
     ]);
-    const args = { agents: [{ agent: "explorer", task: "find callers" }] };
+    const args = { agents: [{ agent: "scout", task: "find callers" }] };
     const session = parseSessionLines(
       [
         line({
@@ -1156,11 +1153,11 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" 2 background explorer agents launched");
+    expect(shown).toContain(" 2 background scout agents launched");
     expect(shown).not.toContain("to manage");
     expect(shown).not.toContain("to list");
-    expect(shown).toContain("explorer (find callers)");
-    expect(shown).toContain("explorer (find tests)");
+    expect(shown).toContain("scout (find callers)");
+    expect(shown).toContain("scout (find tests)");
     expect(shown).toContain("Initializing…");
   });
 
@@ -1168,7 +1165,7 @@ describe("agent view nested run_agent calls", () => {
     const { harness, running, nested, show, text } = await nestedSetup(true);
     const live = await text();
 
-    expect(live()).toContain(" 2 explorer agents launched");
+    expect(live()).toContain(" 2 scout agents launched");
     expect(live()).toContain("Initializing…");
 
     nested.forEach((record) => {
@@ -1178,14 +1175,14 @@ describe("agent view nested run_agent calls", () => {
     const result = await running;
 
     await flush();
-    expect(live()).toContain(" 2 explorer agents launched");
+    expect(live()).toContain(" 2 scout agents launched");
     expect(live()).toContain("Done · 0 tool uses");
 
     show(nestedSession({ ...ARGS, wait: true }, result), "written");
 
     const final = (await text())();
 
-    expect(final).toContain(" 2 explorer agents finished");
+    expect(final).toContain(" 2 scout agents finished");
     expect(final).toContain("Done · 0 tool uses");
   });
 
@@ -1196,7 +1193,7 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" 2 background explorer agents launched");
+    expect(shown).toContain(" 2 background scout agents launched");
     expect(shown).toContain("Initializing…");
   });
 });
@@ -1357,7 +1354,7 @@ describe("agent view request block", () => {
       join(dir, MANIFEST_FILE),
       JSON.stringify({
         id: "explorer-past",
-        agent: "explorer",
+        agent: "scout",
         description: "old",
         state: "done",
         sessionFile: file,

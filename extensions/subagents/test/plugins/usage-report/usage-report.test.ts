@@ -55,7 +55,7 @@ describe("usage report", () => {
   it("reports every agent under its own id, nested agents included", async () => {
     const { startGeneral, spawnFrom, reports } = setup();
     const child = await startGeneral();
-    const grandchild = await spawnFrom(child, "explorer");
+    const grandchild = await spawnFrom(child, "scout");
 
     child.usage = usageOf(0.1);
     grandchild.usage = usageOf(0.2);

@@ -13,6 +13,7 @@ import {
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
 import { errorText } from "../../components/format.ts";
+import { ALL } from "../../model/agent-schema.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -23,6 +24,7 @@ import {
   type AgentRegistry,
   type AgentRunner,
   allowlist,
+  chainLinks,
   chainTerminal,
   type HandoffService,
   isClosed,
@@ -57,6 +59,7 @@ export type BatchItem = {
   files?: string[];
   description?: string;
   model?: string;
+  skills?: string[];
 };
 
 type BatchOptions = { callerId: string; wait: boolean };
@@ -104,6 +107,14 @@ const ABORT_WAIT_MS = 5_000;
 
 const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
+const unique = (names: string[]) => [...new Set(names)];
+
+const skillsFor = (definition: AgentDefinition, item: BatchItem) => {
+  const own = allowlist(definition.skills);
+
+  return own ? unique(own.concat(item.skills ?? [])) : undefined;
+};
+
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
@@ -112,6 +123,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
   const launches = new Map<string, LaunchSlot>();
+  const spawned = new Map<string, number>();
   const userStopped = new Set<string>();
   const releasing = new Set<string>();
   const teardowns = new Map<string, Promise<void>>();
@@ -592,7 +604,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
         customTools: deps.toolsFor(record),
-        skills: allowlist(definition.skills),
+        skills: skillsFor(definition, slot.item),
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
       })
@@ -677,6 +689,46 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     );
   };
 
+  const skillError = (item: BatchItem, available: string[]) => {
+    const tools = (deps.definitions.get(item.agent) as AgentDefinition).tools;
+    const unknown = unique(item.skills ?? []).filter((name) => !available.includes(name));
+
+    if (unknown.length > 0) {
+      const listed = unknown.map((name) => `"${name}"`).join(", ");
+      const valid =
+        available.length > 0 ? `Available skills: ${available.join(", ")}.` : "This session has no skills.";
+
+      return `${item.agent}: unknown skill(s) ${listed}. ${valid}`;
+    }
+
+    if (item.skills?.length && tools !== ALL && !tools.includes("read")) {
+      return `${item.agent}: cannot use skills, its tools do not include read.`;
+    }
+
+    return undefined;
+  };
+
+  const chainRoot = (callerId: string) => {
+    const caller = deps.registry.get(callerId);
+
+    return caller ? chainLinks(deps.registry, caller)[0].id : callerId;
+  };
+
+  const capError = (callerId: string, count: number) => {
+    if (callerId === MAIN_CALLER) {
+      return undefined;
+    }
+
+    const cap = deps.settings.maxChildrenPerAgent;
+    const started = spawned.get(chainRoot(callerId)) ?? 0;
+
+    if (started + count <= cap) {
+      return undefined;
+    }
+
+    return `agent ${callerId} may start at most ${cap} agents per run and has started ${started}; nothing was started. Finish with what you have and list the rest under Open.`;
+  };
+
   const startBatch: Runner["startBatch"] = (items, options) => {
     const unknown = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
 
@@ -706,6 +758,21 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       throw new Error(`maximum agent depth ${deps.settings.maxDepth} reached`);
     }
 
+    const capped = capError(options.callerId, items.length);
+
+    if (capped) {
+      throw new Error(capped);
+    }
+
+    const available = items.some((item) => item.skills?.length) ? deps.runtime.skillNames() : [];
+    const skillErrors = items
+      .map((item) => skillError(item, available))
+      .filter((error) => error !== undefined);
+
+    if (skillErrors.length > 0) {
+      throw new Error(`${skillErrors.join("\n")} Nothing was started.`);
+    }
+
     const planned = items.map((item) => planModel(item, deps.definitions.get(item.agent) as AgentDefinition));
     const modelErrors = planned.filter((plan): plan is { error: string } => "error" in plan);
 
@@ -714,6 +781,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     const slots = (planned as ModelPlan[]).map((plan, index): LaunchSlot => ({ item: items[index], plan }));
+
+    if (options.callerId !== MAIN_CALLER) {
+      const root = chainRoot(options.callerId);
+
+      spawned.set(root, (spawned.get(root) ?? 0) + items.length);
+    }
+
     const batchId = newBatchId();
     const dir = agentsDirFor(deps.session());
 

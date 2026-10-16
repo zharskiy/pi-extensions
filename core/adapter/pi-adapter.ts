@@ -81,7 +81,98 @@ type HiddenCustom = { customType: string; content: string; display: false; detai
 
 const HELD_POLL_MS = 100;
 
-export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
+type RestrictedEntry = { removed: string[] };
+
+export type ToolRestriction = {
+  restrict(keep: readonly string[]): void;
+  reapply(): void;
+  reset(): void;
+  removed(): string[];
+};
+
+export const createToolRestriction = (
+  pi: ExtensionAPI,
+  state: HostState,
+  customType = "restricted-tools",
+): ToolRestriction => {
+  let kept: Set<string> | undefined;
+  let removed: string[] | undefined;
+
+  const stored = () => {
+    if (removed) {
+      return removed;
+    }
+
+    if (!state.ctx) {
+      return [];
+    }
+
+    const entries = state.ctx.sessionManager.getEntries() as {
+      type: string;
+      customType?: string;
+      data?: RestrictedEntry;
+    }[];
+    const latest = entries
+      .filter((entry) => entry.type === "custom" && entry.customType === customType)
+      .at(-1);
+
+    removed = latest?.data?.removed ?? [];
+
+    return removed;
+  };
+
+  const reapply = () => {
+    if (!kept || !state.ctx) {
+      return;
+    }
+
+    const keep = kept;
+    const active = pi.getActiveTools();
+    const dropped = active.filter((name) => !keep.has(name));
+
+    if (dropped.length === 0) {
+      return;
+    }
+
+    const next = [...new Set([...stored(), ...dropped])];
+
+    pi.setActiveTools(active.filter((name) => keep.has(name)));
+    const changed = next.length !== stored().length;
+
+    removed = next;
+
+    if (changed) {
+      pi.appendEntry<RestrictedEntry>(customType, { removed: next });
+    }
+  };
+
+  return {
+    restrict: (keep) => {
+      kept = new Set(keep);
+      reapply();
+    },
+    reapply,
+    reset: () => {
+      removed = undefined;
+    },
+    removed: stored,
+  };
+};
+
+export const parentTools = (pi: ExtensionAPI, restriction: Pick<ToolRestriction, "removed">) => {
+  const active = new Set([...pi.getActiveTools(), ...restriction.removed()]);
+
+  return pi
+    .getAllTools()
+    .filter((tool) => active.has(tool.name))
+    .map((tool) => ({ name: tool.name, path: tool.sourceInfo.path }));
+};
+
+export const createPiHost = (
+  pi: ExtensionAPI,
+  state: HostState,
+  restriction: ToolRestriction = createToolRestriction(pi, state),
+): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
@@ -177,6 +268,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_start", (event, ctx) => {
     capture(ctx);
+    restriction.reset();
     editor.sync(event.reason);
 
     const info = sessionInfo(ctx);
@@ -210,6 +302,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     editor.release();
     sections.release();
+    restriction.reset();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -225,6 +318,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     applyPromptSections(event.systemPromptOptions);
+    restriction.reapply();
   });
 
   pi.on("agent_start", (_event, ctx) => {
@@ -375,6 +469,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     setPromptSection: (name, text) => {
       sections.set(name, text);
     },
+    restrictTools: (keep) => {
+      restriction.restrict(keep);
+    },
     onSessionStart: (handler) => {
       startHandlers.push(handler);
     },
@@ -471,7 +568,8 @@ export const createPiExtension =
     }
 
     const state: HostState = { tools: new Map() };
-    const host = createPiHost(pi, state);
+    const restriction = createToolRestriction(pi, state, `${options.namespace}:restricted-tools`);
+    const host = createPiHost(pi, state, restriction);
 
     const runtime = createPiRuntime(
       {
@@ -483,14 +581,7 @@ export const createPiExtension =
             .getCommands()
             .filter((command) => command.source === "skill")
             .map((command) => ({ name: command.name.replace(/^skill:/, ""), path: command.sourceInfo.path })),
-        activeTools: () => {
-          const active = new Set(pi.getActiveTools());
-
-          return pi
-            .getAllTools()
-            .filter((tool) => active.has(tool.name))
-            .map((tool) => ({ name: tool.name, path: tool.sourceInfo.path }));
-        },
+        activeTools: () => parentTools(pi, restriction),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },
       { namespace: options.namespace, exclude: options.childExclude ?? [] },

@@ -20,6 +20,12 @@ export type Settings = {
   stopGraceSeconds: number;
   maxChainLength: number;
   disabledPlugins: string[];
+  delegateOnly: boolean;
+  delegateOnlyTools: string[];
+  maxChildrenPerAgent: number;
+  fetchTimeoutSeconds: number;
+  fetchMaxBytes: number;
+  fetchMaxChars: number;
 };
 
 const SETTINGS_FILE = "pi-subagents.json";
@@ -38,6 +44,12 @@ export const defaultSettings = (): Settings => ({
   stopGraceSeconds: 60,
   maxChainLength: 3,
   disabledPlugins: [],
+  delegateOnly: true,
+  delegateOnlyTools: ["read", "write", "questionnaire"],
+  maxChildrenPerAgent: 6,
+  fetchTimeoutSeconds: 20,
+  fetchMaxBytes: 5_000_000,
+  fetchMaxChars: 40_000,
 });
 
 const range = (min: number, max: number) => ({ type: "number", min, max }) as const;
@@ -56,6 +68,12 @@ const settingsSchema: SettingsSchema<Settings> = {
   stopGraceSeconds: range(0, 3_600),
   maxChainLength: range(1, 20),
   disabledPlugins: { type: "list", of: "plugin ids" },
+  delegateOnly: { type: "boolean" },
+  delegateOnlyTools: { type: "list", of: "tool names" },
+  maxChildrenPerAgent: range(0, 50),
+  fetchTimeoutSeconds: range(1, 300),
+  fetchMaxBytes: range(10_000, 100_000_000),
+  fetchMaxChars: range(1_000, 1_000_000),
 };
 
 const readUser = (agentDir: string) =>

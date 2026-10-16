@@ -366,5 +366,6 @@ export const createPiRuntime = (
     readSession: (file) => readSessionFile(file, recordEntry),
     resolveModel: (request) => resolveFromCatalog(parent.ctx(), request, defaultProvider()).resolution,
     defaultThinking: () => parent.thinking(),
+    skillNames: () => parent.skillFiles().map((skill) => skill.name),
   };
 };

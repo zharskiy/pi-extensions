@@ -105,7 +105,7 @@ describe("per-call model override", () => {
     const attempt = runAgent.execute(
       {
         agents: [
-          { agent: "explorer", task: "a" },
+          { agent: "scout", task: "a" },
           { agent: "reviewer", task: "b", model: "nova-6" },
         ],
       },
@@ -170,7 +170,7 @@ describe("per-call model override", () => {
     runtime.catalog.push(catalogModel("zeta/nova-6-luna"));
     runtime.preferences = { sessionProvider: "fake", defaultProvider: "zeta" };
 
-    await run([{ agent: "explorer", task: "a", model: "nova-6-luna" }]);
+    await run([{ agent: "scout", task: "a", model: "nova-6-luna" }]);
 
     expect(runtime.children[0].spec.model).toBe("zeta/nova-6-luna");
   });

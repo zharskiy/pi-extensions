@@ -90,7 +90,7 @@ export const spawnAgents = async (
   harness: Pick<ReturnType<typeof startPlugins>, "host" | "services">,
   count: number,
 ) => {
-  const agents = Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `job ${index}` }));
+  const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `job ${index}` }));
 
   await harness.host.tool<RunAgentParams, unknown>("run_agent").execute({ agents }, { update: () => {} });
   await flush();

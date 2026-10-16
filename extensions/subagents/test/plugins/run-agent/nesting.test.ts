@@ -72,12 +72,12 @@ describe("nested agents", () => {
 
     const description = childTool(child, "run_agent").description;
 
-    expect(description).toContain("- explorer:");
+    expect(description).toContain("- scout:");
     expect(description).toContain("- reviewer:");
     expect(description).not.toContain("- implementer:");
     expect(description).toContain("you run at depth 2; agents you start run at depth 3 of at most 3");
 
-    await runMain([{ agent: "explorer", task: "look" }]);
+    await runMain([{ agent: "scout", task: "look" }]);
 
     expect(runtime.children[1].spec.customTools).toEqual([]);
   });
@@ -94,23 +94,23 @@ describe("nested agents", () => {
     const { record, child } = await startGeneral();
 
     const started = await spawnFrom(child, [
-      { agent: "explorer", task: "find a" },
+      { agent: "scout", task: "find a" },
       { agent: "reviewer", task: "check b" },
     ]);
 
     expect(started.text).toContain("Started batch");
 
-    const [, explorer, reviewer] = registry.list();
+    const [, scout, reviewer] = registry.list();
 
-    expect([explorer.callerId, explorer.depth, reviewer.callerId]).toEqual([record.id, 3, record.id]);
-    expect(runtime.child(explorer.id).task).toContain(`Task from ${record.id} (agent id ${explorer.id})`);
+    expect([scout.callerId, scout.depth, reviewer.callerId]).toEqual([record.id, 3, record.id]);
+    expect(runtime.child(scout.id).task).toContain(`Task from ${record.id} (agent id ${scout.id})`);
 
     child.finish(`Started batch, waiting.`);
     await flush();
 
     expect(registry.get(record.id)?.state).toBe("running");
 
-    runtime.child(explorer.id).finish("a is in src/a.ts");
+    runtime.child(scout.id).finish("a is in src/a.ts");
     await flush();
 
     expect(child.wakes).toEqual([]);
@@ -138,7 +138,7 @@ describe("nested agents", () => {
     const { record, child } = await startGeneral();
 
     child.emit({ type: "tool_start", toolName: "run_agent" });
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
 
     expect(registry.get(record.id)?.activity).toBe("run_agent");
 
@@ -153,11 +153,11 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, runtime } = setup();
     const { record, child } = await startGeneral();
 
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
 
-    const explorer = registry.list()[1];
+    const scout = registry.list()[1];
 
-    runtime.child(explorer.id).finish("found a");
+    runtime.child(scout.id).finish("found a");
     await flush();
 
     expect(child.wakes).toEqual([]);
@@ -173,20 +173,20 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, runtime, host } = setup({ maxConcurrent: 1 });
     const { record, child } = await startGeneral();
 
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
 
-    const explorer = registry.list()[1];
+    const scout = registry.list()[1];
 
     expect(runtime.children).toHaveLength(1);
-    expect(explorer.state).toBe("queued");
+    expect(scout.state).toBe("queued");
 
-    child.finish("waiting for the explorer");
+    child.finish("waiting for the scout");
     await flush();
 
     expect(runtime.children).toHaveLength(2);
-    expect(registry.get(explorer.id)?.state).toBe("running");
+    expect(registry.get(scout.id)?.state).toBe("running");
 
-    runtime.child(explorer.id).finish("found a");
+    runtime.child(scout.id).finish("found a");
     await flush();
 
     expect(child.wakes).toHaveLength(1);
@@ -204,7 +204,7 @@ describe("nested agents", () => {
     const { child } = await startGeneral();
 
     const pending = childTool<RunAgentParams>(child, "run_agent").execute(
-      { agents: [{ agent: "explorer", task: "find a" }], wait: true },
+      { agents: [{ agent: "scout", task: "find a" }], wait: true },
       { update: () => {} },
     );
 
@@ -224,7 +224,7 @@ describe("nested agents", () => {
     const { record, child } = await startGeneral();
 
     void childTool<RunAgentParams>(child, "run_agent").execute(
-      { agents: [{ agent: "explorer", task: "find a" }], wait: true },
+      { agents: [{ agent: "scout", task: "find a" }], wait: true },
       { update: () => {} },
     );
     await flush();
@@ -234,7 +234,7 @@ describe("nested agents", () => {
 
     expect(registry.list().map((entry) => entry.state)).toEqual(["stopped", "stopped"]);
 
-    await runMain([{ agent: "explorer", task: "later" }]);
+    await runMain([{ agent: "scout", task: "later" }]);
 
     expect(registry.list()[2].state).toBe("running");
     expect(runtime.children).toHaveLength(3);
@@ -245,7 +245,7 @@ describe("nested agents", () => {
     const { child } = await startGeneral();
 
     const pending = childTool<RunAgentParams>(child, "run_agent").execute(
-      { agents: [{ agent: "explorer", task: "find a" }], wait: true },
+      { agents: [{ agent: "scout", task: "find a" }], wait: true },
       { update: () => {} },
     );
     await flush();
@@ -259,7 +259,7 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, host } = setup();
     const { child } = await startGeneral();
 
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
     await host.shutdown("quit");
 
     expect(registry.list().map((entry) => [entry.state, entry.error])).toEqual([
@@ -274,18 +274,18 @@ describe("nested agents", () => {
     const message = host.tool<{ id: string; message: string }, { delivery?: string }>("message_agent");
     const send = (text: string) => message.execute({ id: record.id, message: text }, { update: () => {} });
 
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
-    child.finish("waiting for the explorer");
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
+    child.finish("waiting for the scout");
     await flush();
 
-    const explorer = registry.list()[1];
+    const scout = registry.list()[1];
 
-    expect(registry.get(explorer.id)?.state).toBe("running");
+    expect(registry.get(scout.id)?.state).toBe("running");
     expect((await send("first")).details?.delivery).toBe("followUp");
     expect((await send("second")).details?.delivery).toBe("held");
     expect(child.messages).toEqual([]);
 
-    runtime.child(explorer.id).finish("found a");
+    runtime.child(scout.id).finish("found a");
     await flush();
 
     expect(child.messages.map((entry) => [entry.message.text, entry.delivery])).toEqual([
@@ -305,8 +305,8 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, runMain } = setup();
     const { child } = await startGeneral();
 
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
-    await runMain([{ agent: "explorer", task: "other" }]);
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
+    await runMain([{ agent: "scout", task: "other" }]);
 
     const [, own, foreign] = registry.list();
     const message = childTool<{ id: string; message: string }>(child, "message_agent");
@@ -322,14 +322,14 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, services } = setup();
     const { record, child } = await startGeneral();
 
-    await spawnFrom(child, [{ agent: "explorer", task: "find a" }]);
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
     await (services.require("runner") as Runner).stop(record.id, { immediate: true });
     await flush();
 
-    const explorer = registry.list()[1];
+    const scout = registry.list()[1];
 
     expect(registry.get(record.id)?.state).toBe("stopped");
-    expect(explorer.state).toBe("stopped");
+    expect(scout.state).toBe("stopped");
   });
 });
 
@@ -337,7 +337,7 @@ describe("pending nested calls", () => {
   it("shares a nested call's partial result with the main spec until the call returns", async () => {
     const { startGeneral, host, registry, runtime } = setup();
     const { record, child } = await startGeneral();
-    const params = { agents: [{ agent: "explorer", task: "find callers" }], wait: true };
+    const params = { agents: [{ agent: "scout", task: "find callers" }], wait: true };
     const running = childTool<RunAgentParams>(child, "run_agent").execute(params, {
       toolCallId: "ra1",
       update: () => {},
@@ -373,7 +373,7 @@ describe("pending nested calls", () => {
     const [first, second] = registry.list();
     const run = (id: string, task: string) =>
       childTool<RunAgentParams>(runtime.child(id), "run_agent").execute(
-        { agents: [{ agent: "explorer", task }], wait: true },
+        { agents: [{ agent: "scout", task }], wait: true },
         { toolCallId: "call_0", update: () => {} },
       );
 
@@ -395,7 +395,7 @@ describe("pending nested calls", () => {
     const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
 
     void main.execute(
-      { agents: [{ agent: "explorer", task: "look" }], wait: true },
+      { agents: [{ agent: "scout", task: "look" }], wait: true },
       { toolCallId: "ra1", update: () => {} },
     );
     await flush();

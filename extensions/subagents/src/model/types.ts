@@ -145,6 +145,10 @@ type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
+type FetchToolService = {
+  tool(): AnyToolSpec;
+};
+
 type AgentViewService = {
   open(id: string): Promise<void>;
 };
@@ -156,4 +160,5 @@ export type ServiceMap = {
   runner: AgentRunner;
   handoff: HandoffService;
   agentStatus: AgentStatusService;
+  fetchTool: FetchToolService;
 };

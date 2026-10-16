@@ -53,6 +53,8 @@ export type FakeHost = Host & {
   mainPrompt?: string;
   promptSections: Map<string, string>;
   promptSectionCalls: { name: string; text: string | undefined }[];
+  activeTools: Set<string>;
+  restrictCalls: string[][];
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
@@ -193,6 +195,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     commands: new Map(),
     promptSections: new Map(),
     promptSectionCalls: [],
+    activeTools: new Set(),
+    restrictCalls: [],
     entries: [],
     files: new Map(),
     sent: [],
@@ -401,6 +405,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     setMainPrompt: (text) => {
       host.mainPrompt = text;
+    },
+    restrictTools: (keep) => {
+      const kept = new Set(keep);
+
+      host.restrictCalls.push([...keep]);
+      host.activeTools = new Set([...host.activeTools].filter((name) => kept.has(name)));
     },
     setPromptSection: (name, text) => {
       host.promptSectionCalls.push({ name, text });
@@ -779,6 +789,7 @@ type FakeRuntime = AgentRuntime & {
   children: FakeChild[];
   sessions: Map<string, SessionRecord>;
   failNextSpawn?: string;
+  skills: string[];
   child(id: string): FakeChild;
 };
 
@@ -798,6 +809,8 @@ export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
     defaultThinking: () => "medium",
+    skills: [],
+    skillNames: () => [...runtime.skills],
     children: [],
     sessions: new Map(),
     spawn: async (spec) => {

@@ -1,10 +1,21 @@
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getAgentDir, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  type ExtensionFactory,
+  getAgentDir,
+  ModelRegistry,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe } from "vitest";
-import type { AgentRuntime, UsageTotals } from "../../adapter/contract.ts";
+import type { AgentRuntime, AnyToolSpec, UsageTotals } from "../../adapter/contract.ts";
+import { replaceMainPrompt } from "../../adapter/main-prompt.ts";
 import { createPiRuntime, type SkillFile } from "../../adapter/pi-child.ts";
+import { toPiTool } from "../../adapter/pi-tools.ts";
 
 export const LIVE_TIMEOUT_MS = 180_000;
 
@@ -188,4 +199,68 @@ export const costOf = (usages: Iterable<UsageTotals>) =>
 
 export const reportCost = (label: string, cost: number) => {
   console.log(`[live cost] ${label}: $${cost.toFixed(6)}`);
+};
+
+export type MainLikeOptions = {
+  root: string;
+  systemPrompt: string;
+  builtinTools: string[];
+  customTools: AnyToolSpec[];
+  skillPaths?: string[];
+};
+
+export const openMainLikeSession = async (options: MainLikeOptions) => {
+  const cwd = join(options.root, "project");
+  const { model, thinking } = liveModel();
+  const agentDir = getAgentDir();
+  const settingsManager = SettingsManager.inMemory({}, { projectTrusted: false });
+
+  const override: ExtensionFactory = (pi) => {
+    pi.on("before_agent_start", (event) => {
+      replaceMainPrompt(event.systemPromptOptions, options.systemPrompt);
+    });
+  };
+
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    noSkills: true,
+    additionalSkillPaths: options.skillPaths ?? [],
+    extensionFactories: [{ name: "main-like-prompt", factory: override }],
+  });
+
+  mkdirSync(cwd, { recursive: true });
+  await loader.reload();
+
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    modelRuntime: await ModelRuntime.create(),
+    model,
+    thinkingLevel: (thinking ?? "off") as never,
+    resourceLoader: loader,
+    settingsManager,
+    sessionManager: SessionManager.create(cwd, join(options.root, "sessions")),
+    tools: [...options.builtinTools, ...options.customTools.map((tool) => tool.name)],
+    customTools: options.customTools.map((tool) => toPiTool(tool)),
+  });
+  const counter = { settled: 0 };
+
+  session.subscribe((event) => {
+    if (event.type === "agent_settled") {
+      counter.settled += 1;
+    }
+  });
+
+  await session.bindExtensions({ mode: "print" });
+
+  const ask = async (text: string) => {
+    const target = counter.settled + 1;
+
+    await session.prompt(text, { expandPromptTemplates: false });
+    await waitUntil(() => counter.settled >= target, LIVE_TIMEOUT_MS, "the main-like turn to settle");
+  };
+
+  return { cwd, ask, close: () => session.dispose() };
 };

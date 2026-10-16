@@ -164,13 +164,13 @@ describe("agent definition parsing", () => {
 
   it("accepts a block list of subagents and treats model inherit as the main session's model", () => {
     const parsed = parseDefinition(
-      "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\ntools: all\nskills: all\nsubagents:\n  - explorer\n  - reviewer\n---\n",
+      "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\ntools: all\nskills: all\nsubagents:\n  - scout\n  - reviewer\n---\n",
       "/x/lead.md",
       "user",
     );
 
     expect(parsed.errors).toEqual([]);
-    expect(parsed.definition?.subagents).toEqual(["explorer", "reviewer"]);
+    expect(parsed.definition?.subagents).toEqual(["scout", "reviewer"]);
     expect(parsed.definition?.model).toBeUndefined();
   });
 });
@@ -336,19 +336,43 @@ describe("definition loading", () => {
     expect(result.errors).toEqual([{ path: join(dir, "broken.md"), message: "description is required" }]);
   });
 
-  it("ships the three role agents and general, the agent for work none of them fits", () => {
+  it("ships the eight agents with the design's field order and models", () => {
     const result = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
+    const names = ["fetch", "general", "image", "implementer", "plan", "reviewer", "scout", "shell"];
+    const fields = ["name", "description", "model", "limit", "tools", "skills", "subagents", "worktree"];
 
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
-    expect([...result.definitions.keys()].sort()).toEqual(["explorer", "general", "implementer", "reviewer"]);
+    expect([...result.definitions.keys()].sort()).toEqual(names);
+    expect(result.definitions.has("explorer")).toBe(false);
+    expect(readdirSync(join(PACKAGE_ROOT, "agents")).sort()).toEqual(names.map((name) => `${name}.md`));
+
+    names.forEach((name) => {
+      const head = readFileSync(join(PACKAGE_ROOT, "agents", `${name}.md`), "utf8").split("---")[1] as string;
+      const keys = head
+        .split("\n")
+        .map((line) => /^([a-z]+):/.exec(line)?.[1])
+        .filter((key): key is string => key !== undefined);
+
+      expect(keys).toEqual(fields);
+    });
+
     expect(
-      ["explorer", "reviewer", "implementer", "general"].map((name) => {
+      ["scout", "fetch", "shell", "image", "plan", "reviewer", "implementer", "general"].map((name) => {
         const definition = result.definitions.get(name);
 
         return `${definition?.model?.replace(/^[^/]+\/.+$/, "provider/id")}:${definition?.thinking}`;
       }),
-    ).toEqual(["provider/id:low", "provider/id:high", "provider/id:medium", "provider/id:medium"]);
+    ).toEqual([
+      "provider/id:low",
+      "provider/id:low",
+      "provider/id:low",
+      "provider/id:low",
+      "provider/id:high",
+      "provider/id:high",
+      "provider/id:medium",
+      "provider/id:medium",
+    ]);
 
     result.definitions.forEach((definition) => {
       expect(definition.limit).toBeGreaterThanOrEqual(5000);
@@ -361,13 +385,19 @@ describe("definition loading", () => {
       return [definition?.tools, definition?.skills, definition?.subagents];
     };
 
-    expect(grants("explorer")).toEqual([["read", "grep", "find", "ls"], [], []]);
-    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], []]);
-    expect(grants("implementer")).toEqual([["read", "grep", "find", "ls", "edit", "write", "bash"], [], []]);
-    expect(grants("general")).toEqual(["all", "all", ["explorer", "reviewer"]]);
-    expect(result.definitions.get("general")?.description).toMatch(
-      /^Use only when no other agent fits the work/,
-    );
+    expect(grants("scout")).toEqual([["read", "grep", "find", "ls"], [], []]);
+    expect(grants("plan")).toEqual([["read", "grep", "find", "ls"], [], ["scout"]]);
+    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], ["scout"]]);
+    expect(grants("implementer")).toEqual([
+      ["read", "grep", "find", "ls", "edit", "write", "bash"],
+      [],
+      ["scout"],
+    ]);
+    expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
+    expect(grants("shell")).toEqual([["bash", "read"], [], []]);
+    expect(grants("image")).toEqual([["read"], [], []]);
+    expect(grants("general")).toEqual(["all", "all", ["scout", "reviewer"]]);
+    expect(result.definitions.get("general")?.description).toMatch(/^Use only when no other agent fits/);
   });
 
   it("declares exactly the frontmatter schema's fields in each shipped file, in the schema's order", () => {
@@ -439,7 +469,7 @@ describe("list fields", () => {
     ["tools", "~", "~"],
     ["tools", "[read, web_*]", "web_*"],
     ["skills", "[docs, ./style]", "./style"],
-    ["subagents", "[explorer, -reviewer]", "-reviewer"],
+    ["subagents", "[scout, -reviewer]", "-reviewer"],
   ])("rejects %s entries that are not plain names", (key, value, shown) => {
     const parsed = parse({ [key]: value });
 
@@ -552,11 +582,15 @@ describe("prompt assembly", () => {
       Shared rules.",
         "# Agent: scout
 
-      You scout.
-
-      Output: your last message is your result. Make it complete and self-contained; your caller sees nothing else.",
+      You scout.",
       ]
     `);
+  });
+
+  it("ships a base prompt with the result contract", () => {
+    const base = readFileSync(join(PACKAGE_ROOT, "prompts", "base-system-prompt.md"), "utf8");
+
+    expect(base).toContain("Status: done | partial | blocked");
   });
 
   it("tells the agent that approvals are refused", () => {
@@ -568,8 +602,8 @@ describe("prompt assembly", () => {
     );
     const [first] = assemblePromptAppend(base, parsed.definition as NonNullable<typeof parsed.definition>);
 
-    expect(first).toContain("Nobody can approve anything while you run: confirmations are refused at once.");
-    expect(first).toContain("list the blocked step in your result");
+    expect(first).toContain("Confirmations are refused at once.");
+    expect(first).toContain("list the step under Open");
   });
 });
 

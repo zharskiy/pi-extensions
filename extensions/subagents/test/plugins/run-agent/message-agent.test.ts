@@ -19,8 +19,8 @@ const setup = async (maxConcurrent = 4) => {
   await runAgent.execute(
     {
       agents: [
-        { agent: "explorer", task: "one" },
-        { agent: "explorer", task: "two" },
+        { agent: "scout", task: "one" },
+        { agent: "scout", task: "two" },
       ],
     },
     { update: () => {} },
@@ -101,7 +101,7 @@ describe("message_agent", () => {
 
     await host
       .tool<RunAgentParams, unknown>("run_agent")
-      .execute({ agents: [{ agent: "explorer", task: "three" }] }, { update: () => {} });
+      .execute({ agents: [{ agent: "scout", task: "three" }] }, { update: () => {} });
     await flush();
 
     expect(registry.list()[2].state).toBe("running");
@@ -147,7 +147,7 @@ describe("message_agent", () => {
     const [record] = registry.list();
 
     const grandchild = registry.create({
-      agent: "explorer",
+      agent: "scout",
       description: "nested",
       callerId: record.id,
       depth: 3,

@@ -17,7 +17,7 @@ const setup = async (count = 1, overrides = {}) => {
   const messageAgent = harness.host.tool<MessageAgentParams, { delivery?: string }>("message_agent");
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner");
-  const agents = Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `task ${index}` }));
+  const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `task ${index}` }));
 
   await runAgent.execute({ agents }, { update: () => {} });
   await flush();

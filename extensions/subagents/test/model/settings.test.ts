@@ -77,6 +77,68 @@ describe("subagents settings", () => {
     expect(loaded.errors).toEqual([`${userFile}: doneLingerMs must be a number between 0 and 3600000`]);
   });
 
+  it("defaults the delegation and fetch settings", () => {
+    expect(defaultSettings()).toMatchObject({
+      delegateOnly: true,
+      delegateOnlyTools: ["read", "write", "questionnaire"],
+      maxChildrenPerAgent: 6,
+      fetchTimeoutSeconds: 20,
+      fetchMaxBytes: 5_000_000,
+      fetchMaxChars: 40_000,
+    });
+  });
+
+  it("accepts valid delegation and fetch settings", () => {
+    const { agentDir, cwd, userFile } = dirs();
+    const values = {
+      delegateOnly: false,
+      delegateOnlyTools: ["read"],
+      maxChildrenPerAgent: 0,
+      fetchTimeoutSeconds: 300,
+      fetchMaxBytes: 10_000,
+      fetchMaxChars: 1_000_000,
+    };
+
+    writeJson(userFile, values);
+
+    const loaded = loadSettings(agentDir, cwd, false);
+
+    expect(loaded.settings).toMatchObject(values);
+    expect(loaded.errors).toEqual([]);
+  });
+
+  it("drops out-of-range and wrong-type delegation and fetch settings with a warning", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, {
+      delegateOnly: "yes",
+      delegateOnlyTools: "read",
+      maxChildrenPerAgent: 51,
+      fetchTimeoutSeconds: 0,
+      fetchMaxBytes: 9_999,
+      fetchMaxChars: "lots",
+    });
+
+    const loaded = loadSettings(agentDir, cwd, false);
+
+    expect(loaded.settings).toMatchObject({
+      delegateOnly: true,
+      delegateOnlyTools: ["read", "write", "questionnaire"],
+      maxChildrenPerAgent: 6,
+      fetchTimeoutSeconds: 20,
+      fetchMaxBytes: 5_000_000,
+      fetchMaxChars: 40_000,
+    });
+    expect(loaded.errors).toEqual([
+      `${userFile}: delegateOnly must be true or false`,
+      `${userFile}: delegateOnlyTools must be a list of tool names`,
+      `${userFile}: maxChildrenPerAgent must be a number between 0 and 50`,
+      `${userFile}: fetchTimeoutSeconds must be a number between 1 and 300`,
+      `${userFile}: fetchMaxBytes must be a number between 10000 and 100000000`,
+      `${userFile}: fetchMaxChars must be a number between 1000 and 1000000`,
+    ]);
+  });
+
   it("merges defaults, the user file and a trusted project file, project last", () => {
     const { agentDir, cwd, userFile, projectFile } = dirs();
 

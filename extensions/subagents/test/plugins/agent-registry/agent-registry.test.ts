@@ -41,7 +41,7 @@ const setup = () => {
 
   const open = () =>
     registry.create({
-      agent: "explorer",
+      agent: "scout",
       description: "search",
       callerId: MAIN_CALLER,
       depth: 1,
@@ -66,7 +66,7 @@ const setupRunning = async (overrides = {}) => {
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
-    .execute({ agents: [{ agent: "explorer", task: "map the auth flow" }] }, { update: () => {} });
+    .execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
   await flush();
   harness.host.settle();
 

@@ -230,6 +230,61 @@ describe("pi adapter conformance", () => {
     }
   });
 
+  it("drops the tools a setActiveTools list leaves out and ignores unknown names", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+    const seen: { api?: pi.ExtensionAPI } = {};
+
+    try {
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "probe",
+            factory: (api) => {
+              seen.api = api;
+              api.registerTool(namedTool("probe_tool") as never);
+            },
+          },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const api = seen.api as pi.ExtensionAPI;
+      const before = api.getActiveTools();
+
+      api.setActiveTools(["read", "probe_tool", "no_such_tool"]);
+
+      expect(before).toEqual(expect.arrayContaining(["read", "bash", "probe_tool"]));
+      expect(api.getActiveTools().toSorted()).toEqual(["probe_tool", "read"]);
+      expect(api.getAllTools().map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(["bash", "probe_tool"]),
+      );
+
+      session.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("names only assistant event types pi has", () => {
     void (ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][]);
   });
