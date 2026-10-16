@@ -5,7 +5,7 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 ```
 
  150.1k · cache 91% · $4.00 · <model name> (1M context)
- Session total (agents included): 162.4k / $4.42
+ session total (agents included) 162.4k / $4.42
  my-project git:(feature-branch) • <session name>
  ▶▶ thinking high (shift+tab to cycle)
 
@@ -15,6 +15,7 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 
 ## What it does
 
+- Field labels (`cache`, `session total (agents included)`, `thinking`) are dim; the values keep their colours.
 - Line 1: the main session's context-window occupancy (warning colour above 70 percent, error above 90, `?` while pi does not know it, for example right after a compaction), the session's cache hit rate, the main session's cost, and the model name pi reports with its context window.
 - `cache 91%` is the share of the main session's prompt tokens read from the provider's cache, `cacheRead / (input + cacheRead + cacheWrite)` summed over every main-session request (agents, cache warming and compaction summaries left out), as an integer: success colour from 70 percent, warning from 30, error below. It stays hidden until the session reported any cache read or write (some providers never do), and it is the first segment dropped when the line does not fit the terminal. `/context` shows the same figure next to the last turn's.
 - Line 2: the cumulative chargeable tokens (`input + output + cacheRead + cacheWrite`) and cost of the whole session, the main session plus everything reported to the spending extension, such as subagents at every depth.

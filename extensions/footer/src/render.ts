@@ -19,7 +19,6 @@ const COLORS = {
   cyan: "\x1b[38;5;152m",
   blue: "\x1b[38;5;153m",
   yellow: "\x1b[38;5;223m",
-  mauve: "\x1b[38;5;182m",
 } as const;
 
 export type FooterState = {
@@ -110,7 +109,7 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   const cost = all.reduce((sum, spend) => sum + spend.cost, 0);
 
   return [
-    paint(COLORS.mauve, "Session total (agents included): "),
+    theme.fg("dim", "session total (agents included) "),
     paint(COLORS.green, formatTokens(tokens)),
     theme.fg("dim", " / "),
     paint(COLORS.gold, formatCost(cost)),
@@ -129,7 +128,7 @@ const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: stri
   const level =
     model?.reasoning === false
       ? theme.fg("dim", "thinking unavailable")
-      : paintBold(COLORS.gold, `thinking ${thinking || "off"}`);
+      : `${theme.fg("dim", "thinking ")}${paintBold(COLORS.gold, thinking || "off")}`;
 
   return `${paint(COLORS.gold, MODE_MARK)} ${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
 };

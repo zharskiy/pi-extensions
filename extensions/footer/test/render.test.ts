@@ -42,7 +42,7 @@ describe("renderFooter", () => {
     expect(render()).toEqual([
       "",
       " 150.1k · $4.00 · test-model (1M context)",
-      " Session total (agents included): 162.4k / $4.42",
+      " session total (agents included) 162.4k / $4.42",
       " my-project",
       " ▶▶ thinking high (shift+tab to cycle)",
       "",
@@ -55,7 +55,7 @@ describe("renderFooter", () => {
     expect(lines).toEqual([
       "",
       " 150.1k · $4.00 · test-model (1M context)",
-      " Session total (agents included): 162.4k / $4.42",
+      " session total (agents included) 162.4k / $4.42",
       " my-project git:(feature-branch) • refactor",
       " ▶▶ thinking high (shift+tab to cycle)",
       "",
@@ -121,6 +121,13 @@ describe("renderFooter", () => {
     expect(painted(12)).toContain("<error>12%");
   });
 
+  it("renders the session total and thinking labels dim and keeps the values coloured", () => {
+    const lines = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() });
+
+    expect(lines[2]).toContain("<dim>session total (agents included) ");
+    expect(lines.join("\n")).toContain("<dim>thinking ");
+  });
+
   it("drops the cache segment first when the line is too narrow", () => {
     const at = (width: number) =>
       plain(renderFooter(plainTheme, state({ cache: 91 }), { branch: null, statuses: new Map() }, width)[1]);
@@ -138,7 +145,7 @@ describe("renderFooter", () => {
   it("marks subscription sessions on the session total", () => {
     const sub = { ...totals, subscription: true };
 
-    expect(render({ totals: sub })[2]).toBe(" Session total (agents included): 162.4k / $4.42 (sub)");
+    expect(render({ totals: sub })[2]).toBe(" session total (agents included) 162.4k / $4.42 (sub)");
     expect(
       renderFooter(tokenTheme, state({ totals: sub }), { branch: null, statuses: new Map() })[2],
     ).toContain("<dim> (sub)");
