@@ -1,11 +1,8 @@
 import type { ContextSnapshot, FooterData, ModelInfo, ThemeLike } from "../../../core/adapter/contract.ts";
-import { cacheTone } from "../../../core/manager/cache.ts";
+import { cachePercentText } from "../../../core/manager/cache.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
-import { formatTokens } from "../../../core/manager/format.ts";
-
-const PAD = " ";
-
-const DOT = " · ";
+import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
+import { DOT, PAD } from "../../../core/manager/layout.ts";
 
 const MODE_MARK = "▶▶";
 
@@ -44,20 +41,6 @@ const formatCost = (cost: number) => {
   return cost < 0.01 ? `$${cost.toFixed(3)}` : `$${cost.toFixed(2)}`;
 };
 
-const formatWindow = (count: number) => {
-  if (count >= 1_000_000) {
-    const millions = count / 1_000_000;
-
-    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
-  }
-
-  if (count >= 1000) {
-    return `${Math.round(count / 1000)}k`;
-  }
-
-  return `${count}`;
-};
-
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
@@ -88,7 +71,7 @@ const modelText = (context: ContextSnapshot, model: ModelInfo | undefined) => {
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
-  `${theme.fg("dim", "cache ")}${theme.fg(cacheTone(percent), `${Math.round(percent)}%`)}`;
+  `${theme.fg("dim", "cache ")}${cachePercentText(theme, percent)}`;
 
 const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
   const join = (cache: number | undefined) =>

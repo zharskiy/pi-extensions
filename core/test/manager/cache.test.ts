@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { cacheHitPercent, cacheTone, reportedCache, sessionCacheHit } from "../../manager/cache.ts";
+import type { ThemeLike } from "../../adapter/contract.ts";
+import {
+  cacheHitPercent,
+  cachePercentText,
+  cacheTone,
+  reportedCache,
+  sessionCacheHit,
+} from "../../manager/cache.ts";
+import { plainTheme } from "../helpers/fakes.ts";
+
+const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
 
 describe("cache hit", () => {
   it("is the cache read share of the whole prompt, input, reads and writes", () => {
@@ -21,6 +31,14 @@ describe("cache hit", () => {
       "warning",
       "error",
       "error",
+    ]);
+  });
+
+  it("prints the rounded percentage in the colour of its rate", () => {
+    expect([91.4, 69.5, 12].map((percent) => cachePercentText(tokenTheme, percent))).toEqual([
+      "<success>91%",
+      "<warning>70%",
+      "<error>12%",
     ]);
   });
 });

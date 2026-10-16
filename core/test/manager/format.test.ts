@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorText, formatDuration, formatTokens } from "../../manager/format.ts";
+import { errorText, formatDuration, formatTokens, formatWindow } from "../../manager/format.ts";
 
 describe("shared formatters", () => {
   it("formats tokens as 999, 1.0k, 1.2M", () => {
@@ -10,6 +10,17 @@ describe("shared formatters", () => {
     expect(formatTokens(12_345)).toBe("12.3k");
     expect([999_949, 999_950, 999_999].map(formatTokens)).toEqual(["999.9k", "1.0M", "1.0M"]);
     expect([150_100, 1_000_000, 2_450_000].map(formatTokens)).toEqual(["150.1k", "1.0M", "2.5M"]);
+  });
+
+  it("formats context windows in whole thousands or tenths of a million", () => {
+    expect([512, 200_000, 128_500, 1_000_000, 1_048_576, 1_500_000].map(formatWindow)).toEqual([
+      "512",
+      "200k",
+      "129k",
+      "1M",
+      "1.0M",
+      "1.5M",
+    ]);
   });
 
   it("formats durations as seconds, minutes and hours", () => {

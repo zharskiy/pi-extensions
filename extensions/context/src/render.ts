@@ -1,135 +1,66 @@
-import type { ContextBreakdown, ContextPart, ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
-import { cacheTone } from "../../../core/manager/cache.ts";
+import type { ThemeLike } from "../../../core/adapter/contract.ts";
+import { cachePercentText } from "../../../core/manager/cache.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
+import { DOT, hintLines, PAD } from "../../../core/manager/layout.ts";
 import {
-  byTokens,
   type CacheFigures,
   type Category,
   type CategoryKey,
-  type Cell,
-  gridCells,
-  type Snapshot,
-  sumParts,
   type UsageModel,
   usageModel,
 } from "./breakdown.ts";
+import { detailLines, title } from "./details.ts";
+import { GAP, gridOf, legendGlyph } from "./grid.ts";
+import type { Snapshot } from "./snapshot.ts";
+import { figuresText, modelName } from "./summary.ts";
 
-const PAD = " ";
+type RenderOptions = { width: number; expanded: boolean; expandKey: string };
 
-const GAP = "   ";
-
-const DOT = " · ";
-
-const NARROW_MAX = 50;
-
-const WIDE_WINDOW = 1_000_000;
-
-const COLORS: Record<CategoryKey, ThemeToken> = {
-  systemPrompt: "syntaxComment",
-  systemTools: "syntaxType",
-  mcpTools: "syntaxFunction",
-  extensionTools: "syntaxKeyword",
-  memoryFiles: "syntaxString",
-  skills: "syntaxNumber",
-  messages: "accent",
-  free: "dim",
-  reserve: "warning",
+const LABELS: Record<CategoryKey, string> = {
+  systemPrompt: "System prompt",
+  systemTools: "System tools",
+  mcpTools: "MCP tools",
+  extensionTools: "Extension tools",
+  memoryFiles: "Memory files",
+  skills: "Skills",
+  messages: "Messages",
+  free: "Free space",
+  reserve: "Compaction reserve",
 };
-
-const GLYPHS = { used: "⛁", partial: "⛀", free: "⛶", reserve: "⛝" } as const;
-
-export type RenderOptions = { width: number; expanded: boolean; expandKey: string };
-
-export type GridLayout = { columns: number; rows: number; beside: boolean };
-
-const besideWidth = (columns: number, side: number) => PAD.length + columns * 2 - 1 + GAP.length + side;
-
-export const gridLayout = (window: number, width: number, side: number): GridLayout => {
-  if (width < NARROW_MAX) {
-    return { columns: 5, rows: 5, beside: false };
-  }
-
-  if (window >= WIDE_WINDOW && besideWidth(20, side) <= width) {
-    return { columns: 20, rows: 10, beside: true };
-  }
-
-  return { columns: 10, rows: 10, beside: besideWidth(10, side) <= width };
-};
-
-export const formatWindow = (count: number) => {
-  if (count >= 1_000_000 && count % 100_000 === 0) {
-    return `${count / 1_000_000}M`;
-  }
-
-  if (count >= 1_000 && count % 1_000 === 0) {
-    return `${count / 1_000}k`;
-  }
-
-  return formatTokens(count);
-};
-
-const glyphOf = (key: CategoryKey, partial: boolean) => {
-  if (key === "free") {
-    return GLYPHS.free;
-  }
-
-  if (key === "reserve") {
-    return GLYPHS.reserve;
-  }
-
-  return partial ? GLYPHS.partial : GLYPHS.used;
-};
-
-const paintCell = (theme: ThemeLike, cell: Cell) =>
-  theme.fg(COLORS[cell.key], glyphOf(cell.key, cell.partial));
-
-const gridRows = (theme: ThemeLike, cells: Cell[], columns: number) =>
-  Array.from({ length: Math.ceil(cells.length / columns) }, (_, row) =>
-    cells
-      .slice(row * columns, (row + 1) * columns)
-      .map((cell) => paintCell(theme, cell))
-      .join(" "),
-  );
 
 const percentText = (percent: number) => `${percent.toFixed(1)}%`;
 
-const legendLine = (theme: ThemeLike, category: Category, full: boolean) => {
-  const glyph = theme.fg(COLORS[category.key], glyphOf(category.key, false));
+const legendText = (theme: ThemeLike, category: Category, full: boolean) => {
+  const amount = formatTokens(category.tokens);
+  const share = `(${percentText(category.percent)})`;
 
-  if (category.key === "free") {
-    if (full) {
-      return `${glyph} ${theme.fg("warning", "Free space: 0 (0%)")}`;
-    }
-
-    return `${glyph} ${category.label}: ${formatTokens(category.tokens)} (${percentText(category.percent)})`;
+  if (category.key !== "free") {
+    return `${LABELS[category.key]}: ${amount} tokens ${share}`;
   }
 
-  return `${glyph} ${category.label}: ${formatTokens(category.tokens)} tokens (${percentText(category.percent)})`;
+  return full ? theme.fg("warning", `${LABELS.free}: 0 (0%)`) : `${LABELS.free}: ${amount} ${share}`;
 };
 
-export const headerText = (theme: ThemeLike, model: UsageModel) => {
-  const mark = model.estimated ? "~" : "";
-  const figures = `${mark}${formatTokens(model.used)}/${formatWindow(model.window)} tokens (${Math.round(model.percent)}%)`;
+const legendLine = (theme: ThemeLike, category: Category, full: boolean) =>
+  `${legendGlyph(theme, category.key)} ${legendText(theme, category, full)}`;
 
-  return [
-    theme.fg("text", model.model ?? "no model"),
-    figures,
+const headerText = (theme: ThemeLike, model: UsageModel) =>
+  [
+    theme.fg("text", modelName(model)),
+    figuresText(model),
     ...(model.estimated ? [theme.fg("dim", "estimated")] : []),
   ].join(theme.fg("dim", DOT));
-};
 
-const hitText = (theme: ThemeLike, percent: number, token: ThemeToken) =>
-  theme.fg(token, `${Math.round(percent)}%`);
+const lastTurnText = (theme: ThemeLike, lastTurn: number, missed: boolean) =>
+  missed ? theme.fg("warning", `${Math.round(lastTurn)}%`) : cachePercentText(theme, lastTurn);
 
-export const cacheText = (theme: ThemeLike, cache: CacheFigures) => {
+const cacheText = (theme: ThemeLike, cache: CacheFigures) => {
   const last =
     cache.lastTurn === undefined
       ? []
-      : [
-          `last turn ${hitText(theme, cache.lastTurn, cache.lastMissed ? "warning" : cacheTone(cache.lastTurn))}`,
-        ];
+      : [`last turn ${lastTurnText(theme, cache.lastTurn, cache.lastMissed)}`];
 
-  return `Cache hit: ${[...last, `session ${hitText(theme, cache.session, cacheTone(cache.session))}`].join(theme.fg("dim", DOT))}`;
+  return `Cache hit: ${[...last, `session ${cachePercentText(theme, cache.session)}`].join(theme.fg("dim", DOT))}`;
 };
 
 const sideLines = (theme: ThemeLike, model: UsageModel) => [
@@ -140,21 +71,21 @@ const sideLines = (theme: ThemeLike, model: UsageModel) => [
   ...model.categories.map((category) => legendLine(theme, category, model.full)),
 ];
 
+const indented = (line: string) => (line ? `${PAD}${line}` : line);
+
 const bodyLines = (theme: ThemeLike, model: UsageModel, width: number) => {
   const side = sideLines(theme, model);
-  const sideWidth = Math.max(...side.map((line) => theme.width(line)));
-  const shape = gridLayout(model.window, width, sideWidth);
-  const grid = gridRows(theme, gridCells(model, shape.columns * shape.rows), shape.columns);
+  const grid = gridOf(theme, model, width, Math.max(...side.map((line) => theme.width(line))));
 
-  if (!shape.beside) {
-    return [...grid.map((row) => `${PAD}${row}`), "", ...side.map((line) => (line ? `${PAD}${line}` : line))];
+  if (!grid.beside) {
+    return [...grid.rows.map(indented), "", ...side.map(indented)];
   }
 
-  const blank = " ".repeat(shape.columns * 2 - 1);
+  const blank = " ".repeat(grid.columns * 2 - 1);
 
-  return Array.from({ length: Math.max(grid.length, side.length) }, (_, index) => {
+  return Array.from({ length: Math.max(grid.rows.length, side.length) }, (_, index) => {
     const right = side[index] ?? "";
-    const left = grid[index];
+    const left = grid.rows[index];
 
     if (left === undefined) {
       return right ? `${PAD}${blank}${GAP}${right}` : "";
@@ -164,125 +95,6 @@ const bodyLines = (theme: ThemeLike, model: UsageModel, width: number) => {
   });
 };
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
-const branch = (theme: ThemeLike, text: string) => `${PAD}${theme.fg("dim", "└")} ${text}`;
-
-const title = (theme: ThemeLike, name: string, hint?: string) =>
-  `${PAD}${theme.bold(name)}${hint ? theme.fg("dim", `${DOT}${hint}`) : ""}`;
-
-const partLines = (theme: ThemeLike, parts: readonly ContextPart[], onDemand = false) =>
-  byTokens(parts).map((part) =>
-    branch(
-      theme,
-      onDemand && part.tokens === 0
-        ? `${part.name}: ${theme.fg("dim", "loaded on demand")}`
-        : `${part.name}: ${formatTokens(part.tokens)} tokens`,
-    ),
-  );
-
-type Section = {
-  name: string;
-  hint?: string;
-  parts: ContextPart[];
-  one: string;
-  many: string;
-  onDemand?: boolean;
-};
-
-const summaryOf = (section: Section) => {
-  const waiting = section.onDemand ? section.parts.filter((part) => part.tokens === 0).length : 0;
-
-  return [
-    plural(section.parts.length, section.one, section.many),
-    `${formatTokens(sumParts(section.parts))} tokens`,
-    ...(waiting > 0 ? [`${waiting} loaded on demand`] : []),
-  ].join(DOT);
-};
-
-const sectionLines = (theme: ThemeLike, section: Section, expanded: boolean) => {
-  if (section.parts.length === 0) {
-    return [];
-  }
-
-  const body = expanded
-    ? partLines(theme, section.parts, section.onDemand)
-    : [branch(theme, summaryOf(section))];
-
-  return [title(theme, section.name, section.hint), ...body];
-};
-
-const BUCKETS: { key: Exclude<keyof ContextBreakdown["messages"], "count">; label: string }[] = [
-  { key: "toolResults", label: "tool results" },
-  { key: "assistant", label: "assistant" },
-  { key: "user", label: "user" },
-  { key: "thinking", label: "thinking" },
-  { key: "toolCalls", label: "tool calls" },
-  { key: "other", label: "other" },
-];
-
-const messageLines = (theme: ThemeLike, messages: ContextBreakdown["messages"], expanded: boolean) => {
-  if (messages.count === 0) {
-    return [];
-  }
-
-  const buckets = BUCKETS.map(({ key, label }) => ({ label, tokens: messages[key] }))
-    .filter((bucket) => bucket.tokens > 0)
-    .sort((left, right) => right.tokens - left.tokens);
-
-  const body = expanded
-    ? buckets.map((bucket) => branch(theme, `${bucket.label}: ${formatTokens(bucket.tokens)} tokens`))
-    : [
-        branch(
-          theme,
-          [
-            plural(messages.count, "message", "messages"),
-            ...buckets.map((bucket) => `${bucket.label} ${formatTokens(bucket.tokens)}`),
-          ].join(DOT),
-        ),
-      ];
-
-  return [title(theme, "Messages"), ...body];
-};
-
-const detailLines = (theme: ThemeLike, breakdown: ContextBreakdown, expanded: boolean) => [
-  ...sectionLines(
-    theme,
-    { name: "Memory files", hint: "AGENTS.md", parts: breakdown.memoryFiles, one: "file", many: "files" },
-    expanded,
-  ),
-  ...sectionLines(
-    theme,
-    { name: "Skills", hint: "/skill:<name>", parts: breakdown.skills, one: "skill", many: "skills" },
-    expanded,
-  ),
-  ...sectionLines(
-    theme,
-    {
-      name: "MCP tools",
-      hint: "/mcp",
-      parts: breakdown.tools.mcp,
-      one: "tool",
-      many: "tools",
-      onDemand: true,
-    },
-    expanded,
-  ),
-  ...sectionLines(
-    theme,
-    { name: "Extension tools", parts: breakdown.tools.extension, one: "tool", many: "tools" },
-    expanded,
-  ),
-  ...(expanded
-    ? sectionLines(
-        theme,
-        { name: "System tools", parts: breakdown.tools.builtin, one: "tool", many: "tools" },
-        expanded,
-      )
-    : []),
-  ...messageLines(theme, breakdown.messages, expanded),
-];
-
 const twoDigits = (value: number) => `${value}`.padStart(2, "0");
 
 const clockText = (timestamp: number) => {
@@ -291,48 +103,35 @@ const clockText = (timestamp: number) => {
   return `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
 };
 
-const hintLine = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions) => {
+const overflowLines = (theme: ThemeLike, model: UsageModel) =>
+  model.overflow > 0
+    ? [
+        `${PAD}${theme.fg("error", `Context exceeds the window by ${formatTokens(model.overflow)} tokens${DOT}/compact`)}`,
+      ]
+    : [];
+
+const toggleLines = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions) => {
   if (snapshot.expandedByDefault) {
     return [];
   }
 
-  return [`${PAD}${theme.fg("dim", `${options.expandKey} to ${options.expanded ? "collapse" : "expand"}`)}`];
+  return hintLines(
+    theme,
+    [`${options.expandKey} to ${options.expanded ? "collapse" : "expand"}`],
+    options.width,
+  );
 };
 
 export const renderSnapshot = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions): string[] => {
   const model = usageModel(snapshot);
-  const expanded = options.expanded || snapshot.expandedByDefault;
-  const details = detailLines(theme, snapshot.breakdown, expanded);
-  const overflow =
-    model.overflow > 0
-      ? [
-          `${PAD}${theme.fg("error", `Context exceeds the window by ${formatTokens(model.overflow)} tokens${DOT}/compact`)}`,
-        ]
-      : [];
+  const details = detailLines(theme, snapshot.breakdown, options.expanded || snapshot.expandedByDefault);
   const stamp = snapshot.timestamp > 0 ? clockText(snapshot.timestamp) : undefined;
+  const footer = details.length > 0 ? ["", ...details, ...toggleLines(theme, snapshot, options)] : [];
 
   return [
     title(theme, "Context Usage", stamp),
     ...bodyLines(theme, model, options.width),
-    ...overflow,
-    ...(details.length > 0 ? ["", ...details] : []),
-    ...(details.length > 0 ? hintLine(theme, snapshot, options) : []),
-  ].map((line) => theme.truncate(line, options.width));
-};
-
-const plainText: ThemeLike = {
-  fg: (_token, text) => text,
-  bold: (text) => text,
-  width: (text) => text.length,
-  truncate: (text) => text,
-  wrap: (text) => [text],
-};
-
-export const summaryLine = (snapshot: Snapshot) => {
-  const model = usageModel(snapshot);
-
-  return [
-    `Context: ${headerText(plainText, model)}`,
-    ...(model.cache ? [cacheText(plainText, model.cache)] : []),
-  ].join(DOT);
+    ...overflowLines(theme, model),
+    ...footer,
+  ];
 };

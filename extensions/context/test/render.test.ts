@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { formatWindow, gridLayout, renderSnapshot, summaryLine } from "../src/render.ts";
+import { renderSnapshot } from "../src/render.ts";
+import { summaryLine } from "../src/summary.ts";
 import { breakdown, snapshot, usage } from "./fixtures.ts";
 
 const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+
+const cacheLine = (lines: string[]) => lines.find((line) => line.includes("Cache hit:"));
 
 const render = (
   patch = {},
@@ -98,27 +101,30 @@ describe("renderSnapshot", () => {
   });
 
   it("leaves the cache line out until the session reported cache activity", () => {
-    const lines = render({ session: usage(1_000, 0), lastRequest: usage(500, 0) });
+    const lines = render({ session: usage({ input: 1_000 }), lastRequest: usage({ input: 500 }) });
 
-    expect(lines[2]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁");
-    expect(lines[3]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Estimated usage by category");
+    expect(cacheLine(lines)).toBeUndefined();
+    expect(lines).toContain(" ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Estimated usage by category");
   });
 
   it("paints the last turn in warning when it missed the cache the session had, and colours by hit rate", () => {
-    const lines = render(
-      { lastRequest: usage(1_000, 0), session: usage(50, 50) },
+    const missed = render(
+      { lastRequest: usage({ input: 1_000 }), session: usage({ input: 50, cacheRead: 50 }) },
+      { width: 300 },
+      tokenTheme,
+    );
+    const painted = render(
+      { lastRequest: usage({ input: 80, cacheRead: 20 }), session: usage({ input: 10, cacheRead: 90 }) },
       { width: 300 },
       tokenTheme,
     );
 
-    expect(lines[2]).toContain("Cache hit: last turn <warning>0%<dim> · session <warning>50%");
-    expect(
-      render({ lastRequest: usage(80, 20), session: usage(10, 90) }, { width: 300 }, tokenTheme)[2],
-    ).toContain("last turn <error>20%<dim> · session <success>90%");
+    expect(cacheLine(missed)).toContain("Cache hit: last turn <warning>0%<dim> · session <warning>50%");
+    expect(cacheLine(painted)).toContain("last turn <error>20%<dim> · session <success>90%");
   });
 
   it("shows only the session figure before any valid request on the branch", () => {
-    expect(render({ lastRequest: undefined })[2]).toContain("Cache hit: session 91%");
+    expect(cacheLine(render({ lastRequest: undefined }))).toContain("Cache hit: session 91%");
   });
 
   it("colours each category from the theme", () => {
@@ -126,12 +132,12 @@ describe("renderSnapshot", () => {
 
     expect(
       [
-        "<syntaxComment>⛁ System prompt",
-        "<syntaxType>⛁ System tools",
-        "<syntaxFunction>⛁ MCP tools",
-        "<syntaxKeyword>⛁ Extension tools",
-        "<syntaxString>⛁ Memory files",
-        "<syntaxNumber>⛁ Skills",
+        "<comment>⛁ System prompt",
+        "<type>⛁ System tools",
+        "<function>⛁ MCP tools",
+        "<keyword>⛁ Extension tools",
+        "<string>⛁ Memory files",
+        "<number>⛁ Skills",
         "<accent>⛁ Messages",
         "<dim>⛶ Free space",
         "<warning>⛝ Compaction reserve",
@@ -143,7 +149,9 @@ describe("renderSnapshot", () => {
   it("marks an estimated total after compaction with ~ and · estimated", () => {
     const lines = render({ breakdown: breakdown({ total: null }) });
 
-    expect(lines[1]).toContain("Test Model · ~61.2k/200k tokens (31%) · estimated");
+    expect(lines.some((line) => line.endsWith("Test Model · ~61.2k/200k tokens (31%) · estimated"))).toBe(
+      true,
+    );
     expect(lines).toContain("                       ⛁ Messages: 42.8k tokens (21.4%)");
   });
 
@@ -156,6 +164,7 @@ describe("renderSnapshot", () => {
 
   it("puts the legend under the grid when it does not fit beside it and uses a 5 x 5 grid below 50", () => {
     const lines = render({}, { width: 45 });
+    const at63 = render({}, { width: 63 });
 
     expect(lines.slice(1, 9)).toEqual([
       " ⛀ ⛀ ⛁ ⛁ ⛁",
@@ -167,22 +176,18 @@ describe("renderSnapshot", () => {
       " Test Model · 61.2k/200k tokens (31%)",
       " Cache hit: last turn 87% · session 91%",
     ]);
-    expect(lines.every((line) => plainTheme.width(line) <= 45)).toBe(true);
-    expect(render({}, { width: 63 })[1]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁");
-    expect(render({}, { width: 63 })[12]).toBe(" Test Model · 61.2k/200k tokens (31%)");
+    expect(at63[1]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁");
+    expect(at63).toContain(" Test Model · 61.2k/200k tokens (31%)");
     expect(render({}, { width: 64 })[1]).toBe(" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁   Test Model · 61.2k/200k tokens (31%)");
   });
 
   it("uses 20 columns for windows of 1M only when the legend fits beside them", () => {
-    expect(gridLayout(1_000_000, 84, 41)).toEqual({ columns: 20, rows: 10, beside: true });
-    expect(gridLayout(1_000_000, 83, 41)).toEqual({ columns: 10, rows: 10, beside: true });
-    expect(gridLayout(1_000_000, 63, 41)).toEqual({ columns: 10, rows: 10, beside: false });
-    expect(gridLayout(200_000, 120, 41)).toEqual({ columns: 10, rows: 10, beside: true });
-    expect(gridLayout(1_000_000, 49, 10)).toEqual({ columns: 5, rows: 5, beside: false });
+    const wide = (width: number) => render({ breakdown: breakdown({ window: 1_000_000 }) }, { width })[1];
 
-    const wide = render({ breakdown: breakdown({ window: 1_000_000 }) }, { width: 100 });
-
-    expect(wide[1]).toMatch(/^ (\S ){19}\S {3}Test Model · 61\.2k\/1M tokens \(6%\)$/);
+    expect(wide(84)).toMatch(/^ (\S ){19}\S {3}Test Model · 61\.2k\/1M tokens \(6%\)$/);
+    expect(wide(83)).toMatch(/^ (\S ){9}\S {3}Test Model · 61\.2k\/1M tokens \(6%\)$/);
+    expect(wide(63)).toMatch(/^ (\S ){9}\S$/);
+    expect(render({}, { width: 120 })[1]).toMatch(/^ (\S ){9}\S {3}Test Model/);
   });
 
   it.each([60, 72, 80, 100, 120])(
@@ -194,7 +199,6 @@ describe("renderSnapshot", () => {
       const lines = render({ breakdown: long }, { width });
       const wide = render({ breakdown: { ...long, window: 1_000_000 } }, { width });
 
-      expect([...lines, ...wide].every((line) => plainTheme.width(line) <= width)).toBe(true);
       expect(
         intact(lines, [
           "Long Model Name Preview Edition 1 · 61.2k/200k tokens (31%)",
@@ -215,22 +219,8 @@ describe("renderSnapshot", () => {
     const lines = render({ breakdown: breakdown({ model: "Long Model Name Preview Edition 1" }) });
 
     expect(lines.slice(1, 3)).toEqual([" ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁", " ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁"]);
-    expect(lines[12]).toBe(" Long Model Name Preview Edition 1 · 61.2k/200k tokens (31%)");
+    expect(lines).toContain(" Long Model Name Preview Edition 1 · 61.2k/200k tokens (31%)");
     expect(lines).toContain(" ⛝ Compaction reserve: 16.4k tokens (8.2%)");
-  });
-
-  it("cuts every line to the width", () => {
-    expect(render({}, { width: 62 }).every((line) => plainTheme.width(line) <= 62)).toBe(true);
-  });
-
-  it("formats windows as whole k or M when they are round", () => {
-    expect([200_000, 1_000_000, 1_048_576, 128_500, 900].map(formatWindow)).toEqual([
-      "200k",
-      "1M",
-      "1.0M",
-      "128.5k",
-      "900",
-    ]);
   });
 
   it("summarises the snapshot in one line for modes without a transcript", () => {

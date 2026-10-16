@@ -121,11 +121,18 @@ describe("renderFooter", () => {
     expect(painted(12)).toContain("<error>12%");
   });
 
-  it("renders the session total label dim, paints the thinking label and level in one bold gold span and keeps the values coloured", () => {
-    const lines = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() });
+  it("renders the session total label dim before its values", () => {
+    const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[2];
 
-    expect(lines[2]).toContain("<dim>session total (agents included) ");
-    expect(lines[4]).toContain("\x1b[1m\x1b[38;5;186mthinking high\x1b[0m");
+    expect(plain(line)).toBe(" <dim>session total (agents included) 162.4k<dim> / $4.42");
+  });
+
+  it("paints the thinking label and its level in one bold span", () => {
+    const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[4];
+
+    const bold = line.slice(line.indexOf("\x1b[1m"));
+
+    expect(plain(bold.slice(0, bold.indexOf("\x1b[0m")))).toBe("thinking high");
   });
 
   it("drops the cache segment first when the line is too narrow", () => {

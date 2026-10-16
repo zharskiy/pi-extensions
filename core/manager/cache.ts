@@ -1,4 +1,6 @@
-export type PromptUsage = { input: number; cacheRead: number; cacheWrite: number };
+import type { PromptTokens, ThemeLike } from "../adapter/contract.ts";
+
+type PromptUsage = Pick<PromptTokens, "input" | "cacheRead" | "cacheWrite">;
 
 export type CacheTone = "success" | "warning" | "error";
 
@@ -20,3 +22,6 @@ export const cacheTone = (percent: number): CacheTone => {
 
   return percent >= 30 ? "warning" : "error";
 };
+
+export const cachePercentText = (theme: ThemeLike, percent: number) =>
+  theme.fg(cacheTone(percent), `${Math.round(percent)}%`);

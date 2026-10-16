@@ -1,21 +1,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  buildBreakdown,
-  classifyTools,
-  contextHost,
-  messageBuckets,
-  reserveOf,
-  sectionsOfPrompt,
-  splitSections,
-  toolKind,
-  toolTokens,
-} from "../../adapter/pi-context.ts";
+import { contextHost } from "../../adapter/pi-context.ts";
 import type { HostState } from "../../adapter/pi-ui.ts";
 
 const offlineModel = {
@@ -87,133 +76,26 @@ const SKILLS = [
   "</skills>",
 ].join("\n");
 
-describe("pi context helpers", () => {
-  it("maps project_context to memory files per file, skills per skill and the rest to the system prompt", () => {
-    const sections = new Map([
-      ["preamble", "p".repeat(40)],
-      ["project_context", MEMORY],
-      ["skills", SKILLS],
-    ]);
-    const split = splitSections(sections);
+const source = (path: string) => ({ path, source: "local", scope: "temporary", origin: "top-level" });
 
-    expect(split.memoryFiles.map((part) => part.name)).toEqual([
-      "/repo/AGENTS.md",
-      "/home/me/.pi/agent/AGENTS.md",
-    ]);
-    expect(split.memoryFiles[0].tokens).toBeGreaterThan(100);
-    expect(split.skills.map((part) => part.name)).toEqual(["code & style"]);
-
-    const all = Array.from(sections.values()).reduce((sum, text) => sum + Math.ceil(text.length / 4), 0);
-    const parts = [...split.memoryFiles, ...split.skills].reduce((sum, part) => sum + part.tokens, 0);
-
-    expect(split.systemPrompt).toBe(all - parts);
-  });
-
-  it("keeps a section it cannot split as one row", () => {
-    expect(
-      splitSections(new Map([["project_context", "<project_context>\nfree text\n</project_context>"]]))
-        .memoryFiles,
-    ).toEqual([{ name: "project context", tokens: 12 }]);
-  });
-
-  it("parses the memory and skills sections out of the rendered prompt", () => {
-    const sections = sectionsOfPrompt(["intro", MEMORY, SKILLS, "<cwd>\n/repo\n</cwd>"].join("\n\n"));
-
-    expect(Array.from(sections.keys())).toEqual(["project_context", "skills", "prompt"]);
-    expect(sections.get("project_context")).toBe(MEMORY);
-    expect(sections.get("prompt")).toContain("<cwd>");
-  });
-
-  it("classifies tools by source path and lists deferred MCP tools at zero", () => {
-    expect(
-      ["builtin:mcp", "builtin:read", "builtin:tool-search", "/x/index.ts", undefined].map(toolKind),
-    ).toEqual(["mcp", "builtin", "builtin", "extension", "extension"]);
-
-    const read = { name: "read", description: "Read", parameters: {} };
-    const tools = classifyTools(
-      [
-        read,
-        { name: "mcp_a", description: "", parameters: {} },
-        { name: "mine", description: "", parameters: {} },
-      ],
-      [
-        { name: "read", path: "builtin:read", exposure: "direct" },
-        { name: "mcp_a", path: "builtin:mcp", exposure: "direct" },
-        { name: "mcp_b", path: "builtin:mcp", exposure: "deferred" },
-        { name: "mcp_c", path: "builtin:mcp", exposure: "hidden" },
-        { name: "mine", path: "/ext/index.ts", exposure: "direct" },
-      ],
-    );
-
-    expect(tools.builtin).toEqual([{ name: "read", tokens: toolTokens(read) }]);
-    expect(tools.mcp.map((part) => part.name)).toEqual(["mcp_a", "mcp_b"]);
-    expect(tools.mcp[1].tokens).toBe(0);
-    expect(tools.extension.map((part) => part.name)).toEqual(["mine"]);
-  });
-
-  it("buckets messages by role and block type with pi's estimate, skipping system messages", () => {
-    const buckets = messageBuckets([
-      { role: "system", content: "s".repeat(4_000) },
-      { role: "user", content: "u".repeat(40), timestamp: 0 },
-      assistant(usage(1, 0, 0), [
-        { type: "text", text: "a".repeat(80) },
-        { type: "thinking", thinking: "t".repeat(400) },
-        { type: "toolCall", id: "1", name: "bash", arguments: { command: "ls" } },
-      ]),
-      {
-        role: "toolResult",
-        toolCallId: "1",
-        toolName: "bash",
-        content: [{ type: "text", text: "r".repeat(800) }],
-      },
-      { role: "custom", customType: "x", content: "c".repeat(8), display: true, timestamp: 0 },
-    ]);
-
-    expect(buckets).toEqual({
-      count: 4,
-      user: 10,
-      assistant: 20,
-      thinking: 100,
-      toolCalls: pi.estimateTokens(
-        assistant(usage(1, 0, 0), [
-          { type: "toolCall", id: "1", name: "bash", arguments: { command: "ls" } },
-        ]) as never,
-      ),
-      toolResults: 200,
-      other: 2,
-    });
-  });
-
-  it("reserves the compaction reserve only while compaction is on, with model overrides", () => {
-    const model = { provider: "acme", id: "m" };
-
-    expect(reserveOf(undefined, model)).toBe(pi.DEFAULT_COMPACTION_SETTINGS.reserveTokens);
-    expect(reserveOf({ enabled: false, reserveTokens: 1 }, model)).toBe(0);
-    expect(reserveOf({ reserveTokens: 2_000 }, model)).toBe(2_000);
-    expect(
-      reserveOf({ reserveTokens: 2_000, modelOverrides: { "acme/m": { reserveTokens: 3_000 } } }, model),
-    ).toBe(3_000);
-  });
+const toolInfo = (name: string, path: string, exposure = "direct") => ({
+  name,
+  description: name.toUpperCase(),
+  parameters: {},
+  exposure,
+  sourceInfo: source(path),
 });
 
-const fakeApi = (tools: pi.ToolInfo[] = [], active: string[] = []) => {
-  const renderers = new Map<string, pi.EntryRenderer>();
-
-  return {
-    renderers,
-    api: {
-      getAllTools: () => tools,
-      getActiveTools: () => active,
-      getSettings: () => ({ compaction: { reserveTokens: 1_000 } }),
-      registerEntryRenderer: (type: string, renderer: pi.EntryRenderer) => {
-        renderers.set(type, renderer);
-      },
-    } as unknown as Pick<
-      pi.ExtensionAPI,
-      "getAllTools" | "getActiveTools" | "getSettings" | "registerEntryRenderer"
-    >,
-  };
-};
+const fakeApi = (
+  tools: unknown[] = [],
+  active: string[] = [],
+  settings: unknown = { compaction: { reserveTokens: 1_000 } },
+) =>
+  ({
+    getAllTools: () => tools,
+    getActiveTools: () => active,
+    getSettings: () => settings,
+  }) as unknown as Pick<pi.ExtensionAPI, "getAllTools" | "getActiveTools" | "getSettings">;
 
 const ctxOf = (session: pi.SessionManager, prompt = "") =>
   ({
@@ -223,11 +105,125 @@ const ctxOf = (session: pi.SessionManager, prompt = "") =>
     getSystemPrompt: () => prompt,
   }) as unknown as pi.ExtensionContext;
 
-describe("contextHost", () => {
-  it("sums only assistant usage of the main session, memoised on the leaf", () => {
+const factsOf = (
+  api: ReturnType<typeof fakeApi>,
+  session = pi.SessionManager.inMemory("/tmp"),
+  prompt = "",
+) => contextHost(api, { tools: new Map(), ctx: ctxOf(session, prompt) }).contextFacts();
+
+describe("contextFacts", () => {
+  it("splits the system prompt text and lists the active declared tools before the first request", () => {
+    const tools = [
+      toolInfo("read", "builtin:read"),
+      toolInfo("off", "builtin:off"),
+      toolInfo("mine", "/ext/index.ts"),
+      toolInfo("docs", "builtin:mcp", "deferred"),
+      toolInfo("secret", "builtin:mcp", "hidden"),
+    ];
+    const facts = factsOf(
+      fakeApi(tools, ["read", "mine", "docs", "secret"]),
+      undefined,
+      `intro\n\n${MEMORY}\n\n${SKILLS}\n\n<cwd>\n/repo\n</cwd>`,
+    );
+
+    expect(facts).toMatchObject({
+      model: "Offline",
+      window: 100_000,
+      total: 5_000,
+      reserve: 1_000,
+      messages: [],
+    });
+    expect(facts?.sections.map((section) => section.name)).toEqual(["project_context", "skills", "prompt"]);
+    expect(facts?.sections.slice(0, 2).map((section) => section.text)).toEqual([MEMORY, SKILLS]);
+    expect(facts?.sections[2].text).toBe("intro\n\n\n\n\n\n<cwd>\n/repo\n</cwd>");
+    expect(facts?.tools).toEqual([
+      { name: "read", source: "builtin", onDemand: false, chars: 52 },
+      { name: "mine", source: "extension", onDemand: false, chars: 52 },
+      { name: "docs", source: "mcp", onDemand: true, chars: 52 },
+    ]);
+  });
+
+  it("replays the system messages from the projection once pi wrote them", () => {
     const session = pi.SessionManager.inMemory("/tmp");
-    const state: HostState = { tools: new Map(), ctx: ctxOf(session) };
-    const host = contextHost(fakeApi().api, state);
+
+    session.appendMessage({
+      role: "system",
+      content: "",
+      sections: { preamble: "p".repeat(400), skills: SKILLS },
+      toolsAdded: [{ name: "mine", description: "Mine", parameters: {} }],
+      timestamp: 0,
+    } as never);
+    session.appendMessage({ role: "user", content: "hello", timestamp: 0 });
+
+    const facts = factsOf(fakeApi([toolInfo("mine", "/ext/index.ts")]), session, "ignored");
+
+    expect(facts?.sections).toEqual([
+      { name: "preamble", text: "p".repeat(400) },
+      { name: "skills", text: SKILLS },
+    ]);
+    expect(facts?.tools).toEqual([{ name: "mine", source: "extension", onDemand: false, chars: 52 }]);
+    expect(facts?.messages).toEqual([{ role: "user", tokens: 2, blocks: [] }]);
+  });
+
+  it("estimates every conversation message and each assistant block, skipping system messages", () => {
+    const session = pi.SessionManager.inMemory("/tmp");
+
+    session.appendMessage({
+      role: "system",
+      content: "",
+      sections: { preamble: "s".repeat(4_000) },
+      timestamp: 0,
+    } as never);
+    session.appendMessage({ role: "user", content: "u".repeat(40), timestamp: 0 });
+    session.appendMessage(
+      assistant(usage(1, 0, 0), [
+        { type: "text", text: "a".repeat(80) },
+        { type: "thinking", thinking: "t".repeat(400) },
+        { type: "toolCall", id: "1", name: "bash", arguments: { command: "ls" } },
+      ]),
+    );
+    session.appendMessage({
+      role: "toolResult",
+      toolCallId: "1",
+      toolName: "bash",
+      content: [{ type: "text", text: "r".repeat(800) }],
+      isError: false,
+      timestamp: 0,
+    });
+
+    expect(factsOf(fakeApi(), session)?.messages).toEqual([
+      { role: "user", tokens: 10, blocks: [] },
+      {
+        role: "assistant",
+        tokens: 125,
+        blocks: [
+          { type: "text", tokens: 20 },
+          { type: "thinking", tokens: 100 },
+          { type: "toolCall", tokens: 5 },
+        ],
+      },
+      { role: "toolResult", tokens: 200, blocks: [] },
+    ]);
+  });
+
+  it("reserves the compaction reserve only while compaction is on, with model overrides", () => {
+    const reserve = (settings: unknown) => factsOf(fakeApi([], [], settings))?.reserve;
+
+    expect(reserve({})).toBe(pi.DEFAULT_COMPACTION_SETTINGS.reserveTokens);
+    expect(reserve({ compaction: { enabled: false, reserveTokens: 1 } })).toBe(0);
+    expect(reserve({ compaction: { reserveTokens: 2_000 } })).toBe(2_000);
+    expect(
+      reserve({
+        compaction: { reserveTokens: 2_000, modelOverrides: { "fake/offline": { reserveTokens: 3_000 } } },
+      }),
+    ).toBe(3_000);
+  });
+});
+
+describe("request usage", () => {
+  it("sums only assistant usage of the main session and follows the leaf", () => {
+    const session = pi.SessionManager.inMemory("/tmp");
+    const host = contextHost(fakeApi(), { tools: new Map(), ctx: ctxOf(session) });
 
     session.appendMessage({ role: "user", content: "hi", timestamp: 0 });
     session.appendMessage(assistant(usage(10, 80, 10)));
@@ -241,11 +237,8 @@ describe("contextHost", () => {
       usage: usage(1_000, 0, 0),
     } as never);
 
-    const first = host.mainRequestUsage();
-
-    expect(first).toEqual({ input: 10, cacheRead: 80, cacheWrite: 10, output: 5 });
-    expect(host.mainRequestUsage()).toBe(first);
-    expect(host.lastRequestUsage()).toEqual(first);
+    expect(host.mainRequestUsage()).toEqual({ input: 10, cacheRead: 80, cacheWrite: 10, output: 5 });
+    expect(host.lastRequestUsage()).toEqual({ input: 10, cacheRead: 80, cacheWrite: 10, output: 5 });
 
     session.appendMessage(assistant(usage(50, 0, 0)));
 
@@ -253,17 +246,15 @@ describe("contextHost", () => {
     expect(host.lastRequestUsage()).toEqual({ input: 50, cacheRead: 0, cacheWrite: 0, output: 5 });
   });
 
-  it("does not serve one session's memoised usage to another session with the same leaf id", () => {
+  it("measures the session the host now points at", () => {
     const first = pi.SessionManager.inMemory("/tmp");
     const second = pi.SessionManager.inMemory("/tmp");
 
     first.appendMessage(assistant(usage(10, 80, 10)));
     second.appendMessage(assistant(usage(50, 0, 0)));
-    vi.spyOn(first, "getLeafId").mockReturnValue("same");
-    vi.spyOn(second, "getLeafId").mockReturnValue("same");
 
     const state: HostState = { tools: new Map(), ctx: ctxOf(first) };
-    const host = contextHost(fakeApi().api, state);
+    const host = contextHost(fakeApi(), state);
 
     expect(host.mainRequestUsage()).toEqual({ input: 10, cacheRead: 80, cacheWrite: 10, output: 5 });
 
@@ -273,98 +264,11 @@ describe("contextHost", () => {
   });
 
   it("measures nothing without a live session", () => {
-    const host = contextHost(fakeApi().api, { tools: new Map() });
+    const host = contextHost(fakeApi(), { tools: new Map() });
 
-    expect(host.contextBreakdown()).toBeUndefined();
+    expect(host.contextFacts()).toBeUndefined();
     expect(host.lastRequestUsage()).toBeUndefined();
     expect(host.mainRequestUsage()).toEqual({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
-  });
-
-  it("falls back to the system prompt text and the active direct tools before the first request", () => {
-    const source = (path: string) => ({ path, source: "local", scope: "temporary", origin: "top-level" });
-    const tools = [
-      {
-        name: "read",
-        description: "Read",
-        parameters: {},
-        exposure: "direct",
-        sourceInfo: source("builtin:read"),
-      },
-      {
-        name: "off",
-        description: "Off",
-        parameters: {},
-        exposure: "direct",
-        sourceInfo: source("builtin:off"),
-      },
-      {
-        name: "docs",
-        description: "Docs",
-        parameters: {},
-        exposure: "deferred",
-        sourceInfo: source("builtin:mcp"),
-      },
-    ] as unknown as pi.ToolInfo[];
-    const breakdown = buildBreakdown(
-      fakeApi(tools, ["read", "docs"]).api,
-      ctxOf(pi.SessionManager.inMemory("/tmp"), `intro\n\n${MEMORY}`),
-    );
-
-    expect(breakdown).toMatchObject({
-      model: "Offline",
-      window: 100_000,
-      total: 5_000,
-      reserve: 1_000,
-      skills: [],
-      tools: { builtin: [{ name: "read" }], mcp: [{ name: "docs", tokens: 0 }], extension: [] },
-      messages: { count: 0 },
-    });
-    expect(breakdown.memoryFiles).toHaveLength(2);
-    expect(breakdown.systemPrompt).toBeGreaterThan(0);
-  });
-
-  it("replays system messages from the projection once pi wrote them", () => {
-    const session = pi.SessionManager.inMemory("/tmp");
-
-    session.appendMessage({
-      role: "system",
-      content: "",
-      sections: { preamble: "p".repeat(400), skills: SKILLS },
-      toolsAdded: [{ name: "mine", description: "Mine", parameters: {} }],
-      timestamp: 0,
-    } as never);
-    session.appendMessage({ role: "user", content: "hello", timestamp: 0 });
-
-    const breakdown = buildBreakdown(fakeApi().api, ctxOf(session, "ignored"));
-
-    expect(breakdown.systemPrompt).toBeGreaterThanOrEqual(100);
-    expect(breakdown.skills.map((part) => part.name)).toEqual(["code & style"]);
-    expect(breakdown.tools.extension.map((part) => part.name)).toEqual(["mine"]);
-    expect(breakdown.messages).toMatchObject({ count: 1, user: 2 });
-  });
-
-  it("registers an entry renderer that passes pi's data, expanded flag and theme and cuts lines to the width", () => {
-    const { api, renderers } = fakeApi();
-    const host = contextHost(api, { tools: new Map() });
-    const seen: unknown[] = [];
-    const theme = { fg: (token: string, text: string) => `${token}:${text}`, bold: (text: string) => text };
-
-    host.registerEntryRenderer("x:entry", (data, width, expanded, themed) => {
-      seen.push({ data, width, expanded });
-      return [themed.fg("syntaxKeyword", "0123456789"), "ok"];
-    });
-
-    const component = renderers.get("x:entry")?.(
-      { type: "custom", customType: "x:entry", data: { a: 1 }, id: "e", parentId: null, timestamp: "" },
-      { expanded: true },
-      theme as unknown as pi.Theme,
-    );
-
-    expect(component?.render(12).map((line) => stripVTControlCharacters(line))).toEqual([
-      "syntaxKeywo…",
-      "ok",
-    ]);
-    expect(seen).toEqual([{ data: { a: 1 }, width: 12, expanded: true }]);
   });
 });
 
@@ -444,20 +348,23 @@ describe("pi context against a real session", () => {
       });
       expect(paths.probe_tool).toBe("<inline:probe>");
 
-      const before = buildBreakdown(probe, captured as pi.ExtensionContext);
+      const host = contextHost(probe, { tools: new Map(), ctx: captured });
+      const before = host.contextFacts();
+      const named = (facts: typeof before, kind: string) =>
+        facts?.tools.filter((tool) => tool.source === kind).map((tool) => tool.name);
 
       expect(
         (captured as pi.ExtensionContext).sessionManager
           .buildSessionProjection()
           .messages.some((message) => message.role === "system"),
       ).toBe(false);
-      expect(before.tools.mcp).toEqual([
-        { name: "mcp_direct", tokens: expect.any(Number) },
-        { name: "mcp_deferred", tokens: 0 },
+      expect(before?.tools.filter((tool) => tool.source === "mcp")).toEqual([
+        { name: "mcp_direct", source: "mcp", onDemand: false, chars: expect.any(Number) },
+        { name: "mcp_deferred", source: "mcp", onDemand: true, chars: expect.any(Number) },
       ]);
-      expect(before.tools.builtin.map((part) => part.name)).toContain("read");
-      expect(before.tools.extension.map((part) => part.name)).toEqual(["probe_tool"]);
-      expect(before.systemPrompt).toBeGreaterThan(100);
+      expect(named(before, "builtin")).toContain("read");
+      expect(named(before, "extension")).toEqual(["probe_tool"]);
+      expect(before?.sections.map((section) => section.name)).toContain("prompt");
 
       await session.prompt("hello");
 
@@ -467,12 +374,15 @@ describe("pi context against a real session", () => {
         ctx.sessionManager.buildSessionProjection().messages.some((message) => message.role === "system"),
       ).toBe(true);
 
-      const after = buildBreakdown(probe, ctx);
+      const after = contextHost(probe, { tools: new Map(), ctx }).contextFacts();
+      const promptChars = (facts: typeof before) =>
+        facts?.sections.reduce((sum, section) => sum + section.text.length, 0) ?? 0;
 
-      expect(after.tools.mcp.map((part) => part.name)).toEqual(["mcp_direct", "mcp_deferred"]);
-      expect(after.tools.extension.map((part) => part.name)).toEqual(["probe_tool"]);
-      expect(after.messages.user).toBeGreaterThan(0);
-      expect(Math.abs(after.systemPrompt - before.systemPrompt)).toBeLessThan(10);
+      expect(named(after, "mcp")).toEqual(["mcp_direct", "mcp_deferred"]);
+      expect(named(after, "extension")).toEqual(["probe_tool"]);
+      expect(after?.messages.map((message) => message.role)).toContain("user");
+      expect(after?.sections.map((section) => section.name)).not.toContain("prompt");
+      expect(Math.abs(promptChars(after) - promptChars(before))).toBeLessThan(40);
     } finally {
       session.dispose();
     }
