@@ -1,118 +1,87 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
 import type { Host, SessionInfo } from "../../../core/adapter/contract.ts";
-import { errorText } from "../../../core/manager/format.ts";
-import {
-  projectSettingsPath,
-  readSettingsFile,
-  type SettingsParse,
-  userSettingsPath,
-} from "../../../core/manager/settings.ts";
-import { NORMAL, SETTINGS_FILE, type StyleSettings, styleSchema } from "./settings.ts";
+import { reportSettingsErrors } from "../../../core/manager/settings.ts";
+import { pickStyle } from "./pick.ts";
+import { readStyleSettings, SETTINGS_FILE, saveStyle } from "./settings.ts";
+import { NORMAL, type Style } from "./styles.ts";
 
 export const SECTION = "output_style";
 
-export const STATUS_KEY = "pi-style";
-
-export const loadStyles = (dir: string): ReadonlyMap<string, string> =>
-  new Map(
-    readdirSync(dir)
-      .filter((file) => file.endsWith(".md") && file !== `${NORMAL}.md`)
-      .sort()
-      .map((file) => [basename(file, ".md"), readFileSync(join(dir, file), "utf8").trim()]),
-  );
-
-const noFile: SettingsParse<StyleSettings> = { patch: {}, errors: [] };
-
-export const createStyle = (host: Host, styles: ReadonlyMap<string, string>) => {
+export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   const names = [...styles.keys(), NORMAL];
-  const schema = styleSchema(names);
-  const reported = new Set<string>();
-  const available = `available: ${names.join(", ")}`;
   let current = NORMAL;
-  let shown: string | undefined;
   let projectStyle: string | undefined;
-  let location: SessionInfo | undefined;
+  let session: SessionInfo | undefined;
 
-  const showStatus = (force: boolean) => {
-    const status = current === NORMAL ? undefined : current;
+  const apply = (name: string) => {
+    current = name;
+    host.setPromptSection(SECTION, styles.get(name)?.prompt);
+  };
 
-    if (!force && status === shown) {
+  const report = reportSettingsErrors(host, "pi-style");
+
+  host.onSessionStart((info) => {
+    const stored = readStyleSettings(names, info);
+
+    session = info;
+    projectStyle = stored.project;
+    report(stored.errors);
+    apply(projectStyle ?? stored.user ?? NORMAL);
+  });
+
+  const choose = (name: string) => {
+    const failure = session && saveStyle(session.agentDir, name);
+
+    if (failure) {
+      host.ui.notify(`pi-style: ${failure}`, "warning");
+    }
+
+    apply(name);
+
+    if (projectStyle !== undefined) {
+      host.ui.notify(
+        `Style: ${name} from the next run. .pi/${SETTINGS_FILE} sets "${projectStyle}" and wins at the next session start.`,
+        "warning",
+      );
+
       return;
     }
 
-    shown = status;
-    host.ui.setStatus(STATUS_KEY, status && host.ui.style("dim", `style ${status}`));
+    host.ui.notify(`Style: ${name} from the next run.`, "info");
   };
 
-  const apply = (name: string, force: boolean) => {
-    current = name;
-    host.setPromptSection(SECTION, styles.get(name));
-    showStatus(force);
-  };
+  const available = () => `available: ${names.join(", ")}`;
 
-  const save = (info: SessionInfo, name: string) => {
-    const path = userSettingsPath(info.agentDir, SETTINGS_FILE);
+  const pick = async () => {
+    if (host.session().mode !== "tui") {
+      host.ui.notify(`Style: ${current} (${available()})`, "info");
+      return;
+    }
 
-    try {
-      mkdirSync(info.agentDir, { recursive: true });
-      writeFileSync(path, `${JSON.stringify({ style: name }, null, 2)}\n`);
-    } catch (error) {
-      host.ui.notify(`pi-style: cannot save ${path}: ${errorText(error)}`, "warning");
+    const picked = await pickStyle(host, styles, current);
+
+    if (picked !== undefined) {
+      choose(picked);
     }
   };
 
-  host.onSessionStart((info) => {
-    const user = readSettingsFile(schema, userSettingsPath(info.agentDir, SETTINGS_FILE));
-    const project = info.projectTrusted
-      ? readSettingsFile(schema, projectSettingsPath(info.cwd, SETTINGS_FILE))
-      : noFile;
-
-    location = info;
-    projectStyle = project.patch.style;
-
-    [...user.errors, ...project.errors]
-      .filter((error) => !reported.has(error))
-      .forEach((error) => {
-        reported.add(error);
-        host.ui.notify(`pi-style settings: ${error}`, "warning");
-      });
-
-    apply(projectStyle ?? user.patch.style ?? NORMAL, true);
-  });
-
   host.registerCommand("style", {
-    description: `Set the output style of the main session and every agent. Usage: /style [${names.join("|")}]`,
+    description: `Pick the output style of the main session and every agent from a list, or set it directly: /style [${names.join("|")}]`,
     complete: (prefix) =>
       names.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
-    run: (args) => {
+    run: async (args) => {
       const name = args.trim();
 
       if (!name) {
-        host.ui.notify(`Style: ${current} (${available})`, "info");
+        await pick();
         return;
       }
 
       if (!names.includes(name)) {
-        host.ui.notify(`Unknown style "${name}" (${available})`, "error");
+        host.ui.notify(`Unknown style "${name}" (${available()})`, "error");
         return;
       }
 
-      if (location) {
-        save(location, name);
-      }
-
-      apply(name, false);
-
-      if (projectStyle !== undefined) {
-        host.ui.notify(
-          `Style: ${name} from the next run. .pi/${SETTINGS_FILE} sets "${projectStyle}" and wins at the next session start.`,
-          "warning",
-        );
-        return;
-      }
-
-      host.ui.notify(`Style: ${name} from the next run.`, "info");
+      choose(name);
     },
   });
 };

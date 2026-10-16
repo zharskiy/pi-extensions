@@ -7,6 +7,8 @@ import {
   parseSettings,
   projectSettingsPath,
   readSettingsFile,
+  readSettingsFiles,
+  reportSettingsErrors,
   type SettingsSchema,
   userSettingsPath,
   watchSettings,
@@ -127,6 +129,32 @@ describe("settings files", () => {
       settings: { count: 2, ratio: 0.9, names: [] },
       errors: [],
     });
+  });
+
+  it("reads the user and the trusted project values apart", () => {
+    expect(readSettingsFiles(schema, FILE, withFiles(true))).toEqual({
+      user: { count: 2, ratio: 0.2 },
+      project: { ratio: 0.9 },
+      errors: [],
+    });
+  });
+
+  it("reads no project values when the project is not trusted", () => {
+    expect(readSettingsFiles(schema, FILE, withFiles(false)).project).toEqual({});
+  });
+
+  it("warns about each settings error once", () => {
+    const host = createFakeHost({ id: "s" });
+    const report = reportSettingsErrors(host, "example");
+
+    report(["a", "b"]);
+    report(["b", "c"]);
+
+    expect(host.notices.map((notice) => notice.message)).toEqual([
+      "example settings: a",
+      "example settings: b",
+      "example settings: c",
+    ]);
   });
 
   it("ignores the project file when the project is not trusted", () => {

@@ -101,7 +101,17 @@ export const userSettingsPath = (agentDir: string, file: string) => join(agentDi
 
 export const projectSettingsPath = (cwd: string, file: string) => join(cwd, ".pi", file);
 
-type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
+export type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
+
+export const readSettingsFiles = <T>(schema: SettingsSchema<T>, file: string, location: SettingsLocation) => {
+  const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));
+
+  const project: SettingsParse<T> = location.projectTrusted
+    ? readSettingsFile(schema, projectSettingsPath(location.cwd, file))
+    : { patch: {}, errors: [] };
+
+  return { user: user.patch, project: project.patch, errors: [...user.errors, ...project.errors] };
+};
 
 export const loadSettingsFiles = <T>(
   schema: SettingsSchema<T>,
@@ -109,16 +119,21 @@ export const loadSettingsFiles = <T>(
   file: string,
   location: SettingsLocation,
 ) => {
-  const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));
+  const { user, project, errors } = readSettingsFiles(schema, file, location);
 
-  const project = location.projectTrusted
-    ? readSettingsFile(schema, projectSettingsPath(location.cwd, file))
-    : { patch: {}, errors: [] };
+  return { settings: { ...defaults, ...user, ...project }, errors };
+};
 
-  return {
-    settings: { ...defaults, ...user.patch, ...project.patch },
-    errors: [...user.errors, ...project.errors],
-  };
+export const reportSettingsErrors = (host: Host, label: string) => {
+  const reported = new Set<string>();
+
+  return (errors: readonly string[]) =>
+    errors
+      .filter((error) => !reported.has(error))
+      .forEach((error) => {
+        reported.add(error);
+        host.ui.notify(`${label} settings: ${error}`, "warning");
+      });
 };
 
 export const watchSettings = <T>(
@@ -128,20 +143,14 @@ export const watchSettings = <T>(
   defaults: T,
   file: string,
 ): (() => T) => {
+  const report = reportSettingsErrors(host, label);
   let settings = defaults;
-  const reported = new Set<string>();
 
   host.onSessionStart((info) => {
     const loaded = loadSettingsFiles(schema, defaults, file, info);
 
     settings = loaded.settings;
-
-    loaded.errors
-      .filter((error) => !reported.has(error))
-      .forEach((error) => {
-        reported.add(error);
-        host.ui.notify(`${label} settings: ${error}`, "warning");
-      });
+    report(loaded.errors);
   });
 
   return () => settings;

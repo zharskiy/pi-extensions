@@ -1,3 +1,7 @@
+---
+description: short, result-first replies
+---
+
 # Output style: concise
 
 Keep every response as short as it can be while staying complete and correct. The engineering work stays as thorough as usual; only the writing gets shorter.

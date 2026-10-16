@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
-import { createStyle, loadStyles } from "./style.ts";
+import { createStyle } from "./style.ts";
+import { loadStyles } from "./styles.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
