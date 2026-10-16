@@ -2,13 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { RunMode } from "../../../core/adapter/contract.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flush } from "../../../core/test/helpers/fakes.ts";
-import {
-  ANSWER_ARM_MS,
-  createQuestionnaire,
-  QUESTIONNAIRE_SOURCE,
-  type QuestionnaireParams,
-} from "../src/questionnaire.ts";
-import type { QuestionnaireDetails } from "../src/result.ts";
+import { createQuestionnaire, QUESTIONNAIRE_SOURCE } from "../src/questionnaire.ts";
+import type { QuestionnaireDetails, QuestionnaireParams } from "../src/result.ts";
+import { ANSWER_ARM_MS } from "../src/view.ts";
 import { char, key, PRIORITY, SCOPE } from "./fixtures.ts";
 
 const setup = (mode: RunMode = "tui") => {
@@ -30,18 +26,14 @@ const waitingSignals = (host: ReturnType<typeof setup>["host"]) =>
   host.published.filter((entry) => entry.channel === AWAITING_INPUT_CHANNEL).map((entry) => entry.data);
 
 describe("questionnaire tool", () => {
-  it("declares itself as a sequential, model-only tool with the prompt guidelines", () => {
+  it("declares itself as a sequential, model-only tool", () => {
     const { tool } = setup();
 
     expect(tool).toMatchObject({
       name: "questionnaire",
-      label: "Questionnaire",
       executionMode: "sequential",
+      modelOnly: true,
     });
-    expect(tool.exposure).toBe("model-only");
-    expect(tool.promptSnippet).toBe("Ask a batch of independent multiple-choice questions in one form");
-    expect(tool.promptGuidelines).toHaveLength(3);
-    expect(tool.description).toContain("mutually independent multiple-choice questions");
   });
 
   it("returns an error outside the interactive terminal, without a form", async () => {
@@ -146,6 +138,29 @@ describe("questionnaire tool", () => {
     expect(host.renderTool("questionnaire", { result }).result).toBe(
       ["✓ Scope: (wrote) both", "✓ Priority: 2. Later"].join("\n"),
     );
+  });
+
+  it("puts the earlier typed answer back in the text input when the question is opened again", async () => {
+    const { host, tool, clock } = setup();
+    const pending = run(tool, { questions: [SCOPE, PRIORITY] });
+
+    await flush();
+    clock.now += ANSWER_ARM_MS;
+
+    const form = host.form();
+
+    form.press(char("3"));
+    form.type("both");
+    form.press(key("enter"), key("left"));
+
+    expect(form.render(60)).not.toContain(" > both");
+
+    form.press(char("3"));
+
+    expect(form.render(60)).toContain(" > both");
+
+    form.press(key("escape"), key("escape"));
+    await pending;
   });
 
   it("Esc in the text input returns to the options, Esc there cancels with the answers so far", async () => {

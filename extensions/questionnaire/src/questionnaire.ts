@@ -1,30 +1,19 @@
-import type { FormApi, Host, KeyPress, ToolSpec, ViewComponent } from "../../../core/adapter/contract.ts";
+import type { Host, ToolSpec } from "../../../core/adapter/contract.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../core/manager/channels.ts";
+import { initialForm } from "./form.ts";
 import {
-  answerOf,
-  answerText,
-  currentQuestion,
-  type FormState,
-  initialForm,
-  pressKey,
-  stopTyping,
-} from "./form.ts";
-import { inputWidth, renderForm } from "./render.ts";
-import {
-  callText,
   errorResult,
   normalizeQuestions,
-  type Question,
-  type QuestionInput,
   type QuestionnaireDetails,
+  type QuestionnaireParams,
+  questionInputs,
   questionsError,
-  resultSummary,
   resultText,
 } from "./result.ts";
+import { callText, resultSummary } from "./summary.ts";
+import { createFormView } from "./view.ts";
 
 export const QUESTIONNAIRE_SOURCE = "pi-questionnaire";
-
-export const ANSWER_ARM_MS = 250;
 
 const DESCRIPTION =
   "Ask the user a batch of mutually independent multiple-choice questions in one interactive form. Each question also accepts a typed answer unless allowOther is false, and the user may cancel. Interactive sessions only: it errors in non-interactive runs.";
@@ -81,72 +70,6 @@ const PARAMETERS = {
   additionalProperties: false,
 };
 
-export type QuestionnaireParams = { questions?: QuestionInput[] };
-
-type ViewOptions = { now: () => number; onChange: (state: FormState) => void };
-
-export const createFormView = (
-  api: FormApi<QuestionnaireDetails>,
-  questions: Question[],
-  { now, onChange }: ViewOptions,
-): ViewComponent => {
-  const input = api.createTextInput();
-  const openedAt = now();
-  let state = initialForm(questions);
-
-  const finish = (cancelled: boolean) => api.done({ questions, answers: state.answers, cancelled });
-
-  const apply = (next: FormState, done?: "submit" | "cancel") => {
-    const startsTyping = next.typing && !state.typing;
-
-    state = next;
-    onChange(state);
-
-    if (startsTyping) {
-      const question = currentQuestion(state);
-      const answer = question ? answerOf(state, question.id) : undefined;
-
-      input.setText(answer?.wasCustom ? answer.label : "");
-    }
-
-    if (done) {
-      finish(done === "cancel");
-      return;
-    }
-
-    api.requestRender();
-  };
-
-  input.onSubmit((text) => {
-    const outcome = answerText(state, text);
-
-    apply(outcome.state, outcome.done);
-  });
-
-  const handleKey = (key: KeyPress) => {
-    if (state.typing && key.name === "escape") {
-      apply(stopTyping(state));
-      return;
-    }
-
-    if (state.typing) {
-      input.handleKey(key);
-      api.requestRender();
-      return;
-    }
-
-    const outcome = pressKey(state, key, now() - openedAt >= ANSWER_ARM_MS);
-
-    apply(outcome.state, outcome.done);
-  };
-
-  return {
-    render: (width) =>
-      renderForm(state, api.theme, width, state.typing ? input.render(inputWidth(width)) : []),
-    handleKey,
-  };
-};
-
 export const questionnaireTool = (
   host: Host,
   now: () => number = Date.now,
@@ -158,9 +81,9 @@ export const questionnaireTool = (
   promptGuidelines: PROMPT_GUIDELINES,
   parameters: PARAMETERS,
   executionMode: "sequential",
-  exposure: "model-only",
+  modelOnly: true,
   execute: async (params, { signal }) => {
-    const questions = normalizeQuestions(params.questions ?? []);
+    const questions = normalizeQuestions(questionInputs(params));
 
     if (host.session().mode !== "tui") {
       return errorResult(NOT_INTERACTIVE, questions);
@@ -194,6 +117,7 @@ export const questionnaireTool = (
           }),
         { signal },
       );
+
       const details = shown ?? { questions, answers: latest.answers, cancelled: true };
 
       return { text: resultText(details), details };

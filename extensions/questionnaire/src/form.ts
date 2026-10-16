@@ -1,4 +1,5 @@
 import type { KeyPress } from "../../../core/adapter/contract.ts";
+import { listKey } from "../../../core/manager/list.ts";
 import type { Answer, Question, QuestionOption } from "./result.ts";
 
 export const OTHER_LABEL = "Type something.";
@@ -14,6 +15,8 @@ export type FormState = {
 };
 
 export type FormOutcome = { state: FormState; done?: "submit" | "cancel" };
+
+type KeyOptions = { armed?: boolean };
 
 export const initialForm = (questions: Question[]): FormState => ({
   questions,
@@ -79,6 +82,7 @@ const save = (state: FormState, answer: Answer): FormOutcome => {
 
     return kept ? [kept] : [];
   });
+
   const saved = { ...state, answers, typing: false };
 
   if (!isMulti(state)) {
@@ -106,15 +110,6 @@ const choose = (state: FormState, index: number): FormOutcome => {
   );
 };
 
-const move = (state: FormState, index: number): FormOutcome => {
-  const last = formOptions(currentQuestion(state)).length - 1;
-
-  return { state: { ...state, option: Math.max(0, Math.min(last, index)) } };
-};
-
-const digitOf = (key: KeyPress) =>
-  key.name === "other" && key.char && /^[1-9]$/.test(key.char) ? Number(key.char) : undefined;
-
 const tabKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormState>> = {
   tab: (state) => shiftTab(state, 1),
   right: (state) => shiftTab(state, 1),
@@ -122,19 +117,27 @@ const tabKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormState>
   left: (state) => shiftTab(state, -1),
 };
 
-const questionKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormOutcome>> = {
-  up: (state) => move(state, state.option - 1),
-  down: (state) => move(state, state.option + 1),
-  home: (state) => move(state, 0),
-  end: (state) => move(state, formOptions(currentQuestion(state)).length - 1),
-  enter: (state) => choose(state, state.option),
+const questionKey = (state: FormState, key: KeyPress, { armed = true }: KeyOptions): FormOutcome => {
+  const step = listKey(key, state.option, formOptions(currentQuestion(state)).length);
+
+  if (!step || (step.pick && !armed)) {
+    return { state };
+  }
+
+  return step.pick ? choose(state, step.index) : { state: { ...state, option: step.index } };
 };
 
 const submitKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormOutcome>> = {
   enter: (state) => (allAnswered(state) ? { state, done: "submit" } : { state }),
 };
 
-export const pressKey = (state: FormState, key: KeyPress, armed = true): FormOutcome => {
+const stopTyping = (state: FormState): FormState => ({ ...state, typing: false });
+
+export const pressKey = (state: FormState, key: KeyPress, options: KeyOptions = {}): FormOutcome => {
+  if (state.typing) {
+    return { state: key.name === "escape" ? stopTyping(state) : state };
+  }
+
   if (key.name === "escape") {
     return { state, done: "cancel" };
   }
@@ -145,21 +148,13 @@ export const pressKey = (state: FormState, key: KeyPress, armed = true): FormOut
     return { state: tabbed(state) };
   }
 
-  const digit = digitOf(key);
-
-  if (!armed && (key.name === "enter" || digit !== undefined)) {
-    return { state };
-  }
-
   if (onSubmitTab(state)) {
-    return submitKeys[key.name]?.(state) ?? { state };
+    const submit = options.armed === false ? undefined : submitKeys[key.name];
+
+    return submit?.(state) ?? { state };
   }
 
-  if (digit !== undefined) {
-    return choose(state, digit - 1);
-  }
-
-  return questionKeys[key.name]?.(state) ?? { state };
+  return questionKey(state, key, options);
 };
 
 export const answerText = (state: FormState, text: string): FormOutcome => {
@@ -172,5 +167,3 @@ export const answerText = (state: FormState, text: string): FormOutcome => {
 
   return save(state, { id: question.id, value: trimmed, label: trimmed, wasCustom: true });
 };
-
-export const stopTyping = (state: FormState): FormState => ({ ...state, typing: false });

@@ -1,4 +1,4 @@
-import type { ThemeLike, ToolResult } from "../../../core/adapter/contract.ts";
+import type { ToolResult } from "../../../core/adapter/contract.ts";
 
 export type QuestionOption = { value: string; label: string; description?: string };
 
@@ -20,6 +20,8 @@ export type Question = {
 
 export type Answer = { id: string; value: string; label: string; wasCustom: boolean; index?: number };
 
+export type QuestionnaireParams = { questions?: QuestionInput[] };
+
 export type QuestionnaireDetails = { questions: Question[]; answers: Answer[]; cancelled: boolean };
 
 const CANCELLED = "User cancelled the questionnaire";
@@ -28,10 +30,18 @@ const ANSWERED_BEFORE = "Answered before cancelling:";
 
 const FALLBACK = "Pick a sensible default for anything unanswered, or stop.";
 
+export const defaultLabel = (index: number) => `Q${index + 1}`;
+
+export const questionInputs = (params: QuestionnaireParams) =>
+  Array.isArray(params.questions) ? params.questions : [];
+
+export const labelOf = (questions: Question[], answer: Answer) =>
+  questions.find((question) => question.id === answer.id)?.label ?? answer.id;
+
 export const normalizeQuestions = (inputs: QuestionInput[]): Question[] =>
   inputs.map((input, index) => ({
     id: input.id,
-    label: input.label?.trim() || `Q${index + 1}`,
+    label: input.label?.trim() || defaultLabel(index),
     prompt: input.prompt,
     options: input.options ?? [],
     allowOther: input.allowOther !== false,
@@ -56,8 +66,7 @@ export const questionsError = (questions: Question[]) => {
 };
 
 const answerLine = (questions: Question[], answer: Answer) => {
-  const label = questions.find((question) => question.id === answer.id)?.label ?? answer.id;
-  const head = `${label} (${answer.id})`;
+  const head = `${labelOf(questions, answer)} (${answer.id})`;
 
   if (answer.wasCustom) {
     return `${head}: wrote: ${answer.label}`;
@@ -81,34 +90,3 @@ export const errorResult = (text: string, questions: Question[] = []): ToolResul
   isError: true,
   details: { questions, answers: [], cancelled: true },
 });
-
-const plural = (count: number) => `${count} question${count === 1 ? "" : "s"}`;
-
-export const callText = (params: { questions?: QuestionInput[] }, theme: ThemeLike) => {
-  const questions = Array.isArray(params.questions) ? params.questions : [];
-  const labels = questions.map((question, index) => question?.label?.trim() || `Q${index + 1}`);
-  const title = `${theme.bold("questionnaire")} ${theme.fg("muted", plural(questions.length))}`;
-
-  return labels.length > 0 ? `${title}${theme.fg("dim", ` (${labels.join(", ")})`)}` : title;
-};
-
-const answerSummary = (questions: Question[], answer: Answer, theme: ThemeLike) => {
-  const label = questions.find((question) => question.id === answer.id)?.label ?? answer.id;
-  const shown = answer.wasCustom
-    ? `${theme.fg("dim", "(wrote)")} ${answer.label}`
-    : `${answer.index}. ${answer.label}`;
-
-  return `${theme.fg("success", "✓")} ${theme.fg("accent", label)}: ${shown}`;
-};
-
-export const resultSummary = (result: ToolResult<QuestionnaireDetails>, theme: ThemeLike) => {
-  const details = result.details;
-
-  if (!details || result.isError) {
-    return result.isError ? theme.fg("error", result.text) : result.text;
-  }
-
-  const lines = details.answers.map((answer) => answerSummary(details.questions, answer, theme));
-
-  return (details.cancelled ? [theme.fg("warning", "Cancelled"), ...lines] : lines).join("\n");
-};
