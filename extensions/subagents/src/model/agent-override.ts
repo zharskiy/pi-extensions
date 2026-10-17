@@ -5,7 +5,7 @@ export type OverrideField = { patch: AgentOverride; error?: string };
 
 export const OVERRIDE_FIELDS = ["model", "thinking", "skills"] as const;
 
-export const MODEL_FORMAT = `provider/id[:thinking] or ${INHERIT_MODEL}, without spaces`;
+const MODEL_FORMAT = `provider/id[:thinking] or ${INHERIT_MODEL}, without spaces`;
 
 export const overrideModel = (value: unknown): OverrideField => {
   const text = typeof value === "string" ? value.trim() : "";

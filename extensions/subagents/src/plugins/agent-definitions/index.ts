@@ -4,7 +4,7 @@ import type { SessionInfo } from "../../../../../core/adapter/contract.ts";
 import { resolutionProblem } from "../../model/model-resolution.ts";
 import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { reloadSettings } from "../../model/settings.ts";
+import { reloadSettings, settingsWarning } from "../../model/settings.ts";
 import type { AgentDefinitions } from "../../model/types.ts";
 import { type DefinitionDir, loadDefinitions } from "./loader.ts";
 import { assemblePromptAppend } from "./prompt.ts";
@@ -63,16 +63,14 @@ export const agentDefinitionsPlugin: Plugin = {
       });
 
       loaded.notices.forEach((notice) => {
-        notifyOnce(`${NAMESPACE} settings: ${notice.message}`, notice.level);
+        notifyOnce(settingsWarning(notice.message), notice.level);
       });
     };
 
     const reload = () => {
       const info = host.session();
 
-      reloadSettings(settings, info, (message) =>
-        host.ui.notify(`${NAMESPACE} settings: ${message}`, "warning"),
-      );
+      reloadSettings(settings, info, (message) => host.ui.notify(settingsWarning(message), "warning"));
       load(info);
     };
 

@@ -41,9 +41,9 @@ describe("run_agent mcp", () => {
 
     const registry = harness.services.require("registry");
     const byAgent = Object.fromEntries(
-      harness.runtime.children.map((child) => [registry.get(child.id)?.agent, [child.spec.mcp, child.mcp]]),
+      harness.runtime.children.map((child) => [registry.get(child.id)?.agent, child.spec.mcp ?? true]),
     );
 
-    expect(byAgent).toEqual({ scout: [false, false], general: [true, true], own: [true, true] });
+    expect(byAgent).toEqual({ scout: false, general: true, own: true });
   });
 });

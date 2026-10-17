@@ -20,7 +20,7 @@ export type LineCheck = {
   resolveModel(request: string): { ref: string } | { error: string };
 };
 
-export type LineRequest = { change: SetupChange; scope: Scope };
+type LineRequest = { change: SetupChange; scope: Scope };
 
 type Parsed = OverrideField & { scope?: Scope };
 
@@ -40,8 +40,12 @@ const parseModel = (value: string, check: LineCheck): Parsed => {
 };
 
 const skillsValue = (value: string) => {
-  if (value === ALL || value === "none") {
-    return value === ALL ? ALL : [];
+  if (value === ALL) {
+    return ALL;
+  }
+
+  if (value === "none") {
+    return [];
   }
 
   return value

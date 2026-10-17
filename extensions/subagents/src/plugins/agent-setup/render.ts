@@ -1,9 +1,14 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { hintLines, PAD, padded, prefixed, rule } from "../../../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../../../core/manager/list.ts";
-import { MULTI_SELECT_HINTS, multiLines, scrollWindow } from "../../../../../core/manager/multi-select.ts";
+import {
+  MULTI_SELECT_HINTS,
+  multiLines,
+  pointerMark,
+  scrolledLines,
+} from "../../../../../core/manager/multi-select.ts";
 import { TAB_SWITCH_HINT, tabBar } from "../../../../../core/manager/tabs.ts";
-import { INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
 import {
   FIELDS,
   type Field,
@@ -50,7 +55,7 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
     return draft.thinking ?? "default";
   }
 
-  const none = context.skills.length === 0 && draft.skills !== "all";
+  const none = context.skills.length === 0 && draft.skills !== ALL;
 
   return none ? "none (no skills loaded)" : grantText(draft.skills);
 };
@@ -58,12 +63,11 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
 const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>
   FIELDS.flatMap((field, index) => {
     const chosen = index === state.field && !state.picker;
-    const pointer = chosen ? theme.fg("accent", theme.bold("›")) : " ";
     const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
     const changed = fieldChanged(context, state, state.tab, field) ? theme.fg("warning", " (changed)") : "";
     const value = `${theme.fg("text", valueText(context, state, field))}${changed}`;
 
-    return prefixed(theme, `${PAD}${pointer} ${label}`, value, width);
+    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${label}`, value, width);
   });
 
 const windowLines = (
@@ -72,23 +76,12 @@ const windowLines = (
   cursor: number,
   width: number,
   label: (option: string) => string = (option) => option,
-) => {
-  const { start, end } = scrollWindow(options.length, cursor, LIST_HEIGHT);
-  const more = (text: string) => padded(theme, theme.fg("dim", text), width);
+) =>
+  scrolledLines(theme, options.length, cursor, LIST_HEIGHT, width, (index, chosen) => {
+    const text = theme.fg(chosen ? "accent" : "text", label(options[index] ?? ""));
 
-  const rows = options.slice(start, end).flatMap((option, offset) => {
-    const chosen = start + offset === cursor;
-    const pointer = chosen ? theme.fg("accent", theme.bold("›")) : " ";
-
-    return prefixed(theme, `${PAD}${pointer} `, theme.fg(chosen ? "accent" : "text", label(option)), width);
+    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} `, text, width);
   });
-
-  return [
-    ...(start > 0 ? more(`↑ ${start} more`) : []),
-    ...rows,
-    ...(end < options.length ? more(`↓ ${options.length - end} more`) : []),
-  ];
-};
 
 const pickerLines = (
   context: SetupContext,

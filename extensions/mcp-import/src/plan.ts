@@ -6,9 +6,9 @@ import type { Origin } from "./sources.ts";
 
 export type Entry = { name: string; origin: string; server: PiServer; notes: string[] };
 
-export type Skipped = { name: string; origin: string; reason: string };
+type Skipped = { name: string; origin: string; reason: string };
 
-export type Target = { label: string; text?: string };
+type Target = { label: string; text?: string };
 
 export type Plan = { added: Entry[]; skipped: Skipped[]; text?: string; error?: string };
 

@@ -2,7 +2,7 @@ import type { ImportArgs } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
 import type { Entry, Plan } from "./plan.ts";
 
-export type ReportInput = { args: ImportArgs; plan: Plan; checked: readonly string[]; target: string };
+type ReportInput = { args: ImportArgs; plan: Plan; checked: readonly string[]; target: string };
 
 const command = (args: ImportArgs, apply: boolean) =>
   [
@@ -27,7 +27,7 @@ const section = (title: string, lines: readonly string[]) =>
 const signIn = (entries: readonly Entry[]) =>
   entries.filter((entry) => needsSignIn(entry.server)).map((entry) => entry.name);
 
-const NAMESPACE = "pi-mcp-import";
+export const NAMESPACE = "pi-mcp-import";
 
 const detail = ({ plan }: ReportInput) => [
   ...section(

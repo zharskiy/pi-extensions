@@ -79,7 +79,11 @@ const statusWithin = (text: string, start: number, left: number): boolean => {
 
 export const hasStatusLine = (text: string) => statusWithin(text, 0, STATUS_SCAN_LINES);
 
-export const pickResult = (texts: string[]) => (texts.findLast(hasStatusLine) ?? texts.at(-1) ?? "").trim();
+export const pickResult = (texts: string[]) => {
+  const withStatus = texts.findLast(hasStatusLine);
+
+  return { text: (withStatus ?? texts.at(-1) ?? "").trim(), statusLine: withStatus !== undefined };
+};
 
 const headCut = (text: string, limit: number) => {
   const newline = text.lastIndexOf("\n", limit);

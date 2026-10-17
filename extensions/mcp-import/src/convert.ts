@@ -5,7 +5,7 @@ type RawServer = Record<string, unknown>;
 
 export type PiServer = Record<string, unknown>;
 
-export type Conversion = { server: PiServer; notes: string[] } | { skip: string };
+type Conversion = { server: PiServer; notes: string[] } | { skip: string };
 
 export type ConvertContext = { home: string; sep: string };
 

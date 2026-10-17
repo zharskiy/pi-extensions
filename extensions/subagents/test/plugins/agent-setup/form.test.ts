@@ -25,6 +25,20 @@ describe("agent setup form", () => {
     expect(thinkingOptions(context(), { model: "inherit", skills: [] })).toContain("medium");
   });
 
+  it("drops a thinking level the newly chosen model does not accept and keeps one it does", () => {
+    const ctx = context();
+    const small = press(ctx, initialSetup(ctx), key("enter"), key("end"), key("enter"));
+
+    expect(small.state.drafts[0]).toEqual({ model: "acme/small", thinking: undefined, skills: "all" });
+    expect(setupChanges(ctx, small.state)).toEqual([
+      { name: "lead", patch: { model: "acme/small", thinking: undefined } },
+    ]);
+
+    const inherit = press(ctx, initialSetup(ctx), key("enter"), key("home"), key("enter"));
+
+    expect(inherit.state.drafts[0]).toEqual({ model: "inherit", thinking: "high", skills: "all" });
+  });
+
   it("picks a model, a thinking level and skills, and marks the changed fields and tab", () => {
     const ctx = context();
     const { state } = press(

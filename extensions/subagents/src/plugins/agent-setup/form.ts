@@ -9,9 +9,9 @@ import {
 import { tabStep } from "../../../../../core/manager/tabs.ts";
 import { type AgentOverride, ALL, type Grant, INHERIT_MODEL } from "../../model/agent-schema.ts";
 
-export type Draft = { model: string; thinking?: string; skills: Grant };
+type Draft = { model: string; thinking?: string; skills: Grant };
 
-export type SetupAgent = { name: string; description: string; tools: Grant; mcp: boolean; initial: Draft };
+type SetupAgent = { name: string; description: string; tools: Grant; mcp: boolean; initial: Draft };
 
 export type Scope = "project" | "user";
 
@@ -39,7 +39,7 @@ export type SetupState = {
   refused?: string;
 };
 
-export type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
+type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
 
 export type SetupChange = { name: string; patch: AgentOverride };
 
@@ -132,6 +132,14 @@ const setDraft = (state: SetupState, patch: Partial<Draft>): SetupState => ({
   drafts: state.drafts.map((draft, index) => (index === state.tab ? { ...draft, ...patch } : draft)),
 });
 
+const modelPatch = (context: SetupContext, state: SetupState, model: string): Partial<Draft> => {
+  const thinking = state.drafts[state.tab]?.thinking;
+  const accepted =
+    thinking === undefined || thinkingOptions(context, { model, skills: [] }).includes(thinking);
+
+  return accepted ? { model } : { model, thinking: undefined };
+};
+
 const PAGE = LIST_HEIGHT;
 
 const STEPS: Partial<Record<KeyPress["name"], (cursor: number, count: number) => number>> = {
@@ -164,7 +172,10 @@ const chooseFromList = (
       return { ...state, picker: undefined };
     }
 
-    return setDraft(state, picker.field === "model" ? { model: value } : { thinking: value });
+    return setDraft(
+      state,
+      picker.field === "model" ? modelPatch(context, state, value) : { thinking: value },
+    );
   }
 
   const cursor = listStep(key, picker.cursor, options.length);
@@ -219,7 +230,7 @@ const submitKey = (context: SetupContext, state: SetupState, key: KeyPress): Set
   return { state: scope === undefined ? state : { ...state, scope, refused: undefined } };
 };
 
-const agentKey = (state: SetupState, key: KeyPress, context: SetupContext): SetupState => {
+const agentKey = (context: SetupContext, state: SetupState, key: KeyPress): SetupState => {
   if (key.name === "enter") {
     return openPicker(context, state);
   }
@@ -248,5 +259,5 @@ export const pressSetupKey = (context: SetupContext, state: SetupState, key: Key
     return submitKey(context, state, key);
   }
 
-  return { state: agentKey(state, key, context) };
+  return { state: agentKey(context, state, key) };
 };

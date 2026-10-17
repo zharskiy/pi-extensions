@@ -35,7 +35,7 @@ import {
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
-import { batchMessage, hasStatusLine, pickResult, storeResult } from "./result.ts";
+import { batchMessage, pickResult, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
 import { composeTask } from "./task.ts";
 
@@ -407,7 +407,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const text = finalText(live);
+    const { text, statusLine } = finalText(live);
 
     if (aborted || failedStop(live.lastStopReason)) {
       const error =
@@ -425,7 +425,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const result = storeResult(record, text);
 
-    deps.registry.close(record.id, { state: "done", ...result, statusLine: hasStatusLine(text) });
+    deps.registry.close(record.id, { state: "done", ...result, statusLine });
   };
 
   const clearGrace = (live: Live | undefined) => {
@@ -440,7 +440,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     clearGrace(live);
 
-    const text = live ? finalText(live) : "";
+    const text = live ? finalText(live).text : "";
 
     deps.registry.close(record.id, {
       state: "stopped",
@@ -703,8 +703,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return unique(own.concat(item.skills ?? []));
   };
 
-  const skillError = (item: BatchItem, available: string[]) => {
-    const tools = (deps.definitions.get(item.agent) as AgentDefinition).tools;
+  const skillError = (item: BatchItem, definition: AgentDefinition, available: string[]) => {
+    const tools = definition.tools;
     const unknown = unique(item.skills ?? []).filter((name) => !available.includes(name));
 
     if (unknown.length > 0) {
@@ -780,16 +780,16 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       throw new Error(capped);
     }
 
+    const definitions = items.map((item) => deps.definitions.get(item.agent) as AgentDefinition);
     const available = items.some((item) => item.skills?.length) ? callerSkills(options.callerId) : [];
     const skillErrors = items
-      .map((item) => skillError(item, available))
+      .map((item, index) => skillError(item, definitions[index], available))
       .filter((error) => error !== undefined);
 
     if (skillErrors.length > 0) {
       throw new Error(`${skillErrors.join("\n")} Nothing was started.`);
     }
 
-    const definitions = items.map((item) => deps.definitions.get(item.agent) as AgentDefinition);
     const planned = items.map((item, index) => planModel(item, definitions[index]));
     const modelErrors = planned.filter((plan): plan is { error: string } => "error" in plan);
 

@@ -8,7 +8,7 @@ export type Origin = { label: string; servers: Record<string, unknown>; note?: s
 
 export type Found = { origins: Origin[]; checked: string[]; problems: string[] };
 
-export type Places = { home: string; cwd: string };
+type Places = { home: string; cwd: string };
 
 type Read = { data?: unknown; problem?: string };
 

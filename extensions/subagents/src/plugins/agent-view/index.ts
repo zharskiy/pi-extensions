@@ -3,6 +3,7 @@ import { cutChars, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
+import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
 import { createAgentList } from "./list.ts";
@@ -112,12 +113,12 @@ export const agentViewPlugin: Plugin = {
         const terminal = source.find(id);
 
         if (!terminal) {
-          host.ui.notify(`pi-subagents: unknown agent "${id}"`, "warning");
+          host.ui.notify(`${NAMESPACE}: unknown agent "${id}"`, "warning");
         }
 
         return terminal;
       } catch (error) {
-        host.ui.notify(`pi-subagents: cannot read ${errorText(error)}`, "warning");
+        host.ui.notify(`${NAMESPACE}: cannot read ${errorText(error)}`, "warning");
 
         return undefined;
       }
@@ -156,7 +157,7 @@ export const agentViewPlugin: Plugin = {
 
       if (!service) {
         host.ui.notify(
-          `pi-subagents: /agents ${word} needs the agent-setup plugin, which is disabled`,
+          `${NAMESPACE}: /agents ${word} needs the agent-setup plugin, which is disabled`,
           "error",
         );
         return;
@@ -166,7 +167,7 @@ export const agentViewPlugin: Plugin = {
     };
 
     const usage = setup()?.usage;
-    const usageText = usage ? ` | ${usage.create} | /agents setup` : "";
+    const usageText = usage ? ` | ${usage.create} | ${usage.setup}` : "";
 
     const setupCompletions = (prefix: string) =>
       (setup()?.complete(prefix.slice(SETUP_PREFIX.length)) ?? []).map((entry) => ({
@@ -205,7 +206,7 @@ export const agentViewPlugin: Plugin = {
 
     const offLeft = host.ui.onEmptyEditorLeft(() => {
       openOverlay({ kind: "list" }).catch((error: unknown) => {
-        host.ui.notify(`pi-subagents: cannot open the agents list: ${errorText(error)}`, "warning");
+        host.ui.notify(`${NAMESPACE}: cannot open the agents list: ${errorText(error)}`, "warning");
       });
     });
 

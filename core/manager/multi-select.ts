@@ -22,6 +22,28 @@ export const scrollWindow = (count: number, cursor: number, height: number) => {
   return { start, end: Math.min(count, start + size) };
 };
 
+export const pointerMark = (theme: ThemeLike, chosen: boolean) =>
+  chosen ? theme.fg("accent", theme.bold("›")) : " ";
+
+export const scrolledLines = (
+  theme: ThemeLike,
+  count: number,
+  cursor: number,
+  height: number,
+  width: number,
+  row: (index: number, chosen: boolean) => string[],
+) => {
+  const { start, end } = scrollWindow(count, cursor, height);
+  const rows = Array.from({ length: end - start }, (_, offset) => start + offset).flatMap((index) =>
+    row(index, index === cursor),
+  );
+  const more = (text: string) => padded(theme, theme.fg("dim", text), width);
+  const above = start > 0 ? more(`↑ ${start} more`) : [];
+  const below = end < count ? more(`↓ ${count - end} more`) : [];
+
+  return [...above, ...rows, ...below];
+};
+
 const MOVES: Partial<Record<KeyPress["name"], (state: MultiState, count: number) => number>> = {
   up: (state) => state.cursor - 1,
   down: (state) => state.cursor + 1,
@@ -72,22 +94,12 @@ export const multiLines = (
     return padded(theme, theme.fg("muted", "(none available)"), width);
   }
 
-  const { start, end } = scrollWindow(options.length, state.cursor, height);
-
-  const rows = options.slice(start, end).flatMap((option, offset) => {
-    const index = start + offset;
-    const chosen = index === state.cursor;
-    const pointer = chosen ? theme.fg("accent", theme.bold("›")) : " ";
+  return scrolledLines(theme, options.length, state.cursor, height, width, (index, chosen) => {
+    const option = options[index];
     const box = state.checked[index] ? theme.fg("success", "[x]") : theme.fg("muted", "[ ]");
-    const label = theme.fg(chosen ? "accent" : "text", option.label);
-    const description = option.description ? `  ${theme.fg("muted", option.description)}` : "";
+    const label = theme.fg(chosen ? "accent" : "text", option?.label ?? "");
+    const description = option?.description ? `  ${theme.fg("muted", option.description)}` : "";
 
-    return prefixed(theme, `${PAD}${pointer} ${box} `, `${label}${description}`, width);
+    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${box} `, `${label}${description}`, width);
   });
-
-  const more = (text: string) => padded(theme, theme.fg("dim", text), width);
-  const above = start > 0 ? more(`↑ ${start} more`) : [];
-  const below = end < options.length ? more(`↓ ${options.length - end} more`) : [];
-
-  return [...above, ...rows, ...below];
 };

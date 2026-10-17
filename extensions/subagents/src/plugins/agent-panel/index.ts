@@ -79,7 +79,7 @@ export const agentPanelPlugin: Plugin = {
     };
 
     const report = (action: string, error: unknown) => {
-      host.ui.notify(`pi-subagents: ${action} failed: ${errorText(error)}`, "warning");
+      host.ui.notify(`${NAMESPACE}: ${action} failed: ${errorText(error)}`, "warning");
     };
 
     const actions: PanelActions = {

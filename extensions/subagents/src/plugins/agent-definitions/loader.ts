@@ -19,7 +19,7 @@ import { parseFrontmatter } from "./yaml-lite.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 
-export type OverrideNotice = { level: "warning" | "info"; message: string };
+type OverrideNotice = { level: "warning" | "info"; message: string };
 
 export type OverrideCheck = {
   overrides: AgentOverrides;

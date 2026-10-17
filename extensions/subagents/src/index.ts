@@ -3,7 +3,7 @@ import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
 import { createExtensionManager } from "../../../core/manager/extension-manager.ts";
 import { errorText } from "./components/format.ts";
 import { NAMESPACE } from "./model/paths.ts";
-import { defaultSettings, disabledPlugins, reloadSettings } from "./model/settings.ts";
+import { defaultSettings, disabledPlugins, reloadSettings, settingsWarning } from "./model/settings.ts";
 import { plugins } from "./plugins.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -14,9 +14,7 @@ export default createPiExtension(
     const settings = { ...defaultSettings(), disabledPlugins: disabled };
 
     host.onSessionStart((info) => {
-      reloadSettings(settings, info, (message) =>
-        host.ui.notify(`${NAMESPACE} settings: ${message}`, "warning"),
-      );
+      reloadSettings(settings, info, (message) => host.ui.notify(settingsWarning(message), "warning"));
     });
 
     const manager = createExtensionManager({

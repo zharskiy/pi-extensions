@@ -658,7 +658,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
 export type FakeChild = ChildSession & {
   spec: SpawnSpec;
-  mcp: boolean;
   task?: string;
   messages: { message: RoutedMessage; delivery: MessageDelivery }[];
   wakes: string[];
@@ -693,7 +692,6 @@ const createFakeChild = (spec: SpawnSpec): FakeChild => {
     id: spec.id,
     sessionFile: `${spec.sessionDir}/session.jsonl`,
     spec,
-    mcp: spec.mcp ?? true,
     messages: [],
     wakes: [],
     aborted: false,

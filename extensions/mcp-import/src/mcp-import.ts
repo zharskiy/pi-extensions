@@ -5,7 +5,7 @@ import { errorText, homeRelative } from "../../../core/manager/format.ts";
 import { projectSettingsPath, userSettingsPath } from "../../../core/manager/settings.ts";
 import { completeArgs, type ImportArgs, parseArgs, USAGE } from "./args.ts";
 import { planImport } from "./plan.ts";
-import { appliedReport, dryRunReport, emptyReport } from "./report.ts";
+import { appliedReport, dryRunReport, emptyReport, NAMESPACE } from "./report.ts";
 import { findServers } from "./sources.ts";
 
 const MCP_FILE = "mcp.json";
@@ -18,7 +18,7 @@ export const createMcpImport = (host: Host, home: string) => {
   };
 
   const fail = (message: string, level: "warning" | "error" = "error") => {
-    host.ui.notify(`pi-mcp-import: ${message}`, level);
+    host.ui.notify(`${NAMESPACE}: ${message}`, level);
   };
 
   const run = (args: ImportArgs) => {

@@ -5,10 +5,10 @@ import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolve
 
 type PiModel = NonNullable<ExtensionContext["model"]>;
 
-export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
+const providerAuth = (ctx: ExtensionContext) => {
   const authByProvider = new Map<string, boolean>();
 
-  const hasAuth = (model: PiModel) => {
+  return (model: PiModel) => {
     const known = authByProvider.get(model.provider);
 
     if (known !== undefined) {
@@ -21,6 +21,10 @@ export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
 
     return configured;
   };
+};
+
+export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
+  const hasAuth = providerAuth(ctx);
 
   return ctx.modelRegistry
     .getAll()
@@ -36,6 +40,7 @@ export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
 
 const catalogOf = (ctx: ExtensionContext) => {
   const models = ctx.modelRegistry.getAll();
+  const hasAuth = providerAuth(ctx);
 
   const catalog = models.map(
     (model): CatalogModel => ({
@@ -44,7 +49,7 @@ const catalogOf = (ctx: ExtensionContext) => {
       name: model.name,
       contextWindow: model.contextWindow,
       cost: { input: model.cost.input, output: model.cost.output },
-      authenticated: ctx.modelRegistry.hasConfiguredAuth(model),
+      authenticated: hasAuth(model),
     }),
   );
 

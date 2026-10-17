@@ -15,6 +15,7 @@ import {
   overrideThinking,
 } from "./agent-override.ts";
 import type { AgentOverride, AgentOverrides } from "./agent-schema.ts";
+import { NAMESPACE } from "./paths.ts";
 
 export type Settings = {
   maxConcurrent: number;
@@ -123,6 +124,8 @@ const settingsSchema: SettingsSchema<Settings> = {
   fetchMaxChars: range(1_000, 1_000_000),
   agents: { type: "object", of: "agent overrides", parse: parseOverrides },
 };
+
+export const settingsWarning = (message: string) => `${NAMESPACE} settings: ${message}`;
 
 export const settingsPaths = (info: { agentDir: string; cwd: string }) => ({
   project: projectSettingsPath(info.cwd, SETTINGS_FILE),
