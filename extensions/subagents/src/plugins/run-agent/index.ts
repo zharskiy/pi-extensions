@@ -162,16 +162,6 @@ export const runAgentPlugin: Plugin = {
     host.onSessionStart(() => {
       registerRunAgent();
       host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
-
-      if (settings.delegateOnly) {
-        const agentTools = [
-          "run_agent",
-          "message_agent",
-          ...(services.has("agentStatus") ? ["agent_status"] : []),
-        ];
-
-        host.restrictTools([...agentTools, ...settings.delegateOnlyTools]);
-      }
     });
 
     host.onSessionShutdown(async (reason) => {

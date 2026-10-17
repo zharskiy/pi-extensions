@@ -138,7 +138,7 @@ fetch-tool/         # the fetch tool: index.ts (plugin, `fetchTool` service, too
 agent-definitions/  # loads agents/**/*.md: loader.ts, fields.ts (field rules),
                     #   yaml-lite.ts (frontmatter parser), prompt assembly
 agent-registry/     # in-memory agent records (registry.ts)
-run-agent/          # index.ts (plugin, wake, block invalidation, delegate-only restriction), runner.ts (skills and spawn-cap checks), tools.ts (run_agent, message_agent), render.ts (block),
+run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts (skills and spawn-cap checks), tools.ts (run_agent, message_agent), render.ts (block),
                     #   placement.ts + worktree.ts,
                     #   task.ts (task text), outbox.ts, result.ts, model-text.ts,
                     #   semaphore.ts, handoff.ts (handoff template and schema service)

@@ -67,7 +67,7 @@ describe("run_agent skills", () => {
     expect(runtime.children.map((child) => child.spec.skills)).toEqual([undefined, []]);
   });
 
-  it("fails the whole batch on an unknown name, listing the valid ones, and registers nothing", async () => {
+  it("fails the whole batch on a skill the caller lacks, lists its skills, starts nothing", async () => {
     const { run, registry, runtime } = setup();
 
     await expect(
@@ -76,19 +76,19 @@ describe("run_agent skills", () => {
         { agent: "reviewer", task: "b", skills: ["tdd", "lint", "fmt"] },
       ]),
     ).rejects.toThrow(
-      'reviewer: unknown skill(s) "lint", "fmt". Available skills: docs, git, tdd. Nothing was started.',
+      'reviewer: skill(s) "lint", "fmt" not in this caller\'s skills. This caller\'s skills: docs, git, tdd. Nothing was started.',
     );
     expect(registry.list()).toEqual([]);
     expect(runtime.children).toEqual([]);
   });
 
-  it("says the session has no skills when the list is empty", async () => {
+  it("says the caller has no skills when the main session has none", async () => {
     const { run, registry, runtime } = setup();
 
     runtime.skills = [];
 
     await expect(run([{ agent: "scout", task: "a", skills: ["tdd"] }])).rejects.toThrow(
-      'scout: unknown skill(s) "tdd". This session has no skills. Nothing was started.',
+      'scout: skill(s) "tdd" not in this caller\'s skills. This caller has no skills. Nothing was started.',
     );
     expect(registry.list()).toEqual([]);
   });
@@ -106,7 +106,7 @@ describe("run_agent skills", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
-  it("validates an agent caller's items against the main session's skills", async () => {
+  it("validates a skills: all caller's items against every skill of the main session", async () => {
     const { run, registry, runner, runtime } = setup();
 
     await run([{ agent: "general", task: "lead" }]);
@@ -118,12 +118,71 @@ describe("run_agent skills", () => {
         callerId: lead.id,
         wait: false,
       }),
-    ).toThrow('scout: unknown skill(s) "lint". Available skills: docs, git, tdd. Nothing was started.');
+    ).toThrow(
+      'scout: skill(s) "lint" not in this caller\'s skills. This caller\'s skills: docs, git, tdd. Nothing was started.',
+    );
 
     runner.startBatch([{ agent: "scout", task: "a", skills: ["git"] }], { callerId: lead.id, wait: false });
     await flush();
 
     expect(runtime.children[1].spec.skills).toEqual(["git"]);
+  });
+
+  it("stores each record's effective skills, all resolved to names, call-time skills added", async () => {
+    const { run, registry } = setup({ lead: "tools: all\nskills: [docs]\nsubagents: [scout]" });
+
+    await run([
+      { agent: "general", task: "a" },
+      { agent: "lead", task: "b", skills: ["git"] },
+      { agent: "scout", task: "c" },
+    ]);
+
+    expect(registry.list().map((record) => record.skills)).toEqual([
+      ["docs", "git", "tdd"],
+      ["docs", "git"],
+      [],
+    ]);
+  });
+
+  it("lets an agent caller pass only skills in its own effective set", async () => {
+    const { run, registry, runner, runtime } = setup({
+      lead: "tools: all\nskills: [docs]\nsubagents: [scout]",
+    });
+
+    await run([{ agent: "lead", task: "lead", skills: ["git"] }]);
+
+    const lead = registry.list()[0];
+
+    expect(() =>
+      runner.startBatch([{ agent: "scout", task: "a", skills: ["tdd"] }], { callerId: lead.id, wait: false }),
+    ).toThrow(
+      'scout: skill(s) "tdd" not in this caller\'s skills. This caller\'s skills: docs, git. Nothing was started.',
+    );
+    expect(registry.list()).toHaveLength(1);
+
+    runner.startBatch([{ agent: "scout", task: "a", skills: ["git", "docs"] }], {
+      callerId: lead.id,
+      wait: false,
+    });
+    await flush();
+
+    expect(runtime.children[1].spec.skills).toEqual(["git", "docs"]);
+    expect(registry.list()[1].skills).toEqual(["git", "docs"]);
+  });
+
+  it("says an agent caller with skills: [] has no skills to pass", async () => {
+    const { run, registry, runner } = setup({ bare: "tools: all\nskills: []\nsubagents: [scout]" });
+
+    await run([{ agent: "bare", task: "lead" }]);
+
+    expect(() =>
+      runner.startBatch([{ agent: "scout", task: "a", skills: ["docs"] }], {
+        callerId: registry.list()[0].id,
+        wait: false,
+      }),
+    ).toThrow(
+      'scout: skill(s) "docs" not in this caller\'s skills. This caller has no skills. Nothing was started.',
+    );
   });
 
   it("carries the item's skills into a handoff successor", async () => {
@@ -149,5 +208,6 @@ describe("run_agent skills", () => {
 
     expect(successor).toBeDefined();
     expect(runtime.child(successor).spec.skills).toEqual(["tdd"]);
+    expect(current(successor).skills).toEqual(["tdd"]);
   });
 });

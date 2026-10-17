@@ -17,7 +17,8 @@
     "questionnaire",
     "style",
     "context",
-    "footer"
+    "footer",
+    "mcp-import"
   ],
   "files": [
     "core/adapter",
@@ -44,7 +45,8 @@
       "./extensions/questionnaire/src/index.ts",
       "./extensions/style/src/index.ts",
       "./extensions/context/src/index.ts",
-      "./extensions/footer/src/index.ts"
+      "./extensions/footer/src/index.ts",
+      "./extensions/mcp-import/src/index.ts"
     ]
   },
   "scripts": {

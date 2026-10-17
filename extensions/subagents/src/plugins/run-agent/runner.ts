@@ -35,7 +35,7 @@ import {
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
-import { batchMessage, storeResult } from "./result.ts";
+import { batchMessage, pickResult, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
 import { composeTask } from "./task.ts";
 
@@ -370,6 +370,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       dir: dirname(record.dir),
       contextLimit: record.contextLimit,
       model: record.model,
+      skills: record.skills,
       chainIndex: record.chainIndex + 1,
       predecessorId: record.id,
       worktree: record.worktree,
@@ -390,6 +391,19 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return closed;
   };
 
+  const finalText = (live: Live) =>
+    pickResult(live.child?.runTexts() ?? [], live.child?.lastText() || live.lastText);
+
+  const partialResult = (record: AgentRecord, text: string, error: string) => {
+    if (text.length === 0) {
+      return { error };
+    }
+
+    const { error: storeError, ...stored } = storeResult(record, text);
+
+    return { ...stored, error: storeError ? `${error}; ${storeError}` : error };
+  };
+
   const finish = (record: AgentRecord, live: Live, aborted: boolean) => {
     if (isClosed(record.state)) {
       return;
@@ -400,13 +414,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const text = (live.child?.lastText() || live.lastText).trim();
+    const text = finalText(live);
+
     if (aborted || failedStop(live.lastStopReason)) {
-      deps.registry.close(record.id, {
-        state: "failed",
-        error:
-          live.abortReason ?? live.lastError ?? (aborted ? "aborted" : `stopped with ${live.lastStopReason}`),
-      });
+      const error =
+        live.abortReason ?? live.lastError ?? (aborted ? "aborted" : `stopped with ${live.lastStopReason}`);
+
+      deps.registry.close(record.id, { state: "failed", ...partialResult(record, text, error) });
 
       return;
     }
@@ -433,10 +447,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     clearGrace(live);
 
-    const text = (live?.child?.lastText() || live?.lastText || "").trim();
-    const result = text.length > 0 ? storeResult(record, text) : {};
+    const text = live ? finalText(live) : "";
 
-    deps.registry.close(record.id, { state: "stopped", error, graceEndsAt: undefined, ...result });
+    deps.registry.close(record.id, {
+      state: "stopped",
+      graceEndsAt: undefined,
+      ...partialResult(record, text, error),
+    });
   };
 
   const expireGrace = async (id: string) => {
@@ -605,6 +622,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         tools: allowlist(definition.tools),
         customTools: deps.toolsFor(record),
         skills: skillsFor(definition, slot.item),
+        mcp: definition.mcp ?? true,
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
       })
@@ -689,6 +707,15 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     );
   };
 
+  const callerSkills = (callerId: string) =>
+    callerId === MAIN_CALLER ? deps.runtime.skillNames() : (deps.registry.get(callerId)?.skills ?? []);
+
+  const effectiveSkills = (definition: AgentDefinition, item: BatchItem) => {
+    const own = definition.skills === ALL ? deps.runtime.skillNames() : definition.skills;
+
+    return unique(own.concat(item.skills ?? []));
+  };
+
   const skillError = (item: BatchItem, available: string[]) => {
     const tools = (deps.definitions.get(item.agent) as AgentDefinition).tools;
     const unknown = unique(item.skills ?? []).filter((name) => !available.includes(name));
@@ -696,9 +723,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     if (unknown.length > 0) {
       const listed = unknown.map((name) => `"${name}"`).join(", ");
       const valid =
-        available.length > 0 ? `Available skills: ${available.join(", ")}.` : "This session has no skills.";
+        available.length > 0
+          ? `This caller's skills: ${available.join(", ")}.`
+          : "This caller has no skills.";
 
-      return `${item.agent}: unknown skill(s) ${listed}. ${valid}`;
+      return `${item.agent}: skill(s) ${listed} not in this caller's skills. ${valid}`;
     }
 
     if (item.skills?.length && tools !== ALL && !tools.includes("read")) {
@@ -764,7 +793,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       throw new Error(capped);
     }
 
-    const available = items.some((item) => item.skills?.length) ? deps.runtime.skillNames() : [];
+    const available = items.some((item) => item.skills?.length) ? callerSkills(options.callerId) : [];
     const skillErrors = items
       .map((item) => skillError(item, available))
       .filter((error) => error !== undefined);
@@ -809,6 +838,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         dir,
         contextLimit: (deps.definitions.get(item.agent) as AgentDefinition).limit,
         model: plan.label,
+        skills: effectiveSkills(deps.definitions.get(item.agent) as AgentDefinition, item),
       });
 
       launches.set(record.id, slot);

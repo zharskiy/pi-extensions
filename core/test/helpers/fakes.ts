@@ -53,8 +53,6 @@ export type FakeHost = Host & {
   mainPrompt?: string;
   promptSections: Map<string, string>;
   promptSectionCalls: { name: string; text: string | undefined }[];
-  activeTools: Set<string>;
-  restrictCalls: string[][];
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
@@ -195,8 +193,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     commands: new Map(),
     promptSections: new Map(),
     promptSectionCalls: [],
-    activeTools: new Set(),
-    restrictCalls: [],
     entries: [],
     files: new Map(),
     sent: [],
@@ -405,12 +401,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     setMainPrompt: (text) => {
       host.mainPrompt = text;
-    },
-    restrictTools: (keep) => {
-      const kept = new Set(keep);
-
-      host.restrictCalls.push([...keep]);
-      host.activeTools = new Set([...host.activeTools].filter((name) => kept.has(name)));
     },
     setPromptSection: (name, text) => {
       host.promptSectionCalls.push({ name, text });
@@ -667,6 +657,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
 export type FakeChild = ChildSession & {
   spec: SpawnSpec;
+  mcp: boolean;
   task?: string;
   messages: { message: RoutedMessage; delivery: MessageDelivery }[];
   wakes: string[];
@@ -676,6 +667,7 @@ export type FakeChild = ChildSession & {
   disposed: boolean;
   usage: UsageTotals;
   text: string;
+  texts?: string[];
   emit(event: ChildEvent): void;
   finish(
     text: string,
@@ -700,6 +692,7 @@ const createFakeChild = (spec: SpawnSpec): FakeChild => {
     id: spec.id,
     sessionFile: `${spec.sessionDir}/session.jsonl`,
     spec,
+    mcp: spec.mcp ?? true,
     messages: [],
     wakes: [],
     aborted: false,
@@ -738,6 +731,7 @@ const createFakeChild = (spec: SpawnSpec): FakeChild => {
     },
     ownUsage: () => child.usage,
     lastText: () => child.text,
+    runTexts: () => child.texts ?? (child.text.trim() ? [child.text.trim()] : []),
     emit: (event) => {
       [...listeners].forEach((listener) => {
         listener(event);

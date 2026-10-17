@@ -23,7 +23,7 @@ const MIN_ROOM = 8;
 
 const STATS_COLS = 30;
 
-const POINTER_COLS = 2;
+export const POINTER_COLS = 2;
 
 export type RowInput = TreeRow & { selected: boolean };
 
@@ -110,26 +110,19 @@ const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
   return painted + " ".repeat(Math.max(0, cols - theme.width(cut)));
 };
 
-const leadOf = (theme: ThemeLike, row: TreeRow, nameCols: number, pointerCols: number) =>
-  pointerCols + theme.width(treePrefix(row)) + 2 + nameCols + 2;
+const leadOf = (theme: ThemeLike, row: TreeRow, nameCols: number) =>
+  POINTER_COLS + theme.width(treePrefix(row)) + 2 + nameCols + 2;
 
-export const rowLayout = (
-  rows: TreeRow[],
-  now: number,
-  width: number,
-  selecting: boolean,
-  theme: ThemeLike,
-): RowLayout => {
+export const rowLayout = (rows: TreeRow[], now: number, width: number, theme: ThemeLike): RowLayout => {
   const nameCols = nameColumn(rows, theme);
-  const reserve = selecting ? POINTER_COLS : 0;
   const widest = (measure: (row: TreeRow) => number) =>
     rows.reduce((most, row) => Math.max(most, measure(row)), 0);
   const wants = (row: TreeRow, cap: number) =>
-    leadOf(theme, row, nameCols, 0) + Math.min(cap, theme.width(singleLine(row.record.description)));
+    leadOf(theme, row, nameCols) + Math.min(cap, theme.width(singleLine(row.record.description)));
   const wanted = widest((row) => wants(row, DESCRIPTION_COLS_MAX));
   const floor = widest((row) => wants(row, MIN_DESCRIPTION));
   const limit = innerWidth(width) - 2 - widest((row) => statsReserve(theme, row.record, now));
-  const infoAt = Math.max(floor + reserve, Math.min(wanted + reserve, limit));
+  const infoAt = Math.max(floor, Math.min(wanted, limit));
 
   return { nameCols, infoAt: Math.min(innerWidth(width), infoAt) };
 };
@@ -143,17 +136,16 @@ export const renderRow = (
 ): string => {
   const { record } = input;
   const { nameCols, infoAt } = layout;
-  const pointerCols = input.selected ? POINTER_COLS : 0;
-  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : "";
+  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : " ".repeat(POINTER_COLS);
   const tree = treePrefix(input);
   const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
-  const fixed = leadOf(theme, input, nameCols, pointerCols);
+  const fixed = leadOf(theme, input, nameCols);
   const stats = pickStats(theme, statsVariants(record, now), width, infoAt);
   const room = roomFor(theme, width, fixed, stats.plain);
   const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
 
   if (room < MIN_ROOM) {
-    const after = innerWidth(width) - pointerCols - theme.width(tree) - 2;
+    const after = innerWidth(width) - POINTER_COLS - theme.width(tree) - 2;
 
     if (stats.plain && 2 + theme.width(stats.plain) > after) {
       const cut = theme.truncate(stats.plain, Math.max(0, after - 2));

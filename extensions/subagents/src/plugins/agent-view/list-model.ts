@@ -31,16 +31,20 @@ const rootOf = (record: AgentRecord, byId: ById): AgentRecord => {
   return !caller || isListRoot(record, byId) ? record : rootOf(caller, byId);
 };
 
-export const visibleRecords = (
-  records: AgentRecord[],
-  now: number,
-  lingerMs: number,
-  cleared: ReadonlySet<string>,
-): AgentRecord[] => {
+export const MAX_CLOSED_ROOTS = 200;
+
+export const visibleRecords = (records: AgentRecord[], cleared: ReadonlySet<string>): AgentRecord[] => {
   const byId = indexOf(records);
   const terminals = terminalsOf(records, byId);
-  const ageOf = (record: AgentRecord) => now - (record.endedAt ?? now);
   const hidden = (record: AgentRecord) => isClosed(record.state) && cleared.has(record.id);
+
+  const keptRoots = new Set(
+    terminals
+      .filter((record) => isClosed(record.state) && !hidden(record) && isListRoot(record, byId))
+      .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+      .slice(0, MAX_CLOSED_ROOTS)
+      .map((record) => record.id),
+  );
 
   const listedAlone = (record: AgentRecord) => {
     if (!isClosed(record.state)) {
@@ -49,13 +53,7 @@ export const visibleRecords = (
 
     const root = rootOf(record, byId);
 
-    if (isClosed(root.state)) {
-      return ageOf(root) < lingerMs;
-    }
-
-    const caller = callerOf(record, byId);
-
-    return ageOf(record) < lingerMs || (caller !== undefined && !isClosed(caller.state));
+    return !isClosed(root.state) || keptRoots.has(root.id);
   };
 
   const listed = new Set<string>();

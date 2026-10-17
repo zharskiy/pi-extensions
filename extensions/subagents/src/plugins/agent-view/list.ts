@@ -16,7 +16,6 @@ import type { ListComponent } from "./overlay.ts";
 
 type ListDeps = {
   records(): AgentRecord[];
-  lingerMs: number;
   cleared: Set<string>;
   stop(id: string): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void): () => void;
@@ -49,7 +48,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
   const compute = () => {
     const previousIds = ids;
 
-    visible = visibleRecords(deps.records(), Date.now(), deps.lingerMs, deps.cleared);
+    visible = visibleRecords(deps.records(), deps.cleared);
     sections = listSections(visible);
     subtitleText = subtitle(visible);
     rows = sections.flatMap((section) => section.rows);
@@ -66,7 +65,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     api.requestRender();
   };
 
-  const tickMs = () => tickFor(visible, true);
+  const tickMs = () => tickFor(visible, false);
 
   const selected = () => rows.find((row) => row.record.id === selectedId)?.record;
 
@@ -134,7 +133,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     }
 
     const now = Date.now();
-    const layout = rowLayout(rows, now, width, selectedId !== undefined, theme);
+    const layout = rowLayout(rows, now, width, theme);
     const lines: string[] = [];
     let selectedLine = -1;
 

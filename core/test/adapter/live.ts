@@ -132,7 +132,7 @@ export const describeLive = (name: string, body: () => void) =>
     body();
   });
 
-const PI_DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
+export const PI_DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 
 export type LiveParent = { trusted?: boolean; skillFiles?: SkillFile[] };
 

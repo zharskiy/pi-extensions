@@ -100,7 +100,8 @@ describe("stop grace period", () => {
 
     expect(registry.get(id)?.state).toBe("stopped");
     expect(wakeTexts(host)).toHaveLength(1);
-    expect(wakeTexts(host)[0]).toContain("partial findings");
+    expect(wakeTexts(host)[0]).toContain("(unverified partial output: stopped by the user)\n\npartial findings");
+    expect(registry.get(id)?.resultPath).toBeDefined();
     expect(vi.getTimerCount()).toBe(0);
   });
 

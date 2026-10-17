@@ -68,6 +68,7 @@ export type AgentRecord = {
   dir: string;
   sessionFile?: string;
   model?: string;
+  skills?: string[];
   worktree?: Worktree;
   contextLimit: number;
   handoffRequested: boolean;
@@ -106,6 +107,7 @@ export type NewAgent = {
   dir: string;
   contextLimit: number;
   model?: string;
+  skills?: string[];
   chainIndex?: number;
   predecessorId?: string;
   worktree?: Worktree;

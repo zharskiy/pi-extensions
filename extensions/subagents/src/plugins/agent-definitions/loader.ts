@@ -1,6 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
+import {
+  type AgentFrontmatter,
+  type AgentOverride,
+  type AgentOverrides,
+  ALL,
+  INHERIT_MODEL,
+} from "../../model/agent-schema.ts";
 import {
   type AgentDefinition,
   type AgentSource,
@@ -12,10 +18,20 @@ import { parseFrontmatter } from "./yaml-lite.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 
+export type OverrideNotice = { level: "warning" | "info"; message: string };
+
+export type OverrideCheck = {
+  overrides: AgentOverrides;
+  skillNames: () => string[];
+  modelProblem: (model: string) => string | undefined;
+  untrustedDir?: string;
+};
+
 type LoadResult = {
   definitions: Map<string, AgentDefinition>;
   errors: DefinitionError[];
   warnings: DefinitionError[];
+  notices: OverrideNotice[];
 };
 
 const FIELD_KEYS: ReadonlySet<string> = new Set(FRONTMATTER_FIELDS.map((spec) => spec.key));
@@ -161,7 +177,87 @@ const markdownFiles = (dir: string): string[] => {
     });
 };
 
-export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
+const agentNamesIn = (dir: string) =>
+  new Set(
+    markdownFiles(dir)
+      .map((path) => parseFrontmatter(readFileSync(path, "utf8")).data.name)
+      .filter((name): name is string => typeof name === "string"),
+  );
+
+const modelNotice = (name: string, model: string | undefined, check: OverrideCheck) => {
+  const problem = model === undefined || model === INHERIT_MODEL ? undefined : check.modelProblem(model);
+
+  return problem ? `agents.${name}.model "${model}": ${problem}; dropped` : undefined;
+};
+
+const skillsNotice = (name: string, skills: AgentOverride["skills"], check: OverrideCheck) => {
+  if (!Array.isArray(skills) || skills.length === 0) {
+    return undefined;
+  }
+
+  const loaded = check.skillNames();
+  const unknown = skills.filter((skill) => !loaded.includes(skill));
+  const available = loaded.length > 0 ? loaded.join(", ") : "none";
+
+  return unknown.length > 0
+    ? `agents.${name}.skills names unknown skill(s) ${unknown.join(", ")}; dropped. Loaded skills: ${available}`
+    : undefined;
+};
+
+const checkedOverride = (name: string, override: AgentOverride, check: OverrideCheck) => {
+  const badModel = modelNotice(name, override.model, check);
+  const badSkills = skillsNotice(name, override.skills, check);
+  const kept: AgentOverride = {
+    ...override,
+    model: badModel ? undefined : override.model,
+    skills: badSkills ? undefined : override.skills,
+  };
+  const notices = [badModel, badSkills]
+    .filter((message): message is string => message !== undefined)
+    .map((message): OverrideNotice => ({ level: "warning", message }));
+
+  return { kept, notices };
+};
+
+const overridden = (definition: AgentDefinition, override: AgentOverride): AgentDefinition => {
+  const model = override.model === INHERIT_MODEL ? undefined : (override.model ?? definition.model);
+
+  return {
+    ...definition,
+    model,
+    thinking: override.thinking ?? definition.thinking,
+    skills: override.skills ?? definition.skills,
+  };
+};
+
+const applyOverrides = (definitions: Map<string, AgentDefinition>, check: OverrideCheck) => {
+  const untrusted = check.untrustedDir ? agentNamesIn(check.untrustedDir) : new Set<string>();
+
+  return Object.entries(check.overrides).flatMap(([name, override]): OverrideNotice[] => {
+    const definition = definitions.get(name);
+
+    if (!definition && untrusted.has(name)) {
+      return [
+        {
+          level: "info",
+          message: `agents.${name}: "${name}" is defined only in this project's .pi/agents, which is not trusted; override not applied`,
+        },
+      ];
+    }
+
+    if (!definition) {
+      return [{ level: "warning", message: `agents.${name}: no agent named "${name}"; override ignored` }];
+    }
+
+    const { kept, notices } = checkedOverride(name, override, check);
+
+    definitions.set(name, overridden(definition, kept));
+
+    return notices;
+  });
+};
+
+export const loadDefinitions = (dirs: DefinitionDir[], check?: OverrideCheck): LoadResult => {
   const definitions = new Map<string, AgentDefinition>();
   const errors: DefinitionError[] = [];
   const warnings: DefinitionError[] = [];
@@ -195,5 +291,7 @@ export const loadDefinitions = (dirs: DefinitionDir[]): LoadResult => {
 
   pruneSubagentGraph(definitions, errors);
 
-  return { definitions, errors, warnings };
+  const notices = check ? applyOverrides(definitions, check) : [];
+
+  return { definitions, errors, warnings, notices };
 };

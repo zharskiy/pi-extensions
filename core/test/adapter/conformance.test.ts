@@ -7,6 +7,7 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
+import { finalRunTexts } from "../../adapter/messages.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
@@ -230,61 +231,6 @@ describe("pi adapter conformance", () => {
     }
   });
 
-  it("drops the tools a setActiveTools list leaves out and ignores unknown names", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
-    const seen: { api?: pi.ExtensionAPI } = {};
-
-    try {
-      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
-
-      const settingsManager = pi.SettingsManager.inMemory({});
-
-      const loader = new pi.DefaultResourceLoader({
-        cwd: dir,
-        agentDir: dir,
-        settingsManager,
-        extensionFactories: [
-          {
-            name: "probe",
-            factory: (api) => {
-              seen.api = api;
-              api.registerTool(namedTool("probe_tool") as never);
-            },
-          },
-        ],
-      });
-
-      await loader.reload();
-
-      const { session } = await pi.createAgentSession({
-        cwd: dir,
-        agentDir: dir,
-        modelRuntime: await pi.ModelRuntime.create(),
-        model: offlineModel as never,
-        resourceLoader: loader,
-        settingsManager,
-        sessionManager: pi.SessionManager.inMemory(dir),
-      });
-
-      await session.bindExtensions({ mode: "print" });
-
-      const api = seen.api as pi.ExtensionAPI;
-      const before = api.getActiveTools();
-
-      api.setActiveTools(["read", "probe_tool", "no_such_tool"]);
-
-      expect(before).toEqual(expect.arrayContaining(["read", "bash", "probe_tool"]));
-      expect(api.getActiveTools().toSorted()).toEqual(["probe_tool", "read"]);
-      expect(api.getAllTools().map((tool) => tool.name)).toEqual(
-        expect.arrayContaining(["bash", "probe_tool"]),
-      );
-
-      session.dispose();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
   it("names only assistant event types pi has", () => {
     void (ASSISTANT_DELTA_TYPES satisfies readonly pi.MessageUpdateEvent["assistantMessageEvent"]["type"][]);
   });
@@ -394,6 +340,39 @@ describe("pi adapter conformance", () => {
     expect(fire("session_before_compact", { reason: "overflow" })).toEqual([{ cancel: true }]);
   });
 
+  it("reads the assistant texts of a child's final run from pi's session entries", () => {
+    const session = pi.SessionManager.inMemory(mkdtempSync(join(tmpdir(), "pi-run-texts-")));
+    const text = (value: string) => ({ type: "text" as const, text: value });
+    const toolCall = { type: "toolCall" as const, id: "t1", name: "read", arguments: {} };
+    const user = (value: string) => ({ role: "user" as const, content: value, timestamp: 0 });
+    const assistant = (content: unknown[]) =>
+      ({ role: "assistant", content, stopReason: content.includes(toolCall) ? "toolUse" : "stop" }) as never;
+    const toolResult = {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "read",
+      content: [text("file")],
+      isError: false,
+      timestamp: 0,
+    } as never;
+
+    [
+      user("task"),
+      assistant([text("Status: done\nfirst run")]),
+      user("wake"),
+      assistant([text("Status: done\nreport"), toolCall]),
+      toolResult,
+      user("steered"),
+      assistant([toolCall]),
+      toolResult,
+      assistant([text("  bye  ")]),
+    ].forEach((message) => {
+      session.appendMessage(message);
+    });
+
+    expect(finalRunTexts(session.getEntries())).toEqual(["Status: done\nreport", "bye"]);
+  });
+
   it("records the first provider request once as the prompt record", () => {
     const { api, entries, fire } = fakeExtensionApi();
 
@@ -477,6 +456,15 @@ describe("pi adapter conformance", () => {
       const { names } = await sessionTools(childToolNames(["read"], [], noMainTools));
 
       expect(names).toEqual([...LATE_MCP, "read"]);
+    });
+
+    it("keeps MCP tools registered after the start inactive for mcp: false", async () => {
+      const tools = childToolNames(["read"], [], noMainTools, false);
+      const { active } = await sessionTools(tools);
+
+      expect(tools.some((name) => name.startsWith("mcp__"))).toBe(false);
+      expect(active).toContain("read");
+      expect(active.filter((name) => name.startsWith("mcp__"))).toEqual([]);
     });
 
     it("keeps the main session's tools and every MCP tool for tools: all", async () => {

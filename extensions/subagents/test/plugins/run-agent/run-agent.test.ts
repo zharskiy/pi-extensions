@@ -103,24 +103,95 @@ describe("run_agent batches", () => {
     expect(wakeTexts(host)).toHaveLength(1);
   });
 
-  it("passes small results inline and large ones as a file path", async () => {
+  it("passes small results inline and large ones as their head up to a newline and a file marker", async () => {
     const { run, runtime, host, registry } = setup({ inlineResultChars: 50 });
-    const large = "x".repeat(500);
+    const large = `Status: done\n${"a".repeat(30)}\n${"x".repeat(500)}`;
 
     await run(tasks(2));
     host.settle();
 
-    runtime.children[0].finish("small");
+    runtime.children[0].finish("Status: done\nsmall");
     runtime.children[1].finish(large);
     await flush();
 
     const [small, big] = registry.list();
+    const wake = wakeTexts(host)[0];
 
-    expect(wakeTexts(host)[0]).toContain("\n\nsmall");
-    expect(wakeTexts(host)[0]).not.toContain(large);
-    expect(wakeTexts(host)[0]).toContain(`Result file: ${big.resultPath} (500 chars)`);
+    expect(wake).toContain("\n\nStatus: done\nsmall");
+    expect(wake).not.toContain("x".repeat(500));
+    expect(wake).not.toContain("Preview:");
+    expect(wake.endsWith(`\n\nStatus: done\n${"a".repeat(30)}\nResult file: ${big.resultPath} (501 more chars)`)).toBe(
+      true,
+    );
     expect(readFileSync(big.resultPath ?? "", "utf8")).toBe(`${large}\n`);
     expect(existsSync(small.resultPath ?? "")).toBe(true);
+  });
+
+  it("cuts a result without a newline at the limit and gives only the marker for a limit of 0", async () => {
+    const cut = setup({ inlineResultChars: 10 });
+
+    await cut.run(tasks(1));
+    cut.host.settle();
+    cut.runtime.children[0].finish(`Status: ${"y".repeat(30)}`);
+    await flush();
+
+    expect(wakeTexts(cut.host)[0]).toContain(`\n\nStatus: yy\nResult file: ${cut.registry.list()[0].resultPath} (28 more chars)`);
+
+    const none = setup({ inlineResultChars: 0 });
+
+    await none.run(tasks(1));
+    none.host.settle();
+    none.runtime.children[0].finish("Status: done");
+    await flush();
+
+    expect(wakeTexts(none.host)[0]).toMatch(/\n\nResult file: \S+ \(12 more chars\)$/);
+  });
+
+  it("takes the last text of the final run that carries a Status line, without spending a turn", async () => {
+    const { run, runtime, host, registry } = setup();
+
+    await run(tasks(1));
+    host.settle();
+
+    const child = runtime.children[0];
+
+    child.texts = ["thinking aloud", "**Status:** done\nthe report", "Done, see above."];
+    child.finish("Done, see above.");
+    await flush();
+
+    expect(registry.list()[0].resultText).toBe("**Status:** done\nthe report");
+    expect(wakeTexts(host)[0]).not.toContain("(shape: no Status line)");
+    expect(child.wakes).toEqual([]);
+  });
+
+  it("marks a result without a Status line with a shape note", async () => {
+    const { run, runtime, host, registry } = setup();
+
+    await run(tasks(1));
+    host.settle();
+    runtime.children[0].finish("just prose");
+    await flush();
+
+    expect(registry.list()[0].state).toBe("done");
+    expect(wakeTexts(host)[0]).toContain("(shape: no Status line)\n\njust prose");
+  });
+
+  it("shows a failed agent's last text as unverified partial output and stores its result file", async () => {
+    const { run, runtime, host, registry } = setup();
+
+    await run(tasks(1));
+    host.settle();
+    runtime.children[0].finish("half a report", { stopReason: "error", error: "rate limited" });
+    await flush();
+
+    const [record] = registry.list();
+
+    expect(record.state).toBe("failed");
+    expect(record.error).toBe("rate limited");
+    expect(readFileSync(record.resultPath ?? "", "utf8")).toBe("half a report\n");
+    expect(wakeTexts(host)[0]).toMatch(
+      /Failed: rate limited \([^\n]*\)\n\(unverified partial output: rate limited\)\n\nhalf a report$/,
+    );
   });
 
   it("joins a busy turn as a hidden follow-up", async () => {
@@ -348,7 +419,7 @@ describe("run_agent batches", () => {
       type: "array",
       items: { type: "string" },
       description:
-        "Skill names to add for this agent: main-session skills whose descriptions fit the task, plus any the user named. None for chores. An unknown name starts nothing; the error lists the valid names.",
+        "Skill names to add for this agent: skills you have whose descriptions fit the task, plus any the user named. None for chores. A skill you do not have starts nothing; the error lists yours.",
     });
     expect(item.additionalProperties).toBe(false);
   });

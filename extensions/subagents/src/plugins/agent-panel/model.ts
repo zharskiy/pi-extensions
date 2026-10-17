@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { renderRow, rowLayout } from "../../components/agent-row.ts";
+import { POINTER_COLS, renderRow, rowLayout } from "../../components/agent-row.ts";
 import { innerWidth, PAD, SEP } from "../../components/format.ts";
 import { stopHint } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
@@ -100,9 +100,9 @@ export const panelLines = (
   actions: PanelActionsAvailable,
 ): string[] => {
   const { start, end, below } = windowOf(rows, state);
-  const marker = (text: string) => `${PAD}${theme.fg("dim", text)}`;
+  const marker = (text: string) => `${PAD}${" ".repeat(POINTER_COLS)}${theme.fg("dim", text)}`;
   const selected = rows.find((entry) => entry.record.id === state.selectedId);
-  const layout = rowLayout(rows, now, width, selected !== undefined, theme);
+  const layout = rowLayout(rows, now, width, theme);
   const lines = rows
     .slice(start, end)
     .map((entry) =>

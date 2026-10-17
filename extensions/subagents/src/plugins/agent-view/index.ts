@@ -37,15 +37,13 @@ export const agentViewPlugin: Plugin = {
     const viewWatch = (id: string) =>
       watch((record) => chainLinks(registry, record).some((link) => link.id === id));
 
-    const listed = () =>
-      listedTerminals(visibleRecords(registry.list(), Date.now(), settings.lingerMs, cleared));
+    const listed = () => listedTerminals(visibleRecords(registry.list(), cleared));
 
     const partsFor = (api: OverlayApi): OverlayParts => ({
       list: (hooks) =>
         createAgentList(
           {
             records: () => registry.list(),
-            lingerMs: settings.lingerMs,
             cleared,
             stop,
             watch: watch(() => true),

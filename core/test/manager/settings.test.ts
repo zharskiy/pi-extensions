@@ -61,6 +61,24 @@ describe("settings helpers", () => {
     });
   });
 
+  it("accepts a plain object for an object rule, through its own parser when it has one", () => {
+    const plain: SettingsSchema<{ map: unknown }> = { map: { type: "object", of: "entries" } };
+    const parsed: SettingsSchema<{ map: unknown }> = {
+      map: {
+        type: "object",
+        of: "entries",
+        parse: (value) => ({ value: { kept: value.good }, errors: ["bad is wrong"] }),
+      },
+    };
+
+    expect(parseSettings(plain, { map: { a: 1 } }, "f").patch).toEqual({ map: { a: 1 } });
+    expect(parseSettings(plain, { map: [] }, "f").errors).toEqual(["f: map must be an object of entries"]);
+    expect(parseSettings(parsed, { map: { good: 1, bad: 2 } }, "f")).toEqual({
+      patch: { map: { kept: 1 } },
+      errors: ["f: map.bad is wrong"],
+    });
+  });
+
   it("rejects anything but a JSON object", () => {
     expect(parseSettings(schema, [], "f").errors).toEqual(["f: expected a JSON object"]);
     expect(parseSettings(schema, null, "f").errors).toEqual(["f: expected a JSON object"]);

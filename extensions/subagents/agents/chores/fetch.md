@@ -7,6 +7,7 @@ tools: [fetch, read]
 skills: []
 subagents: []
 worktree: false
+mcp: false
 ---
 You answer one question from web pages. You never edit files.
 

@@ -79,8 +79,6 @@ describe("subagents settings", () => {
 
   it("defaults the delegation and fetch settings", () => {
     expect(defaultSettings()).toMatchObject({
-      delegateOnly: true,
-      delegateOnlyTools: ["read", "write", "questionnaire"],
       maxChildrenPerAgent: 6,
       fetchTimeoutSeconds: 20,
       fetchMaxBytes: 5_000_000,
@@ -91,8 +89,6 @@ describe("subagents settings", () => {
   it("accepts valid delegation and fetch settings", () => {
     const { agentDir, cwd, userFile } = dirs();
     const values = {
-      delegateOnly: false,
-      delegateOnlyTools: ["read"],
       maxChildrenPerAgent: 0,
       fetchTimeoutSeconds: 300,
       fetchMaxBytes: 10_000,
@@ -111,8 +107,6 @@ describe("subagents settings", () => {
     const { agentDir, cwd, userFile } = dirs();
 
     writeJson(userFile, {
-      delegateOnly: "yes",
-      delegateOnlyTools: "read",
       maxChildrenPerAgent: 51,
       fetchTimeoutSeconds: 0,
       fetchMaxBytes: 9_999,
@@ -122,16 +116,12 @@ describe("subagents settings", () => {
     const loaded = loadSettings(agentDir, cwd, false);
 
     expect(loaded.settings).toMatchObject({
-      delegateOnly: true,
-      delegateOnlyTools: ["read", "write", "questionnaire"],
       maxChildrenPerAgent: 6,
       fetchTimeoutSeconds: 20,
       fetchMaxBytes: 5_000_000,
       fetchMaxChars: 40_000,
     });
     expect(loaded.errors).toEqual([
-      `${userFile}: delegateOnly must be true or false`,
-      `${userFile}: delegateOnlyTools must be a list of tool names`,
       `${userFile}: maxChildrenPerAgent must be a number between 0 and 50`,
       `${userFile}: fetchTimeoutSeconds must be a number between 1 and 300`,
       `${userFile}: fetchMaxBytes must be a number between 10000 and 100000000`,
@@ -147,6 +137,84 @@ describe("subagents settings", () => {
 
     expect(loadSettings(agentDir, cwd, true).settings).toMatchObject({ maxConcurrent: 6, maxDepth: 4 });
     expect(loadSettings(agentDir, cwd, false).settings).toMatchObject({ maxConcurrent: 2, maxDepth: 4 });
+  });
+
+  it("has no agent overrides by default", () => {
+    expect(defaultSettings().agents).toEqual({});
+  });
+
+  it("parses agent overrides, splitting a model's thinking suffix, an explicit thinking winning", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, {
+      agents: {
+        scout: { model: "acme/x:high" },
+        planner: { model: "acme/y:high", thinking: "low", skills: ["docs", "docs"] },
+        general: { model: "inherit", skills: "all" },
+      },
+    });
+
+    const loaded = loadSettings(agentDir, cwd, false);
+
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.settings.agents).toEqual({
+      scout: { model: "acme/x", thinking: "high" },
+      planner: { model: "acme/y", thinking: "low", skills: ["docs"] },
+      general: { model: "inherit", skills: "all" },
+    });
+  });
+
+  it("reports invalid override fields and keeps the valid ones", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, {
+      agents: {
+        scout: { model: "a b", thinking: "loud", skills: "some", tools: ["read"] },
+        planner: "fast",
+        reviewer: { model: "acme/x:extreme", thinking: "max" },
+      },
+    });
+
+    const loaded = loadSettings(agentDir, cwd, false);
+
+    expect(loaded.settings.agents).toEqual({ scout: {}, reviewer: { thinking: "max" } });
+    expect(loaded.errors).toEqual([
+      `${userFile}: agents.scout.tools cannot be overridden (only model, thinking, skills); create an own agent instead`,
+      `${userFile}: agents.scout.model must be provider/id[:thinking] without spaces`,
+      `${userFile}: agents.scout.thinking must be one of off, minimal, low, medium, high, xhigh, max`,
+      `${userFile}: agents.scout.skills must be "all" or a list of skill names`,
+      `${userFile}: agents.planner must be an object with model, thinking, skills`,
+      `${userFile}: agents.reviewer.model: invalid thinking level "extreme" in "acme/x:extreme"; use one of off, minimal, low, medium, high, xhigh, max`,
+    ]);
+  });
+
+  it("rejects agents that is not an object", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, { agents: ["scout"] });
+
+    expect(loadSettings(agentDir, cwd, false).errors).toEqual([
+      `${userFile}: agents must be an object of agent overrides`,
+    ]);
+  });
+
+  it("merges agent overrides per agent and field, the trusted project last", () => {
+    const { agentDir, cwd, userFile, projectFile } = dirs();
+
+    writeJson(userFile, {
+      agents: { scout: { model: "acme/u", skills: ["docs"] }, planner: { thinking: "low" } },
+    });
+    writeJson(projectFile, { agents: { scout: { model: "acme/p:high" }, reviewer: { skills: [] } } });
+
+    expect(loadSettings(agentDir, cwd, true).settings.agents).toEqual({
+      scout: { model: "acme/p", thinking: "high", skills: ["docs"] },
+      planner: { thinking: "low" },
+      reviewer: { skills: [] },
+    });
+    expect(loadSettings(agentDir, cwd, false).settings.agents).toEqual({
+      scout: { model: "acme/u", skills: ["docs"] },
+      planner: { thinking: "low" },
+    });
   });
 
   it("reads disabledPlugins from the user file only and warns when the project file sets it", () => {

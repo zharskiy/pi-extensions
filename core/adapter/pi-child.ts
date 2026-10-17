@@ -24,7 +24,7 @@ import type {
   StopReason,
   UsageTotals,
 } from "./contract.ts";
-import { messageText, toolCallCount } from "./messages.ts";
+import { finalRunTexts, messageText, toolCallCount } from "./messages.ts";
 import { resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
 import { applyPromptSections } from "./pi-sections.ts";
@@ -105,20 +105,25 @@ const MCP_TOOLS = [...MCP_DISCOVERY_TOOLS, `${MCP_PREFIX}*`, ...MCP_RESOURCE_TOO
 const isMcpTool = (name: string) =>
   name.startsWith(MCP_PREFIX) || MCP_DISCOVERY_TOOLS.includes(name) || MCP_RESOURCE_TOOLS.includes(name);
 
-const wantsMcp = (tools: readonly string[] | undefined) => tools === undefined || tools.length > 0;
+const wantsDiscovery = (tools: readonly string[] | undefined) => tools === undefined || tools.length > 0;
 
 export const childToolNames = (
   tools: string[] | undefined,
   customNames: string[],
   mainTools: () => string[],
+  mcp = true,
 ) => {
-  const mcp = wantsMcp(tools) ? MCP_TOOLS : [];
+  const discovery = wantsDiscovery(tools) ? (mcp ? MCP_TOOLS : MCP_DISCOVERY_TOOLS) : [];
 
-  return Array.from(new Set([...(tools ?? mainTools()), ...mcp, ...customNames]));
+  return Array.from(new Set([...(tools ?? mainTools()), ...discovery, ...customNames]));
 };
 
-const mcpExtensions = (tools: readonly string[] | undefined, mcpDisabled: boolean): InlineExtension[] => {
-  if (!wantsMcp(tools)) {
+const mcpExtensions = (
+  tools: readonly string[] | undefined,
+  mcp: boolean,
+  mcpDisabled: boolean,
+): InlineExtension[] => {
+  if (!wantsDiscovery(tools)) {
     return [];
   }
 
@@ -127,7 +132,7 @@ const mcpExtensions = (tools: readonly string[] | undefined, mcpDisabled: boolea
     { name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
   ];
 
-  return mcpDisabled
+  return mcpDisabled || !mcp
     ? discovery
     : [...discovery, { name: "mcp", factory: createMcpExtension(), replaceable: true, builtin: true }];
 };
@@ -214,7 +219,7 @@ export const createPiRuntime = (
           hidden: true,
           factory: createChildExtension(spec.id, modelLabel, recordEntry),
         },
-        ...mcpExtensions(spec.tools, parent.mcpDisabled()),
+        ...mcpExtensions(spec.tools, spec.mcp ?? true, parent.mcpDisabled()),
       ],
     });
 
@@ -240,6 +245,7 @@ export const createPiRuntime = (
           spec.tools,
           spec.customTools.map((tool) => tool.name),
           mainTools,
+          spec.mcp ?? true,
         ),
         customTools: spec.customTools.map((tool) => toPiTool(tool)),
       }),
@@ -358,6 +364,7 @@ export const createPiRuntime = (
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),
       lastText: () => session.getLastAssistantText() ?? "",
+      runTexts: () => finalRunTexts(session.sessionManager.getEntries()),
     };
   };
 

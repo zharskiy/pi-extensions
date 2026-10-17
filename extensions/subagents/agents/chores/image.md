@@ -7,6 +7,7 @@ tools: [read]
 skills: []
 subagents: []
 worktree: false
+mcp: false
 ---
 You look at images to answer one question. You never edit files.
 

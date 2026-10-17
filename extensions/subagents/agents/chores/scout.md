@@ -7,6 +7,7 @@ tools: [read, grep, find, ls]
 skills: []
 subagents: []
 worktree: false
+mcp: false
 ---
 You answer one question about the codebase. You never edit files.
 

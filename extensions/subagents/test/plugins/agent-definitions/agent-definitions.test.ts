@@ -3,7 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FRONTMATTER_FIELDS } from "../../../src/plugins/agent-definitions/fields.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { loadDefinitions, parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
+import {
+  loadDefinitions,
+  type OverrideCheck,
+  parseDefinition,
+} from "../../../src/plugins/agent-definitions/loader.ts";
 import { assemblePromptAppend } from "../../../src/plugins/agent-definitions/prompt.ts";
 import { parseFrontmatter } from "../../../src/plugins/agent-definitions/yaml-lite.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../helpers/harness.ts";
@@ -240,6 +244,143 @@ describe("worktree field", () => {
   });
 });
 
+describe("mcp field", () => {
+  const parse = (extra: string) =>
+    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", "user");
+
+  it("is a known field, omitted by default, and accepts a boolean", () => {
+    expect(parse("").definition?.mcp).toBeUndefined();
+    expect(parse("mcp: true").warnings).toEqual([]);
+    expect(parse("mcp: true").definition?.mcp).toBe(true);
+    expect(parse("mcp: false").definition?.mcp).toBe(false);
+  });
+
+  it("rejects anything but a boolean", () => {
+    expect(parse("mcp: some").errors).toEqual(["mcp must be true or false"]);
+  });
+});
+
+describe("agent overrides", () => {
+  const dirs = () => {
+    const root = tempDir();
+    const shipped = join(root, "shipped");
+    const user = join(root, "user");
+
+    const fields = "subagents: []\nmodel: acme/one:low";
+
+    writeAgent(shipped, "a.md", agentFile("a", "shipped", `${fields}\nskills: [docs]`));
+    writeAgent(shipped, "b.md", agentFile("b", "shipped b", fields));
+
+    return {
+      root,
+      list: [
+        { path: shipped, source: "builtin" as const },
+        { path: user, source: "user" as const },
+      ],
+      user,
+    };
+  };
+
+  const check = (
+    overrides: OverrideCheck["overrides"],
+    extra: Partial<OverrideCheck> = {},
+  ): OverrideCheck => ({
+    overrides,
+    skillNames: () => ["docs", "git"],
+    modelProblem: (model) => (model.startsWith("acme/") ? undefined : "matches no available model"),
+    ...extra,
+  });
+
+  it("applies the override field by field on whichever file won", () => {
+    const { list, user } = dirs();
+
+    writeAgent(user, "a.md", agentFile("a", "user", "subagents: []\nmodel: acme/two:high\nskills: [git]"));
+
+    const result = loadDefinitions(list, check({ a: { thinking: "medium" }, b: { skills: ["git"] } }));
+
+    expect(result.notices).toEqual([]);
+    expect(result.definitions.get("a")).toMatchObject({
+      description: "user",
+      model: "acme/two",
+      thinking: "medium",
+      skills: ["git"],
+    });
+    expect(result.definitions.get("b")).toMatchObject({
+      model: "acme/one",
+      thinking: "low",
+      skills: ["git"],
+    });
+  });
+
+  it("replaces model and skills, keeps the file's thinking, and clears the model for inherit", () => {
+    const { list } = dirs();
+
+    const result = loadDefinitions(
+      list,
+      check({ a: { model: "acme/three", skills: [] }, b: { model: "inherit", thinking: "off" } }),
+    );
+
+    expect(result.definitions.get("a")).toMatchObject({ model: "acme/three", thinking: "low", skills: [] });
+    expect(result.definitions.get("b")).toMatchObject({ model: undefined, thinking: "off" });
+  });
+
+  it("warns about a model or skills that fail the check and drops only that field", () => {
+    const { list } = dirs();
+
+    const result = loadDefinitions(
+      list,
+      check({ a: { model: "other/x", thinking: "high", skills: ["docs", "lint"] } }),
+    );
+
+    expect(result.definitions.get("a")).toMatchObject({
+      model: "acme/one",
+      thinking: "high",
+      skills: ["docs"],
+    });
+    expect(result.notices).toEqual([
+      { level: "warning", message: 'agents.a.model "other/x": matches no available model; dropped' },
+      {
+        level: "warning",
+        message: "agents.a.skills names unknown skill(s) lint; dropped. Loaded skills: docs, git",
+      },
+    ]);
+  });
+
+  it("warns about an unknown agent and only informs about one defined in an untrusted project", () => {
+    const { list, root } = dirs();
+    const untrusted = join(root, "project-agents");
+
+    writeAgent(untrusted, "local.md", agentFile("local", "untrusted"));
+
+    const result = loadDefinitions(
+      list,
+      check({ ghost: { thinking: "low" }, local: {} }, { untrustedDir: untrusted }),
+    );
+
+    expect(result.definitions.has("local")).toBe(false);
+    expect(result.notices).toEqual([
+      { level: "warning", message: 'agents.ghost: no agent named "ghost"; override ignored' },
+      {
+        level: "info",
+        message:
+          'agents.local: "local" is defined only in this project\'s .pi/agents, which is not trusted; override not applied',
+      },
+    ]);
+  });
+
+  it("checks nothing and leaves definitions alone without overrides", () => {
+    const { list } = dirs();
+    const result = loadDefinitions(list);
+
+    expect(result.notices).toEqual([]);
+    expect(result.definitions.get("a")).toMatchObject({
+      model: "acme/one",
+      thinking: "low",
+      skills: ["docs"],
+    });
+  });
+});
+
 describe("subagent graph validation", () => {
   const load = (files: Record<string, string>) => {
     const dir = tempDir();
@@ -378,7 +519,17 @@ describe("definition loading", () => {
       scout: "chores",
       shell: "chores",
     };
-    const fields = ["name", "description", "model", "limit", "tools", "skills", "subagents", "worktree"];
+    const fields = [
+      "name",
+      "description",
+      "model",
+      "limit",
+      "tools",
+      "skills",
+      "subagents",
+      "worktree",
+      "mcp",
+    ];
 
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
@@ -423,6 +574,7 @@ describe("definition loading", () => {
     result.definitions.forEach((definition) => {
       expect(definition.limit).toBeGreaterThanOrEqual(5000);
       expect(definition.worktree).toBe(false);
+      expect(definition.mcp).toBe(folders[definition.name] === "leads");
     });
 
     const grants = (name: string) => {
@@ -678,6 +830,55 @@ describe("agent-definitions plugin", () => {
     harness.host.start();
 
     expect(definitions.get("proj")?.source).toBe("project");
+  });
+
+  it("applies settings overrides at session start and reports each failed check once", () => {
+    const harness = createHarness([agentDefinitionsPlugin], {
+      agents: {
+        scout: { model: "nobody/none", thinking: "high", skills: ["docs"] },
+        ghost: { thinking: "low" },
+      },
+    });
+
+    harness.runtime.skills = ["docs"];
+    harness.host.start();
+    harness.host.start();
+
+    const scout = harness.services.require("definitions").get("scout");
+
+    expect(scout?.skills).toEqual(["docs"]);
+    expect(scout?.thinking).toBe("high");
+    expect(scout?.model).not.toBe("nobody/none");
+    expect(harness.host.notices).toEqual([
+      {
+        level: "warning",
+        message: expect.stringMatching(/^pi-subagents settings: agents\.scout\.model "nobody\/none": .*dropped$/),
+      },
+      {
+        level: "warning",
+        message: 'pi-subagents settings: agents.ghost: no agent named "ghost"; override ignored',
+      },
+    ]);
+  });
+
+  it("only informs about an override for an agent of an untrusted project", () => {
+    const harness = createHarness([agentDefinitionsPlugin], { agents: { proj: { thinking: "low" } } });
+
+    writeAgent(join(harness.host.info.cwd, ".pi", "agents"), "proj.md", agentFile("proj", "p"));
+    harness.host.start();
+
+    expect(harness.host.notices).toEqual([
+      {
+        level: "info",
+        message:
+          'pi-subagents settings: agents.proj: "proj" is defined only in this project\'s .pi/agents, which is not trusted; override not applied',
+      },
+    ]);
+
+    harness.host.info.projectTrusted = true;
+    harness.host.start();
+
+    expect(harness.services.require("definitions").get("proj")?.thinking).toBe("low");
   });
 
   it("shows the warnings of a loaded file on session start", () => {

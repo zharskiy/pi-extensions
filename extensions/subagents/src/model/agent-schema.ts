@@ -1,5 +1,7 @@
 export const ALL = "all";
 
+export const INHERIT_MODEL = "inherit";
+
 export type Grant = string[] | typeof ALL;
 
 export type AgentFrontmatter = {
@@ -11,4 +13,9 @@ export type AgentFrontmatter = {
   skills: Grant;
   subagents: Grant;
   worktree?: boolean;
+  mcp?: boolean;
 };
+
+export type AgentOverride = { model?: string; thinking?: string; skills?: Grant };
+
+export type AgentOverrides = Record<string, AgentOverride>;

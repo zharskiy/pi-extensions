@@ -11,7 +11,11 @@ type BooleanRule = { type: "boolean" };
 
 type ChoiceRule = { type: "choice"; values: readonly string[] };
 
-type SettingsRule = NumberRule | ListRule | BooleanRule | ChoiceRule;
+export type ObjectParse = { value: unknown; errors: string[] };
+
+type ObjectRule = { type: "object"; of: string; parse?: (value: Record<string, unknown>) => ObjectParse };
+
+type SettingsRule = NumberRule | ListRule | BooleanRule | ChoiceRule | ObjectRule;
 
 export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 
@@ -26,6 +30,9 @@ const validNumber = (rule: NumberRule, value: unknown) =>
 const validList = (value: unknown) =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string");
 
+export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 const isValid = (rule: SettingsRule, value: unknown) => {
   if (rule.type === "boolean") {
     return typeof value === "boolean";
@@ -33,6 +40,10 @@ const isValid = (rule: SettingsRule, value: unknown) => {
 
   if (rule.type === "choice") {
     return typeof value === "string" && rule.values.includes(value);
+  }
+
+  if (rule.type === "object") {
+    return isPlainObject(value);
   }
 
   return rule.type === "number" ? validNumber(rule, value) : validList(value);
@@ -51,6 +62,10 @@ const expectation = (rule: SettingsRule) => {
     return `one of ${rule.values.map((value) => `"${value}"`).join(", ")}`;
   }
 
+  if (rule.type === "object") {
+    return `an object of ${rule.of}`;
+  }
+
   return rule.minExclusive
     ? `a number above ${rule.min} and at most ${rule.max}`
     : `a number between ${rule.min} and ${rule.max}`;
@@ -61,11 +76,11 @@ export const parseSettings = <T>(
   raw: unknown,
   source: string,
 ): SettingsParse<T> => {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+  if (!isPlainObject(raw)) {
     return { patch: {}, errors: [`${source}: expected a JSON object`] };
   }
 
-  const input = raw as Record<string, unknown>;
+  const input = raw;
   const patch: Partial<T> = {};
   const errors: string[] = [];
 
@@ -76,6 +91,14 @@ export const parseSettings = <T>(
 
       if (!isValid(rule, value)) {
         errors.push(`${source}: ${key} must be ${expectation(rule)}`);
+        return;
+      }
+
+      if (rule.type === "object" && rule.parse) {
+        const parsed = rule.parse(value as Record<string, unknown>);
+
+        errors.push(...parsed.errors.map((error) => `${source}: ${key}.${error}`));
+        Object.assign(patch, { [key]: parsed.value });
         return;
       }
 
