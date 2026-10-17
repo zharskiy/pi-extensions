@@ -1,6 +1,7 @@
 import { errorText } from "../../../core/manager/format.ts";
+import { isPlainObject } from "../../../core/manager/settings.ts";
 import type { Source } from "./args.ts";
-import { type ConvertContext, convertServer, isRecord, type PiServer, validName } from "./convert.ts";
+import { type ConvertContext, convertServer, type PiServer, validName } from "./convert.ts";
 import type { Origin } from "./sources.ts";
 
 export type Entry = { name: string; origin: string; server: PiServer; notes: string[] };
@@ -15,7 +16,7 @@ type Parsed = { config: Record<string, unknown>; servers: Record<string, unknown
 
 const namespace = (name: string) => name.replace(/-/g, "_");
 
-export const parseTarget = (target: Target): Parsed | string => {
+const parseTarget = (target: Target): Parsed | string => {
   const indent = (target.text && /^([ \t]+)\S/m.exec(target.text)?.[1]) || "  ";
 
   if (target.text === undefined || target.text.trim() === "") {
@@ -25,17 +26,17 @@ export const parseTarget = (target: Target): Parsed | string => {
   try {
     const config: unknown = JSON.parse(target.text);
 
-    if (!isRecord(config) || (config.mcpServers !== undefined && !isRecord(config.mcpServers))) {
+    if (!isPlainObject(config) || (config.mcpServers !== undefined && !isPlainObject(config.mcpServers))) {
       return `${target.label}: expected an object with an "mcpServers" object`;
     }
 
-    return { config, servers: isRecord(config.mcpServers) ? config.mcpServers : {}, indent };
+    return { config, servers: isPlainObject(config.mcpServers) ? config.mcpServers : {}, indent };
   } catch (error) {
     return `${target.label}: ${errorText(error)}`;
   }
 };
 
-export const mergeText = (parsed: Parsed, entries: readonly Entry[]) => {
+const mergeText = (parsed: Parsed, entries: readonly Entry[]) => {
   const servers = {
     ...parsed.servers,
     ...Object.fromEntries(entries.map((entry) => [entry.name, entry.server])),

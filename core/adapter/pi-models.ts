@@ -1,38 +1,38 @@
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type AvailableModel, type ModelResolution, THINKING_LEVELS } from "./contract.ts";
+import type { AvailableModel, ModelResolution } from "./contract.ts";
 import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolver.ts";
 
 type PiModel = NonNullable<ExtensionContext["model"]>;
 
-type ThinkingFacts = Pick<PiModel, "reasoning" | "thinkingLevelMap">;
+export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
+  const authByProvider = new Map<string, boolean>();
 
-const ON_REQUEST_ONLY = ["xhigh", "max"];
+  const hasAuth = (model: PiModel) => {
+    const known = authByProvider.get(model.provider);
 
-export const thinkingLevelsOf = (model: ThinkingFacts) => {
-  if (!model.reasoning) {
-    return ["off"];
-  }
+    if (known !== undefined) {
+      return known;
+    }
 
-  const map: Record<string, string | null | undefined> = model.thinkingLevelMap ?? {};
+    const configured = ctx.modelRegistry.hasConfiguredAuth(model);
 
-  return THINKING_LEVELS.filter((level) => {
-    const mapped = map[level];
+    authByProvider.set(model.provider, configured);
 
-    return mapped !== null && (!ON_REQUEST_ONLY.includes(level) || mapped !== undefined);
-  });
-};
+    return configured;
+  };
 
-export const availableModels = (ctx: ExtensionContext): AvailableModel[] =>
-  ctx.modelRegistry
+  return ctx.modelRegistry
     .getAll()
-    .filter((model) => ctx.modelRegistry.hasConfiguredAuth(model))
+    .filter(hasAuth)
     .map((model) => ({
       ref: `${model.provider}/${model.id}`,
       contextWindow: model.contextWindow,
       cost: { input: model.cost.input, output: model.cost.output },
-      thinking: thinkingLevelsOf(model),
+      thinking: getSupportedThinkingLevels(model),
     }))
     .sort((left, right) => left.ref.localeCompare(right.ref));
+};
 
 const catalogOf = (ctx: ExtensionContext) => {
   const models = ctx.modelRegistry.getAll();

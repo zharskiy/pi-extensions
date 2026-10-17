@@ -18,7 +18,7 @@ const stubFetch = (respond: () => Response | Promise<Response>) => {
 };
 
 const setup = (overrides = {}) => {
-  const harness = createHarness([fetchToolPlugin], overrides);
+  const harness = createHarness([fetchToolPlugin], { overrides });
 
   return { ...harness, tool: harness.services.require("fetchTool").tool() as never as FetchTool };
 };
@@ -127,7 +127,7 @@ describe("fetch-tool plugin", () => {
   });
 
   it("can be disabled through disabledPlugins", () => {
-    const { services } = createHarness([fetchToolPlugin], { disabledPlugins: ["fetch-tool"] });
+    const { services } = createHarness([fetchToolPlugin], { overrides: { disabledPlugins: ["fetch-tool"] } });
 
     expect(() => services.require("fetchTool")).toThrow("not provided");
   });

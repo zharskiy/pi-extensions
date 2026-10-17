@@ -12,7 +12,7 @@ import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 const GRACE_MS = 60_000;
 
 const setup = async (count = 1, overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
   const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
   const messageAgent = harness.host.tool<MessageAgentParams, { delivery?: string }>("message_agent");
   const registry = harness.services.require("registry");

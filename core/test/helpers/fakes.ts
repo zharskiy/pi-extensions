@@ -785,7 +785,6 @@ type FakeRuntime = AgentRuntime & {
   sessions: Map<string, SessionRecord>;
   failNextSpawn?: string;
   skills: string[];
-  modelThinking: Record<string, string[]>;
   child(id: string): FakeChild;
 };
 
@@ -804,20 +803,15 @@ export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime
     ],
     preferences: { sessionProvider: "fake" },
     resolveModel: (request) => resolveModel(request ?? "fake/model", runtime.catalog, runtime.preferences),
-    modelThinking: {},
     availableModels: () =>
       runtime.catalog
         .filter((model) => model.authenticated)
-        .map((model) => {
-          const ref = `${model.provider}/${model.id}`;
-
-          return {
-            ref,
-            contextWindow: model.contextWindow,
-            cost: model.cost,
-            thinking: runtime.modelThinking[ref] ?? [...THINKING_LEVELS],
-          };
-        })
+        .map((model) => ({
+          ref: `${model.provider}/${model.id}`,
+          contextWindow: model.contextWindow,
+          cost: model.cost,
+          thinking: [...THINKING_LEVELS],
+        }))
         .sort((left, right) => left.ref.localeCompare(right.ref)),
     defaultThinking: () => "medium",
     skills: [],

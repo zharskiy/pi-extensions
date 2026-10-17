@@ -68,10 +68,12 @@ describe("/mcp-import", () => {
 
     expect(existsSync(userFile)).toBe(false);
     expect(host.notices).toHaveLength(1);
-    expect(host.notices[0].message).toContain("dry run, nothing written");
+    expect(host.notices[0].message).toContain(
+      "pi-mcp-import: dry run of /mcp-import claude, nothing written",
+    );
     expect(host.notices[0].message).toContain('"docs": {');
-    expect(host.notices[0].message).toContain("Sign in with /mcp");
-    expect(host.notices[0].message).toContain("Run /mcp-import claude apply to write them.");
+    expect(host.notices[0].message).toContain("sign in with /mcp");
+    expect(host.notices[0].message).toContain("run /mcp-import claude apply to write them");
   });
 
   it("writes user-scope servers with apply and keeps existing ones", async () => {
@@ -86,12 +88,12 @@ describe("/mcp-import", () => {
       mcpServers: { kept: { command: "old" }, docs: { type: "http", url: "https://x.test/mcp" } },
     });
     expect(host.notices[0].message).toMatch(
-      /^\/mcp-import claude apply: added 1 server to ~\/\.pi\/agent\/mcp\.json: docs\./,
+      /^pi-mcp-import: \/mcp-import claude apply added 1 server to ~\/\.pi\/agent\/mcp\.json: docs\n/,
     );
     expect(host.notices[0].message).toContain(
       "kept (~/.claude.json (user scope)): already in ~/.pi/agent/mcp.json",
     );
-    expect(host.notices[0].message).toContain("Run /reload to connect them, then /mcp to check them.");
+    expect(host.notices[0].message).toContain("run /reload to connect them, then /mcp to check them");
   });
 
   it("writes project servers to .pi/mcp.json", async () => {
@@ -136,7 +138,10 @@ describe("/mcp-import", () => {
     await host.runCommand("mcp-import", "cursor");
 
     expect(host.notices).toEqual([
-      { message: "/mcp-import cursor: no MCP servers found in ~/.cursor/mcp.json.", level: "info" },
+      {
+        message: "pi-mcp-import: /mcp-import cursor found no MCP servers in ~/.cursor/mcp.json",
+        level: "info",
+      },
     ]);
   });
 
@@ -158,7 +163,7 @@ describe("/mcp-import", () => {
     await host.runCommand("mcp-import", "codex");
 
     expect(host.notices).toEqual([
-      { message: expect.stringMatching(/Unknown tool "codex"/), level: "error" },
+      { message: expect.stringMatching(/^pi-mcp-import: unknown tool "codex".*usage: /), level: "error" },
     ]);
   });
 });

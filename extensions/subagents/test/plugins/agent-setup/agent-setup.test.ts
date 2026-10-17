@@ -7,8 +7,6 @@ import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
-import { parseSetupLine } from "../../../src/plugins/agent-setup/line.ts";
-import { mergeChanges } from "../../../src/plugins/agent-setup/write.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
 
@@ -67,6 +65,14 @@ const goToAgent = (form: FakeForm, name: string) => {
   expect(showsAgent(form, name)).toBe(true);
 };
 
+const goToSubmit = (form: FakeForm) => {
+  Array.from({ length: 20 }).forEach(() => {
+    if (!form.render(400).some((line) => line.includes("Save to:"))) {
+      form.press(key("tab"));
+    }
+  });
+};
+
 describe("/agents setup form", () => {
   it("writes changed fields into the trusted project's file, keeps other keys and applies them", async () => {
     const { projectFile, openForm, definition, noticesOf } = setup({ trusted: true });
@@ -79,7 +85,8 @@ describe("/agents setup form", () => {
     form.press(key("enter"), key("home"), key("enter"));
     form.press(key("down"), key("enter"), key("home"), key("enter"));
     form.press(key("down"), key("enter"), char("n"), key("space"), key("enter"));
-    form.press(key("backTab"), key("enter"));
+    goToSubmit(form);
+    form.press(key("enter"));
     await run;
 
     expect(form.closed).toBe(true);
@@ -146,7 +153,7 @@ describe("/agents setup form", () => {
     second.form.press(key("escape"));
     await second.run;
 
-    expect(noticesOf("info")).toEqual(["pi-subagents: agent setup: nothing changed"]);
+    expect(noticesOf("info")).toEqual(["pi-subagents: nothing changed"]);
     expect(existsSync(projectFile) || existsSync(userFile)).toBe(false);
   });
 
@@ -188,6 +195,15 @@ describe("/agents setup one-line form", () => {
     expect(definition("scout")?.thinking).toBe("high");
   });
 
+  it("writes the user file by default in an untrusted project", async () => {
+    const { host, userFile, definition } = setup();
+
+    await host.runCommand("agents", "setup scout thinking=low");
+
+    expect(readJson(userFile)).toEqual({ agents: { scout: { thinking: "low" } } });
+    expect(definition("scout")?.thinking).toBe("low");
+  });
+
   it("writes the trusted project's file by default with the model and its thinking suffix", async () => {
     const { host, projectFile, definition } = setup({ trusted: true });
 
@@ -208,7 +224,7 @@ describe("/agents setup one-line form", () => {
       "setup scout model=locked/lyra-9-0 scope=user",
       "setup scout color=blue scope=user",
       "setup scout",
-      "setup scout thinking=high",
+      "setup scout thinking=high scope=project",
     ];
 
     await requests.reduce<Promise<void>>(
@@ -220,34 +236,14 @@ describe("/agents setup one-line form", () => {
     expect(noticesOf("error").at(-1)).toContain("not trusted");
     expect(existsSync(projectFile) || existsSync(userFile)).toBe(false);
   });
-
-  it("parses inherit and none and keeps the last scope", () => {
-    const check = { agents: ["scout"], skills: [], resolveModel: () => ({ error: "unused" }) };
-
-    expect(parseSetupLine("scout model=inherit skills=none scope=user", check)).toEqual({
-      change: { name: "scout", patch: { model: "inherit", skills: [] } },
-      scope: "user",
-    });
-  });
 });
 
-describe("/agents setup completion and merge", () => {
+describe("/agents setup completion", () => {
   it("offers setup as a subcommand and agent names after it", () => {
     const { host } = setup();
     const complete = host.commands.get("agents")?.complete;
 
     expect(complete?.("se")?.map((entry) => entry.value)).toEqual(["setup"]);
     expect(complete?.("setup sc")?.map((entry) => entry.value)).toEqual(["setup scout"]);
-  });
-
-  it("merges changes field by field into existing agent entries", () => {
-    expect(
-      mergeChanges({ other: true, agents: { scout: { model: "fake/model", thinking: "low" } } }, [
-        { name: "scout", patch: { thinking: "high" } },
-      ]),
-    ).toEqual({ other: true, agents: { scout: { model: "fake/model", thinking: "high" } } });
-    const change = { name: "scout", patch: { thinking: "high" } };
-
-    expect(() => mergeChanges({ agents: [] }, [change])).toThrow('"agents" is not an object');
   });
 });

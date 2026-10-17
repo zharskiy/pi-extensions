@@ -20,18 +20,30 @@ type RawEntry = { type?: string; message?: RawMessage };
 
 const endsRun = (message: RawMessage) => message.role === "assistant" && toolCallCount(message.content) === 0;
 
-export const finalRunTexts = (entries: readonly unknown[]): string[] => {
-  const messages = (entries as RawEntry[])
-    .filter((entry) => entry.type === "message" && entry.message !== undefined)
-    .map((entry) => entry.message as RawMessage);
+type RunWalk = { texts: string[]; userAfter: boolean; done: boolean };
 
-  const start = messages.findLastIndex(
-    (message, index) => message.role === "user" && (index === 0 || endsRun(messages[index - 1])),
-  );
+const step = (walk: RunWalk, entry: RawEntry): RunWalk => {
+  const message = entry.type === "message" ? entry.message : undefined;
 
-  return messages
-    .slice(Math.max(start, 0))
-    .filter((message) => message.role === "assistant")
-    .map((message) => messageText(message.content).trim())
-    .filter((text) => text.length > 0);
+  if (walk.done || message === undefined) {
+    return walk;
+  }
+
+  if (walk.userAfter && endsRun(message)) {
+    walk.done = true;
+    return walk;
+  }
+
+  walk.userAfter = message.role === "user";
+
+  const text = message.role === "assistant" ? messageText(message.content).trim() : "";
+
+  if (text.length > 0) {
+    walk.texts.push(text);
+  }
+
+  return walk;
 };
+
+export const finalRunTexts = (entries: readonly unknown[]): string[] =>
+  (entries as RawEntry[]).reduceRight(step, { texts: [], userAfter: false, done: false }).texts.reverse();

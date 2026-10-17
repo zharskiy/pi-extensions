@@ -80,14 +80,13 @@ export const parseSettings = <T>(
     return { patch: {}, errors: [`${source}: expected a JSON object`] };
   }
 
-  const input = raw;
   const patch: Partial<T> = {};
   const errors: string[] = [];
 
   Object.entries(schema as Record<string, SettingsRule>)
-    .filter(([key]) => input[key] !== undefined)
+    .filter(([key]) => raw[key] !== undefined)
     .forEach(([key, rule]) => {
-      const value = input[key];
+      const value = raw[key];
 
       if (!isValid(rule, value)) {
         errors.push(`${source}: ${key} must be ${expectation(rule)}`);

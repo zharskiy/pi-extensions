@@ -1,5 +1,11 @@
 import { splitModelRequest } from "../../../../../core/adapter/contract.ts";
-import { type AgentFrontmatter, ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
+import {
+  type AgentFrontmatter,
+  ALL,
+  INHERIT_MODEL,
+  PLAIN_NAME,
+  PLAIN_NAME_TEXT,
+} from "../../model/agent-schema.ts";
 import type { FrontmatterValue } from "./yaml-lite.ts";
 
 type FieldKey = keyof AgentFrontmatter;
@@ -18,10 +24,6 @@ type FieldRule = {
 type FieldSpec = FieldRule & { key: FieldKey };
 
 type FieldResult = { value?: unknown; thinking?: string; error?: string; warning?: string };
-
-const PLAIN_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
-
-const PLAIN_NAME_TEXT = "letters, digits, '_' and '-', not starting with '-'";
 
 const RULES: { [K in FieldKey]: FieldRule } = {
   name: { kind: "name", required: true },

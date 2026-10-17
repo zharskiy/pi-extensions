@@ -4,7 +4,7 @@ import {
   type AgentTemplate,
   agentTemplate,
   DESCRIPTION_PLACEHOLDER,
-} from "../../../src/plugins/agent-view/agent-template.ts";
+} from "../../../src/plugins/agent-setup/agent-template.ts";
 
 const parse = (template: AgentTemplate) => parseDefinition(agentTemplate(template), "x.md", "user");
 

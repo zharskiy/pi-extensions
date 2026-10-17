@@ -107,11 +107,11 @@ const isMcpTool = (name: string) =>
 
 const wantsDiscovery = (tools: readonly string[] | undefined) => tools === undefined || tools.length > 0;
 
+type ToolRequest = { tools: string[] | undefined; customNames: string[]; mcp?: boolean };
+
 export const childToolNames = (
-  tools: string[] | undefined,
-  customNames: string[],
+  { tools, customNames, mcp = true }: ToolRequest,
   mainTools: () => string[],
-  mcp = true,
 ) => {
   const discovery = wantsDiscovery(tools) ? (mcp ? MCP_TOOLS : MCP_DISCOVERY_TOOLS) : [];
 
@@ -242,10 +242,8 @@ export const createPiRuntime = (
         settingsManager,
         sessionManager,
         tools: childToolNames(
-          spec.tools,
-          spec.customTools.map((tool) => tool.name),
+          { tools: spec.tools, customNames: spec.customTools.map((tool) => tool.name), mcp: spec.mcp },
           mainTools,
-          spec.mcp ?? true,
         ),
         customTools: spec.customTools.map((tool) => toPiTool(tool)),
       }),

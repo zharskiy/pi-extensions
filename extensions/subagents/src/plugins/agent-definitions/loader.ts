@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { unknownSkillsProblem } from "../../model/agent-override.ts";
 import {
   type AgentFrontmatter,
   type AgentOverride,
@@ -190,23 +191,21 @@ const modelNotice = (name: string, model: string | undefined, check: OverrideChe
   return problem ? `agents.${name}.model "${model}": ${problem}; dropped` : undefined;
 };
 
-const skillsNotice = (name: string, skills: AgentOverride["skills"], check: OverrideCheck) => {
-  if (!Array.isArray(skills) || skills.length === 0) {
-    return undefined;
-  }
+const skillsNotice = (name: string, skills: AgentOverride["skills"], loaded: () => string[]) => {
+  const problem =
+    Array.isArray(skills) && skills.length > 0 ? unknownSkillsProblem(skills, loaded()) : undefined;
 
-  const loaded = check.skillNames();
-  const unknown = skills.filter((skill) => !loaded.includes(skill));
-  const available = loaded.length > 0 ? loaded.join(", ") : "none";
-
-  return unknown.length > 0
-    ? `agents.${name}.skills names unknown skill(s) ${unknown.join(", ")}; dropped. Loaded skills: ${available}`
-    : undefined;
+  return problem ? `agents.${name}.skills ${problem}; dropped` : undefined;
 };
 
-const checkedOverride = (name: string, override: AgentOverride, check: OverrideCheck) => {
+const checkedOverride = (
+  name: string,
+  override: AgentOverride,
+  check: OverrideCheck,
+  loaded: () => string[],
+) => {
   const badModel = modelNotice(name, override.model, check);
-  const badSkills = skillsNotice(name, override.skills, check);
+  const badSkills = skillsNotice(name, override.skills, loaded);
   const kept: AgentOverride = {
     ...override,
     model: badModel ? undefined : override.model,
@@ -217,6 +216,16 @@ const checkedOverride = (name: string, override: AgentOverride, check: OverrideC
     .map((message): OverrideNotice => ({ level: "warning", message }));
 
   return { kept, notices };
+};
+
+const once = <T>(read: () => T) => {
+  let value: { read: T } | undefined;
+
+  return () => {
+    value ??= { read: read() };
+
+    return value.read;
+  };
 };
 
 const overridden = (definition: AgentDefinition, override: AgentOverride): AgentDefinition => {
@@ -231,12 +240,20 @@ const overridden = (definition: AgentDefinition, override: AgentOverride): Agent
 };
 
 const applyOverrides = (definitions: Map<string, AgentDefinition>, check: OverrideCheck) => {
-  const untrusted = check.untrustedDir ? agentNamesIn(check.untrustedDir) : new Set<string>();
+  const entries = Object.entries(check.overrides);
 
-  return Object.entries(check.overrides).flatMap(([name, override]): OverrideNotice[] => {
+  if (entries.length === 0) {
+    return [];
+  }
+
+  const untrustedDir = check.untrustedDir;
+  const untrusted = once(() => (untrustedDir ? agentNamesIn(untrustedDir) : new Set<string>()));
+  const loaded = once(check.skillNames);
+
+  return entries.flatMap(([name, override]): OverrideNotice[] => {
     const definition = definitions.get(name);
 
-    if (!definition && untrusted.has(name)) {
+    if (!definition && untrusted().has(name)) {
       return [
         {
           level: "info",
@@ -249,7 +266,7 @@ const applyOverrides = (definitions: Map<string, AgentDefinition>, check: Overri
       return [{ level: "warning", message: `agents.${name}: no agent named "${name}"; override ignored` }];
     }
 
-    const { kept, notices } = checkedOverride(name, override, check);
+    const { kept, notices } = checkedOverride(name, override, check, loaded);
 
     definitions.set(name, overridden(definition, kept));
 

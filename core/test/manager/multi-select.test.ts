@@ -5,7 +5,6 @@ import {
   initialMulti,
   multiKey,
   multiLines,
-  multiSelectForm,
   scrollWindow,
 } from "../../manager/multi-select.ts";
 import { plainTheme } from "../helpers/fakes.ts";
@@ -13,80 +12,6 @@ import { plainTheme } from "../helpers/fakes.ts";
 const key = (name: KeyPress["name"]): KeyPress => ({ name });
 
 const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
-
-const OPTIONS = [{ label: "alpha", description: "first" }, { label: "beta" }, { label: "gamma" }];
-
-const open = (checked?: boolean[]) => {
-  const results: (number[] | undefined)[] = [];
-  let renders = 0;
-
-  const view = multiSelectForm({ title: "Skills", options: OPTIONS, checked })({
-    theme: plainTheme,
-    requestRender: () => {
-      renders += 1;
-    },
-    done: (result) => {
-      results.push(result);
-    },
-    createTextInput: () => {
-      throw new Error("no text input");
-    },
-  });
-
-  const press = (...keys: KeyPress[]) => {
-    keys.forEach((pressed) => {
-      view.handleKey(pressed);
-    });
-  };
-
-  return { view, results, press, renders: () => renders };
-};
-
-describe("multiSelectForm", () => {
-  it("renders checkbox rows pre-filled from the checked list, the pointer on the first row, hints", () => {
-    expect(open([false, true]).view.render(60)).toEqual([
-      "─".repeat(60),
-      " Skills",
-      "",
-      " › [ ] alpha  first",
-      "   [x] beta",
-      "   [ ] gamma",
-      "",
-      " ↑↓ move · Space toggle · a all · n none · Enter confirm ·",
-      " Esc cancel",
-      "─".repeat(60),
-    ]);
-  });
-
-  it("toggles the row under the pointer with Space and returns the checked indexes on Enter", () => {
-    const form = open();
-
-    form.press(key("space"), key("down"), key("down"), key("space"), key("up"), key("space"), key("space"));
-    form.press(key("enter"));
-
-    expect(form.results).toEqual([[0, 2]]);
-    expect(form.renders()).toBeGreaterThan(0);
-  });
-
-  it("checks every row with a and none with n", () => {
-    const all = open();
-    const none = open([true, true, true]);
-
-    all.press(char("a"), key("enter"));
-    none.press(char("n"), key("enter"));
-
-    expect(all.results).toEqual([[0, 1, 2]]);
-    expect(none.results).toEqual([[]]);
-  });
-
-  it("returns nothing on Escape", () => {
-    const form = open([true]);
-
-    form.press(key("escape"));
-
-    expect(form.results).toEqual([undefined]);
-  });
-});
 
 describe("multiKey", () => {
   it("keeps the pointer inside the list and leaves Enter, Escape and other keys to the caller", () => {
@@ -98,6 +23,15 @@ describe("multiKey", () => {
     expect(multiKey(key("enter"), state)).toBeUndefined();
     expect(multiKey(key("escape"), state)).toBeUndefined();
     expect(multiKey(char("x"), state)).toBeUndefined();
+  });
+
+  it("toggles the row under the pointer with Space and checks every row with a and none with n", () => {
+    const state = initialMulti(3, [false, true]);
+    const toggled = multiKey(key("space"), { ...state, cursor: 2 }) ?? state;
+
+    expect(checkedIndexes(toggled)).toEqual([1, 2]);
+    expect(checkedIndexes(multiKey(char("a"), state) ?? state)).toEqual([0, 1, 2]);
+    expect(checkedIndexes(multiKey(char("n"), toggled) ?? toggled)).toEqual([]);
   });
 
   it("does nothing harmful on an empty list", () => {
@@ -122,6 +56,15 @@ describe("multiLines", () => {
       " › [ ] skill-7",
       "   [ ] skill-8",
       " ↓ 4 more",
+    ]);
+  });
+
+  it("marks checked rows and shows descriptions beside the label", () => {
+    const options = [{ label: "alpha", description: "first" }, { label: "beta" }];
+
+    expect(multiLines(plainTheme, options, initialMulti(2, [false, true]), 40)).toEqual([
+      " › [ ] alpha  first",
+      "   [x] beta",
     ]);
   });
 

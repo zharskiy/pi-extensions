@@ -56,10 +56,9 @@ const setup = () => {
 };
 
 const setupRunning = async (overrides = {}) => {
-  const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  );
+  });
 
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;

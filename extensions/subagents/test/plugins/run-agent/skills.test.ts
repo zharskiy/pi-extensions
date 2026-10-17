@@ -14,10 +14,9 @@ import { createHarness } from "../../helpers/harness.ts";
 const HEADER = "description: d\nlimit: 50000\nsubagents: []\n";
 
 const setup = (definitions: Record<string, string> = {}, overrides = {}) => {
-  const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  );
+  });
   const dir = join(harness.host.info.agentDir, "agents");
 
   mkdirSync(dir, { recursive: true });

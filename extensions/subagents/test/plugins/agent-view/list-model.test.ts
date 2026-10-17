@@ -117,4 +117,33 @@ describe("list model", () => {
 
     expect(new Set(visible(records).map((record) => record.id))).toEqual(new Set(["c-1", "c-2", "c-child"]));
   });
+
+  it("computes a large registry in a single pass", () => {
+    const tree = (prefix: string, closed: boolean, endedAt: number) => {
+      const state = closed ? "done" : "running";
+      const root = agentRecord({
+        id: prefix,
+        state,
+        endedAt: closed ? endedAt : undefined,
+        createdAt: endedAt,
+      });
+      const nested = Array.from({ length: 9 }, (_, index) =>
+        done(`${prefix}-${index}`, endedAt, { callerId: index === 0 ? prefix : `${prefix}-${index - 1}` }),
+      );
+
+      return [root, ...nested];
+    };
+    const records = [
+      ...Array.from({ length: 400 }, (_, index) => tree(`c${index}`, true, NOW - index)),
+      ...Array.from({ length: 30 }, (_, index) => tree(`o${index}`, false, NOW + index)),
+    ].flat();
+    const started = performance.now();
+    const sections = listSections(visibleRecords(records, new Set()));
+    const elapsed = performance.now() - started;
+
+    expect(records.length).toBeGreaterThan(4_000);
+    expect(sections.map((section) => section.title)).toEqual(["Running", `Completed (${MAX_CLOSED_ROOTS})`]);
+    expect(sections[1]?.rows).toHaveLength(MAX_CLOSED_ROOTS * 10);
+    expect(elapsed).toBeLessThan(50);
+  });
 });

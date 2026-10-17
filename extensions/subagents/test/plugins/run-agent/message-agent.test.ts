@@ -10,7 +10,9 @@ import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = async (maxConcurrent = 4) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], {
-    maxConcurrent,
+    overrides: {
+      maxConcurrent,
+    },
   });
   const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
   const messageAgent = harness.host.tool<MessageAgentParams, { delivery?: string }>("message_agent");

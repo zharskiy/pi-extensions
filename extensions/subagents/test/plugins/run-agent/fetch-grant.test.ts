@@ -15,7 +15,7 @@ const definition = (name: string, tools: string) =>
 const setup = async (tools: string, overrides = {}) => {
   const harness = createHarness(
     [agentRegistryPlugin, agentDefinitionsPlugin, fetchToolPlugin, runAgentPlugin],
-    overrides,
+    { overrides },
   );
   const dir = join(harness.host.info.agentDir, "agents");
 

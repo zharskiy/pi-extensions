@@ -739,7 +739,7 @@ describe("agent view with live agents", () => {
 
     const harness = createHarness(
       [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentViewPlugin],
-      { stopGraceSeconds: 0 },
+      { overrides: { stopGraceSeconds: 0 } },
     );
     const registry = harness.services.require("registry");
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");

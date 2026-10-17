@@ -7,7 +7,8 @@ import {
   listLines,
   SELECT_HINTS,
 } from "../../../../../core/manager/list.ts";
-import { type AgentKind, INHERIT } from "./agent-template.ts";
+import { INHERIT_MODEL } from "../../model/agent-schema.ts";
+import type { AgentKind } from "./agent-template.ts";
 
 export type CreateAnswers = { description: string; kind: AgentKind; model: string };
 
@@ -21,7 +22,7 @@ const KINDS: readonly (ListOption & { value: AgentKind })[] = [
 const PROMPTS: Record<Step, string> = {
   description: "Description: when to use it, what it is not for, what it returns. Empty for a placeholder.",
   kind: "Kind: sets the tools, subagents and mcp defaults.",
-  model: `Model: provider/id or provider/id:thinking. Empty uses ${INHERIT}, the main session's model.`,
+  model: `Model: provider/id or provider/id:thinking. Empty uses ${INHERIT_MODEL}, the main session's model.`,
 };
 
 const HINTS: Record<Step, readonly string[]> = {

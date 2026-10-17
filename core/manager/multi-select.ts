@@ -1,21 +1,14 @@
-import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, PAD, padded, prefixed, rule } from "./layout.ts";
-import { CANCEL_HINT, clampIndex } from "./list.ts";
+import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
+import { PAD, padded, prefixed } from "./layout.ts";
+import { clampIndex } from "./list.ts";
 
-export type MultiOption = { label: string; description?: string };
+type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
-export type MultiSelectSpec = {
-  title: string;
-  options: readonly MultiOption[];
-  checked?: readonly boolean[];
-  height?: number;
-};
+export const MULTI_SELECT_HINTS = ["↑↓ select", "Space toggle", "a all", "n none"] as const;
 
-export const MULTI_SELECT_HINTS = ["↑↓ move", "Space toggle", "a all", "n none"] as const;
-
-export const DEFAULT_HEIGHT = 10;
+const DEFAULT_HEIGHT = 10;
 
 export const initialMulti = (count: number, checked: readonly boolean[] = []): MultiState => ({
   cursor: 0,
@@ -98,41 +91,3 @@ export const multiLines = (
 
   return [...above, ...rows, ...below];
 };
-
-const HINTS = [...MULTI_SELECT_HINTS, "Enter confirm", CANCEL_HINT];
-
-export const multiSelectForm =
-  (spec: MultiSelectSpec): FormFactory<number[] | undefined> =>
-  (api) => {
-    let state = initialMulti(spec.options.length, spec.checked);
-
-    return {
-      render: (width) => [
-        rule(api.theme, width),
-        ...padded(api.theme, api.theme.fg("text", spec.title), width),
-        "",
-        ...multiLines(api.theme, spec.options, state, width, spec.height),
-        "",
-        ...hintLines(api.theme, HINTS, width),
-        rule(api.theme, width),
-      ],
-      handleKey: (key) => {
-        if (key.name === "escape") {
-          api.done(undefined);
-          return;
-        }
-
-        if (key.name === "enter") {
-          api.done(checkedIndexes(state));
-          return;
-        }
-
-        const next = multiKey(key, state);
-
-        if (next) {
-          state = next;
-          api.requestRender();
-        }
-      },
-    };
-  };

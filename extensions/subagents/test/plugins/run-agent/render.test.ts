@@ -46,7 +46,7 @@ const toolDeps = (runner: Runner, registry: AgentRegistry) => ({
 });
 
 const setup = (overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;
   const tool = runAgentTool(toolDeps(runner, registry), "run agents");

@@ -62,6 +62,7 @@ export type AgentRecord = {
   context?: ContextSnapshot;
   lastText: string;
   resultText?: string;
+  statusLine?: boolean;
   resultPath?: string;
   handoffPath: string;
   error?: string;
@@ -157,7 +158,9 @@ type AgentViewService = {
 };
 
 type AgentSetupService = {
+  usage: { setup: string; create: string };
   run(args: string): Promise<void>;
+  create(args: string): Promise<void>;
   complete(prefix: string): { value: string; label: string }[];
 };
 

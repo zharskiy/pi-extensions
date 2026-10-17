@@ -11,9 +11,9 @@ describe("mcp-import arguments", () => {
   });
 
   it("rejects a missing or unknown tool and unknown words", () => {
-    expect(parseArgs("")).toMatch(/^Name the tool/);
-    expect(parseArgs("other")).toMatch(/^Unknown tool "other"/);
-    expect(parseArgs("claude now")).toMatch(/^Unknown argument "now"/);
+    expect(parseArgs("")).toEqual({ error: expect.stringMatching(/^name the tool.*usage: \/mcp-import/) });
+    expect(parseArgs("other")).toEqual({ error: expect.stringMatching(/^unknown tool "other"/) });
+    expect(parseArgs("claude now")).toEqual({ error: expect.stringMatching(/^unknown argument "now"/) });
   });
 
   it("completes the tool, then the flags not yet given", () => {

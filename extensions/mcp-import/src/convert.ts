@@ -1,12 +1,13 @@
+import { isPlainObject } from "../../../core/manager/settings.ts";
 import type { Source } from "./args.ts";
+
+type RawServer = Record<string, unknown>;
 
 export type PiServer = Record<string, unknown>;
 
 export type Conversion = { server: PiServer; notes: string[] } | { skip: string };
 
 export type ConvertContext = { home: string; sep: string };
-
-type Record_ = Record<string, unknown>;
 
 const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 
@@ -37,18 +38,16 @@ const CURSOR_ENV = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 const WORKSPACE = /\$\{workspaceFolder(?:Basename)?\}/;
 
+// biome-ignore lint/suspicious/noTemplateCurlyInString: Cursor's literal placeholder
 const HOME = "${userHome}";
 
 const VARIABLE = /\$\{[^}]*\}/;
-
-export const isRecord = (value: unknown): value is Record_ =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
 
 const isStringRecord = (value: unknown): value is Record<string, string> =>
-  isRecord(value) && Object.values(value).every((item) => typeof item === "string");
+  isPlainObject(value) && Object.values(value).every((item) => typeof item === "string");
 
 export const validName = (name: string) => SERVER_NAME.test(name);
 
@@ -69,7 +68,7 @@ const transportSkip = (type: unknown) => {
   return `has transport type ${JSON.stringify(type)}; pi supports only stdio, http and streamable-http`;
 };
 
-const pick = (raw: Record_): PiServer | string => {
+const pick = (raw: RawServer): PiServer | string => {
   const out: PiServer = {};
 
   if (raw.type !== undefined) {
@@ -184,7 +183,7 @@ const warnUnexpanded = (server: PiServer, notes: string[]) => {
   }
 };
 
-const dropUnknown = (raw: Record_, known: string[], notes: string[]) => {
+const dropUnknown = (raw: RawServer, known: string[], notes: string[]) => {
   const unknown = Object.keys(raw).filter((key) => !known.includes(key));
 
   if (unknown.length > 0) {
@@ -192,7 +191,7 @@ const dropUnknown = (raw: Record_, known: string[], notes: string[]) => {
   }
 };
 
-const convertTimeout = (raw: Record_, server: PiServer, notes: string[]) => {
+const convertTimeout = (raw: RawServer, server: PiServer, notes: string[]) => {
   if (raw.timeout === undefined) {
     return;
   }
@@ -206,12 +205,12 @@ const convertTimeout = (raw: Record_, server: PiServer, notes: string[]) => {
   notes.push(`timeout ${raw.timeout} ms became ${server.timeout} s`);
 };
 
-const convertOAuth = (raw: Record_, server: PiServer, notes: string[]) => {
+const convertOAuth = (raw: RawServer, server: PiServer, notes: string[]) => {
   if (raw.oauth === undefined) {
     return;
   }
 
-  if (!isRecord(raw.oauth) || !("url" in server)) {
+  if (!isPlainObject(raw.oauth) || !("url" in server)) {
     notes.push("dropped oauth: not an object on an HTTP server");
     return;
   }
@@ -231,7 +230,7 @@ const convertOAuth = (raw: Record_, server: PiServer, notes: string[]) => {
   }
 };
 
-const convertHelper = (raw: Record_, server: PiServer, notes: string[]) => {
+const convertHelper = (raw: RawServer, server: PiServer, notes: string[]) => {
   if (raw.headersHelper === undefined) {
     return;
   }
@@ -250,7 +249,7 @@ const convertHelper = (raw: Record_, server: PiServer, notes: string[]) => {
   );
 };
 
-const convertClaude = (raw: Record_, notes: string[]): Conversion => {
+const convertClaude = (raw: RawServer, notes: string[]): Conversion => {
   const picked = pick(raw);
 
   if (typeof picked === "string") {
@@ -281,7 +280,7 @@ const replaceHome = (field: string, value: string, home: string) => {
   return rest.split(HOME).join(home);
 };
 
-const convertCursor = (raw: Record_, notes: string[], context: ConvertContext): Conversion => {
+const convertCursor = (raw: RawServer, notes: string[], context: ConvertContext): Conversion => {
   const picked = pick(raw);
 
   if (typeof picked === "string") {
@@ -328,7 +327,7 @@ const convertCursor = (raw: Record_, notes: string[], context: ConvertContext): 
 };
 
 export const convertServer = (source: Source, raw: unknown, context: ConvertContext): Conversion => {
-  if (!isRecord(raw)) {
+  if (!isPlainObject(raw)) {
     return { skip: "is not an object" };
   }
 
@@ -343,6 +342,6 @@ export const convertServer = (source: Source, raw: unknown, context: ConvertCont
 
 export const needsSignIn = (server: PiServer) =>
   typeof server.url === "string" &&
-  !Object.keys(isRecord(server.headers) ? server.headers : {}).some(
+  !Object.keys(isPlainObject(server.headers) ? server.headers : {}).some(
     (key) => key.toLowerCase() === "authorization",
   );

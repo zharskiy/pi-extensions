@@ -23,7 +23,9 @@ const MIN_ROOM = 8;
 
 const STATS_COLS = 30;
 
-export const POINTER_COLS = 2;
+const POINTER_COLS = 2;
+
+export const POINTER_BLANK = " ".repeat(POINTER_COLS);
 
 export type RowInput = TreeRow & { selected: boolean };
 
@@ -113,19 +115,52 @@ const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
 const leadOf = (theme: ThemeLike, row: TreeRow, nameCols: number) =>
   POINTER_COLS + theme.width(treePrefix(row)) + 2 + nameCols + 2;
 
-export const rowLayout = (rows: TreeRow[], now: number, width: number, theme: ThemeLike): RowLayout => {
-  const nameCols = nameColumn(rows, theme);
-  const widest = (measure: (row: TreeRow) => number) =>
-    rows.reduce((most, row) => Math.max(most, measure(row)), 0);
-  const wants = (row: TreeRow, cap: number) =>
-    leadOf(theme, row, nameCols) + Math.min(cap, theme.width(singleLine(row.record.description)));
-  const wanted = widest((row) => wants(row, DESCRIPTION_COLS_MAX));
-  const floor = widest((row) => wants(row, MIN_DESCRIPTION));
-  const limit = innerWidth(width) - 2 - widest((row) => statsReserve(theme, row.record, now));
-  const infoAt = Math.max(floor, Math.min(wanted, limit));
-
-  return { nameCols, infoAt: Math.min(innerWidth(width), infoAt) };
+export type RowMeasure = {
+  nameCols: number;
+  wanted: number;
+  floor: number;
+  reserve: number;
+  live: AgentRecord[];
 };
+
+const hasFixedStats = (record: AgentRecord) => !isClosed(record.state) || record.endedAt !== undefined;
+
+export const measureRows = (rows: TreeRow[], theme: ThemeLike): RowMeasure => {
+  const nameCols = nameColumn(rows, theme);
+
+  return rows.reduce<RowMeasure>(
+    (measure, row) => {
+      const lead = leadOf(theme, row, nameCols);
+      const described = theme.width(singleLine(row.record.description));
+
+      measure.wanted = Math.max(measure.wanted, lead + Math.min(DESCRIPTION_COLS_MAX, described));
+      measure.floor = Math.max(measure.floor, lead + Math.min(MIN_DESCRIPTION, described));
+
+      if (hasFixedStats(row.record)) {
+        measure.reserve = Math.max(measure.reserve, statsReserve(theme, row.record, 0));
+      } else {
+        measure.live.push(row.record);
+      }
+
+      return measure;
+    },
+    { nameCols, wanted: 0, floor: 0, reserve: 0, live: [] },
+  );
+};
+
+export const layoutOf = (measure: RowMeasure, now: number, width: number, theme: ThemeLike): RowLayout => {
+  const reserve = measure.live.reduce(
+    (most, record) => Math.max(most, statsReserve(theme, record, now)),
+    measure.reserve,
+  );
+  const limit = innerWidth(width) - 2 - reserve;
+  const infoAt = Math.max(measure.floor, Math.min(measure.wanted, limit));
+
+  return { nameCols: measure.nameCols, infoAt: Math.min(innerWidth(width), infoAt) };
+};
+
+export const rowLayout = (rows: TreeRow[], now: number, width: number, theme: ThemeLike): RowLayout =>
+  layoutOf(measureRows(rows, theme), now, width, theme);
 
 export const renderRow = (
   input: RowInput,
@@ -136,7 +171,7 @@ export const renderRow = (
 ): string => {
   const { record } = input;
   const { nameCols, infoAt } = layout;
-  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : " ".repeat(POINTER_COLS);
+  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : POINTER_BLANK;
   const tree = treePrefix(input);
   const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
   const fixed = leadOf(theme, input, nameCols);

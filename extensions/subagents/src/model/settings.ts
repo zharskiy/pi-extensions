@@ -1,4 +1,3 @@
-import { splitModelRequest, THINKING_LEVELS } from "../../../../core/adapter/contract.ts";
 import {
   isPlainObject,
   type ObjectParse,
@@ -8,7 +7,14 @@ import {
   type SettingsSchema,
   userSettingsPath,
 } from "../../../../core/manager/settings.ts";
-import { type AgentOverride, type AgentOverrides, ALL } from "./agent-schema.ts";
+import {
+  OVERRIDE_FIELDS,
+  type OverrideField,
+  overrideModel,
+  overrideSkills,
+  overrideThinking,
+} from "./agent-override.ts";
+import type { AgentOverride, AgentOverrides } from "./agent-schema.ts";
 
 export type Settings = {
   maxConcurrent: number;
@@ -30,7 +36,7 @@ export type Settings = {
   agents: AgentOverrides;
 };
 
-export const SETTINGS_FILE = "pi-subagents.json";
+const SETTINGS_FILE = "pi-subagents.json";
 
 export const defaultSettings = (): Settings => ({
   maxConcurrent: 4,
@@ -54,44 +60,7 @@ export const defaultSettings = (): Settings => ({
 
 const range = (min: number, max: number) => ({ type: "number", min, max }) as const;
 
-const OVERRIDE_FIELDS = ["model", "thinking", "skills"];
-
-type FieldParse = { patch: AgentOverride; error?: string };
-
-const overrideModel = (value: unknown): FieldParse => {
-  if (typeof value !== "string" || value.trim().length === 0 || /\s/.test(value.trim())) {
-    return { patch: {}, error: "model must be provider/id[:thinking] without spaces" };
-  }
-
-  const request = splitModelRequest(value);
-
-  if (request.error) {
-    return { patch: {}, error: `model: ${request.error}` };
-  }
-
-  const thinking = request.thinking ? { thinking: request.thinking } : {};
-
-  return request.name.length === 0 ? { patch: thinking } : { patch: { model: request.name, ...thinking } };
-};
-
-const overrideThinking = (value: unknown): FieldParse =>
-  typeof value === "string" && THINKING_LEVELS.includes(value)
-    ? { patch: { thinking: value } }
-    : { patch: {}, error: `thinking must be one of ${THINKING_LEVELS.join(", ")}` };
-
-const overrideSkills = (value: unknown): FieldParse => {
-  if (value === ALL) {
-    return { patch: { skills: ALL } };
-  }
-
-  if (Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry.trim().length > 0)) {
-    return { patch: { skills: Array.from(new Set(value.map((entry: string) => entry.trim()))) } };
-  }
-
-  return { patch: {}, error: `skills must be "${ALL}" or a list of skill names` };
-};
-
-const OVERRIDE_PARSERS: Record<string, (value: unknown) => FieldParse> = {
+const OVERRIDE_PARSERS: Record<string, (value: unknown) => OverrideField> = {
   model: overrideModel,
   thinking: overrideThinking,
   skills: overrideSkills,
@@ -102,7 +71,7 @@ const parseOverride = (name: string, raw: unknown) => {
     return { errors: [`${name} must be an object with ${OVERRIDE_FIELDS.join(", ")}`] };
   }
 
-  const unknown = Object.keys(raw).filter((key) => !OVERRIDE_FIELDS.includes(key));
+  const unknown = Object.keys(raw).filter((key) => !(OVERRIDE_FIELDS as readonly string[]).includes(key));
   const errors = unknown.map(
     (key) =>
       `${name}.${key} cannot be overridden (only ${OVERRIDE_FIELDS.join(", ")}); create an own agent instead`,
@@ -127,7 +96,7 @@ const parseOverrides = (value: Record<string, unknown>): ObjectParse => {
   return { value: overrides, errors: parsed.flatMap((entry) => entry.errors) };
 };
 
-export const mergeOverrides = (lower: AgentOverrides = {}, higher: AgentOverrides = {}): AgentOverrides =>
+const mergeOverrides = (lower: AgentOverrides = {}, higher: AgentOverrides = {}): AgentOverrides =>
   Object.fromEntries(
     Array.from(new Set([...Object.keys(lower), ...Object.keys(higher)])).map((name) => [
       name,
@@ -155,13 +124,18 @@ const settingsSchema: SettingsSchema<Settings> = {
   agents: { type: "object", of: "agent overrides", parse: parseOverrides },
 };
 
+export const settingsPaths = (info: { agentDir: string; cwd: string }) => ({
+  project: projectSettingsPath(info.cwd, SETTINGS_FILE),
+  user: userSettingsPath(info.agentDir, SETTINGS_FILE),
+});
+
 const readUser = (agentDir: string) =>
   readSettingsFile(settingsSchema, userSettingsPath(agentDir, SETTINGS_FILE));
 
 export const disabledPlugins = (agentDir: string) => readUser(agentDir).patch.disabledPlugins ?? [];
 
 export const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
-  const projectPath = projectSettingsPath(cwd, SETTINGS_FILE);
+  const projectPath = settingsPaths({ agentDir, cwd }).project;
   const user = readUser(agentDir);
   const project: SettingsParse<Settings> = projectTrusted
     ? readSettingsFile(settingsSchema, projectPath)
@@ -176,4 +150,25 @@ export const loadSettings = (agentDir: string, cwd: string, projectTrusted: bool
   const agents = mergeOverrides(user.patch.agents, projectPatch.agents);
 
   return { settings: { ...defaultSettings(), ...user.patch, ...projectPatch, agents }, errors };
+};
+
+const reportedBy = new WeakMap<Settings, Set<string>>();
+
+export const reloadSettings = (
+  settings: Settings,
+  info: { agentDir: string; cwd: string; projectTrusted: boolean },
+  notify: (message: string) => void,
+) => {
+  const loaded = loadSettings(info.agentDir, info.cwd, info.projectTrusted);
+  const reported = reportedBy.get(settings) ?? new Set<string>();
+
+  reportedBy.set(settings, reported);
+  Object.assign(settings, loaded.settings);
+
+  loaded.errors
+    .filter((message) => !reported.has(message))
+    .forEach((message) => {
+      reported.add(message);
+      notify(message);
+    });
 };

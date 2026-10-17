@@ -25,10 +25,9 @@ const WIDE_AGENT = [
 ].join("\n");
 
 const setup = async (overrides = {}, agent = "scout") => {
-  const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  );
+  });
 
   if (agent === "wide") {
     const userAgentsDir = join(harness.host.info.agentDir, "agents");

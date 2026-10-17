@@ -13,7 +13,7 @@ import { createSemaphore } from "../../../src/plugins/run-agent/semaphore.ts";
 import { createHarness, PACKAGE_ROOT, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = (overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
   const runAgent = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
   const registry = harness.services.require("registry");
 

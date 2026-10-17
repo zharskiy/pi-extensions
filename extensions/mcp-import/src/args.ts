@@ -1,4 +1,4 @@
-export const SOURCES = ["claude", "cursor"] as const;
+const SOURCES = ["claude", "cursor"] as const;
 
 export type Source = (typeof SOURCES)[number];
 
@@ -12,21 +12,23 @@ export const USAGE = "/mcp-import <claude|cursor> [project] [apply]";
 
 const isSource = (word: string): word is Source => (SOURCES as readonly string[]).includes(word);
 
-export const parseArgs = (text: string): ImportArgs | string => {
+export const parseArgs = (text: string): ImportArgs | { error: string } => {
   const [first, ...rest] = text.trim().split(/\s+/).filter(Boolean);
 
   if (!first) {
-    return `Name the tool to import from: ${USAGE}`;
+    return { error: `name the tool to import from; usage: ${USAGE}` };
   }
 
   if (!isSource(first)) {
-    return `Unknown tool "${first}" (available: ${SOURCES.join(", ")}). Usage: ${USAGE}`;
+    return { error: `unknown tool "${first}" (available: ${SOURCES.join(", ")}); usage: ${USAGE}` };
   }
 
   const unknown = rest.filter((word) => !FLAGS.includes(word));
 
   if (unknown.length > 0) {
-    return `Unknown argument ${unknown.map((word) => `"${word}"`).join(", ")}. Usage: ${USAGE}`;
+    return {
+      error: `unknown argument ${unknown.map((word) => `"${word}"`).join(", ")}; usage: ${USAGE}`,
+    };
   }
 
   return {

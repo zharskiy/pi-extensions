@@ -81,11 +81,9 @@ type BeforeStart = (context: {
   runtime: ReturnType<typeof createFakeRuntime>;
 }) => void;
 
-export const createHarness = (
-  plugins: Plugin[],
-  overrides: Partial<Settings> = {},
-  beforeStart: BeforeStart = () => {},
-) => {
+type HarnessOptions = { overrides?: Partial<Settings>; beforeStart?: BeforeStart };
+
+export const createHarness = (plugins: Plugin[], { overrides = {}, beforeStart }: HarnessOptions = {}) => {
   const root = tempDir();
 
   const host = createFakeHost({
@@ -97,7 +95,7 @@ export const createHarness = (
 
   const runtime = createFakeRuntime(shippedModels());
 
-  beforeStart({ root, host, runtime });
+  beforeStart?.({ root, host, runtime });
 
   return { root, ...startPlugins(host, runtime, plugins, overrides) };
 };

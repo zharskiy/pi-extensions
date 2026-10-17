@@ -19,9 +19,11 @@ const scouts = (count: number): BatchItem[] =>
 
 const setup = async (overrides = {}) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
-    maxChildrenPerAgent: 3,
-    maxConcurrent: 20,
-    ...overrides,
+    overrides: {
+      maxChildrenPerAgent: 3,
+      maxConcurrent: 20,
+      ...overrides,
+    },
   });
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;

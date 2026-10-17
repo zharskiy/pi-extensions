@@ -14,6 +14,7 @@ import {
   onSubmitTab,
   type Picker,
   SCOPES,
+  type SetupChange,
   type SetupContext,
   type SetupState,
   setupChanges,
@@ -26,8 +27,7 @@ const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", sk
 
 const LABEL_WIDTH = 10;
 
-export const TOOLS_NOTE =
-  "Tools are fixed per agent. To change tools, create your own agent with /agents create.";
+const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own agent with /agents create.";
 
 const MCP_ON = "on: the MCP servers configured in mcp.json, shared by every agent with mcp: true";
 
@@ -66,7 +66,13 @@ const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
     return prefixed(theme, `${PAD}${pointer} ${label}`, value, width);
   });
 
-const windowLines = (theme: ThemeLike, options: string[], cursor: number, width: number) => {
+const windowLines = (
+  theme: ThemeLike,
+  options: string[],
+  cursor: number,
+  width: number,
+  label: (option: string) => string = (option) => option,
+) => {
   const { start, end } = scrollWindow(options.length, cursor, LIST_HEIGHT);
   const more = (text: string) => padded(theme, theme.fg("dim", text), width);
 
@@ -74,7 +80,7 @@ const windowLines = (theme: ThemeLike, options: string[], cursor: number, width:
     const chosen = start + offset === cursor;
     const pointer = chosen ? theme.fg("accent", theme.bold("›")) : " ";
 
-    return prefixed(theme, `${PAD}${pointer} `, theme.fg(chosen ? "accent" : "text", option), width);
+    return prefixed(theme, `${PAD}${pointer} `, theme.fg(chosen ? "accent" : "text", label(option)), width);
   });
 
   return [
@@ -100,9 +106,7 @@ const pickerLines = (
   }
 
   if (picker.field === "model") {
-    const options = modelOptions(context, state.tab).map(modelText);
-
-    const rows = windowLines(theme, options, picker.cursor, width);
+    const rows = windowLines(theme, modelOptions(context, state.tab), picker.cursor, width, modelText);
 
     return [...title("Model (models with credentials)"), ...rows];
   }
@@ -152,11 +156,11 @@ const changeText = (patch: Record<string, unknown>) =>
 const submitLines = (
   context: SetupContext,
   state: SetupState,
+  changes: SetupChange[],
   paths: SetupPaths,
   theme: ThemeLike,
   width: number,
 ) => {
-  const changes = setupChanges(context, state);
   const title = changes.length > 0 ? "Changes" : "No changes";
   const rows = changes.flatMap((change) => {
     const text = `${theme.fg("muted", `${change.name}:`)} ${theme.fg("text", changeText(change.patch))}`;
@@ -179,7 +183,7 @@ const submitLines = (
   ];
 };
 
-const hints = (context: SetupContext, state: SetupState) => {
+const hints = (context: SetupContext, state: SetupState, ready: boolean) => {
   if (state.picker?.field === "skills") {
     return [...MULTI_SELECT_HINTS, "Enter confirm", "Esc back"];
   }
@@ -189,7 +193,7 @@ const hints = (context: SetupContext, state: SetupState) => {
   }
 
   if (onSubmitTab(context, state)) {
-    const enter = setupChanges(context, state).length > 0 ? "Enter save" : "Enter close";
+    const enter = ready ? "Enter save" : "Enter close";
 
     return [...SELECT_HINTS, enter, TAB_SWITCH_HINT, CANCEL_HINT];
   }
@@ -208,9 +212,10 @@ export const renderSetup = (
     label: agent.name,
     done: FIELDS.some((field) => fieldChanged(context, state, index, field)),
   }));
-  const ready = setupChanges(context, state).length > 0;
+  const changes = setupChanges(context, state);
+  const ready = changes.length > 0;
   const body = onSubmitTab(context, state)
-    ? submitLines(context, state, paths, theme, width)
+    ? submitLines(context, state, changes, paths, theme, width)
     : agentLines(context, state, theme, width);
 
   return [
@@ -219,7 +224,7 @@ export const renderSetup = (
     "",
     ...body,
     "",
-    ...hintLines(theme, hints(context, state), width),
+    ...hintLines(theme, hints(context, state, ready), width),
     rule(theme, width),
   ];
 };

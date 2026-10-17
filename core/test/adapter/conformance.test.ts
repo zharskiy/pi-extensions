@@ -10,13 +10,13 @@ import { THINKING_LEVELS } from "../../adapter/contract.ts";
 import { finalRunTexts } from "../../adapter/messages.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
-import { availableModels, thinkingLevelsOf } from "../../adapter/pi-models.ts";
+import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const ADAPTER_PI_MAJOR = 1;
 
-const PI_PACKAGES = ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
+const PI_PACKAGES = ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
 
 const readJson = (url: URL) => JSON.parse(readFileSync(url, "utf8"));
 
@@ -307,17 +307,7 @@ describe("pi adapter conformance", () => {
     ).toEqual([]);
   });
 
-  it("lists the model catalogue with the thinking levels pi supports for each model", () => {
-    const shapes = [
-      { reasoning: false },
-      { reasoning: true },
-      { reasoning: true, thinkingLevelMap: { minimal: null, xhigh: "x-high" } },
-      { reasoning: true, thinkingLevelMap: { off: null, xhigh: null, max: "maximum" } },
-    ];
-
-    expect(shapes.map((shape) => thinkingLevelsOf(shape as never))).toEqual(
-      shapes.map((shape) => getSupportedThinkingLevels(shape as never)),
-    );
+  it("names the same thinking levels as pi", () => {
     expect(
       getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: { xhigh: "x", max: "m" } } as never),
     ).toEqual(THINKING_LEVELS);
@@ -499,13 +489,13 @@ describe("pi adapter conformance", () => {
     ];
 
     it("keeps the named tools and every MCP tool, including tools registered after the start", async () => {
-      const { names } = await sessionTools(childToolNames(["read"], [], noMainTools));
+      const { names } = await sessionTools(childToolNames({ tools: ["read"], customNames: [] }, noMainTools));
 
       expect(names).toEqual([...LATE_MCP, "read"]);
     });
 
     it("keeps MCP tools registered after the start inactive for mcp: false", async () => {
-      const tools = childToolNames(["read"], [], noMainTools, false);
+      const tools = childToolNames({ tools: ["read"], customNames: [], mcp: false }, noMainTools);
       const { active } = await sessionTools(tools);
 
       expect(tools.some((name) => name.startsWith("mcp__"))).toBe(false);
@@ -514,20 +504,24 @@ describe("pi adapter conformance", () => {
     });
 
     it("keeps the main session's tools and every MCP tool for tools: all", async () => {
-      const { names } = await sessionTools(childToolNames(undefined, [], () => ["read", "web_fetch"]));
+      const { names } = await sessionTools(
+        childToolNames({ tools: undefined, customNames: [] }, () => ["read", "web_fetch"]),
+      );
 
       expect(names).toEqual([...LATE_MCP, "read", "web_fetch"]);
     });
 
     it("keeps no tool at all for tools: []", async () => {
-      const { names, active } = await sessionTools(childToolNames([], [], noMainTools));
+      const { names, active } = await sessionTools(
+        childToolNames({ tools: [], customNames: [] }, noMainTools),
+      );
 
       expect(names).toEqual([]);
       expect(active).toEqual([]);
     });
 
     it("keeps a third-party extension's MCP tools registered but inactive for tools: [] with agent tools", async () => {
-      const tools = childToolNames([], ["web_fetch"], noMainTools);
+      const tools = childToolNames({ tools: [], customNames: ["web_fetch"] }, noMainTools);
       const { names, active } = await sessionTools(tools);
 
       expect(tools).toEqual(["web_fetch"]);
@@ -605,7 +599,9 @@ describe("pi adapter conformance", () => {
       const codemode = await piModule("extensions/codemode/tool.js");
       const search = await piModule("extensions/tool-search/tool.js");
       const mcpTools = await piModule("extensions/mcp/tools.js");
-      const added = childToolNames(["read"], [], noMainTools).filter((name) => name !== "read");
+      const added = childToolNames({ tools: ["read"], customNames: [] }, noMainTools).filter(
+        (name) => name !== "read",
+      );
       const serverTool = mcpTools.createMcpToolName("fixture", "code");
 
       expect(added.filter((name) => !name.includes("*")).toSorted()).toEqual(

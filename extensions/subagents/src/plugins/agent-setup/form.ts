@@ -190,7 +190,9 @@ const chooseSkills = (
 
   const names = checkedIndexes(picker.multi).flatMap((index) => context.skills[index] ?? []);
 
-  return setDraft(state, { skills: names.length === context.skills.length ? ALL : names });
+  const unchangedAll = state.drafts[state.tab]?.skills === ALL && names.length === context.skills.length;
+
+  return setDraft(state, { skills: unchangedAll ? ALL : names });
 };
 
 const pickerKey = (context: SetupContext, state: SetupState, picker: Picker, key: KeyPress): SetupState => {

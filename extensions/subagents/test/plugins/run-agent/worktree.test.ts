@@ -68,10 +68,9 @@ const ISOLATED_AGENT = [
 ].join("\n");
 
 const setup = (cwd: string, overrides: Partial<Settings> = {}) => {
-  const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  );
+  });
 
   const agents = join(harness.host.info.agentDir, "agents");
 

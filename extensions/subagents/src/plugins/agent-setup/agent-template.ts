@@ -1,17 +1,15 @@
+import { INHERIT_MODEL } from "../../model/agent-schema.ts";
+
 export type AgentKind = "lead" | "chore";
 
 export type AgentTemplate = { name: string; description: string; kind: AgentKind; model: string };
-
-export const AGENT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
-
-export const INHERIT = "inherit";
 
 export const DESCRIPTION_PLACEHOLDER =
   "Use for <when the main session should pick this agent>. Not for <what other agents do>. Returns <what>.";
 
 type KindDefaults = { limit: number; tools: string; subagents: string; mcp: boolean; scope: string };
 
-export const KIND_DEFAULTS: Record<AgentKind, KindDefaults> = {
+const KIND_DEFAULTS: Record<AgentKind, KindDefaults> = {
   lead: {
     limit: 120_000,
     tools: "[read, grep, find, ls, edit, write, bash]",
@@ -39,7 +37,7 @@ const needsQuotes = (text: string) =>
 
 const scalar = (text: string) => (needsQuotes(text) ? `"${text}"` : text);
 
-export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 const frontmatter = ({ name, description, kind, model }: AgentTemplate) => {
   const defaults = KIND_DEFAULTS[kind];
@@ -51,8 +49,8 @@ const frontmatter = ({ name, description, kind, model }: AgentTemplate) => {
     `name: ${name}`,
     "# description: when the main session should use this agent, what it is not for, what it returns.",
     `description: ${scalar(oneLine(description) || DESCRIPTION_PLACEHOLDER)}`,
-    `# model: provider/id or provider/id:thinking; ${INHERIT} uses the main session's model.`,
-    `model: ${oneLine(model) || INHERIT}`,
+    `# model: provider/id or provider/id:thinking; ${INHERIT_MODEL} uses the main session's model.`,
+    `model: ${oneLine(model) || INHERIT_MODEL}`,
     "# limit: context limit in tokens, at least 5000.",
     `limit: ${defaults.limit}`,
     "# tools: tool names, all for the tools active in the main session, or [] for none.",

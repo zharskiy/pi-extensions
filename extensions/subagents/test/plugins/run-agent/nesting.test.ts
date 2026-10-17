@@ -22,7 +22,7 @@ const childTool = <P>(child: FakeChild, name: string) => {
 };
 
 const setup = (overrides = {}) => {
-  const harness = createHarness(plugins, overrides);
+  const harness = createHarness(plugins, { overrides });
   const registry = harness.services.require("registry");
 
   const runMain = async (agents: RunAgentParams["agents"]) => {

@@ -3,22 +3,29 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { KeyPress } from "../../../../../core/adapter/contract.ts";
 import type { FakeForm } from "../../../../../core/test/helpers/fake-form.ts";
+import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { parseCreateArgs, shippedAgentNames } from "../../../src/plugins/agent-view/create.ts";
+import { parseCreateArgs } from "../../../src/plugins/agent-setup/create.ts";
+import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
-import { createHarness, PACKAGE_ROOT } from "../../helpers/harness.ts";
+import { createHarness } from "../../helpers/harness.ts";
 
 const enter: KeyPress = { name: "enter" };
 
 const setup = () => {
-  const harness = createHarness([agentRegistryPlugin, agentViewPlugin]);
+  const harness = createHarness([
+    agentRegistryPlugin,
+    agentDefinitionsPlugin,
+    agentSetupPlugin,
+    agentViewPlugin,
+  ]);
   const { host } = harness;
   const userFile = (name: string) => join(host.info.agentDir, "agents", `${name}.md`);
   const projectFile = (name: string) => join(host.info.cwd, ".pi", "agents", `${name}.md`);
-  const warnings = () => host.notices.filter((notice) => notice.level === "warning").map((n) => n.message);
+  const errors = () => host.notices.filter((notice) => notice.level === "error").map((n) => n.message);
 
-  return { ...harness, userFile, projectFile, warnings };
+  return { ...harness, userFile, projectFile, errors };
 };
 
 const fill = (form: FakeForm, answers: string[]) => {
@@ -36,13 +43,6 @@ describe("/agents create", () => {
     expect(parseCreateArgs("docs user")).toHaveProperty("error");
     expect(parseCreateArgs("docs project extra")).toHaveProperty("error");
     expect(parseCreateArgs("-docs")).toHaveProperty("error");
-  });
-
-  it("reads the shipped names from both shipped folders", () => {
-    const names = shippedAgentNames(PACKAGE_ROOT);
-
-    expect(names.has("implementer")).toBe(true);
-    expect(names.has("scout")).toBe(true);
   });
 
   it("asks for description, kind and model, writes a user agent and tells to /reload", async () => {
@@ -74,11 +74,11 @@ describe("/agents create", () => {
   });
 
   it("writes a project agent only in a trusted project", async () => {
-    const { host, projectFile, warnings } = setup();
+    const { host, projectFile, errors } = setup();
 
     await host.runCommand("agents", "create local project");
 
-    expect(warnings().at(-1)).toContain("trusted project");
+    expect(errors().at(-1)).toContain("trusted project");
     expect(host.forms).toHaveLength(0);
 
     host.info.projectTrusted = true;
@@ -91,25 +91,29 @@ describe("/agents create", () => {
     expect(readFileSync(projectFile("local"), "utf8")).toContain("mcp: true");
   });
 
-  it("refuses a shipped name and an existing file", async () => {
-    const { host, userFile, warnings } = setup();
+  it("refuses a shipped lead or chore name and an existing file", async () => {
+    const { host, userFile, errors } = setup();
 
     await host.runCommand("agents", "create scout");
 
-    expect(warnings().at(-1)).toContain("shipped agent");
+    expect(errors().at(-1)).toContain("shipped agent");
+
+    await host.runCommand("agents", "create implementer");
+
+    expect(errors().at(-1)).toContain("shipped agent");
 
     mkdirSync(join(host.info.agentDir, "agents"), { recursive: true });
     writeFileSync(userFile("mine"), "keep");
 
     await host.runCommand("agents", "create mine");
 
-    expect(warnings().at(-1)).toContain("already exists");
+    expect(errors().at(-1)).toContain("already exists");
     expect(readFileSync(userFile("mine"), "utf8")).toBe("keep");
     expect(host.forms).toHaveLength(0);
   });
 
   it("writes nothing when the form is cancelled or the model has spaces", async () => {
-    const { host, userFile, warnings } = setup();
+    const { host, userFile, errors } = setup();
     const cancelled = host.runCommand("agents", "create quiet");
 
     host.form().press({ name: "escape" });
@@ -120,7 +124,7 @@ describe("/agents create", () => {
     fill(host.form(), ["d", "", "provider/a b"]);
     await spaced;
 
-    expect(warnings().at(-1)).toContain("without spaces");
+    expect(errors().at(-1)).toContain("without spaces");
     expect(existsSync(userFile("quiet"))).toBe(false);
   });
 
@@ -138,6 +142,25 @@ describe("/agents create", () => {
     const command = host.commands.get("agents");
 
     expect(command?.complete?.("cr")?.map((item) => item.value)).toEqual(["create"]);
+    expect(command?.complete?.("cr")?.[0]?.label).toContain("/agents create <name> [project]");
     expect(command?.description).toContain("/agents create <name> [project]");
+  });
+
+  it("reports a clear error when the agent-setup plugin is off", async () => {
+    const harness = createHarness([agentRegistryPlugin, agentViewPlugin]);
+
+    await harness.host.runCommand("agents", "create docs");
+    await harness.host.runCommand("agents", "setup");
+
+    expect(harness.host.notices.map((notice) => notice.message)).toEqual([
+      "pi-subagents: /agents create needs the agent-setup plugin, which is disabled",
+      "pi-subagents: /agents setup needs the agent-setup plugin, which is disabled",
+    ]);
+    expect(
+      harness.host.commands
+        .get("agents")
+        ?.complete?.("")
+        ?.map((item) => item.value),
+    ).toEqual([]);
   });
 });

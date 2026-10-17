@@ -5,17 +5,29 @@ import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
-import { CREATE_USAGE, createAgentCommand } from "./create.ts";
 import { createAgentList } from "./list.ts";
 import { listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
 import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
 import { createAgentView } from "./view.ts";
 
+const SETUP_PREFIX = "setup ";
+
+const SUBCOMMANDS = ["create", "setup"] as const;
+
+type Subcommand = (typeof SUBCOMMANDS)[number];
+
+const SUBCOMMAND_TEXT: Record<Subcommand, string> = {
+  create: "new agent file",
+  setup: "model, thinking and skills per agent",
+};
+
+const isSubcommand = (word: string): word is Subcommand => (SUBCOMMANDS as readonly string[]).includes(word);
+
 export const agentViewPlugin: Plugin = {
   id: "agent-view",
   requires: ["agent-registry"],
-  enable: ({ host, runtime, bus, services, settings, root }) => {
+  enable: ({ host, runtime, bus, services, settings }) => {
     const registry = services.require("registry");
     const cleared = new Set<string>();
 
@@ -126,19 +138,35 @@ export const agentViewPlugin: Plugin = {
     const label = (record: AgentRecord) =>
       cutChars(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
 
-    const create = createAgentCommand(host, root);
-
-    const subcommands = [
-      { value: "create", label: `create · new agent file: ${CREATE_USAGE}` },
-      {
-        value: "setup",
-        label: "setup · model, thinking and skills per agent: /agents setup [<agent> key=value…]",
-      },
-    ];
-
     const setup = () => (services.has("agentSetup") ? services.require("agentSetup") : undefined);
 
-    const SETUP_PREFIX = "setup ";
+    const subcommands = (prefix: string) => {
+      const service = setup();
+
+      return service
+        ? SUBCOMMANDS.filter((word) => word.startsWith(prefix)).map((word) => ({
+            value: word,
+            label: `${word} · ${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}`,
+          }))
+        : [];
+    };
+
+    const runSubcommand = async (word: Subcommand, args: string) => {
+      const service = setup();
+
+      if (!service) {
+        host.ui.notify(
+          `pi-subagents: /agents ${word} needs the agent-setup plugin, which is disabled`,
+          "error",
+        );
+        return;
+      }
+
+      await (word === "create" ? service.create(args) : service.run(args));
+    };
+
+    const usage = setup()?.usage;
+    const usageText = usage ? ` | ${usage.create} | /agents setup` : "";
 
     const setupCompletions = (prefix: string) =>
       (setup()?.complete(prefix.slice(SETUP_PREFIX.length)) ?? []).map((entry) => ({
@@ -147,14 +175,12 @@ export const agentViewPlugin: Plugin = {
       }));
 
     host.registerCommand("agents", {
-      description: `Open the agents list, or one agent's view by id. Usage: /agents [id] | ${CREATE_USAGE} | /agents setup`,
+      description: `Open the agents list, or one agent's view by id. Usage: /agents [id]${usageText}`,
       complete: (prefix) =>
         prefix.startsWith(SETUP_PREFIX)
           ? setupCompletions(prefix)
           : [
-              ...subcommands
-                .filter((command) => command.value !== "setup" || setup())
-                .filter((command) => command.value.startsWith(prefix)),
+              ...subcommands(prefix),
               ...listed()
                 .filter((record) => record.id.startsWith(prefix))
                 .map((record) => ({ value: record.id, label: label(record) })),
@@ -163,15 +189,8 @@ export const agentViewPlugin: Plugin = {
         const id = args.trim();
         const [word, ...rest] = id.split(/\s+/);
 
-        if (word === "create") {
-          await create(rest.join(" "));
-          return;
-        }
-
-        const setupService = word === "setup" ? setup() : undefined;
-
-        if (setupService) {
-          await setupService.run(rest.join(" "));
+        if (word && isSubcommand(word)) {
+          await runSubcommand(word, rest.join(" "));
           return;
         }
 

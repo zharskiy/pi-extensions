@@ -54,16 +54,32 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
 
 const STATUS_LINE = /^(#+\s*)?status\s*:/i;
 
-export const hasStatusLine = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => line.replace(/[*_`]/g, "").trim())
-    .filter((line) => line.length > 0)
-    .slice(0, 5)
-    .some((line) => STATUS_LINE.test(line));
+const STATUS_SCAN_LINES = 5;
 
-export const pickResult = (texts: string[], fallback: string) =>
-  (texts.findLast(hasStatusLine) ?? texts.at(-1) ?? fallback).trim();
+const NON_BLANK_LINE = /[^\n]*\S[^\n]*/g;
+
+const statusWithin = (text: string, start: number, left: number): boolean => {
+  NON_BLANK_LINE.lastIndex = start;
+
+  const match = left > 0 ? NON_BLANK_LINE.exec(text) : null;
+
+  if (!match) {
+    return false;
+  }
+
+  const line = match[0].replace(/[*_`]/g, "").trim();
+  const next = match.index + match[0].length + 1;
+
+  if (line.length === 0) {
+    return statusWithin(text, next, left);
+  }
+
+  return STATUS_LINE.test(line) || statusWithin(text, next, left - 1);
+};
+
+export const hasStatusLine = (text: string) => statusWithin(text, 0, STATUS_SCAN_LINES);
+
+export const pickResult = (texts: string[]) => (texts.findLast(hasStatusLine) ?? texts.at(-1) ?? "").trim();
 
 const headCut = (text: string, limit: number) => {
   const newline = text.lastIndexOf("\n", limit);
@@ -130,7 +146,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecor
 
   if (record.state !== "done") {
     lines.push(`(unverified partial output: ${record.error ?? record.state})`);
-  } else if (!hasStatusLine(text)) {
+  } else if (!(record.statusLine ?? hasStatusLine(text))) {
     lines.push("(shape: no Status line)");
   }
 

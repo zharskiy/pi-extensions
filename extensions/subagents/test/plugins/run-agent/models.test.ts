@@ -112,7 +112,7 @@ describe("per-call model override", () => {
       { update: () => {} },
     );
 
-    await expect(attempt).rejects.toThrow(/reviewer: model "nova-6" matches several model families/);
+    await expect(attempt).rejects.toThrow(/reviewer: model "nova-6": matches several models \(/);
     await expect(attempt).rejects.toThrow(
       /- beta\/nova-6.1-sol \(context 200.0k, \$1\/\$5 per Mtok in\/out\)/,
     );
@@ -129,7 +129,7 @@ describe("per-call model override", () => {
 
     await expect(
       runAgent.execute({ agents: [{ agent: "reviewer", task: "b", model: "lyra" }] }, { update: () => {} }),
-    ).rejects.toThrow(/matches only models whose providers have no credentials \(locked\)/);
+    ).rejects.toThrow(/matches only models without credentials \(locked\//);
     await expect(
       runAgent.execute(
         { agents: [{ agent: "reviewer", task: "b", model: "luna:hgih" }] },

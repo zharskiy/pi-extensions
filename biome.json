@@ -18,7 +18,7 @@
   },
   "overrides": [
     {
-      "includes": ["extensions/mcp-import/**"],
+      "includes": ["extensions/mcp-import/test/**"],
       "linter": {
         "rules": {
           "suspicious": {

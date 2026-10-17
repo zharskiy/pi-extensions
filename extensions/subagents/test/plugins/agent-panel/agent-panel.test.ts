@@ -42,7 +42,9 @@ const stubs = () => {
 const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {}) => {
   const stub = stubs();
   const plugins = options.services === false ? [] : stub.plugins;
-  const harness = createHarness([agentRegistryPlugin, ...plugins, agentPanelPlugin], options.settings);
+  const harness = createHarness([agentRegistryPlugin, ...plugins, agentPanelPlugin], {
+    overrides: options.settings,
+  });
   const registry = harness.services.require("registry");
   const { host } = harness;
 

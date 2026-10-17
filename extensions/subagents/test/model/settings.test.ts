@@ -180,7 +180,7 @@ describe("subagents settings", () => {
     expect(loaded.settings.agents).toEqual({ scout: {}, reviewer: { thinking: "max" } });
     expect(loaded.errors).toEqual([
       `${userFile}: agents.scout.tools cannot be overridden (only model, thinking, skills); create an own agent instead`,
-      `${userFile}: agents.scout.model must be provider/id[:thinking] without spaces`,
+      `${userFile}: agents.scout.model must be provider/id[:thinking] or inherit, without spaces`,
       `${userFile}: agents.scout.thinking must be one of off, minimal, low, medium, high, xhigh, max`,
       `${userFile}: agents.scout.skills must be "all" or a list of skill names`,
       `${userFile}: agents.planner must be an object with model, thinking, skills`,

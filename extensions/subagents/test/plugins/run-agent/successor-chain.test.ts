@@ -41,7 +41,7 @@ const handoffText = (status: string) =>
 const setup = async (overrides = {}, agent = "scout") => {
   const harness = createHarness(
     [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentStatusPlugin],
-    overrides,
+    { overrides },
   );
 
   const registry = harness.services.require("registry");

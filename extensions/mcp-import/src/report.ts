@@ -27,46 +27,49 @@ const section = (title: string, lines: readonly string[]) =>
 const signIn = (entries: readonly Entry[]) =>
   entries.filter((entry) => needsSignIn(entry.server)).map((entry) => entry.name);
 
+const NAMESPACE = "pi-mcp-import";
+
 const detail = ({ plan }: ReportInput) => [
   ...section(
-    "Notes",
+    "notes",
     plan.added.flatMap((entry) => entry.notes.map((note) => `${entry.name}: ${note}`)),
   ),
   ...section(
-    "Skipped",
+    "skipped",
     plan.skipped.map((skip) => `${skip.name} (${skip.origin}): ${skip.reason}`),
   ),
 ];
 
-const oauthLine = (names: readonly string[]) =>
+const oauthLines = (names: readonly string[]) =>
   names.length > 0
     ? [
-        "",
-        `Sign in with /mcp (or /mcp login <name>) for ${names.join(", ")} if the server asks: OAuth tokens never transfer from another tool.`,
+        `sign in with /mcp (or /mcp login <name>) for ${names.join(", ")} if the server asks; OAuth tokens never transfer from another tool`,
       ]
     : [];
+
+const gap = (lines: readonly string[]) => (lines.length > 0 ? ["", ...lines] : []);
 
 export const dryRunReport = (input: ReportInput) => {
   const { args, plan, checked, target } = input;
   const head = [
-    `${command(args, false)}: dry run, nothing written.`,
-    `Read: ${checked.join(", ")}`,
-    `Target: ${target}`,
+    `${NAMESPACE}: dry run of ${command(args, false)}, nothing written`,
+    `read: ${checked.join(", ")}`,
+    `target: ${target}`,
   ];
 
   if (plan.added.length === 0) {
-    return [...head, "", "Nothing to add.", ...detail(input)].join("\n");
+    return [...head, "", "nothing to add", ...detail(input)].join("\n");
   }
 
   return [
     ...head,
     "",
-    `Would add ${plural(plan.added.length)}:`,
+    `would add ${plural(plan.added.length)}:`,
     preview(plan.added),
     ...detail(input),
-    ...oauthLine(signIn(plan.added)),
+    ...gap(oauthLines(signIn(plan.added))),
     "",
-    `Run ${command(args, true)} to write them.`,
+    `run ${command(args, true)} to write them`,
   ].join("\n");
 };
 
@@ -74,17 +77,17 @@ export const appliedReport = (input: ReportInput) => {
   const { args, plan, target } = input;
 
   if (plan.added.length === 0) {
-    return [`${command(args, true)}: nothing added to ${target}.`, ...detail(input)].join("\n");
+    return [`${NAMESPACE}: ${command(args, true)} added nothing to ${target}`, ...detail(input)].join("\n");
   }
 
   return [
-    `${command(args, true)}: added ${plural(plan.added.length)} to ${target}: ${plan.added.map((entry) => entry.name).join(", ")}.`,
+    `${NAMESPACE}: ${command(args, true)} added ${plural(plan.added.length)} to ${target}: ${plan.added.map((entry) => entry.name).join(", ")}`,
     ...detail(input),
     "",
-    "Run /reload to connect them, then /mcp to check them.",
-    ...oauthLine(signIn(plan.added)).slice(1),
+    "run /reload to connect them, then /mcp to check them",
+    ...oauthLines(signIn(plan.added)),
   ].join("\n");
 };
 
 export const emptyReport = (args: ImportArgs, checked: readonly string[]) =>
-  `${command(args, false)}: no MCP servers found in ${checked.join(", ")}.`;
+  `${NAMESPACE}: ${command(args, false)} found no MCP servers in ${checked.join(", ")}`;

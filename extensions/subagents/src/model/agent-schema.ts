@@ -2,6 +2,10 @@ export const ALL = "all";
 
 export const INHERIT_MODEL = "inherit";
 
+export const PLAIN_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
+export const PLAIN_NAME_TEXT = "letters, digits, '_' and '-', not starting with '-'";
+
 export type Grant = string[] | typeof ALL;
 
 export type AgentFrontmatter = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorText, formatDuration, formatTokens, formatWindow } from "../../manager/format.ts";
+import { errorText, formatDuration, formatTokens, formatWindow, homeRelative } from "../../manager/format.ts";
 
 describe("shared formatters", () => {
   it("formats tokens as 999, 1.0k, 1.2M", () => {
@@ -37,5 +37,12 @@ describe("shared formatters", () => {
     expect(errorText(new Error("boom"))).toBe("boom");
     expect(errorText("plain")).toBe("plain");
     expect(errorText(undefined)).toBe("undefined");
+  });
+
+  it("shortens paths under the home directory to ~ and leaves others alone", () => {
+    expect(homeRelative("/home/me/.pi/agent/mcp.json", "/home/me")).toBe("~/.pi/agent/mcp.json");
+    expect(homeRelative("/home/me", "/home/me")).toBe("~");
+    expect(homeRelative("/home/meow/x", "/home/me")).toBe("/home/meow/x");
+    expect(homeRelative("/home/me/x", "")).toBe("/home/me/x");
   });
 });

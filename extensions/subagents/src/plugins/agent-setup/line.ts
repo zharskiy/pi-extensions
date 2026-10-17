@@ -1,4 +1,10 @@
-import { splitModelRequest, THINKING_LEVELS } from "../../../../../core/adapter/contract.ts";
+import {
+  type OverrideField,
+  overrideModel,
+  overrideSkills,
+  overrideThinking,
+  unknownSkillsProblem,
+} from "../../model/agent-override.ts";
 import { type AgentOverride, ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
 import { SCOPES, type Scope, type SetupChange } from "./form.ts";
 
@@ -10,54 +16,51 @@ export const SETUP_USAGE = [
 export type LineCheck = {
   agents: string[];
   skills: string[];
-  resolveModel(request: string): { ref?: string; error?: string };
+  defaultScope: Scope;
+  resolveModel(request: string): { ref: string } | { error: string };
 };
 
 export type LineRequest = { change: SetupChange; scope: Scope };
 
-type Parsed = { patch: AgentOverride; scope?: Scope; error?: string };
+type Parsed = OverrideField & { scope?: Scope };
 
 const parseModel = (value: string, check: LineCheck): Parsed => {
-  if (value === INHERIT_MODEL) {
-    return { patch: { model: INHERIT_MODEL } };
+  const field = overrideModel(value);
+  const model = field.patch.model;
+
+  if (field.error || model === undefined || model === INHERIT_MODEL) {
+    return field;
   }
 
-  const request = splitModelRequest(value);
+  const resolved = check.resolveModel(model);
 
-  if (request.error) {
-    return { patch: {}, error: request.error };
+  return "error" in resolved
+    ? { patch: {}, error: resolved.error }
+    : { patch: { ...field.patch, model: resolved.ref } };
+};
+
+const skillsValue = (value: string) => {
+  if (value === ALL || value === "none") {
+    return value === ALL ? ALL : [];
   }
 
-  const resolved = check.resolveModel(request.name);
-  const thinking = request.thinking ? { thinking: request.thinking } : {};
-
-  if (!resolved.ref) {
-    return { patch: {}, error: resolved.error };
-  }
-
-  return { patch: { model: resolved.ref, ...thinking } };
+  return value
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
 };
 
 const parseSkills = (value: string, check: LineCheck): Parsed => {
-  if (value === ALL || value === "none") {
-    return { patch: { skills: value === ALL ? ALL : [] } };
-  }
+  const field = overrideSkills(skillsValue(value));
+  const skills = field.patch.skills;
+  const problem = Array.isArray(skills) ? unknownSkillsProblem(skills, check.skills) : undefined;
 
-  const names = Array.from(new Set(value.split(",").map((name) => name.trim()))).filter(Boolean);
-  const unknown = names.filter((name) => !check.skills.includes(name));
-  const loaded = check.skills.length > 0 ? check.skills.join(", ") : "none";
-
-  return unknown.length > 0
-    ? { patch: {}, error: `unknown skill(s) ${unknown.join(", ")}; loaded skills: ${loaded}` }
-    : { patch: { skills: names } };
+  return problem ? { patch: {}, error: `skills ${problem}` } : field;
 };
 
 const PARSERS: Record<string, (value: string, check: LineCheck) => Parsed> = {
   model: parseModel,
-  thinking: (value) =>
-    THINKING_LEVELS.includes(value)
-      ? { patch: { thinking: value } }
-      : { patch: {}, error: `thinking must be one of ${THINKING_LEVELS.join(", ")}` },
+  thinking: (value) => overrideThinking(value),
   skills: parseSkills,
   scope: (value) =>
     SCOPES.includes(value as Scope)
@@ -98,7 +101,7 @@ export const parseSetupLine = (args: string, check: LineCheck): LineRequest | { 
   }
 
   const patch: AgentOverride = Object.assign({}, ...parsed.map((entry) => entry.patch));
-  const scope = parsed.reduce<Scope>((chosen, entry) => entry.scope ?? chosen, "project");
+  const scope = parsed.reduce<Scope>((chosen, entry) => entry.scope ?? chosen, check.defaultScope);
 
   if (Object.keys(patch).length === 0) {
     return { error: `nothing to set; usage: ${SETUP_USAGE}` };

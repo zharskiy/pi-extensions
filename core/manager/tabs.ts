@@ -4,7 +4,7 @@ export type Tab = { label: string; done: boolean };
 
 export const TAB_SWITCH_HINT = "Tab/←→ switch";
 
-export const SUBMIT_LABEL = "✓ Submit";
+const SUBMIT_LABEL = "✓ Submit";
 
 const STEPS: Partial<Record<KeyPress["name"], number>> = { tab: 1, right: 1, backTab: -1, left: -1 };
 

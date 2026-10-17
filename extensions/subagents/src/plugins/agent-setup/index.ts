@@ -1,11 +1,11 @@
-import { sep } from "node:path";
-import type { FormFactory, ModelResolution, SessionInfo } from "../../../../../core/adapter/contract.ts";
-import { projectSettingsPath, userSettingsPath } from "../../../../../core/manager/settings.ts";
+import type { FormFactory, SessionInfo } from "../../../../../core/adapter/contract.ts";
 import { INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { resolutionProblem } from "../../model/model-resolution.ts";
 import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { loadSettings, SETTINGS_FILE } from "../../model/settings.ts";
+import { settingsPaths } from "../../model/settings.ts";
 import type { AgentDefinition } from "../../model/types.ts";
+import { CREATE_USAGE, createAgentCommand } from "./create.ts";
 import {
   initialSetup,
   pressSetupKey,
@@ -19,39 +19,13 @@ import { parseSetupLine, SETUP_USAGE } from "./line.ts";
 import { renderSetup, type SetupPaths } from "./render.ts";
 import { overriddenFields, writeChanges } from "./write.ts";
 
-export type SetupResult = { scope: Scope; changes: SetupChange[] };
+type SetupResult = { scope: Scope; changes: SetupChange[] };
 
-const groupOf = (definition: AgentDefinition) => {
-  if (definition.source !== "builtin") {
-    return 2;
-  }
+const shippedFirst = (left: AgentDefinition, right: AgentDefinition) =>
+  Number(left.source !== "builtin") - Number(right.source !== "builtin") ||
+  left.name.localeCompare(right.name);
 
-  return definition.path.includes(`${sep}chores${sep}`) ? 1 : 0;
-};
-
-const byGroup = (left: AgentDefinition, right: AgentDefinition) =>
-  groupOf(left) - groupOf(right) || left.name.localeCompare(right.name);
-
-const pathsOf = (info: SessionInfo): SetupPaths => ({
-  project: projectSettingsPath(info.cwd, SETTINGS_FILE),
-  user: userSettingsPath(info.agentDir, SETTINGS_FILE),
-});
-
-const modelError = (request: string, resolution: Exclude<ModelResolution, { kind: "resolved" }>) => {
-  if (resolution.kind === "invalid") {
-    return resolution.error;
-  }
-
-  if (resolution.kind === "ambiguous") {
-    const refs = resolution.candidates.map((model) => model.ref).join(", ");
-
-    return `model "${request}" matches several models (${refs}); use provider/id`;
-  }
-
-  return `model "${request}" matches no model with credentials`;
-};
-
-export const setupForm =
+const setupForm =
   (context: SetupContext, paths: SetupPaths): FormFactory<SetupResult | undefined> =>
   (api) => {
     let state = initialSetup(context);
@@ -84,25 +58,15 @@ const changeSummary = (changes: SetupChange[]) =>
 export const agentSetupPlugin: Plugin = {
   id: "agent-setup",
   requires: ["agent-definitions"],
-  enable: ({ host, runtime, services, settings }) => {
+  enable: ({ host, runtime, services }) => {
     const definitions = services.require("definitions");
 
     const notify = (message: string, level: "info" | "warning" | "error") =>
       host.ui.notify(`${NAMESPACE}: ${message}`, level);
 
-    const reload = (info: SessionInfo) => {
-      const loaded = loadSettings(info.agentDir, info.cwd, info.projectTrusted);
-
-      Object.assign(settings, loaded.settings);
-      loaded.errors.forEach((message) => {
-        host.ui.notify(`${NAMESPACE} settings: ${message}`, "warning");
-      });
-      definitions.reload();
-    };
-
     const save = (scope: Scope, changes: SetupChange[]) => {
       const info = host.session();
-      const paths = pathsOf(info);
+      const paths = settingsPaths(info);
 
       if (scope === "project" && !info.projectTrusted) {
         notify(`not saved: this project is not trusted, so ${paths.project} is not read`, "error");
@@ -116,7 +80,7 @@ export const agentSetupPlugin: Plugin = {
         return;
       }
 
-      reload(info);
+      definitions.reload();
       notify(`saved ${changeSummary(changes)} to ${paths[scope]}; agents started from now on use it`, "info");
 
       const shadowed =
@@ -130,7 +94,7 @@ export const agentSetupPlugin: Plugin = {
     const context = (info: SessionInfo): SetupContext => ({
       agents: definitions
         .list()
-        .sort(byGroup)
+        .sort(shippedFirst)
         .map((definition) => ({
           name: definition.name,
           description: definition.description,
@@ -149,7 +113,7 @@ export const agentSetupPlugin: Plugin = {
 
     const runForm = async () => {
       const info = host.session();
-      const paths = pathsOf(info);
+      const paths = settingsPaths(info);
 
       if (info.mode !== "tui") {
         const files = `${paths.project} or ${paths.user}`;
@@ -166,7 +130,7 @@ export const agentSetupPlugin: Plugin = {
       }
 
       if (result.changes.length === 0) {
-        notify("agent setup: nothing changed", "info");
+        notify("nothing changed", "info");
         return;
       }
 
@@ -177,12 +141,13 @@ export const agentSetupPlugin: Plugin = {
       const request = parseSetupLine(args, {
         agents: definitions.list().map((definition) => definition.name),
         skills: runtime.skillNames(),
+        defaultScope: host.session().projectTrusted ? "project" : "user",
         resolveModel: (model) => {
           const resolution = runtime.resolveModel(model);
 
           return resolution.kind === "resolved"
             ? { ref: resolution.model.ref }
-            : { error: modelError(model, resolution) };
+            : { error: `model "${model}": ${resolutionProblem(resolution)}` };
         },
       });
 
@@ -194,7 +159,18 @@ export const agentSetupPlugin: Plugin = {
       save(request.scope, [request.change]);
     };
 
+    const create = createAgentCommand({
+      host,
+      shippedNames: () =>
+        definitions
+          .list()
+          .filter((definition) => definition.source === "builtin")
+          .map((definition) => definition.name),
+    });
+
     services.provide("agentSetup", {
+      usage: { setup: SETUP_USAGE, create: CREATE_USAGE },
+      create,
       run: async (args) => {
         if (args.trim()) {
           runLine(args);

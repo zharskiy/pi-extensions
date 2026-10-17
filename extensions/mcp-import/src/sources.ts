@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { errorText } from "../../../core/manager/format.ts";
+import { isPlainObject } from "../../../core/manager/settings.ts";
 import type { Scope, Source } from "./args.ts";
-import { isRecord } from "./convert.ts";
 
 export type Origin = { label: string; servers: Record<string, unknown>; note?: string };
 
@@ -25,7 +25,7 @@ const readJson = (path: string): Read => {
 };
 
 export const serversOf = (data: unknown): Record<string, unknown> | string => {
-  if (!isRecord(data)) {
+  if (!isPlainObject(data)) {
     return "expected a JSON object";
   }
 
@@ -33,19 +33,19 @@ export const serversOf = (data: unknown): Record<string, unknown> | string => {
     return {};
   }
 
-  return isRecord(data.mcpServers) ? data.mcpServers : 'expected "mcpServers" to be an object';
+  return isPlainObject(data.mcpServers) ? data.mcpServers : 'expected "mcpServers" to be an object';
 };
 
 export const claudeLocalServers = (
   data: unknown,
   dirs: readonly string[],
 ): Record<string, unknown> | string => {
-  if (!isRecord(data) || !isRecord(data.projects)) {
+  if (!isPlainObject(data) || !isPlainObject(data.projects)) {
     return {};
   }
 
   const projects = data.projects;
-  const key = dirs.find((dir) => isRecord(projects[dir]));
+  const key = dirs.find((dir) => isPlainObject(projects[dir]));
 
   return key === undefined ? {} : serversOf(projects[key]);
 };

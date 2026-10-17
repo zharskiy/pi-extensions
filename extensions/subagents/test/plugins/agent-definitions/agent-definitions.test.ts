@@ -341,7 +341,7 @@ describe("agent overrides", () => {
       { level: "warning", message: 'agents.a.model "other/x": matches no available model; dropped' },
       {
         level: "warning",
-        message: "agents.a.skills names unknown skill(s) lint; dropped. Loaded skills: docs, git",
+        message: "agents.a.skills names unknown skill(s) lint (loaded skills: docs, git); dropped",
       },
     ]);
   });
@@ -833,18 +833,17 @@ describe("agent-definitions plugin", () => {
   });
 
   it("applies settings overrides at session start and reports each failed check once", () => {
-    const harness = createHarness(
-      [agentDefinitionsPlugin],
-      {
+    const harness = createHarness([agentDefinitionsPlugin], {
+      overrides: {
         agents: {
           scout: { model: "nobody/none", thinking: "high", skills: ["docs"] },
           ghost: { thinking: "low" },
         },
       },
-      ({ runtime }) => {
+      beforeStart: ({ runtime }) => {
         runtime.skills = ["docs"];
       },
-    );
+    });
 
     harness.host.start();
 
@@ -868,13 +867,12 @@ describe("agent-definitions plugin", () => {
   });
 
   it("only informs about an override for an agent of an untrusted project", () => {
-    const harness = createHarness(
-      [agentDefinitionsPlugin],
-      { agents: { proj: { thinking: "low" } } },
-      ({ host }) => {
+    const harness = createHarness([agentDefinitionsPlugin], {
+      overrides: { agents: { proj: { thinking: "low" } } },
+      beforeStart: ({ host }) => {
         writeAgent(join(host.info.cwd, ".pi", "agents"), "proj.md", agentFile("proj", "p"));
       },
-    );
+    });
 
     expect(harness.host.notices).toEqual([
       {
