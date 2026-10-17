@@ -9,7 +9,8 @@ import { findServers } from "./sources.ts";
 
 export const MCP_FILE = "mcp.json";
 
-const display = (path: string, home: string) => (path.startsWith(`${home}${sep}`) ? `~${path.slice(home.length)}` : path);
+const display = (path: string, home: string) =>
+  path.startsWith(`${home}${sep}`) ? `~${path.slice(home.length)}` : path;
 
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
@@ -23,7 +24,10 @@ export const createMcpImport = (host: Host, home: string) => {
     const project = args.scope === "project";
 
     if (project && args.apply && !projectTrusted) {
-      notify("/mcp-import: trust this project first; pi reads .pi/mcp.json only in trusted projects.", "error");
+      notify(
+        "/mcp-import: trust this project first; pi reads .pi/mcp.json only in trusted projects.",
+        "error",
+      );
       return;
     }
 

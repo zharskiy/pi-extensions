@@ -29,7 +29,11 @@ export const parseArgs = (text: string): ImportArgs | string => {
     return `Unknown argument ${unknown.map((word) => `"${word}"`).join(", ")}. Usage: ${USAGE}`;
   }
 
-  return { source: first, scope: rest.includes("project") ? "project" : "user", apply: rest.includes("apply") };
+  return {
+    source: first,
+    scope: rest.includes("project") ? "project" : "user",
+    apply: rest.includes("apply"),
+  };
 };
 
 export const completeArgs = (prefix: string) => {

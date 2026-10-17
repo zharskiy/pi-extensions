@@ -36,7 +36,10 @@ export const serversOf = (data: unknown): Record<string, unknown> | string => {
   return isRecord(data.mcpServers) ? data.mcpServers : 'expected "mcpServers" to be an object';
 };
 
-export const claudeLocalServers = (data: unknown, dirs: readonly string[]): Record<string, unknown> | string => {
+export const claudeLocalServers = (
+  data: unknown,
+  dirs: readonly string[],
+): Record<string, unknown> | string => {
   if (!isRecord(data) || !isRecord(data.projects)) {
     return {};
   }
@@ -99,12 +102,16 @@ export const findServers = (source: Source, scope: Scope, places: Places): Found
 
   return {
     origins: parsed.flatMap(({ spec, servers }) =>
-      typeof servers === "string" ? [] : [{ label: spec.label, servers, ...(spec.note ? { note: spec.note } : {}) }],
+      typeof servers === "string"
+        ? []
+        : [{ label: spec.label, servers, ...(spec.note ? { note: spec.note } : {}) }],
     ),
     checked: [...new Set(specs.map((spec) => spec.label))],
     problems: [
       ...reads.flatMap(({ read }) => (read.problem ? [read.problem] : [])),
-      ...parsed.flatMap(({ spec, servers }) => (typeof servers === "string" ? [`${spec.path}: ${servers}`] : [])),
+      ...parsed.flatMap(({ spec, servers }) =>
+        typeof servers === "string" ? [`${spec.path}: ${servers}`] : [],
+      ),
     ],
   };
 };

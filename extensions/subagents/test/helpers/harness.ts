@@ -75,7 +75,17 @@ export const startPlugins = <R extends AgentRuntime>(
   return { host, runtime, settings, manager, errors, services: manager.services, bus: manager.bus };
 };
 
-export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = {}) => {
+type BeforeStart = (context: {
+  root: string;
+  host: FakeHost;
+  runtime: ReturnType<typeof createFakeRuntime>;
+}) => void;
+
+export const createHarness = (
+  plugins: Plugin[],
+  overrides: Partial<Settings> = {},
+  beforeStart: BeforeStart = () => {},
+) => {
   const root = tempDir();
 
   const host = createFakeHost({
@@ -85,7 +95,11 @@ export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = 
     agentDir: join(root, "agent"),
   });
 
-  return { root, ...startPlugins(host, createFakeRuntime(shippedModels()), plugins, overrides) };
+  const runtime = createFakeRuntime(shippedModels());
+
+  beforeStart({ root, host, runtime });
+
+  return { root, ...startPlugins(host, runtime, plugins, overrides) };
 };
 
 export const spawnAgents = async (

@@ -7,7 +7,13 @@ import { createMcpImport } from "../src/mcp-import.ts";
 
 const roots: string[] = [];
 
-type Setup = { claude?: unknown; mcpJson?: unknown; cursorProject?: unknown; existing?: unknown; projectTrusted?: boolean };
+type Setup = {
+  claude?: unknown;
+  mcpJson?: unknown;
+  cursorProject?: unknown;
+  existing?: unknown;
+  projectTrusted?: boolean;
+};
 
 const setup = ({ claude, mcpJson, cursorProject, existing, projectTrusted = true }: Setup = {}) => {
   const root = mkdtempSync(join(tmpdir(), "pi-mcp-import-"));
@@ -54,7 +60,9 @@ afterEach(() => {
 
 describe("/mcp-import", () => {
   it("prints what it would write and writes nothing without apply", async () => {
-    const { host, userFile } = setup({ claude: { mcpServers: { docs: { type: "http", url: "https://x.test/mcp" } } } });
+    const { host, userFile } = setup({
+      claude: { mcpServers: { docs: { type: "http", url: "https://x.test/mcp" } } },
+    });
 
     await host.runCommand("mcp-import", "claude");
 
@@ -77,8 +85,12 @@ describe("/mcp-import", () => {
     expect(readJson(userFile)).toEqual({
       mcpServers: { kept: { command: "old" }, docs: { type: "http", url: "https://x.test/mcp" } },
     });
-    expect(host.notices[0].message).toMatch(/^\/mcp-import claude apply: added 1 server to ~\/\.pi\/agent\/mcp\.json: docs\./);
-    expect(host.notices[0].message).toContain("kept (~/.claude.json (user scope)): already in ~/.pi/agent/mcp.json");
+    expect(host.notices[0].message).toMatch(
+      /^\/mcp-import claude apply: added 1 server to ~\/\.pi\/agent\/mcp\.json: docs\./,
+    );
+    expect(host.notices[0].message).toContain(
+      "kept (~/.claude.json (user scope)): already in ~/.pi/agent/mcp.json",
+    );
     expect(host.notices[0].message).toContain("Run /reload to connect them, then /mcp to check them.");
   });
 
@@ -95,7 +107,9 @@ describe("/mcp-import", () => {
   });
 
   it("imports Cursor's project file", async () => {
-    const { host, projectFile } = setup({ cursorProject: { mcpServers: { other: { command: "${userHome}/srv" } } } });
+    const { host, projectFile } = setup({
+      cursorProject: { mcpServers: { other: { command: "${userHome}/srv" } } },
+    });
 
     await host.runCommand("mcp-import", "cursor project apply");
 
@@ -103,12 +117,17 @@ describe("/mcp-import", () => {
   });
 
   it("refuses to write a project file in an untrusted project", async () => {
-    const { host, projectFile } = setup({ mcpJson: { mcpServers: { tool: { command: "tool" } } }, projectTrusted: false });
+    const { host, projectFile } = setup({
+      mcpJson: { mcpServers: { tool: { command: "tool" } } },
+      projectTrusted: false,
+    });
 
     await host.runCommand("mcp-import", "claude project apply");
 
     expect(existsSync(projectFile)).toBe(false);
-    expect(host.notices).toEqual([{ message: expect.stringMatching(/trust this project first/), level: "error" }]);
+    expect(host.notices).toEqual([
+      { message: expect.stringMatching(/trust this project first/), level: "error" },
+    ]);
   });
 
   it("says so when the tool has no servers", async () => {
@@ -138,6 +157,8 @@ describe("/mcp-import", () => {
 
     await host.runCommand("mcp-import", "codex");
 
-    expect(host.notices).toEqual([{ message: expect.stringMatching(/Unknown tool "codex"/), level: "error" }]);
+    expect(host.notices).toEqual([
+      { message: expect.stringMatching(/Unknown tool "codex"/), level: "error" },
+    ]);
   });
 });

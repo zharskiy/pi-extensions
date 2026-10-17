@@ -52,7 +52,8 @@ describe("multiSelectForm", () => {
       "   [x] beta",
       "   [ ] gamma",
       "",
-      " ↑↓ move · Space toggle · a all · n none · Enter confirm · Esc cancel",
+      " ↑↓ move · Space toggle · a all · n none · Enter confirm ·",
+      " Esc cancel",
       "─".repeat(60),
     ]);
   });

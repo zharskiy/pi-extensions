@@ -43,7 +43,10 @@ describe("source files", () => {
 
     writeFileSync(
       join(home, ".claude.json"),
-      JSON.stringify({ mcpServers: { u: { command: "u" } }, projects: { [cwd]: { mcpServers: { l: { command: "l" } } } } }),
+      JSON.stringify({
+        mcpServers: { u: { command: "u" } },
+        projects: { [cwd]: { mcpServers: { l: { command: "l" } } } },
+      }),
     );
 
     expect(findServers("claude", "user", { home, cwd }).origins).toEqual([
@@ -54,7 +57,10 @@ describe("source files", () => {
   it("reads Claude's local scope before .mcp.json for a project import", () => {
     const { home, cwd } = places();
 
-    writeFileSync(join(home, ".claude.json"), JSON.stringify({ projects: { [cwd]: { mcpServers: { l: { command: "l" } } } } }));
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ projects: { [cwd]: { mcpServers: { l: { command: "l" } } } } }),
+    );
     writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { p: { command: "p" } } }));
 
     expect(findServers("claude", "project", { home, cwd }).origins.map((origin) => origin.label)).toEqual([
@@ -70,7 +76,9 @@ describe("source files", () => {
     writeFileSync(join(cwd, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { p: { command: "p" } } }));
 
     expect(findServers("cursor", "user", { home, cwd }).origins[0].servers).toEqual({ u: { command: "u" } });
-    expect(findServers("cursor", "project", { home, cwd }).origins[0].servers).toEqual({ p: { command: "p" } });
+    expect(findServers("cursor", "project", { home, cwd }).origins[0].servers).toEqual({
+      p: { command: "p" },
+    });
   });
 
   it("treats missing files as empty and reports unreadable ones", () => {

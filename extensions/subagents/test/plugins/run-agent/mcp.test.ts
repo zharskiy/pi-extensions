@@ -11,7 +11,12 @@ import { createHarness } from "../../helpers/harness.ts";
 
 describe("run_agent mcp", () => {
   it("passes the definition's mcp to the spawn, true when the file omits it", async () => {
-    const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin]);
+    const harness = createHarness([
+      agentRegistryPlugin,
+      agentDefinitionsPlugin,
+      runAgentPlugin,
+      limitsPlugin,
+    ]);
     const dir = join(harness.host.info.agentDir, "agents");
 
     mkdirSync(dir, { recursive: true });

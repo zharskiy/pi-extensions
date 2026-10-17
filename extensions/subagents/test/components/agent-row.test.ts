@@ -393,8 +393,8 @@ describe("agent row", () => {
   it("collapses whitespace in the description", () => {
     const input = row(agentRecord({ ...AUTH, description: "a\n  b" }));
 
-    expect(
-      renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, plainTheme)),
-    ).toContain("a b");
+    expect(renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, plainTheme))).toContain(
+      "a b",
+    );
   });
 });

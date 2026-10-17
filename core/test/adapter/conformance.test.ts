@@ -7,10 +7,10 @@ import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { THINKING_LEVELS } from "../../adapter/contract.ts";
+import { finalRunTexts } from "../../adapter/messages.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { availableModels, thinkingLevelsOf } from "../../adapter/pi-models.ts";
-import { finalRunTexts } from "../../adapter/messages.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 

@@ -119,7 +119,7 @@ describe("run_agent skills", () => {
         wait: false,
       }),
     ).toThrow(
-      'scout: skill(s) "lint" not in this caller\'s skills. This caller\'s skills: docs, git, tdd. Nothing was started.',
+      "scout: skill(s) \"lint\" not in this caller's skills. This caller's skills: docs, git, tdd. Nothing was started.",
     );
 
     runner.startBatch([{ agent: "scout", task: "a", skills: ["git"] }], { callerId: lead.id, wait: false });
@@ -156,7 +156,7 @@ describe("run_agent skills", () => {
     expect(() =>
       runner.startBatch([{ agent: "scout", task: "a", skills: ["tdd"] }], { callerId: lead.id, wait: false }),
     ).toThrow(
-      'scout: skill(s) "tdd" not in this caller\'s skills. This caller\'s skills: docs, git. Nothing was started.',
+      "scout: skill(s) \"tdd\" not in this caller's skills. This caller's skills: docs, git. Nothing was started.",
     );
     expect(registry.list()).toHaveLength(1);
 

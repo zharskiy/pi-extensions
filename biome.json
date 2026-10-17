@@ -18,6 +18,16 @@
   },
   "overrides": [
     {
+      "includes": ["extensions/mcp-import/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noTemplateCurlyInString": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["core/**", "extensions/*/src/**", "!core/adapter/**", "!core/test/**"],
       "linter": {
         "rules": {

@@ -1,5 +1,5 @@
 import { splitModelRequest, THINKING_LEVELS } from "../../../../../core/adapter/contract.ts";
-import { ALL, type AgentOverride, INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { type AgentOverride, ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
 import { SCOPES, type Scope, type SetupChange } from "./form.ts";
 
 export const SETUP_USAGE = [

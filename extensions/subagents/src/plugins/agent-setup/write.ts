@@ -22,11 +22,13 @@ export const mergeChanges = (current: Record<string, unknown>, changes: SetupCha
     throw new Error('"agents" is not an object; fix it by hand first');
   }
 
-  const merged = changes.reduce<Record<string, unknown>>((result, { name, patch }) => {
-    const existing = result[name];
+  const merged: Record<string, unknown> = { ...agents };
 
-    return { ...result, [name]: { ...(isPlainObject(existing) ? existing : {}), ...patch } };
-  }, agents);
+  changes.forEach(({ name, patch }) => {
+    const existing = merged[name];
+
+    merged[name] = { ...(isPlainObject(existing) ? existing : {}), ...patch };
+  });
 
   return { ...current, agents: merged };
 };

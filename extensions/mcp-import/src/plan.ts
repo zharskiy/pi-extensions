@@ -36,7 +36,10 @@ export const parseTarget = (target: Target): Parsed | string => {
 };
 
 export const mergeText = (parsed: Parsed, entries: readonly Entry[]) => {
-  const servers = { ...parsed.servers, ...Object.fromEntries(entries.map((entry) => [entry.name, entry.server])) };
+  const servers = {
+    ...parsed.servers,
+    ...Object.fromEntries(entries.map((entry) => [entry.name, entry.server])),
+  };
 
   return `${JSON.stringify({ ...parsed.config, mcpServers: servers }, null, parsed.indent)}\n`;
 };
@@ -56,14 +59,22 @@ export const planImport = (
   }
 
   const candidates: Candidate[] = origins.flatMap((origin) =>
-    Object.entries(origin.servers).map(([name, raw]) => ({ name, origin: origin.label, raw, note: origin.note })),
+    Object.entries(origin.servers).map(([name, raw]) => ({
+      name,
+      origin: origin.label,
+      raw,
+      note: origin.note,
+    })),
   );
 
   const existing = Object.keys(parsed.servers);
 
   const step = (plan: Plan, candidate: Candidate, index: number): Plan => {
     const { name, origin } = candidate;
-    const skip = (reason: string): Plan => ({ ...plan, skipped: [...plan.skipped, { name, origin, reason }] });
+    const skip = (reason: string): Plan => ({
+      ...plan,
+      skipped: [...plan.skipped, { name, origin, reason }],
+    });
     const first = candidates.findIndex((other) => other.name === name);
 
     if (first < index) {

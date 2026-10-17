@@ -16,14 +16,18 @@ describe("Claude Code entries", () => {
   });
 
   it("copies an http entry with headers", () => {
-    expect(claude({ type: "http", url: "https://x.test/mcp", headers: { Authorization: "Bearer ${T}" } })).toEqual({
+    expect(
+      claude({ type: "http", url: "https://x.test/mcp", headers: { Authorization: "Bearer ${T}" } }),
+    ).toEqual({
       server: { type: "http", url: "https://x.test/mcp", headers: { Authorization: "Bearer ${T}" } },
       notes: [],
     });
   });
 
   it("skips sse and ws entries", () => {
-    expect(claude({ type: "sse", url: "https://x.test/sse" })).toEqual({ skip: expect.stringMatching(/legacy SSE/) });
+    expect(claude({ type: "sse", url: "https://x.test/sse" })).toEqual({
+      skip: expect.stringMatching(/legacy SSE/),
+    });
     expect(claude({ type: "ws", url: "wss://x.test" })).toEqual({ skip: expect.stringMatching(/WebSocket/) });
     expect(claude({ type: "other", command: "x" })).toEqual({ skip: expect.stringMatching(/"other"/) });
   });
@@ -67,7 +71,10 @@ describe("Claude Code entries", () => {
   });
 
   it("keeps the oauth fields pi knows and drops the rest", () => {
-    const result = claude({ url: "https://x.test/mcp", oauth: { clientId: "id", callbackPort: 8080, other: 1 } });
+    const result = claude({
+      url: "https://x.test/mcp",
+      oauth: { clientId: "id", callbackPort: 8080, other: 1 },
+    });
 
     expect(result).toEqual({
       server: { url: "https://x.test/mcp", oauth: { clientId: "id", callbackPort: 8080 } },
@@ -120,7 +127,9 @@ describe("Cursor entries", () => {
   });
 
   it("does not apply Claude's default syntax rule", () => {
-    expect(cursor({ command: "srv", env: { A: "${A:-b}" } })).toMatchObject({ server: { env: { A: "${A:-b}" } } });
+    expect(cursor({ command: "srv", env: { A: "${A:-b}" } })).toMatchObject({
+      server: { env: { A: "${A:-b}" } },
+    });
   });
 });
 

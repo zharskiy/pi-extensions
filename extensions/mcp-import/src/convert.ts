@@ -14,7 +14,18 @@ const PI_TYPES = ["stdio", "http", "streamable-http"];
 
 const LITERAL_FIELDS = ["command", "cwd", "url"];
 
-const CLAUDE_KEYS = ["type", "command", "args", "env", "cwd", "url", "headers", "headersHelper", "timeout", "oauth"];
+const CLAUDE_KEYS = [
+  "type",
+  "command",
+  "args",
+  "env",
+  "cwd",
+  "url",
+  "headers",
+  "headersHelper",
+  "timeout",
+  "oauth",
+];
 
 const CURSOR_KEYS = ["type", "command", "args", "env", "cwd", "url", "headers", "envFile", "auth"];
 
@@ -42,7 +53,7 @@ const isStringRecord = (value: unknown): value is Record<string, string> =>
 export const validName = (name: string) => SERVER_NAME.test(name);
 
 const AUTHORIZATION_FROM_JSON =
-  "node -e 'let s=\"\";process.stdin.on(\"data\",(d)=>{s+=d}).on(\"end\",()=>{const h=JSON.parse(s);const k=Object.keys(h).find((k)=>k.toLowerCase()===\"authorization\");process.stdout.write(k?String(h[k]):\"\")})'";
+  'node -e \'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{const h=JSON.parse(s);const k=Object.keys(h).find((k)=>k.toLowerCase()==="authorization");process.stdout.write(k?String(h[k]):"")})\'';
 
 export const helperCommand = (helper: string) => `!(${helper}) | ${AUTHORIZATION_FROM_JSON}`;
 
@@ -129,9 +140,10 @@ const mapStrings = (server: PiServer, map: (field: string, value: string) => str
 };
 
 const strings = (server: PiServer): [string, string][] => [
-  ...LITERAL_FIELDS.filter((field) => typeof server[field] === "string").map(
-    (field): [string, string] => [field, server[field] as string],
-  ),
+  ...LITERAL_FIELDS.filter((field) => typeof server[field] === "string").map((field): [string, string] => [
+    field,
+    server[field] as string,
+  ]),
   ...(isStringArray(server.args) ? server.args.map((arg): [string, string] => ["args", arg]) : []),
   ...["env", "headers"].flatMap((field) =>
     isStringRecord(server[field])
@@ -149,7 +161,9 @@ const escapeCommands = (server: PiServer, notes: string[]) => {
       return value;
     }
 
-    notes.push(`${field} starts with "!", which pi would run as a command; written as "$!..." to keep it literal`);
+    notes.push(
+      `${field} starts with "!", which pi would run as a command; written as "$!..." to keep it literal`,
+    );
     return `$${value}`;
   });
 };
@@ -203,7 +217,9 @@ const convertOAuth = (raw: Record_, server: PiServer, notes: string[]) => {
   }
 
   const oauth = raw.oauth;
-  const kept = Object.fromEntries(OAUTH_KEYS.filter((key) => oauth[key] !== undefined).map((key) => [key, oauth[key]]));
+  const kept = Object.fromEntries(
+    OAUTH_KEYS.filter((key) => oauth[key] !== undefined).map((key) => [key, oauth[key]]),
+  );
   const dropped = Object.keys(oauth).filter((key) => !OAUTH_KEYS.includes(key));
 
   if (Object.keys(kept).length > 0) {
@@ -225,7 +241,10 @@ const convertHelper = (raw: Record_, server: PiServer, notes: string[]) => {
     return;
   }
 
-  server.headers = { ...(server.headers as Record<string, string> | undefined), Authorization: helperCommand(raw.headersHelper) };
+  server.headers = {
+    ...(server.headers as Record<string, string> | undefined),
+    Authorization: helperCommand(raw.headersHelper),
+  };
   notes.push(
     "headersHelper became an Authorization header that runs it (!command); pi keeps the output for the whole session, and other headers it prints must be added by hand",
   );
@@ -324,4 +343,6 @@ export const convertServer = (source: Source, raw: unknown, context: ConvertCont
 
 export const needsSignIn = (server: PiServer) =>
   typeof server.url === "string" &&
-  !Object.keys(isRecord(server.headers) ? server.headers : {}).some((key) => key.toLowerCase() === "authorization");
+  !Object.keys(isRecord(server.headers) ? server.headers : {}).some(
+    (key) => key.toLowerCase() === "authorization",
+  );

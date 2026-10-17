@@ -23,7 +23,12 @@ describe("import plan", () => {
   });
 
   it("creates the file content when there is none", () => {
-    const plan = planImport("cursor", [{ label: "a", servers: { one: { command: "x" } } }], target(), context);
+    const plan = planImport(
+      "cursor",
+      [{ label: "a", servers: { one: { command: "x" } } }],
+      target(),
+      context,
+    );
 
     expect(plan.text).toBe('{\n  "mcpServers": {\n    "one": {\n      "command": "x"\n    }\n  }\n}\n');
   });
@@ -40,7 +45,11 @@ describe("import plan", () => {
     expect(plan.text).toBeUndefined();
     expect(plan.skipped).toEqual([
       { name: "same", origin: "a", reason: "already in mcp.json, left unchanged" },
-      { name: "my-tool", origin: "a", reason: 'pi treats it as the same server as "my_tool" in mcp.json, left unchanged' },
+      {
+        name: "my-tool",
+        origin: "a",
+        reason: 'pi treats it as the same server as "my_tool" in mcp.json, left unchanged',
+      },
     ]);
   });
 
@@ -56,13 +65,20 @@ describe("import plan", () => {
     );
 
     expect(plan.added).toMatchObject([{ name: "x", origin: "local", server: { command: "local" } }]);
-    expect(plan.skipped).toEqual([{ name: "x", origin: "project", reason: "also defined in local, which wins" }]);
+    expect(plan.skipped).toEqual([
+      { name: "x", origin: "project", reason: "also defined in local, which wins" },
+    ]);
   });
 
   it("skips invalid names and unsupported entries", () => {
     const plan = planImport(
       "claude",
-      [{ label: "a", servers: { "bad name": { command: "x" }, old: { type: "sse", url: "https://x.test/sse" } } }],
+      [
+        {
+          label: "a",
+          servers: { "bad name": { command: "x" }, old: { type: "sse", url: "https://x.test/sse" } },
+        },
+      ],
       target(),
       context,
     );
@@ -73,6 +89,8 @@ describe("import plan", () => {
 
   it("refuses a target file that is not a valid mcp.json", () => {
     expect(planImport("claude", [], target("{"), context).error).toMatch(/^mcp\.json: /);
-    expect(planImport("claude", [], target('{"mcpServers":[]}'), context).error).toMatch(/"mcpServers" object/);
+    expect(planImport("claude", [], target('{"mcpServers":[]}'), context).error).toMatch(
+      /"mcpServers" object/,
+    );
   });
 });

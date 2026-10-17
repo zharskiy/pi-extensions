@@ -833,15 +833,19 @@ describe("agent-definitions plugin", () => {
   });
 
   it("applies settings overrides at session start and reports each failed check once", () => {
-    const harness = createHarness([agentDefinitionsPlugin], {
-      agents: {
-        scout: { model: "nobody/none", thinking: "high", skills: ["docs"] },
-        ghost: { thinking: "low" },
+    const harness = createHarness(
+      [agentDefinitionsPlugin],
+      {
+        agents: {
+          scout: { model: "nobody/none", thinking: "high", skills: ["docs"] },
+          ghost: { thinking: "low" },
+        },
       },
-    });
+      ({ runtime }) => {
+        runtime.skills = ["docs"];
+      },
+    );
 
-    harness.runtime.skills = ["docs"];
-    harness.host.start();
     harness.host.start();
 
     const scout = harness.services.require("definitions").get("scout");
@@ -852,7 +856,9 @@ describe("agent-definitions plugin", () => {
     expect(harness.host.notices).toEqual([
       {
         level: "warning",
-        message: expect.stringMatching(/^pi-subagents settings: agents\.scout\.model "nobody\/none": .*dropped$/),
+        message: expect.stringMatching(
+          /^pi-subagents settings: agents\.scout\.model "nobody\/none": .*dropped$/,
+        ),
       },
       {
         level: "warning",
@@ -862,10 +868,13 @@ describe("agent-definitions plugin", () => {
   });
 
   it("only informs about an override for an agent of an untrusted project", () => {
-    const harness = createHarness([agentDefinitionsPlugin], { agents: { proj: { thinking: "low" } } });
-
-    writeAgent(join(harness.host.info.cwd, ".pi", "agents"), "proj.md", agentFile("proj", "p"));
-    harness.host.start();
+    const harness = createHarness(
+      [agentDefinitionsPlugin],
+      { agents: { proj: { thinking: "low" } } },
+      ({ host }) => {
+        writeAgent(join(host.info.cwd, ".pi", "agents"), "proj.md", agentFile("proj", "p"));
+      },
+    );
 
     expect(harness.host.notices).toEqual([
       {

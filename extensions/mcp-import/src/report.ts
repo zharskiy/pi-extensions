@@ -5,17 +5,27 @@ import type { Entry, Plan } from "./plan.ts";
 export type ReportInput = { args: ImportArgs; plan: Plan; checked: readonly string[]; target: string };
 
 const command = (args: ImportArgs, apply: boolean) =>
-  ["/mcp-import", args.source, ...(args.scope === "project" ? ["project"] : []), ...(apply ? ["apply"] : [])].join(" ");
+  [
+    "/mcp-import",
+    args.source,
+    ...(args.scope === "project" ? ["project"] : []),
+    ...(apply ? ["apply"] : []),
+  ].join(" ");
 
 const plural = (count: number) => (count === 1 ? "1 server" : `${count} servers`);
 
 const preview = (entries: readonly Entry[]) =>
-  JSON.stringify({ mcpServers: Object.fromEntries(entries.map((entry) => [entry.name, entry.server])) }, null, 2);
+  JSON.stringify(
+    { mcpServers: Object.fromEntries(entries.map((entry) => [entry.name, entry.server])) },
+    null,
+    2,
+  );
 
 const section = (title: string, lines: readonly string[]) =>
   lines.length > 0 ? ["", `${title}:`, ...lines.map((line) => `  ${line}`)] : [];
 
-const signIn = (entries: readonly Entry[]) => entries.filter((entry) => needsSignIn(entry.server)).map((entry) => entry.name);
+const signIn = (entries: readonly Entry[]) =>
+  entries.filter((entry) => needsSignIn(entry.server)).map((entry) => entry.name);
 
 const detail = ({ plan }: ReportInput) => [
   ...section(
@@ -38,7 +48,11 @@ const oauthLine = (names: readonly string[]) =>
 
 export const dryRunReport = (input: ReportInput) => {
   const { args, plan, checked, target } = input;
-  const head = [`${command(args, false)}: dry run, nothing written.`, `Read: ${checked.join(", ")}`, `Target: ${target}`];
+  const head = [
+    `${command(args, false)}: dry run, nothing written.`,
+    `Read: ${checked.join(", ")}`,
+    `Target: ${target}`,
+  ];
 
   if (plan.added.length === 0) {
     return [...head, "", "Nothing to add.", ...detail(input)].join("\n");

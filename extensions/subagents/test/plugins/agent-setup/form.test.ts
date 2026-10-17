@@ -159,9 +159,7 @@ describe("agent setup form", () => {
 
     expect(submit.done).toBeUndefined();
     expect(submit.state.refused).toBe(UNTRUSTED);
-    expect(render(ctx, submit.state)).toContain(
-      ` › 1. This project  ${PATHS.project} (project not trusted)`,
-    );
+    expect(render(ctx, submit.state)).toContain(` › 1. This project  ${PATHS.project} (project not trusted)`);
     expect(press(ctx, submit.state, key("down"), key("enter")).done).toBe("save");
   });
 });

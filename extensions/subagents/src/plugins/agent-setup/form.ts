@@ -7,7 +7,7 @@ import {
   multiKey,
 } from "../../../../../core/manager/multi-select.ts";
 import { tabStep } from "../../../../../core/manager/tabs.ts";
-import { ALL, type AgentOverride, type Grant, INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { type AgentOverride, ALL, type Grant, INHERIT_MODEL } from "../../model/agent-schema.ts";
 
 export type Draft = { model: string; thinking?: string; skills: Grant };
 

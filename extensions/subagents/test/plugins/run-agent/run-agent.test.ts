@@ -120,9 +120,9 @@ describe("run_agent batches", () => {
     expect(wake).toContain("\n\nStatus: done\nsmall");
     expect(wake).not.toContain("x".repeat(500));
     expect(wake).not.toContain("Preview:");
-    expect(wake.endsWith(`\n\nStatus: done\n${"a".repeat(30)}\nResult file: ${big.resultPath} (501 more chars)`)).toBe(
-      true,
-    );
+    expect(
+      wake.endsWith(`\n\nStatus: done\n${"a".repeat(30)}\nResult file: ${big.resultPath} (501 more chars)`),
+    ).toBe(true);
     expect(readFileSync(big.resultPath ?? "", "utf8")).toBe(`${large}\n`);
     expect(existsSync(small.resultPath ?? "")).toBe(true);
   });
@@ -135,7 +135,9 @@ describe("run_agent batches", () => {
     cut.runtime.children[0].finish(`Status: ${"y".repeat(30)}`);
     await flush();
 
-    expect(wakeTexts(cut.host)[0]).toContain(`\n\nStatus: yy\nResult file: ${cut.registry.list()[0].resultPath} (28 more chars)`);
+    expect(wakeTexts(cut.host)[0]).toContain(
+      `\n\nStatus: yy\nResult file: ${cut.registry.list()[0].resultPath} (28 more chars)`,
+    );
 
     const none = setup({ inlineResultChars: 0 });
 
