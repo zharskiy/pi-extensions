@@ -2,6 +2,8 @@
 
 Status: proposal, 2026-10-16. Branch `feat/agent-workflow-revamp`, pi 1.3.0. Local planning document (docs/ is gitignored); committed docs must not link here.
 
+Status note (2026-10-17): [orchestrator-model.md](orchestrator-model.md) supersedes the cheap delegate-only coordinator (first goal, "Second opinion" verdict), the byte-stable-within-a-session goal and the "No per-agent MCP filter" non-goal; docs/ is no longer gitignored.
+
 Abbreviations: S = `extensions/subagents`, A = `core/adapter`. Anchors are from the current-state inventory and from code checks made for this document.
 
 ## Goals and non-goals
