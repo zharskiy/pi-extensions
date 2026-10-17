@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "vitest";
 import type { UsageTotals } from "../../../../core/adapter/contract.ts";
@@ -39,7 +39,15 @@ const setField = (head: string, key: string, value: string) => {
 };
 
 const liveAgentFile = (name: string, patch: AgentPatch) => {
-  const source = readFileSync(join(PACKAGE_ROOT, "agents", `${patch.from}.md`), "utf8");
+  const shipped = ["leads", "chores"]
+    .map((group) => join(PACKAGE_ROOT, "agents", group, `${patch.from}.md`))
+    .find((path) => existsSync(path));
+
+  if (!shipped) {
+    throw new Error(`no shipped agent named ${patch.from}`);
+  }
+
+  const source = readFileSync(shipped, "utf8");
   const { head, body } = frontmatterOf(source);
 
   const fields: Record<string, string> = {

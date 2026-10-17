@@ -27,7 +27,7 @@ type Case = {
 };
 
 const layoutOf = ({ input, now, width, layout }: Case) =>
-  layout ?? rowLayout([input], now, width, input.selected, plainTheme);
+  layout ?? rowLayout([input], now, width, plainTheme);
 
 const grepping = agentRecord({ ...AUTH, tokens: 12_300, activity: "grep" });
 const queued = agentRecord({
@@ -79,71 +79,71 @@ const cases: Case[] = [
     input: row(grepping),
     now: 65_000,
     width: 80,
-    expected: " ⠋ explorer  Map the auth module  grep · 1m 5s · ↓ 12.3k tokens",
+    expected: "   ⠋ explorer  Map the auth module  grep · 1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "cuts the description before dropping stats",
     input: row(grepping),
     now: 65_000,
-    width: 60,
-    expected: " ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
+    width: 62,
+    expected: "   ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "drops the activity, then the tokens, when the description would fall below 12 columns",
     input: row(grepping),
     now: 65_000,
-    width: 38,
-    expected: " ⠋ explorer  Map the aut…  1m 5s",
+    width: 40,
+    expected: "   ⠋ explorer  Map the aut…  1m 5s",
   },
   {
     name: "drops the elapsed too and keeps the description",
     input: row(grepping),
     now: 65_000,
-    width: 30,
-    expected: " ⠋ explorer  Map the auth mo…",
+    width: 32,
+    expected: "   ⠋ explorer  Map the auth mo…",
   },
   {
     name: "drops the activity when it does not fit after the info column",
     input: row(grepping),
     now: 65_000,
-    layout: { nameCols: 9, infoAt: 31 },
-    width: 57,
-    expected: " ⠋ explorer   Map the auth modu…  1m 5s · ↓ 12.3k tokens",
+    layout: { nameCols: 9, infoAt: 33 },
+    width: 59,
+    expected: "   ⠋ explorer   Map the auth modu…  1m 5s · ↓ 12.3k tokens",
   },
   {
     name: "shows queued as the status word",
     input: row(queued),
     now: 65_000,
     width: 80,
-    expected: " ○ worker  Rename parseDate callers  queued",
+    expected: "   ○ worker  Rename parseDate callers  queued",
   },
   {
     name: "keeps the status word on a narrow row",
     input: row(queued),
     now: 65_000,
-    width: 30,
-    expected: " ○ worker  Rename pa…  queued",
+    width: 32,
+    expected: "   ○ worker  Rename pa…  queued",
   },
   {
     name: "shows done with the duration",
     input: row(done),
     now: 99_000,
     width: 80,
-    expected: " ✓ explorer  Map the auth module  done · 1m 5s",
+    expected: "   ✓ explorer  Map the auth module  done · 1m 5s",
   },
   {
     name: "drops the duration of a closed row and keeps its status word",
     input: row(done),
     now: 99_000,
-    width: 30,
-    expected: " ✓ explorer  Map the a…  done",
+    width: 32,
+    expected: "   ✓ explorer  Map the a…  done",
   },
   {
     name: "omits the description and pads the name when fewer than 8 columns remain",
     input: row(done),
     now: 99_000,
-    width: 26,
-    expected: " ✓ explorer          done",
+    width: 28,
+    expected: "   ✓ explorer          done",
   },
   {
     name: "marks the selected row with the pointer",
@@ -157,52 +157,52 @@ const cases: Case[] = [
     input: row(grace),
     now: 130_000,
     width: 80,
-    expected: " ◐ worker  Fix the login redirect  stopping",
+    expected: "   ◐ worker  Fix the login redirect  stopping",
   },
   {
     name: "shows stopped with the duration",
     input: row(stopped),
     now: 9_000,
     width: 80,
-    expected: " ■ worker  Fix the login redirect  stopped · 3s",
+    expected: "   ■ worker  Fix the login redirect  stopped · 3s",
   },
   {
     name: "shows handed off with the duration",
     input: row(handedOff),
     now: 9_000_000,
     width: 80,
-    expected: " ↪ explorer  Map the auth module  handed off · 1h 2m",
+    expected: "   ↪ explorer  Map the auth module  handed off · 1h 2m",
   },
   {
     name: "appends the chain index to the name",
     input: row(chained),
     now: 130_000,
     width: 80,
-    expected: " ⠋ explorer #2  Map the auth module  bash · 2m 10s · ↓ 30.1k tokens",
+    expected: "   ⠋ explorer #2  Map the auth module  bash · 2m 10s · ↓ 30.1k tokens",
   },
   {
     name: "draws the connector of a last child",
     input: row(child, { depth: 1, last: true }),
     now: 12_000,
-    layout: { nameCols: 13, infoAt: 44 },
+    layout: { nameCols: 13, infoAt: 46 },
     width: 80,
-    expected: " └─ ⠋ explorer       Find callers of login     read · 12s · ↓ 1.1k tokens",
+    expected: "   └─ ⠋ explorer       Find callers of login     read · 12s · ↓ 1.1k tokens",
   },
   {
     name: "draws continuation bars for deeper rows",
     input: row(child, { depth: 2, last: false, ancestorsContinue: [true] }),
     now: 12_000,
-    layout: { nameCols: 13, infoAt: 44 },
+    layout: { nameCols: 13, infoAt: 46 },
     width: 80,
-    expected: " │  ├─ ⠋ explorer       Find callers of login  read · 12s · ↓ 1.1k tokens",
+    expected: "   │  ├─ ⠋ explorer       Find callers of login  read · 12s · ↓ 1.1k tokens",
   },
   {
     name: "keeps only the name on a deep row too narrow for any stats",
     input: row(child, { depth: 2, last: false, ancestorsContinue: [true] }),
     now: 12_000,
-    layout: { nameCols: 13, infoAt: 44 },
-    width: 24,
-    expected: " │  ├─ ⠋ explorer      ",
+    layout: { nameCols: 13, infoAt: 46 },
+    width: 26,
+    expected: "   │  ├─ ⠋ explorer      ",
   },
   {
     name: "shows open descendants and writing",
@@ -216,7 +216,7 @@ const cases: Case[] = [
     input: row(agentRecord(AUTH)),
     now: 3_000,
     width: 80,
-    expected: " ⠋ explorer  Map the auth module  3s",
+    expected: "   ⠋ explorer  Map the auth module  3s",
   },
 ];
 
@@ -228,7 +228,7 @@ describe("agent row", () => {
     const line = renderRow(input, now, width, plainTheme, layoutOf(testCase));
 
     expect(line).toBe(expected);
-    expect(line).toMatch(input.selected ? /^ › / : /^ [^›]/);
+    expect(line).toMatch(input.selected ? /^ › / : /^ {3}/);
     expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
   });
 
@@ -240,8 +240,8 @@ describe("agent row", () => {
           now,
           80,
           plainTheme,
-          rowLayout([row(agentRecord(AUTH))], now, 80, false, plainTheme),
-        )[1],
+          rowLayout([row(agentRecord(AUTH))], now, 80, plainTheme),
+        )[3],
     );
 
     expect(frames).toEqual(["⠋", "⠹", "⠏", "⠋"]);
@@ -253,43 +253,43 @@ describe("agent row", () => {
         const line = renderRow(testCase.input, testCase.now, width, plainTheme, layoutOf(testCase));
 
         expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
-        expect(line).toMatch(testCase.input.selected ? /^ › / : /^ [^›]/);
+        expect(line).toMatch(testCase.input.selected ? /^ › / : /^ {3}/);
       });
     });
   });
 
   it("starts the info two columns after the longest description of the surface", () => {
     const rows = [row(grepping), row(queued), row(done)];
-    const layout = rowLayout(rows, 99_000, 200, false, plainTheme);
+    const layout = rowLayout(rows, 99_000, 200, plainTheme);
     const lines = rows.map((input) => renderRow(input, 99_000, 200, plainTheme, layout));
 
-    expect(layout).toEqual({ nameCols: 8, infoAt: 12 + 24 });
+    expect(layout).toEqual({ nameCols: 8, infoAt: 14 + 24 });
     expect(infoStart(lines[0], "grep")).toBe(1 + layout.infoAt + 2);
     expect(infoStart(lines[1], "queued")).toBe(1 + layout.infoAt + 2);
     expect(infoStart(lines[2], "done")).toBe(1 + layout.infoAt + 2);
-    expect(lines[0]).toBe(" ⠋ explorer  Map the auth module       grep · 1m 39s · ↓ 12.3k tokens");
-    expect(lines[2]).toBe(" ✓ explorer  Map the auth module       done · 1m 5s");
+    expect(lines[0]).toBe("   ⠋ explorer  Map the auth module       grep · 1m 39s · ↓ 12.3k tokens");
+    expect(lines[2]).toBe("   ✓ explorer  Map the auth module       done · 1m 5s");
   });
 
   it("caps the description column at 48 and cuts longer descriptions", () => {
     const long = row(agentRecord({ ...AUTH, state: "done", endedAt: 65_000, description: "d".repeat(60) }));
-    const layout = rowLayout([long], 99_000, 200, false, plainTheme);
+    const layout = rowLayout([long], 99_000, 200, plainTheme);
     const line = renderRow(long, 99_000, 200, plainTheme, layout);
 
-    expect(layout.infoAt).toBe(12 + 48);
-    expect(line).toBe(` ✓ explorer  ${"d".repeat(47)}…  done · 1m 5s`);
+    expect(layout.infoAt).toBe(14 + 48);
+    expect(line).toBe(`   ✓ explorer  ${"d".repeat(47)}…  done · 1m 5s`);
   });
 
   it("moves the info column left to keep 30 columns for running stats on a narrow terminal", () => {
     const rows = [row(grepping), row(done)];
-    const layout = rowLayout(rows, 65_000, 60, false, plainTheme);
-    const lines = rows.map((input) => renderRow(input, 65_000, 60, plainTheme, layout));
+    const layout = rowLayout(rows, 65_000, 62, plainTheme);
+    const lines = rows.map((input) => renderRow(input, 65_000, 62, plainTheme, layout));
 
-    expect(layout.infoAt).toBe(58 - 2 - 30);
+    expect(layout.infoAt).toBe(60 - 2 - 30);
     expect(infoStart(lines[0], "grep")).toBe(infoStart(lines[1], "done"));
     expect(lines).toEqual([
-      " ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
-      " ✓ explorer  Map the auth …  done · 1m 5s",
+      "   ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
+      "   ✓ explorer  Map the auth …  done · 1m 5s",
     ]);
   });
 
@@ -300,8 +300,8 @@ describe("agent row", () => {
     const second = [at("tool_search", 123_500), row(child, { depth: 1 })];
 
     [70, 100, 140].forEach((width) => {
-      const before = rowLayout(first, 5_000, width, false, plainTheme);
-      const after = rowLayout(second, 605_000, width, false, plainTheme);
+      const before = rowLayout(first, 5_000, width, plainTheme);
+      const after = rowLayout(second, 605_000, width, plainTheme);
       const line = renderRow(second[0], 605_000, width, plainTheme, after);
 
       expect(after.infoAt).toBe(before.infoAt);
@@ -317,47 +317,43 @@ describe("agent row", () => {
       depth: 4,
       ancestorsContinue: [true, true, true],
     });
-    const layout = rowLayout([root, deep], 5_000, 70, false, plainTheme);
+    const layout = rowLayout([root, deep], 5_000, 70, plainTheme);
     const lines = [root, deep].map((input) => renderRow(input, 5_000, 70, plainTheme, layout));
 
     expect(lines).toEqual([
-      " ⠋ explorer (+1)  Map the auth module       5s · ↓ 123.5k tokens",
-      " │  │  │  └─ ⠋ explorer       Map the aut…  ls · 5s · ↓ 10 tokens",
+      "   ⠋ explorer (+1)  Map the auth module       5s · ↓ 123.5k tokens",
+      "   │  │  │  └─ ⠋ explorer       Map the aut…  ls · 5s · ↓ 10 tokens",
     ]);
     expect(infoStart(lines[0], "5s")).toBe(infoStart(lines[1], "ls"));
   });
 
   it("keeps the stats of a row with a short description", () => {
     const short = row(agentRecord({ ...AUTH, description: "ab", tokens: 12_300, activity: "grep" }));
-    const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, false, plainTheme));
+    const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, plainTheme));
 
-    expect(line).toBe(" ⠋ explorer  ab  grep · 1m 5s · ↓ 12.3k tokens");
+    expect(line).toBe("   ⠋ explorer  ab  grep · 1m 5s · ↓ 12.3k tokens");
   });
 
-  it("reserves the pointer columns while a row is selected", () => {
+  it("reserves the pointer columns on every row, selected or not", () => {
     const rows = [row(grepping), row(failed)];
-    const idle = rowLayout(rows, 200_000, 120, false, plainTheme);
-    const selecting = rowLayout(rows, 200_000, 120, true, plainTheme);
-    const pointed = renderRow({ ...rows[1], selected: true }, 200_000, 120, plainTheme, selecting);
-    const other = renderRow(rows[0], 200_000, 120, plainTheme, selecting);
+    const layout = rowLayout(rows, 200_000, 120, plainTheme);
+    const pointed = renderRow({ ...rows[1], selected: true }, 200_000, 120, plainTheme, layout);
+    const idle = renderRow(rows[1], 200_000, 120, plainTheme, layout);
+    const other = renderRow(rows[0], 200_000, 120, plainTheme, layout);
 
-    expect(selecting.infoAt).toBe(idle.infoAt + 2);
     expect(infoStart(pointed, "failed")).toBe(infoStart(other, "grep"));
+    expect(infoStart(idle, "failed")).toBe(infoStart(other, "grep"));
+    expect(pointed.slice(3)).toBe(idle.slice(3));
   });
 
-  it("puts the pointer after the pad and shifts the selected row by two", () => {
+  it("puts the pointer after the pad without moving the selected row", () => {
     [80, 40, 20].forEach((width) => {
-      const plainLine = renderRow(
-        row(failed),
-        200_000,
-        width,
-        plainTheme,
-        rowLayout([row(failed)], 200_000, width, false, plainTheme),
-      );
-      const layout = rowLayout([row(failed)], 200_000, width, true, plainTheme);
+      const layout = rowLayout([row(failed)], 200_000, width, plainTheme);
+      const plainLine = renderRow(row(failed), 200_000, width, plainTheme, layout);
       const pointed = renderRow(row(failed, { selected: true }), 200_000, width, plainTheme, layout);
 
-      expect(plainLine.indexOf("✗")).toBe(1);
+      expect(plainLine.indexOf("✗")).toBe(3);
+      expect(plainLine.startsWith("   ")).toBe(true);
       expect(pointed.indexOf("✗")).toBe(3);
       expect(pointed.startsWith(" › ")).toBe(true);
       expect(plainTheme.width(plainLine)).toBeLessThanOrEqual(width - 1);
@@ -372,7 +368,7 @@ describe("agent row", () => {
       200_000,
       80,
       recording,
-      rowLayout([row(failed)], 200_000, 80, true, plainTheme),
+      rowLayout([row(failed)], 200_000, 80, plainTheme),
     );
 
     expect(line).toContain("<accent>›");
@@ -386,7 +382,7 @@ describe("agent row", () => {
     const first = row(agentRecord(AUTH));
     const second = row(agentRecord({ ...AUTH, chainIndex: 2 }), { openDescendants: 3 });
     const third = row(agentRecord({ ...AUTH, agent: "a".repeat(40) }));
-    const nameCols = (rows: RowInput[]) => rowLayout(rows, 0, 80, false, plainTheme).nameCols;
+    const nameCols = (rows: RowInput[]) => rowLayout(rows, 0, 80, plainTheme).nameCols;
 
     expect(nameCols([])).toBe(0);
     expect(nameCols([first])).toBe(8);
@@ -397,8 +393,8 @@ describe("agent row", () => {
   it("collapses whitespace in the description", () => {
     const input = row(agentRecord({ ...AUTH, description: "a\n  b" }));
 
-    expect(
-      renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, false, plainTheme)),
-    ).toContain("a b");
+    expect(renderRow(input, 3_000, 80, plainTheme, rowLayout([input], 3_000, 80, plainTheme))).toContain(
+      "a b",
+    );
   });
 });

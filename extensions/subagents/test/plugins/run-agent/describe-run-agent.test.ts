@@ -45,7 +45,7 @@ describe("run_agent description", () => {
     );
     expect(text).not.toContain("allback");
     expect(text).toContain(
-      "- Choosing: pick the agent whose description fits the work, never because a model was named; when the request names no role, work out the role from the work.",
+      '- Choosing: pick the agent whose description fits the work, never because a model was named. "Review X with model M" is the reviewing agent with a model override.',
     );
   });
 
@@ -75,6 +75,36 @@ describe("run_agent description", () => {
 
     expect(text).toContain("They cannot start agents of their own.");
     expect(text).toContain("- none: no agents are available to you; do not call this tool.");
+  });
+
+  it("states the skills rule, the credentials case and the Status lines of a result, without the old Tasks rule", () => {
+    const text = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
+
+    expect(text).toContain(
+      "- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass skills you have yourself (in the main session, any of its skills) whose descriptions fit the task, plus any skill the user named; chores (scout, fetch, shell, image) take none. A skill you do not have starts nothing, and the error lists yours.",
+    );
+    expect(text).toContain(
+      "Pass the words unchanged as `name[:thinking]` (a name, a name with `:high`, or `:low` alone).",
+    );
+    expect(text).toContain(
+      "If the only matches lack credentials, tell the user (they can log in with `/login`) and ask whether to run the agent on its own model; never drop a requested model silently.",
+    );
+    expect(text).toContain(
+      "It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (the task was ambiguous; it lists the questions and changed nothing), and ends with `Verification:` and `Open:` lines.",
+    );
+    expect(text).not.toContain("- Tasks:");
+    expect(text).not.toContain("Read the file either way");
+    expect(text).toContain("after the path). To continue, start a new agent");
+  });
+
+  it("adds the Cap line only when a child cap is given, after the depth rule", () => {
+    const main = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
+    const child = describeRunAgent(agents, { callerDepth: 2, maxDepth: 3, maxConcurrent: 4, childCap: 6 });
+
+    expect(main).not.toContain("- Cap:");
+    expect(child).toContain(
+      "They cannot start agents of their own.\n- Cap: you may start at most 6 agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.\n- Concurrency:",
+    );
   });
 
   it("is stable for the same input so the tool set stays cache-safe", () => {

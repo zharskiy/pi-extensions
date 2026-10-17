@@ -28,24 +28,27 @@ pi-extensions/
 │   │   ├── pi-context-messages.ts # per-message and per-block token estimates
 │   │   ├── pi-usage.ts          # last and main request usage, main memoised on session and leaf
 │   │   ├── pi-entries.ts        # Host.registerEntryRenderer over pi's entry renderers
-│   │   ├── pi-models.ts / model-resolver.ts  # model catalog, matching
+│   │   ├── pi-models.ts / model-resolver.ts  # model catalog (availableModels: credentialed models with
+│   │   │                        #   their thinking levels), matching
 │   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
 │   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
 │   │   ├── pi-working.ts        # working indicator and message (HostUi)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
 │   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
-│   │   └── usage.ts / messages.ts / route.ts # usage sums, text, routing
+│   │   └── usage.ts / messages.ts / route.ts # usage sums, text (finalRunTexts: a child's final run), routing
 │   ├── manager/                 # pi-free shared code
 │   │   ├── extension-manager.ts # enables plugins in dependency order
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # token, window, duration and error-text formatters
+│   │   ├── format.ts            # token, window, duration, error-text and ~/ path formatters
 │   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
 │   │   ├── layout.ts            # padding, dot separator, accent rule, wrapped and hint lines
 │   │   ├── list.ts              # selectable list: lines, keys, shared hints
 │   │   ├── select.ts            # single-choice form over the list
+│   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
+│   │   ├── multi-select.ts      # checkbox list: Space, a all, n none, scroll window
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
@@ -58,17 +61,20 @@ pi-extensions/
 │   │   │   ├── index.ts         # entry point, wires settings + plugins
 │   │   │   ├── plugins.ts       # ordered plugin list
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
-│   │   │   │                    #   agent-schema, context-limit
+│   │   │   │                    #   agent-schema, agent-override (override value checks),
+│   │   │   │                    #   model-resolution (resolutionProblem), context-limit
 │   │   │   ├── components/      # pure TUI render helpers (format.ts formatters, padding and
 │   │   │   │                    #   wrapping over the theme, state-text.ts glyphs, spinner, words
 │   │   │   │                    #   and stop hint, agent-row, tree.ts (chain links, terminals,
 │   │   │   │                    #   tree order, connectors, selection carry), refresh.ts
 │   │   │   │                    #   throttle/ticker and tick cadence)
 │   │   │   └── plugins/         # one folder per feature, see below
-│   │   ├── agents/              # bundled agent definitions (*.md)
+│   │   ├── agents/              # bundled agent definitions (*.md): leads/ (planner, implementer,
+│   │   │                        #   reviewer, general), chores/ (scout, fetch, shell, image)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
 │   │   │                        #   base-system-prompt.md, handoff.md
-│   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures)
+│   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures; routing.live.test.ts
+│   │   │                        #   checks the main session's routing)
 │   │   └── README.md
 │   ├── session-limits/          # main session hands over before it fills
 │   │   ├── src/                 # index, conversation, limits, thresholds,
@@ -98,8 +104,9 @@ pi-extensions/
 │   │   └── README.md
 │   ├── questionnaire/           # questionnaire tool: batch of multiple-choice questions in one form
 │   │   ├── src/                 # index, questionnaire (tool spec, execute), view (form view, arm delay),
-│   │   │                        #   form (pure state), render (form lines), summary (call and result
-│   │   │                        #   renderers), result (types, normalising, model text)
+│   │   │                        #   form (pure state; tab keys from core/manager/tabs.ts), render (form
+│   │   │                        #   lines), summary (call and result renderers), result (types,
+│   │   │                        #   normalising, model text)
 │   │   ├── test/
 │   │   └── README.md
 │   ├── style/                   # /style: output style for the main session and every agent
@@ -115,8 +122,14 @@ pi-extensions/
 │   │   │                        #   render (compose), summary (plain one-line summary)
 │   │   ├── test/
 │   │   └── README.md
-│   └── footer/                  # multi-line status footer with session totals
-│       ├── src/                 # index, footer (wiring), render (pure line builders)
+│   ├── footer/                  # multi-line status footer with session totals
+│   │   ├── src/                 # index, footer (wiring), render (pure line builders)
+│   │   ├── test/
+│   │   └── README.md
+│   └── mcp-import/              # /mcp-import: MCP servers from Claude Code or Cursor into pi's mcp.json
+│       ├── src/                 # index, mcp-import (command, file I/O), args (parse, complete),
+│       │                        #   sources (each tool's files), convert (one entry), plan (merge
+│       │                        #   without overwriting), report (messages)
 │       ├── test/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
@@ -131,17 +144,25 @@ pi-extensions/
 ### Subagents plugins (extensions/subagents/src/plugins/)
 
 ```
-agent-definitions/  # loads agents/*.md: loader.ts, fields.ts (field rules),
-                    #   yaml-lite.ts (frontmatter parser), prompt assembly
+fetch-tool/         # the fetch tool: index.ts (plugin, `fetchTool` service, tool spec), fetch.ts (request,
+                    #   limits, redirects), text.ts (readable text, title)
+agent-definitions/  # loads agents/**/*.md: loader.ts (files, then the agents.<name> overrides and
+                    #   their checks), fields.ts (field rules), yaml-lite.ts (frontmatter parser),
+                    #   prompt assembly
 agent-registry/     # in-memory agent records (registry.ts)
-run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts, tools.ts (run_agent, message_agent), render.ts (block),
-                    #   placement.ts + worktree.ts,
-                    #   task.ts (task text), outbox.ts, result.ts, model-text.ts,
-                    #   semaphore.ts, handoff.ts (handoff template and schema service)
+run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts (skills and spawn-cap
+                    #   checks), tools.ts (run_agent, message_agent), render.ts (block), placement.ts
+                    #   + worktree.ts, task.ts (task text), outbox.ts, result.ts (result pick,
+                    #   result.md, inlining), model-text.ts, semaphore.ts, handoff.ts (handoff
+                    #   template and schema service)
 agent-status/       # status tool and snapshots
-agent-view/         # /agents overlay: index (command, service), overlay.ts (list/view host),
+agent-view/         # /agents overlay: index (command, routing to services), overlay.ts (list/view host),
                     #   list.ts + list-model.ts (tree sections), view.ts, loader.ts,
                     #   request-block.ts (the view's Request block)
+agent-setup/        # /agents setup and create: index (plugin, service, save), form.ts (pure state
+                    #   and keys), render.ts (form lines), line.ts (one-line form), write.ts (merge
+                    #   into the file), create.ts (/agents create), create-form.ts (its three-step
+                    #   form), agent-template.ts (the new file)
 agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel
@@ -154,15 +175,15 @@ usage-report/       # reports agent usage to the spending channel
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
 - `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`. `extensions/subagents/test/helpers/live.ts` builds the live harness on top.
-- Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. `<agentDir>/pi-style.json` is the only settings file an extension writes (`/style`); the full list of written files is in ARCHITECTURE.md (Persistence summary).
+- Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. The files the extensions write are listed in ARCHITECTURE.md (Persistence summary).
 - Custom entries in the main session file are named `<namespace>:<kind>`, for example `pi-spending:usage` and `pi-context:snapshot` (one per `/context` in tui mode).
-- Prompts (`prompts/*.md`) and agent definitions (`agents/*.md`) are markdown read at runtime.
+- Prompts (`prompts/*.md`) and agent definitions (`agents/**/*.md`) are markdown read at runtime.
 - No provider or model names in code or prompts (unit-test fixtures use neutral fake names). The shipped agent files name their models as configuration, and the subagents README lists them.
 
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer}/src/index.ts`.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import}/src/index.ts`.
 - Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files
@@ -173,4 +194,4 @@ usage-report/       # reports agent usage to the spending channel
 - `vitest.live.config.ts`: only live tests, serial, long timeouts.
 - `biome.json`: format/lint, plus the pi-import restriction outside the adapter.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests.
-- `.gitignore`: node_modules, .DS_Store, .claude, docs/.
+- `.gitignore`: node_modules, .DS_Store, .claude.

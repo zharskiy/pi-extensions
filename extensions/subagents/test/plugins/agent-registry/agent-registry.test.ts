@@ -41,7 +41,7 @@ const setup = () => {
 
   const open = () =>
     registry.create({
-      agent: "explorer",
+      agent: "scout",
       description: "search",
       callerId: MAIN_CALLER,
       depth: 1,
@@ -56,17 +56,16 @@ const setup = () => {
 };
 
 const setupRunning = async (overrides = {}) => {
-  const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  );
+  });
 
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
-    .execute({ agents: [{ agent: "explorer", task: "map the auth flow" }] }, { update: () => {} });
+    .execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
   await flush();
   harness.host.settle();
 

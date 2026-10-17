@@ -324,6 +324,7 @@ export type ChildSession = {
   dispose(): Promise<void>;
   ownUsage(): UsageTotals;
   lastText(): string;
+  runTexts(): string[];
   wake(text: string): Promise<void>;
 };
 
@@ -336,6 +337,7 @@ export type SpawnSpec = {
   thinking: string;
   tools?: string[];
   skills?: string[];
+  mcp?: boolean;
   promptAppend: string[];
   reserveTokens: number;
   customTools: AnyToolSpec[];
@@ -360,7 +362,7 @@ export type SessionRecord = {
   contextTokens?: number;
 };
 
-const THINKING_LEVELS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+export const THINKING_LEVELS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 export const splitModelRequest = (request: string): { name: string; thinking?: string; error?: string } => {
   const trimmed = request.trim();
@@ -404,11 +406,15 @@ export type ModelResolution =
     }
   | { kind: "invalid"; request: string; error: string };
 
+export type AvailableModel = ModelChoice & { thinking: string[] };
+
 export type AgentRuntime = {
   spawn(spec: SpawnSpec): Promise<ChildSession>;
   readSession(file: string): SessionRecord;
   resolveModel(request: string | undefined): ModelResolution;
+  availableModels(): AvailableModel[];
   defaultThinking(): string;
+  skillNames(): string[];
 };
 
 export const emptyUsage = (): UsageTotals => ({

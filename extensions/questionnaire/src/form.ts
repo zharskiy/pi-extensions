@@ -1,5 +1,6 @@
 import type { KeyPress } from "../../../core/adapter/contract.ts";
 import { listKey } from "../../../core/manager/list.ts";
+import { tabStep } from "../../../core/manager/tabs.ts";
 import type { Answer, Question, QuestionOption } from "./result.ts";
 
 export const OTHER_LABEL = "Type something.";
@@ -63,12 +64,6 @@ const optionFor = (state: FormState, tab: number) => {
 
 const goTo = (state: FormState, tab: number): FormState => ({ ...state, tab, option: optionFor(state, tab) });
 
-const shiftTab = (state: FormState, step: number) => {
-  const tabs = state.questions.length + 1;
-
-  return goTo(state, (state.tab + step + tabs) % tabs);
-};
-
 const nextUnanswered = (state: FormState) => {
   const count = state.questions.length;
   const order = Array.from({ length: count }, (_, offset) => (state.tab + 1 + offset) % count);
@@ -110,13 +105,6 @@ const choose = (state: FormState, index: number): FormOutcome => {
   );
 };
 
-const tabKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormState>> = {
-  tab: (state) => shiftTab(state, 1),
-  right: (state) => shiftTab(state, 1),
-  backTab: (state) => shiftTab(state, -1),
-  left: (state) => shiftTab(state, -1),
-};
-
 const questionKey = (state: FormState, key: KeyPress, { armed = true }: KeyOptions): FormOutcome => {
   const step = listKey(key, state.option, formOptions(currentQuestion(state)).length);
 
@@ -142,10 +130,10 @@ export const pressKey = (state: FormState, key: KeyPress, options: KeyOptions = 
     return { state, done: "cancel" };
   }
 
-  const tabbed = isMulti(state) ? tabKeys[key.name] : undefined;
+  const tabbed = isMulti(state) ? tabStep(key, state.tab, state.questions.length + 1) : undefined;
 
-  if (tabbed) {
-    return { state: tabbed(state) };
+  if (tabbed !== undefined) {
+    return { state: goTo(state, tabbed) };
   }
 
   if (onSubmitTab(state)) {

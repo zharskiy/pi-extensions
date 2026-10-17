@@ -13,7 +13,7 @@ describe("subagents plugin set", () => {
   });
 
   it("skips plugins disabled in settings and names the plugins that needed them", () => {
-    const harness = createHarness(plugins, { disabledPlugins: ["agent-registry"] });
+    const harness = createHarness(plugins, { overrides: { disabledPlugins: ["agent-registry"] } });
 
     expect(harness.host.tools.size).toBe(0);
     expect(harness.host.commands.has("agents")).toBe(false);

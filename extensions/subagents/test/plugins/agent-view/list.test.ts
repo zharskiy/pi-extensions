@@ -113,12 +113,12 @@ describe("agents list", () => {
 
     expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 3 done", "", " Running"]);
     expect(body[4]).toMatch(/^ › ⠋ explorer \(\+1\) +map the auth module/);
-    expect(body[5]).toMatch(/^ ├─ ⠋ explorer +find callers/);
-    expect(body[6]).toMatch(/^ └─ ✓ explorer +find parseDate +done · \d+m? ?\d+s$/);
+    expect(body[5]).toMatch(/^ {3}├─ ⠋ explorer +find callers/);
+    expect(body[6]).toMatch(/^ {3}└─ ✓ explorer +find parseDate +done · \d+m? ?\d+s$/);
     expect(body[7]).toBe("");
     expect(body[8]).toBe(" Completed (1)");
-    expect(body[9]).toMatch(/^ ✓ reviewer +review the diff +done · /);
-    expect(body[10]).toMatch(/^ └─ ✓ explorer +collect files +done · /);
+    expect(body[9]).toMatch(/^ {3}✓ reviewer +review the diff +done · /);
+    expect(body[10]).toMatch(/^ {3}└─ ✓ explorer +collect files +done · /);
     expect(new Set([6, 9, 10].map((index) => body[index].indexOf("done · "))).size).toBe(1);
     expect(lines().join("\n")).not.toContain(child.id);
   });
@@ -315,8 +315,8 @@ describe("agents list", () => {
           expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
         });
       rows.forEach((line) => {
-        expect(line.slice(0, 1)).toBe(" ");
-        expect(line.slice(line.startsWith(" › ") ? 3 : 1).slice(0, 1)).toMatch(/[⠋✓├└]/);
+        expect(line.slice(0, 3)).toMatch(/^ ( |›) $/);
+        expect(line.slice(3, 4)).toMatch(/[⠋✓├└]/);
       });
     });
   });
@@ -411,24 +411,20 @@ describe("agents list", () => {
     expect(unref).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a closed row for lingerMs, then drops it on the tick", async () => {
+  it("keeps a closed row for the rest of the session", async () => {
     const harness = setup();
-    const closed = harness.create({ description: "short lived" });
+    const closed = harness.create({ description: "long gone" });
 
-    harness.finish(closed.id, NOW);
+    harness.finish(closed.id, NOW - 3_600_000);
 
     const { lines } = await harness.openList();
 
-    expect(lines().join("\n")).toContain("short lived");
+    expect(lines().join("\n")).toContain("long gone");
 
-    vi.advanceTimersByTime(29_000);
+    vi.advanceTimersByTime(600_000);
 
-    expect(lines().join("\n")).toContain("short lived");
-
-    vi.advanceTimersByTime(2_000);
-
-    expect(lines().join("\n")).not.toContain("short lived");
-    expect(lines()).toContain(" No agents running");
+    expect(lines().join("\n")).toContain("long gone");
+    expect(lines()).not.toContain(" No agents running");
   });
 
   it("clears a closed row with x, selects the next row, and keeps it cleared after reopening /agents", async () => {
@@ -497,10 +493,10 @@ describe("agents list", () => {
   it("completes /agents with the listed ids only", async () => {
     const harness = setup();
     const open = harness.create({ description: "open" });
-    const expired = harness.create({ description: "expired" });
+    const older = harness.create({ description: "older" });
     const cleared = harness.create({ description: "cleared", createdAt: -1 });
 
-    harness.finish(expired.id, NOW - 60_000);
+    harness.finish(older.id, NOW - 60_000);
     harness.finish(cleared.id, NOW - 1_000);
 
     const { view } = await harness.openList();
@@ -509,20 +505,21 @@ describe("agents list", () => {
     view.handleKey(char("x"));
 
     const command = harness.host.commands.get("agents");
-    const values = (command?.complete?.("") ?? []).map((item) => item.value);
+    const ids = [open.id, older.id, cleared.id];
+    const items = (command?.complete?.("") ?? []).filter((item) => ids.includes(item.value));
 
-    expect(values).toEqual([open.id]);
+    expect(items.map((item) => item.value)).toEqual([open.id, older.id]);
     expect(command?.complete?.("zzz")).toEqual([]);
-    expect((command?.complete?.("") ?? [])[0]?.label).toBe(`${open.id} · running · open`);
+    expect(items[0]?.label).toBe(`${open.id} · running · open`);
   });
 
-  it("moves the selection to the next row when the selected row lingers out", async () => {
+  it("moves the selection to the next row when the selected row is cleared", async () => {
     const harness = setup();
     const root = harness.create({ description: "open root", createdAt: 1 });
     const child = harness.create({ callerId: root.id, description: "closed child", createdAt: 2 });
     const grandchild = harness.create({
       callerId: child.id,
-      description: "lingering grandchild",
+      description: "closed grandchild",
       createdAt: 3,
     });
 
@@ -535,16 +532,16 @@ describe("agents list", () => {
     view.handleKey(key("down"));
     view.handleKey(key("down"));
 
-    expect(selectedRow(lines())).toContain("lingering grandchild");
+    expect(selectedRow(lines())).toContain("closed grandchild");
 
-    vi.advanceTimersByTime(1_000);
+    view.handleKey(char("x"));
 
-    expect(lines().join("\n")).not.toContain("lingering grandchild");
+    expect(lines().join("\n")).not.toContain("closed grandchild");
     expect(lines().join("\n")).toContain("closed child");
     expect(selectedRow(lines())).toContain("open sibling");
   });
 
-  it("keeps a closed child under its open caller past lingerMs, and its own children for lingerMs", async () => {
+  it("keeps closed descendants under an open caller however long ago they ended", async () => {
     const harness = setup();
     const root = harness.create({ description: "open root", createdAt: 1 });
     const child = harness.create({ callerId: root.id, description: "old child", createdAt: 2 });
@@ -558,15 +555,15 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
     const text = lines().join("\n");
 
-    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running · 2 done", "", " Running"]);
+    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running · 3 done", "", " Running"]);
     expect(lines()[4]).toMatch(/^ › ⠋ explorer +open root/);
-    expect(lines()[5]).toMatch(/^ └─ ✓ explorer +old child +done/);
-    expect(lines()[6]).toMatch(/^ {4}└─ ✓ explorer +recent grandchild +done/);
-    expect(text).not.toContain("stale grandchild");
+    expect(lines()[5]).toMatch(/^ {3}└─ ✓ explorer +old child +done/);
+    expect(lines()[6]).toMatch(/^ {6}├─ ✓ explorer +stale grandchild +done/);
+    expect(lines()[7]).toMatch(/^ {6}└─ ✓ explorer +recent grandchild +done/);
     expect(text).not.toContain("Completed");
   });
 
-  it("moves a closed subtree to Completed and lingers it from the root's endedAt", async () => {
+  it("moves a closed subtree to Completed and keeps it there", async () => {
     const harness = setup();
     const root = harness.create({ description: "done root", createdAt: 1 });
     const child = harness.create({ callerId: root.id, description: "early child", createdAt: 2 });
@@ -579,12 +576,16 @@ describe("agents list", () => {
     expect(lines().slice(3, 6)).toEqual([
       " Completed (1)",
       expect.stringMatching(/^ › ✓ explorer +done root +done/),
-      expect.stringMatching(/^ └─ ✓ explorer +early child +done/),
+      expect.stringMatching(/^ {3}└─ ✓ explorer +early child +done/),
     ]);
 
-    vi.advanceTimersByTime(20_000);
+    vi.advanceTimersByTime(600_000);
 
-    expect(lines()).toContain(" No agents running");
+    expect(lines().slice(3, 6)).toEqual([
+      " Completed (1)",
+      expect.stringMatching(/^ › ✓ explorer +done root +done/),
+      expect.stringMatching(/^ {3}└─ ✓ explorer +early child +done/),
+    ]);
   });
 
   it("shows a chain as one row, its terminal, under the caller of its first link", async () => {
@@ -609,8 +610,8 @@ describe("agents list", () => {
 
     expect(lines()[1]).toBe(" Agents · 3 running");
     expect(lines()[4]).toMatch(/^ › ⠋ explorer +other root/);
-    expect(lines()[5]).toMatch(/^ ⠋ explorer #2 \(\+1\) +chained job/);
-    expect(lines()[6]).toMatch(/^ └─ ⠋ explorer +child of the first link/);
+    expect(lines()[5]).toMatch(/^ {3}⠋ explorer #2 \(\+1\) +chained job/);
+    expect(lines()[6]).toMatch(/^ {3}└─ ⠋ explorer +child of the first link/);
     expect(text.match(/chained job/g)).toHaveLength(1);
   });
 });

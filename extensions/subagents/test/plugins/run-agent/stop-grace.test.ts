@@ -12,12 +12,12 @@ import { createHarness, wakeTexts } from "../../helpers/harness.ts";
 const GRACE_MS = 60_000;
 
 const setup = async (count = 1, overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
   const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
   const messageAgent = harness.host.tool<MessageAgentParams, { delivery?: string }>("message_agent");
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner");
-  const agents = Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `task ${index}` }));
+  const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `task ${index}` }));
 
   await runAgent.execute({ agents }, { update: () => {} });
   await flush();
@@ -100,7 +100,10 @@ describe("stop grace period", () => {
 
     expect(registry.get(id)?.state).toBe("stopped");
     expect(wakeTexts(host)).toHaveLength(1);
-    expect(wakeTexts(host)[0]).toContain("partial findings");
+    expect(wakeTexts(host)[0]).toContain(
+      "(unverified partial output: stopped by the user)\n\npartial findings",
+    );
+    expect(registry.get(id)?.resultPath).toBeDefined();
     expect(vi.getTimerCount()).toBe(0);
   });
 

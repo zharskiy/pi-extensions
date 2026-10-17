@@ -38,10 +38,10 @@ const handoffText = (status: string) =>
     "none",
   ].join("\n");
 
-const setup = async (overrides = {}, agent = "explorer") => {
+const setup = async (overrides = {}, agent = "scout") => {
   const harness = createHarness(
     [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentStatusPlugin],
-    overrides,
+    { overrides },
   );
 
   const registry = harness.services.require("registry");
@@ -124,7 +124,7 @@ describe("successor chain", () => {
     const wake = wakeTexts(host)[0];
 
     expect(wake).toContain("finished: 1 done.");
-    expect(wake).toContain(`## ${third} (explorer) - done`);
+    expect(wake).toContain(`## ${third} (scout) - done`);
     expect(wake).toContain(`Chain: ${first.id} → ${second} → ${third} (3 sessions)`);
     expect(wake).toContain("Done (3 tool uses");
     expect(wake).toContain("final answer: tokens refresh in src/auth.ts");
@@ -279,7 +279,7 @@ describe("successor chain", () => {
       chainIndex: 2,
       predecessorId: first.id,
     });
-    expect(byPredecessor.text).toContain(`${first.id} → ${second} (explorer`);
+    expect(byPredecessor.text).toContain(`${first.id} → ${second} (scout`);
     expect(byPredecessor.text).toContain(`chain: link 2, continues ${first.id}`);
 
     const all = await status.execute({}, { update: () => {} });
@@ -292,14 +292,14 @@ describe("successor chain", () => {
     const child = runtime.child(first.id);
     const runAgent = child.spec.customTools?.find((tool) => tool.name === "run_agent");
 
-    await runAgent?.execute({ agents: [{ agent: "explorer", task: "find the token store" }] } as never, {
+    await runAgent?.execute({ agents: [{ agent: "scout", task: "find the token store" }] } as never, {
       update: () => {},
     });
     await flush();
 
-    const explorer = registry.list()[1];
+    const scout = registry.list()[1];
 
-    runtime.child(explorer.id).finish("the token store is src/store.ts");
+    runtime.child(scout.id).finish("the token store is src/store.ts");
     await flush();
 
     expect(child.wakes).toEqual([]);
@@ -313,14 +313,14 @@ describe("successor chain", () => {
     const task = runtime.child(successor).task ?? "";
 
     expect(task).toContain("Batch results that reached your predecessor after it stopped for the handoff:");
-    expect(task).toContain(`Batch ${explorer.batchId} finished: 1 done.`);
+    expect(task).toContain(`Batch ${scout.batchId} finished: 1 done.`);
     expect(task).toContain("the token store is src/store.ts");
   });
 
   it("resolves a waiting child caller once with the terminal records", async () => {
     const { first, current, handOff, runner, runtime } = await setup({}, "general");
 
-    const started = runner.startBatch([{ agent: "explorer", task: "find the token store" }], {
+    const started = runner.startBatch([{ agent: "scout", task: "find the token store" }], {
       callerId: first.id,
       wait: true,
     });

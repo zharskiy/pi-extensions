@@ -11,7 +11,7 @@ describeLive("live run_agent", () => {
   beforeAll(() => {
     live = createLiveHarness("run-agent", {
       agents: {
-        explorer: { from: "explorer" },
+        scout: { from: "scout" },
       },
     });
   });
@@ -20,8 +20,8 @@ describeLive("live run_agent", () => {
     await live?.close();
   });
 
-  it("runs one explorer to done with a result, a cost and a linked session file", async () => {
-    const id = await live.run("explorer", TINY_TASK);
+  it("runs one scout to done with a result, a cost and a linked session file", async () => {
+    const id = await live.run("scout", TINY_TASK);
 
     await live.waitForWakes(1);
 

@@ -16,9 +16,9 @@ describeLive("live nested agents", () => {
       agents: {
         general: {
           from: "general",
-          fields: { tools: "[]", skills: "[]", subagents: "[explorer]" },
+          fields: { tools: "[]", skills: "[]", subagents: "[scout]" },
         },
-        explorer: { from: "explorer" },
+        scout: { from: "scout" },
       },
     });
 
@@ -29,31 +29,31 @@ describeLive("live nested agents", () => {
     await live?.close();
   });
 
-  it("lets general start an explorer whose result wakes general only, and general wakes the main session once", async () => {
+  it("lets general start an scout whose result wakes general only, and general wakes the main session once", async () => {
     const generalId = await live.run(
       "general",
-      "Call run_agent once, without the wait option, to start exactly one explorer agent with the task: read secret.txt in your current working directory and reply with its content only. Then end your turn. When you are woken with the explorer's result, reply with the explorer's answer only.",
+      "Call run_agent once, without the wait option, to start exactly one scout agent with the task: read secret.txt in your current working directory and reply with its content only. Then end your turn. When you are woken with the scout's result, reply with the scout's answer only.",
     );
 
     await live.waitForWakes(1, 2 * LIVE_TIMEOUT_MS);
     await quiet(2_000);
 
     const general = live.registry.get(generalId);
-    const explorer = live.registry.list().find((record) => record.callerId === generalId);
-    const explorerId = explorer?.id ?? "missing";
+    const scout = live.registry.list().find((record) => record.callerId === generalId);
+    const scoutId = scout?.id ?? "missing";
 
     const wakes = sessionLines(general?.sessionFile ?? "").filter(
-      (line) => line.message?.role === "user" && JSON.stringify(line.message.content).includes(explorerId),
+      (line) => line.message?.role === "user" && JSON.stringify(line.message.content).includes(scoutId),
     );
 
     expect(general?.state).toBe("done");
     expect(general?.resultText).toContain(SECRET);
-    expect(explorer?.agent).toBe("explorer");
-    expect(explorer?.depth).toBe((general?.depth ?? 0) + 1);
-    expect(explorer?.state).toBe("done");
+    expect(scout?.agent).toBe("scout");
+    expect(scout?.depth).toBe((general?.depth ?? 0) + 1);
+    expect(scout?.state).toBe("done");
     expect(wakes).toHaveLength(1);
     expect(wakeTexts(live.host)).toHaveLength(1);
     expect(wakeTexts(live.host)[0]).toContain(generalId);
-    expect(wakeTexts(live.host)[0]).not.toContain(explorerId);
+    expect(wakeTexts(live.host)[0]).not.toContain(scoutId);
   });
 });

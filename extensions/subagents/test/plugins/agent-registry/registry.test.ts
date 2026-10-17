@@ -9,7 +9,7 @@ import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts"
 import { tempDir } from "../../helpers/harness.ts";
 
 const newAgent = (dir: string) => ({
-  agent: "explorer",
+  agent: "scout",
   task: "search",
   description: "search",
   callerId: MAIN_CALLER,
@@ -49,9 +49,9 @@ describe("agent registry", () => {
 
   it("skips an id whose directory already exists from an earlier run of the session", () => {
     const dir = tempDir();
-    const ids = ["explorer-aaaa", "explorer-aaaa", "explorer-bbbb"];
+    const ids = ["scout-aaaa", "scout-aaaa", "scout-bbbb"];
 
-    mkdirSync(join(dir, "explorer-aaaa"));
+    mkdirSync(join(dir, "scout-aaaa"));
 
     const registry = createRegistry({
       bus: createBus<BusEvents>(),
@@ -59,7 +59,7 @@ describe("agent registry", () => {
       newId: () => ids.shift() ?? "",
     });
 
-    expect(registry.create(newAgent(dir)).id).toBe("explorer-bbbb");
+    expect(registry.create(newAgent(dir)).id).toBe("scout-bbbb");
   });
 
   it("draws agent ids from six random bytes", () => {
@@ -69,7 +69,7 @@ describe("agent registry", () => {
       writeManifest: () => {},
     });
 
-    expect(registry.create(newAgent(tempDir())).id).toMatch(/^explorer-[0-9a-f]{12}$/);
+    expect(registry.create(newAgent(tempDir())).id).toMatch(/^scout-[0-9a-f]{12}$/);
   });
 
   it("writes the final turns, tool calls and tokens to the manifest on close", () => {

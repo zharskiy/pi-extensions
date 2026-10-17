@@ -13,7 +13,7 @@ import { createSemaphore } from "../../../src/plugins/run-agent/semaphore.ts";
 import { createHarness, PACKAGE_ROOT, wakeTexts } from "../../helpers/harness.ts";
 
 const setup = (overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
   const runAgent = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
   const registry = harness.services.require("registry");
 
@@ -31,7 +31,7 @@ const setup = (overrides = {}) => {
 };
 
 const tasks = (count: number) =>
-  Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `task ${index}` }));
+  Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `task ${index}` }));
 
 describe("run_agent batches", () => {
   it("starts agents in the background and wakes the caller once when all three are done", async () => {
@@ -81,9 +81,7 @@ describe("run_agent batches", () => {
 
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("2 done, 1 failed");
-    expect(wakeTexts(host)[0]).toMatch(
-      /explorer-\w+ \(explorer\) - failed\nTask: task 1\nFailed: rate limited/,
-    );
+    expect(wakeTexts(host)[0]).toMatch(/scout-\w+ \(scout\) - failed\nTask: task 1\nFailed: rate limited/);
   });
 
   it("treats an empty final answer and an aborted run as failures", async () => {
@@ -105,24 +103,97 @@ describe("run_agent batches", () => {
     expect(wakeTexts(host)).toHaveLength(1);
   });
 
-  it("passes small results inline and large ones as a file path", async () => {
+  it("passes small results inline and large ones as their head up to a newline and a file marker", async () => {
     const { run, runtime, host, registry } = setup({ inlineResultChars: 50 });
-    const large = "x".repeat(500);
+    const large = `Status: done\n${"a".repeat(30)}\n${"x".repeat(500)}`;
 
     await run(tasks(2));
     host.settle();
 
-    runtime.children[0].finish("small");
+    runtime.children[0].finish("Status: done\nsmall");
     runtime.children[1].finish(large);
     await flush();
 
     const [small, big] = registry.list();
+    const wake = wakeTexts(host)[0];
 
-    expect(wakeTexts(host)[0]).toContain("\n\nsmall");
-    expect(wakeTexts(host)[0]).not.toContain(large);
-    expect(wakeTexts(host)[0]).toContain(`Result file: ${big.resultPath} (500 chars)`);
+    expect(wake).toContain("\n\nStatus: done\nsmall");
+    expect(wake).not.toContain("x".repeat(500));
+    expect(wake).not.toContain("Preview:");
+    expect(
+      wake.endsWith(`\n\nStatus: done\n${"a".repeat(30)}\nResult file: ${big.resultPath} (501 more chars)`),
+    ).toBe(true);
     expect(readFileSync(big.resultPath ?? "", "utf8")).toBe(`${large}\n`);
     expect(existsSync(small.resultPath ?? "")).toBe(true);
+  });
+
+  it("cuts a result without a newline at the limit and gives only the marker for a limit of 0", async () => {
+    const cut = setup({ inlineResultChars: 10 });
+
+    await cut.run(tasks(1));
+    cut.host.settle();
+    cut.runtime.children[0].finish(`Status: ${"y".repeat(30)}`);
+    await flush();
+
+    expect(wakeTexts(cut.host)[0]).toContain(
+      `\n\nStatus: yy\nResult file: ${cut.registry.list()[0].resultPath} (28 more chars)`,
+    );
+
+    const none = setup({ inlineResultChars: 0 });
+
+    await none.run(tasks(1));
+    none.host.settle();
+    none.runtime.children[0].finish("Status: done");
+    await flush();
+
+    expect(wakeTexts(none.host)[0]).toMatch(/\n\nResult file: \S+ \(12 more chars\)$/);
+  });
+
+  it("takes the last text of the final run that carries a Status line, without spending a turn", async () => {
+    const { run, runtime, host, registry } = setup();
+
+    await run(tasks(1));
+    host.settle();
+
+    const child = runtime.children[0];
+
+    child.texts = ["thinking aloud", "**Status:** done\nthe report", "Done, see above."];
+    child.finish("Done, see above.");
+    await flush();
+
+    expect(registry.list()[0].resultText).toBe("**Status:** done\nthe report");
+    expect(wakeTexts(host)[0]).not.toContain("(shape: no Status line)");
+    expect(child.wakes).toEqual([]);
+  });
+
+  it("marks a result without a Status line with a shape note", async () => {
+    const { run, runtime, host, registry } = setup();
+
+    await run(tasks(1));
+    host.settle();
+    runtime.children[0].finish("just prose");
+    await flush();
+
+    expect(registry.list()[0].state).toBe("done");
+    expect(wakeTexts(host)[0]).toContain("(shape: no Status line)\n\njust prose");
+  });
+
+  it("shows a failed agent's last text as unverified partial output and stores its result file", async () => {
+    const { run, runtime, host, registry } = setup();
+
+    await run(tasks(1));
+    host.settle();
+    runtime.children[0].finish("half a report", { stopReason: "error", error: "rate limited" });
+    await flush();
+
+    const [record] = registry.list();
+
+    expect(record.state).toBe("failed");
+    expect(record.error).toBe("rate limited");
+    expect(readFileSync(record.resultPath ?? "", "utf8")).toBe("half a report\n");
+    expect(wakeTexts(host)[0]).toMatch(
+      /Failed: rate limited \([^\n]*\)\n\(unverified partial output: rate limited\)\n\nhalf a report$/,
+    );
   });
 
   it("joins a busy turn as a hidden follow-up", async () => {
@@ -228,7 +299,9 @@ describe("run_agent batches", () => {
 
     await expect(
       runAgent.execute({ agents: [{ agent: "nope", task: "x" }] }, { update: () => {} }),
-    ).rejects.toThrow(/unknown agent\(s\): nope. Available: explorer, general, implementer, reviewer/);
+    ).rejects.toThrow(
+      /unknown agent\(s\): nope. Available: fetch, general, image, implementer, planner, reviewer, scout, shell/,
+    );
     expect(runtime.children).toEqual([]);
   });
 
@@ -246,7 +319,7 @@ describe("run_agent batches", () => {
   it("gives each agent its own directory under the parent session, a manifest and the composed task", async () => {
     const { run, runtime, registry, host } = setup();
 
-    await run([{ agent: "explorer", task: "find auth", files: ["src/a.ts"] }]);
+    await run([{ agent: "scout", task: "find auth", files: ["src/a.ts"] }]);
 
     const record = registry.list()[0];
     const child = runtime.children[0];
@@ -255,8 +328,10 @@ describe("run_agent batches", () => {
     expect(child.spec.sessionDir).toBe(record.dir);
     expect(child.spec.parentSessionFile).toBe(host.info.file);
     expect(child.spec.tools).toEqual(["read", "grep", "find", "ls"]);
-    expect(child.spec.promptAppend[1]).toContain("# Agent: explorer");
-    expect(child.task).toBe(`Task from main (agent id ${record.id}):\nfind auth\n\nInput files:\n- src/a.ts`);
+    expect(child.spec.promptAppend[1]).toContain("# Agent: scout");
+    expect(child.task).toBe(
+      `Task from main (agent id ${record.id}):\nAgent folder: ${record.dir}\nfind auth\n\nInput files:\n- src/a.ts`,
+    );
     expect(JSON.parse(readFileSync(join(record.dir, "manifest.json"), "utf8"))).toMatchObject({
       id: record.id,
       state: "running",
@@ -333,6 +408,24 @@ describe("run_agent batches", () => {
     ]);
   });
 
+  it("declares skills as a string list on each item of the schema", () => {
+    const { host } = setup();
+    const parameters = host.tool<RunAgentParams, RunAgentDetails>("run_agent").parameters as {
+      properties: {
+        agents: { items: { properties: Record<string, unknown>; additionalProperties: boolean } };
+      };
+    };
+    const item = parameters.properties.agents.items;
+
+    expect(item.properties.skills).toEqual({
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Skill names to add for this agent: skills you have whose descriptions fit the task, plus any the user named. None for chores. A skill you do not have starts nothing; the error lists yours.",
+    });
+    expect(item.additionalProperties).toBe(false);
+  });
+
   it("records the last tool name as activity on tool_start", async () => {
     const { run, runtime, registry } = setup();
 
@@ -407,11 +500,11 @@ describe("allowed subagents", () => {
   const LEAD_AGENT = [
     "---",
     "name: lead",
-    "description: Test agent that may only spawn the explorer.",
+    "description: Test agent that may only spawn the scout.",
     "limit: 50000",
     "tools: all",
     "skills: all",
-    "subagents: [explorer]",
+    "subagents: [scout]",
     "---",
     "Lead the work.",
   ].join("\n");
@@ -436,7 +529,7 @@ describe("allowed subagents", () => {
     const { run, registry } = setup();
 
     await run([
-      { agent: "explorer", task: "a" },
+      { agent: "scout", task: "a" },
       { agent: "implementer", task: "b" },
       { agent: "reviewer", task: "c" },
     ]);
@@ -449,12 +542,10 @@ describe("allowed subagents", () => {
     const spawn = (agent: string) =>
       runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
 
-    expect(() => spawn("reviewer")).toThrow(
-      "agent(s) not allowed for this caller: reviewer. Allowed: explorer",
-    );
+    expect(() => spawn("reviewer")).toThrow("agent(s) not allowed for this caller: reviewer. Allowed: scout");
     expect(runtime.children).toHaveLength(1);
 
-    const started = spawn("explorer");
+    const started = spawn("scout");
 
     await flush();
 
@@ -465,14 +556,14 @@ describe("allowed subagents", () => {
   it("rejects every agent for a caller with an empty subagents list", async () => {
     const { run, registry, services } = setup({ maxDepth: 3 });
 
-    await run([{ agent: "explorer", task: "look" }]);
+    await run([{ agent: "scout", task: "look" }]);
 
-    const explorer = registry.list()[0];
+    const scout = registry.list()[0];
     const runner = services.require("runner") as Runner;
 
     expect(() =>
       runner.startBatch([{ agent: "reviewer", task: "x" }], {
-        callerId: explorer.id,
+        callerId: scout.id,
         wait: false,
       }),
     ).toThrow("agent(s) not allowed for this caller: reviewer. Allowed: none");
@@ -485,8 +576,8 @@ describe("allowed subagents", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, "lead.md"),
-      LEAD_AGENT.replace("subagents: [explorer]", "subagents: all").replace(
-        "description: Test agent that may only spawn the explorer.",
+      LEAD_AGENT.replace("subagents: [scout]", "subagents: all").replace(
+        "description: Test agent that may only spawn the scout.",
         "description: Lead.",
       ),
     );
@@ -500,7 +591,7 @@ describe("allowed subagents", () => {
       runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
 
     expect(() => spawn("lead")).toThrow(
-      "agent(s) not allowed for this caller: lead. Allowed: explorer, general, implementer, reviewer",
+      "agent(s) not allowed for this caller: lead. Allowed: fetch, general, image, implementer, planner, reviewer, scout, shell",
     );
 
     spawn("implementer");
@@ -512,7 +603,7 @@ describe("allowed subagents", () => {
       (tool) => tool.name === "run_agent",
     )?.description;
 
-    expect(description).toContain("- explorer:");
+    expect(description).toContain("- scout:");
     expect(description).toContain("- general:");
     expect(description).not.toContain("- lead:");
   });

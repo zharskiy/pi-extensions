@@ -1,6 +1,7 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { hintLines, PAD, padded, rule } from "../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
+import { TAB_SWITCH_HINT, tabBar } from "../../../core/manager/tabs.ts";
 import {
   allAnswered,
   answerOf,
@@ -12,26 +13,16 @@ import {
   unanswered,
 } from "./form.ts";
 
-const tabBar = (state: FormState, theme: ThemeLike) => {
-  const active = (text: string) => theme.fg("accent", theme.bold(text));
-
-  const tabs = state.questions.map((question, index) => {
-    const answered = Boolean(answerOf(state, question.id));
-    const box = answered ? "■" : "□";
-
-    if (index === state.tab) {
-      return active(`${box} ${question.label}`);
-    }
-
-    return `${theme.fg(answered ? "success" : "muted", box)} ${theme.fg(answered ? "text" : "muted", question.label)}`;
-  });
-
-  const submit = onSubmitTab(state)
-    ? active("✓ Submit")
-    : theme.fg(allAnswered(state) ? "success" : "dim", "✓ Submit");
-
-  return `${theme.fg("dim", "←")} ${[...tabs, submit].join("  ")} ${theme.fg("dim", "→")}`;
-};
+const tabs = (state: FormState, theme: ThemeLike) =>
+  tabBar(
+    theme,
+    state.questions.map((question) => ({
+      label: question.label,
+      done: Boolean(answerOf(state, question.id)),
+    })),
+    state.tab,
+    allAnswered(state),
+  );
 
 const optionLines = (state: FormState, theme: ThemeLike, width: number) => {
   const options = formOptions(currentQuestion(state)).map((option) => {
@@ -43,18 +34,16 @@ const optionLines = (state: FormState, theme: ThemeLike, width: number) => {
   return listLines(theme, options, state.option, width);
 };
 
-const SWITCH_HINT = "Tab/←→ switch";
-
 const hints = (state: FormState) => {
   if (state.typing) {
     return ["Enter save", "Esc back to options"];
   }
 
   if (onSubmitTab(state)) {
-    return [SWITCH_HINT, ...(allAnswered(state) ? ["Enter submit"] : []), CANCEL_HINT];
+    return [TAB_SWITCH_HINT, ...(allAnswered(state) ? ["Enter submit"] : []), CANCEL_HINT];
   }
 
-  const actions = isMulti(state) ? [SWITCH_HINT, "Enter confirm"] : ["Enter submit"];
+  const actions = isMulti(state) ? [TAB_SWITCH_HINT, "Enter confirm"] : ["Enter submit"];
 
   return [...SELECT_HINTS, ...actions, CANCEL_HINT];
 };
@@ -113,7 +102,7 @@ const questionLines = (state: FormState, theme: ThemeLike, width: number, input:
 export const inputWidth = (width: number) => Math.max(1, width - 2);
 
 export const renderForm = (state: FormState, theme: ThemeLike, width: number, input: string[] = []) => {
-  const tabs = isMulti(state) ? [...padded(theme, tabBar(state, theme), width), ""] : [];
+  const bar = isMulti(state) ? [...padded(theme, tabs(state, theme), width), ""] : [];
 
   const body = onSubmitTab(state)
     ? submitLines(state, theme, width)
@@ -121,7 +110,7 @@ export const renderForm = (state: FormState, theme: ThemeLike, width: number, in
 
   return [
     rule(theme, width),
-    ...tabs,
+    ...bar,
     ...body,
     "",
     ...hintLines(theme, hints(state), width),

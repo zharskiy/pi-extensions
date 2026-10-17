@@ -1,4 +1,5 @@
 import type { Host } from "../../../core/adapter/contract.ts";
+import { homeRelative } from "../../../core/manager/format.ts";
 import { type Breakdown, breakdownOf } from "./buckets.ts";
 import { renderSnapshot } from "./render.ts";
 import { parseSnapshot, type Snapshot } from "./snapshot.ts";
@@ -17,11 +18,7 @@ const shortPath = (path: string, home: string, cwd: string) => {
     return `./${path.slice(cwd.length + 1)}`;
   }
 
-  if (home && (path === home || path.startsWith(`${home}/`))) {
-    return `~${path.slice(home.length)}`;
-  }
-
-  return path;
+  return homeRelative(path, home);
 };
 
 const shortened = (breakdown: Breakdown, home: string, cwd: string): Breakdown => ({

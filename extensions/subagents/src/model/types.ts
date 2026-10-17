@@ -62,12 +62,14 @@ export type AgentRecord = {
   context?: ContextSnapshot;
   lastText: string;
   resultText?: string;
+  statusLine?: boolean;
   resultPath?: string;
   handoffPath: string;
   error?: string;
   dir: string;
   sessionFile?: string;
   model?: string;
+  skills?: string[];
   worktree?: Worktree;
   contextLimit: number;
   handoffRequested: boolean;
@@ -106,6 +108,7 @@ export type NewAgent = {
   dir: string;
   contextLimit: number;
   model?: string;
+  skills?: string[];
   chainIndex?: number;
   predecessorId?: string;
   worktree?: Worktree;
@@ -124,6 +127,7 @@ export type AgentDefinitions = {
   get(name: string): AgentDefinition | undefined;
   list(): AgentDefinition[];
   promptAppend(definition: AgentDefinition): string[];
+  reload(): void;
 };
 
 export type RouteResult =
@@ -145,15 +149,28 @@ type AgentStatusService = {
   toolFor(callerId: string): AnyToolSpec;
 };
 
+type FetchToolService = {
+  tool(): AnyToolSpec;
+};
+
 type AgentViewService = {
   open(id: string): Promise<void>;
+};
+
+type AgentSetupService = {
+  usage: { setup: string; create: string };
+  run(args: string): Promise<void>;
+  create(args: string): Promise<void>;
+  complete(prefix: string): { value: string; label: string }[];
 };
 
 export type ServiceMap = {
   registry: AgentRegistry;
   agentView: AgentViewService;
+  agentSetup: AgentSetupService;
   definitions: AgentDefinitions;
   runner: AgentRunner;
   handoff: HandoffService;
   agentStatus: AgentStatusService;
+  fetchTool: FetchToolService;
 };

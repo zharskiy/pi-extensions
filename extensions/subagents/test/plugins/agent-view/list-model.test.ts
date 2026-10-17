@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRecord } from "../../../src/model/types.ts";
-import { listSections, visibleRecords } from "../../../src/plugins/agent-view/list-model.ts";
+import {
+  listSections,
+  MAX_CLOSED_ROOTS,
+  visibleRecords,
+} from "../../../src/plugins/agent-view/list-model.ts";
 import { agentRecord } from "../../helpers/records.ts";
 
 const NOW = 1_000_000;
 
-const LINGER = 30_000;
-
 const done = (id: string, endedAt: number, patch: Partial<AgentRecord> = {}) =>
   agentRecord({ id, state: "done", endedAt, ...patch });
 
-const visible = (records: AgentRecord[]) => visibleRecords(records, NOW, LINGER, new Set());
+const visible = (records: AgentRecord[]) => visibleRecords(records, new Set());
 
 const sectionRows = (records: AgentRecord[]) =>
   listSections(records).map((section) => ({
@@ -64,5 +66,84 @@ describe("list model", () => {
 
     expect(sections.map((section) => section.title)).toEqual(["Completed (2)"]);
     expect(sections[0]?.rows.map((row) => `${row.depth}:${row.record.id}`)).toEqual(["0:s", "0:r", "1:r1"]);
+  });
+
+  it("keeps closed agents however long ago they ended", () => {
+    const records = [done("r", 0), done("r1", 0, { callerId: "r" }), agentRecord({ id: "a" })];
+
+    expect(sectionRows(visible(records))).toEqual([
+      { title: "Running", rows: ["0:a"] },
+      { title: "Completed (1)", rows: ["0:r", "1:r1"] },
+    ]);
+  });
+
+  it("hides cleared closed rows", () => {
+    const records = [done("r", NOW - 10), done("r1", NOW - 20, { callerId: "r" }), done("s", NOW - 5)];
+
+    expect(visibleRecords(records, new Set(["r", "r1"])).map((record) => record.id)).toEqual(["s"]);
+  });
+
+  it("caps Completed roots, dropping the oldest with their subtrees and chains", () => {
+    const roots = Array.from({ length: MAX_CLOSED_ROOTS }, (_, index) => done(`k${index}`, NOW - index));
+    const old = [
+      done("old-1", 1, { successorId: "old-2", state: "handoff" }),
+      done("old-2", 2, { predecessorId: "old-1", chainIndex: 2 }),
+      done("old-child", 1, { callerId: "old-2" }),
+      done("older", 0),
+    ];
+    const ids = visible([...old, ...roots, agentRecord({ id: "a" })]).map((record) => record.id);
+
+    expect(ids).toHaveLength(MAX_CLOSED_ROOTS + 1);
+    expect(ids).toContain("a");
+    expect(ids).toContain(`k${MAX_CLOSED_ROOTS - 1}`);
+    expect(ids.filter((id) => id.startsWith("old"))).toEqual([]);
+  });
+
+  it("counts only uncleared roots toward the cap", () => {
+    const roots = Array.from({ length: MAX_CLOSED_ROOTS }, (_, index) => done(`k${index}`, NOW - index));
+    const ids = visibleRecords([...roots, done("old", 0)], new Set(["k0"])).map((record) => record.id);
+
+    expect(ids).toHaveLength(MAX_CLOSED_ROOTS);
+    expect(ids).toContain("old");
+    expect(ids).not.toContain("k0");
+  });
+
+  it("keeps a closed chain whole with its children while it is within the cap", () => {
+    const records = [
+      done("c-1", 5, { successorId: "c-2", state: "handoff" }),
+      done("c-2", 6, { predecessorId: "c-1", chainIndex: 2 }),
+      done("c-child", 4, { callerId: "c-2" }),
+    ];
+
+    expect(new Set(visible(records).map((record) => record.id))).toEqual(new Set(["c-1", "c-2", "c-child"]));
+  });
+
+  it("computes a large registry in a single pass", () => {
+    const tree = (prefix: string, closed: boolean, endedAt: number) => {
+      const state = closed ? "done" : "running";
+      const root = agentRecord({
+        id: prefix,
+        state,
+        endedAt: closed ? endedAt : undefined,
+        createdAt: endedAt,
+      });
+      const nested = Array.from({ length: 9 }, (_, index) =>
+        done(`${prefix}-${index}`, endedAt, { callerId: index === 0 ? prefix : `${prefix}-${index - 1}` }),
+      );
+
+      return [root, ...nested];
+    };
+    const records = [
+      ...Array.from({ length: 400 }, (_, index) => tree(`c${index}`, true, NOW - index)),
+      ...Array.from({ length: 30 }, (_, index) => tree(`o${index}`, false, NOW + index)),
+    ].flat();
+    const started = performance.now();
+    const sections = listSections(visibleRecords(records, new Set()));
+    const elapsed = performance.now() - started;
+
+    expect(records.length).toBeGreaterThan(4_000);
+    expect(sections.map((section) => section.title)).toEqual(["Running", `Completed (${MAX_CLOSED_ROOTS})`]);
+    expect(sections[1]?.rows).toHaveLength(MAX_CLOSED_ROOTS * 10);
+    expect(elapsed).toBeLessThan(50);
   });
 });

@@ -1,5 +1,11 @@
 import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../core/adapter/contract.ts";
-import { renderRow, rowLayout } from "../../components/agent-row.ts";
+import {
+  layoutOf,
+  measureRows,
+  type RowLayout,
+  type RowMeasure,
+  renderRow,
+} from "../../components/agent-row.ts";
 import { errorText, innerWidth, PAD, truncatePainted } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";
 import { carrySelection, type TreeRow } from "../../components/tree.ts";
@@ -16,7 +22,6 @@ import type { ListComponent } from "./overlay.ts";
 
 type ListDeps = {
   records(): AgentRecord[];
-  lingerMs: number;
   cleared: Set<string>;
   stop(id: string): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void): () => void;
@@ -32,12 +37,26 @@ const STOP_FAILED_MS = 3_000;
 
 type Feedback = { text: string; token: ThemeToken };
 
+type Slot = { kind: "gap" } | { kind: "title"; title: string } | { kind: "row"; row: TreeRow };
+
+const GAP: Slot = { kind: "gap" };
+
+const slotsOf = (sections: ReturnType<typeof listSections>): Slot[] =>
+  sections.flatMap((section, index): Slot[] => [
+    ...(index > 0 ? [GAP] : []),
+    { kind: "title", title: section.title },
+    ...section.rows.map((row): Slot => ({ kind: "row", row })),
+  ]);
+
 export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent => {
   const scroll = api.createScroll();
   let visible: AgentRecord[] = [];
-  let sections: ReturnType<typeof listSections> = [];
   let rows: TreeRow[] = [];
   let ids: string[] = [];
+  let slots: Slot[] = [];
+  let placeholders: string[] = [""];
+  let lineOf = new Map<string, number>();
+  let measure: RowMeasure | undefined;
   let subtitleText = "";
   let selectedId: string | undefined;
   let feedback: Feedback | undefined;
@@ -49,11 +68,17 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
   const compute = () => {
     const previousIds = ids;
 
-    visible = visibleRecords(deps.records(), Date.now(), deps.lingerMs, deps.cleared);
-    sections = listSections(visible);
+    visible = visibleRecords(deps.records(), deps.cleared);
+    const sections = listSections(visible);
     subtitleText = subtitle(visible);
     rows = sections.flatMap((section) => section.rows);
     ids = rows.map((row) => row.record.id);
+    slots = slotsOf(sections);
+    placeholders = Array.from({ length: Math.max(1, slots.length) }, () => "");
+    lineOf = new Map(
+      slots.flatMap((slot, line) => (slot.kind === "row" ? [[slot.row.record.id, line]] : [])),
+    );
+    measure = rows.length > 0 ? measureRows(rows, api.theme) : undefined;
     selectedId = carrySelection(previousIds, ids, selectedId) ?? ids[0];
   };
 
@@ -66,7 +91,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     api.requestRender();
   };
 
-  const tickMs = () => tickFor(visible, true);
+  const tickMs = () => tickFor(visible, false);
 
   const selected = () => rows.find((row) => row.record.id === selectedId)?.record;
 
@@ -123,40 +148,23 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     );
   };
 
-  const bodyLines = (width: number, inner: number) => {
+  const bodyLine = (index: number, width: number, inner: number, now: number, layout?: RowLayout) => {
     const theme = api.theme;
+    const slot = slots[index];
 
-    if (rows.length === 0) {
-      return {
-        lines: [PAD + theme.fg("muted", theme.truncate("No agents running", inner))],
-        selectedLine: -1,
-      };
+    if (!slot || !layout) {
+      return PAD + theme.fg("muted", theme.truncate("No agents running", inner));
     }
 
-    const now = Date.now();
-    const layout = rowLayout(rows, now, width, selectedId !== undefined, theme);
-    const lines: string[] = [];
-    let selectedLine = -1;
+    if (slot.kind === "gap") {
+      return "";
+    }
 
-    sections.forEach((section, index) => {
-      if (index > 0) {
-        lines.push("");
-      }
+    if (slot.kind === "title") {
+      return PAD + theme.bold(theme.truncate(slot.title, inner));
+    }
 
-      lines.push(PAD + theme.bold(theme.truncate(section.title, inner)));
-
-      section.rows.forEach((row) => {
-        const isSelected = row.record.id === selectedId;
-
-        if (isSelected) {
-          selectedLine = lines.length;
-        }
-
-        lines.push(renderRow({ ...row, selected: isSelected }, now, width, theme, layout));
-      });
-    });
-
-    return { lines, selectedLine };
+    return renderRow({ ...slot.row, selected: slot.row.record.id === selectedId }, now, width, theme, layout);
   };
 
   const footerLines = (inner: number) => {
@@ -172,19 +180,22 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     const inner = innerWidth(width);
     const footer = footerLines(inner);
     const height = bodyHeight(footer.length);
-    const body = bodyLines(width, inner);
-    let window = scroll.window(body.lines, height);
+    let window = scroll.window(placeholders, height);
     const top = scroll.state().top;
-    const line = body.selectedLine;
+    const line = selectedId === undefined ? -1 : (lineOf.get(selectedId) ?? -1);
 
     if (line >= 0 && (line < top || line >= top + height)) {
       scroll.scrollTo(line < top ? Math.max(0, line - 1) : line - height + 1);
-      window = scroll.window(body.lines, height);
+      window = scroll.window(placeholders, height);
     }
 
-    const padding = Array.from({ length: height - window.length }, () => "");
+    const start = scroll.state().top;
+    const now = Date.now();
+    const layout = measure ? layoutOf(measure, now, width, api.theme) : undefined;
+    const body = window.map((_, offset) => bodyLine(start + offset, width, inner, now, layout));
+    const padding = Array.from({ length: height - body.length }, () => "");
 
-    return ["", titleLine(inner), "", ...window, ...padding, "", ...footer, ""];
+    return ["", titleLine(inner), "", ...body, ...padding, "", ...footer, ""];
   };
 
   const select = (index: number) => {
