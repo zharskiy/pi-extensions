@@ -1,6 +1,6 @@
 # Orchestrator model: a capable main session that decides and delegates
 
-Status: proposal, 2026-10-17; revised 2026-10-17 round 2 (two modes, no hold, three-layer skills, codemode preserved); revised 2026-10-17 round 3 (plan mode deferred, UI and result work packages added); round 3, reviewed 2026-10-17 (see "Review round (2026-10-17)"). Branch `feat/agent-workflow-revamp`, pi 1.3.0. Supersedes the delegate-only default in agent-workflow.md; the roster, brief template, result contract, fetch tool and call-time skills from that design stay.
+Status: proposal, 2026-10-17; revised 2026-10-17 round 2 (two modes, no hold, three-layer skills, codemode preserved); revised 2026-10-17 round 3 (plan mode deferred, UI and result work packages added); round 3, reviewed 2026-10-17 (see "Review round (2026-10-17)"); round 4, 2026-10-17 (user decisions: F and G kept, MCP import added, result files in the OS temp dir). Branch `feat/agent-workflow-revamp`, pi 1.3.0. Supersedes the delegate-only default in agent-workflow.md; the roster, brief template, result contract, fetch tool and call-time skills from that design stay.
 
 Research date: 2026-10-17. Evidence: [orchestrator-capability.md](../research/orchestrator-capability.md) (model tiers), [settings-and-skills-layering.md](../research/settings-and-skills-layering.md) (settings, skills, MCP), [nesting-modes-and-setup.md](../research/nesting-modes-and-setup.md) (nesting depth, mode switching, agent creation), [subagent-results.md](../research/subagent-results.md) (what a parent receives), [migration-portability.md](../research/migration-portability.md) (skills, MCP and agents from other tools). The removal itself is itemised in [delegate-only-removal.md](delegate-only-removal.md). The user's earlier plan-mode research is cited as future-plans/plan-mode.md, the user's local note (untracked). Repo references are `file:line` on this branch; `PI/` means `node_modules/@earendil-works/pi-coding-agent`, and `T`, `R` and `AS` mean `PI/dist/core/extensions/types.d.ts`, `PI/dist/core/extensions/runner.js` and `PI/dist/core/agent-session.js`. Model values in settings examples are placeholders (`provider/id`); they are user data, not code.
 
@@ -117,11 +117,14 @@ Both are first-word subcommands of the existing `/agents` command (`plugins/agen
 
 It takes effect at the next session start. An immediate reload is feasible: settings and definitions are both plain loads run from `onSessionStart` (`src/index.ts:16-19`, `agent-definitions/index.ts:25-33`), so a `reload()` that re-runs both after the write applies to agents started afterwards; running agents keep their config. A one-line form serves scripts: `/agents setup <agent> model=... thinking=... skills=a,b|all|none`.
 
-**Review recommendation (pending the user's decision): defer the form.** It is a form over a five-line JSON file, and size L is understated: it needs the multi-select component, the questionnaire tab code moved into `core/manager`, the model-catalogue API with its fake and conformance test, the settings object rule, the reload path and the one-line parser. A README example of `agents.<name>` does the job for a small team until the override has been used. See open question 2.
+**Decision: build the form as designed.** The review recommended deferring it in favour of a README example; the user declined, because the team is large and a form is how most of it will set agents up. Its prerequisites are WP-F scope, and size L covers them:
+- the questionnaire's tab bar and tab key handling move into `core/manager`, because extensions may not import each other (ARCHITECTURE.md:10);
+- a model-catalogue method on the host contract that lists pi's models filtered to providers with credentials, with its fake and a conformance test: `AgentRuntime` exposes only `resolveModel` (`core/adapter/contract.ts:411`), and `core/adapter/pi-models.ts:17` computes `authenticated` but nothing lists models to extensions;
+- the multi-select component, the settings object rule, the reload path and the one-line parser.
 
 **`/agents create <name> [from <agent>]`.** No wizard: products dropped them (Claude Code removed its `/agents` wizard in 2.1.198, 2026-07-01, "ask Claude to create or manage subagents, or edit `.claude/agents/` directly"; Cursor says "ask Agent to create one"; Codex is TOML only; Gemini's `/agents config` tunes existing agents only; nesting-modes-and-setup.md, C). The command scaffolds `<cwd>/.pi/agents/<name>.md` from a template, or from a copy of a shipped agent with `from`, with every frontmatter field documented in comments in the body (`name`, `description`, `model`, `limit`, `tools`, `skills`, `subagents`, `mcp`, `worktree`). It then tells the user to edit the file, or to ask the main session to, since the main session has `write`.
 
-**Review recommendation (pending the user's decision): shrink it.** Either `/agents create <name> from <agent>` only (copy a shipped file), or no command and a README section with the annotated frontmatter. The shipped files already declare every field in order and double as reference files (`extensions/subagents/README.md:57`), and the main session has `write`.
+**Decision: keep the scaffold with its template.** The review recommended shrinking it to `from <agent>` or a README section; the user declined, because in a large team a command that writes a documented file is faster than finding and copying the right reference.
 
 ## No resumable or held leads for now
 
@@ -146,6 +149,8 @@ Evidence: [subagent-results.md](../research/subagent-results.md). Today:
 - Failed entries carry no text (`result.ts:94-98`); a stopped entry carries text only when it has some.
 - No 8 KB limit exists. Pi's only `8 * 1024` is `NESTED_CALL_LIMITS.maxArgumentBytesPerCall`, the per-call cap on argument records of nested tool calls (`PI/dist/core/nested-tool-calls.js:18`).
 
+Communication needs no additional work to function; R1 to R4 are tuning of what exists. The three mechanisms other products use already exist here: summaries (the result contract), file spill (`result.md` above the inline limit) and transcripts (the child's session JSONL, viewable with `/agents <id>`).
+
 Decisions:
 - **R1.** Default `inlineResultChars` becomes 8,000. The contract's ceiling is about 1,500 tokens, roughly 6,000 characters, so a result that follows it always arrives inline, and four parallel agents cost at most about 8,000 tokens per batch.
 - **R2.** Above the limit, inline the head up to the limit, cut at the last newline before it, followed by one marker line `Result file: <path> (<N> more chars)`, instead of the 300-character preview. The marker keeps today's `Result file:` wording (`result.ts:109`) so existing prompt text still matches. The Status line and the first section always arrive. The planner rule in `prompts/main-session.md:41` ("read its result file if it is not inline") becomes: if the entry ends with a marker line, read the file before running any batch. A planner result over the limit now arrives half inline, and a main session that runs batch 1 from the head and never reads the tail loses batches silently.
@@ -153,6 +158,7 @@ Decisions:
 - **R4. Zero-turn shape scan.** The result is the last assistant text of the child's final run (after its last prompt or wake) that carries a `Status:` line, matched leniently: within the first five lines, case-insensitive, `**Status:**` tolerated. It is read through one adapter method over the child's session entries; the adapter already reads them for `ownUsage` (`core/adapter/pi-child.ts:359`). When no text of the final run carries a Status line, the result is the last text with a `(shape: no Status line)` note. No extra turn and no runtime state. This covers a child that writes its result and then ends on a tool call or a one-line sign-off.
 - **R4, to confirm during implementation:** the boundary of "the final run", the last user message or `pi-subagents:wake` custom entry. Wakes and routed messages reach a child through `deliver` (`pi-child.ts:324`, `wake` at 356), which prompts the child when it is idle (`prompt` at 319-322), so in the child they appear as user messages; the `pi-subagents:wake` custom entry is what the main session receives (`run-agent/index.ts:38`). A message steered into a running child is also a user message and must not cut the run short.
 - **Why not a retry (review).** The earlier draft sent a child without a `Status:` line one follow-up asking for the Result shape. The review dropped it: it would add a sub-state between settled and closed that must re-acquire a slot through `resume` (`runner.ts:214-243`), skip handoff, grace, aborted and failed children, and survive a `message_agent` steered into the retry turn; and a strict check fires on cosmetic variants, costing a turn each time. The retry is the fallback if the live suite shows that the scan misses cases.
+- **R5. Result files in the OS temp dir.** Today `storeResult` writes `result.md` to `record.dir` (`run-agent/result.ts:42-53`), which is `<session file without .jsonl>/agents/<id>/` under pi's session dir: `agentsDirFor` builds the `agents` folder (`src/model/paths.ts:9-10`; for a session without a file it falls back to `<agentDir>/pi-subagents/<session id>/agents`), the runner passes it to the registry (`run-agent/runner.ts:792, 809`), and the registry joins the agent id (`agent-registry/registry.ts:82`). The manifest and the child's session file sit in the same folder (the child's `sessionDir` is `record.dir`, `run-agent/runner.ts:601`). The user wants result files in the OS temp dir, where the subagent handoff documents already live: `handoffPathFor` writes `<tmpdir>/pi-subagents/<session id>/<id>-handoff.md` (`src/model/paths.ts:12-13`, `NAMESPACE` at 5), which AGENTS.md:16 allows. Decision: `result.md` moves to `<tmpdir>/pi-subagents/<session id>/agents/<id>/result.md`, built by a new helper next to `handoffPathFor`; the manifest and the child JSONL stay under the session dir. Consequence: the OS may clean the temp file, so when the `Result file:` path no longer exists, the `/agents <id>` view and `agent_status` fall back to the child's last assistant message read from its JSONL, and the main prompt's "read the result file" line gets "if it is gone, ask the agent view".
 
 ## Agent list and row rendering
 
@@ -176,21 +182,45 @@ Evidence: [migration-portability.md](../research/migration-portability.md).
 - **Instructions.** Pi reads AGENTS.md and CLAUDE.md (`PI/dist/core/resource-loader.js:116`).
 - **Agent definitions** do not port: other formats lack `limit`, `tools`, `skills` and `subagents` as this project defines them, and Codex uses TOML.
 
-Decisions:
-- Advise teams to keep skills in `.agents/skills`.
-- No `.claude/skills` registration. A Claude Code user adds the path to pi's `skills` setting (`"skills": ["~/.claude/skills"]` in `~/.pi/agent/settings.json`, or a project path in `.pi/settings.json`; `PI/docs/settings.md:148-161`) or moves the folders to `.agents/skills`. Registering it through `resources_discover` would load another tool's skills into every session with no off switch and duplicate pi's own setting.
-- No `from-file` converter. Model aliases cannot be mapped in code under the no-provider rule, which leaves tool-name mapping as the only mechanical part. The README gets a field table and the main session converts a file on request.
+Decisions (the user wants no general migration work):
+- **Skills need no work** when they live in `.agents/skills`, which pi reads (`PI/docs/skills.md:61`). Advise teams to keep them there.
+- **Claude Code skills** in `.claude/skills`: one README line, no code. No `.claude/skills` registration. A Claude Code user adds the path to pi's `skills` setting (`"skills": ["~/.claude/skills"]` in `~/.pi/agent/settings.json`, or a project path in `.pi/settings.json`; `PI/docs/settings.md:148-161`) or moves the folders to `.agents/skills`. Registering it through `resources_discover` would load another tool's skills into every session with no off switch and duplicate pi's own setting.
+- **Agent definitions and instruction files** get a README paragraph only. No `from-file` converter. Model aliases cannot be mapped in code under the no-provider rule, which leaves tool-name mapping as the only mechanical part. The README gets a field table and the main session converts a file on request.
 - The team story: commit `.pi/mcp.json`, `.pi/agents`, `.pi/pi-subagents.json` and `.agents/skills`; a colleague trusts the project and has the setup.
+- **MCP is the one asset that gets code**: an importer for Claude Code, Codex CLI and Cursor only (WP-M, see "MCP import").
 - The README gets a "Coming from another tool" section (WP-H).
 
 Effort per user (review estimate): skills take minutes. MCP takes 10 to 20 minutes from Claude Code, Cursor, Cline or Amp (copy `mcpServers`, run `pi mcp list` and `pi mcp login`, convert timeouts from ms to s, rewrite Cursor's `${env:X}`), up to an hour from Codex TOML, Gemini or Kilo; `sse` endpoints are a hard stop. Agent definitions take 10 to 15 minutes each by hand. Instruction files are free for AGENTS.md and CLAUDE.md, and take 15 to 30 minutes to merge `.claude/rules/`, `CLAUDE.local.md`, imports, `.cursor/rules` and GEMINI.md.
+
+## MCP import
+
+Pi already manages servers. `/mcp` in a session lists servers with their state, tool count, exposure and source, and lets the user inspect, reconnect, sign in or out, change exposure, enable and disable, including "Enable in this project" / "Disable in this project" overrides for user-level servers (`PI/docs/mcp.md:88-90`); `pi mcp add|remove|list|login|logout` work from the shell (`PI/docs/mcp.md:92`). So the extension adds import only.
+
+**Shape.** A new small extension, working name `mcp-import`; extensions never import each other, so it is independent of subagents. One command, `/mcp-import <claude|codex|cursor> [project] [apply]`. Without `apply` it is a dry run that prints the entries it would write and every warning; with `apply` it writes. User scope writes `~/.pi/agent/mcp.json`; `project` writes `<cwd>/.pi/mcp.json` and needs a trusted project. Existing names are never overwritten (skipped with a message), and unrelated content is preserved. After apply it tells the user to run `pi mcp list` and to sign in with `/mcp` for OAuth servers, since tokens never transfer.
+
+**Sources.**
+- Claude Code: project `.mcp.json` and user `~/.claude.json` `mcpServers`. The user file also holds project-scoped entries keyed by project path; the exact layout is to confirm during implementation.
+- Codex CLI: `~/.codex/config.toml` and `.codex/config.toml`, `[mcp_servers.<name>]` tables.
+- Cursor: `~/.cursor/mcp.json` and `.cursor/mcp.json`.
+
+**Conversion rules** (from [migration-portability.md](../research/migration-portability.md), source table at lines 39-41, notes at 88-92):
+
+| Source | Rule |
+| --- | --- |
+| Claude Code | Copy `command`, `args`, `env`, `url`, `headers`; keep `type: http` and `stdio`; skip `type: sse` and `ws` with a message (pi rejects `sse`, `PI/docs/mcp.md:79`, and lists only `stdio`, `http` and `streamable-http`, `mcp.md:78`); rewrite `${VAR:-default}` to `${VAR}` with a warning; convert `timeout` from milliseconds to seconds; map `headersHelper` to pi's whole-value `!command` or drop it with a warning; drop `oauth` with a note to sign in. |
+| Cursor | Rewrite `${env:X}` to `${X}` and `${userHome}` to `~`; skip entries using `${workspaceFolder}` with a warning; drop `envFile` with a warning; drop `auth` with a sign-in note. |
+| Codex CLI | TOML table to JSON entry; copy `command`, `args`, `env`, `cwd`; `env_vars` become `env` entries with `${VAR}` values; `bearer_token_env_var` becomes the header `Authorization: Bearer ${VAR}`; `http_headers` to `headers`; `env_http_headers` to headers with `${VAR}` values; `startup_timeout_sec` to `timeout`; drop `enabled_tools`, `disabled_tools` and `tool_timeout_sec` with a warning (pi's `toolExposure` has different semantics); keep `url` when it is not SSE. |
+
+**TOML.** Neither pi nor this repo ships a TOML parser. The repo has no runtime dependencies: `package.json` declares only `peerDependencies` (pi, pi-tui, typebox) and `devDependencies`; pi's own dependencies include `yaml` but no TOML package (`PI/package.json`). Options: add a small TOML dependency, or write a subset parser for `[mcp_servers.<name>]` tables with string, array-of-string and inline-table values. The choice is open for implementation; the dependency is recommended, since the subset parser must still reject or warn on everything outside its subset.
+
+**Storage rule.** `~/.pi/agent/mcp.json` is inside pi's agent dir, which AGENTS.md:16 allows. `.pi/mcp.json` is a new write outside it, like `/agents setup`'s `.pi/pi-subagents.json`; WP-H updates the AGENTS.md storage rule with both.
 
 ## Review round (2026-10-17)
 
 A senior review of this design concluded:
 - Worth implementing, with the changes recorded above.
 - A, B, R, C and D carry the value; I shrinks to the list filter and a cap; J is trivial.
-- F and G are recommended for deferral (F) or shrinking (G), pending the user's decision.
+- F and G were recommended for deferral (F) or shrinking (G); the user kept both as designed, because the team is large.
 - Order: A, B, R, D, C, I, J, with H alongside.
 
 ## Work packages
@@ -201,19 +231,19 @@ A senior review of this design concluded:
 | B | **Normal-mode prompt** with the plan-first sentence, routing live suite adaptation (full tool set, relax "exactly one agent"), and the lead rule to report `Status: partial` rather than re-delegate the whole task | A | S | Yes |
 | C | **Skills**: caller-aware validation in the runner, with the effective set stored per record at spawn (`skills: all` resolved to names) and named in the runner's error; `agents.<name>` overrides (model, thinking, skills) merged in the loader in the stated order; override `model` and `skills` checked at session start (warn and drop the field; info for agents only in an untrusted project); settings object rule and per-agent merge | | M | No |
 | D | **Codemode split**: `mcp` frontmatter field (leads `true`, chores `false`, omitted means `true`), codemode and `tool_search` as today, MCP tool names and extension only with `mcp: true` in `pi-child.ts`; `SpawnSpec.mcp` with contract, fake runtime and conformance test; `grants.live.test.ts` fixture sets `mcp: true` | | S | No |
-| F | **`/agents setup`** form, multi-select component, questionnaire tab code moved to `core/manager`, model-catalogue contract API, one-line form, reload. Deferred pending user decision (review): a form over a five-line JSON file, a README example serves until the override is used | C, D | L | No |
-| G | **`/agents create`** scaffold and template. Scope pending user decision (review): shrink to `from <agent>` only, or a README section | D | S | No |
+| F | **`/agents setup`** form, multi-select component, questionnaire tab code moved to `core/manager`, model-catalogue contract API (credentialed models, with fake and conformance test), one-line form, reload. Kept as designed by the user (large team) | C, D | L | No |
+| G | **`/agents create`** scaffold and template. Kept as designed by the user (large team) | D | S | No |
 | I | **List history**: drop the `lingerMs` filter from the list overlay (and the setting, if nothing else reads it), keep `x`, cap of about 200 closed roots pruned by whole subtrees and chains | | S | No |
 | J | **Pointer columns**: always reserve the two pointer columns in `rowLayout` and `renderRow`; update the five row tests | | S | No |
-| R | **Results**: R1 default 8,000, R2 head plus marker line, R3 partial text for failed and stopped entries, R4 zero-turn shape scan over the child's final run | | M | No |
-| H | **Docs**: README, ARCHITECTURE.md, STRUCTURE.md per WP; README says call-time skills are this project's addition, gains a "Coming from another tool" section, and describes the new result inlining; fix "all seven have `skills: []`" (`extensions/subagents/README.md:84`) for the eight-agent roster | each | M total | Yes for A, B |
+| R | **Results**: R1 default 8,000, R2 head plus marker line, R3 partial text for failed and stopped entries, R4 zero-turn shape scan over the child's final run, R5 `result.md` in the OS temp dir with the JSONL fallback in `/agents <id>` and `agent_status` | | M | No |
+| M | **MCP import**: new `mcp-import` extension, `/mcp-import <claude\|codex\|cursor> [project] [apply]`, dry run by default, conversion rules and warnings, TOML reading for Codex | | M | No |
+| H | **Docs**: README, ARCHITECTURE.md, STRUCTURE.md per WP; README says call-time skills are this project's addition, gains a "Coming from another tool" section, and describes the new result inlining; the AGENTS.md storage rule gains `.pi/pi-subagents.json`, `.pi/mcp.json` and the temp-dir `result.md`; fix "all seven have `skills: []`" (`extensions/subagents/README.md:84`) for the eight-agent roster | each | M total | Yes for A, B |
 
-The decision takes effect with A and B: the main session runs on the user's model with its full tool set and the normal-mode prompt. The review's order for the rest is R, D, C, I, J, with H alongside; F and G wait for the user's decision. Implementation is deferred to a later step; this document is the plan.
+The decision takes effect with A and B: the main session runs on the user's model with its full tool set and the normal-mode prompt. The review's order for the rest is R, D, C, I, J, then F after C and D, G after D, and M at any point since it depends on nothing, with H alongside. Implementation is deferred to a later step; this document is the plan.
 
 ## Open questions
 
 1. Should `/agents setup` also write the user-level file (a scope choice in the form), or stay project-only?
-2. Build the `/agents setup` form now, or ship the `agents.<name>` override with a README example first (the review recommends the example first)?
-3. `/agents create`: keep the scaffold with a template, shrink it to `from <agent>`, or replace it with a README section (the review recommends shrinking)?
+2. MCP import, for implementation: a TOML dependency or a subset parser for Codex (the dependency is recommended, see "MCP import"); the exact layout of project-scoped entries in `~/.claude.json`.
 
-Answered: R4 (the review chose the zero-turn scan over the retry, see R4); `.claude/skills` registration and the `from-file` converter (both no, see "Migration from other tools").
+Answered: R4 (the review chose the zero-turn scan over the retry, see R4); `.claude/skills` registration and the `from-file` converter (both no, see "Migration from other tools"); the `/agents setup` form (build it as designed) and `/agents create` (keep the scaffold with its template), both because the team is large; general migration work (none: skills and instructions get README text, MCP gets an importer, see "MCP import"); where `result.md` lives (the OS temp dir, see R5).
