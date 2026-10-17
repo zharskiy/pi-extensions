@@ -505,11 +505,12 @@ describe("agents list", () => {
     view.handleKey(char("x"));
 
     const command = harness.host.commands.get("agents");
-    const values = (command?.complete?.("") ?? []).map((item) => item.value);
+    const ids = [open.id, older.id, cleared.id];
+    const items = (command?.complete?.("") ?? []).filter((item) => ids.includes(item.value));
 
-    expect(values).toEqual([open.id, older.id]);
+    expect(items.map((item) => item.value)).toEqual([open.id, older.id]);
     expect(command?.complete?.("zzz")).toEqual([]);
-    expect((command?.complete?.("") ?? [])[0]?.label).toBe(`${open.id} · running · open`);
+    expect(items[0]?.label).toBe(`${open.id} · running · open`);
   });
 
   it("moves the selection to the next row when the selected row is cleared", async () => {

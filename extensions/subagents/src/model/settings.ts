@@ -30,7 +30,7 @@ export type Settings = {
   agents: AgentOverrides;
 };
 
-const SETTINGS_FILE = "pi-subagents.json";
+export const SETTINGS_FILE = "pi-subagents.json";
 
 export const defaultSettings = (): Settings => ({
   maxConcurrent: 4,

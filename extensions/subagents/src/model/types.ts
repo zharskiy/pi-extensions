@@ -126,6 +126,7 @@ export type AgentDefinitions = {
   get(name: string): AgentDefinition | undefined;
   list(): AgentDefinition[];
   promptAppend(definition: AgentDefinition): string[];
+  reload(): void;
 };
 
 export type RouteResult =
@@ -155,9 +156,15 @@ type AgentViewService = {
   open(id: string): Promise<void>;
 };
 
+type AgentSetupService = {
+  run(args: string): Promise<void>;
+  complete(prefix: string): { value: string; label: string }[];
+};
+
 export type ServiceMap = {
   registry: AgentRegistry;
   agentView: AgentViewService;
+  agentSetup: AgentSetupService;
   definitions: AgentDefinitions;
   runner: AgentRunner;
   handoff: HandoffService;

@@ -25,7 +25,7 @@ import type {
   UsageTotals,
 } from "./contract.ts";
 import { finalRunTexts, messageText, toolCallCount } from "./messages.ts";
-import { resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
+import { availableModels, resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
 import { applyPromptSections } from "./pi-sections.ts";
 import { toPiTool } from "./pi-tools.ts";
@@ -372,6 +372,7 @@ export const createPiRuntime = (
     spawn,
     readSession: (file) => readSessionFile(file, recordEntry),
     resolveModel: (request) => resolveFromCatalog(parent.ctx(), request, defaultProvider()).resolution,
+    availableModels: () => availableModels(parent.ctx()),
     defaultThinking: () => parent.thinking(),
     skillNames: () => parent.skillFiles().map((skill) => skill.name),
   };

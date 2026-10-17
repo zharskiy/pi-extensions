@@ -1,0 +1,253 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { describe, expect, it } from "vitest";
+import type { KeyPress } from "../../../../../core/adapter/contract.ts";
+import type { FakeForm } from "../../../../../core/test/helpers/fake-form.ts";
+import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
+import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
+import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
+import { parseSetupLine } from "../../../src/plugins/agent-setup/line.ts";
+import { mergeChanges } from "../../../src/plugins/agent-setup/write.ts";
+import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
+import { createHarness } from "../../helpers/harness.ts";
+
+const key = (name: KeyPress["name"]): KeyPress => ({ name });
+
+const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+
+const APPLIES = "agents started from now on use it";
+
+const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
+
+const writeJson = (path: string, value: unknown) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value));
+};
+
+const setup = ({ trusted = false } = {}) => {
+  const harness = createHarness([
+    agentRegistryPlugin,
+    agentDefinitionsPlugin,
+    agentSetupPlugin,
+    agentViewPlugin,
+  ]);
+  const { host, runtime, services } = harness;
+
+  host.info.projectTrusted = trusted;
+  runtime.skills = ["docs", "search"];
+
+  const projectFile = join(host.info.cwd, ".pi", "pi-subagents.json");
+  const userFile = join(host.info.agentDir, "pi-subagents.json");
+  const noticesOf = (level: string) =>
+    host.notices.filter((notice) => notice.level === level).map((notice) => notice.message);
+  const definition = (name: string) => services.require("definitions").get(name);
+
+  const openForm = async () => {
+    const run = host.runCommand("agents", "setup");
+
+    await flush();
+
+    return { run, form: host.form() };
+  };
+
+  return { ...harness, projectFile, userFile, noticesOf, definition, openForm };
+};
+
+const showsAgent = (form: FakeForm, name: string) =>
+  form.render(400).some((line) => line.startsWith(` ${name} `));
+
+const goToAgent = (form: FakeForm, name: string) => {
+  Array.from({ length: 20 }).forEach(() => {
+    if (!showsAgent(form, name)) {
+      form.press(key("tab"));
+    }
+  });
+
+  expect(showsAgent(form, name)).toBe(true);
+};
+
+describe("/agents setup form", () => {
+  it("writes changed fields into the trusted project's file, keeps other keys and applies them", async () => {
+    const { projectFile, openForm, definition, noticesOf } = setup({ trusted: true });
+
+    writeJson(projectFile, { maxConcurrent: 2, agents: { scout: { thinking: "low" } } });
+
+    const { run, form } = await openForm();
+
+    goToAgent(form, "general");
+    form.press(key("enter"), key("home"), key("enter"));
+    form.press(key("down"), key("enter"), key("home"), key("enter"));
+    form.press(key("down"), key("enter"), char("n"), key("space"), key("enter"));
+    form.press(key("backTab"), key("enter"));
+    await run;
+
+    expect(form.closed).toBe(true);
+    expect(readJson(projectFile)).toEqual({
+      maxConcurrent: 2,
+      agents: {
+        scout: { thinking: "low" },
+        general: { model: "inherit", thinking: "off", skills: ["docs"] },
+      },
+    });
+    expect(definition("general")).toMatchObject({ model: undefined, thinking: "off", skills: ["docs"] });
+    expect(definition("scout")?.thinking).toBe("low");
+    expect(noticesOf("info")).toEqual([
+      `pi-subagents: saved general (model, thinking, skills) to ${projectFile}; ${APPLIES}`,
+    ]);
+  });
+
+  it("refuses the project file in an untrusted project and writes the user file instead", async () => {
+    const { projectFile, userFile, openForm, definition } = setup();
+    const { run, form } = await openForm();
+
+    goToAgent(form, "scout");
+    form.press(key("down"), key("enter"), key("end"), key("enter"));
+    form.press(key("tab"), key("tab"), key("up"), key("enter"));
+
+    expect(form.closed).toBe(false);
+    expect(form.render(400).some((line) => line.includes("this project is not trusted"))).toBe(true);
+
+    form.press(key("down"), key("enter"));
+    await run;
+
+    expect(existsSync(projectFile)).toBe(false);
+    expect(readJson(userFile)).toEqual({ agents: { scout: { thinking: "max" } } });
+    expect(definition("scout")?.thinking).toBe("max");
+  });
+
+  it("warns when the trusted project's file sets a field written to the user file", async () => {
+    const { projectFile, userFile, openForm, noticesOf } = setup({ trusted: true });
+
+    writeJson(projectFile, { agents: { scout: { thinking: "low" } } });
+
+    const { run, form } = await openForm();
+
+    goToAgent(form, "scout");
+    form.press(key("down"), key("enter"), key("end"), key("enter"));
+    form.press(key("tab"), key("tab"), key("down"), key("enter"));
+    await run;
+
+    expect(readJson(userFile)).toEqual({ agents: { scout: { thinking: "max" } } });
+    expect(noticesOf("warning")).toContain(
+      `pi-subagents: ${projectFile} also sets agents.scout.thinking and wins`,
+    );
+  });
+
+  it("closes without writing when nothing changed or on Escape", async () => {
+    const { projectFile, userFile, openForm, noticesOf } = setup({ trusted: true });
+    const first = await openForm();
+
+    first.form.press(key("backTab"), key("enter"));
+    await first.run;
+
+    const second = await openForm();
+
+    second.form.press(key("escape"));
+    await second.run;
+
+    expect(noticesOf("info")).toEqual(["pi-subagents: agent setup: nothing changed"]);
+    expect(existsSync(projectFile) || existsSync(userFile)).toBe(false);
+  });
+
+  it("does not overwrite a settings file that is not valid JSON", async () => {
+    const { projectFile, openForm, noticesOf } = setup({ trusted: true });
+
+    writeJson(projectFile, "{ not json");
+
+    const { run, form } = await openForm();
+
+    form.press(key("down"), key("enter"), key("home"), key("enter"), key("backTab"), key("enter"));
+    await run;
+
+    expect(readFileSync(projectFile, "utf8")).toBe("{ not json");
+    expect(noticesOf("error")).toHaveLength(1);
+    expect(noticesOf("error")[0]).toContain(`cannot save ${projectFile}`);
+  });
+
+  it("refuses the form outside the terminal UI and names the files to edit", async () => {
+    const { host, projectFile, userFile, noticesOf } = setup();
+
+    host.info.mode = "rpc";
+    await host.runCommand("agents", "setup");
+
+    expect(host.forms).toEqual([]);
+    expect(noticesOf("error")).toHaveLength(1);
+    expect(noticesOf("error")[0]).toContain(projectFile);
+    expect(noticesOf("error")[0]).toContain(userFile);
+  });
+});
+
+describe("/agents setup one-line form", () => {
+  it("sets fields of one agent in the user file and applies them", async () => {
+    const { host, userFile, definition } = setup();
+
+    await host.runCommand("agents", "setup scout thinking=high skills=none scope=user");
+
+    expect(readJson(userFile)).toEqual({ agents: { scout: { thinking: "high", skills: [] } } });
+    expect(definition("scout")?.thinking).toBe("high");
+  });
+
+  it("writes the trusted project's file by default with the model and its thinking suffix", async () => {
+    const { host, projectFile, definition } = setup({ trusted: true });
+
+    await host.runCommand("agents", "setup scout model=fake/model:low skills=docs,search");
+
+    expect(readJson(projectFile)).toEqual({
+      agents: { scout: { model: "fake/model", thinking: "low", skills: ["docs", "search"] } },
+    });
+    expect(definition("scout")).toMatchObject({ model: "fake/model", thinking: "low" });
+  });
+
+  it("reports bad requests and writes nothing", async () => {
+    const { host, projectFile, userFile, noticesOf } = setup();
+    const requests = [
+      "setup nobody thinking=high",
+      "setup scout thinking=extreme scope=user",
+      "setup scout skills=ghost scope=user",
+      "setup scout model=locked/lyra-9-0 scope=user",
+      "setup scout color=blue scope=user",
+      "setup scout",
+      "setup scout thinking=high",
+    ];
+
+    await requests.reduce<Promise<void>>(
+      (chain, request) => chain.then(() => host.runCommand("agents", request)),
+      Promise.resolve(),
+    );
+
+    expect(noticesOf("error")).toHaveLength(requests.length);
+    expect(noticesOf("error").at(-1)).toContain("not trusted");
+    expect(existsSync(projectFile) || existsSync(userFile)).toBe(false);
+  });
+
+  it("parses inherit and none and keeps the last scope", () => {
+    const check = { agents: ["scout"], skills: [], resolveModel: () => ({ error: "unused" }) };
+
+    expect(parseSetupLine("scout model=inherit skills=none scope=user", check)).toEqual({
+      change: { name: "scout", patch: { model: "inherit", skills: [] } },
+      scope: "user",
+    });
+  });
+});
+
+describe("/agents setup completion and merge", () => {
+  it("offers setup as a subcommand and agent names after it", () => {
+    const { host } = setup();
+    const complete = host.commands.get("agents")?.complete;
+
+    expect(complete?.("se")?.map((entry) => entry.value)).toEqual(["setup"]);
+    expect(complete?.("setup sc")?.map((entry) => entry.value)).toEqual(["setup scout"]);
+  });
+
+  it("merges changes field by field into existing agent entries", () => {
+    expect(
+      mergeChanges({ other: true, agents: { scout: { model: "fake/model", thinking: "low" } } }, [
+        { name: "scout", patch: { thinking: "high" } },
+      ]),
+    ).toEqual({ other: true, agents: { scout: { model: "fake/model", thinking: "high" } } });
+    const change = { name: "scout", patch: { thinking: "high" } };
+
+    expect(() => mergeChanges({ agents: [] }, [change])).toThrow('"agents" is not an object');
+  });
+});

@@ -406,10 +406,13 @@ export type ModelResolution =
     }
   | { kind: "invalid"; request: string; error: string };
 
+export type AvailableModel = ModelChoice & { thinking: string[] };
+
 export type AgentRuntime = {
   spawn(spec: SpawnSpec): Promise<ChildSession>;
   readSession(file: string): SessionRecord;
   resolveModel(request: string | undefined): ModelResolution;
+  availableModels(): AvailableModel[];
   defaultThinking(): string;
   skillNames(): string[];
 };

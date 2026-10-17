@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ModelChoice, ModelResolution } from "../../../../../core/adapter/contract.ts";
+import type { ModelChoice, ModelResolution, SessionInfo } from "../../../../../core/adapter/contract.ts";
 import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import type { AgentDefinitions } from "../../model/types.ts";
@@ -36,6 +36,7 @@ export const agentDefinitionsPlugin: Plugin = {
       list: () =>
         Array.from(loaded.definitions.values()).sort((left, right) => left.name.localeCompare(right.name)),
       promptAppend: (definition) => assemblePromptAppend(basePrompt, definition),
+      reload: () => load(host.session()),
     };
 
     services.provide("definitions", definitions);
@@ -48,7 +49,7 @@ export const agentDefinitionsPlugin: Plugin = {
       return resolution.kind === "resolved" ? undefined : resolutionProblem(resolution);
     };
 
-    host.onSessionStart((info) => {
+    const load = (info: SessionInfo) => {
       const dirs: DefinitionDir[] = [builtin, { path: join(info.agentDir, "agents"), source: "user" }];
       const projectAgents = join(info.cwd, ".pi", "agents");
 
@@ -77,6 +78,8 @@ export const agentDefinitionsPlugin: Plugin = {
           reported.add(notice.message);
           host.ui.notify(`${NAMESPACE} settings: ${notice.message}`, notice.level);
         });
-    });
+    };
+
+    host.onSessionStart(load);
   },
 };

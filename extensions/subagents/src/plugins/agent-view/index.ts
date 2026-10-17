@@ -5,6 +5,7 @@ import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
+import { CREATE_USAGE, createAgentCommand } from "./create.ts";
 import { createAgentList } from "./list.ts";
 import { listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
@@ -14,7 +15,7 @@ import { createAgentView } from "./view.ts";
 export const agentViewPlugin: Plugin = {
   id: "agent-view",
   requires: ["agent-registry"],
-  enable: ({ host, runtime, bus, services, settings }) => {
+  enable: ({ host, runtime, bus, services, settings, root }) => {
     const registry = services.require("registry");
     const cleared = new Set<string>();
 
@@ -125,14 +126,54 @@ export const agentViewPlugin: Plugin = {
     const label = (record: AgentRecord) =>
       cutChars(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
 
+    const create = createAgentCommand(host, root);
+
+    const subcommands = [
+      { value: "create", label: `create · new agent file: ${CREATE_USAGE}` },
+      {
+        value: "setup",
+        label: "setup · model, thinking and skills per agent: /agents setup [<agent> key=value…]",
+      },
+    ];
+
+    const setup = () => (services.has("agentSetup") ? services.require("agentSetup") : undefined);
+
+    const SETUP_PREFIX = "setup ";
+
+    const setupCompletions = (prefix: string) =>
+      (setup()?.complete(prefix.slice(SETUP_PREFIX.length)) ?? []).map((entry) => ({
+        value: `${SETUP_PREFIX}${entry.value}`,
+        label: entry.label,
+      }));
+
     host.registerCommand("agents", {
-      description: "Open the agents list, or one agent's view by id. Usage: /agents [id]",
+      description: `Open the agents list, or one agent's view by id. Usage: /agents [id] | ${CREATE_USAGE} | /agents setup`,
       complete: (prefix) =>
-        listed()
-          .filter((record) => record.id.startsWith(prefix))
-          .map((record) => ({ value: record.id, label: label(record) })),
+        prefix.startsWith(SETUP_PREFIX)
+          ? setupCompletions(prefix)
+          : [
+              ...subcommands
+                .filter((command) => command.value !== "setup" || setup())
+                .filter((command) => command.value.startsWith(prefix)),
+              ...listed()
+                .filter((record) => record.id.startsWith(prefix))
+                .map((record) => ({ value: record.id, label: label(record) })),
+            ],
       run: async (args) => {
         const id = args.trim();
+        const [word, ...rest] = id.split(/\s+/);
+
+        if (word === "create") {
+          await create(rest.join(" "));
+          return;
+        }
+
+        const setupService = word === "setup" ? setup() : undefined;
+
+        if (setupService) {
+          await setupService.run(rest.join(" "));
+          return;
+        }
 
         if (id) {
           await open(id);

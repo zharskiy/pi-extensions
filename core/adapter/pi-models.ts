@@ -1,8 +1,38 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { ModelResolution } from "./contract.ts";
+import { type AvailableModel, type ModelResolution, THINKING_LEVELS } from "./contract.ts";
 import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolver.ts";
 
 type PiModel = NonNullable<ExtensionContext["model"]>;
+
+type ThinkingFacts = Pick<PiModel, "reasoning" | "thinkingLevelMap">;
+
+const ON_REQUEST_ONLY = ["xhigh", "max"];
+
+export const thinkingLevelsOf = (model: ThinkingFacts) => {
+  if (!model.reasoning) {
+    return ["off"];
+  }
+
+  const map: Record<string, string | null | undefined> = model.thinkingLevelMap ?? {};
+
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = map[level];
+
+    return mapped !== null && (!ON_REQUEST_ONLY.includes(level) || mapped !== undefined);
+  });
+};
+
+export const availableModels = (ctx: ExtensionContext): AvailableModel[] =>
+  ctx.modelRegistry
+    .getAll()
+    .filter((model) => ctx.modelRegistry.hasConfiguredAuth(model))
+    .map((model) => ({
+      ref: `${model.provider}/${model.id}`,
+      contextWindow: model.contextWindow,
+      cost: { input: model.cost.input, output: model.cost.output },
+      thinking: thinkingLevelsOf(model),
+    }))
+    .sort((left, right) => left.ref.localeCompare(right.ref));
 
 const catalogOf = (ctx: ExtensionContext) => {
   const models = ctx.modelRegistry.getAll();

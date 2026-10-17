@@ -1,12 +1,15 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { THINKING_LEVELS } from "../../adapter/contract.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
+import { availableModels, thinkingLevelsOf } from "../../adapter/pi-models.ts";
 import { finalRunTexts } from "../../adapter/messages.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
@@ -302,6 +305,49 @@ describe("pi adapter conformance", () => {
     expect(
       methods.filter((name) => typeof Reflect.get(pi.ModelRegistry.prototype, name) !== "function"),
     ).toEqual([]);
+  });
+
+  it("lists the model catalogue with the thinking levels pi supports for each model", () => {
+    const shapes = [
+      { reasoning: false },
+      { reasoning: true },
+      { reasoning: true, thinkingLevelMap: { minimal: null, xhigh: "x-high" } },
+      { reasoning: true, thinkingLevelMap: { off: null, xhigh: null, max: "maximum" } },
+    ];
+
+    expect(shapes.map((shape) => thinkingLevelsOf(shape as never))).toEqual(
+      shapes.map((shape) => getSupportedThinkingLevels(shape as never)),
+    );
+    expect(
+      getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: { xhigh: "x", max: "m" } } as never),
+    ).toEqual(THINKING_LEVELS);
+  });
+
+  it("lists only models with credentials, sorted by ref, with their window, cost and thinking levels", () => {
+    const model = (provider: string, id: string, reasoning: boolean) => ({
+      ...offlineModel,
+      provider,
+      id,
+      reasoning,
+      cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+    });
+    const models = [model("zeta", "one", true), model("alpha", "two", false), model("locked", "three", true)];
+    const ctx = {
+      modelRegistry: {
+        getAll: () => models,
+        hasConfiguredAuth: (candidate: { provider: string }) => candidate.provider !== "locked",
+      },
+    };
+
+    expect(availableModels(ctx as never)).toEqual([
+      { ref: "alpha/two", contextWindow: 1_000, cost: { input: 1, output: 2 }, thinking: ["off"] },
+      {
+        ref: "zeta/one",
+        contextWindow: 1_000,
+        cost: { input: 1, output: 2 },
+        thinking: ["off", "minimal", "low", "medium", "high"],
+      },
+    ]);
   });
 
   it("keeps the editor's input history in one array that addToHistory changes in place", () => {
