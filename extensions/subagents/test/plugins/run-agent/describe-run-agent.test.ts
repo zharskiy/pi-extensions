@@ -81,7 +81,7 @@ describe("run_agent description", () => {
     const text = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
 
     expect(text).toContain(
-      "- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass skills you have yourself (in the main session, any of its skills) whose descriptions fit the task, plus any skill the user named; chores (scout, fetch, shell, image, verifier) take none. A skill you do not have starts nothing, and the error lists yours.",
+      "- Skills: `skills` adds skills, by name, to the agent's own for this task. Pass skills you have yourself (in the main session, any of its skills) whose descriptions fit the task, plus any skill the user named; chores (scout, editor, fetch, shell, image, verifier) take none. A skill you do not have starts nothing, and the error lists yours.",
     );
     expect(text).toContain(
       "Pass the words unchanged as `name[:thinking]` (a name, a name with `:high`, or `:low` alone).",
