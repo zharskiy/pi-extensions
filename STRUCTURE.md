@@ -70,7 +70,8 @@ pi-extensions/
 │   │   │   │                    #   throttle/ticker and tick cadence)
 │   │   │   └── plugins/         # one folder per feature, see below
 │   │   ├── agents/              # bundled agent definitions (*.md): leads/ (planner, implementer,
-│   │   │                        #   reviewer, general), chores/ (scout, fetch, shell, image)
+│   │   │                        #   reviewer, general), chores/ (scout, editor, fetch, shell,
+│   │   │                        #   image, verifier)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
 │   │   │                        #   base-system-prompt.md, handoff.md
 │   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures; routing.live.test.ts

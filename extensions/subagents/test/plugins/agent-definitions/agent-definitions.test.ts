@@ -506,10 +506,22 @@ describe("definition loading", () => {
     expect(result.errors).toEqual([{ path: join(dir, "broken.md"), message: "description is required" }]);
   });
 
-  it("ships the eight agents with the design's field order and models", () => {
+  it("ships the ten agents with the design's field order and models", () => {
     const result = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
-    const names = ["fetch", "general", "image", "implementer", "planner", "reviewer", "scout", "shell"];
+    const names = [
+      "editor",
+      "fetch",
+      "general",
+      "image",
+      "implementer",
+      "planner",
+      "reviewer",
+      "scout",
+      "shell",
+      "verifier",
+    ];
     const folders: Record<string, string> = {
+      editor: "chores",
       fetch: "chores",
       general: "leads",
       image: "chores",
@@ -518,6 +530,7 @@ describe("definition loading", () => {
       reviewer: "leads",
       scout: "chores",
       shell: "chores",
+      verifier: "chores",
     };
     const fields = [
       "name",
@@ -555,12 +568,25 @@ describe("definition loading", () => {
     });
 
     expect(
-      ["scout", "fetch", "shell", "image", "planner", "reviewer", "implementer", "general"].map((name) => {
+      [
+        "scout",
+        "editor",
+        "fetch",
+        "shell",
+        "image",
+        "verifier",
+        "planner",
+        "reviewer",
+        "implementer",
+        "general",
+      ].map((name) => {
         const definition = result.definitions.get(name);
 
         return `${definition?.model?.replace(/^[^/]+\/.+$/, "provider/id")}:${definition?.thinking}`;
       }),
     ).toEqual([
+      "provider/id:low",
+      "provider/id:low",
       "provider/id:low",
       "provider/id:low",
       "provider/id:low",
@@ -594,10 +620,12 @@ describe("definition loading", () => {
     expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
     expect(grants("shell")).toEqual([["bash", "read"], [], []]);
     expect(grants("image")).toEqual([["read"], [], []]);
+    expect(grants("verifier")).toEqual([["read", "grep", "find", "ls", "bash"], [], []]);
+    expect(grants("editor")).toEqual([["read", "grep", "find", "ls", "edit", "write"], [], []]);
     expect(grants("general")).toEqual([
       "all",
       "all",
-      ["scout", "fetch", "shell", "image", "planner", "implementer", "reviewer"],
+      ["scout", "editor", "fetch", "shell", "image", "verifier", "planner", "implementer", "reviewer"],
     ]);
     expect(result.definitions.get("general")?.description).toMatch(/^Use only when no other agent fits/);
   });
