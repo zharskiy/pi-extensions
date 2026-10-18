@@ -4,8 +4,8 @@ import type { Limits } from "./thresholds.ts";
 export const SETTINGS_FILE = "pi-session-limits.json";
 
 export const DEFAULT_LIMITS: Limits = {
-  softRatio: 0.6,
-  hardRatio: 0.75,
+  softRatio: 0.45,
+  hardRatio: 0.6,
   softTokens: 125_000,
   hardTokens: 175_000,
 };

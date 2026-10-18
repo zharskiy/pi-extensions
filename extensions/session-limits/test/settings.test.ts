@@ -35,7 +35,7 @@ describe("session-limits settings", () => {
   it("reports an invalid ratio and keeps the default", () => {
     const { file, host, limits } = load({ softRatio: 0, hardRatio: 0.8 });
 
-    expect(limits()).toEqual({ softRatio: 0.6, hardRatio: 0.8, softTokens: 125_000, hardTokens: 175_000 });
+    expect(limits()).toEqual({ softRatio: 0.45, hardRatio: 0.8, softTokens: 125_000, hardTokens: 175_000 });
     expect(host.notices).toEqual([
       {
         message: `pi-session-limits settings: ${file}: softRatio must be a number above 0 and at most 1`,
@@ -54,14 +54,14 @@ describe("session-limits settings", () => {
   it("merges a single token cap with the other defaults", () => {
     const { host, limits } = load({ hardTokens: 300_000 });
 
-    expect(limits()).toEqual({ softRatio: 0.6, hardRatio: 0.75, softTokens: 125_000, hardTokens: 300_000 });
+    expect(limits()).toEqual({ softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 300_000 });
     expect(host.notices).toEqual([]);
   });
 
   it("reports an invalid token cap and keeps the default", () => {
     const { file, host, limits } = load({ softTokens: 0, hardTokens: 300_000 });
 
-    expect(limits()).toEqual({ softRatio: 0.6, hardRatio: 0.75, softTokens: 125_000, hardTokens: 300_000 });
+    expect(limits()).toEqual({ softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 300_000 });
     expect(host.notices).toEqual([
       {
         message: `pi-session-limits settings: ${file}: softTokens must be a number above 0 and at most 100000000`,

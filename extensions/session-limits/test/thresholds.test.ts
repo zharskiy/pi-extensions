@@ -8,7 +8,7 @@ import {
   thresholdsFor,
 } from "../src/thresholds.ts";
 
-const limits = { softRatio: 0.6, hardRatio: 0.75, softTokens: 125_000, hardTokens: 175_000 };
+const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
 
 const at = (tokens: number | null, window = 100_000) => ({ tokens, window });
 
@@ -25,10 +25,10 @@ const input = (patch: Partial<HandoffInput>): HandoffInput => ({
 
 describe("contextLevel", () => {
   it("classifies tokens against the soft and hard ratios of a small window", () => {
-    expect(contextLevel(at(59_999), limits)).toBe("normal");
-    expect(contextLevel(at(60_000), limits)).toBe("soft");
-    expect(contextLevel(at(74_999), limits)).toBe("soft");
-    expect(contextLevel(at(75_000), limits)).toBe("hard");
+    expect(contextLevel(at(44_999), limits)).toBe("normal");
+    expect(contextLevel(at(45_000), limits)).toBe("soft");
+    expect(contextLevel(at(59_999), limits)).toBe("soft");
+    expect(contextLevel(at(60_000), limits)).toBe("hard");
   });
 
   it("caps the thresholds by tokens on a large window", () => {
@@ -44,10 +44,10 @@ describe("contextLevel", () => {
   it("keeps the ratios when they are below the caps", () => {
     const medium = (tokens: number) => at(tokens, 200_000);
 
-    expect(thresholdsFor(200_000, limits)).toEqual({ soft: 120_000, hard: 150_000 });
-    expect(contextLevel(medium(119_999), limits)).toBe("normal");
-    expect(contextLevel(medium(120_000), limits)).toBe("soft");
-    expect(contextLevel(medium(150_000), limits)).toBe("hard");
+    expect(thresholdsFor(200_000, limits)).toEqual({ soft: 90_000, hard: 120_000 });
+    expect(contextLevel(medium(89_999), limits)).toBe("normal");
+    expect(contextLevel(medium(90_000), limits)).toBe("soft");
+    expect(contextLevel(medium(120_000), limits)).toBe("hard");
   });
 
   it("is unknown without tokens or window", () => {
@@ -102,26 +102,26 @@ describe("segmentFor", () => {
       token: "warning",
       text: "ctx 160k · handoff at 175k",
     });
-    expect(segmentFor(at(130_000, 200_000), "watching", limits, "session-handoff")).toEqual({
+    expect(segmentFor(at(100_000, 200_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "ctx 65% · handoff at 75%",
+      text: "ctx 50% · handoff at 60%",
     });
   });
 
   it("shows the ratio when it equals the token cap", () => {
     expect(
-      segmentFor(at(130_000, 200_000), "watching", { ...limits, hardTokens: 150_000 }, "session-handoff"),
+      segmentFor(at(100_000, 200_000), "watching", { ...limits, hardTokens: 120_000 }, "session-handoff"),
     ).toEqual({
       token: "warning",
-      text: "ctx 65% · handoff at 75%",
+      text: "ctx 50% · handoff at 60%",
     });
   });
 
   it("is empty below the soft limit and warns from it", () => {
-    expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toBeUndefined();
-    expect(segmentFor(at(62_000), "watching", limits, "session-handoff")).toEqual({
+    expect(segmentFor(at(40_000), "watching", limits, "session-handoff")).toBeUndefined();
+    expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "ctx 62% · handoff at 75%",
+      text: "ctx 50% · handoff at 60%",
     });
   });
 

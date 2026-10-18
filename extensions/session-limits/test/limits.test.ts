@@ -94,11 +94,11 @@ describe("session limits", () => {
   it("colours the footer segment by soft and hard limit", () => {
     const { turn, status } = setup();
 
-    turn(50_000);
+    turn(40_000);
     expect(status()).toBeUndefined();
 
-    turn(62_000);
-    expect(status()).toBe("<warning>ctx 62% · handoff at 75%");
+    turn(50_000);
+    expect(status()).toBe("<warning>ctx 50% · handoff at 60%");
 
     turn(40_000);
     expect(status()).toBeUndefined();
@@ -376,8 +376,8 @@ describe("session limits", () => {
   it("clears the footer segment when the usage becomes unknown", () => {
     const { turn, status } = setup();
 
-    turn(62_000);
-    expect(status()).toBe("<warning>ctx 62% · handoff at 75%");
+    turn(50_000);
+    expect(status()).toBe("<warning>ctx 50% · handoff at 60%");
 
     turn(null);
     expect(status()).toBeUndefined();
@@ -425,14 +425,14 @@ describe("session limits", () => {
   it("hides the stale context segment after compaction until the next turn", () => {
     const { host, turn, status } = setup();
 
-    turn(62_000);
+    turn(50_000);
     host.compact();
 
     expect(status()).toBeUndefined();
 
-    turn(63_000);
+    turn(51_000);
 
-    expect(status()).toBe("<warning>ctx 63% · handoff at 75%");
+    expect(status()).toBe("<warning>ctx 51% · handoff at 60%");
   });
 
   it("keeps a busy signal that a source announced in its own session start", () => {
