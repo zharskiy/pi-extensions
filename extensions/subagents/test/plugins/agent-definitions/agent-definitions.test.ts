@@ -567,7 +567,7 @@ describe("definition loading", () => {
       "provider/id:low",
       "provider/id:high",
       "provider/id:high",
-      "provider/id:medium",
+      "provider/id:max",
       "provider/id:medium",
     ]);
 
