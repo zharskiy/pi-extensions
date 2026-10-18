@@ -8,7 +8,7 @@ import {
   thresholdsFor,
 } from "../src/thresholds.ts";
 
-const limits = { softRatio: 0.6, hardRatio: 0.75, softTokens: 150_000, hardTokens: 200_000 };
+const limits = { softRatio: 0.6, hardRatio: 0.75, softTokens: 125_000, hardTokens: 175_000 };
 
 const at = (tokens: number | null, window = 100_000) => ({ tokens, window });
 
@@ -34,11 +34,11 @@ describe("contextLevel", () => {
   it("caps the thresholds by tokens on a large window", () => {
     const large = (tokens: number) => at(tokens, 1_000_000);
 
-    expect(thresholdsFor(1_000_000, limits)).toEqual({ soft: 150_000, hard: 200_000 });
-    expect(contextLevel(large(149_999), limits)).toBe("normal");
-    expect(contextLevel(large(150_000), limits)).toBe("soft");
-    expect(contextLevel(large(199_999), limits)).toBe("soft");
-    expect(contextLevel(large(200_000), limits)).toBe("hard");
+    expect(thresholdsFor(1_000_000, limits)).toEqual({ soft: 125_000, hard: 175_000 });
+    expect(contextLevel(large(124_999), limits)).toBe("normal");
+    expect(contextLevel(large(125_000), limits)).toBe("soft");
+    expect(contextLevel(large(174_999), limits)).toBe("soft");
+    expect(contextLevel(large(175_000), limits)).toBe("hard");
   });
 
   it("keeps the ratios when they are below the caps", () => {
@@ -61,7 +61,7 @@ describe("contextLevel", () => {
 
     expect(contextLevel(at(80_000), inverted)).toBe("hard");
     expect(contextLevel(at(70_000), inverted)).toBe("normal");
-    expect(contextLevel(at(190_000, 1_000_000), { ...limits, softTokens: 250_000 })).toBe("normal");
+    expect(contextLevel(at(170_000, 1_000_000), { ...limits, softTokens: 250_000 })).toBe("normal");
   });
 });
 
@@ -100,7 +100,7 @@ describe("segmentFor", () => {
   it("names the token cap when it wins over the ratio", () => {
     expect(segmentFor(at(160_000, 1_000_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "ctx 160k · handoff at 200k",
+      text: "ctx 160k · handoff at 175k",
     });
     expect(segmentFor(at(130_000, 200_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",

@@ -108,15 +108,15 @@ describe("session limits", () => {
   });
 
   it("requests the handoff at the token cap on a large window", () => {
-    const { host, status } = setup(0, { ...LIMITS, softTokens: 150_000, hardTokens: 200_000 });
+    const { host, status } = setup(0, { ...LIMITS, softTokens: 125_000, hardTokens: 175_000 });
 
     host.turnEnd({ tokens: 160_000, window: 1_000_000 });
-    expect(status()).toBe("<warning>ctx 160k · handoff at 200k");
+    expect(status()).toBe("<warning>ctx 160k · handoff at 175k");
     expect(host.sent).toHaveLength(0);
 
-    host.turnEnd({ tokens: 200_000, window: 1_000_000 });
+    host.turnEnd({ tokens: 175_000, window: 1_000_000 });
     expect(host.sent).toHaveLength(1);
-    expect(status()).toBe("<error>ctx 20% · writing handoff");
+    expect(status()).toBe("<error>ctx 17% · writing handoff");
   });
 
   it("sends the handoff instruction once as the next user message", () => {

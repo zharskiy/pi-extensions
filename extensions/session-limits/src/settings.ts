@@ -6,8 +6,8 @@ export const SETTINGS_FILE = "pi-session-limits.json";
 export const DEFAULT_LIMITS: Limits = {
   softRatio: 0.6,
   hardRatio: 0.75,
-  softTokens: 150_000,
-  hardTokens: 200_000,
+  softTokens: 125_000,
+  hardTokens: 175_000,
 };
 
 const ratio = { type: "number", min: 0, max: 1, minExclusive: true } as const;
