@@ -71,20 +71,24 @@ const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, stri
 });
 
 export const segmentFor = (
-  context: ContextTokens,
+  context: ContextTokens | undefined,
   phase: Phase,
   limits: Limits,
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
-  const percent = percentOf(context);
+  const percent = context ? percentOf(context) : null;
 
   if (phase !== "watching") {
-    const shown = percent === null ? "ctx" : `ctx ${percent}%`;
+    const label = pendingLabels(command)[phase];
 
     return {
       token: phase === "waiting" ? "warning" : "error",
-      text: `${shown} · ${pendingLabels(command)[phase]}`,
+      text: percent === null ? label : `ctx ${percent}% · ${label}`,
     };
+  }
+
+  if (!context) {
+    return undefined;
   }
 
   const level = contextLevel(context, limits);
