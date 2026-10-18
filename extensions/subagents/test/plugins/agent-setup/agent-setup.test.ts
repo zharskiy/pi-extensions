@@ -71,6 +71,8 @@ const goToSubmit = (form: FakeForm) => {
       form.press(key("tab"));
     }
   });
+
+  expect(form.render(400).some((line) => line.includes("Save to:"))).toBe(true);
 };
 
 describe("/agents setup form", () => {
@@ -110,7 +112,8 @@ describe("/agents setup form", () => {
 
     goToAgent(form, "scout");
     form.press(key("down"), key("enter"), key("end"), key("enter"));
-    form.press(key("tab"), key("tab"), key("up"), key("enter"));
+    goToSubmit(form);
+    form.press(key("up"), key("enter"));
 
     expect(form.closed).toBe(false);
     expect(form.render(400).some((line) => line.includes("this project is not trusted"))).toBe(true);
@@ -132,7 +135,8 @@ describe("/agents setup form", () => {
 
     goToAgent(form, "scout");
     form.press(key("down"), key("enter"), key("end"), key("enter"));
-    form.press(key("tab"), key("tab"), key("down"), key("enter"));
+    goToSubmit(form);
+    form.press(key("down"), key("enter"));
     await run;
 
     expect(readJson(userFile)).toEqual({ agents: { scout: { thinking: "max" } } });
