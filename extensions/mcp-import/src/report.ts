@@ -73,21 +73,32 @@ export const dryRunReport = (input: ReportInput) => {
   ].join("\n");
 };
 
-export const appliedReport = (input: ReportInput) => {
+export const appliedReport = (input: ReportInput, picked = false) => {
   const { args, plan, target } = input;
+  const subject = picked ? `${NAMESPACE}:` : `${NAMESPACE}: ${command(args, true)}`;
 
   if (plan.added.length === 0) {
-    return [`${NAMESPACE}: ${command(args, true)} added nothing to ${target}`, ...detail(input)].join("\n");
+    return [`${subject} added nothing to ${target}`, ...detail(input)].join("\n");
   }
 
   return [
-    `${NAMESPACE}: ${command(args, true)} added ${plural(plan.added.length)} to ${target}: ${plan.added.map((entry) => entry.name).join(", ")}`,
+    `${subject} added ${plural(plan.added.length)} to ${target}: ${plan.added.map((entry) => entry.name).join(", ")}`,
     ...detail(input),
     "",
     "run /reload to connect them, then /mcp to check them",
     ...oauthLines(signIn(plan.added)),
   ].join("\n");
 };
+
+export const NOT_SELECTED = "not selected";
+
+export const NOTHING_SELECTED = `${NAMESPACE}: nothing selected, nothing written`;
+
+export const UNTRUSTED_ONLY =
+  "found MCP servers only in this project's files; trust this project first, pi reads .pi/mcp.json only in trusted projects";
+
+export const nothingToImport = (checked: readonly string[], present: readonly string[]) =>
+  `${NAMESPACE}: found no MCP servers to import in ${checked.join(", ")}${present.length > 0 ? `; all of them are already in ${present.join(", ")}` : ""}`;
 
 export const emptyReport = (args: ImportArgs, checked: readonly string[]) =>
   `${NAMESPACE}: ${command(args, false)} found no MCP servers in ${checked.join(", ")}`;

@@ -6,7 +6,7 @@ import type { Origin } from "./sources.ts";
 
 export type Entry = { name: string; origin: string; server: PiServer; notes: string[] };
 
-type Skipped = { name: string; origin: string; reason: string };
+export type Skipped = { name: string; origin: string; reason: string; present?: true };
 
 type Target = { label: string; text?: string };
 
@@ -72,9 +72,9 @@ export const planImport = (
 
   const step = (plan: Plan, candidate: Candidate, index: number): Plan => {
     const { name, origin } = candidate;
-    const skip = (reason: string): Plan => ({
+    const skip = (reason: string, present = false): Plan => ({
       ...plan,
-      skipped: [...plan.skipped, { name, origin, reason }],
+      skipped: [...plan.skipped, { name, origin, reason, ...(present ? { present: true as const } : {}) }],
     });
     const first = candidates.findIndex((other) => other.name === name);
 
@@ -93,6 +93,7 @@ export const planImport = (
         clash === name
           ? `already in ${target.label}, left unchanged`
           : `pi treats it as the same server as "${clash}" in ${target.label}, left unchanged`,
+        true,
       );
     }
 

@@ -3,14 +3,36 @@ import { dirname, sep } from "node:path";
 import type { Host } from "../../../core/adapter/contract.ts";
 import { errorText, homeRelative } from "../../../core/manager/format.ts";
 import { projectSettingsPath, userSettingsPath } from "../../../core/manager/settings.ts";
-import { completeArgs, type ImportArgs, parseArgs, USAGE } from "./args.ts";
+import {
+  completeArgs,
+  type ImportArgs,
+  MISSING_SOURCE,
+  parseArgs,
+  type Scope,
+  type Source,
+  USAGE,
+} from "./args.ts";
+import { PAIRS, type Pair, pickImport, scanPairs } from "./pick.ts";
 import { planImport } from "./plan.ts";
-import { appliedReport, dryRunReport, emptyReport, NAMESPACE } from "./report.ts";
-import { findServers } from "./sources.ts";
+import {
+  appliedReport,
+  dryRunReport,
+  emptyReport,
+  NAMESPACE,
+  NOT_SELECTED,
+  NOTHING_SELECTED,
+  nothingToImport,
+  UNTRUSTED_ONLY,
+} from "./report.ts";
+import { type Found, findServers } from "./sources.ts";
 
 const MCP_FILE = "mcp.json";
 
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
+
+const hasServers = (found: Found) => found.origins.some((origin) => Object.keys(origin.servers).length > 0);
+
+type Prepared = { found: Found; pair?: Pair; problem?: string };
 
 export const createMcpImport = (host: Host, home: string) => {
   const notify = (message: string) => {
@@ -21,26 +43,15 @@ export const createMcpImport = (host: Host, home: string) => {
     host.ui.notify(`${NAMESPACE}: ${message}`, level);
   };
 
-  const run = (args: ImportArgs) => {
-    const { cwd, agentDir, projectTrusted } = host.session();
-    const project = args.scope === "project";
+  const prepare = (source: Source, scope: Scope): Prepared => {
+    const { cwd, agentDir } = host.session();
+    const found = findServers(source, scope, { home, cwd });
 
-    if (project && args.apply && !projectTrusted) {
-      fail(`trust this project first; pi reads .pi/${MCP_FILE} only in trusted projects`);
-      return;
+    if (!hasServers(found)) {
+      return { found };
     }
 
-    const found = findServers(args.source, args.scope, { home, cwd });
-
-    found.problems.forEach((problem) => {
-      fail(problem, "warning");
-    });
-
-    if (found.origins.every((origin) => Object.keys(origin.servers).length === 0)) {
-      notify(emptyReport(args, found.checked));
-      return;
-    }
-
+    const project = scope === "project";
     const path = project ? projectSettingsPath(cwd, MCP_FILE) : userSettingsPath(agentDir, MCP_FILE);
     const target = project ? `.pi/${MCP_FILE}` : homeRelative(path, home);
     let text: string | undefined;
@@ -48,45 +59,160 @@ export const createMcpImport = (host: Host, home: string) => {
     try {
       text = readText(path);
     } catch (error) {
-      fail(`cannot read ${path}: ${errorText(error)}`);
-      return;
+      return { found, problem: `cannot read ${path}: ${errorText(error)}` };
     }
 
-    const plan = planImport(args.source, found.origins, { label: target, text }, { home, sep });
+    const plan = planImport(source, found.origins, { label: target, text }, { home, sep });
 
     if (plan.error) {
-      fail(`${plan.error}; fix it first, nothing written`);
+      return { found, problem: `${plan.error}; fix it first, nothing written` };
+    }
+
+    return { found, pair: { source, scope, found, plan, path, target, text } };
+  };
+
+  const write = (path: string, text: string | undefined) => {
+    if (text === undefined) {
+      return true;
+    }
+
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, text);
+      return true;
+    } catch (error) {
+      fail(`cannot write ${path}: ${errorText(error)}`);
+      return false;
+    }
+  };
+
+  const run = (args: ImportArgs) => {
+    const project = args.scope === "project";
+
+    if (project && args.apply && !host.session().projectTrusted) {
+      fail(`trust this project first; pi reads .pi/${MCP_FILE} only in trusted projects`);
       return;
     }
 
-    const report = { args, plan, checked: found.checked, target };
+    const { found, pair, problem } = prepare(args.source, args.scope);
+
+    found.problems.forEach((message) => {
+      fail(message, "warning");
+    });
+
+    if (problem) {
+      fail(problem);
+      return;
+    }
+
+    if (!pair) {
+      notify(emptyReport(args, found.checked));
+      return;
+    }
+
+    const report = { args, plan: pair.plan, checked: found.checked, target: pair.target };
 
     if (!args.apply) {
       notify(dryRunReport(report));
       return;
     }
 
-    if (plan.text !== undefined) {
-      try {
-        mkdirSync(dirname(path), { recursive: true });
-        writeFileSync(path, plan.text);
-      } catch (error) {
-        fail(`cannot write ${path}: ${errorText(error)}`);
-        return;
-      }
+    if (write(pair.path, pair.plan.text)) {
+      notify(appliedReport(report));
+    }
+  };
+
+  const apply = (pair: Pair, names: readonly string[]) => {
+    const chosen = new Set(names);
+    const origins = pair.found.origins.map((origin) => ({
+      ...origin,
+      servers: Object.fromEntries(Object.entries(origin.servers).filter(([name]) => chosen.has(name))),
+    }));
+    const plan = planImport(pair.source, origins, { label: pair.target, text: pair.text }, { home, sep });
+    const unchecked = pair.plan.added
+      .filter((entry) => !chosen.has(entry.name))
+      .map((entry) => ({ name: entry.name, origin: entry.origin, reason: NOT_SELECTED }));
+
+    if (plan.error) {
+      fail(`${plan.error}; fix it first, nothing written`);
+      return;
     }
 
-    notify(appliedReport(report));
+    if (!write(pair.path, plan.text)) {
+      return;
+    }
+
+    const args = { source: pair.source, scope: pair.scope, apply: true };
+    const skipped = [...pair.plan.skipped, ...unchecked];
+
+    notify(
+      appliedReport(
+        { args, plan: { ...plan, skipped }, checked: pair.found.checked, target: pair.target },
+        true,
+      ),
+    );
+  };
+
+  const interactive = async () => {
+    const prepared = PAIRS.map(({ source, scope }) => prepare(source, scope));
+    const warnings = [...new Set(prepared.flatMap((item) => item.found.problems))];
+    const problems = [...new Set(prepared.flatMap((item) => (item.problem ? [item.problem] : [])))];
+
+    warnings.forEach((message) => {
+      fail(message, "warning");
+    });
+    problems.forEach((message) => {
+      fail(message);
+    });
+
+    const candidates = prepared.flatMap((item) => (item.pair ? [item.pair] : []));
+    const scan = scanPairs(candidates, host.session().projectTrusted);
+
+    if (scan.kind === "untrusted") {
+      fail(UNTRUSTED_ONLY);
+      return;
+    }
+
+    if (scan.kind === "empty") {
+      if (problems.length === 0) {
+        notify(nothingToImport([...new Set(prepared.flatMap((item) => item.found.checked))], scan.present));
+      }
+
+      return;
+    }
+
+    const picked = await pickImport(host, scan.pairs);
+
+    if (!picked) {
+      return;
+    }
+
+    if (picked.names.length === 0) {
+      notify(NOTHING_SELECTED);
+      return;
+    }
+
+    apply(picked.pair, picked.names);
   };
 
   host.registerCommand("mcp-import", {
-    description: `Import MCP servers from Claude Code or Cursor into pi's mcp.json; a dry run unless you add apply: ${USAGE}`,
+    description: `Import MCP servers from Claude Code or Cursor into pi's mcp.json; without arguments pick the source and servers, with arguments a dry run unless you add apply: ${USAGE}`,
     complete: completeArgs,
-    run: (text) => {
+    run: async (text) => {
       const args = parseArgs(text);
 
       if ("error" in args) {
         fail(args.error);
+        return;
+      }
+
+      if ("interactive" in args) {
+        if (host.session().mode !== "tui") {
+          fail(MISSING_SOURCE);
+          return;
+        }
+
+        await interactive();
         return;
       }
 
