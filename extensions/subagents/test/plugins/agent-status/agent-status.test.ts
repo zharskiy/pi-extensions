@@ -29,13 +29,13 @@ describe("agent_status", () => {
   it("names the model next to the agent", async () => {
     const harness = setup();
 
-    await harness.runAgent.execute({ agents: [{ agent: "explorer", task: "one" }] }, { update: () => {} });
+    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "one" }] }, { update: () => {} });
     await flush();
 
     const registry = harness.services.require("registry");
     const [record] = registry.list();
 
-    expect(snapshotLine(snapshotOf(record, Date.now()))).toContain(`(explorer, ${record.model}) running`);
+    expect(snapshotLine(snapshotOf(record, Date.now()))).toContain(`(scout, ${record.model}) running`);
   });
 
   it("returns a snapshot for one or several agents in one call", async () => {
@@ -44,7 +44,7 @@ describe("agent_status", () => {
     await harness.runAgent.execute(
       {
         agents: [
-          { agent: "explorer", task: "one" },
+          { agent: "scout", task: "one" },
           { agent: "reviewer", task: "two" },
         ],
       },
@@ -73,7 +73,7 @@ describe("agent_status", () => {
 
     expect(snapshot).toMatchObject({
       id: first.id,
-      agent: "explorer",
+      agent: "scout",
       model: first.model,
       state: "running",
       tokens: 2_000,
@@ -106,7 +106,7 @@ describe("agent_status", () => {
     );
     expect(result.details?.agents).toHaveLength(2);
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
-    expect(result.text).toContain(`${first.id} (explorer, ${first.model}) running`);
+    expect(result.text).toContain(`${first.id} (scout, ${first.model}) running`);
     expect(result.text).toContain("ctx 15%");
     expect(result.text).toContain(" · 1 tool use · ctx 15%");
     expect(result.text).toContain("ghost-0000: unknown agent");
@@ -124,7 +124,7 @@ describe("agent_status", () => {
 
     const harness = setup();
 
-    await harness.runAgent.execute({ agents: [{ agent: "explorer", task: "x" }] }, { update: () => {} });
+    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "x" }] }, { update: () => {} });
     await flush();
 
     const [record] = harness.services.require("registry").list();
@@ -136,7 +136,7 @@ describe("agent_status", () => {
 
     expect(result.details?.agents[0]).toMatchObject({ state: "grace", graceSecondsLeft: 45 });
     expect(result.text).toContain(
-      `${record.id} (explorer, ${record.model}) grace (closes in 45s unless messaged)`,
+      `${record.id} (scout, ${record.model}) grace (closes in 45s unless messaged)`,
     );
 
     await harness.host.shutdown("quit");
@@ -149,7 +149,7 @@ describe("agent_status", () => {
 
     const link = (chainIndex: number) =>
       registry.create({
-        agent: "explorer",
+        agent: "scout",
         description: "t",
         callerId: "main",
         depth: 2,
@@ -177,7 +177,7 @@ describe("agent_status", () => {
 
     expect(empty.text).toBe("No agents in this session.");
 
-    await harness.runAgent.execute({ agents: [{ agent: "explorer", task: "x" }] }, { update: () => {} });
+    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "x" }] }, { update: () => {} });
 
     const all = await harness.status.execute({}, { update: () => {} });
 

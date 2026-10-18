@@ -162,6 +162,16 @@ describe("child session MCP", () => {
     expect(captured.sessionOptions[0].tools).toEqual(["read", "grep", "web_fetch", ...EVERY_MCP]);
   });
 
+  it("keeps codemode and tool search but no MCP built-in or MCP tool names for mcp: false", async () => {
+    await runtime.spawn(spec({ tools: ["read"], mcp: false }));
+    await runtime.spawn(spec({ id: "a2", tools: [], mcp: false }));
+
+    expect(factoriesOf(0).map((entry) => entry.name)).toEqual(["test-ext-child", "codemode", "tool-search"]);
+    expect(factoriesOf(1).map((entry) => entry.name)).toEqual(["test-ext-child"]);
+    expect(captured.sessionOptions[0].tools).toEqual(["read", "codemode", "tool_search"]);
+    expect(captured.sessionOptions[1].tools).toEqual([]);
+  });
+
   it("leaves out pi's MCP built-in but keeps codemode and tool search when the main session has MCP off", async () => {
     const withoutMcp = runtimeWith({ mcpDisabled: () => true });
 
@@ -176,21 +186,31 @@ describe("child session MCP", () => {
 
 describe("child tool names", () => {
   it("appends every MCP tool and then the custom tools, without duplicates", () => {
-    expect(childToolNames(["read", "codemode"], ["run_agent"], () => [])).toEqual([
+    expect(childToolNames({ tools: ["read", "codemode"], customNames: ["run_agent"] }, () => [])).toEqual([
       "read",
       ...EVERY_MCP,
       "run_agent",
     ]);
-    expect(childToolNames(undefined, ["run_agent"], () => ["read"])).toEqual([
+    expect(childToolNames({ tools: undefined, customNames: ["run_agent"] }, () => ["read"])).toEqual([
       "read",
       ...EVERY_MCP,
       "run_agent",
     ]);
   });
 
+  it("appends only codemode and tool search without MCP", () => {
+    expect(childToolNames({ tools: ["read"], customNames: ["run_agent"], mcp: false }, () => [])).toEqual([
+      "read",
+      "codemode",
+      "tool_search",
+      "run_agent",
+    ]);
+    expect(childToolNames({ tools: [], customNames: [], mcp: false }, () => ["read"])).toEqual([]);
+  });
+
   it("keeps only the custom tools for []", () => {
-    expect(childToolNames([], [], () => ["read"])).toEqual([]);
-    expect(childToolNames([], ["run_agent"], () => ["read"])).toEqual(["run_agent"]);
+    expect(childToolNames({ tools: [], customNames: [] }, () => ["read"])).toEqual([]);
+    expect(childToolNames({ tools: [], customNames: ["run_agent"] }, () => ["read"])).toEqual(["run_agent"]);
   });
 });
 

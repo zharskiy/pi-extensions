@@ -39,7 +39,7 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
   execute: async (params) => {
     const now = Date.now();
     const wanted = params.ids && params.ids.length > 0 ? params.ids : defaultIds(scope);
-    const unknown = wanted.filter((id) => !scope.registry.get(id));
+    const unknownIds = wanted.filter((id) => !scope.registry.get(id));
 
     const agents = wanted
       .map((id) => ({ id, record: scope.registry.get(id) }))
@@ -50,12 +50,12 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
 
     const lines = agents.map(snapshotLine);
 
-    unknown.forEach((id) => {
+    unknownIds.forEach((id) => {
       lines.push(`${id}: unknown agent`);
     });
 
     const text = lines.length > 0 ? lines.join("\n") : "No agents in this session.";
-    return { text, details: { agents, unknown } };
+    return { text, details: { agents, unknown: unknownIds } };
   },
   renderCall: (params, theme) =>
     `${theme.bold("agent_status")} ${theme.fg("muted", params.ids?.join(", ") ?? "all")}`,

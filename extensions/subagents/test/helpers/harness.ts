@@ -37,11 +37,13 @@ export const tempDir = (prefix = "pi-subagents-") => {
 const shippedModels = () =>
   [
     ...new Set(
-      readdirSync(join(PACKAGE_ROOT, "agents")).flatMap((file) =>
-        readFileSync(join(PACKAGE_ROOT, "agents", file), "utf8")
-          .split("\n")
-          .flatMap((line) => /^model:\s*([^\s:]+)/.exec(line)?.[1] ?? []),
-      ),
+      readdirSync(join(PACKAGE_ROOT, "agents"), { recursive: true, encoding: "utf8" })
+        .filter((file) => file.endsWith(".md"))
+        .flatMap((file) =>
+          readFileSync(join(PACKAGE_ROOT, "agents", file), "utf8")
+            .split("\n")
+            .flatMap((line) => /^model:\s*([^\s:]+)/.exec(line)?.[1] ?? []),
+        ),
     ),
   ].map((ref) => catalogModel(ref));
 
@@ -73,7 +75,15 @@ export const startPlugins = <R extends AgentRuntime>(
   return { host, runtime, settings, manager, errors, services: manager.services, bus: manager.bus };
 };
 
-export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = {}) => {
+type BeforeStart = (context: {
+  root: string;
+  host: FakeHost;
+  runtime: ReturnType<typeof createFakeRuntime>;
+}) => void;
+
+type HarnessOptions = { overrides?: Partial<Settings>; beforeStart?: BeforeStart };
+
+export const createHarness = (plugins: Plugin[], { overrides = {}, beforeStart }: HarnessOptions = {}) => {
   const root = tempDir();
 
   const host = createFakeHost({
@@ -83,14 +93,18 @@ export const createHarness = (plugins: Plugin[], overrides: Partial<Settings> = 
     agentDir: join(root, "agent"),
   });
 
-  return { root, ...startPlugins(host, createFakeRuntime(shippedModels()), plugins, overrides) };
+  const runtime = createFakeRuntime(shippedModels());
+
+  beforeStart?.({ root, host, runtime });
+
+  return { root, ...startPlugins(host, runtime, plugins, overrides) };
 };
 
 export const spawnAgents = async (
   harness: Pick<ReturnType<typeof startPlugins>, "host" | "services">,
   count: number,
 ) => {
-  const agents = Array.from({ length: count }, (_, index) => ({ agent: "explorer", task: `job ${index}` }));
+  const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `job ${index}` }));
 
   await harness.host.tool<RunAgentParams, unknown>("run_agent").execute({ agents }, { update: () => {} });
   await flush();

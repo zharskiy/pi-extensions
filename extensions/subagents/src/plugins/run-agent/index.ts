@@ -3,7 +3,13 @@ import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
-import { type AgentDefinition, type AgentRecord, isClosed, subagentNames } from "../../model/types.ts";
+import {
+  type AgentDefinition,
+  type AgentRecord,
+  allowlist,
+  isClosed,
+  subagentNames,
+} from "../../model/types.ts";
 import { createHandoff } from "./handoff.ts";
 import { joinTexts } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
@@ -50,19 +56,24 @@ export const runAgentPlugin: Plugin = {
         .map((name) => definitions.get(name))
         .filter((definition): definition is AgentDefinition => definition !== undefined);
 
+      const granted = own && allowlist(own.tools)?.includes("fetch") && services.has("fetchTool");
+      const extra: AnyToolSpec[] = granted ? [services.require("fetchTool").tool()] : [];
+
       if (allowed.length === 0 || record.depth >= settings.maxDepth) {
-        return [];
+        return extra;
       }
 
       const description = describeRunAgent(allowed, {
         callerDepth: record.depth,
         maxDepth: settings.maxDepth,
         maxConcurrent: settings.maxConcurrent,
+        childCap: settings.maxChildrenPerAgent,
       });
 
       const childDeps = { runner, registry, calls, hints };
 
       const tools: AnyToolSpec[] = [
+        ...extra,
         runAgentTool(childDeps, description, record.id),
         messageAgentTool(childDeps, record.id),
       ];

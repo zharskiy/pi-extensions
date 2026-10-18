@@ -42,7 +42,9 @@ const stubs = () => {
 const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {}) => {
   const stub = stubs();
   const plugins = options.services === false ? [] : stub.plugins;
-  const harness = createHarness([agentRegistryPlugin, ...plugins, agentPanelPlugin], options.settings);
+  const harness = createHarness([agentRegistryPlugin, ...plugins, agentPanelPlugin], {
+    overrides: options.settings,
+  });
   const registry = harness.services.require("registry");
   const { host } = harness;
 
@@ -95,7 +97,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual([expect.stringMatching(/^ ○ explorer {2}look around +queued$/), ""]);
+    expect(panel.lines()).toEqual([expect.stringMatching(/^ {3}○ explorer {2}look around +queued$/), ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });
@@ -137,9 +139,9 @@ describe("agent panel", () => {
 
     expect(lines).toHaveLength(7);
     expect(lines[0]).toContain("reviewer (+1)");
-    expect(lines[1].startsWith(" └─ ")).toBe(true);
+    expect(lines[1].startsWith("   └─ ")).toBe(true);
     expect(lines[1]).toContain("nested");
-    expect(lines.slice(5)).toEqual([" ↓ 3 more", ""]);
+    expect(lines.slice(5)).toEqual(["   ↓ 3 more", ""]);
   });
 
   it("down on an empty editor selects the first row and installs a capture", () => {
@@ -183,7 +185,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0]).toBe(" ↑ 1 more");
+    expect(lines[0]).toBe("   ↑ 1 more");
     expect(selectedRow(lines)).toBe(lines[5]);
   });
 
@@ -197,7 +199,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines[0]).toBe(" ↑ 1 more");
+    expect(lines[0]).toBe("   ↑ 1 more");
     expect(selectedRow(lines)).toBe(lines[1]);
   });
 
@@ -422,7 +424,7 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
     Array.from({ length: 6 }, () => panel.key("down"));
 
-    expect(panel.lines()[0]).toBe(" ↑ 2 more");
+    expect(panel.lines()[0]).toBe("   ↑ 2 more");
 
     panel.key("escape");
 
@@ -430,7 +432,7 @@ describe("agent panel", () => {
 
     expect(selectedRow(after)).toBeUndefined();
     expect(after).not.toContain(HINT);
-    expect(after[0]).toBe(" ↑ 2 more");
+    expect(after[0]).toBe("   ↑ 2 more");
 
     panel.host.pressEmptyDown();
 
@@ -440,9 +442,9 @@ describe("agent panel", () => {
 
     panel.type("a");
 
-    expect(panel.lines()[0]).toMatch(/^ [^›]/);
+    expect(panel.lines()[0]).toMatch(/^ {3}/);
     expect(panel.lines()[0]).not.toContain("›");
-    expect(panel.lines().at(-2)).toBe(" ↓ 2 more");
+    expect(panel.lines().at(-2)).toBe("   ↓ 2 more");
   });
 
   it("ticks every 100 ms while a row runs, every second with only queued rows, and never when empty", () => {
@@ -566,7 +568,7 @@ describe("agent panel", () => {
 
     expect(top).toHaveLength(5);
     expect(new Set([...top, ...bottom]).size).toBe(1);
-    expect(top[0]).toBe(" › ".length + 2 + plainTheme.width("explorer") + 2 + 28 + 2);
+    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 28 + 2);
   });
 
   it("puts the scroll markers in the glyph column and ends every line before the last column", () => {
@@ -579,7 +581,7 @@ describe("agent panel", () => {
     const lines = panel.lines();
     const glyphColumn = lines[1].indexOf("⠋");
 
-    expect(glyphColumn).toBe(1);
+    expect(glyphColumn).toBe(3);
     expect(lines[0].indexOf("↑")).toBe(glyphColumn);
     expect(lines[6].indexOf("↓")).toBe(glyphColumn);
 

@@ -3,7 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FRONTMATTER_FIELDS } from "../../../src/plugins/agent-definitions/fields.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { loadDefinitions, parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
+import {
+  loadDefinitions,
+  type OverrideCheck,
+  parseDefinition,
+} from "../../../src/plugins/agent-definitions/loader.ts";
 import { assemblePromptAppend } from "../../../src/plugins/agent-definitions/prompt.ts";
 import { parseFrontmatter } from "../../../src/plugins/agent-definitions/yaml-lite.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../helpers/harness.ts";
@@ -164,13 +168,13 @@ describe("agent definition parsing", () => {
 
   it("accepts a block list of subagents and treats model inherit as the main session's model", () => {
     const parsed = parseDefinition(
-      "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\ntools: all\nskills: all\nsubagents:\n  - explorer\n  - reviewer\n---\n",
+      "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\ntools: all\nskills: all\nsubagents:\n  - scout\n  - reviewer\n---\n",
       "/x/lead.md",
       "user",
     );
 
     expect(parsed.errors).toEqual([]);
-    expect(parsed.definition?.subagents).toEqual(["explorer", "reviewer"]);
+    expect(parsed.definition?.subagents).toEqual(["scout", "reviewer"]);
     expect(parsed.definition?.model).toBeUndefined();
   });
 });
@@ -237,6 +241,143 @@ describe("worktree field", () => {
 
     expect(parsed.definition).toBeUndefined();
     expect(parsed.errors).toEqual(["worktree must be true or false"]);
+  });
+});
+
+describe("mcp field", () => {
+  const parse = (extra: string) =>
+    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", "user");
+
+  it("is a known field, omitted by default, and accepts a boolean", () => {
+    expect(parse("").definition?.mcp).toBeUndefined();
+    expect(parse("mcp: true").warnings).toEqual([]);
+    expect(parse("mcp: true").definition?.mcp).toBe(true);
+    expect(parse("mcp: false").definition?.mcp).toBe(false);
+  });
+
+  it("rejects anything but a boolean", () => {
+    expect(parse("mcp: some").errors).toEqual(["mcp must be true or false"]);
+  });
+});
+
+describe("agent overrides", () => {
+  const dirs = () => {
+    const root = tempDir();
+    const shipped = join(root, "shipped");
+    const user = join(root, "user");
+
+    const fields = "subagents: []\nmodel: acme/one:low";
+
+    writeAgent(shipped, "a.md", agentFile("a", "shipped", `${fields}\nskills: [docs]`));
+    writeAgent(shipped, "b.md", agentFile("b", "shipped b", fields));
+
+    return {
+      root,
+      list: [
+        { path: shipped, source: "builtin" as const },
+        { path: user, source: "user" as const },
+      ],
+      user,
+    };
+  };
+
+  const check = (
+    overrides: OverrideCheck["overrides"],
+    extra: Partial<OverrideCheck> = {},
+  ): OverrideCheck => ({
+    overrides,
+    skillNames: () => ["docs", "git"],
+    modelProblem: (model) => (model.startsWith("acme/") ? undefined : "matches no available model"),
+    ...extra,
+  });
+
+  it("applies the override field by field on whichever file won", () => {
+    const { list, user } = dirs();
+
+    writeAgent(user, "a.md", agentFile("a", "user", "subagents: []\nmodel: acme/two:high\nskills: [git]"));
+
+    const result = loadDefinitions(list, check({ a: { thinking: "medium" }, b: { skills: ["git"] } }));
+
+    expect(result.notices).toEqual([]);
+    expect(result.definitions.get("a")).toMatchObject({
+      description: "user",
+      model: "acme/two",
+      thinking: "medium",
+      skills: ["git"],
+    });
+    expect(result.definitions.get("b")).toMatchObject({
+      model: "acme/one",
+      thinking: "low",
+      skills: ["git"],
+    });
+  });
+
+  it("replaces model and skills, keeps the file's thinking, and clears the model for inherit", () => {
+    const { list } = dirs();
+
+    const result = loadDefinitions(
+      list,
+      check({ a: { model: "acme/three", skills: [] }, b: { model: "inherit", thinking: "off" } }),
+    );
+
+    expect(result.definitions.get("a")).toMatchObject({ model: "acme/three", thinking: "low", skills: [] });
+    expect(result.definitions.get("b")).toMatchObject({ model: undefined, thinking: "off" });
+  });
+
+  it("warns about a model or skills that fail the check and drops only that field", () => {
+    const { list } = dirs();
+
+    const result = loadDefinitions(
+      list,
+      check({ a: { model: "other/x", thinking: "high", skills: ["docs", "lint"] } }),
+    );
+
+    expect(result.definitions.get("a")).toMatchObject({
+      model: "acme/one",
+      thinking: "high",
+      skills: ["docs"],
+    });
+    expect(result.notices).toEqual([
+      { level: "warning", message: 'agents.a.model "other/x": matches no available model; dropped' },
+      {
+        level: "warning",
+        message: "agents.a.skills names unknown skill(s) lint (loaded skills: docs, git); dropped",
+      },
+    ]);
+  });
+
+  it("warns about an unknown agent and only informs about one defined in an untrusted project", () => {
+    const { list, root } = dirs();
+    const untrusted = join(root, "project-agents");
+
+    writeAgent(untrusted, "local.md", agentFile("local", "untrusted"));
+
+    const result = loadDefinitions(
+      list,
+      check({ ghost: { thinking: "low" }, local: {} }, { untrustedDir: untrusted }),
+    );
+
+    expect(result.definitions.has("local")).toBe(false);
+    expect(result.notices).toEqual([
+      { level: "warning", message: 'agents.ghost: no agent named "ghost"; override ignored' },
+      {
+        level: "info",
+        message:
+          'agents.local: "local" is defined only in this project\'s .pi/agents, which is not trusted; override not applied',
+      },
+    ]);
+  });
+
+  it("checks nothing and leaves definitions alone without overrides", () => {
+    const { list } = dirs();
+    const result = loadDefinitions(list);
+
+    expect(result.notices).toEqual([]);
+    expect(result.definitions.get("a")).toMatchObject({
+      model: "acme/one",
+      thinking: "low",
+      skills: ["docs"],
+    });
   });
 });
 
@@ -324,6 +465,35 @@ describe("definition loading", () => {
     expect(result.definitions.get("solo")?.source).toBe("builtin");
   });
 
+  it("reads agent files in subfolders and warns about a name defined twice in one location", () => {
+    const root = tempDir();
+    const builtin = join(root, "builtin");
+    const user = join(root, "user");
+
+    writeAgent(join(builtin, "chores"), "scout.md", agentFile("scout", "builtin scout"));
+    writeAgent(join(user, "team", "nested"), "helper.md", agentFile("helper", "nested helper"));
+    writeAgent(join(user, "a"), "one.md", agentFile("twin", "first twin"));
+    writeAgent(join(user, "b"), "two.md", agentFile("twin", "second twin"));
+    writeAgent(join(user, "b"), "notes.txt", "not an agent");
+
+    const result = loadDefinitions([
+      { path: builtin, source: "builtin" },
+      { path: user, source: "user" },
+    ]);
+
+    expect(result.errors).toEqual([]);
+    expect([...result.definitions.keys()].sort()).toEqual(["helper", "scout", "twin"]);
+    expect(result.definitions.get("scout")?.path).toBe(join(builtin, "chores", "scout.md"));
+    expect(result.definitions.get("helper")?.path).toBe(join(user, "team", "nested", "helper.md"));
+    expect(result.definitions.get("twin")?.description).toBe("second twin");
+    expect(result.warnings).toEqual([
+      {
+        path: join(user, "b", "two.md"),
+        message: `agent "twin" is also defined in ${join(user, "a", "one.md")}; this file wins`,
+      },
+    ]);
+  });
+
   it("collects invalid files as errors and keeps loading the rest", () => {
     const dir = tempDir();
 
@@ -336,23 +506,75 @@ describe("definition loading", () => {
     expect(result.errors).toEqual([{ path: join(dir, "broken.md"), message: "description is required" }]);
   });
 
-  it("ships the three role agents and general, the agent for work none of them fits", () => {
+  it("ships the eight agents with the design's field order and models", () => {
     const result = loadDefinitions([{ path: join(PACKAGE_ROOT, "agents"), source: "builtin" }]);
+    const names = ["fetch", "general", "image", "implementer", "planner", "reviewer", "scout", "shell"];
+    const folders: Record<string, string> = {
+      fetch: "chores",
+      general: "leads",
+      image: "chores",
+      implementer: "leads",
+      planner: "leads",
+      reviewer: "leads",
+      scout: "chores",
+      shell: "chores",
+    };
+    const fields = [
+      "name",
+      "description",
+      "model",
+      "limit",
+      "tools",
+      "skills",
+      "subagents",
+      "worktree",
+      "mcp",
+    ];
 
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
-    expect([...result.definitions.keys()].sort()).toEqual(["explorer", "general", "implementer", "reviewer"]);
+    expect([...result.definitions.keys()].sort()).toEqual(names);
+    expect(result.definitions.has("explorer")).toBe(false);
     expect(
-      ["explorer", "reviewer", "implementer", "general"].map((name) => {
+      readdirSync(join(PACKAGE_ROOT, "agents"), { recursive: true, encoding: "utf8" })
+        .filter((file) => file.endsWith(".md"))
+        .sort(),
+    ).toEqual(names.map((name) => `${folders[name]}/${name}.md`).sort());
+
+    names.forEach((name) => {
+      const head = readFileSync(
+        join(PACKAGE_ROOT, "agents", folders[name] as string, `${name}.md`),
+        "utf8",
+      ).split("---")[1] as string;
+      const keys = head
+        .split("\n")
+        .map((line) => /^([a-z]+):/.exec(line)?.[1])
+        .filter((key): key is string => key !== undefined);
+
+      expect(keys).toEqual(fields);
+    });
+
+    expect(
+      ["scout", "fetch", "shell", "image", "planner", "reviewer", "implementer", "general"].map((name) => {
         const definition = result.definitions.get(name);
 
         return `${definition?.model?.replace(/^[^/]+\/.+$/, "provider/id")}:${definition?.thinking}`;
       }),
-    ).toEqual(["provider/id:low", "provider/id:high", "provider/id:medium", "provider/id:medium"]);
+    ).toEqual([
+      "provider/id:low",
+      "provider/id:low",
+      "provider/id:low",
+      "provider/id:low",
+      "provider/id:high",
+      "provider/id:high",
+      "provider/id:medium",
+      "provider/id:medium",
+    ]);
 
     result.definitions.forEach((definition) => {
       expect(definition.limit).toBeGreaterThanOrEqual(5000);
       expect(definition.worktree).toBe(false);
+      expect(definition.mcp).toBe(folders[definition.name] === "leads");
     });
 
     const grants = (name: string) => {
@@ -361,22 +583,34 @@ describe("definition loading", () => {
       return [definition?.tools, definition?.skills, definition?.subagents];
     };
 
-    expect(grants("explorer")).toEqual([["read", "grep", "find", "ls"], [], []]);
-    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], []]);
-    expect(grants("implementer")).toEqual([["read", "grep", "find", "ls", "edit", "write", "bash"], [], []]);
-    expect(grants("general")).toEqual(["all", "all", ["explorer", "reviewer"]]);
-    expect(result.definitions.get("general")?.description).toMatch(
-      /^Use only when no other agent fits the work/,
-    );
+    expect(grants("scout")).toEqual([["read", "grep", "find", "ls"], [], []]);
+    expect(grants("planner")).toEqual([["read", "grep", "find", "ls"], [], ["scout"]]);
+    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], ["scout"]]);
+    expect(grants("implementer")).toEqual([
+      ["read", "grep", "find", "ls", "edit", "write", "bash"],
+      [],
+      ["scout"],
+    ]);
+    expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
+    expect(grants("shell")).toEqual([["bash", "read"], [], []]);
+    expect(grants("image")).toEqual([["read"], [], []]);
+    expect(grants("general")).toEqual([
+      "all",
+      "all",
+      ["scout", "fetch", "shell", "image", "planner", "implementer", "reviewer"],
+    ]);
+    expect(result.definitions.get("general")?.description).toMatch(/^Use only when no other agent fits/);
   });
 
   it("declares exactly the frontmatter schema's fields in each shipped file, in the schema's order", () => {
     const dir = join(PACKAGE_ROOT, "agents");
     const keys = FRONTMATTER_FIELDS.map((spec) => spec.key);
 
-    readdirSync(dir).forEach((file) => {
-      expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
-    });
+    readdirSync(dir, { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".md"))
+      .forEach((file) => {
+        expect(Object.keys(parseFrontmatter(readFileSync(join(dir, file), "utf8")).data)).toEqual(keys);
+      });
   });
 
   it("documents the frontmatter schema in the README table, row by row", () => {
@@ -439,7 +673,7 @@ describe("list fields", () => {
     ["tools", "~", "~"],
     ["tools", "[read, web_*]", "web_*"],
     ["skills", "[docs, ./style]", "./style"],
-    ["subagents", "[explorer, -reviewer]", "-reviewer"],
+    ["subagents", "[scout, -reviewer]", "-reviewer"],
   ])("rejects %s entries that are not plain names", (key, value, shown) => {
     const parsed = parse({ [key]: value });
 
@@ -552,11 +786,15 @@ describe("prompt assembly", () => {
       Shared rules.",
         "# Agent: scout
 
-      You scout.
-
-      Output: your last message is your result. Make it complete and self-contained; your caller sees nothing else.",
+      You scout.",
       ]
     `);
+  });
+
+  it("ships a base prompt with the result contract", () => {
+    const base = readFileSync(join(PACKAGE_ROOT, "prompts", "base-system-prompt.md"), "utf8");
+
+    expect(base).toContain("Status: done | partial | blocked");
   });
 
   it("tells the agent that approvals are refused", () => {
@@ -568,8 +806,8 @@ describe("prompt assembly", () => {
     );
     const [first] = assemblePromptAppend(base, parsed.definition as NonNullable<typeof parsed.definition>);
 
-    expect(first).toContain("Nobody can approve anything while you run: confirmations are refused at once.");
-    expect(first).toContain("list the blocked step in your result");
+    expect(first).toContain("Confirmations are refused at once.");
+    expect(first).toContain("list the step under Open");
   });
 });
 
@@ -596,6 +834,62 @@ describe("agent-definitions plugin", () => {
     harness.host.start();
 
     expect(definitions.get("proj")?.source).toBe("project");
+  });
+
+  it("applies settings overrides at session start and reports each failed check once", () => {
+    const harness = createHarness([agentDefinitionsPlugin], {
+      overrides: {
+        agents: {
+          scout: { model: "nobody/none", thinking: "high", skills: ["docs"] },
+          ghost: { thinking: "low" },
+        },
+      },
+      beforeStart: ({ runtime }) => {
+        runtime.skills = ["docs"];
+      },
+    });
+
+    harness.host.start();
+
+    const scout = harness.services.require("definitions").get("scout");
+
+    expect(scout?.skills).toEqual(["docs"]);
+    expect(scout?.thinking).toBe("high");
+    expect(scout?.model).not.toBe("nobody/none");
+    expect(harness.host.notices).toEqual([
+      {
+        level: "warning",
+        message: expect.stringMatching(
+          /^pi-subagents settings: agents\.scout\.model "nobody\/none": .*dropped$/,
+        ),
+      },
+      {
+        level: "warning",
+        message: 'pi-subagents settings: agents.ghost: no agent named "ghost"; override ignored',
+      },
+    ]);
+  });
+
+  it("only informs about an override for an agent of an untrusted project", () => {
+    const harness = createHarness([agentDefinitionsPlugin], {
+      overrides: { agents: { proj: { thinking: "low" } } },
+      beforeStart: ({ host }) => {
+        writeAgent(join(host.info.cwd, ".pi", "agents"), "proj.md", agentFile("proj", "p"));
+      },
+    });
+
+    expect(harness.host.notices).toEqual([
+      {
+        level: "info",
+        message:
+          'pi-subagents settings: agents.proj: "proj" is defined only in this project\'s .pi/agents, which is not trusted; override not applied',
+      },
+    ]);
+
+    harness.host.info.projectTrusted = true;
+    harness.host.start();
+
+    expect(harness.services.require("definitions").get("proj")?.thinking).toBe("low");
   });
 
   it("shows the warnings of a loaded file on session start", () => {

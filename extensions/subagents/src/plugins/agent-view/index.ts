@@ -3,6 +3,7 @@ import { cutChars, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
+import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
 import { createAgentList } from "./list.ts";
@@ -10,6 +11,19 @@ import { listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
 import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
 import { createAgentView } from "./view.ts";
+
+const SETUP_PREFIX = "setup ";
+
+const SUBCOMMANDS = ["create", "setup"] as const;
+
+type Subcommand = (typeof SUBCOMMANDS)[number];
+
+const SUBCOMMAND_TEXT: Record<Subcommand, string> = {
+  create: "new agent file",
+  setup: "model, thinking and skills per agent",
+};
+
+const isSubcommand = (word: string): word is Subcommand => (SUBCOMMANDS as readonly string[]).includes(word);
 
 export const agentViewPlugin: Plugin = {
   id: "agent-view",
@@ -37,15 +51,13 @@ export const agentViewPlugin: Plugin = {
     const viewWatch = (id: string) =>
       watch((record) => chainLinks(registry, record).some((link) => link.id === id));
 
-    const listed = () =>
-      listedTerminals(visibleRecords(registry.list(), Date.now(), settings.lingerMs, cleared));
+    const listed = () => listedTerminals(visibleRecords(registry.list(), cleared));
 
     const partsFor = (api: OverlayApi): OverlayParts => ({
       list: (hooks) =>
         createAgentList(
           {
             records: () => registry.list(),
-            lingerMs: settings.lingerMs,
             cleared,
             stop,
             watch: watch(() => true),
@@ -101,12 +113,12 @@ export const agentViewPlugin: Plugin = {
         const terminal = source.find(id);
 
         if (!terminal) {
-          host.ui.notify(`pi-subagents: unknown agent "${id}"`, "warning");
+          host.ui.notify(`${NAMESPACE}: unknown agent "${id}"`, "warning");
         }
 
         return terminal;
       } catch (error) {
-        host.ui.notify(`pi-subagents: cannot read ${errorText(error)}`, "warning");
+        host.ui.notify(`${NAMESPACE}: cannot read ${errorText(error)}`, "warning");
 
         return undefined;
       }
@@ -127,14 +139,61 @@ export const agentViewPlugin: Plugin = {
     const label = (record: AgentRecord) =>
       cutChars(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
 
+    const setup = () => (services.has("agentSetup") ? services.require("agentSetup") : undefined);
+
+    const subcommands = (prefix: string) => {
+      const service = setup();
+
+      return service
+        ? SUBCOMMANDS.filter((word) => word.startsWith(prefix)).map((word) => ({
+            value: word,
+            label: `${word} · ${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}`,
+          }))
+        : [];
+    };
+
+    const runSubcommand = async (word: Subcommand, args: string) => {
+      const service = setup();
+
+      if (!service) {
+        host.ui.notify(
+          `${NAMESPACE}: /agents ${word} needs the agent-setup plugin, which is disabled`,
+          "error",
+        );
+        return;
+      }
+
+      await (word === "create" ? service.create(args) : service.run(args));
+    };
+
+    const usage = setup()?.usage;
+    const usageText = usage ? ` | ${usage.create} | ${usage.setup}` : "";
+
+    const setupCompletions = (prefix: string) =>
+      (setup()?.complete(prefix.slice(SETUP_PREFIX.length)) ?? []).map((entry) => ({
+        value: `${SETUP_PREFIX}${entry.value}`,
+        label: entry.label,
+      }));
+
     host.registerCommand("agents", {
-      description: "Open the agents list, or one agent's view by id. Usage: /agents [id]",
+      description: `Open the agents list, or one agent's view by id. Usage: /agents [id]${usageText}`,
       complete: (prefix) =>
-        listed()
-          .filter((record) => record.id.startsWith(prefix))
-          .map((record) => ({ value: record.id, label: label(record) })),
+        prefix.startsWith(SETUP_PREFIX)
+          ? setupCompletions(prefix)
+          : [
+              ...subcommands(prefix),
+              ...listed()
+                .filter((record) => record.id.startsWith(prefix))
+                .map((record) => ({ value: record.id, label: label(record) })),
+            ],
       run: async (args) => {
         const id = args.trim();
+        const [word, ...rest] = id.split(/\s+/);
+
+        if (word && isSubcommand(word)) {
+          await runSubcommand(word, rest.join(" "));
+          return;
+        }
 
         if (id) {
           await open(id);
@@ -147,7 +206,7 @@ export const agentViewPlugin: Plugin = {
 
     const offLeft = host.ui.onEmptyEditorLeft(() => {
       openOverlay({ kind: "list" }).catch((error: unknown) => {
-        host.ui.notify(`pi-subagents: cannot open the agents list: ${errorText(error)}`, "warning");
+        host.ui.notify(`${NAMESPACE}: cannot open the agents list: ${errorText(error)}`, "warning");
       });
     });
 

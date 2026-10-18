@@ -1,18 +1,22 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { THINKING_LEVELS } from "../../adapter/contract.ts";
+import { finalRunTexts } from "../../adapter/messages.ts";
 import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
+import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const ADAPTER_PI_MAJOR = 1;
 
-const PI_PACKAGES = ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
+const PI_PACKAGES = ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
 
 const readJson = (url: URL) => JSON.parse(readFileSync(url, "utf8"));
 
@@ -303,6 +307,39 @@ describe("pi adapter conformance", () => {
     ).toEqual([]);
   });
 
+  it("names the same thinking levels as pi", () => {
+    expect(
+      getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: { xhigh: "x", max: "m" } } as never),
+    ).toEqual(THINKING_LEVELS);
+  });
+
+  it("lists only models with credentials, sorted by ref, with their window, cost and thinking levels", () => {
+    const model = (provider: string, id: string, reasoning: boolean) => ({
+      ...offlineModel,
+      provider,
+      id,
+      reasoning,
+      cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+    });
+    const models = [model("zeta", "one", true), model("alpha", "two", false), model("locked", "three", true)];
+    const ctx = {
+      modelRegistry: {
+        getAll: () => models,
+        hasConfiguredAuth: (candidate: { provider: string }) => candidate.provider !== "locked",
+      },
+    };
+
+    expect(availableModels(ctx as never)).toEqual([
+      { ref: "alpha/two", contextWindow: 1_000, cost: { input: 1, output: 2 }, thinking: ["off"] },
+      {
+        ref: "zeta/one",
+        contextWindow: 1_000,
+        cost: { input: 1, output: 2 },
+        thinking: ["off", "minimal", "low", "medium", "high"],
+      },
+    ]);
+  });
+
   it("keeps the editor's input history in one array that addToHistory changes in place", () => {
     const editor = new tui.Editor(
       { terminal: { rows: 40 }, requestRender: () => {} } as never,
@@ -337,6 +374,39 @@ describe("pi adapter conformance", () => {
 
     expect(fire("session_before_compact", { reason: "threshold" })).toEqual([{ cancel: true }]);
     expect(fire("session_before_compact", { reason: "overflow" })).toEqual([{ cancel: true }]);
+  });
+
+  it("reads the assistant texts of a child's final run from pi's session entries", () => {
+    const session = pi.SessionManager.inMemory(mkdtempSync(join(tmpdir(), "pi-run-texts-")));
+    const text = (value: string) => ({ type: "text" as const, text: value });
+    const toolCall = { type: "toolCall" as const, id: "t1", name: "read", arguments: {} };
+    const user = (value: string) => ({ role: "user" as const, content: value, timestamp: 0 });
+    const assistant = (content: unknown[]) =>
+      ({ role: "assistant", content, stopReason: content.includes(toolCall) ? "toolUse" : "stop" }) as never;
+    const toolResult = {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "read",
+      content: [text("file")],
+      isError: false,
+      timestamp: 0,
+    } as never;
+
+    [
+      user("task"),
+      assistant([text("Status: done\nfirst run")]),
+      user("wake"),
+      assistant([text("Status: done\nreport"), toolCall]),
+      toolResult,
+      user("steered"),
+      assistant([toolCall]),
+      toolResult,
+      assistant([text("  bye  ")]),
+    ].forEach((message) => {
+      session.appendMessage(message);
+    });
+
+    expect(finalRunTexts(session.getEntries())).toEqual(["Status: done\nreport", "bye"]);
   });
 
   it("records the first provider request once as the prompt record", () => {
@@ -419,26 +489,39 @@ describe("pi adapter conformance", () => {
     ];
 
     it("keeps the named tools and every MCP tool, including tools registered after the start", async () => {
-      const { names } = await sessionTools(childToolNames(["read"], [], noMainTools));
+      const { names } = await sessionTools(childToolNames({ tools: ["read"], customNames: [] }, noMainTools));
 
       expect(names).toEqual([...LATE_MCP, "read"]);
     });
 
+    it("keeps MCP tools registered after the start inactive for mcp: false", async () => {
+      const tools = childToolNames({ tools: ["read"], customNames: [], mcp: false }, noMainTools);
+      const { active } = await sessionTools(tools);
+
+      expect(tools.some((name) => name.startsWith("mcp__"))).toBe(false);
+      expect(active).toContain("read");
+      expect(active.filter((name) => name.startsWith("mcp__"))).toEqual([]);
+    });
+
     it("keeps the main session's tools and every MCP tool for tools: all", async () => {
-      const { names } = await sessionTools(childToolNames(undefined, [], () => ["read", "web_fetch"]));
+      const { names } = await sessionTools(
+        childToolNames({ tools: undefined, customNames: [] }, () => ["read", "web_fetch"]),
+      );
 
       expect(names).toEqual([...LATE_MCP, "read", "web_fetch"]);
     });
 
     it("keeps no tool at all for tools: []", async () => {
-      const { names, active } = await sessionTools(childToolNames([], [], noMainTools));
+      const { names, active } = await sessionTools(
+        childToolNames({ tools: [], customNames: [] }, noMainTools),
+      );
 
       expect(names).toEqual([]);
       expect(active).toEqual([]);
     });
 
     it("keeps a third-party extension's MCP tools registered but inactive for tools: [] with agent tools", async () => {
-      const tools = childToolNames([], ["web_fetch"], noMainTools);
+      const tools = childToolNames({ tools: [], customNames: ["web_fetch"] }, noMainTools);
       const { names, active } = await sessionTools(tools);
 
       expect(tools).toEqual(["web_fetch"]);
@@ -516,7 +599,9 @@ describe("pi adapter conformance", () => {
       const codemode = await piModule("extensions/codemode/tool.js");
       const search = await piModule("extensions/tool-search/tool.js");
       const mcpTools = await piModule("extensions/mcp/tools.js");
-      const added = childToolNames(["read"], [], noMainTools).filter((name) => name !== "read");
+      const added = childToolNames({ tools: ["read"], customNames: [] }, noMainTools).filter(
+        (name) => name !== "read",
+      );
       const serverTool = mcpTools.createMcpToolName("fixture", "code");
 
       expect(added.filter((name) => !name.includes("*")).toSorted()).toEqual(

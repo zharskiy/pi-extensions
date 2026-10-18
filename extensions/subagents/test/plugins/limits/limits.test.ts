@@ -24,11 +24,10 @@ const WIDE_AGENT = [
   "Search wide.",
 ].join("\n");
 
-const setup = async (overrides = {}, agent = "explorer") => {
-  const harness = createHarness(
-    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin],
+const setup = async (overrides = {}, agent = "scout") => {
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
-  );
+  });
 
   if (agent === "wide") {
     const userAgentsDir = join(harness.host.info.agentDir, "agents");
@@ -232,7 +231,7 @@ describe("limits plugin", () => {
       unknown
     >;
 
-    await runChild.execute({ agents: [{ agent: "explorer", task: "look" }] }, { update: () => {} });
+    await runChild.execute({ agents: [{ agent: "scout", task: "look" }] }, { update: () => {} });
     await flush();
     await turn(100_500, "stop");
     child.finish("Started batch, waiting.");

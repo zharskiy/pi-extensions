@@ -17,7 +17,8 @@
     "questionnaire",
     "style",
     "context",
-    "footer"
+    "footer",
+    "mcp-import"
   ],
   "files": [
     "core/adapter",
@@ -44,7 +45,8 @@
       "./extensions/questionnaire/src/index.ts",
       "./extensions/style/src/index.ts",
       "./extensions/context/src/index.ts",
-      "./extensions/footer/src/index.ts"
+      "./extensions/footer/src/index.ts",
+      "./extensions/mcp-import/src/index.ts"
     ]
   },
   "scripts": {
@@ -56,12 +58,14 @@
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@earendil-works/pi-ai": "^1.3.0",
     "@earendil-works/pi-coding-agent": "^1.3.0",
     "@earendil-works/pi-tui": "^1.3.0",
     "@types/node": "^24.0.0",

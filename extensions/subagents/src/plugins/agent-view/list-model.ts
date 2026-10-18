@@ -1,61 +1,98 @@
 import { SEP } from "../../components/format.ts";
 import { stopHint } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
-import { type AgentRecord, chainLinks, chainTerminal, isClosed, MAIN_CALLER } from "../../model/types.ts";
+import { type AgentRecord, isClosed, MAIN_CALLER } from "../../model/types.ts";
 
 type ById = ReadonlyMap<string, AgentRecord>;
 
 type ListSection = { title: string; rows: TreeRow[] };
 
-const callerOf = (record: AgentRecord, byId: ById): AgentRecord | undefined => {
-  const callerId = chainLinks(byId, record)[0].callerId;
-  const caller = callerId === MAIN_CALLER ? undefined : byId.get(callerId);
+type Lookup = (record: AgentRecord) => AgentRecord;
 
-  return caller ? chainTerminal(byId, caller) : undefined;
+const memoised = (compute: (record: AgentRecord, self: Lookup) => AgentRecord): Lookup => {
+  const memo = new Map<string, AgentRecord>();
+
+  const self: Lookup = (record) => {
+    const known = memo.get(record.id);
+
+    if (known) {
+      return known;
+    }
+
+    const found = compute(record, self);
+
+    memo.set(record.id, found);
+
+    return found;
+  };
+
+  return self;
 };
 
 const indexOf = (records: AgentRecord[]) => new Map(records.map((record) => [record.id, record]));
 
-const terminalsOf = (records: AgentRecord[], byId: ById) =>
-  records.filter((record) => isTerminal(record, byId));
+const forestOf = (records: AgentRecord[]) => {
+  const byId: ById = indexOf(records);
+  const terminals = records.filter((record) => isTerminal(record, byId));
 
-const isListRoot = (record: AgentRecord, byId: ById): boolean => {
-  const caller = callerOf(record, byId);
+  const firstLink = memoised((record, self) => {
+    const predecessor = record.predecessorId ? byId.get(record.predecessorId) : undefined;
 
-  return !caller || (!isClosed(record.state) && isClosed(caller.state));
+    return predecessor ? self(predecessor) : record;
+  });
+
+  const lastLink = memoised((record, self) => {
+    const successor = record.successorId ? byId.get(record.successorId) : undefined;
+
+    return successor ? self(successor) : record;
+  });
+
+  const callerOf = (record: AgentRecord): AgentRecord | undefined => {
+    const callerId = firstLink(record).callerId;
+    const caller = callerId === MAIN_CALLER ? undefined : byId.get(callerId);
+
+    return caller ? lastLink(caller) : undefined;
+  };
+
+  const isListRoot = (record: AgentRecord): boolean => {
+    const caller = callerOf(record);
+
+    return !caller || (!isClosed(record.state) && isClosed(caller.state));
+  };
+
+  const rootOf = memoised((record, self) => {
+    const caller = callerOf(record);
+
+    return !caller || isListRoot(record) ? record : self(caller);
+  });
+
+  return { byId, terminals, callerOf, isListRoot, rootOf };
 };
 
-const rootOf = (record: AgentRecord, byId: ById): AgentRecord => {
-  const caller = callerOf(record, byId);
+const newestFirst = (a: AgentRecord, b: AgentRecord) => (b.endedAt ?? 0) - (a.endedAt ?? 0);
 
-  return !caller || isListRoot(record, byId) ? record : rootOf(caller, byId);
-};
+export const MAX_CLOSED_ROOTS = 200;
 
-export const visibleRecords = (
-  records: AgentRecord[],
-  now: number,
-  lingerMs: number,
-  cleared: ReadonlySet<string>,
-): AgentRecord[] => {
-  const byId = indexOf(records);
-  const terminals = terminalsOf(records, byId);
-  const ageOf = (record: AgentRecord) => now - (record.endedAt ?? now);
+export const visibleRecords = (records: AgentRecord[], cleared: ReadonlySet<string>): AgentRecord[] => {
+  const { byId, terminals, callerOf, isListRoot, rootOf } = forestOf(records);
   const hidden = (record: AgentRecord) => isClosed(record.state) && cleared.has(record.id);
+
+  const keptRoots = new Set(
+    terminals
+      .filter((record) => isClosed(record.state) && !hidden(record) && isListRoot(record))
+      .sort(newestFirst)
+      .slice(0, MAX_CLOSED_ROOTS)
+      .map((record) => record.id),
+  );
 
   const listedAlone = (record: AgentRecord) => {
     if (!isClosed(record.state)) {
       return true;
     }
 
-    const root = rootOf(record, byId);
+    const root = rootOf(record);
 
-    if (isClosed(root.state)) {
-      return ageOf(root) < lingerMs;
-    }
-
-    const caller = callerOf(record, byId);
-
-    return ageOf(record) < lingerMs || (caller !== undefined && !isClosed(caller.state));
+    return !isClosed(root.state) || keptRoots.has(root.id);
   };
 
   const listed = new Set<string>();
@@ -67,7 +104,7 @@ export const visibleRecords = (
 
     listed.add(record.id);
 
-    const caller = isListRoot(record, byId) ? undefined : callerOf(record, byId);
+    const caller = isListRoot(record) ? undefined : callerOf(record);
 
     if (caller) {
       keep(caller);
@@ -82,28 +119,41 @@ export const visibleRecords = (
   );
 };
 
-export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] =>
-  terminalsOf(visible, indexOf(visible));
+export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] => {
+  const byId = indexOf(visible);
 
-const subtreeOf = (root: AgentRecord, terminals: AgentRecord[], byId: ById) =>
-  terminals.filter((record) => rootOf(record, byId).id === root.id);
+  return visible.filter((record) => isTerminal(record, byId));
+};
 
 export const listSections = (visible: AgentRecord[]): ListSection[] => {
-  const byId = indexOf(visible);
-  const terminals = terminalsOf(visible, byId);
-  const isRoot = (record: AgentRecord) => isListRoot(record, byId);
-  const running = terminals.filter((record) => !isClosed(rootOf(record, byId).state));
+  const { byId, terminals, isListRoot, rootOf } = forestOf(visible);
+  const subtrees = new Map<string, AgentRecord[]>();
+  const running: AgentRecord[] = [];
+
+  terminals.forEach((record) => {
+    const root = rootOf(record);
+
+    if (!isClosed(root.state)) {
+      running.push(record);
+      return;
+    }
+
+    const subtree = subtrees.get(root.id) ?? [];
+
+    subtree.push(record);
+    subtrees.set(root.id, subtree);
+  });
 
   const completedRoots = terminals
-    .filter((record) => isRoot(record) && isClosed(record.state))
-    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+    .filter((record) => isListRoot(record) && isClosed(record.state))
+    .sort(newestFirst);
 
   const completed = completedRoots.flatMap((root) =>
-    treeOrder(withLinks(subtreeOf(root, terminals, byId), byId), (record) => record.id === root.id),
+    treeOrder(withLinks(subtrees.get(root.id) ?? [], byId), (record) => record.id === root.id),
   );
 
   const sections: ListSection[] = [
-    { title: "Running", rows: treeOrder(withLinks(running, byId), isRoot) },
+    { title: "Running", rows: treeOrder(withLinks(running, byId), isListRoot) },
     { title: `Completed (${completedRoots.length})`, rows: completed },
   ];
 
@@ -123,22 +173,28 @@ export const subtitle = (visible: AgentRecord[]): string => {
 };
 
 export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
-  const byId = indexOf(visible);
-  const terminals = terminalsOf(visible, byId);
+  const { terminals, callerOf, isListRoot } = forestOf(visible);
   const target = terminals.find((record) => record.id === id);
 
   if (!target || !isClosed(target.state)) {
     return [];
   }
 
+  const memo = new Map<string, boolean>();
+
   const below = (record: AgentRecord): boolean => {
-    if (isListRoot(record, byId)) {
-      return false;
+    const known = memo.get(record.id);
+
+    if (known !== undefined) {
+      return known;
     }
 
-    const caller = callerOf(record, byId);
+    const caller = isListRoot(record) ? undefined : callerOf(record);
+    const found = caller !== undefined && (caller.id === id || below(caller));
 
-    return caller !== undefined && (caller.id === id || below(caller));
+    memo.set(record.id, found);
+
+    return found;
   };
 
   return [

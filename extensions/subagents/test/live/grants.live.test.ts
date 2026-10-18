@@ -55,11 +55,11 @@ describeLive("live grants", () => {
       ),
       agents: {
         granted: {
-          from: "explorer",
-          fields: { tools: "[read, ls]", skills: "[alpha, gamma]" },
+          from: "scout",
+          fields: { tools: "[read, ls]", skills: "[alpha, gamma]", mcp: "true" },
         },
-        bare: { from: "explorer", fields: { tools: "[]", skills: "[]" } },
-        "all-skills": { from: "explorer", fields: { tools: "[read, ls]", skills: "all" } },
+        bare: { from: "scout", fields: { tools: "[]", skills: "[]", mcp: "true" } },
+        "all-skills": { from: "scout", fields: { tools: "[read, ls]", skills: "all", mcp: "true" } },
       },
     });
 

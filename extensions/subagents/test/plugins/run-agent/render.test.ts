@@ -21,7 +21,7 @@ type Agent = RunAgentParams["agents"][number];
 const item = (agent: string, description: string): Agent => ({ agent, task: description, description });
 
 const THREE = [
-  item("explorer", "Map the auth module"),
+  item("scout", "Map the auth module"),
   item("worker", "Fix the login redirect"),
   item("reviewer", "Review the diff of PR 5"),
 ];
@@ -46,7 +46,7 @@ const toolDeps = (runner: Runner, registry: AgentRegistry) => ({
 });
 
 const setup = (overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], overrides);
+  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;
   const tool = runAgentTool(toolDeps(runner, registry), "run agents");
@@ -168,7 +168,7 @@ describe("run_agent block", () => {
 
     expect(lines(text)).toHaveLength(7);
     expect(lines(text)[0]).toBe("3 agents launched");
-    expect(lines(text)[1]).toMatch(/^├─ explorer \(Map the auth module\)/);
+    expect(lines(text)[1]).toMatch(/^├─ scout \(Map the auth module\)/);
 
     const background = renderResult(
       harness,
@@ -216,27 +216,27 @@ describe("run_agent block", () => {
 
   it("headers name the agent when the batch shares one", async () => {
     const harness = withWorker();
-    const explorers = [item("explorer", "a"), item("explorer", "b"), item("explorer", "c")];
-    const result = await launched(harness, explorers);
+    const scouts = [item("scout", "a"), item("scout", "b"), item("scout", "c")];
+    const result = await launched(harness, scouts);
 
-    expect(
-      lines(renderResult(harness, result, { agents: explorers, wait: true }, { isPartial: true }))[0],
-    ).toBe("3 explorer agents launched");
-    expect(lines(renderResult(harness, result, { agents: explorers }))[0]).toBe(
-      "3 background explorer agents launched (↓ to manage · ← to list)",
+    expect(lines(renderResult(harness, result, { agents: scouts, wait: true }, { isPartial: true }))[0]).toBe(
+      "3 scout agents launched",
     );
-    expect(lines(renderResult(harness, result, { agents: explorers, wait: true }))[0]).toBe(
-      "3 explorer agents finished",
+    expect(lines(renderResult(harness, result, { agents: scouts }))[0]).toBe(
+      "3 background scout agents launched (↓ to manage · ← to list)",
     );
-    expect(lines(renderResult(harness, result, { agents: explorers }))[1]).toMatch(/^├─ explorer \(a\)/);
+    expect(lines(renderResult(harness, result, { agents: scouts, wait: true }))[0]).toBe(
+      "3 scout agents finished",
+    );
+    expect(lines(renderResult(harness, result, { agents: scouts }))[1]).toMatch(/^├─ scout \(a\)/);
 
-    const one = await launched(harness, [explorers[0]]);
+    const one = await launched(harness, [scouts[0]]);
 
-    expect(lines(renderResult(harness, one, { agents: [explorers[0]] }))[0]).toBe(
-      "1 background explorer agent launched (↓ to manage · ← to list)",
+    expect(lines(renderResult(harness, one, { agents: [scouts[0]] }))[0]).toBe(
+      "1 background scout agent launched (↓ to manage · ← to list)",
     );
 
-    const mixed = [item("explorer", "a"), item("worker", "b")];
+    const mixed = [item("scout", "a"), item("worker", "b")];
     const both = await launched(harness, mixed);
 
     expect(lines(renderResult(harness, both, { agents: mixed }))[0]).toBe(
@@ -264,8 +264,8 @@ describe("run_agent block", () => {
   it("points Status unavailable at /agents only while the list plugin is on", () => {
     const details: RunAgentDetails = {
       batchId: "b-old",
-      ids: ["explorer-abc"],
-      agents: [{ id: "explorer-abc", agent: "explorer", description: "Map the auth module" }],
+      ids: ["scout-abc"],
+      agents: [{ id: "scout-abc", agent: "scout", description: "Map the auth module" }],
     };
     const status = (disabledPlugins: string[]) =>
       lines(
@@ -275,7 +275,7 @@ describe("run_agent block", () => {
         }).result ?? "",
       )[2];
 
-    expect(status([])).toBe("   Status unavailable · /agents explorer-abc");
+    expect(status([])).toBe("   Status unavailable · /agents scout-abc");
     expect(status(["agent-view"])).toBe("   Status unavailable");
   });
 
@@ -288,10 +288,10 @@ describe("run_agent block", () => {
     const nested = harness.runtime
       .child(parent)
       .spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as typeof harness.tool;
-    const agents = [item("explorer", "Find the callers")];
+    const agents = [item("scout", "Find the callers")];
     const result = await nested.execute({ agents }, { update: () => {} });
 
-    expect(lines(renderResult(harness, result, { agents }))[0]).toBe("1 background explorer agent launched");
+    expect(lines(renderResult(harness, result, { agents }))[0]).toBe("1 background scout agent launched");
   });
 
   it("keeps a drawn block until it is rendered again", async () => {
@@ -317,7 +317,7 @@ describe("run_agent block", () => {
 
   it("keeps every line within BLOCK_WIDTH and leaves the padding to the adapter", async () => {
     const harness = withWorker();
-    const long = [item("explorer", "x".repeat(300)), item("worker", "y".repeat(300))];
+    const long = [item("scout", "x".repeat(300)), item("worker", "y".repeat(300))];
     const result = await launched(harness, long);
     const rendered = lines(renderResult(harness, result, { agents: long }));
 
@@ -432,13 +432,13 @@ describe("run_agent block", () => {
 
     const rendered = lines(renderResult(harness, result, { agents: [THREE[0]] }));
 
-    expect(rendered[1]).toMatch(/^└─ explorer #2 \(Map the auth module\)/);
+    expect(rendered[1]).toMatch(/^└─ scout #2 \(Map the auth module\)/);
     expect(rendered[2]).toBe("   Done · 5 tool uses · 1m 5s");
   });
 
   it("cuts the description to the width and drops the model first", async () => {
     const harness = withWorker();
-    const long = [item("explorer", "d".repeat(120))];
+    const long = [item("scout", "d".repeat(120))];
     const result = await launched(harness, long);
     const row = lines(renderResult(harness, result, { agents: long }))[1];
 
@@ -472,21 +472,21 @@ describe("run_agent block", () => {
     const short = await launched(harness, [THREE[0]]);
 
     expect(lines(renderResult(harness, short, { agents: [THREE[0]] }))[1]).toMatch(
-      /^└─ explorer \(Map the auth module\) · \S+\/\S+:\w+$/,
+      /^└─ scout \(Map the auth module\) · \S+\/\S+:\w+$/,
     );
   });
 
   it("renders the error header and the full error when expanded", () => {
     const harness = setup();
-    const result = { isError: true, text: "unknown agent(s): x. Available: explorer\nNothing was started." };
+    const result = { isError: true, text: "unknown agent(s): x. Available: scout\nNothing was started." };
     const params = { agents: [item("x", "y")] };
 
     expect(renderResult(harness, result, params)).toBe(
-      "✗ No agents started: unknown agent(s): x. Available: explorer",
+      "✗ No agents started: unknown agent(s): x. Available: scout",
     );
     expect(lines(renderResult(harness, result, params, { expanded: true }))).toEqual([
-      "✗ No agents started: unknown agent(s): x. Available: explorer",
-      "   unknown agent(s): x. Available: explorer",
+      "✗ No agents started: unknown agent(s): x. Available: scout",
+      "   unknown agent(s): x. Available: scout",
       "   Nothing was started.",
     ]);
   });
@@ -500,11 +500,11 @@ describe("run_agent block", () => {
     const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
     const details: RunAgentDetails = {
       batchId: "b-old",
-      ids: ["explorer-abc", "worker-def", "reviewer-123"],
+      ids: ["scout-abc", "worker-def", "reviewer-123"],
       agents: [
         {
-          id: "explorer-abc",
-          agent: "explorer",
+          id: "scout-abc",
+          agent: "scout",
           description: "Map the auth module",
           model: "fake/model:high",
         },
@@ -529,8 +529,8 @@ describe("run_agent block", () => {
 
     expect(lines(text).slice(0, 3)).toEqual([
       "3 background agents launched",
-      "├─ explorer (Map the auth module) · fake/model:high",
-      "│  Status unavailable · /agents explorer-abc",
+      "├─ scout (Map the auth module) · fake/model:high",
+      "│  Status unavailable · /agents scout-abc",
     ]);
   });
 
@@ -589,7 +589,7 @@ describe("run_agent block", () => {
     const settled = vi.fn();
     const redrawn = vi.fn();
     const other = vi.fn();
-    const unknown = vi.fn();
+    const invalidateUnknown = vi.fn();
     const render = (result: ToolResult<unknown>, invalidate: () => void) =>
       harness.host.renderTool("run_agent", { call: { agents: [THREE[0]] }, result, state: { invalidate } });
 
@@ -602,7 +602,10 @@ describe("run_agent block", () => {
     expect(other).toHaveBeenCalledTimes(1);
 
     render(first, redrawn);
-    render({ text: "Started batch", details: { batchId: "b-unknown", ids: [], agents: [] } }, unknown);
+    render(
+      { text: "Started batch", details: { batchId: "b-unknown", ids: [], agents: [] } },
+      invalidateUnknown,
+    );
 
     const [, b] = ids(harness);
 
@@ -611,7 +614,7 @@ describe("run_agent block", () => {
 
     expect(other).toHaveBeenCalledTimes(2);
     expect(redrawn).not.toHaveBeenCalled();
-    expect(unknown).not.toHaveBeenCalled();
+    expect(invalidateUnknown).not.toHaveBeenCalled();
     expect(settled).toHaveBeenCalledTimes(2);
   });
 
@@ -740,8 +743,8 @@ describe("run_agent block box tone", () => {
     const harness = setup();
     const details: RunAgentDetails = {
       batchId: "b-old",
-      ids: ["explorer-abc"],
-      agents: [{ id: "explorer-abc", agent: "explorer", description: "Map the auth module" }],
+      ids: ["scout-abc"],
+      agents: [{ id: "scout-abc", agent: "scout", description: "Map the auth module" }],
     };
     const params = { agents: [THREE[0]] };
 
@@ -778,7 +781,7 @@ describe("run_agent block colours", () => {
     const model = harness.registry.list()[0].model;
 
     expect(lines(renderResult(harness, result, { agents: [THREE[0]] }, {}, tagged))[1]).toBe(
-      `└─ <b>explorer</b> <muted>(Map the auth module)</muted><dim> · ${model}</dim>`,
+      `└─ <b>scout</b> <muted>(Map the auth module)</muted><dim> · ${model}</dim>`,
     );
   });
 
@@ -837,8 +840,8 @@ describe("run_agent block colours", () => {
     const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
     const details: RunAgentDetails = {
       batchId: "b-old",
-      ids: ["explorer-abc"],
-      agents: [{ id: "explorer-abc", agent: "explorer", description: "Map the auth module" }],
+      ids: ["scout-abc"],
+      agents: [{ id: "scout-abc", agent: "scout", description: "Map the auth module" }],
     };
     const text = resolve(
       tool.renderResult?.(
@@ -848,7 +851,7 @@ describe("run_agent block colours", () => {
       ),
     );
 
-    expect(lines(text)[2]).toBe("   <dim>Status unavailable · /agents explorer-abc</dim>");
+    expect(lines(text)[2]).toBe("   <dim>Status unavailable · /agents scout-abc</dim>");
   });
 });
 
@@ -857,20 +860,20 @@ describe("run_agent block width", () => {
 
   it("keeps the description and the whole model at width 80 and at width 120", async () => {
     const harness = withWorker();
-    const agents = [item("explorer", forty)];
+    const agents = [item("scout", forty)];
     const result = await launched(harness, agents);
     const model = harness.registry.list()[0].model as string;
     const at = (width: number) =>
       lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
 
-    expect(at(80)).toBe(`└─ explorer (${forty}) · ${model}`);
+    expect(at(80)).toBe(`└─ scout (${forty}) · ${model}`);
     expect(plainTheme.width(at(80))).toBeLessThanOrEqual(78);
-    expect(at(120)).toBe(`└─ explorer (${forty}) · ${model}`);
+    expect(at(120)).toBe(`└─ scout (${forty}) · ${model}`);
   });
 
   it("cuts the description, never the model, against the real width and drops the model when it does not fit", async () => {
     const harness = withWorker();
-    const agents = [item("explorer", "d".repeat(60))];
+    const agents = [item("scout", "d".repeat(60))];
     const result = await launched(harness, agents);
     const model = harness.registry.list()[0].model as string;
     const at = (width: number) =>
@@ -878,7 +881,7 @@ describe("run_agent block width", () => {
 
     expect(at(80).endsWith(`…) · ${model}`)).toBe(true);
     expect(plainTheme.width(at(80))).toBe(78);
-    expect(at(120)).toBe(`└─ explorer (${"d".repeat(60)}) · ${model}`);
+    expect(at(120)).toBe(`└─ scout (${"d".repeat(60)}) · ${model}`);
     expect(at(50)).not.toContain(model);
     expect(at(50).endsWith("…)")).toBe(true);
     expect(plainTheme.width(at(50))).toBeLessThanOrEqual(48);

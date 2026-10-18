@@ -13,6 +13,7 @@ import {
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
 import { errorText } from "../../components/format.ts";
+import { ALL } from "../../model/agent-schema.ts";
 import type { Bus } from "../../model/events.ts";
 import { agentsDirFor } from "../../model/paths.ts";
 import type { Settings } from "../../model/settings.ts";
@@ -23,6 +24,7 @@ import {
   type AgentRegistry,
   type AgentRunner,
   allowlist,
+  chainLinks,
   chainTerminal,
   type HandoffService,
   isClosed,
@@ -33,7 +35,7 @@ import {
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
-import { batchMessage, storeResult } from "./result.ts";
+import { batchMessage, pickResult, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
 import { composeTask } from "./task.ts";
 
@@ -57,6 +59,7 @@ export type BatchItem = {
   files?: string[];
   description?: string;
   model?: string;
+  skills?: string[];
 };
 
 type BatchOptions = { callerId: string; wait: boolean };
@@ -78,7 +81,7 @@ type Batch = {
   resolve: (records: AgentRecord[]) => void;
 };
 
-type LaunchSlot = { item: BatchItem; plan: ModelPlan; undelivered?: string[] };
+type LaunchSlot = { item: BatchItem; definition: AgentDefinition; plan: ModelPlan; undelivered?: string[] };
 
 type Live = {
   child?: ChildSession;
@@ -104,6 +107,8 @@ const ABORT_WAIT_MS = 5_000;
 
 const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
+const unique = (names: string[]) => [...new Set(names)];
+
 const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
@@ -112,6 +117,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const batches = new Map<string, Batch>();
   const lives = new Map<string, Live>();
   const launches = new Map<string, LaunchSlot>();
+  const spawned = new Map<string, number>();
   const userStopped = new Set<string>();
   const releasing = new Set<string>();
   const teardowns = new Map<string, Promise<void>>();
@@ -358,6 +364,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       dir: dirname(record.dir),
       contextLimit: record.contextLimit,
       model: record.model,
+      skills: record.skills,
       chainIndex: record.chainIndex + 1,
       predecessorId: record.id,
       worktree: record.worktree,
@@ -378,6 +385,18 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return closed;
   };
 
+  const finalText = (live: Live) => pickResult(live.child?.runTexts() ?? []);
+
+  const partialResult = (record: AgentRecord, text: string, error: string) => {
+    if (text.length === 0) {
+      return { error };
+    }
+
+    const { error: storeError, ...stored } = storeResult(record, text);
+
+    return { ...stored, error: storeError ? `${error}; ${storeError}` : error };
+  };
+
   const finish = (record: AgentRecord, live: Live, aborted: boolean) => {
     if (isClosed(record.state)) {
       return;
@@ -388,13 +407,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    const text = (live.child?.lastText() || live.lastText).trim();
+    const { text, statusLine } = finalText(live);
+
     if (aborted || failedStop(live.lastStopReason)) {
-      deps.registry.close(record.id, {
-        state: "failed",
-        error:
-          live.abortReason ?? live.lastError ?? (aborted ? "aborted" : `stopped with ${live.lastStopReason}`),
-      });
+      const error =
+        live.abortReason ?? live.lastError ?? (aborted ? "aborted" : `stopped with ${live.lastStopReason}`);
+
+      deps.registry.close(record.id, { state: "failed", ...partialResult(record, text, error) });
 
       return;
     }
@@ -406,7 +425,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const result = storeResult(record, text);
 
-    deps.registry.close(record.id, { state: "done", ...result });
+    deps.registry.close(record.id, { state: "done", ...result, statusLine });
   };
 
   const clearGrace = (live: Live | undefined) => {
@@ -421,10 +440,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     clearGrace(live);
 
-    const text = (live?.child?.lastText() || live?.lastText || "").trim();
-    const result = text.length > 0 ? storeResult(record, text) : {};
+    const text = live ? finalText(live).text : "";
 
-    deps.registry.close(record.id, { state: "stopped", error, graceEndsAt: undefined, ...result });
+    deps.registry.close(record.id, {
+      state: "stopped",
+      graceEndsAt: undefined,
+      ...partialResult(record, text, error),
+    });
   };
 
   const expireGrace = async (id: string) => {
@@ -559,13 +581,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     const session = deps.session();
-    const definition = deps.definitions.get(record.agent);
-
-    if (!definition) {
-      deps.registry.close(record.id, { state: "failed", error: `unknown agent "${record.agent}"` });
-      await releaseLive(record.id);
-      return;
-    }
+    const definition = slot.definition;
 
     const placement = await place(record, definition, session.cwd);
 
@@ -592,7 +608,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
         customTools: deps.toolsFor(record),
-        skills: allowlist(definition.skills),
+        skills: definition.skills === ALL ? undefined : (record.skills ?? []),
+        mcp: definition.mcp ?? true,
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
       })
@@ -677,16 +694,67 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     );
   };
 
-  const startBatch: Runner["startBatch"] = (items, options) => {
-    const unknown = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
+  const callerSkills = (callerId: string) =>
+    callerId === MAIN_CALLER ? deps.runtime.skillNames() : (deps.registry.get(callerId)?.skills ?? []);
 
-    if (unknown.length > 0) {
+  const skillNamesFor = (definition: AgentDefinition, item: BatchItem) => {
+    const own = definition.skills === ALL ? deps.runtime.skillNames() : definition.skills;
+
+    return unique(own.concat(item.skills ?? []));
+  };
+
+  const skillError = (item: BatchItem, definition: AgentDefinition, available: string[]) => {
+    const tools = definition.tools;
+    const unknownSkills = unique(item.skills ?? []).filter((name) => !available.includes(name));
+
+    if (unknownSkills.length > 0) {
+      const listed = unknownSkills.map((name) => `"${name}"`).join(", ");
+      const valid =
+        available.length > 0
+          ? `This caller's skills: ${available.join(", ")}.`
+          : "This caller has no skills.";
+
+      return `${item.agent}: skill(s) ${listed} not in this caller's skills. ${valid}`;
+    }
+
+    if (item.skills?.length && tools !== ALL && !tools.includes("read")) {
+      return `${item.agent}: cannot use skills, its tools do not include read.`;
+    }
+
+    return undefined;
+  };
+
+  const chainRoot = (callerId: string) => {
+    const caller = deps.registry.get(callerId);
+
+    return caller ? chainLinks(deps.registry, caller)[0].id : callerId;
+  };
+
+  const capError = (callerId: string, count: number) => {
+    if (callerId === MAIN_CALLER) {
+      return undefined;
+    }
+
+    const cap = deps.settings.maxChildrenPerAgent;
+    const started = spawned.get(chainRoot(callerId)) ?? 0;
+
+    if (started + count <= cap) {
+      return undefined;
+    }
+
+    return `agent ${callerId} may start at most ${cap} agents per run and has started ${started}; nothing was started. Finish with what you have and list the rest under Open.`;
+  };
+
+  const startBatch: Runner["startBatch"] = (items, options) => {
+    const unknownAgents = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
+
+    if (unknownAgents.length > 0) {
       const available = deps.definitions
         .list()
         .map((definition) => definition.name)
         .join(", ");
 
-      throw new Error(`unknown agent(s): ${unknown.join(", ")}. Available: ${available || "none"}`);
+      throw new Error(`unknown agent(s): ${unknownAgents.join(", ")}. Available: ${available || "none"}`);
     }
 
     const allowed = allowedSubagents(options.callerId);
@@ -706,14 +774,39 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       throw new Error(`maximum agent depth ${deps.settings.maxDepth} reached`);
     }
 
-    const planned = items.map((item) => planModel(item, deps.definitions.get(item.agent) as AgentDefinition));
+    const capped = capError(options.callerId, items.length);
+
+    if (capped) {
+      throw new Error(capped);
+    }
+
+    const definitions = items.map((item) => deps.definitions.get(item.agent) as AgentDefinition);
+    const available = items.some((item) => item.skills?.length) ? callerSkills(options.callerId) : [];
+    const skillErrors = items
+      .map((item, index) => skillError(item, definitions[index], available))
+      .filter((error) => error !== undefined);
+
+    if (skillErrors.length > 0) {
+      throw new Error(`${skillErrors.join("\n")} Nothing was started.`);
+    }
+
+    const planned = items.map((item, index) => planModel(item, definitions[index]));
     const modelErrors = planned.filter((plan): plan is { error: string } => "error" in plan);
 
     if (modelErrors.length > 0) {
       throw new Error(`${modelErrors.map((plan) => plan.error).join("\n\n")}\n\nNothing was started.`);
     }
 
-    const slots = (planned as ModelPlan[]).map((plan, index): LaunchSlot => ({ item: items[index], plan }));
+    const slots = (planned as ModelPlan[]).map(
+      (plan, index): LaunchSlot => ({ item: items[index], definition: definitions[index], plan }),
+    );
+
+    if (options.callerId !== MAIN_CALLER) {
+      const root = chainRoot(options.callerId);
+
+      spawned.set(root, (spawned.get(root) ?? 0) + items.length);
+    }
+
     const batchId = newBatchId();
     const dir = agentsDirFor(deps.session());
 
@@ -724,7 +817,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     });
 
     const records = slots.map((slot) => {
-      const { item, plan } = slot;
+      const { item, definition, plan } = slot;
 
       const record = deps.registry.create({
         agent: item.agent,
@@ -733,8 +826,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         depth,
         batchId,
         dir,
-        contextLimit: (deps.definitions.get(item.agent) as AgentDefinition).limit,
+        contextLimit: definition.limit,
         model: plan.label,
+        skills: skillNamesFor(definition, item),
       });
 
       launches.set(record.id, slot);

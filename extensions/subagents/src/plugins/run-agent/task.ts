@@ -9,7 +9,7 @@ export const composeTask = (
   undelivered: string[] = [],
 ) => {
   const files = predecessor ? [predecessor.handoffPath].concat(item.files ?? []) : (item.files ?? []);
-  const lines = [`Task from ${record.callerId} (agent id ${record.id}):`];
+  const lines = [`Task from ${record.callerId} (agent id ${record.id}):`, `Agent folder: ${record.dir}`];
 
   if (predecessor) {
     lines.push(

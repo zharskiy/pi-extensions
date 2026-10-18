@@ -105,14 +105,14 @@ describe("per-call model override", () => {
     const attempt = runAgent.execute(
       {
         agents: [
-          { agent: "explorer", task: "a" },
+          { agent: "scout", task: "a" },
           { agent: "reviewer", task: "b", model: "nova-6" },
         ],
       },
       { update: () => {} },
     );
 
-    await expect(attempt).rejects.toThrow(/reviewer: model "nova-6" matches several model families/);
+    await expect(attempt).rejects.toThrow(/reviewer: model "nova-6": matches several models \(/);
     await expect(attempt).rejects.toThrow(
       /- beta\/nova-6.1-sol \(context 200.0k, \$1\/\$5 per Mtok in\/out\)/,
     );
@@ -129,7 +129,7 @@ describe("per-call model override", () => {
 
     await expect(
       runAgent.execute({ agents: [{ agent: "reviewer", task: "b", model: "lyra" }] }, { update: () => {} }),
-    ).rejects.toThrow(/matches only models whose providers have no credentials \(locked\)/);
+    ).rejects.toThrow(/matches only models without credentials \(locked\//);
     await expect(
       runAgent.execute(
         { agents: [{ agent: "reviewer", task: "b", model: "luna:hgih" }] },
@@ -170,7 +170,7 @@ describe("per-call model override", () => {
     runtime.catalog.push(catalogModel("zeta/nova-6-luna"));
     runtime.preferences = { sessionProvider: "fake", defaultProvider: "zeta" };
 
-    await run([{ agent: "explorer", task: "a", model: "nova-6-luna" }]);
+    await run([{ agent: "scout", task: "a", model: "nova-6-luna" }]);
 
     expect(runtime.children[0].spec.model).toBe("zeta/nova-6-luna");
   });

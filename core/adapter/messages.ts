@@ -13,3 +13,37 @@ export const messageText = (content: unknown) => {
 
 export const toolCallCount = (content: unknown) =>
   contentParts(content).filter((part) => part.type === "toolCall").length;
+
+type RawMessage = { role?: string; content?: unknown };
+
+type RawEntry = { type?: string; message?: RawMessage };
+
+const endsRun = (message: RawMessage) => message.role === "assistant" && toolCallCount(message.content) === 0;
+
+type RunWalk = { texts: string[]; userAfter: boolean; done: boolean };
+
+const step = (walk: RunWalk, entry: RawEntry): RunWalk => {
+  const message = entry.type === "message" ? entry.message : undefined;
+
+  if (walk.done || message === undefined) {
+    return walk;
+  }
+
+  if (walk.userAfter && endsRun(message)) {
+    walk.done = true;
+    return walk;
+  }
+
+  walk.userAfter = message.role === "user";
+
+  const text = message.role === "assistant" ? messageText(message.content).trim() : "";
+
+  if (text.length > 0) {
+    walk.texts.push(text);
+  }
+
+  return walk;
+};
+
+export const finalRunTexts = (entries: readonly unknown[]): string[] =>
+  (entries as RawEntry[]).reduceRight(step, { texts: [], userAfter: false, done: false }).texts.reverse();

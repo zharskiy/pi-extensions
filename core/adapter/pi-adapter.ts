@@ -81,6 +81,15 @@ type HiddenCustom = { customType: string; content: string; display: false; detai
 
 const HELD_POLL_MS = 100;
 
+export const parentTools = (pi: ExtensionAPI) => {
+  const active = new Set(pi.getActiveTools());
+
+  return pi
+    .getAllTools()
+    .filter((tool) => active.has(tool.name))
+    .map((tool) => ({ name: tool.name, path: tool.sourceInfo.path }));
+};
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
@@ -483,14 +492,7 @@ export const createPiExtension =
             .getCommands()
             .filter((command) => command.source === "skill")
             .map((command) => ({ name: command.name.replace(/^skill:/, ""), path: command.sourceInfo.path })),
-        activeTools: () => {
-          const active = new Set(pi.getActiveTools());
-
-          return pi
-            .getAllTools()
-            .filter((tool) => active.has(tool.name))
-            .map((tool) => ({ name: tool.name, path: tool.sourceInfo.path }));
-        },
+        activeTools: () => parentTools(pi),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },
       { namespace: options.namespace, exclude: options.childExclude ?? [] },

@@ -52,6 +52,57 @@ export const storeResult = (record: AgentRecord, text: string): StoredResult => 
   }
 };
 
+const STATUS_LINE = /^(#+\s*)?status\s*:/i;
+
+const STATUS_SCAN_LINES = 5;
+
+const NON_BLANK_LINE = /[^\n]*\S[^\n]*/g;
+
+const statusWithin = (text: string, start: number, left: number): boolean => {
+  NON_BLANK_LINE.lastIndex = start;
+
+  const match = left > 0 ? NON_BLANK_LINE.exec(text) : null;
+
+  if (!match) {
+    return false;
+  }
+
+  const line = match[0].replace(/[*_`]/g, "").trim();
+  const next = match.index + match[0].length + 1;
+
+  if (line.length === 0) {
+    return statusWithin(text, next, left);
+  }
+
+  return STATUS_LINE.test(line) || statusWithin(text, next, left - 1);
+};
+
+export const hasStatusLine = (text: string) => statusWithin(text, 0, STATUS_SCAN_LINES);
+
+export const pickResult = (texts: string[]) => {
+  const withStatus = texts.findLast(hasStatusLine);
+
+  return { text: (withStatus ?? texts.at(-1) ?? "").trim(), statusLine: withStatus !== undefined };
+};
+
+const headCut = (text: string, limit: number) => {
+  const newline = text.lastIndexOf("\n", limit);
+
+  return newline > 0 ? newline : limit;
+};
+
+const inlineText = (text: string, resultPath: string | undefined, limit: number) => {
+  if (!resultPath || text.length <= limit) {
+    return [text];
+  }
+
+  const cut = headCut(text, limit);
+  const head = text.slice(0, cut).trimEnd();
+  const marker = `Result file: ${resultPath} (${text.length - cut} more chars)`;
+
+  return head.length > 0 ? [head, marker] : [marker];
+};
+
 export const chainTotals = (links: AgentRecord[]): AgentRecord => {
   const first = links[0];
   const last = links[links.length - 1];
@@ -91,26 +142,19 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecor
     return lines.join("\n");
   }
 
-  const carriesResult = record.state === "done" || (record.state === "stopped" && Boolean(record.resultText));
-
-  if (!carriesResult) {
-    return lines.join("\n");
-  }
-
   const text = record.resultText ?? "";
 
-  if (!record.resultPath || text.length <= inlineLimit) {
-    lines.push("", text);
-
+  if (record.state !== "done" && text.length === 0) {
     return lines.join("\n");
   }
 
-  lines.push(
-    `Result file: ${record.resultPath} (${text.length} chars)`,
-    `Preview: ${cutChars(singleLine(text), 300)}`,
-  );
+  if (record.state !== "done") {
+    lines.push(`(unverified partial output: ${record.error ?? record.state})`);
+  } else if (!(record.statusLine ?? hasStatusLine(text))) {
+    lines.push("(shape: no Status line)");
+  }
 
-  return lines.join("\n");
+  return [...lines, "", ...inlineText(text, record.resultPath, inlineLimit)].join("\n");
 };
 
 const countByState = (records: AgentRecord[]) => {
