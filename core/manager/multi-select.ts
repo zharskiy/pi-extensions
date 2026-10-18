@@ -97,10 +97,16 @@ export const multiLines = (
   return scrolledLines(theme, options.length, state.cursor, height, width, (index, chosen) => {
     const option = options[index];
     const box = state.checked[index] ? theme.fg("success", "[x]") : theme.fg("muted", "[ ]");
-    const label = theme.fg(chosen ? "accent" : "text", option?.label ?? "");
-    const description = option?.description ? `  ${theme.fg("muted", option.description)}` : "";
+    const first = `${PAD}${pointerMark(theme, chosen)} ${box} `;
+    const name = option?.label ?? "";
+    const label = theme.fg(chosen ? "accent" : "text", name);
+    const room = width - theme.width(first) - theme.width(name) - 2;
+    const description =
+      option?.description && room > 0
+        ? `  ${theme.fg("muted", theme.truncate(option.description, room))}`
+        : "";
 
-    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${box} `, `${label}${description}`, width);
+    return prefixed(theme, first, `${label}${description}`, width);
   });
 };
 

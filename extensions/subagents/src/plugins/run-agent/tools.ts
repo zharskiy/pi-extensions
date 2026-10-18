@@ -309,6 +309,16 @@ export const messageAgentTool = (
       details: { delivery: routed.delivery },
     };
   },
-  renderCall: (params, theme) =>
-    `${theme.bold("message_agent")} ${theme.fg("accent", params.id ?? "")} ${theme.fg("muted", (params.message ?? "").slice(0, 60))}`,
+  renderShell: "box",
+  renderCall: () => "",
+  renderResult: (result, state, theme) => {
+    if (!result.isError) {
+      return "";
+    }
+
+    const id = String((state.args as MessageAgentParams | undefined)?.id ?? "");
+
+    return `${theme.bold("message_agent")} ${theme.fg("accent", id)}: ${result.text.replace(/^Error:\s*/, "")}`;
+  },
+  renderTone: (_state, result) => (result?.isError ? "error" : undefined),
 });

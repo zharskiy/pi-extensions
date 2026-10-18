@@ -1,4 +1,9 @@
-import { type AvailableModel, type KeyPress, THINKING_LEVELS } from "../../../../../core/adapter/contract.ts";
+import {
+  type AvailableModel,
+  type KeyPress,
+  type SkillInfo,
+  THINKING_LEVELS,
+} from "../../../../../core/adapter/contract.ts";
 import { clampIndex } from "../../../../../core/manager/list.ts";
 import {
   checkedIndexes,
@@ -20,7 +25,7 @@ export const SCOPES: readonly Scope[] = ["project", "user"];
 export type SetupContext = {
   agents: SetupAgent[];
   models: AvailableModel[];
-  skills: string[];
+  skills: SkillInfo[];
   trusted: boolean;
 };
 
@@ -115,7 +120,7 @@ const openPicker = (context: SetupContext, state: SetupState): SetupState => {
 
   if (field === "skills") {
     const has = (name: string) => draft?.skills === ALL || Boolean(draft?.skills.includes(name));
-    const checked = context.skills.map(has);
+    const checked = context.skills.map((skill) => has(skill.name));
 
     return { ...state, picker: { field, multi: initialMulti(context.skills.length, checked) } };
   }
@@ -199,7 +204,7 @@ const chooseSkills = (
     return { ...state, picker: undefined };
   }
 
-  const names = checkedIndexes(picker.multi).flatMap((index) => context.skills[index] ?? []);
+  const names = checkedIndexes(picker.multi).flatMap((index) => context.skills[index]?.name ?? []);
 
   const unchangedAll = state.drafts[state.tab]?.skills === ALL && names.length === context.skills.length;
 

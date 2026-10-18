@@ -107,7 +107,7 @@ export const agentSetupPlugin: Plugin = {
           },
         })),
       models: runtime.availableModels(),
-      skills: runtime.skillNames(),
+      skills: runtime.skillCatalog(),
       trusted: info.projectTrusted,
     });
 
