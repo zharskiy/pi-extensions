@@ -1,0 +1,28 @@
+{
+  "workbenchRoot": "~/work",
+  "departments": {
+    "be": {
+      "name": "Backend",
+      "branch": "feature/{ticket}-{slug}",
+      "repos": {
+        "order-service": { "remote": "git@git.acme.internal:be/order-service.git", "default": "main", "check": "./gradlew check" },
+        "pricing-service": { "remote": "git@git.acme.internal:be/pricing-service.git", "default": "main", "check": "./gradlew check" }
+      }
+    },
+    "fe": {
+      "name": "Frontend",
+      "branch": "feat/{ticket}/{slug}",
+      "repos": {
+        "web-shell": { "remote": "git@git.acme.internal:fe/web-shell.git", "default": "main", "check": "npm run check" },
+        "web-orders": { "remote": "git@git.acme.internal:fe/web-orders.git", "default": "main", "check": "npm run check" }
+      }
+    },
+    "qaa": {
+      "name": "QA automation",
+      "branch": "qa/{ticket}_{slug}",
+      "repos": {
+        "e2e-tests": { "remote": "git@git.acme.internal:qaa/e2e-tests.git", "default": "develop", "check": "npm run lint && npm run e2e -- --list" }
+      }
+    }
+  }
+}
