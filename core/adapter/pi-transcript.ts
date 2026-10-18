@@ -18,9 +18,10 @@ import {
   type ToolRenderers,
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
+import { type Component, Container, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import type { AnyToolSpec, TranscriptItem, TranscriptPane } from "./contract.ts";
 import { toPiResult, toPiTool } from "./pi-tools.ts";
+import { parseRoutedMessage } from "./route.ts";
 
 const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
   read: createReadToolDefinition,
@@ -81,6 +82,7 @@ const defaultPiRenderers = () => {
 export type TranscriptPaneOptions = {
   tools?: AnyToolSpec[];
   owner?: string;
+  dim?: (text: string) => string;
 };
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
@@ -167,7 +169,15 @@ export const createTranscriptPane = (
         container.addChild(new Spacer(1));
       }
 
-      container.addChild(new UserMessageComponent(item.text, getMarkdownTheme()));
+      const routed = parseRoutedMessage(item.text);
+
+      if (routed) {
+        const dim = options.dim ?? ((text: string) => text);
+
+        container.addChild(new Text(dim(`message from ${routed.sender}`), 1, 0));
+      }
+
+      container.addChild(new UserMessageComponent(routed?.text ?? item.text, getMarkdownTheme()));
       return;
     }
 

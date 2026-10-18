@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
@@ -8,7 +8,7 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { THINKING_LEVELS } from "../../adapter/contract.ts";
 import { finalRunTexts } from "../../adapter/messages.ts";
-import { mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
+import { mcpBuiltinLoaded, skillFiles } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
@@ -587,6 +587,70 @@ describe("pi adapter conformance", () => {
     it("is missing under --no-mcp and with -builtin:mcp in the extensions setting", async () => {
       expect(await mainSession({ disabled: ["mcp"] })).toBe(false);
       expect(await mainSession({ extensions: ["-builtin:mcp"] })).toBe(false);
+    });
+  });
+
+  describe("main session skills", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const skillFile = (dir: string, name: string, description: string) => {
+      const path = join(dir, "skills", name, "SKILL.md");
+
+      mkdirSync(join(dir, "skills", name), { recursive: true });
+      writeFileSync(path, `---\nname: ${name}\ndescription: ${description}\n---\n\nBody of ${name}.\n`);
+
+      return path;
+    };
+
+    it("reads each skill command's name without the skill: prefix, its description and its file", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const seen: pi.ExtensionAPI[] = [];
+      const review = skillFile(dir, "review", "Reviews diffs for bugs");
+      const docs = skillFile(dir, "docs", "Writes and fixes docs");
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        additionalSkillPaths: [review, docs],
+        extensionFactories: [
+          {
+            name: "probe",
+            factory: (api) => {
+              seen.push(api);
+            },
+          },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const files = seen[0] ? skillFiles(seen[0]) : [];
+
+      session.dispose();
+
+      expect(files.toSorted((left, right) => left.name.localeCompare(right.name))).toEqual([
+        { name: "docs", description: "Writes and fixes docs", path: docs },
+        { name: "review", description: "Reviews diffs for bugs", path: review },
+      ]);
     });
   });
 
