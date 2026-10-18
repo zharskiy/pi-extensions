@@ -6,8 +6,8 @@ It knows nothing about other extensions. Extensions that run work in the backgro
 
 ## What it does
 
-- Below `softRatio` of the model's context window nothing is shown. From `softRatio` (60% by default) a footer segment in the warning colour says `ctx 62% · handoff at 75%` (the percentage is rounded down). The segment disappears when the token usage is unknown, for example right after a compaction until the next reply.
-- At the first turn end at or above `hardRatio` (75%) the extension sends one user message (a follow-up while the session is busy) asking the model to write a handoff file with its write tool to `<OS temp dir>/pi-session-limits/<session id>-handoff.md`, so it needs no cleanup. The template is `prompts/handoff.md`: six sections `Status` (done, partial or blocked), `Outcome`, `Evidence`, `Blocker`, `Next`, `Files touched`. The segment turns to the error colour: `writing handoff`. While the switch is held for running work (below) it uses the warning colour; only writing, switching and failed use the error colour.
+- Below the soft threshold nothing is shown. The soft threshold is `softRatio` of the model's context window (60% by default) or `softTokens` (150,000), whichever is lower; the hard threshold is `hardRatio` (75%) or `hardTokens` (200,000), whichever is lower. From the soft threshold a footer segment in the warning colour says `ctx 62% · handoff at 75%` (the percentage is rounded down); when the token cap is the lower one both sides are token counts instead, for example `ctx 160k · handoff at 200k`. The segment disappears when the token usage is unknown, for example right after a compaction until the next reply.
+- At the first turn end at or above the hard threshold the extension sends one user message (a follow-up while the session is busy) asking the model to write a handoff file with its write tool to `<OS temp dir>/pi-session-limits/<session id>-handoff.md`, so it needs no cleanup. The template is `prompts/handoff.md`: six sections `Status` (done, partial or blocked), `Outcome`, `Evidence`, `Blocker`, `Next`, `Files touched`. The segment turns to the error colour: `writing handoff`. While the switch is held for running work (below) it uses the warning colour; only writing, switching and failed use the error colour.
 - The file is judged when the session settles. A file that is missing, unchanged since the request, or invalid gets exactly one resend with the problems listed; a second failure gives one warning naming the path, and the segment says `handoff failed, run /session-handoff`. The same happens when a switch was started but its command never ran: at the next idle or turn end the segment says `handoff failed, run /session-handoff` instead of staying on `switching`.
 - With a valid file and the session idle, the extension runs `/session-handoff`, which opens a new session linked to the old one (`/resume` shows the link) and seeds it with a displayed message of type `pi-session-limits-handoff`: a short preface naming the previous session file, then the handoff. No turn is started; your next message goes to the new session.
 - If you kept talking after the file was written, the file is out of date: the extension asks for one fresh handoff instead of switching, and switches on the next settle with the newer file.
@@ -26,11 +26,13 @@ Optional JSON in `~/.pi/agent/pi-session-limits.json`, and in `.pi/pi-session-li
 ```json
 {
   "softRatio": 0.6,
-  "hardRatio": 0.75
+  "hardRatio": 0.75,
+  "softTokens": 150000,
+  "hardTokens": 200000
 }
 ```
 
-Both are fractions of the model's context window, numbers above 0 and at most 1. An invalid value is reported once per extension instance (so again in each new session) as a warning and ignored. A soft ratio at or above the hard ratio skips the warning stage; this includes setting only `hardRatio` below the default soft ratio. Both files are read once, at session start (`/reload` or a new session applies changes).
+`softRatio` and `hardRatio` are fractions of the model's context window, numbers above 0 and at most 1. `softTokens` and `hardTokens` are absolute token counts, numbers above 0 and at most 100,000,000. The effective thresholds are `soft = min(window × softRatio, softTokens)` and `hard = min(window × hardRatio, hardTokens)`, so the ratios decide on small windows (120,000 and 150,000 tokens on a 200,000-token window) and the caps decide on large context windows: on a 1,000,000-token window the warning starts at 150,000 and the handoff happens at 200,000 tokens instead of 750,000. A file with only the ratios keeps working; the caps take their defaults. An invalid value is reported once per extension instance (so again in each new session) as a warning and ignored. An effective soft threshold at or above the effective hard one skips the warning stage; this includes setting only `hardRatio` below the default soft ratio, or only `hardTokens` below the default `softTokens`. Both files are read once, at session start (`/reload` or a new session applies changes).
 
 A model context window of 0, or unknown token usage, disables the extension for that moment: no handoff is requested and the footer segment is cleared.
 

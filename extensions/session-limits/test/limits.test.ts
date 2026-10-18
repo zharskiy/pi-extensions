@@ -5,6 +5,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flushTimers as flush } from "../../../core/test/helpers/fakes.ts";
 import { createLimits } from "../src/limits.ts";
+import { DEFAULT_LIMITS } from "../src/settings.ts";
 
 const created: string[] = [];
 
@@ -22,7 +23,7 @@ afterAll(() => {
   });
 });
 
-const RATIOS = { softRatio: 0.6, hardRatio: 0.75 };
+const LIMITS = DEFAULT_LIMITS;
 
 const TEMPLATE = readFileSync(resolve(import.meta.dirname, "..", "prompts", "handoff.md"), "utf8");
 
@@ -52,7 +53,7 @@ const HANDOFF_TYPE = "pi-session-limits-handoff";
 
 const RELEASE_MS = 1_000;
 
-const setup = (releaseDelayMs = 0) => {
+const setup = (releaseDelayMs = 0, limits = LIMITS) => {
   const root = tempRoot();
   const file = join(root, "sessions", "main.jsonl");
 
@@ -64,7 +65,7 @@ const setup = (releaseDelayMs = 0) => {
     projectTrusted: false,
   });
 
-  createLimits({ host, template: TEMPLATE, ratios: () => RATIOS, releaseDelayMs });
+  createLimits({ host, template: TEMPLATE, limits: () => limits, releaseDelayMs });
 
   host.start();
 
@@ -104,6 +105,18 @@ describe("session limits", () => {
 
     turn(76_000);
     expect(status()).toBe("<error>ctx 76% · writing handoff");
+  });
+
+  it("requests the handoff at the token cap on a large window", () => {
+    const { host, status } = setup(0, { ...LIMITS, softTokens: 150_000, hardTokens: 200_000 });
+
+    host.turnEnd({ tokens: 160_000, window: 1_000_000 });
+    expect(status()).toBe("<warning>ctx 160k · handoff at 200k");
+    expect(host.sent).toHaveLength(0);
+
+    host.turnEnd({ tokens: 200_000, window: 1_000_000 });
+    expect(host.sent).toHaveLength(1);
+    expect(status()).toBe("<error>ctx 20% · writing handoff");
   });
 
   it("sends the handoff instruction once as the next user message", () => {
@@ -435,7 +448,7 @@ describe("session limits", () => {
 
     host.onSessionStart(() => host.emit(BUSY_CHANNEL, { source: "pi-subagents", busy: true }));
 
-    createLimits({ host, template: TEMPLATE, ratios: () => RATIOS, releaseDelayMs: 0 });
+    createLimits({ host, template: TEMPLATE, limits: () => LIMITS, releaseDelayMs: 0 });
 
     host.start();
     host.turnEnd({ tokens: 76_000, window: 100_000 });

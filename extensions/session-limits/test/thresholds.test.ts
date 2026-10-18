@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { contextLevel, handoffStep, retryInstruction, segmentFor, shouldRequest } from "../src/thresholds.ts";
+import {
+  contextLevel,
+  handoffStep,
+  retryInstruction,
+  segmentFor,
+  shouldRequest,
+  thresholdsFor,
+} from "../src/thresholds.ts";
 
-const ratios = { softRatio: 0.6, hardRatio: 0.75 };
+const limits = { softRatio: 0.6, hardRatio: 0.75, softTokens: 150_000, hardTokens: 200_000 };
 
 const at = (tokens: number | null, window = 100_000) => ({ tokens, window });
 
@@ -17,21 +24,44 @@ const input = (patch: Partial<HandoffInput>): HandoffInput => ({
 });
 
 describe("contextLevel", () => {
-  it("classifies tokens against the soft and hard ratios of the window", () => {
-    expect(contextLevel(at(59_999), ratios)).toBe("normal");
-    expect(contextLevel(at(60_000), ratios)).toBe("soft");
-    expect(contextLevel(at(74_999), ratios)).toBe("soft");
-    expect(contextLevel(at(75_000), ratios)).toBe("hard");
+  it("classifies tokens against the soft and hard ratios of a small window", () => {
+    expect(contextLevel(at(59_999), limits)).toBe("normal");
+    expect(contextLevel(at(60_000), limits)).toBe("soft");
+    expect(contextLevel(at(74_999), limits)).toBe("soft");
+    expect(contextLevel(at(75_000), limits)).toBe("hard");
+  });
+
+  it("caps the thresholds by tokens on a large window", () => {
+    const large = (tokens: number) => at(tokens, 1_000_000);
+
+    expect(thresholdsFor(1_000_000, limits)).toEqual({ soft: 150_000, hard: 200_000 });
+    expect(contextLevel(large(149_999), limits)).toBe("normal");
+    expect(contextLevel(large(150_000), limits)).toBe("soft");
+    expect(contextLevel(large(199_999), limits)).toBe("soft");
+    expect(contextLevel(large(200_000), limits)).toBe("hard");
+  });
+
+  it("keeps the ratios when they are below the caps", () => {
+    const medium = (tokens: number) => at(tokens, 200_000);
+
+    expect(thresholdsFor(200_000, limits)).toEqual({ soft: 120_000, hard: 150_000 });
+    expect(contextLevel(medium(119_999), limits)).toBe("normal");
+    expect(contextLevel(medium(120_000), limits)).toBe("soft");
+    expect(contextLevel(medium(150_000), limits)).toBe("hard");
   });
 
   it("is unknown without tokens or window", () => {
-    expect(contextLevel(at(null), ratios)).toBe("unknown");
-    expect(contextLevel(at(80_000, 0), ratios)).toBe("unknown");
+    expect(contextLevel(at(null), limits)).toBe("unknown");
+    expect(contextLevel(at(80_000, 0), limits)).toBe("unknown");
+    expect(contextLevel(at(null, 1_000_000), limits)).toBe("unknown");
   });
 
-  it("skips the soft stage when the soft ratio is above the hard ratio", () => {
-    expect(contextLevel(at(80_000), { softRatio: 0.9, hardRatio: 0.75 })).toBe("hard");
-    expect(contextLevel(at(70_000), { softRatio: 0.9, hardRatio: 0.75 })).toBe("normal");
+  it("skips the soft stage when the soft threshold is above the hard one", () => {
+    const inverted = { ...limits, softRatio: 0.9, hardRatio: 0.75 };
+
+    expect(contextLevel(at(80_000), inverted)).toBe("hard");
+    expect(contextLevel(at(70_000), inverted)).toBe("normal");
+    expect(contextLevel(at(190_000, 1_000_000), { ...limits, softTokens: 250_000 })).toBe("normal");
   });
 });
 
@@ -67,27 +97,47 @@ describe("handoffStep", () => {
 });
 
 describe("segmentFor", () => {
+  it("names the token cap when it wins over the ratio", () => {
+    expect(segmentFor(at(160_000, 1_000_000), "watching", limits, "session-handoff")).toEqual({
+      token: "warning",
+      text: "ctx 160k · handoff at 200k",
+    });
+    expect(segmentFor(at(130_000, 200_000), "watching", limits, "session-handoff")).toEqual({
+      token: "warning",
+      text: "ctx 65% · handoff at 75%",
+    });
+  });
+
+  it("shows the ratio when it equals the token cap", () => {
+    expect(
+      segmentFor(at(130_000, 200_000), "watching", { ...limits, hardTokens: 150_000 }, "session-handoff"),
+    ).toEqual({
+      token: "warning",
+      text: "ctx 65% · handoff at 75%",
+    });
+  });
+
   it("is empty below the soft limit and warns from it", () => {
-    expect(segmentFor(at(50_000), "watching", ratios, "session-handoff")).toBeUndefined();
-    expect(segmentFor(at(62_000), "watching", ratios, "session-handoff")).toEqual({
+    expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toBeUndefined();
+    expect(segmentFor(at(62_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
       text: "ctx 62% · handoff at 75%",
     });
   });
 
   it("is red in the pending phases, amber while waiting, and names the command when stuck", () => {
-    expect(segmentFor(at(78_000), "requested", ratios, "session-handoff")).toEqual({
+    expect(segmentFor(at(78_000), "requested", limits, "session-handoff")).toEqual({
       token: "error",
       text: "ctx 78% · writing handoff",
     });
-    expect(segmentFor(at(78_000), "waiting", ratios, "session-handoff")).toEqual({
+    expect(segmentFor(at(78_000), "waiting", limits, "session-handoff")).toEqual({
       token: "warning",
       text: "ctx 78% · handoff waits for running work",
     });
-    expect(segmentFor(at(null), "switching", ratios, "session-handoff")?.text).toBe(
+    expect(segmentFor(at(null), "switching", limits, "session-handoff")?.text).toBe(
       "ctx · switching session",
     );
-    expect(segmentFor(at(78_000), "stuck", ratios, "session-handoff")?.text).toBe(
+    expect(segmentFor(at(78_000), "stuck", limits, "session-handoff")?.text).toBe(
       "ctx 78% · handoff failed, run /session-handoff",
     );
   });
