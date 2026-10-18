@@ -137,13 +137,27 @@ describe("list model", () => {
       ...Array.from({ length: 400 }, (_, index) => tree(`c${index}`, true, NOW - index)),
       ...Array.from({ length: 30 }, (_, index) => tree(`o${index}`, false, NOW + index)),
     ].flat();
-    const started = performance.now();
+    const reads = { predecessorId: 0, successorId: 0 };
+
+    const counted = (key: "predecessorId" | "successorId") => (record: AgentRecord) => {
+      Object.defineProperty(record, key, {
+        get: () => {
+          reads[key] += 1;
+
+          return undefined;
+        },
+      });
+    };
+
+    records.forEach(counted("predecessorId"));
+    records.forEach(counted("successorId"));
+
     const sections = listSections(visibleRecords(records, new Set()));
-    const elapsed = performance.now() - started;
 
     expect(records.length).toBeGreaterThan(4_000);
     expect(sections.map((section) => section.title)).toEqual(["Running", `Completed (${MAX_CLOSED_ROOTS})`]);
     expect(sections[1]?.rows).toHaveLength(MAX_CLOSED_ROOTS * 10);
-    expect(elapsed).toBeLessThan(50);
+    expect(reads.predecessorId).toBeLessThanOrEqual(records.length * 4);
+    expect(reads.successorId).toBeLessThanOrEqual(records.length * 4);
   });
 });

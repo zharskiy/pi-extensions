@@ -594,7 +594,11 @@ describe("definition loading", () => {
     expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
     expect(grants("shell")).toEqual([["bash", "read"], [], []]);
     expect(grants("image")).toEqual([["read"], [], []]);
-    expect(grants("general")).toEqual(["all", "all", ["scout", "reviewer"]]);
+    expect(grants("general")).toEqual([
+      "all",
+      "all",
+      ["scout", "fetch", "shell", "image", "planner", "implementer", "reviewer"],
+    ]);
     expect(result.definitions.get("general")?.description).toMatch(/^Use only when no other agent fits/);
   });
 

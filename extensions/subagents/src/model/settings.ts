@@ -40,7 +40,7 @@ export type Settings = {
 const SETTINGS_FILE = "pi-subagents.json";
 
 export const defaultSettings = (): Settings => ({
-  maxConcurrent: 4,
+  maxConcurrent: 12,
   maxDepth: 3,
   softContextRatio: 0.8,
   hardContextRatio: 1.15,
@@ -72,8 +72,8 @@ const parseOverride = (name: string, raw: unknown) => {
     return { errors: [`${name} must be an object with ${OVERRIDE_FIELDS.join(", ")}`] };
   }
 
-  const unknown = Object.keys(raw).filter((key) => !(OVERRIDE_FIELDS as readonly string[]).includes(key));
-  const errors = unknown.map(
+  const unknownKeys = Object.keys(raw).filter((key) => !(OVERRIDE_FIELDS as readonly string[]).includes(key));
+  const errors = unknownKeys.map(
     (key) =>
       `${name}.${key} cannot be overridden (only ${OVERRIDE_FIELDS.join(", ")}); create an own agent instead`,
   );

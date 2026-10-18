@@ -184,10 +184,10 @@ const warnUnexpanded = (server: PiServer, notes: string[]) => {
 };
 
 const dropUnknown = (raw: RawServer, known: string[], notes: string[]) => {
-  const unknown = Object.keys(raw).filter((key) => !known.includes(key));
+  const unknownKeys = Object.keys(raw).filter((key) => !known.includes(key));
 
-  if (unknown.length > 0) {
-    notes.push(`dropped ${unknown.join(", ")}: pi has no such field`);
+  if (unknownKeys.length > 0) {
+    notes.push(`dropped ${unknownKeys.join(", ")}: pi has no such field`);
   }
 };
 

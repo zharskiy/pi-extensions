@@ -74,7 +74,7 @@ describe("nested agents", () => {
 
     expect(description).toContain("- scout:");
     expect(description).toContain("- reviewer:");
-    expect(description).not.toContain("- implementer:");
+    expect(description).toContain("- implementer:");
     expect(description).toContain("you run at depth 2; agents you start run at depth 3 of at most 3");
 
     await runMain([{ agent: "scout", task: "look" }]);

@@ -23,11 +23,11 @@ export const parseArgs = (text: string): ImportArgs | { error: string } => {
     return { error: `unknown tool "${first}" (available: ${SOURCES.join(", ")}); usage: ${USAGE}` };
   }
 
-  const unknown = rest.filter((word) => !FLAGS.includes(word));
+  const unknownWords = rest.filter((word) => !FLAGS.includes(word));
 
-  if (unknown.length > 0) {
+  if (unknownWords.length > 0) {
     return {
-      error: `unknown argument ${unknown.map((word) => `"${word}"`).join(", ")}; usage: ${USAGE}`,
+      error: `unknown argument ${unknownWords.map((word) => `"${word}"`).join(", ")}; usage: ${USAGE}`,
     };
   }
 

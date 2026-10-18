@@ -43,10 +43,10 @@ export const overrideSkills = (value: unknown): OverrideField => {
 };
 
 export const unknownSkillsProblem = (skills: string[], loaded: string[]) => {
-  const unknown = skills.filter((skill) => !loaded.includes(skill));
+  const unknownSkills = skills.filter((skill) => !loaded.includes(skill));
   const available = loaded.length > 0 ? loaded.join(", ") : "none";
 
-  return unknown.length > 0
-    ? `names unknown skill(s) ${unknown.join(", ")} (loaded skills: ${available})`
+  return unknownSkills.length > 0
+    ? `names unknown skill(s) ${unknownSkills.join(", ")} (loaded skills: ${available})`
     : undefined;
 };

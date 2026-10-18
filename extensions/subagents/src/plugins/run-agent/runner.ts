@@ -705,10 +705,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
   const skillError = (item: BatchItem, definition: AgentDefinition, available: string[]) => {
     const tools = definition.tools;
-    const unknown = unique(item.skills ?? []).filter((name) => !available.includes(name));
+    const unknownSkills = unique(item.skills ?? []).filter((name) => !available.includes(name));
 
-    if (unknown.length > 0) {
-      const listed = unknown.map((name) => `"${name}"`).join(", ");
+    if (unknownSkills.length > 0) {
+      const listed = unknownSkills.map((name) => `"${name}"`).join(", ");
       const valid =
         available.length > 0
           ? `This caller's skills: ${available.join(", ")}.`
@@ -746,15 +746,15 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const startBatch: Runner["startBatch"] = (items, options) => {
-    const unknown = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
+    const unknownAgents = items.filter((item) => !deps.definitions.get(item.agent)).map((item) => item.agent);
 
-    if (unknown.length > 0) {
+    if (unknownAgents.length > 0) {
       const available = deps.definitions
         .list()
         .map((definition) => definition.name)
         .join(", ");
 
-      throw new Error(`unknown agent(s): ${unknown.join(", ")}. Available: ${available || "none"}`);
+      throw new Error(`unknown agent(s): ${unknownAgents.join(", ")}. Available: ${available || "none"}`);
     }
 
     const allowed = allowedSubagents(options.callerId);

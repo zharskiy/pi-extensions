@@ -90,7 +90,7 @@ describe("run_agent description", () => {
       "If the only matches lack credentials, tell the user (they can log in with `/login`) and ask whether to run the agent on its own model; never drop a requested model silently.",
     );
     expect(text).toContain(
-      "It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (the task was ambiguous; it lists the questions and changed nothing), and ends with `Verification:` and `Open:` lines.",
+      "It starts with `Status: done`, `Status: partial` (its Open line says what is left) or `Status: blocked` (it changed nothing; either the task was ambiguous and it lists the questions, or a `Wrong agent:` line says the task belongs to another agent: start that one with the same task), and ends with `Verification:` and `Open:` lines.",
     );
     expect(text).not.toContain("- Tasks:");
     expect(text).not.toContain("Read the file either way");

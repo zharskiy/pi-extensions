@@ -589,7 +589,7 @@ describe("run_agent block", () => {
     const settled = vi.fn();
     const redrawn = vi.fn();
     const other = vi.fn();
-    const unknown = vi.fn();
+    const invalidateUnknown = vi.fn();
     const render = (result: ToolResult<unknown>, invalidate: () => void) =>
       harness.host.renderTool("run_agent", { call: { agents: [THREE[0]] }, result, state: { invalidate } });
 
@@ -602,7 +602,10 @@ describe("run_agent block", () => {
     expect(other).toHaveBeenCalledTimes(1);
 
     render(first, redrawn);
-    render({ text: "Started batch", details: { batchId: "b-unknown", ids: [], agents: [] } }, unknown);
+    render(
+      { text: "Started batch", details: { batchId: "b-unknown", ids: [], agents: [] } },
+      invalidateUnknown,
+    );
 
     const [, b] = ids(harness);
 
@@ -611,7 +614,7 @@ describe("run_agent block", () => {
 
     expect(other).toHaveBeenCalledTimes(2);
     expect(redrawn).not.toHaveBeenCalled();
-    expect(unknown).not.toHaveBeenCalled();
+    expect(invalidateUnknown).not.toHaveBeenCalled();
     expect(settled).toHaveBeenCalledTimes(2);
   });
 

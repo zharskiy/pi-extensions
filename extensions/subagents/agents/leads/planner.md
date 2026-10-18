@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Use first for requests that are ambiguous or multi-step, need a design choice, or change several modules. Read-only; may start scouts. Returns an ordered plan of agent batches with a full brief per task.
-model: anthropic/claude-opus-5-5:high
+model: openai/gpt-6.1-sol:high
 limit: 120000
 tools: [read, grep, find, ls]
 skills: []
