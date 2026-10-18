@@ -1,6 +1,6 @@
 The user ran {{command}} and wants a new agent that the main session can start with run_agent. Write the agent file yourself in this conversation; do not delegate it to an agent.
 
-1. Settle what the agent is for. {{known}}If the conversation does not yet answer what the agent does, when the main session should pick it over the agents that exist, whether it changes files (a lead) or only reads and reports (a chore), and what it returns, ask the user only what is missing, in one message, and stop there until they answer.{{askName}} Otherwise write the file now, without asking anything.
+1. Settle what the agent is for. {{known}}If the conversation does not yet answer what the agent does, when the main session should pick it over the agents that exist, whether it changes files (a lead) or only reads and reports (a chore), and what it returns, ask the user only what is missing, in one message, and stop there until they answer. Otherwise write the file now, without asking anything.{{askName}}
 2. Write one file with your write tool. {{file}} Do not overwrite an existing file; if the name is taken, agree on another with the user.
 3. Start from the skeleton below that fits: the lead skeleton for an agent that changes files, the chore skeleton for one that only reads and reports. Keep every frontmatter field and its value unless a bullet here says otherwise, and replace every <...> placeholder.
    - name: letters, digits, `_` and `-`; not one of the names taken below.

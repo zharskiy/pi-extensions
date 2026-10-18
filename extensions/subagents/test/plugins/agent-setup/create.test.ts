@@ -59,7 +59,7 @@ describe("/agents create", () => {
     expect(brief).toContain("implementer");
     expect(brief).toContain("- docs: Write project docs\n- sql: Review SQL migrations");
     expect(brief).toContain("name: <name>");
-    expect(brief).toContain("Also agree on a short name (or propose one) before writing.");
+    expect(brief).toContain("agree on a short name with the user (or propose one) before writing.");
     expect(brief).toContain(
       "ask the user only what is missing, in one message, and stop there until they answer.",
     );
@@ -119,7 +119,7 @@ describe("/agents create", () => {
 
     expect(briefs()[0]).toContain("The user ran /agents create a reviewer for SQL migrations and");
     expect(briefs()[0]).toContain('The user describes it as: "a reviewer for SQL migrations". ');
-    expect(briefs()[0]).toContain("Also agree on a short name");
+    expect(briefs()[0]).toContain("agree on a short name with the user");
   });
 
   it("names no provider", async () => {

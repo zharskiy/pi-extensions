@@ -87,7 +87,9 @@ export const createBrief = (input: BriefInput): string => {
   const values: Record<string, string> = {
     command,
     known: knownText(input.request),
-    askName: input.request.name ? "" : " Also agree on a short name (or propose one) before writing.",
+    askName: input.request.name
+      ? ""
+      : " Either way, agree on a short name with the user (or propose one) before writing.",
     file: fileText(input),
     taken: input.taken.join(", ") || "none",
     skills: skillsText(input.skills),
