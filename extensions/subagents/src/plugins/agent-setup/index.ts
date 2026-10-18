@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { FormFactory, SessionInfo } from "../../../../../core/adapter/contract.ts";
 import { INHERIT_MODEL } from "../../model/agent-schema.ts";
 import { resolutionProblem } from "../../model/model-resolution.ts";
@@ -58,8 +60,9 @@ const changeSummary = (changes: SetupChange[]) =>
 export const agentSetupPlugin: Plugin = {
   id: "agent-setup",
   requires: ["agent-definitions"],
-  enable: ({ host, runtime, services }) => {
+  enable: ({ host, runtime, services, root }) => {
     const definitions = services.require("definitions");
+    const createPrompt = readFileSync(join(root, "prompts", "create-agent.md"), "utf8").trim();
 
     const notify = (message: string, level: "info" | "warning" | "error") =>
       host.ui.notify(`${NAMESPACE}: ${message}`, level);
@@ -159,14 +162,7 @@ export const agentSetupPlugin: Plugin = {
       save(request.scope, [request.change]);
     };
 
-    const create = createAgentCommand({
-      host,
-      shippedNames: () =>
-        definitions
-          .list()
-          .filter((definition) => definition.source === "builtin")
-          .map((definition) => definition.name),
-    });
+    const create = createAgentCommand({ host, template: createPrompt, definitions, runtime });
 
     services.provide("agentSetup", {
       usage: { setup: SETUP_USAGE, create: CREATE_USAGE },

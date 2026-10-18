@@ -1,17 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { KeyPress } from "../../../../../core/adapter/contract.ts";
-import type { FakeForm } from "../../../../../core/test/helpers/fake-form.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { parseCreateArgs } from "../../../src/plugins/agent-setup/create.ts";
 import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
+import { SETUP_USAGE } from "../../../src/plugins/agent-setup/line.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
-import { createHarness } from "../../helpers/harness.ts";
-
-const enter: KeyPress = { name: "enter" };
+import { createHarness, PACKAGE_ROOT } from "../../helpers/harness.ts";
 
 const setup = () => {
   const harness = createHarness([
@@ -20,130 +15,158 @@ const setup = () => {
     agentSetupPlugin,
     agentViewPlugin,
   ]);
-  const { host } = harness;
-  const userFile = (name: string) => join(host.info.agentDir, "agents", `${name}.md`);
-  const projectFile = (name: string) => join(host.info.cwd, ".pi", "agents", `${name}.md`);
+  const { host, runtime } = harness;
+  const userDir = join(host.info.agentDir, "agents");
+  const projectDir = join(host.info.cwd, ".pi", "agents");
   const errors = () => host.notices.filter((notice) => notice.level === "error").map((n) => n.message);
 
-  return { ...harness, userFile, projectFile, errors };
+  runtime.skills = ["docs", "sql"];
+  runtime.skillDescriptions = { docs: "Write project docs", sql: "Review SQL migrations" };
+
+  return { ...harness, userDir, projectDir, errors };
 };
 
-const fill = (form: FakeForm, answers: string[]) => {
-  answers.forEach((answer) => {
-    form.type(answer);
-    form.press(enter);
-  });
-};
+const shippedProviders = () => [
+  ...new Set(
+    readdirSync(join(PACKAGE_ROOT, "agents"), { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".md"))
+      .flatMap((file) =>
+        readFileSync(join(PACKAGE_ROOT, "agents", file), "utf8")
+          .split("\n")
+          .flatMap((line) => /^model:\s*([^\s/]+)\//.exec(line)?.[1] ?? []),
+      ),
+  ),
+];
 
 describe("/agents create", () => {
-  it("parses the name and the optional project scope", () => {
-    expect(parseCreateArgs("docs")).toEqual({ name: "docs", project: false });
-    expect(parseCreateArgs(" docs  project ")).toEqual({ name: "docs", project: true });
-    expect(parseCreateArgs("")).toHaveProperty("error");
-    expect(parseCreateArgs("docs user")).toHaveProperty("error");
-    expect(parseCreateArgs("docs project extra")).toHaveProperty("error");
-    expect(parseCreateArgs("-docs")).toHaveProperty("error");
-  });
+  it("sends the main session a brief with the taken names, skills, skeleton and user dir", async () => {
+    const { host, userDir } = setup();
 
-  it("asks for description, kind and model, writes a user agent and tells to /reload", async () => {
-    const { host, userFile } = setup();
-    const running = host.runCommand("agents", "create docs-writer");
-    const form = host.form();
+    await host.runCommand("agents", "create");
 
-    expect(form.render(100).join("\n")).toContain("New agent docs-writer");
+    expect(host.sent).toHaveLength(1);
 
-    fill(form, ["Use for docs."]);
-    form.press({ name: "down" }, enter);
-    fill(form, ["provider/model-id:low"]);
-    await running;
+    const brief = host.sent[0] ?? "";
 
-    const source = readFileSync(userFile("docs-writer"), "utf8");
-    const { definition, errors } = parseDefinition(source, "x", "user");
-
-    expect(errors).toEqual([]);
-    expect(definition).toMatchObject({
-      name: "docs-writer",
-      description: "Use for docs.",
-      model: "provider/model-id",
-      thinking: "low",
-      mcp: false,
-      subagents: [],
+    expect(brief).toContain("The user ran /agents create and wants a new agent");
+    expect(brief).toContain(join(userDir, "<name>.md"));
+    expect(brief).toMatch(/Names taken: .*\bscout\b/);
+    expect(brief).toContain("implementer");
+    expect(brief).toContain("- docs: Write project docs\n- sql: Review SQL migrations");
+    expect(brief).toContain("name: <name>");
+    expect(brief).toContain("Also agree on a short name (or propose one) before writing.");
+    expect(brief).toContain("If nothing is missing, ask no question and go straight to writing the file.");
+    expect(brief).not.toContain("{{");
+    expect(existsSync(userDir)).toBe(false);
+    expect(host.notices.at(-1)).toEqual({
+      message: "pi-subagents: asked the main session to create the agent; answer its questions, then /reload",
+      level: "info",
     });
-    expect(host.notices.at(-1)?.message).toContain(userFile("docs-writer"));
-    expect(host.notices.at(-1)?.message).toContain("/reload");
   });
 
-  it("writes a project agent only in a trusted project", async () => {
-    const { host, projectFile, errors } = setup();
+  it("offers the project dir only in a trusted project", async () => {
+    const { host, userDir, projectDir } = setup();
 
-    await host.runCommand("agents", "create local project");
+    await host.runCommand("agents", "create");
 
-    expect(errors().at(-1)).toContain("trusted project");
-    expect(host.forms).toHaveLength(0);
+    expect(host.sent[0]).not.toContain(projectDir);
+    expect(host.sent[0]).toContain(
+      `Write it to ${join(userDir, "<name>.md")}. This project is not trusted, so project agents are not loaded; do not write one.`,
+    );
 
     host.info.projectTrusted = true;
+    await host.runCommand("agents", "create");
 
-    const running = host.runCommand("agents", "create local project");
-
-    fill(host.form(), ["", "", ""]);
-    await running;
-
-    expect(readFileSync(projectFile("local"), "utf8")).toContain("mcp: true");
+    expect(host.sent[1]).toContain(join(userDir, "<name>.md"));
+    expect(host.sent[1]).toContain(join(projectDir, "<name>.md"));
+    expect(host.sent[1]).not.toContain("not trusted");
   });
 
-  it("refuses a shipped lead or chore name and an existing file", async () => {
-    const { host, userFile, errors } = setup();
+  it("names the file for a given name, in the user or the trusted project dir", async () => {
+    const { host, userDir, projectDir } = setup();
+
+    await host.runCommand("agents", "create reviewer-sql");
+
+    expect(host.sent[0]).toContain("The user ran /agents create reviewer-sql and");
+    expect(host.sent[0]).toContain("Its name is reviewer-sql. ");
+    expect(host.sent[0]).toContain(`Write it to ${join(userDir, "reviewer-sql.md")}.`);
+    expect(host.sent[0]).not.toContain("agree on a short name");
+
+    host.info.projectTrusted = true;
+    await host.runCommand("agents", "create reviewer-sql project");
+
+    expect(host.sent[1]).toContain(`Write it to ${join(projectDir, "reviewer-sql.md")}.`);
+  });
+
+  it("passes a purpose quoted and asks for a name", async () => {
+    const { host } = setup();
+
+    await host.runCommand("agents", "create a reviewer for SQL migrations");
+
+    expect(host.sent[0]).toContain("The user ran /agents create a reviewer for SQL migrations and");
+    expect(host.sent[0]).toContain('The user describes it as: "a reviewer for SQL migrations". ');
+    expect(host.sent[0]).toContain("Also agree on a short name");
+  });
+
+  it("names no provider", async () => {
+    const { host } = setup();
+
+    await host.runCommand("agents", "create");
+
+    const providers = shippedProviders();
+
+    expect(providers.length).toBeGreaterThan(0);
+    providers.forEach((provider) => {
+      expect(host.sent[0]?.toLowerCase()).not.toContain(provider.toLowerCase());
+    });
+  });
+
+  it("refuses a shipped name, an existing file, an untrusted project and a bad name, sending nothing", async () => {
+    const { host, userDir, errors } = setup();
 
     await host.runCommand("agents", "create scout");
 
-    expect(errors().at(-1)).toContain("shipped agent");
+    expect(errors().at(-1)).toBe('pi-subagents: "scout" is a shipped agent; pick another name');
 
-    await host.runCommand("agents", "create implementer");
-
-    expect(errors().at(-1)).toContain("shipped agent");
-
-    mkdirSync(join(host.info.agentDir, "agents"), { recursive: true });
-    writeFileSync(userFile("mine"), "keep");
-
+    mkdirSync(userDir, { recursive: true });
+    writeFileSync(join(userDir, "mine.md"), "keep");
     await host.runCommand("agents", "create mine");
 
-    expect(errors().at(-1)).toContain("already exists");
-    expect(readFileSync(userFile("mine"), "utf8")).toBe("keep");
-    expect(host.forms).toHaveLength(0);
+    expect(errors().at(-1)).toBe(`pi-subagents: ${join(userDir, "mine.md")} already exists; edit it instead`);
+
+    await host.runCommand("agents", "create local project");
+
+    expect(errors().at(-1)).toBe(
+      "pi-subagents: project agents need a trusted project; create a user agent with /agents create <name>",
+    );
+
+    await host.runCommand("agents", "create my.agent project");
+
+    expect(errors().at(-1)).toContain('agent name "my.agent" must use');
+    expect(host.sent).toEqual([]);
+    expect(readFileSync(join(userDir, "mine.md"), "utf8")).toBe("keep");
   });
 
-  it("writes nothing when the form is cancelled or the model has spaces", async () => {
-    const { host, userFile, errors } = setup();
-    const cancelled = host.runCommand("agents", "create quiet");
+  it("sends the brief outside the terminal UI too", async () => {
+    const { host } = setup();
 
-    host.form().press({ name: "escape" });
-    await cancelled;
-
-    const spaced = host.runCommand("agents", "create quiet");
-
-    fill(host.form(), ["d", "", "provider/a b"]);
-    await spaced;
-
-    expect(errors().at(-1)).toContain("without spaces");
-    expect(existsSync(userFile("quiet"))).toBe(false);
-  });
-
-  it("writes the lead template without a form outside the TUI", async () => {
-    const { host, userFile } = setup();
-
-    host.info.mode = "print";
+    host.info.mode = "rpc";
     await host.runCommand("agents", "create batch");
 
-    expect(readFileSync(userFile("batch"), "utf8")).toContain("model: inherit");
+    expect(host.sent).toHaveLength(1);
+    expect(host.forms).toHaveLength(0);
   });
 
   it("offers create in completion and in the description", () => {
     const { host } = setup();
     const command = host.commands.get("agents");
+    const usage = "/agents create [<name> [project] | <what the agent is for>]";
 
     expect(command?.complete?.("cr")?.map((item) => item.value)).toEqual(["create"]);
-    expect(command?.complete?.("cr")?.[0]?.label).toContain("/agents create <name> [project]");
-    expect(command?.description).toContain("/agents create <name> [project]");
+    expect(command?.complete?.("cr")?.[0]?.label).toBe(`create · new agent: ${usage}`);
+    expect(command?.description).toBe(
+      `Agents: list, setup or create. Usage: /agents [view | <id>] | ${usage} | ${SETUP_USAGE}`,
+    );
   });
 
   it("reports a clear error when the agent-setup plugin is off", async () => {
@@ -161,6 +184,6 @@ describe("/agents create", () => {
         .get("agents")
         ?.complete?.("")
         ?.map((item) => item.value),
-    ).toEqual([]);
+    ).toEqual(["view"]);
   });
 });

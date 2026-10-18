@@ -8,16 +8,9 @@ import {
 } from "../../components/agent-row.ts";
 import { errorText, innerWidth, PAD, truncatePainted } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";
-import { carrySelection, type TreeRow } from "../../components/tree.ts";
+import { carrySelection, stoppableAgents, type TreeRow } from "../../components/tree.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
-import {
-  clearTargets,
-  listedTerminals,
-  listHint,
-  listSections,
-  subtitle,
-  visibleRecords,
-} from "./list-model.ts";
+import { clearTargets, listHint, listSections, subtitle, visibleRecords } from "./list-model.ts";
 import type { ListComponent } from "./overlay.ts";
 
 type ListDeps = {
@@ -231,9 +224,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
   };
 
   const stopAll = () => {
-    const stoppable = listedTerminals(visible).filter(
-      (record) => record.state === "queued" || record.state === "running",
-    );
+    const stoppable = stoppableAgents(visible);
 
     if (!pendingStopAll) {
       if (stoppable.length === 0) {
