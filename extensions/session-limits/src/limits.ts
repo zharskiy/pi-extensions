@@ -9,9 +9,9 @@ import {
   type HandoffFile,
   handoffStep,
   isPending,
+  type Limits,
   MAX_INSTRUCTIONS,
   type Phase,
-  type Ratios,
   retryInstruction,
   segmentFor,
   shouldRequest,
@@ -26,7 +26,7 @@ const HANDOFF_TYPE = "pi-session-limits-handoff";
 type LimitsOptions = {
   host: Host;
   template: string;
-  ratios: () => Ratios;
+  limits: () => Limits;
   releaseDelayMs?: number;
 };
 
@@ -56,7 +56,7 @@ const readHandoff = (path: string) => {
   }
 };
 
-export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }: LimitsOptions) => {
+export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }: LimitsOptions) => {
   const sources = new Set<string>();
   let state: LimitsState = {
     phase: "watching",
@@ -71,7 +71,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
   const instruction = (path: string) => template.replaceAll("{{path}}", path).trim();
 
   const refresh = () => {
-    const segment = state.context && segmentFor(state.context, state.phase, ratios(), HANDOFF_COMMAND);
+    const segment = state.context && segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
 
     host.ui.setStatus(STATUS_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
   };
@@ -352,7 +352,7 @@ export const createLimits = ({ host, template, ratios, releaseDelayMs = 1_000 }:
       state = { ...state, userActive: true };
     }
 
-    const level = contextLevel(context, ratios());
+    const level = contextLevel(context, limits());
 
     state = { ...state, context: level === "unknown" ? undefined : context };
 
