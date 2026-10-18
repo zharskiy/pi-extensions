@@ -85,10 +85,10 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     template
       .replaceAll("{{reason}}", reason)
       .replace(
-        /\{\{focus\}\}\n?/,
+        /\n*\{\{focus\}\}\n*/,
         focus
-          ? `The user says the next session is for: ${focus}. Shape Outcome and Next around that and leave out what it does not need.\n`
-          : "",
+          ? `\n\nThe user says the next session is for: ${focus}. Shape Outcome and Next around that and leave out what it does not need.\n\n`
+          : "\n\n",
       )
       .replaceAll("{{path}}", path)
       .trim();
@@ -456,8 +456,31 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     refresh();
   });
 
-  host.onIdle(() => {
+  const cancelManual = () => {
+    state = {
+      ...state,
+      phase: "watching",
+      instructions: 0,
+      path: undefined,
+      staleMtime: undefined,
+      settledSinceInstruction: false,
+      userActive: false,
+      manual: false,
+      handedOff: false,
+      focus: undefined,
+    };
+
+    host.ui.notify("Session handoff cancelled.", "info");
+    refresh();
+  };
+
+  host.onIdle((info) => {
     abandonStalledSwitch();
+
+    if (info.aborted && state.phase === "requested" && state.handedOff) {
+      cancelManual();
+      return;
+    }
 
     if (isPending(state.phase)) {
       state = { ...state, settledSinceInstruction: true };

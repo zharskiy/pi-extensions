@@ -27,8 +27,8 @@ const SUBCOMMAND_TEXT: Record<Subcommand, string> = {
   setup: "model, thinking and skills per agent",
 };
 
-const MENU_TEXT: Record<SetupWord, string> = {
-  setup: "model, thinking and skills per agent",
+const MENU_TEXT: Record<Subcommand, string> = {
+  ...SUBCOMMAND_TEXT,
   create: "new agent; the main session asks what it is for and writes it",
 };
 
@@ -198,7 +198,7 @@ export const agentViewPlugin: Plugin = {
       const counts = listCounts(registry.list(), cleared);
       const parts = [
         counts.running > 0 ? `${counts.running} running` : undefined,
-        counts.completed > 0 ? `${counts.completed} completed` : undefined,
+        counts.completed > 0 ? `${counts.completed} done` : undefined,
       ].filter((part) => part !== undefined);
 
       return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(SEP);

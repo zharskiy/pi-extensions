@@ -12,7 +12,7 @@ import {
   type Source,
   USAGE,
 } from "./args.ts";
-import { PAIRS, type Pair, pickImport, scanPairs } from "./pick.ts";
+import { PAIRS, type Pair, pickImport, scanPairs, visibleScope } from "./pick.ts";
 import { planImport } from "./plan.ts";
 import {
   appliedReport,
@@ -22,6 +22,7 @@ import {
   NOT_SELECTED,
   NOTHING_SELECTED,
   nothingToImport,
+  pickedReport,
   UNTRUSTED_ONLY,
 } from "./report.ts";
 import { type Found, findServers } from "./sources.ts";
@@ -122,7 +123,21 @@ export const createMcpImport = (host: Host, home: string) => {
     }
   };
 
-  const apply = (pair: Pair, names: readonly string[]) => {
+  const apply = (picked: Pair, names: readonly string[]) => {
+    const fresh = prepare(picked.source, picked.scope);
+
+    if (fresh.problem) {
+      fail(fresh.problem);
+      return;
+    }
+
+    const pair = fresh.pair;
+
+    if (!pair) {
+      fail(`found no MCP servers in ${fresh.found.checked.join(", ")} any more, nothing written`);
+      return;
+    }
+
     const chosen = new Set(names);
     const origins = pair.found.origins.map((origin) => ({
       ...origin,
@@ -146,17 +161,16 @@ export const createMcpImport = (host: Host, home: string) => {
     const skipped = [...pair.plan.skipped, ...unchecked];
 
     notify(
-      appliedReport(
-        { args, plan: { ...plan, skipped }, checked: pair.found.checked, target: pair.target },
-        true,
-      ),
+      pickedReport({ args, plan: { ...plan, skipped }, checked: pair.found.checked, target: pair.target }),
     );
   };
 
   const interactive = async () => {
-    const prepared = PAIRS.map(({ source, scope }) => prepare(source, scope));
-    const warnings = [...new Set(prepared.flatMap((item) => item.found.problems))];
-    const problems = [...new Set(prepared.flatMap((item) => (item.problem ? [item.problem] : [])))];
+    const trusted = host.session().projectTrusted;
+    const prepared = PAIRS.map(({ source, scope }) => ({ scope, ...prepare(source, scope) }));
+    const visible = prepared.filter((item) => visibleScope(item.scope, trusted));
+    const warnings = [...new Set(visible.flatMap((item) => item.found.problems))];
+    const problems = [...new Set(visible.flatMap((item) => (item.problem ? [item.problem] : [])))];
 
     warnings.forEach((message) => {
       fail(message, "warning");
@@ -166,7 +180,7 @@ export const createMcpImport = (host: Host, home: string) => {
     });
 
     const candidates = prepared.flatMap((item) => (item.pair ? [item.pair] : []));
-    const scan = scanPairs(candidates, host.session().projectTrusted);
+    const scan = scanPairs(candidates, trusted);
 
     if (scan.kind === "untrusted") {
       fail(UNTRUSTED_ONLY);
@@ -175,7 +189,7 @@ export const createMcpImport = (host: Host, home: string) => {
 
     if (scan.kind === "empty") {
       if (problems.length === 0) {
-        notify(nothingToImport([...new Set(prepared.flatMap((item) => item.found.checked))], scan.present));
+        notify(nothingToImport([...new Set(visible.flatMap((item) => item.found.checked))], scan));
       }
 
       return;

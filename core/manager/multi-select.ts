@@ -83,6 +83,14 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
 export const checkedIndexes = (state: MultiState) =>
   state.checked.flatMap((value, index) => (value ? [index] : []));
 
+const ROW_MARKS = "› [ ] ";
+
+export const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
+  width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
+
+export const descriptionFits = (theme: ThemeLike, option: MultiOption, width: number) =>
+  !option.description || theme.width(option.description) <= descriptionRoom(theme, option.label, width);
+
 export const multiLines = (
   theme: ThemeLike,
   options: readonly MultiOption[],
@@ -100,7 +108,7 @@ export const multiLines = (
     const first = `${PAD}${pointerMark(theme, chosen)} ${box} `;
     const name = option?.label ?? "";
     const label = theme.fg(chosen ? "accent" : "text", name);
-    const room = width - theme.width(first) - theme.width(name) - 2;
+    const room = descriptionRoom(theme, name, width);
     const description =
       option?.description && room > 0
         ? `  ${theme.fg("muted", theme.truncate(option.description, room))}`

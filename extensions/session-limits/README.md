@@ -23,7 +23,8 @@ It knows nothing about other extensions. Extensions that run work in the backgro
 - While a handoff is being written it only notifies `A session handoff is already being written; the session switches when it is ready.`; a new focus is ignored.
 - While a valid handoff waits for running work, `/session-handoff` without text switches now, behind the same confirmation; with text it asks for a fresh handoff.
 - After a failed or cancelled switch, `/session-handoff` without text switches at once when the file at the path is valid and newer than the last request; otherwise, or with text, it asks for a fresh handoff.
-- A second `/session-handoff` while a switch is already running is ignored.
+- Esc while the model writes the handoff for `/session-handoff` cancels it: nothing is resent, the notice says `Session handoff cancelled.` and the footer goes back to normal. A handoff started because the context is full is still asked for again after Esc.
+- A second `/session-handoff` while a switch is already running is ignored, and a focus typed with it is dropped.
 - In print and JSON runs it does nothing, since there is no session to switch to.
 
 ## Settings

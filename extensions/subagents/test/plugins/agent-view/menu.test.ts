@@ -61,7 +61,7 @@ describe("/agents menu", () => {
 
     const running = host.runCommand("agents");
 
-    expect(host.form().render(120).join("\n")).toContain("agents list · 2 running, 1 completed");
+    expect(host.form().render(120).join("\n")).toContain("agents list · 2 running, 1 done");
 
     host.form().press({ name: "escape" });
     await running;
@@ -103,8 +103,8 @@ describe("/agents menu", () => {
     host.form().press(digit("3"));
     await createRun;
 
-    expect(host.sent).toHaveLength(1);
-    expect(host.sent[0]).toContain("The user ran /agents create and wants a new agent");
+    expect(host.hidden).toHaveLength(1);
+    expect(host.hidden[0]?.message.text).toContain("The user ran /agents create and wants a new agent");
     expect(host.overlays).toHaveLength(0);
   });
 

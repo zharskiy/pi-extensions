@@ -92,11 +92,10 @@ describe("Esc after an interrupted turn", () => {
     expect(host.confirmations).toEqual([]);
   });
 
-  it("disarms when a new run starts and settles normally", async () => {
+  it("disarms when a later run settles normally", async () => {
     const { host } = await setup(2);
 
     host.settle({ aborted: true });
-    host.agentStart();
     host.settle();
 
     expect(host.pressEmptyEscape()).toBe(false);

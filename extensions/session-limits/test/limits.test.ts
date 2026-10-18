@@ -334,6 +334,16 @@ describe("session limits", () => {
     expect(status()).toBe(`<error>ctx 90% · handoff failed, run /${HANDOFF_COMMAND}`);
   });
 
+  it("still resends an automatic request after Esc", () => {
+    const { host, requests, turn } = setup();
+
+    turn(76_000);
+    host.settle({ aborted: true });
+
+    expect(requests()).toHaveLength(2);
+    expect(host.notices.some((notice) => notice.message === "Session handoff cancelled.")).toBe(false);
+  });
+
   it("ignores a stale handoff file left from before the request", () => {
     const { host, requests, turn, writeHandoff } = setup();
 
@@ -562,7 +572,40 @@ describe("/session-handoff on demand", () => {
 
     expect(status()).toBe("<error>writing handoff");
     expect(requests()[0]).not.toContain("next session is for");
-    expect(requests()[0]).toMatch(/now, so this is your very next step\.\nWrite the handoff file/);
+    expect(requests()[0]).toMatch(/now, so this is your very next step\.\n\nWrite the handoff file/);
+  });
+
+  it("keeps the focus in its own paragraph", async () => {
+    const { host, requests } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, FOCUS);
+
+    expect(requests()[0]).toMatch(
+      /very next step\.\n\nThe user says the next session is for: [^\n]+\n\nWrite the handoff file/,
+    );
+  });
+
+  it("cancels on Esc during the writing turn and sends nothing more", async () => {
+    const { host, requests, status, writeHandoff } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, FOCUS);
+    host.settle({ aborted: true });
+
+    expect(requests()).toHaveLength(1);
+    expect(host.notices.at(-1)).toEqual({ message: "Session handoff cancelled.", level: "info" });
+    expect(status()).toBeUndefined();
+
+    writeHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.dispatched).toEqual([]);
+    expect(requests()).toHaveLength(1);
+
+    await host.runCommand(HANDOFF_COMMAND);
+
+    expect(requests()).toHaveLength(2);
+    expect(requests()[1]).not.toContain(FOCUS);
   });
 
   it("switches after a valid file and seeds the new session with the focus", async () => {

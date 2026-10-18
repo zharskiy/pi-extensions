@@ -1,6 +1,6 @@
 import type { ImportArgs } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
-import type { Entry, Plan } from "./plan.ts";
+import type { Entry, Plan, Skipped } from "./plan.ts";
 
 type ReportInput = { args: ImportArgs; plan: Plan; checked: readonly string[]; target: string };
 
@@ -29,15 +29,18 @@ const signIn = (entries: readonly Entry[]) =>
 
 export const NAMESPACE = "pi-mcp-import";
 
+const skippedSection = (skipped: readonly Skipped[]) =>
+  section(
+    "skipped",
+    skipped.map((skip) => `${skip.name} (${skip.origin}): ${skip.reason}`),
+  );
+
 const detail = ({ plan }: ReportInput) => [
   ...section(
     "notes",
     plan.added.flatMap((entry) => entry.notes.map((note) => `${entry.name}: ${note}`)),
   ),
-  ...section(
-    "skipped",
-    plan.skipped.map((skip) => `${skip.name} (${skip.origin}): ${skip.reason}`),
-  ),
+  ...skippedSection(plan.skipped),
 ];
 
 const oauthLines = (names: readonly string[]) =>
@@ -73,9 +76,8 @@ export const dryRunReport = (input: ReportInput) => {
   ].join("\n");
 };
 
-export const appliedReport = (input: ReportInput, picked = false) => {
-  const { args, plan, target } = input;
-  const subject = picked ? `${NAMESPACE}:` : `${NAMESPACE}: ${command(args, true)}`;
+const addedReport = (subject: string, input: ReportInput) => {
+  const { plan, target } = input;
 
   if (plan.added.length === 0) {
     return [`${subject} added nothing to ${target}`, ...detail(input)].join("\n");
@@ -90,6 +92,11 @@ export const appliedReport = (input: ReportInput, picked = false) => {
   ].join("\n");
 };
 
+export const appliedReport = (input: ReportInput) =>
+  addedReport(`${NAMESPACE}: ${command(input.args, true)}`, input);
+
+export const pickedReport = (input: ReportInput) => addedReport(`${NAMESPACE}:`, input);
+
 export const NOT_SELECTED = "not selected";
 
 export const NOTHING_SELECTED = `${NAMESPACE}: nothing selected, nothing written`;
@@ -97,8 +104,27 @@ export const NOTHING_SELECTED = `${NAMESPACE}: nothing selected, nothing written
 export const UNTRUSTED_ONLY =
   "found MCP servers only in this project's files; trust this project first, pi reads .pi/mcp.json only in trusted projects";
 
-export const nothingToImport = (checked: readonly string[], present: readonly string[]) =>
-  `${NAMESPACE}: found no MCP servers to import in ${checked.join(", ")}${present.length > 0 ? `; all of them are already in ${present.join(", ")}` : ""}`;
+type Nothing = {
+  files: readonly string[];
+  targets: readonly string[];
+  skipped: readonly Skipped[];
+  present: boolean;
+};
+
+export const nothingToImport = (
+  checked: readonly string[],
+  { files, targets, skipped, present }: Nothing,
+) => {
+  if (files.length === 0) {
+    return `${NAMESPACE}: found no MCP servers to import in ${checked.join(", ")}`;
+  }
+
+  if (present) {
+    return `${NAMESPACE}: nothing new to import: every server in ${files.join(", ")} is already in ${targets.join(", ")}`;
+  }
+
+  return [`${NAMESPACE}: nothing to import from ${files.join(", ")}`, ...skippedSection(skipped)].join("\n");
+};
 
 export const emptyReport = (args: ImportArgs, checked: readonly string[]) =>
   `${NAMESPACE}: ${command(args, false)} found no MCP servers in ${checked.join(", ")}`;

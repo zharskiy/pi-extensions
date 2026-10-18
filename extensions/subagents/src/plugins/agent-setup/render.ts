@@ -2,6 +2,7 @@ import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { hintLines, PAD, padded, prefixed, rule } from "../../../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../../../core/manager/list.ts";
 import {
+  descriptionFits,
   MULTI_SELECT_HINTS,
   multiLines,
   pointerMark,
@@ -87,9 +88,10 @@ const windowLines = (
 
 const skillDetail = (context: SetupContext, cursor: number, theme: ThemeLike, width: number) => {
   const skill = context.skills[cursor];
-  const row = `${PAD}› [ ] ${skill?.name ?? ""}  ${skill?.description ?? ""}`;
-
-  if (!skill?.description || theme.width(row) <= width) {
+  if (
+    !skill?.description ||
+    descriptionFits(theme, { label: skill.name, description: skill.description }, width)
+  ) {
     return [];
   }
 

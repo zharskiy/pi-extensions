@@ -4,7 +4,9 @@ import type { AgentRuntime, Host, SkillInfo } from "../../../../../core/adapter/
 import { PLAIN_NAME, PLAIN_NAME_TEXT } from "../../model/agent-schema.ts";
 import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../model/paths.ts";
 import type { AgentDefinitions } from "../../model/types.ts";
-import { agentTemplate } from "./agent-template.ts";
+import { type AgentKind, agentTemplate } from "./agent-template.ts";
+
+const CREATE_TYPE = "pi-subagents-create";
 
 export const CREATE_USAGE = "/agents create [<name> [project] | <what the agent is for>]";
 
@@ -77,6 +79,9 @@ const fileText = ({ request, userDir, projectDir, trusted }: BriefInput) => {
 const skillsText = (skills: SkillInfo[]) =>
   skills.length === 0 ? "none" : skills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
 
+const skeleton = (kind: AgentKind) =>
+  agentTemplate({ name: "<name>", description: "", kind, model: "" }).trimEnd();
+
 export const createBrief = (input: BriefInput): string => {
   const command = ["/agents create", input.args.trim().replace(/\s+/g, " ")].filter(Boolean).join(" ");
   const values: Record<string, string> = {
@@ -86,7 +91,8 @@ export const createBrief = (input: BriefInput): string => {
     file: fileText(input),
     taken: input.taken.join(", ") || "none",
     skills: skillsText(input.skills),
-    template: agentTemplate({ name: "<name>", description: "", kind: "lead", model: "" }).trimEnd(),
+    lead: skeleton("lead"),
+    chore: skeleton("chore"),
   };
 
   return input.template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match);
@@ -131,8 +137,9 @@ export const createAgentCommand =
       }
     }
 
-    host.sendUserMessage(
-      createBrief({
+    host.sendHiddenMessage({
+      customType: CREATE_TYPE,
+      text: createBrief({
         template,
         args,
         request,
@@ -142,7 +149,7 @@ export const createAgentCommand =
         taken: loaded.map((definition) => definition.name),
         skills: runtime.skillCatalog(),
       }),
-    );
+    });
     host.ui.notify(
       `${NAMESPACE}: asked the main session to create the agent; answer its questions, then /reload`,
       "info",

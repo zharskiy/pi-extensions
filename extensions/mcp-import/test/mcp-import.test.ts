@@ -411,7 +411,59 @@ describe("/mcp-import without arguments", () => {
 
     expect(host.forms).toEqual([]);
     expect(host.notices).toHaveLength(1);
-    expect(host.notices[0].message).toMatch(/; all of them are already in ~\/\.pi\/agent\/mcp\.json$/);
+    expect(host.notices[0].message).toBe(
+      "pi-mcp-import: nothing new to import: every server in ~/.claude.json (user scope) is already in ~/.pi/agent/mcp.json",
+    );
+  });
+
+  it("lists why each found server cannot be added", async () => {
+    const { host } = setup({
+      claude: { mcpServers: { kept: { command: "new" }, "bad name": { command: "x" } } },
+      existing: { mcpServers: { kept: { command: "old" } } },
+    });
+
+    await host.runCommand("mcp-import");
+
+    expect(host.forms).toEqual([]);
+    expect(host.notices).toEqual([
+      {
+        message: [
+          "pi-mcp-import: nothing to import from ~/.claude.json (user scope)",
+          "",
+          "skipped:",
+          "  kept (~/.claude.json (user scope)): already in ~/.pi/agent/mcp.json, left unchanged",
+          "  bad name (~/.claude.json (user scope)): pi server names use only letters, digits, _ and -",
+        ].join("\n"),
+        level: "info",
+      },
+    ]);
+  });
+
+  it("does not report broken project files in an untrusted project", async () => {
+    const { host } = setup({ projectTrusted: false });
+
+    writeFileSync(join(host.session().cwd, ".mcp.json"), "{ broken");
+
+    await host.runCommand("mcp-import");
+
+    expect(host.notices).toHaveLength(1);
+    expect(host.notices[0].message).toMatch(/^pi-mcp-import: found no MCP servers to import in /);
+    expect(host.notices[0].message).not.toContain(".mcp.json,");
+  });
+
+  it("keeps changes made to the target file while the form was open", async () => {
+    const { host, userFile } = setup({
+      claude: { mcpServers: { github: GITHUB } },
+      existing: { mcpServers: {} },
+    });
+
+    const running = host.runCommand("mcp-import");
+
+    writeFileSync(userFile, JSON.stringify({ mcpServers: { outside: LINEAR } }));
+    host.form().press(ENTER);
+    await running;
+
+    expect(readJson(userFile)).toEqual({ mcpServers: { outside: LINEAR, github: GITHUB } });
   });
 
   it("keeps the usage error outside the interactive terminal", async () => {

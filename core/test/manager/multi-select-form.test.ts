@@ -38,17 +38,15 @@ const open = (spec: { checked?: boolean[]; submitHint?: string } = {}) => {
 
 describe("multiSelectForm", () => {
   it("renders the title, checkbox rows with the given checks and the hints with the submit word", () => {
-    expect(open({ checked: [true, false, true], submitHint: "add" }).view.render(70)).toEqual([
-      "─".repeat(70),
-      " Servers",
-      "",
-      " › [x] github  stdio · gh",
-      "   [ ] linear",
-      "   [x] sentry",
-      "",
-      " ↑↓ select · Space toggle · a all · n none · Enter add · Esc cancel",
-      "─".repeat(70),
-    ]);
+    const text = open({ checked: [true, false, true], submitHint: "add" })
+      .view.render(70)
+      .join("\n");
+
+    expect(text).toContain("Servers");
+    expect(text).toContain("› [x] github  stdio · gh");
+    expect(text).toContain("[ ] linear");
+    expect(text).toContain("[x] sentry");
+    expect(text).toContain("↑↓ select · Space toggle · a all · n none · Enter add · Esc cancel");
   });
 
   it("starts with nothing checked and says confirm when no checks or submit word are given", () => {

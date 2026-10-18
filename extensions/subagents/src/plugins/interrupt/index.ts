@@ -1,18 +1,16 @@
-import { errorText } from "../../components/format.ts";
+import { errorText, plural } from "../../components/format.ts";
 import { stoppableAgents } from "../../components/tree.ts";
 import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 
 const SHOWN_IDS = 3;
 
-const agentCount = (count: number) => `${count} ${count === 1 ? "agent" : "agents"}`;
-
 export const stillRunningText = (ids: string[]) => {
   const shown = ids.slice(0, SHOWN_IDS);
   const more = ids.length - shown.length;
   const names = more > 0 ? `${shown.join(", ")} and ${more} more` : shown.join(", ");
 
-  return `${agentCount(ids.length)} ${ids.length === 1 ? "is" : "are"} still running: ${names}.`;
+  return `${plural(ids.length, "agent")} ${ids.length === 1 ? "is" : "are"} still running: ${names}.`;
 };
 
 export const interruptPlugin: Plugin = {
@@ -28,10 +26,6 @@ export const interruptPlugin: Plugin = {
       armed = enabled && aborted;
     });
 
-    host.onAgentStart(() => {
-      armed = false;
-    });
-
     const confirmAndStop = async (ids: string[]) => {
       const yes = await host.ui.confirm("Stop running agents?", stillRunningText(ids));
 
@@ -39,7 +33,7 @@ export const interruptPlugin: Plugin = {
         return;
       }
 
-      host.ui.notify(`${NAMESPACE}: stopping ${agentCount(ids.length)}`, "info");
+      host.ui.notify(`${NAMESPACE}: stopping ${plural(ids.length, "agent")}`, "info");
       await Promise.all(ids.map((id) => runner.stop(id)));
     };
 

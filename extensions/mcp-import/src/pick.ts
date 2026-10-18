@@ -3,7 +3,7 @@ import { multiSelectForm } from "../../../core/manager/multi-select.ts";
 import { selectForm } from "../../../core/manager/select.ts";
 import type { Scope, Source } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
-import type { Entry, Plan } from "./plan.ts";
+import type { Entry, Plan, Skipped } from "./plan.ts";
 import type { Found } from "./sources.ts";
 
 export type Pair = {
@@ -19,7 +19,7 @@ export type Pair = {
 export type Scan =
   | { kind: "pairs"; pairs: Pair[] }
   | { kind: "untrusted" }
-  | { kind: "empty"; present: string[] };
+  | { kind: "empty"; files: string[]; targets: string[]; skipped: Skipped[]; present: boolean };
 
 export const PAIRS: readonly { source: Source; scope: Scope }[] = [
   { source: "claude", scope: "user" },
@@ -34,10 +34,6 @@ const SCOPE_NAMES: Record<Scope, string> = { user: "user", project: "this projec
 
 const NAMES_ROOM = 40;
 
-const LINE_ROOM = 72;
-
-const cut = (text: string, room: number) => (text.length > room ? `${text.slice(0, room - 1)}…` : text);
-
 const foundNames = (pair: Pair) => [
   ...new Set(pair.found.origins.flatMap((origin) => Object.keys(origin.servers))),
 ];
@@ -48,9 +44,11 @@ const allPresent = (pair: Pair) => {
   return foundNames(pair).every((name) => present.has(name));
 };
 
+export const visibleScope = (scope: Scope, trusted: boolean) => trusted || scope === "user";
+
 export const scanPairs = (candidates: readonly Pair[], trusted: boolean): Scan => {
   const addable = candidates.filter((pair) => pair.plan.added.length > 0);
-  const pairs = addable.filter((pair) => trusted || pair.scope === "user");
+  const pairs = addable.filter((pair) => visibleScope(pair.scope, trusted));
 
   if (pairs.length > 0) {
     return { kind: "pairs", pairs };
@@ -60,10 +58,22 @@ export const scanPairs = (candidates: readonly Pair[], trusted: boolean): Scan =
     return { kind: "untrusted" };
   }
 
-  const withServers = candidates.filter((pair) => foundNames(pair).length > 0);
-  const present = withServers.length > 0 && withServers.every(allPresent);
+  const withServers = candidates.filter(
+    (pair) => visibleScope(pair.scope, trusted) && foundNames(pair).length > 0,
+  );
+  const files = withServers.flatMap((pair) =>
+    pair.found.origins
+      .filter((origin) => Object.keys(origin.servers).length > 0)
+      .map((origin) => origin.label),
+  );
 
-  return { kind: "empty", present: present ? [...new Set(withServers.map((pair) => pair.target))] : [] };
+  return {
+    kind: "empty",
+    files: [...new Set(files)],
+    targets: [...new Set(withServers.map((pair) => pair.target))],
+    skipped: withServers.flatMap((pair) => pair.plan.skipped),
+    present: withServers.length > 0 && withServers.every(allPresent),
+  };
 };
 
 const nameList = (names: readonly string[]) => {
@@ -104,7 +114,7 @@ const serverDescription = (entry: Entry) => {
     ...(notes > 0 ? [notes === 1 ? "1 note" : `${notes} notes`] : []),
   ];
 
-  return cut(parts.join(" · "), LINE_ROOM);
+  return parts.join(" · ");
 };
 
 export const serverOptions = (plan: Plan) =>

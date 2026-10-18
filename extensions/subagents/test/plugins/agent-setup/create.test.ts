@@ -23,7 +23,12 @@ const setup = () => {
   runtime.skills = ["docs", "sql"];
   runtime.skillDescriptions = { docs: "Write project docs", sql: "Review SQL migrations" };
 
-  return { ...harness, userDir, projectDir, errors };
+  const briefs = () =>
+    host.hidden
+      .filter((entry) => entry.message.customType === "pi-subagents-create")
+      .map((entry) => entry.message.text);
+
+  return { ...harness, userDir, projectDir, errors, briefs };
 };
 
 const shippedProviders = () => [
@@ -40,13 +45,13 @@ const shippedProviders = () => [
 
 describe("/agents create", () => {
   it("sends the main session a brief with the taken names, skills, skeleton and user dir", async () => {
-    const { host, userDir } = setup();
+    const { host, briefs, userDir } = setup();
 
     await host.runCommand("agents", "create");
 
-    expect(host.sent).toHaveLength(1);
+    expect(briefs()).toHaveLength(1);
 
-    const brief = host.sent[0] ?? "";
+    const brief = briefs()[0] ?? "";
 
     expect(brief).toContain("The user ran /agents create and wants a new agent");
     expect(brief).toContain(join(userDir, "<name>.md"));
@@ -55,7 +60,16 @@ describe("/agents create", () => {
     expect(brief).toContain("- docs: Write project docs\n- sql: Review SQL migrations");
     expect(brief).toContain("name: <name>");
     expect(brief).toContain("Also agree on a short name (or propose one) before writing.");
-    expect(brief).toContain("If nothing is missing, ask no question and go straight to writing the file.");
+    expect(brief).toContain(
+      "ask the user only what is missing, in one message, and stop there until they answer.",
+    );
+    expect(brief).toContain("Otherwise write the file now, without asking anything.");
+    expect(brief).toContain("Lead skeleton:");
+    expect(brief).toContain("Chore skeleton:");
+    expect(brief).toContain("tools: [read, grep, find, ls]\n");
+    expect(brief).toContain("mcp: false");
+    expect(brief).toContain("subagents: [scout]");
+    expect(host.sent).toEqual([]);
     expect(brief).not.toContain("{{");
     expect(existsSync(userDir)).toBe(false);
     expect(host.notices.at(-1)).toEqual({
@@ -65,51 +79,51 @@ describe("/agents create", () => {
   });
 
   it("offers the project dir only in a trusted project", async () => {
-    const { host, userDir, projectDir } = setup();
+    const { host, briefs, userDir, projectDir } = setup();
 
     await host.runCommand("agents", "create");
 
-    expect(host.sent[0]).not.toContain(projectDir);
-    expect(host.sent[0]).toContain(
+    expect(briefs()[0]).not.toContain(projectDir);
+    expect(briefs()[0]).toContain(
       `Write it to ${join(userDir, "<name>.md")}. This project is not trusted, so project agents are not loaded; do not write one.`,
     );
 
     host.info.projectTrusted = true;
     await host.runCommand("agents", "create");
 
-    expect(host.sent[1]).toContain(join(userDir, "<name>.md"));
-    expect(host.sent[1]).toContain(join(projectDir, "<name>.md"));
-    expect(host.sent[1]).not.toContain("not trusted");
+    expect(briefs()[1]).toContain(join(userDir, "<name>.md"));
+    expect(briefs()[1]).toContain(join(projectDir, "<name>.md"));
+    expect(briefs()[1]).not.toContain("not trusted");
   });
 
   it("names the file for a given name, in the user or the trusted project dir", async () => {
-    const { host, userDir, projectDir } = setup();
+    const { host, briefs, userDir, projectDir } = setup();
 
     await host.runCommand("agents", "create reviewer-sql");
 
-    expect(host.sent[0]).toContain("The user ran /agents create reviewer-sql and");
-    expect(host.sent[0]).toContain("Its name is reviewer-sql. ");
-    expect(host.sent[0]).toContain(`Write it to ${join(userDir, "reviewer-sql.md")}.`);
-    expect(host.sent[0]).not.toContain("agree on a short name");
+    expect(briefs()[0]).toContain("The user ran /agents create reviewer-sql and");
+    expect(briefs()[0]).toContain("Its name is reviewer-sql. ");
+    expect(briefs()[0]).toContain(`Write it to ${join(userDir, "reviewer-sql.md")}.`);
+    expect(briefs()[0]).not.toContain("agree on a short name");
 
     host.info.projectTrusted = true;
     await host.runCommand("agents", "create reviewer-sql project");
 
-    expect(host.sent[1]).toContain(`Write it to ${join(projectDir, "reviewer-sql.md")}.`);
+    expect(briefs()[1]).toContain(`Write it to ${join(projectDir, "reviewer-sql.md")}.`);
   });
 
   it("passes a purpose quoted and asks for a name", async () => {
-    const { host } = setup();
+    const { host, briefs } = setup();
 
     await host.runCommand("agents", "create a reviewer for SQL migrations");
 
-    expect(host.sent[0]).toContain("The user ran /agents create a reviewer for SQL migrations and");
-    expect(host.sent[0]).toContain('The user describes it as: "a reviewer for SQL migrations". ');
-    expect(host.sent[0]).toContain("Also agree on a short name");
+    expect(briefs()[0]).toContain("The user ran /agents create a reviewer for SQL migrations and");
+    expect(briefs()[0]).toContain('The user describes it as: "a reviewer for SQL migrations". ');
+    expect(briefs()[0]).toContain("Also agree on a short name");
   });
 
   it("names no provider", async () => {
-    const { host } = setup();
+    const { host, briefs } = setup();
 
     await host.runCommand("agents", "create");
 
@@ -117,12 +131,12 @@ describe("/agents create", () => {
 
     expect(providers.length).toBeGreaterThan(0);
     providers.forEach((provider) => {
-      expect(host.sent[0]?.toLowerCase()).not.toContain(provider.toLowerCase());
+      expect(briefs()[0]?.toLowerCase()).not.toContain(provider.toLowerCase());
     });
   });
 
   it("refuses a shipped name, an existing file, an untrusted project and a bad name, sending nothing", async () => {
-    const { host, userDir, errors } = setup();
+    const { host, briefs, userDir, errors } = setup();
 
     await host.runCommand("agents", "create scout");
 
@@ -143,17 +157,17 @@ describe("/agents create", () => {
     await host.runCommand("agents", "create my.agent project");
 
     expect(errors().at(-1)).toContain('agent name "my.agent" must use');
-    expect(host.sent).toEqual([]);
+    expect(briefs()).toEqual([]);
     expect(readFileSync(join(userDir, "mine.md"), "utf8")).toBe("keep");
   });
 
   it("sends the brief outside the terminal UI too", async () => {
-    const { host } = setup();
+    const { host, briefs } = setup();
 
     host.info.mode = "rpc";
     await host.runCommand("agents", "create batch");
 
-    expect(host.sent).toHaveLength(1);
+    expect(briefs()).toHaveLength(1);
     expect(host.forms).toHaveLength(0);
   });
 
