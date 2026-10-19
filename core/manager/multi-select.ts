@@ -1,8 +1,8 @@
-import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { PAD, padded, prefixed } from "./layout.ts";
-import { clampIndex } from "./list.ts";
+import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
+import { hintLines, PAD, padded, prefixed, rule } from "./layout.ts";
+import { CANCEL_HINT, clampIndex } from "./list.ts";
 
-type MultiOption = { label: string; description?: string };
+export type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
@@ -83,6 +83,14 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
 export const checkedIndexes = (state: MultiState) =>
   state.checked.flatMap((value, index) => (value ? [index] : []));
 
+const ROW_MARKS = "› [ ] ";
+
+export const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
+  width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
+
+export const descriptionFits = (theme: ThemeLike, option: MultiOption, width: number) =>
+  !option.description || theme.width(option.description) <= descriptionRoom(theme, option.label, width);
+
 export const multiLines = (
   theme: ThemeLike,
   options: readonly MultiOption[],
@@ -97,9 +105,61 @@ export const multiLines = (
   return scrolledLines(theme, options.length, state.cursor, height, width, (index, chosen) => {
     const option = options[index];
     const box = state.checked[index] ? theme.fg("success", "[x]") : theme.fg("muted", "[ ]");
-    const label = theme.fg(chosen ? "accent" : "text", option?.label ?? "");
-    const description = option?.description ? `  ${theme.fg("muted", option.description)}` : "";
+    const first = `${PAD}${pointerMark(theme, chosen)} ${box} `;
+    const name = option?.label ?? "";
+    const label = theme.fg(chosen ? "accent" : "text", name);
+    const room = descriptionRoom(theme, name, width);
+    const description =
+      option?.description && room > 0
+        ? `  ${theme.fg("muted", theme.truncate(option.description, room))}`
+        : "";
 
-    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${box} `, `${label}${description}`, width);
+    return prefixed(theme, first, `${label}${description}`, width);
   });
 };
+
+export type MultiSelectSpec<T> = {
+  title: string;
+  options: readonly (MultiOption & { value: T })[];
+  checked?: readonly boolean[];
+  submitHint?: string;
+};
+
+export const multiSelectForm =
+  <T>(spec: MultiSelectSpec<T>): FormFactory<T[] | undefined> =>
+  (api) => {
+    const hints = [...MULTI_SELECT_HINTS, `Enter ${spec.submitHint ?? "confirm"}`, CANCEL_HINT];
+    let state = initialMulti(spec.options.length, spec.checked);
+
+    return {
+      render: (width) => [
+        rule(api.theme, width),
+        ...padded(api.theme, api.theme.fg("text", spec.title), width),
+        "",
+        ...multiLines(api.theme, spec.options, state, width),
+        "",
+        ...hintLines(api.theme, hints, width),
+        rule(api.theme, width),
+      ],
+      handleKey: (key) => {
+        if (key.name === "escape") {
+          api.done(undefined);
+          return;
+        }
+
+        if (key.name === "enter") {
+          api.done(spec.options.filter((_, index) => state.checked[index]).map((option) => option.value));
+          return;
+        }
+
+        const next = multiKey(key, state);
+
+        if (!next) {
+          return;
+        }
+
+        state = next;
+        api.requestRender();
+      },
+    };
+  };

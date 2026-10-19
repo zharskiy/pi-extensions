@@ -95,6 +95,21 @@ describe("pi adapter", () => {
     expect(host.session().mode).toBe("tui");
   });
 
+  it("tells idle handlers whether the settled run was aborted", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+
+    host.onIdle(({ aborted }) => seen.push(aborted));
+
+    await fire("session_start", fakeCtx("tui"));
+    await fire("agent_settled", fakeCtx("tui"), { aborted: true });
+    await fire("agent_settled", fakeCtx("tui"), { aborted: false });
+    await fire("agent_settled", fakeCtx("tui"));
+
+    expect(seen).toEqual([true, false, false]);
+  });
+
   it("emits phases from pi events and idle after the idle handlers", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });

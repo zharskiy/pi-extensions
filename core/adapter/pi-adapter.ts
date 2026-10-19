@@ -12,6 +12,7 @@ import type {
   ContextSnapshot,
   DialogEvent,
   Host,
+  IdleInfo,
   Phase,
   PhaseDetail,
   SessionControl,
@@ -20,7 +21,7 @@ import type {
   ToolSpec,
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
-import { createPiRuntime } from "./pi-child.ts";
+import { createPiRuntime, type SkillFile } from "./pi-child.ts";
 import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
 import { entryHost } from "./pi-entries.ts";
@@ -35,6 +36,16 @@ import { contextOf, sumUsage } from "./usage.ts";
 
 export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
   pi.getCommands().some((command) => command.sourceInfo.path === "builtin:mcp");
+
+export const skillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillFile[] =>
+  pi
+    .getCommands()
+    .filter((command) => command.source === "skill")
+    .map((command) => ({
+      name: command.name.replace(/^skill:/, ""),
+      description: command.description ?? "",
+      path: command.sourceInfo.path,
+    }));
 
 const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
   model !== undefined &&
@@ -94,7 +105,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
-  const idleHandlers: (() => void)[] = [];
+  const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
@@ -323,12 +334,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
-  pi.on("agent_settled", (_event, ctx) => {
+  pi.on("agent_settled", (event, ctx) => {
     capture(ctx);
     runActive = false;
+    const info: IdleInfo = { aborted: event.aborted === true };
 
     idleHandlers.forEach((handler) => {
-      handler();
+      handler(info);
     });
 
     applyPhase({ type: "agent_settled" });
@@ -487,11 +499,7 @@ export const createPiExtension =
         ctx: () => liveCtx(state),
         settings: () => pi.getSettings(),
         thinking: () => pi.getThinkingLevel(),
-        skillFiles: () =>
-          pi
-            .getCommands()
-            .filter((command) => command.source === "skill")
-            .map((command) => ({ name: command.name.replace(/^skill:/, ""), path: command.sourceInfo.path })),
+        skillFiles: () => skillFiles(pi),
         activeTools: () => parentTools(pi),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },

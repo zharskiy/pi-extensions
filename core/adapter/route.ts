@@ -1,4 +1,3 @@
 import type { RoutedMessage } from "./contract.ts";
 
-export const formatRoutedMessage = (message: RoutedMessage) =>
-  `[message from ${message.sender}]\n${message.text}`;
+export const formatRoutedMessage = ({ sender, text }: RoutedMessage) => `[message from ${sender}]\n${text}`;

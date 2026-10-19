@@ -7,7 +7,7 @@ export const MAX_INSTRUCTIONS = 2;
 
 type ContextLevel = "unknown" | "normal" | "soft" | "hard";
 
-export type Phase = "watching" | "requested" | "waiting" | "switching" | "stuck";
+export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching" | "stuck";
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
@@ -64,6 +64,7 @@ export const handoffStep = (input: HandoffInput) => {
 };
 
 const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
+  queued: "handoff after this turn",
   requested: "writing handoff",
   waiting: "handoff waits for running work",
   switching: "switching session",
@@ -71,20 +72,24 @@ const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, stri
 });
 
 export const segmentFor = (
-  context: ContextTokens,
+  context: ContextTokens | undefined,
   phase: Phase,
   limits: Limits,
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
-  const percent = percentOf(context);
+  const percent = context ? percentOf(context) : null;
 
   if (phase !== "watching") {
-    const shown = percent === null ? "ctx" : `ctx ${percent}%`;
+    const label = pendingLabels(command)[phase];
 
     return {
-      token: phase === "waiting" ? "warning" : "error",
-      text: `${shown} · ${pendingLabels(command)[phase]}`,
+      token: phase === "waiting" || phase === "queued" ? "warning" : "error",
+      text: percent === null ? label : `ctx ${percent}% · ${label}`,
     };
+  }
+
+  if (!context) {
+    return undefined;
   }
 
   const level = contextLevel(context, limits);

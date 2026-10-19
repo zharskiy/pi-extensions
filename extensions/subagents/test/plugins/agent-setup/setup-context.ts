@@ -32,7 +32,10 @@ export const context = (trusted = true): SetupContext => ({
     },
   ],
   models: [model("acme/big", ["off", "low", "high"]), model("acme/small", ["off"])],
-  skills: ["docs", "search"],
+  skills: [
+    { name: "docs", description: "Writes docs" },
+    { name: "search", description: "" },
+  ],
   trusted,
 });
 

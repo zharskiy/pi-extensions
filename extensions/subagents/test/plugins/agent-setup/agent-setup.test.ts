@@ -106,6 +106,54 @@ describe("/agents setup form", () => {
     ]);
   });
 
+  it("shows each skill's description on its row and the full text of the one under the cursor", async () => {
+    const { runtime, userFile, openForm } = setup();
+
+    runtime.skills = ["review", "docs", "search"];
+    runtime.skillDescriptions = {
+      review:
+        "Reviews diffs for correctness, missing tests, risky changes and unclear naming, then reports every finding grouped by severity with file and line.",
+      docs: "Writes docs",
+      search: "Searches the web and cites sources",
+    };
+
+    const { run, form } = await openForm();
+
+    goToAgent(form, "general");
+    form.press(key("down"), key("down"), key("enter"));
+
+    const lines = form.render(33);
+    const list = lines.slice(lines.indexOf(" Skills") + 1);
+
+    expect(list.slice(0, 3)).toEqual([
+      " › [x] review  Reviews diffs for…",
+      "   [x] docs  Writes docs",
+      "   [x] search  Searches the web …",
+    ]);
+    expect(list.slice(3, 8)).toEqual([
+      "",
+      " Reviews diffs for correctness,",
+      " missing tests, risky changes and",
+      " unclear naming, then reports ev…",
+      "",
+    ]);
+
+    form.press(key("down"));
+    expect(form.render(33).some((line) => line.startsWith(" Reviews diffs"))).toBe(false);
+    expect(form.render(33).some((line) => line.startsWith(" Searches"))).toBe(false);
+
+    form.press(key("down"));
+    expect(form.render(33)).toContain(" Searches the web and cites");
+    expect(form.render(33)).toContain(" sources");
+
+    form.press(char("n"), key("space"), key("enter"));
+    goToSubmit(form);
+    form.press(key("enter"));
+    await run;
+
+    expect(readJson(userFile)).toEqual({ agents: { general: { skills: ["search"] } } });
+  });
+
   it("refuses the project file in an untrusted project and writes the user file instead", async () => {
     const { projectFile, userFile, openForm, definition } = setup();
     const { run, form } = await openForm();

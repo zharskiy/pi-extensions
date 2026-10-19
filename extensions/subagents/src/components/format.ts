@@ -4,7 +4,7 @@ export { errorText, formatDuration, formatTokens } from "../../../../core/manage
 
 export const SEP = " · ";
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const formatToolUses = (n: number): string => plural(n, "tool use");
 

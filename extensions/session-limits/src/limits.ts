@@ -23,6 +23,14 @@ const HANDOFF_COMMAND = "session-handoff";
 
 const HANDOFF_TYPE = "pi-session-limits-handoff";
 
+const REQUEST_TYPE = "pi-session-limits-request";
+
+const AUTOMATIC_REASON = "Your context window is nearly full.";
+
+const IDLE_POLL_MS = 250;
+
+const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
+
 type LimitsOptions = {
   host: Host;
   template: string;
@@ -38,7 +46,12 @@ type LimitsState = {
   context?: ContextSnapshot;
   settledSinceInstruction: boolean;
   userActive: boolean;
+  manual: boolean;
+  handedOff: boolean;
+  focus?: string;
 };
+
+type RequestOrigin = { manual: boolean; focus?: string };
 
 const mtimeOf = (path: string) => {
   try {
@@ -63,20 +76,43 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     instructions: 0,
     settledSinceInstruction: false,
     userActive: false,
+    manual: false,
+    handedOff: false,
   };
   let turns = 0;
+  let running = false;
   let switchRunning = false;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+  let idlePoll: ReturnType<typeof setTimeout> | undefined;
 
-  const instruction = (path: string) => template.replaceAll("{{path}}", path).trim();
+  const instruction = (path: string, reason: string, focus: string | undefined) =>
+    template
+      .replaceAll("{{reason}}", reason)
+      .replace(
+        /\n*\{\{focus\}\}\n*/,
+        focus
+          ? `\n\nThe user says the next session is for: ${focus}. Shape Outcome and Next around that and leave out what it does not need.\n\n`
+          : "\n\n",
+      )
+      .replaceAll("{{path}}", path)
+      .trim();
+
+  const currentInstruction = (path: string) =>
+    instruction(path, state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON, state.focus);
+
+  const sendInstruction = (text: string) => {
+    host.sendHiddenMessage({ customType: REQUEST_TYPE, text });
+  };
 
   const refresh = () => {
-    const segment = state.context && segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
+    const segment =
+      (state.context || state.phase !== "watching") &&
+      segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
 
     host.ui.setStatus(STATUS_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
   };
 
-  const sendRequest = (path: string) => {
+  const sendRequest = (path: string, origin: RequestOrigin) => {
     state = {
       ...state,
       phase: "requested",
@@ -85,12 +121,15 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
       staleMtime: mtimeOf(path),
       settledSinceInstruction: false,
       userActive: false,
+      manual: origin.manual,
+      handedOff: origin.manual,
+      focus: origin.focus,
     };
 
-    host.sendUserMessage(instruction(path));
+    sendInstruction(currentInstruction(path));
   };
 
-  const request = () => {
+  const request = (origin: RequestOrigin) => {
     const path = handoffPath(host.session());
 
     try {
@@ -101,7 +140,14 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
       return;
     }
 
-    sendRequest(path);
+    sendRequest(path, origin);
+
+    host.ui.notify(
+      origin.manual
+        ? `Writing a session handoff to ${path}; the session switches to a new one when it is ready.`
+        : `Context is nearly full; writing a session handoff to ${path}, then switching to a new session.`,
+      "info",
+    );
   };
 
   const inspect = (path: string): HandoffFile => {
@@ -142,7 +188,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
       userActive: false,
     };
 
-    host.sendUserMessage(retryInstruction(instruction(path), errorsOf(file, path)));
+    sendInstruction(retryInstruction(currentInstruction(path), errorsOf(file, path)));
   };
 
   const switchSession = () => {
@@ -164,7 +210,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     const step = handoffStep({
       phase: state.phase,
       file,
-      busy: sources.size > 0,
+      busy: sources.size > 0 && !state.manual,
       settled,
       instructions: state.instructions,
     });
@@ -179,7 +225,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
         }
 
         if (state.userActive) {
-          sendRequest(path);
+          sendRequest(path, { manual: state.manual, focus: state.focus });
           return;
         }
 
@@ -210,7 +256,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
       return;
     }
 
-    state = { ...state, phase: "waiting" };
+    state = { ...state, phase: "waiting", manual: false };
 
     refresh();
 
@@ -260,7 +306,10 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     const accepted = await control
       .newSession({
         parentSession: previous,
-        seed: { customType: HANDOFF_TYPE, text: seedText(previous, text) },
+        seed: {
+          customType: HANDOFF_TYPE,
+          text: seedText(previous, text, { manual: state.handedOff, focus: state.focus }),
+        },
       })
       .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
 
@@ -318,9 +367,82 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     }, releaseDelayMs);
   };
 
+  const switchNow = (control: SessionControl) => {
+    state = { ...state, phase: "switching" };
+
+    refresh();
+
+    return runSwitch(control);
+  };
+
+  const queue = (focus: string | undefined) => {
+    state = { ...state, phase: "queued", focus };
+
+    host.ui.notify(
+      "The session handoff starts when the current turn ends; stopping the turn (Esc) cancels it.",
+      "info",
+    );
+  };
+
+  const requestManual = (focus: string | undefined) => {
+    if (running || !host.isIdle()) {
+      queue(focus);
+      return;
+    }
+
+    request({ manual: true, focus });
+  };
+
+  const handOff = async (args: string, control: SessionControl) => {
+    const focus = args.trim() || undefined;
+
+    switch (state.phase) {
+      case "watching":
+        requestManual(focus);
+        break;
+      case "queued":
+        if (focus) {
+          state = { ...state, focus };
+          host.ui.notify("Session handoff queued; the focus is updated.", "info");
+        } else {
+          host.ui.notify("A session handoff is already queued for when the turn ends.", "info");
+        }
+
+        break;
+      case "requested":
+        host.ui.notify(
+          "A session handoff is already being written; the session switches when it is ready.",
+          "info",
+        );
+        return;
+      case "switching":
+        await runSwitch(control);
+        return;
+      case "waiting":
+        if (!focus) {
+          await runSwitch(control);
+          return;
+        }
+
+        requestManual(focus);
+        break;
+      case "stuck":
+        if (!focus && state.path && inspect(state.path).kind === "valid") {
+          await switchNow(control);
+          return;
+        }
+
+        requestManual(focus);
+        break;
+    }
+
+    refresh();
+  };
+
   host.registerCommand(HANDOFF_COMMAND, {
-    description: "Continue in a new session seeded from the session handoff file",
-    run: (_args, control) => runSwitch(control),
+    description:
+      "Continue in a fresh session: the model writes a handoff now, then pi switches to a new session started from it. Optional: what the next session is for",
+    run: handOff,
   });
 
   host.subscribe(BUSY_CHANNEL, (data) => {
@@ -357,15 +479,78 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     state = { ...state, context: level === "unknown" ? undefined : context };
 
     if (shouldRequest(state.phase, level)) {
-      request();
+      request({ manual: false });
     }
 
     check(false);
     refresh();
   });
 
-  host.onIdle(() => {
+  const cancelManual = () => {
+    state = {
+      ...state,
+      phase: "watching",
+      instructions: 0,
+      path: undefined,
+      staleMtime: undefined,
+      settledSinceInstruction: false,
+      userActive: false,
+      manual: false,
+      handedOff: false,
+      focus: undefined,
+    };
+
+    host.ui.notify("Session handoff cancelled.", "info");
+    refresh();
+  };
+
+  const stopIdlePoll = () => {
+    clearTimeout(idlePoll);
+    idlePoll = undefined;
+  };
+
+  const releaseQueued = () => {
+    stopIdlePoll();
+
+    if (state.phase !== "queued" || running) {
+      return;
+    }
+
+    if (!host.isIdle()) {
+      idlePoll = setTimeout(releaseQueued, IDLE_POLL_MS);
+      return;
+    }
+
+    request({ manual: true, focus: state.focus });
+    refresh();
+  };
+
+  host.onAgentStart(() => {
+    running = true;
+    stopIdlePoll();
+  });
+
+  host.onIdle((info) => {
+    running = false;
+    stopIdlePoll();
+
     abandonStalledSwitch();
+
+    if (state.phase === "queued") {
+      if (info.aborted) {
+        cancelManual();
+        return;
+      }
+
+      request({ manual: true, focus: state.focus });
+      refresh();
+      return;
+    }
+
+    if (info.aborted && state.phase === "requested" && state.handedOff) {
+      cancelManual();
+      return;
+    }
 
     if (isPending(state.phase)) {
       state = { ...state, settledSinceInstruction: true };
@@ -378,9 +563,11 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   host.onCompact(() => {
     state = { ...state, context: undefined };
     refresh();
+    releaseQueued();
   });
 
   host.onSessionShutdown(() => {
     cancelRelease();
+    stopIdlePoll();
   });
 };
