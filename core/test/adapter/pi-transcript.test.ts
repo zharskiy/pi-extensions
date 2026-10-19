@@ -66,28 +66,17 @@ describe("transcript pane spacing", () => {
 });
 
 describe("transcript pane routed messages", () => {
-  it("shows the sender as a dim label above the body instead of the bracket header", () => {
-    const pane = createTranscriptPane(tui, "/repo", { dim: (text) => `<dim>${text}</dim>` });
+  it("renders a routed message as a plain user message, header included", () => {
+    const pane = createTranscriptPane(tui, "/repo");
 
     pane.sync([{ kind: "user", text: "[message from main]\nfocus on tests" }]);
 
     const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
-    const label = lines.findIndex((line) => line.includes("message from main"));
+    const header = lines.findIndex((line) => line.includes("[message from main]"));
 
-    expect(lines[label]?.trimEnd()).toBe(" <dim>message from main</dim>");
-    expect(lines.findIndex((line) => line.includes("focus on tests"))).toBeGreaterThan(label);
-    expect(lines.some((line) => line.includes("[message from main]"))).toBe(false);
-  });
-
-  it("renders a user message without the header as before", () => {
-    const plain = createTranscriptPane(tui, "/repo");
-    const routed = createTranscriptPane(tui, "/repo");
-
-    plain.sync([{ kind: "user", text: "find the files" }]);
-    routed.sync([{ kind: "user", text: "[message from main]\nfind the files" }]);
-
-    expect(plain.render(60).some((line) => line.includes("message from"))).toBe(false);
-    expect(routed.render(60).slice(1)).toEqual(plain.render(60));
+    expect(header).toBeGreaterThanOrEqual(0);
+    expect(lines.findIndex((line) => line.includes("focus on tests"))).toBeGreaterThan(header);
+    expect(lines.filter((line) => line.includes("message from main"))).toHaveLength(1);
   });
 });
 

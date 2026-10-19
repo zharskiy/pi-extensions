@@ -160,7 +160,6 @@ export const createUi = (
             createTranscriptPane(tui, cwd, {
               tools: [...state.tools.values()],
               owner: options?.owner,
-              dim: (text) => theme.fg("dim", text),
             }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
         });
