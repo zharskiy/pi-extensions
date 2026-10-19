@@ -1,16 +1,22 @@
 import type { RoutedMessage } from "./contract.ts";
 
-export const formatRoutedMessage = (message: RoutedMessage) =>
-  `[message from ${message.sender}]\n${message.text}`;
+const ROUTED_PREFIX = "[message from ";
+const ROUTED_END = "]\n";
 
-const ROUTED_HEADER = /^\[message from ([^\]\n]+)\]\n/;
+export const formatRoutedMessage = ({ sender, text }: RoutedMessage) =>
+  `${ROUTED_PREFIX}${sender}${ROUTED_END}${text}`;
 
 export const parseRoutedMessage = (text: string): RoutedMessage | undefined => {
-  const match = ROUTED_HEADER.exec(text);
-
-  if (!match?.[1]) {
+  if (!text.startsWith(ROUTED_PREFIX)) {
     return undefined;
   }
 
-  return { sender: match[1], text: text.slice(match[0].length) };
+  const end = text.indexOf(ROUTED_END, ROUTED_PREFIX.length);
+  const sender = end === -1 ? "" : text.slice(ROUTED_PREFIX.length, end);
+
+  if (!sender || sender.includes("\n")) {
+    return undefined;
+  }
+
+  return { sender, text: text.slice(end + ROUTED_END.length) };
 };

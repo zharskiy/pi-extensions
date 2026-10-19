@@ -17,4 +17,19 @@ describe("routed messages", () => {
     expect(parseRoutedMessage("[message from main]")).toBeUndefined();
     expect(parseRoutedMessage("[message from ]\nbody")).toBeUndefined();
   });
+
+  it("does not parse a sender that spans lines", () => {
+    expect(parseRoutedMessage("[message from a\nb]\nbody")).toBeUndefined();
+  });
+
+  it("round-trips an empty body", () => {
+    expect(parseRoutedMessage(formatRoutedMessage({ sender: "main", text: "" }))).toEqual({
+      sender: "main",
+      text: "",
+    });
+  });
+
+  it("formats with the header the parser reads", () => {
+    expect(formatRoutedMessage({ sender: "main", text: "x" }).startsWith("[message from main]\n")).toBe(true);
+  });
 });
