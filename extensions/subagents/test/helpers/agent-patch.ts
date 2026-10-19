@@ -18,6 +18,22 @@ const setField = (head: string, key: string, value: string) => {
   return line.test(head) ? head.replace(line, `${key}: ${value}`) : `${head}\n${key}: ${value}`;
 };
 
+const GROUPS: AgentGroup[] = ["leads", "chores"];
+
+export const shippedGroup = (from: string, exists: (group: AgentGroup) => boolean): AgentGroup => {
+  const groups = GROUPS.filter(exists);
+
+  if (groups.length > 1) {
+    throw new Error(`shipped agent ${from} exists under both ${groups.join(" and ")}`);
+  }
+
+  if (groups.length === 0) {
+    throw new Error(`no shipped agent named ${from}`);
+  }
+
+  return groups[0];
+};
+
 export const modelForGroup = (group: AgentGroup, models: LiveModels) =>
   group === "chores" ? models.chore : models.lead;
 

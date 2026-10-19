@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join, resolve } from "node:path";
 import { expect } from "vitest";
 import type { UsageTotals } from "../../../../core/adapter/contract.ts";
+import { errorText } from "../../../../core/manager/format.ts";
 import {
   costOf,
   createLiveRuntime,
@@ -17,7 +18,13 @@ import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Settings } from "../../src/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 import { plugins } from "../../src/plugins.ts";
-import { type AgentGroup, type AgentPatch, patchAgentFile } from "./agent-patch.ts";
+import {
+  type AgentGroup,
+  type AgentPatch,
+  modelForGroup,
+  patchAgentFile,
+  shippedGroup,
+} from "./agent-patch.ts";
 import { PACKAGE_ROOT, startPlugins, tempDir, wakeTexts } from "./harness.ts";
 
 type LiveOptions = {
@@ -29,25 +36,27 @@ type LiveOptions = {
 
 const REPO_ROOT = resolve(PACKAGE_ROOT, "..", "..");
 
-const GROUPS: AgentGroup[] = ["leads", "chores"];
+const shippedPath = (group: AgentGroup, from: string) => join(PACKAGE_ROOT, "agents", group, `${from}.md`);
 
 const liveAgentFile = (name: string, patch: AgentPatch) => {
-  const group = GROUPS.find((candidate) =>
-    existsSync(join(PACKAGE_ROOT, "agents", candidate, `${patch.from}.md`)),
-  );
-
-  if (!group) {
-    throw new Error(`no shipped agent named ${patch.from}`);
-  }
-
-  const source = readFileSync(join(PACKAGE_ROOT, "agents", group, `${patch.from}.md`), "utf8");
-
-  return patchAgentFile(source, {
+  const group = shippedGroup(patch.from, (candidate) => existsSync(shippedPath(candidate, patch.from)));
+  const models = { lead: liveAgentModel(), chore: liveChoreModel() };
+  const text = patchAgentFile(readFileSync(shippedPath(group, patch.from), "utf8"), {
     name,
     group,
     patch,
-    models: { lead: liveAgentModel(), chore: liveChoreModel() },
+    models,
   });
+
+  return { text, model: patch.fields?.model ?? modelForGroup(group, models) };
+};
+
+const seedStep = (command: string, args: string[], sha: string) => {
+  try {
+    execFileSync(command, args, { cwd: REPO_ROOT, stdio: ["ignore", "ignore", "pipe"] });
+  } catch (error) {
+    throw new Error(`seeding the live project from ${sha} failed: ${errorText(error)}`);
+  }
 };
 
 export const createLiveHarness = (label: string, options: LiveOptions) => {
@@ -72,9 +81,15 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
   mkdirSync(project, { recursive: true });
   mkdirSync(join(agentDir, "agents"), { recursive: true });
 
-  Object.entries(options.agents).forEach(([name, patch]) => {
-    writeFileSync(join(agentDir, "agents", `${name}.md`), liveAgentFile(name, patch));
-  });
+  const expectedModels = new Map(
+    Object.entries(options.agents).map(([name, patch]) => {
+      const file = liveAgentFile(name, patch);
+
+      writeFileSync(join(agentDir, "agents", `${name}.md`), file.text);
+
+      return [name, file.model];
+    }),
+  );
 
   const host = createFakeHost({
     id: "live-main",
@@ -114,8 +129,8 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
   const seed = (sha: string) => {
     const archive = join(root, "seed.tar");
 
-    execFileSync("/usr/bin/git", ["archive", "--format=tar", "--output", archive, sha], { cwd: REPO_ROOT });
-    execFileSync("tar", ["-xf", archive, "-C", project]);
+    seedStep("/usr/bin/git", ["archive", "--format=tar", "--output", archive, sha], sha);
+    seedStep("/usr/bin/tar", ["-xf", archive, "-C", project], sha);
     rmSync(archive);
   };
 
@@ -126,9 +141,10 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
       reportCost(label, costOf(usage.values()));
 
       expect(errors).toEqual([]);
-      const models = [liveAgentModel(), liveChoreModel()];
 
-      expect(registry.list().filter((record) => !models.includes(record.model ?? ""))).toEqual([]);
+      const offModel = registry.list().filter((record) => record.model !== expectedModels.get(record.agent));
+
+      expect(offModel).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
