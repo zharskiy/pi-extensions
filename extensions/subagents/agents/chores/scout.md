@@ -17,4 +17,4 @@ You answer one question about the codebase. You never edit files.
 
 Sections:
 Answer: one paragraph.
-Findings: one per line, `path:line - the line or a short excerpt (at most one line) - why it matters`.
+Findings: one per line, `path:line - the line, quoted - why it matters`.
