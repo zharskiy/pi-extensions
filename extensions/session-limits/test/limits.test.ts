@@ -541,6 +541,7 @@ describe("/session-handoff on demand", () => {
     const { host, requests, handoffPath, turn, status } = setup();
 
     turn(34_000);
+    host.settle();
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
 
     expect(requests()).toHaveLength(1);
@@ -752,7 +753,11 @@ describe("/session-handoff on demand", () => {
 
 describe("/session-handoff during a turn", () => {
   const FOCUS = "fix the flaky login test";
-  const QUEUED = "The session handoff starts when the current turn ends. Press Esc to cancel it.";
+  const QUEUED = "The session handoff starts when the current turn ends; stopping the turn (Esc) cancels it.";
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("queues the handoff while a turn runs and sends it with the focus when the turn ends", async () => {
     const { host, requests, handoffPath, turn, status } = setup();
@@ -812,7 +817,7 @@ describe("/session-handoff during a turn", () => {
     turn(34_000);
     await host.runCommand(HANDOFF_COMMAND);
 
-    expect(status()).toBe("<error>ctx 34% · handoff after this turn");
+    expect(status()).toBe("<warning>ctx 34% · handoff after this turn");
 
     await host.runCommand(HANDOFF_COMMAND);
 
@@ -827,7 +832,7 @@ describe("/session-handoff during a turn", () => {
       message: "Session handoff queued; the focus is updated.",
       level: "info",
     });
-    expect(status()).toBe("<error>ctx 34% · handoff after this turn");
+    expect(status()).toBe("<warning>ctx 34% · handoff after this turn");
 
     await host.runCommand(HANDOFF_COMMAND);
     host.settle();
@@ -844,7 +849,7 @@ describe("/session-handoff during a turn", () => {
     turn(76_000);
 
     expect(requests()).toEqual([]);
-    expect(status()).toBe("<error>ctx 76% · handoff after this turn");
+    expect(status()).toBe("<warning>ctx 76% · handoff after this turn");
 
     host.settle();
 
@@ -869,7 +874,155 @@ describe("/session-handoff during a turn", () => {
     expect(host.hidden[0].delivery).toBe("run");
     expect(host.notices.map((notice) => notice.message)).not.toContain(QUEUED);
   });
+
+  it("queues after a turn end without a run start and sends at the clean settle", async () => {
+    const { host, requests, turn } = setup();
+
+    turn(34_000);
+    await host.runCommand(HANDOFF_COMMAND, FOCUS);
+
+    expect(requests()).toEqual([]);
+    expect(host.notices).toEqual([{ message: QUEUED, level: "info" }]);
+
+    host.settle();
+
+    expect(requests()).toHaveLength(1);
+    expect(requests()[0]).toContain(FOCUS);
+  });
+
+  it("sends a handoff queued during a compaction once the session is idle", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    const { host, requests } = setup();
+
+    host.idle = false;
+    await host.runCommand(HANDOFF_COMMAND, FOCUS);
+    host.compact();
+
+    expect(requests()).toEqual([]);
+
+    host.idle = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(requests()).toHaveLength(1);
+    expect(requests()[0]).toContain(FOCUS);
+    expect(host.hidden[0].delivery).toBe("run");
+  });
+
+  it("keeps a handoff queued during a compaction for the run that follows it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    const { host, requests } = setup();
+
+    host.idle = false;
+    await host.runCommand(HANDOFF_COMMAND);
+    host.compact();
+    host.agentStart();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(requests()).toEqual([]);
+
+    host.settle();
+
+    expect(requests()).toHaveLength(1);
+    expect(host.hidden[0].delivery).toBe("run");
+  });
+
+  const stuckSetup = async () => {
+    const context = setup();
+
+    await context.host.runCommand(HANDOFF_COMMAND);
+    context.host.settle();
+    context.host.settle();
+    context.host.agentStart();
+    await context.host.runCommand(HANDOFF_COMMAND);
+
+    return context;
+  };
+
+  it("queues a fresh handoff when stuck without a valid file and sends it at the clean settle", async () => {
+    const { host, requests } = await stuckSetup();
+
+    expect(requests()).toHaveLength(2);
+    expect(host.notices.at(-1)).toEqual({ message: QUEUED, level: "info" });
+
+    host.settle();
+
+    expect(requests()).toHaveLength(3);
+    expect(requests()[2].startsWith("The user ran /session-handoff")).toBe(true);
+  });
+
+  it("drops a handoff queued while stuck when the turn is aborted", async () => {
+    const { host, requests, status } = await stuckSetup();
+
+    host.settle({ aborted: true });
+
+    expect(requests()).toHaveLength(2);
+    expect(host.notices.at(-1)).toEqual({ message: "Session handoff cancelled.", level: "info" });
+    expect(status()).toBeUndefined();
+  });
+
+  const waitingSetup = async () => {
+    const context = setup();
+
+    context.busy(true);
+    context.turn(76_000);
+    context.writeHandoff(VALID_HANDOFF);
+    context.host.settle();
+    context.host.agentStart();
+    await context.host.runCommand(HANDOFF_COMMAND, FOCUS);
+
+    return context;
+  };
+
+  it("queues a fresh handoff with a focus while the switch waits and sends it at the clean settle", async () => {
+    const { host, requests } = await waitingSetup();
+
+    expect(requests()).toHaveLength(1);
+    expect(host.confirmations).toEqual([]);
+    expect(host.notices.at(-1)).toEqual({ message: QUEUED, level: "info" });
+
+    host.settle();
+    await flush();
+
+    expect(requests()).toHaveLength(2);
+    expect(requests()[1]).toContain(FOCUS);
+    expect(host.dispatched).toEqual([]);
+  });
+
+  it("drops a handoff queued while the switch waits when the turn is aborted", async () => {
+    const { host, requests } = await waitingSetup();
+
+    host.settle({ aborted: true });
+    await flush();
+
+    expect(requests()).toHaveLength(1);
+    expect(host.notices.at(-1)).toEqual({ message: "Session handoff cancelled.", level: "info" });
+    expect(host.dispatched).toEqual([]);
+  });
+
+  it("treats the request sent at settle like any other: one resend, then the failure", async () => {
+    const { host, requests, warnings, status } = setup();
+
+    host.agentStart();
+    await host.runCommand(HANDOFF_COMMAND, FOCUS);
+    host.settle();
+
+    expect(requests()).toHaveLength(1);
+
+    host.settle();
+
+    expect(requests()).toHaveLength(2);
+    expect(requests()[1]).toContain("no new handoff file was written");
+
+    host.settle();
+
+    expect(requests()).toHaveLength(2);
+    expect(warnings()).toHaveLength(1);
+    expect(status()).toBe("<error>handoff failed, run /session-handoff");
+  });
 });
+
 describe("session limits around the dispatch window", () => {
   it("goes back to waiting when a source turns busy before the switch runs and the user declines", async () => {
     const { host, turn, writeHandoff, status, busy } = setup();

@@ -83,7 +83,7 @@ export const segmentFor = (
     const label = pendingLabels(command)[phase];
 
     return {
-      token: phase === "waiting" ? "warning" : "error",
+      token: phase === "waiting" || phase === "queued" ? "warning" : "error",
       text: percent === null ? label : `ctx ${percent}% · ${label}`,
     };
   }

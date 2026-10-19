@@ -27,6 +27,8 @@ const REQUEST_TYPE = "pi-session-limits-request";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
+const IDLE_POLL_MS = 250;
+
 const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
 
 type LimitsOptions = {
@@ -81,6 +83,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   let running = false;
   let switchRunning = false;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+  let idlePoll: ReturnType<typeof setTimeout> | undefined;
 
   const instruction = (path: string, reason: string, focus: string | undefined) =>
     template
@@ -375,11 +378,14 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   const queue = (focus: string | undefined) => {
     state = { ...state, phase: "queued", focus };
 
-    host.ui.notify("The session handoff starts when the current turn ends. Press Esc to cancel it.", "info");
+    host.ui.notify(
+      "The session handoff starts when the current turn ends; stopping the turn (Esc) cancels it.",
+      "info",
+    );
   };
 
   const requestManual = (focus: string | undefined) => {
-    if (running) {
+    if (running || !host.isIdle()) {
       queue(focus);
       return;
     }
@@ -498,12 +504,35 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     refresh();
   };
 
+  const stopIdlePoll = () => {
+    clearTimeout(idlePoll);
+    idlePoll = undefined;
+  };
+
+  const releaseQueued = () => {
+    stopIdlePoll();
+
+    if (state.phase !== "queued" || running) {
+      return;
+    }
+
+    if (!host.isIdle()) {
+      idlePoll = setTimeout(releaseQueued, IDLE_POLL_MS);
+      return;
+    }
+
+    request({ manual: true, focus: state.focus });
+    refresh();
+  };
+
   host.onAgentStart(() => {
     running = true;
+    stopIdlePoll();
   });
 
   host.onIdle((info) => {
     running = false;
+    stopIdlePoll();
 
     abandonStalledSwitch();
 
@@ -534,9 +563,11 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   host.onCompact(() => {
     state = { ...state, context: undefined };
     refresh();
+    releaseQueued();
   });
 
   host.onSessionShutdown(() => {
     cancelRelease();
+    stopIdlePoll();
   });
 };
