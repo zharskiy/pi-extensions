@@ -78,6 +78,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     handedOff: false,
   };
   let turns = 0;
+  let running = false;
   let switchRunning = false;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -371,13 +372,36 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     return runSwitch(control);
   };
 
+  const queue = (focus: string | undefined) => {
+    state = { ...state, phase: "queued", focus };
+
+    host.ui.notify("The session handoff starts when the current turn ends. Press Esc to cancel it.", "info");
+  };
+
+  const requestManual = (focus: string | undefined) => {
+    if (running) {
+      queue(focus);
+      return;
+    }
+
+    request({ manual: true, focus });
+  };
+
   const handOff = async (args: string, control: SessionControl) => {
     const focus = args.trim() || undefined;
-    const manual = { manual: true, focus };
 
     switch (state.phase) {
       case "watching":
-        request(manual);
+        requestManual(focus);
+        break;
+      case "queued":
+        if (focus) {
+          state = { ...state, focus };
+          host.ui.notify("Session handoff queued; the focus is updated.", "info");
+        } else {
+          host.ui.notify("A session handoff is already queued for when the turn ends.", "info");
+        }
+
         break;
       case "requested":
         host.ui.notify(
@@ -394,7 +418,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
           return;
         }
 
-        request(manual);
+        requestManual(focus);
         break;
       case "stuck":
         if (!focus && state.path && inspect(state.path).kind === "valid") {
@@ -402,7 +426,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
           return;
         }
 
-        request(manual);
+        requestManual(focus);
         break;
     }
 
@@ -474,8 +498,25 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     refresh();
   };
 
+  host.onAgentStart(() => {
+    running = true;
+  });
+
   host.onIdle((info) => {
+    running = false;
+
     abandonStalledSwitch();
+
+    if (state.phase === "queued") {
+      if (info.aborted) {
+        cancelManual();
+        return;
+      }
+
+      request({ manual: true, focus: state.focus });
+      refresh();
+      return;
+    }
 
     if (info.aborted && state.phase === "requested" && state.handedOff) {
       cancelManual();

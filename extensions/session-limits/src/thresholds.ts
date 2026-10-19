@@ -7,7 +7,7 @@ export const MAX_INSTRUCTIONS = 2;
 
 type ContextLevel = "unknown" | "normal" | "soft" | "hard";
 
-export type Phase = "watching" | "requested" | "waiting" | "switching" | "stuck";
+export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching" | "stuck";
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
@@ -64,6 +64,7 @@ export const handoffStep = (input: HandoffInput) => {
 };
 
 const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
+  queued: "handoff after this turn",
   requested: "writing handoff",
   waiting: "handoff waits for running work",
   switching: "switching session",
