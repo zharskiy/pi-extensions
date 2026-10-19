@@ -8,8 +8,9 @@ import { type PlanFile, planFiles, planStatus, relativeTo } from "../helpers/pla
 
 // One past request from this repository: the planner sees the tree as it was
 // before the commit and plans the change. `expected` are the commit's source
-// files the plan is scored on; `unscored` ones are only logged.
-type Fixture = { sha: string; request: string; expected: string[]; unscored: string[] };
+// files the plan is scored on; `unscored` ones are only logged. `maxHelpers`,
+// when set, caps the agents the planner may start in a majority of runs.
+type Fixture = { sha: string; request: string; expected: string[]; unscored: string[]; maxHelpers?: number };
 
 type Outcome = {
   status: string;
@@ -46,8 +47,9 @@ const fixtures: Fixture[] = [
     unscored: ["extensions/session-limits/src/index.ts"],
   },
   {
-    // Tiny on purpose: one expression in one file, so a good plan needs no
-    // helper; it guards against over-delegation. The seeded tree at 00103e4^
+    // Tiny on purpose: one expression in one file, so a good plan starts no
+    // helper (maxHelpers 0) and the planner reads the file itself; it guards
+    // against over-delegation. The seeded tree at 00103e4^
     // was checked for leaks: render.ts and the footer README still describe
     // the split colours, no changelog.
     sha: "00103e4",
@@ -56,6 +58,7 @@ const fixtures: Fixture[] = [
     expected: ["extensions/footer/src/render.ts"],
     // The commit only reworded one README line.
     unscored: ["extensions/footer/README.md"],
+    maxHelpers: 0,
   },
   {
     // Cross-file: the planner has to trace the shared editor record and the
@@ -144,6 +147,9 @@ const recalls = (fixture: Fixture, outcome: Outcome) =>
 
 const clean = (outcome: Outcome) => outcome.missing.length <= MAX_MISSING;
 
+const lean = (fixture: Fixture, outcome: Outcome) =>
+  fixture.maxHelpers === undefined || outcome.helpers.length <= fixture.maxHelpers;
+
 const listed = (label: string, paths: string[]) =>
   paths.length > 0 ? `, ${label} [${paths.join(", ")}]` : "";
 
@@ -196,14 +202,17 @@ describeLive("live planner plan quality", () => {
 
         const recalled = outcomes.filter((outcome) => recalls(fixture, outcome)).length;
         const cleanRuns = outcomes.filter(clean).length;
+        const leanRuns = outcomes.filter((outcome) => lean(fixture, outcome)).length;
+        const leanText = fixture.maxHelpers === undefined ? "" : `, lean ${leanRuns}/${runs}`;
         const total = outcomes.reduce((sum, outcome) => sum + outcome.cost, 0);
 
         console.log(
-          `[live plan] ${fixture.sha}: recall ok ${recalled}/${runs}, clean ${cleanRuns}/${runs}, mean cost $${(total / runs).toFixed(2)}`,
+          `[live plan] ${fixture.sha}: recall ok ${recalled}/${runs}, clean ${cleanRuns}/${runs}${leanText}, mean cost $${(total / runs).toFixed(2)}`,
         );
 
         expect(recalled).toBeGreaterThan(runs / 2);
         expect(cleanRuns).toBeGreaterThan(runs / 2);
+        expect(leanRuns).toBeGreaterThan(runs / 2);
       } finally {
         await live.close();
       }
