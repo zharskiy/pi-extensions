@@ -103,7 +103,7 @@ describe("run_agent description", () => {
 
     expect(main).not.toContain("- Cap:");
     expect(child).toContain(
-      "They cannot start agents of their own.\n- Cap: you may start at most 6 agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.\n- Concurrency:",
+      "They cannot start agents of their own.\n- Cap: you may start at most 6 agents in this run, across all your batches; further calls are refused. You were started for judgement: give searching, command runs and web pages to the agents above whose descriptions fit, and ask for path:line citations and short excerpts, not conclusions. Read yourself the code your decisions rest on. Do not start an agent for work of a few tool calls.\n- Concurrency:",
     );
   });
 

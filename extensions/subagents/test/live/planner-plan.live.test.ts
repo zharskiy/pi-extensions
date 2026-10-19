@@ -17,7 +17,8 @@ type Outcome = {
   unscored: string[];
   missing: string[];
   globs: string[];
-  scouts: number;
+  helpers: string[];
+  calls: number;
   cost: number;
 };
 
@@ -46,7 +47,7 @@ const fixtures: Fixture[] = [
   },
   {
     // Tiny on purpose: one expression in one file, so a good plan needs no
-    // scout; it guards against over-delegation. The seeded tree at 00103e4^
+    // helper; it guards against over-delegation. The seeded tree at 00103e4^
     // was checked for leaks: render.ts and the footer README still describe
     // the split colours, no changelog.
     sha: "00103e4",
@@ -64,10 +65,11 @@ const fixtures: Fixture[] = [
     sha: "aafb579",
     request:
       "When the composer or subagents install their custom editor, ↑ prompt history is lost on /reload and /new, and after /resume or /fork the earlier prompts of that session cannot be recalled either. pi's own editor keeps its history across all of these. Make our editor behave the same: keep the input history across reload and new, and on resume and fork seed it with the session's user messages.",
-    expected: ["core/adapter/pi-editor.ts"],
-    // The commit changed one call here (passing the start reason and context)
-    // and described the history in ARCHITECTURE.md.
-    unscored: ["core/adapter/pi-adapter.ts", "ARCHITECTURE.md"],
+    // pi-adapter.ts changed one call (passing the start reason and context);
+    // scoring it measures whether the plan reaches past the editor file.
+    expected: ["core/adapter/pi-editor.ts", "core/adapter/pi-adapter.ts"],
+    // The commit described the history here.
+    unscored: ["ARCHITECTURE.md"],
   },
 ];
 
@@ -123,7 +125,8 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
       .filter((file) => !file.path.includes("*") && isMissing(live.project, file))
       .map((file) => file.path),
     globs: paths.filter((path) => path.includes("*")),
-    scouts: records.filter((record) => linkIds.includes(record.callerId) && record.agent === "scout").length,
+    helpers: records.filter((record) => linkIds.includes(record.callerId)).map((record) => record.agent),
+    calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
     cost: costOf(tree.flatMap((id) => live.usage.get(id) ?? [])),
   };
 };
@@ -144,6 +147,14 @@ const clean = (outcome: Outcome) => outcome.missing.length <= MAX_MISSING;
 const listed = (label: string, paths: string[]) =>
   paths.length > 0 ? `, ${label} [${paths.join(", ")}]` : "";
 
+const helperCounts = (helpers: string[]) => {
+  const kinds = [...new Set(helpers)].sort();
+
+  return kinds.length > 0
+    ? ` (${kinds.map((kind) => `${kind} ${helpers.filter((helper) => helper === kind).length}`).join(", ")})`
+    : "";
+};
+
 const line = (fixture: Fixture, outcome: Outcome) =>
   [
     `${outcome.status}, recall ${outcome.named}/${fixture.expected.length}`,
@@ -151,7 +162,8 @@ const line = (fixture: Fixture, outcome: Outcome) =>
     `, missing ${outcome.missing.length}`,
     outcome.missing.length > 0 ? ` [${outcome.missing.join(", ")}]` : "",
     listed("globs", outcome.globs),
-    `, scouts ${outcome.scouts}, cost $${outcome.cost.toFixed(2)}`,
+    `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
+    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
   ].join("");
 
 describeLive("live planner plan quality", () => {
@@ -162,6 +174,8 @@ describeLive("live planner plan quality", () => {
         agents: {
           planner: { from: "planner", fields: { limit: "120000" } },
           scout: { from: "scout" },
+          shell: { from: "shell" },
+          fetch: { from: "fetch" },
         },
       });
 

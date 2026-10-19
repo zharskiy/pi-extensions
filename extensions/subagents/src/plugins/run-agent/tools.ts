@@ -102,7 +102,7 @@ const capRule = ({ childCap }: RunAgentLimits) =>
   childCap === undefined
     ? []
     : [
-        `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.`,
+        `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. You were started for judgement: give searching, command runs and web pages to the agents above whose descriptions fit, and ask for path:line citations and short excerpts, not conclusions. Read yourself the code your decisions rest on. Do not start an agent for work of a few tool calls.`,
       ];
 
 export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgentLimits): string =>
