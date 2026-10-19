@@ -44,6 +44,31 @@ const fixtures: Fixture[] = [
     // The commit only renamed an import here.
     unscored: ["extensions/session-limits/src/index.ts"],
   },
+  {
+    // Tiny on purpose: one expression in one file, so a good plan needs no
+    // scout; it guards against over-delegation. The seeded tree at 00103e4^
+    // was checked for leaks: render.ts and the footer README still describe
+    // the split colours, no changelog.
+    sha: "00103e4",
+    request:
+      "In the footer, the thinking line reads `thinking high` with only the level in bold gold and the word `thinking` in the default colour. It is one mode indicator, so paint the whole `thinking <level>` label in the same bold gold; leave `thinking unavailable` and the cycle hint as they are.",
+    expected: ["extensions/footer/src/render.ts"],
+    // The commit only reworded one README line.
+    unscored: ["extensions/footer/README.md"],
+  },
+  {
+    // Cross-file: the planner has to trace the shared editor record and the
+    // session_start wiring. The seeded tree at aafb579^ was checked for
+    // leaks: no shared history, no seeding from session entries
+    // (buildContextEntries) in core/adapter, nothing in ARCHITECTURE.md.
+    sha: "aafb579",
+    request:
+      "When the composer or subagents install their custom editor, ↑ prompt history is lost on /reload and /new, and after /resume or /fork the earlier prompts of that session cannot be recalled either. pi's own editor keeps its history across all of these. Make our editor behave the same: keep the input history across reload and new, and on resume and fork seed it with the session's user messages.",
+    expected: ["core/adapter/pi-editor.ts"],
+    // The commit changed one call here (passing the start reason and context)
+    // and described the history in ARCHITECTURE.md.
+    unscored: ["core/adapter/pi-adapter.ts", "ARCHITECTURE.md"],
+  },
 ];
 
 const runs = Math.max(1, Math.floor(Number(process.env[RUNS_ENV] ?? "1")) || 1);
@@ -105,13 +130,14 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
 
 // Loose on purpose: model output varies between runs. Both checks must hold
 // in a majority of runs. A run recalls well when the plan is done and names
-// at least 2 of the 3 scored files; it is clean when it names at most 2
-// missing paths (more suggests invented locations).
+// at least 2 scored files (all of them when there are fewer); it is clean when
+// it names at most 2 missing paths (more suggests invented locations).
 const MIN_NAMED = 2;
 
 const MAX_MISSING = 2;
 
-const recalls = (outcome: Outcome) => outcome.status === "done" && outcome.named >= MIN_NAMED;
+const recalls = (fixture: Fixture, outcome: Outcome) =>
+  outcome.status === "done" && outcome.named >= Math.min(MIN_NAMED, fixture.expected.length);
 
 const clean = (outcome: Outcome) => outcome.missing.length <= MAX_MISSING;
 
@@ -154,7 +180,7 @@ describeLive("live planner plan quality", () => {
           Promise.resolve([]),
         );
 
-        const recalled = outcomes.filter(recalls).length;
+        const recalled = outcomes.filter((outcome) => recalls(fixture, outcome)).length;
         const cleanRuns = outcomes.filter(clean).length;
         const total = outcomes.reduce((sum, outcome) => sum + outcome.cost, 0);
 
