@@ -31,6 +31,8 @@ const fixtures: Fixture[] = [
     // and the footer change), so recall measures whether the planner finds the
     // files, not whether it guesses the design. The seeded tree at 686fc95^ was
     // checked for leaks: no token caps, no 150k/200k defaults, no changelog.
+    // Its git history is the one seed commit and the linked node_modules holds
+    // only third-party packages, so neither shows the later change.
     sha: "686fc95",
     request:
       "In session-limits, the handoff thresholds are only fractions of the context window, so on a 1M-token model the handoff comes far too late. Add absolute token caps next to the ratios (defaults 150k soft and 200k hard) so the effective threshold is whichever is lower, configurable in the settings file, and show token counts in the footer segment when the cap is the one that applies.",

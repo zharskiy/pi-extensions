@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { expect } from "vitest";
 import type { UsageTotals } from "../../../../core/adapter/contract.ts";
@@ -51,9 +59,18 @@ const liveAgentFile = (name: string, patch: AgentPatch) => {
   return { text, model: patch.fields?.model ?? modelForGroup(group, models) };
 };
 
-const seedStep = (command: string, args: string[], sha: string) => {
+const SEED_GIT = [
+  "-c",
+  "user.name=live",
+  "-c",
+  "user.email=live@example.invalid",
+  "-c",
+  "commit.gpgsign=false",
+];
+
+const seedStep = (command: string, args: string[], sha: string, cwd = REPO_ROOT) => {
   try {
-    execFileSync(command, args, { cwd: REPO_ROOT, stdio: ["ignore", "ignore", "pipe"] });
+    execFileSync(command, args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
   } catch (error) {
     throw new Error(`seeding the live project from ${sha} failed: ${errorText(error)}`);
   }
@@ -132,6 +149,14 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     seedStep("/usr/bin/git", ["archive", "--format=tar", "--output", archive, sha], sha);
     seedStep("/usr/bin/tar", ["-xf", archive, "-C", project], sha);
     rmSync(archive);
+    seedStep("/usr/bin/git", [...SEED_GIT, "init", "-q"], sha, project);
+    seedStep("/usr/bin/git", [...SEED_GIT, "add", "-A"], sha, project);
+    seedStep("/usr/bin/git", [...SEED_GIT, "commit", "-q", "--no-verify", "-m", "seed"], sha, project);
+
+    if (existsSync(join(REPO_ROOT, "node_modules"))) {
+      symlinkSync(join(REPO_ROOT, "node_modules"), join(project, "node_modules"));
+      appendFileSync(join(project, ".git", "info", "exclude"), "node_modules\n");
+    }
   };
 
   const close = async () => {

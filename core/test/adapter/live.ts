@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -25,7 +25,12 @@ const CHORE_MODEL_ENV = "PI_LIVE_CHORE_MODEL";
 
 const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
-const COPIED_FILES = ["auth.json", "models.json"];
+// pi writes refreshed OAuth tokens back to auth.json and providers rotate
+// refresh tokens, so the temp dir links the real file instead of copying it;
+// a copy would take the new token with it on teardown.
+const LINKED_FILES = ["auth.json"];
+
+const COPIED_FILES = ["models.json"];
 
 const CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md"];
 
@@ -80,6 +85,18 @@ const liveState = () => {
   return state;
 };
 
+export const prepareAgentDir = (realAgentDir: string, agentDir: string) => {
+  const present = (names: string[]) => names.filter((name) => existsSync(join(realAgentDir, name)));
+
+  present(LINKED_FILES).forEach((name) => {
+    symlinkSync(join(realAgentDir, name), join(agentDir, name));
+  });
+
+  present(COPIED_FILES).forEach((name) => {
+    copyFileSync(join(realAgentDir, name), join(agentDir, name));
+  });
+};
+
 export const setupLive = async () => {
   if (state) {
     return;
@@ -90,9 +107,7 @@ export const setupLive = async () => {
   const realAgentDir = getAgentDir();
   const agentDir = mkdtempSync(join(tmpdir(), "pi-live-agent-"));
 
-  COPIED_FILES.filter((name) => existsSync(join(realAgentDir, name))).forEach((name) => {
-    copyFileSync(join(realAgentDir, name), join(agentDir, name));
-  });
+  prepareAgentDir(realAgentDir, agentDir);
 
   process.env[AGENT_DIR_ENV] = agentDir;
 
