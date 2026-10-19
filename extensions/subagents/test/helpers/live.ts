@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect } from "vitest";
 import type { UsageTotals } from "../../../../core/adapter/contract.ts";
 import {
@@ -7,6 +8,7 @@ import {
   createLiveRuntime,
   LIVE_TIMEOUT_MS,
   liveAgentModel,
+  liveChoreModel,
   reportCost,
   waitUntil,
 } from "../../../../core/test/adapter/live.ts";
@@ -15,9 +17,8 @@ import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Settings } from "../../src/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 import { plugins } from "../../src/plugins.ts";
+import { type AgentGroup, type AgentPatch, patchAgentFile } from "./agent-patch.ts";
 import { PACKAGE_ROOT, startPlugins, tempDir, wakeTexts } from "./harness.ts";
-
-type AgentPatch = { from: string; fields?: Record<string, string> };
 
 type LiveOptions = {
   agents: Record<string, AgentPatch>;
@@ -26,38 +27,27 @@ type LiveOptions = {
   skills?: Record<string, string>;
 };
 
-const frontmatterOf = (text: string) => {
-  const end = text.indexOf("\n---", 4);
+const REPO_ROOT = resolve(PACKAGE_ROOT, "..", "..");
 
-  return { head: text.slice(0, end), body: text.slice(end) };
-};
-
-const setField = (head: string, key: string, value: string) => {
-  const line = new RegExp(`^${key}:.*$`, "m");
-
-  return line.test(head) ? head.replace(line, `${key}: ${value}`) : `${head}\n${key}: ${value}`;
-};
+const GROUPS: AgentGroup[] = ["leads", "chores"];
 
 const liveAgentFile = (name: string, patch: AgentPatch) => {
-  const shipped = ["leads", "chores"]
-    .map((group) => join(PACKAGE_ROOT, "agents", group, `${patch.from}.md`))
-    .find((path) => existsSync(path));
+  const group = GROUPS.find((candidate) =>
+    existsSync(join(PACKAGE_ROOT, "agents", candidate, `${patch.from}.md`)),
+  );
 
-  if (!shipped) {
+  if (!group) {
     throw new Error(`no shipped agent named ${patch.from}`);
   }
 
-  const source = readFileSync(shipped, "utf8");
-  const { head, body } = frontmatterOf(source);
+  const source = readFileSync(join(PACKAGE_ROOT, "agents", group, `${patch.from}.md`), "utf8");
 
-  const fields: Record<string, string> = {
-    model: liveAgentModel(),
-    limit: "20000",
-    ...patch.fields,
+  return patchAgentFile(source, {
     name,
-  };
-
-  return `${Object.entries(fields).reduce((text, [key, value]) => setField(text, key, value), head)}${body}`;
+    group,
+    patch,
+    models: { lead: liveAgentModel(), chore: liveChoreModel() },
+  });
 };
 
 export const createLiveHarness = (label: string, options: LiveOptions) => {
@@ -121,6 +111,14 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
   const waitForWakes = (count: number, timeoutMs = LIVE_TIMEOUT_MS) =>
     waitUntil(() => wakeTexts(host).length >= count, timeoutMs, `${count} wake(s) of the main session`);
 
+  const seed = (sha: string) => {
+    const archive = join(root, "seed.tar");
+
+    execFileSync("/usr/bin/git", ["archive", "--format=tar", "--output", archive, sha], { cwd: REPO_ROOT });
+    execFileSync("tar", ["-xf", archive, "-C", project]);
+    rmSync(archive);
+  };
+
   const close = async () => {
     try {
       await host.shutdown();
@@ -128,13 +126,15 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
       reportCost(label, costOf(usage.values()));
 
       expect(errors).toEqual([]);
-      expect(registry.list().filter((record) => record.model !== liveAgentModel())).toEqual([]);
+      const models = [liveAgentModel(), liveChoreModel()];
+
+      expect(registry.list().filter((record) => !models.includes(record.model ?? ""))).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   };
 
-  return { project, host, runtime, registry, usage, run, waitForWakes, close };
+  return { project, host, runtime, registry, usage, run, waitForWakes, seed, close };
 };
 
 export type LiveHarness = ReturnType<typeof createLiveHarness>;

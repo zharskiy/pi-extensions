@@ -21,11 +21,15 @@ export const LIVE_TIMEOUT_MS = 180_000;
 
 const MODEL_ENV = "PI_LIVE_MODEL";
 
+const CHORE_MODEL_ENV = "PI_LIVE_CHORE_MODEL";
+
 const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
 const COPIED_FILES = ["auth.json", "models.json"];
 
 const CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md"];
+
+type ModelSpec = { provider: string; modelId: string; thinking: string | undefined };
 
 type LiveState = {
   realAgentDir: string;
@@ -35,20 +39,37 @@ type LiveState = {
   thinking: string | undefined;
   registry: ModelRegistry;
   model: NonNullable<ReturnType<ModelRegistry["find"]>>;
+  chore: ModelSpec | undefined;
 };
 
 let state: LiveState | undefined;
 
-const parseModelSpec = (spec: string | undefined) => {
+const parseModelSpec = (env: string): ModelSpec => {
+  const spec = process.env[env];
   const match = spec?.match(/^([^/:\s]+)\/([^:\s]+)(?::(\w+))?$/);
 
   if (!match) {
-    throw new Error(
-      `Set ${MODEL_ENV}=provider/id[:thinking] to run the live tests (got ${spec ?? "nothing"})`,
-    );
+    throw new Error(`Set ${env}=provider/id[:thinking] to run the live tests (got ${spec ?? "nothing"})`);
   }
 
   return { provider: match[1], modelId: match[2], thinking: match[3] };
+};
+
+const specText = ({ provider, modelId, thinking }: ModelSpec) =>
+  `${provider}/${modelId}${thinking ? `:${thinking}` : ""}`;
+
+const findUsable = (registry: ModelRegistry, { provider, modelId }: ModelSpec) => {
+  const model = registry.find(provider, modelId);
+
+  if (!model) {
+    throw new Error(`${provider}/${modelId} is not in pi's model catalog`);
+  }
+
+  if (!registry.hasConfiguredAuth(model)) {
+    throw new Error(`pi has no credentials for ${provider}/${modelId}; log in with pi first`);
+  }
+
+  return model;
 };
 
 const liveState = () => {
@@ -64,7 +85,8 @@ export const setupLive = async () => {
     return;
   }
 
-  const { provider, modelId, thinking } = parseModelSpec(process.env[MODEL_ENV]);
+  const main = parseModelSpec(MODEL_ENV);
+  const chore = process.env[CHORE_MODEL_ENV] ? parseModelSpec(CHORE_MODEL_ENV) : undefined;
   const realAgentDir = getAgentDir();
   const agentDir = mkdtempSync(join(tmpdir(), "pi-live-agent-"));
 
@@ -76,17 +98,13 @@ export const setupLive = async () => {
 
   try {
     const registry = new ModelRegistry(await ModelRuntime.create());
-    const model = registry.find(provider, modelId);
+    const model = findUsable(registry, main);
 
-    if (!model) {
-      throw new Error(`${provider}/${modelId} is not in pi's model catalog`);
+    if (chore) {
+      findUsable(registry, chore);
     }
 
-    if (!registry.hasConfiguredAuth(model)) {
-      throw new Error(`pi has no credentials for ${provider}/${modelId}; log in with pi first`);
-    }
-
-    state = { realAgentDir, agentDir, provider, modelId, thinking, registry, model };
+    state = { realAgentDir, agentDir, ...main, registry, model, chore };
   } catch (error) {
     rmSync(agentDir, { recursive: true, force: true });
 
@@ -101,10 +119,12 @@ export const teardownLive = () => {
   }
 };
 
-export const liveAgentModel = () => {
-  const { provider, modelId, thinking } = liveState();
+export const liveAgentModel = () => specText(liveState());
 
-  return `${provider}/${modelId}${thinking ? `:${thinking}` : ""}`;
+export const liveChoreModel = () => {
+  const { chore } = liveState();
+
+  return chore ? specText(chore) : liveAgentModel();
 };
 
 export const liveModel = () => {
