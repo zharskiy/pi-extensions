@@ -45,5 +45,6 @@ describe("handoff schema", () => {
 
     expect(text).toContain("/tmp/x/handoff.md");
     expect(text).not.toContain("{{path}}");
+    expect(text).toContain("Call the `handoff` tool");
   });
 });

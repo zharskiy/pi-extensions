@@ -1,4 +1,6 @@
-You have reached your context limit. Stop the current work now and write a handoff file to:
+You have reached your context limit. Stop the current work now and hand it off.
+
+Call the `handoff` tool with the handoff as its content. It saves the handoff to:
 
 {{path}}
 
@@ -22,4 +24,4 @@ Concrete next steps for the agent that continues this work.
 ## Files touched
 One path per line, or "none".
 
-After writing the file, reply with one line: the path of the handoff file. Do not start new work.
+If the tool reports errors, fix the sections and call it again. Then reply with one line, `handoff saved`, and do not start new work.

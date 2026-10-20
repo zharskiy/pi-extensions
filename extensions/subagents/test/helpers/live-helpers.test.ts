@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { createFakeHost } from "../../../../core/test/helpers/fakes.ts";
 import { modelForGroup, patchAgentFile, shippedGroup } from "./agent-patch.ts";
+import {
+  bashCommands,
+  commandsLine,
+  failureReason,
+  failureSuffix,
+  helperLine,
+  taskLine,
+} from "./live-runs.ts";
 import { planFiles, planStatus, relativeTo } from "./plan-rows.ts";
+import { createTurns } from "./turns.ts";
 
 const SHIPPED = [
   "---",
@@ -15,7 +25,7 @@ const SHIPPED = [
 const models = { lead: "live/lead:high", chore: "live/chore:low" };
 
 describe("patchAgentFile", () => {
-  it("forces the live model and limit and keeps the shipped body", () => {
+  it("forces the live model and limit on a lead and keeps the shipped body", () => {
     const text = patchAgentFile(SHIPPED, {
       name: "planner",
       group: "leads",
@@ -40,6 +50,21 @@ describe("patchAgentFile", () => {
 
     expect(text).toBe(
       ["---", "name: lead", "model: live/lead:high", "limit: 120000", "---", "New prompt.", ""].join("\n"),
+    );
+  });
+
+  it("keeps a chore's shipped limit", () => {
+    const text = patchAgentFile(SHIPPED.replace("planner", "scout"), {
+      name: "scout",
+      group: "chores",
+      patch: { from: "scout" },
+      models,
+    });
+
+    expect(text).toBe(
+      ["---", "name: scout", "model: live/chore:low", "limit: 120000", "---", "Shipped prompt.", ""].join(
+        "\n",
+      ),
     );
   });
 
@@ -147,5 +172,165 @@ describe("plan rows", () => {
     expect(planStatus(plan)).toBe("done");
     expect(planStatus("**Status:** partial\nmore")).toBe("partial");
     expect(planStatus("no status here")).toBeUndefined();
+  });
+});
+
+describe("createTurns", () => {
+  const deferred = () => {
+    const box: { resolve: () => void } = { resolve: () => {} };
+    const promise = new Promise<void>((resolve) => {
+      box.resolve = resolve;
+    });
+
+    return { promise, resolve: () => box.resolve() };
+  };
+
+  it("keeps the host busy until the last overlapping run returns and settles once", async () => {
+    const host = createFakeHost();
+    const settled: number[] = [];
+
+    host.onIdle(() => settled.push(1));
+
+    const turn = createTurns(host);
+    const first = deferred();
+    const second = deferred();
+    const runs = [turn(() => first.promise), turn(() => second.promise)];
+
+    expect(host.idle).toBe(false);
+
+    first.resolve();
+    await runs[0];
+
+    expect(host.idle).toBe(false);
+    expect(settled).toEqual([]);
+
+    second.resolve();
+    await runs[1];
+
+    expect(host.idle).toBe(true);
+    expect(settled).toEqual([1]);
+  });
+
+  it("goes busy again for a second turn after the first settled and settles again", async () => {
+    const host = createFakeHost();
+    const settled: number[] = [];
+
+    host.onIdle(() => settled.push(settled.length + 1));
+
+    const turn = createTurns(host);
+
+    await turn(async () => undefined);
+
+    expect(host.idle).toBe(true);
+    expect(settled).toEqual([1]);
+
+    const next = deferred();
+    const run = turn(() => next.promise);
+
+    expect(host.idle).toBe(false);
+    expect(settled).toEqual([1]);
+
+    next.resolve();
+    await run;
+
+    expect(host.idle).toBe(true);
+    expect(settled).toEqual([1, 2]);
+  });
+
+  it("settles and rethrows when the run fails", async () => {
+    const host = createFakeHost();
+    const turn = createTurns(host);
+
+    await expect(turn(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(host.idle).toBe(true);
+  });
+});
+
+describe("failureReason", () => {
+  it("takes the first non-empty line of the error, cut to 160 chars", () => {
+    expect(failureReason({ error: "\n quota reached \nstack" })).toBe("quota reached");
+    expect(failureReason({ error: "x".repeat(200) })).toBe("x".repeat(160));
+  });
+
+  it("is absent without an error and adds nothing to the log line", () => {
+    expect(failureReason({})).toBeUndefined();
+    expect(failureReason(undefined)).toBeUndefined();
+    expect(failureSuffix(undefined)).toBe("");
+    expect(failureSuffix("quota reached")).toBe(" (failed: quota reached)");
+  });
+});
+
+describe("taskLine", () => {
+  it("skips the runner's header lines and returns the brief's first line", () => {
+    const prompt = [
+      "Task from agent-1 (agent id agent-2):",
+      "Agent folder: /tmp/agents/agent-2",
+      "",
+      "Goal: find every caller of record().",
+      "Known: nothing yet.",
+    ].join("\n");
+
+    expect(taskLine(prompt)).toBe("Goal: find every caller of record().");
+  });
+
+  it("cuts the line to 140 characters", () => {
+    expect(taskLine(`Goal: ${"x".repeat(200)}`)).toHaveLength(140);
+  });
+
+  it("returns an empty line for an empty prompt", () => {
+    expect(taskLine("Task from main (agent id a1):\n\n")).toBe("");
+  });
+});
+
+describe("bashCommands", () => {
+  it("lists the bash commands of assistant tool calls in order", () => {
+    const items = [
+      { kind: "user", text: "go" },
+      {
+        kind: "assistant",
+        toolCalls: [
+          { name: "bash", args: { command: "git diff --stat" } },
+          { name: "read", args: { path: "a.ts" } },
+        ],
+      },
+      { kind: "tool", text: "output" },
+      { kind: "assistant", toolCalls: [{ name: "bash", args: { command: "npm test" } }] },
+      { kind: "assistant", toolCalls: [{ name: "bash", args: {} }] },
+    ];
+
+    expect(bashCommands(items)).toEqual(["git diff --stat", "npm test"]);
+  });
+});
+
+describe("commandsLine", () => {
+  it("joins the commands on one indented line, each on one line", () => {
+    expect(commandsLine(["git diff --stat", "npx vitest run\n  a.test.ts"])).toBe(
+      "    bash 2: git diff --stat · npx vitest run a.test.ts",
+    );
+  });
+
+  it("cuts each command to 80 characters and shows at most 8", () => {
+    const line = commandsLine([
+      `echo ${"y".repeat(100)}`,
+      ...Array.from({ length: 9 }, (_, index) => `c${index}`),
+    ]);
+
+    expect(line).toBe(`    bash 10: echo ${"y".repeat(75)} · c0 · c1 · c2 · c3 · c4 · c5 · c6, …`);
+  });
+
+  it("shows a lead that ran no commands", () => {
+    expect(commandsLine([])).toBe("    bash 0");
+  });
+});
+
+describe("helperLine", () => {
+  it("names the helper's kind and state before its task", () => {
+    expect(helperLine("scout", "done", "Goal: x")).toBe("    helper scout done: Goal: x");
+  });
+
+  it("adds the reason a helper failed", () => {
+    expect(helperLine("scout", "failed", "Goal: x", "aborted")).toBe(
+      "    helper scout failed: Goal: x (failed: aborted)",
+    );
   });
 });

@@ -1,9 +1,17 @@
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
-import { costOf, describeLive, waitUntil } from "../../../../core/test/adapter/live.ts";
-import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../src/model/types.ts";
+import { formatDuration } from "../../../../core/manager/format.ts";
+import { describeLive } from "../../../../core/test/adapter/live.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
+import {
+  concurrentRuns,
+  failureSuffix,
+  handoverLines,
+  helperCounts,
+  liveRuns,
+  runChain,
+} from "../helpers/live-runs.ts";
 import { type PlanFile, planFiles, planStatus, relativeTo } from "../helpers/plan-rows.ts";
 
 type Fixture = { sha: string; request: string; expected: string[]; unscored: string[]; maxHelpers?: number };
@@ -15,11 +23,12 @@ type Outcome = {
   missing: string[];
   globs: string[];
   helpers: string[];
+  handover: string[];
   calls: number;
   cost: number;
+  durationMs: number;
+  failure: string | undefined;
 };
-
-const RUNS_ENV = "PI_LIVE_PLAN_RUNS";
 
 const RUN_TIMEOUT_MS = 540_000;
 
@@ -52,13 +61,7 @@ const fixtures: Fixture[] = [
   },
 ];
 
-const runs = Math.max(1, Math.floor(Number(process.env[RUNS_ENV] ?? "1")) || 1);
-
-const subtree = (records: AgentRecord[], rootId: string): AgentRecord[] => {
-  const children = records.filter((record) => record.callerId === rootId);
-
-  return children.flatMap((child) => [child, ...subtree(records, child.id)]);
-};
+const runs = liveRuns();
 
 const projectRelative = (project: string, path: string) => relativeTo([project, realpathSync(project)], path);
 
@@ -66,43 +69,27 @@ const isMissing = (project: string, file: PlanFile) =>
   !file.isNew && !existsSync(join(project, file.path)) && !existsSync(join(project, dirname(file.path)));
 
 const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> => {
-  const plannerId = await live.run("planner", fixture.request);
-  const terminal = () => {
-    const first = live.registry.get(plannerId);
-
-    return first && chainTerminal(live.registry, first);
-  };
-
-  await waitUntil(
-    () => {
-      const last = terminal();
-
-      return last !== undefined && isClosed(last.state) && last.state !== "handoff";
-    },
-    RUN_TIMEOUT_MS,
-    `planner ${plannerId} to close`,
-  );
-
-  const records = live.registry.list();
-  const planner = terminal();
-  const links = planner ? chainLinks(live.registry, planner) : [];
+  const chain = await runChain(live, "planner", fixture.request, RUN_TIMEOUT_MS);
+  const planner = chain.terminal;
   const text = planner?.resultText ?? "";
   const files = planFiles(text).map((file) => ({ ...file, path: projectRelative(live.project, file.path) }));
   const paths = files.map((file) => file.path);
-  const linkIds = links.map((link) => link.id);
-  const tree = [...linkIds, ...linkIds.flatMap((id) => subtree(records, id).map((record) => record.id))];
+  const state = chain.timedOut ? "timeout" : (planner?.state ?? "missing");
 
   return {
-    status: planner?.state === "done" ? (planStatus(text) ?? "no status") : (planner?.state ?? "missing"),
+    status: state === "done" ? (planStatus(text) ?? "no status") : state,
     named: fixture.expected.filter((path) => paths.includes(path)).length,
     unscored: fixture.unscored.filter((path) => paths.includes(path)),
     missing: files
       .filter((file) => !file.path.includes("*") && isMissing(live.project, file))
       .map((file) => file.path),
     globs: paths.filter((path) => path.includes("*")),
-    helpers: records.filter((record) => linkIds.includes(record.callerId)).map((record) => record.agent),
-    calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
-    cost: costOf(tree.flatMap((id) => live.usage.get(id) ?? [])),
+    helpers: chain.helpers,
+    handover: handoverLines(live, chain, false),
+    calls: chain.calls,
+    cost: chain.cost,
+    durationMs: chain.durationMs,
+    failure: chain.failure,
   };
 };
 
@@ -121,14 +108,6 @@ const lean = (fixture: Fixture, outcome: Outcome) =>
 const listed = (label: string, paths: string[]) =>
   paths.length > 0 ? `, ${label} [${paths.join(", ")}]` : "";
 
-const helperCounts = (helpers: string[]) => {
-  const kinds = [...new Set(helpers)].sort();
-
-  return kinds.length > 0
-    ? ` (${kinds.map((kind) => `${kind} ${helpers.filter((helper) => helper === kind).length}`).join(", ")})`
-    : "";
-};
-
 const line = (fixture: Fixture, outcome: Outcome) =>
   [
     `${outcome.status}, recall ${outcome.named}/${fixture.expected.length}`,
@@ -137,54 +116,58 @@ const line = (fixture: Fixture, outcome: Outcome) =>
     outcome.missing.length > 0 ? ` [${outcome.missing.join(", ")}]` : "",
     listed("globs", outcome.globs),
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
-    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
+    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}, duration ${formatDuration(outcome.durationMs)}`,
+    failureSuffix(outcome.failure),
   ].join("");
+
+const runOnce = async (fixture: Fixture, index: number) => {
+  const live = createLiveHarness(`plan ${fixture.sha} run ${index + 1}`, {
+    agents: {
+      planner: { from: "planner", fields: { limit: "120000" } },
+      scout: { from: "scout" },
+      shell: { from: "shell" },
+      fetch: { from: "fetch" },
+    },
+  });
+
+  try {
+    live.seed(`${fixture.sha}^`);
+
+    const outcome = await planOnce(live, fixture);
+
+    console.log(
+      [
+        `[live plan] ${fixture.sha} run ${index + 1}/${runs}: ${line(fixture, outcome)}`,
+        ...outcome.handover,
+      ].join("\n"),
+    );
+
+    return outcome;
+  } finally {
+    await live.close();
+  }
+};
 
 describeLive("live planner plan quality", () => {
   it.each(fixtures)(
     "plans $sha",
     async (fixture) => {
-      const live = createLiveHarness(`plan ${fixture.sha}`, {
-        agents: {
-          planner: { from: "planner", fields: { limit: "120000" } },
-          scout: { from: "scout" },
-          shell: { from: "shell" },
-          fetch: { from: "fetch" },
-        },
-      });
+      const outcomes = await concurrentRuns(runs, (index) => runOnce(fixture, index));
 
-      try {
-        live.seed(`${fixture.sha}^`);
+      const recalled = outcomes.filter((outcome) => recalls(fixture, outcome)).length;
+      const cleanRuns = outcomes.filter(clean).length;
+      const leanRuns = outcomes.filter((outcome) => lean(fixture, outcome)).length;
+      const leanText = fixture.maxHelpers === undefined ? "" : `, lean ${leanRuns}/${runs}`;
+      const total = outcomes.reduce((sum, outcome) => sum + outcome.cost, 0);
 
-        const outcomes = await Array.from({ length: runs }).reduce<Promise<Outcome[]>>(
-          async (previous, _, index) => {
-            const done = await previous;
-            const outcome = await planOnce(live, fixture);
+      console.log(
+        `[live plan] ${fixture.sha}: recall ok ${recalled}/${runs}, clean ${cleanRuns}/${runs}${leanText}, mean cost $${(total / runs).toFixed(2)}`,
+      );
 
-            console.log(`[live plan] ${fixture.sha} run ${index + 1}/${runs}: ${line(fixture, outcome)}`);
-
-            return [...done, outcome];
-          },
-          Promise.resolve([]),
-        );
-
-        const recalled = outcomes.filter((outcome) => recalls(fixture, outcome)).length;
-        const cleanRuns = outcomes.filter(clean).length;
-        const leanRuns = outcomes.filter((outcome) => lean(fixture, outcome)).length;
-        const leanText = fixture.maxHelpers === undefined ? "" : `, lean ${leanRuns}/${runs}`;
-        const total = outcomes.reduce((sum, outcome) => sum + outcome.cost, 0);
-
-        console.log(
-          `[live plan] ${fixture.sha}: recall ok ${recalled}/${runs}, clean ${cleanRuns}/${runs}${leanText}, mean cost $${(total / runs).toFixed(2)}`,
-        );
-
-        expect(recalled).toBeGreaterThan(runs / 2);
-        expect(cleanRuns).toBeGreaterThan(runs / 2);
-        expect(leanRuns).toBeGreaterThan(runs / 2);
-      } finally {
-        await live.close();
-      }
+      expect(recalled).toBeGreaterThan(runs / 2);
+      expect(cleanRuns).toBeGreaterThan(runs / 2);
+      expect(leanRuns).toBeGreaterThan(runs / 2);
     },
-    runs * (RUN_TIMEOUT_MS + 30_000),
+    RUN_TIMEOUT_MS + 60_000,
   );
 });

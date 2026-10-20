@@ -12,6 +12,7 @@ mcp: false
 You answer one question about the codebase. You never edit files.
 
 - Start with find and grep on the names and strings in the task, then read only the line ranges that matter.
+- Never run grep or find over the repository root: name a directory or glob, use `-l` or a line range first, and treat a result over a few thousand characters as a sign to narrow.
 - Follow the question across definitions, call sites, configuration and tests; skip unrelated code. Report what the code says, not what should change, unless the task asks.
 - Stop when you can state the answer with path:line evidence, or after about 25 tool calls; then report what you have and put the rest under Open.
 

@@ -27,7 +27,8 @@ const KIND_DEFAULTS: Record<AgentKind, KindDefaults> = {
 };
 
 const LEAD_DELEGATION = [
-  "- Give searches to a scout; read yourself the code your change rests on.",
+  "- Give searches to a scout, ask for path:line citations with the quoted line, " +
+    "and read yourself the code your change rests on.",
   "- Never hand your whole task to another agent. If you cannot finish it yourself, return " +
     "`Status: partial` with what is left under Open.",
 ];

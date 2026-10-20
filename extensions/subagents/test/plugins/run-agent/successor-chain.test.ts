@@ -1,6 +1,7 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { MANIFEST_FILE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
@@ -80,6 +81,9 @@ const setup = async (overrides = {}, agent = "scout") => {
   return { ...harness, registry, runner, first, current, requestHandoff, writeHandoff, handOff };
 };
 
+const handoffToolOf = (child: { spec: { customTools?: AnyToolSpec[] } }) =>
+  child.spec.customTools?.find((tool) => tool.name === "handoff") as AnyToolSpec;
+
 const manifestOf = (record: AgentRecord) => JSON.parse(readFileSync(join(record.dir, MANIFEST_FILE), "utf8"));
 
 describe("successor chain", () => {
@@ -152,6 +156,120 @@ describe("successor chain", () => {
       state: "handoff",
     });
     expect(manifestOf(current(second))).toMatchObject({ chainIndex: 2, predecessorId: first.id });
+  });
+
+  it("continues the chain from a handoff given as the final reply when no file was written", async () => {
+    const { first, current, requestHandoff, runtime, registry } = await setup({ maxChainLength: 3 });
+
+    await requestHandoff(first.id);
+
+    expect(existsSync(first.handoffPath)).toBe(false);
+
+    runtime.child(first.id).finish(handoffText("partial"));
+    await flush();
+
+    const second = current(first.id).successorId as string;
+
+    expect(current(first.id)).toMatchObject({ state: "handoff", resultText: handoffText("partial") });
+    expect(current(second)).toMatchObject({ state: "running", chainIndex: 2, predecessorId: first.id });
+    expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
+    expect(runtime.child(second).task).toContain(`Read the handoff file at ${first.handoffPath} first`);
+    expect(registry.list()).toHaveLength(2);
+  });
+
+  it("gives a read-only agent the handoff tool, which refuses before a handoff is requested", async () => {
+    const { first, runtime } = await setup();
+    const child = runtime.child(first.id);
+
+    expect(child.spec.tools).not.toContain("write");
+    expect(child.spec.tools).not.toContain("bash");
+
+    const result = await handoffToolOf(child).execute({ content: handoffText("partial") } as never, {
+      update: () => {},
+    });
+
+    expect(result).toMatchObject({
+      text: "Error: no handoff was requested; continue your task.",
+      isError: true,
+    });
+    expect(existsSync(first.handoffPath)).toBe(false);
+  });
+
+  it("continues the chain from a handoff saved with the handoff tool", async () => {
+    const { first, current, requestHandoff, runtime, registry } = await setup({ maxChainLength: 3 });
+    const child = runtime.child(first.id);
+
+    await requestHandoff(first.id);
+
+    const result = await handoffToolOf(child).execute({ content: handoffText("partial") } as never, {
+      update: () => {},
+    });
+
+    expect(result).toEqual({ text: `Handoff saved at ${first.handoffPath}` });
+    expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
+
+    child.finish("handoff saved");
+    await flush();
+
+    const second = current(first.id).successorId as string;
+
+    expect(current(first.id)).toMatchObject({ state: "handoff", resultText: `${handoffText("partial")}\n` });
+    expect(current(second)).toMatchObject({ state: "running", chainIndex: 2, predecessorId: first.id });
+    expect(runtime.child(second).task).toContain(`Read the handoff file at ${first.handoffPath} first`);
+    expect(registry.list()).toHaveLength(2);
+  });
+
+  it("saves an invalid handoff from the tool and returns its errors", async () => {
+    const { first, current, requestHandoff, runtime, registry } = await setup();
+    const child = runtime.child(first.id);
+    const invalid = "## Status\npartial\n## Outcome\nx";
+
+    await requestHandoff(first.id);
+
+    const result = await handoffToolOf(child).execute({ content: invalid } as never, { update: () => {} });
+
+    expect(result).toEqual({
+      text: `Handoff saved at ${first.handoffPath} but it is invalid: missing sections: Evidence, Blocker, Next, Files touched. Fix the sections and call handoff again.`,
+      isError: true,
+    });
+    expect(readFileSync(first.handoffPath, "utf8")).toBe(`${invalid}\n`);
+
+    child.finish("handoff saved");
+    await flush();
+
+    expect(current(first.id)).toMatchObject({
+      state: "handoff",
+      error: "missing sections: Evidence, Blocker, Next, Files touched",
+    });
+    expect(registry.list()).toHaveLength(1);
+  });
+
+  it("closes as handoff from a blocked handoff given as the final reply", async () => {
+    const { first, current, requestHandoff, runtime, registry, host } = await setup();
+
+    await requestHandoff(first.id);
+    runtime.child(first.id).finish(handoffText("blocked"));
+    await flush();
+
+    expect(current(first.id).state).toBe("handoff");
+    expect(current(first.id).error).toBeUndefined();
+    expect(registry.list()).toHaveLength(1);
+    expect(wakeTexts(host)[0]).toContain(`Handoff file: ${first.handoffPath}`);
+  });
+
+  it("fails when no file was written and the final reply is not a handoff", async () => {
+    const { first, current, requestHandoff, runtime, registry } = await setup();
+
+    await requestHandoff(first.id);
+    runtime.child(first.id).finish("I could not find a tool to write the file.");
+    await flush();
+
+    expect(current(first.id)).toMatchObject({
+      state: "failed",
+      error: `context limit reached but no handoff file was written at ${first.handoffPath} and the final reply is not a handoff`,
+    });
+    expect(existsSync(first.handoffPath)).toBe(false);
+    expect(registry.list()).toHaveLength(1);
   });
 
   it("closes a link as handoff without a successor when the handoff says done", async () => {
@@ -234,6 +352,19 @@ describe("successor chain", () => {
     expect(wakeTexts(host)).toHaveLength(1);
 
     await host.shutdown("quit");
+  });
+
+  it("closes as handoff when a partial handoff is replied during the grace period", async () => {
+    const { first, current, requestHandoff, runner, runtime, registry } = await setup();
+
+    await requestHandoff(first.id);
+    await runner.stop(first.id);
+    runtime.child(first.id).finish(handoffText("partial"));
+    await flush();
+
+    expect(current(first.id).state).toBe("handoff");
+    expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
+    expect(registry.list()).toHaveLength(1);
   });
 
   it("never continues on shutdown", async () => {

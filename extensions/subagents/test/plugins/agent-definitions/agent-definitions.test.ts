@@ -611,11 +611,11 @@ describe("definition loading", () => {
 
     expect(grants("scout")).toEqual([["read", "grep", "find", "ls"], [], []]);
     expect(grants("planner")).toEqual([["read", "grep", "find", "ls"], [], ["scout", "shell", "fetch"]]);
-    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], ["scout"]]);
+    expect(grants("reviewer")).toEqual([["read", "grep", "find", "ls", "bash"], [], ["scout", "shell"]]);
     expect(grants("implementer")).toEqual([
       ["read", "grep", "find", "ls", "edit", "write", "bash"],
       [],
-      ["scout"],
+      ["scout", "shell", "verifier"],
     ]);
     expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
     expect(grants("shell")).toEqual([["bash", "read"], [], []]);

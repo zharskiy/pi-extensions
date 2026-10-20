@@ -46,7 +46,7 @@ export const patchAgentFile = (
 
   const fields: Record<string, string> = {
     model: modelForGroup(options.group, options.models),
-    limit: LIVE_LIMIT,
+    ...(options.group === "leads" ? { limit: LIVE_LIMIT } : {}),
     ...patch.fields,
     name: options.name,
   };

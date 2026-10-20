@@ -8,7 +8,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { expect } from "vitest";
 import type { UsageTotals } from "../../../../core/adapter/contract.ts";
 import { errorText } from "../../../../core/manager/format.ts";
@@ -34,6 +35,7 @@ import {
   shippedGroup,
 } from "./agent-patch.ts";
 import { PACKAGE_ROOT, startPlugins, tempDir, wakeTexts } from "./harness.ts";
+import { createTurns } from "./turns.ts";
 
 type LiveOptions = {
   agents: Record<string, AgentPatch>;
@@ -109,7 +111,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
   );
 
   const host = createFakeHost({
-    id: "live-main",
+    id: basename(root),
     file: join(root, "sessions", "main.jsonl"),
     cwd: project,
     agentDir,
@@ -124,18 +126,18 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     usage.set(event.id, event.usage);
   });
 
-  const run = async (agent: string, task: string) => {
-    host.idle = false;
+  const turn = createTurns(host);
 
-    const result = await host
-      .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents: [{ agent, task }] }, { update: () => {} });
+  const run = async (agent: string, task: string) => {
+    const result = await turn(() =>
+      host
+        .tool<RunAgentParams, RunAgentDetails>("run_agent")
+        .execute({ agents: [{ agent, task }] }, { update: () => {} }),
+    );
 
     if (result.isError || !result.details) {
       throw new Error(result.text);
     }
-
-    host.settle();
 
     return result.details.ids[0];
   };
@@ -172,6 +174,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
       expect(offModel).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
+      rmSync(join(tmpdir(), NAMESPACE, basename(root)), { recursive: true, force: true });
     }
   };
 
