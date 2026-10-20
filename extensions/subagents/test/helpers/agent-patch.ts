@@ -4,6 +4,7 @@ export type AgentPatch = { from: string; fields?: Record<string, string>; body?:
 
 export type LiveModels = { lead: string; chore: string };
 
+// Leads only, so handoff chains are cheap to trigger; chores keep their shipped limit.
 export const LIVE_LIMIT = "20000";
 
 const frontmatterOf = (text: string) => {
@@ -46,7 +47,7 @@ export const patchAgentFile = (
 
   const fields: Record<string, string> = {
     model: modelForGroup(options.group, options.models),
-    limit: LIVE_LIMIT,
+    ...(options.group === "leads" ? { limit: LIVE_LIMIT } : {}),
     ...patch.fields,
     name: options.name,
   };

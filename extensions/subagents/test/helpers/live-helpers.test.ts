@@ -25,7 +25,7 @@ const SHIPPED = [
 const models = { lead: "live/lead:high", chore: "live/chore:low" };
 
 describe("patchAgentFile", () => {
-  it("forces the live model and limit and keeps the shipped body", () => {
+  it("forces the live model and limit on a lead and keeps the shipped body", () => {
     const text = patchAgentFile(SHIPPED, {
       name: "planner",
       group: "leads",
@@ -50,6 +50,21 @@ describe("patchAgentFile", () => {
 
     expect(text).toBe(
       ["---", "name: lead", "model: live/lead:high", "limit: 120000", "---", "New prompt.", ""].join("\n"),
+    );
+  });
+
+  it("keeps a chore's shipped limit", () => {
+    const text = patchAgentFile(SHIPPED.replace("planner", "scout"), {
+      name: "scout",
+      group: "chores",
+      patch: { from: "scout" },
+      models,
+    });
+
+    expect(text).toBe(
+      ["---", "name: scout", "model: live/chore:low", "limit: 120000", "---", "Shipped prompt.", ""].join(
+        "\n",
+      ),
     );
   });
 

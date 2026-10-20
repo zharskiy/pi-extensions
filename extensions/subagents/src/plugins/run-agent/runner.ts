@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   type AgentRuntime,
@@ -318,14 +318,40 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return running;
   };
 
-  const finishHandoff = (record: AgentRecord, live: Live) => {
-    const text = readText(record.handoffPath);
+  const replyText = (live: Live) => (live.child?.runTexts().at(-1) ?? live.lastText).trim();
+
+  const replyHandoff = (live: Live) => {
+    const text = replyText(live);
+
+    return text.length > 0 && deps.handoff.validate(text).ok ? text : undefined;
+  };
+
+  const saveReplyHandoff = (record: AgentRecord, live: Live): { text?: string; error?: string } => {
+    const text = replyHandoff(live);
 
     if (text === undefined) {
-      return deps.registry.close(record.id, {
-        state: "failed",
-        error: `context limit reached but no handoff file was written at ${record.handoffPath}`,
-      });
+      return {
+        error: `context limit reached but no handoff file was written at ${record.handoffPath} and the final reply is not a handoff`,
+      };
+    }
+
+    try {
+      mkdirSync(dirname(record.handoffPath), { recursive: true });
+      writeFileSync(record.handoffPath, `${text}\n`);
+
+      return { text };
+    } catch (error) {
+      return { error: `handoff reply not written to ${record.handoffPath}: ${errorText(error)}` };
+    }
+  };
+
+  const finishHandoff = (record: AgentRecord, live: Live) => {
+    const saved = readText(record.handoffPath);
+    const { text, error } =
+      saved === undefined ? saveReplyHandoff(record, live) : { text: saved, error: undefined };
+
+    if (text === undefined) {
+      return deps.registry.close(record.id, { state: "failed", error });
     }
 
     const validation = deps.handoff.validate(text);
@@ -473,7 +499,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.answering = false;
     releaseSlot(live);
 
-    const handoffWritten = record.handoffRequested && existsSync(record.handoffPath);
+    const handoffWritten =
+      record.handoffRequested && (existsSync(record.handoffPath) || replyHandoff(live) !== undefined);
 
     if (live.abortReason === undefined && !handoffWritten) {
       armGrace(record.id, live);
@@ -495,6 +522,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     if (event.type === "turn_end") {
       const usage = live.child?.ownUsage();
+      // Tokens spent over all turns, for display; the context limit uses context.tokens from this event instead.
       const tokens = usage ? usage.input + usage.output + usage.cacheWrite : record.tokens;
       const turns = record.turns + 1;
 

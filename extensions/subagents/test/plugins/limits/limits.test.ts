@@ -69,11 +69,44 @@ describe("context limit steps", () => {
     expect(contextStep({ ...base, tokens: 80_000 })).toBe("warn");
     expect(contextStep({ ...base, tokens: 85_000, warned: true })).toBe("none");
     expect(contextStep({ ...base, tokens: 100_000, warned: true })).toBe("handoff");
-    expect(contextStep({ ...base, tokens: 110_000, handoffRequested: true })).toBe("none");
-    expect(contextStep({ ...base, tokens: 115_000, handoffRequested: true })).toBe("abort");
+    expect(contextStep({ ...base, tokens: 110_000, handoffRequested: true, turnsSinceHandoff: 1 })).toBe(
+      "none",
+    );
+    expect(contextStep({ ...base, tokens: 115_000, handoffRequested: true, turnsSinceHandoff: 2 })).toBe(
+      "abort",
+    );
     expect(contextStep({ ...base, tokens: 101_000, handoffRequested: true, turnsSinceHandoff: 3 })).toBe(
       "abort",
     );
+  });
+
+  it("gives the agent one turn past the hard line after the handoff request", () => {
+    const base = {
+      limit: 100_000,
+      softRatio: 0.8,
+      hardRatio: 1.15,
+      warned: true,
+      handoffRequested: true,
+      tokens: 150_000,
+    };
+
+    expect(contextStep({ ...base, turnsSinceHandoff: 0 })).toBe("none");
+    expect(contextStep({ ...base, turnsSinceHandoff: 1 })).toBe("none");
+    expect(contextStep({ ...base, turnsSinceHandoff: 2 })).toBe("abort");
+  });
+
+  it("aborts three turns after the handoff request even under the hard line", () => {
+    const base = {
+      limit: 100_000,
+      softRatio: 0.8,
+      hardRatio: 1.15,
+      warned: true,
+      handoffRequested: true,
+      tokens: 101_000,
+    };
+
+    expect(contextStep({ ...base, turnsSinceHandoff: 2 })).toBe("none");
+    expect(contextStep({ ...base, turnsSinceHandoff: 3 })).toBe("abort");
   });
 });
 
@@ -142,7 +175,7 @@ describe("limits plugin", () => {
     );
   });
 
-  it("fails the agent when the handoff file is missing", async () => {
+  it("fails the agent when the handoff file is missing and the final reply is not a handoff", async () => {
     const { child, turn, record, services } = await setup();
 
     await turn(100_500);
@@ -152,19 +185,23 @@ describe("limits plugin", () => {
 
     expect(closed?.state).toBe("failed");
     expect(closed?.error).toBe(
-      `context limit reached but no handoff file was written at ${record.handoffPath}`,
+      `context limit reached but no handoff file was written at ${record.handoffPath} and the final reply is not a handoff`,
     );
   });
 
-  it("aborts an agent that keeps going past the hard line", async () => {
+  it("aborts an agent that keeps going past the hard line after its grace turn", async () => {
     const { child, turn, record, services } = await setup();
 
     await turn(100_500);
     await turn(116_000);
 
+    expect(child.aborted).toBe(false);
+
+    await turn(117_000);
+
     expect(child.aborted).toBe(true);
     expect(services.require("registry").get(record.id)?.error).toBe(
-      `context limit reached but no handoff file was written at ${record.handoffPath}`,
+      `context limit reached but no handoff file was written at ${record.handoffPath} and the final reply is not a handoff`,
     );
   });
 
@@ -275,7 +312,7 @@ describe("limits plugin", () => {
 
     expect(child.aborted).toBe(true);
     expect(services.require("registry").get(record.id)?.error).toBe(
-      `context limit reached but no handoff file was written at ${record.handoffPath}`,
+      `context limit reached but no handoff file was written at ${record.handoffPath} and the final reply is not a handoff`,
     );
   });
 

@@ -16,8 +16,9 @@ export const contextStep = (input: ContextStepInput): ContextStep => {
   if (input.handoffRequested) {
     const overHard = input.tokens >= input.limit * input.hardRatio;
     const tooManyTurns = input.turnsSinceHandoff >= MAX_TURNS_AFTER_HANDOFF;
+    const graceUsed = input.turnsSinceHandoff >= 2;
 
-    return overHard || tooManyTurns ? "abort" : "none";
+    return (overHard && graceUsed) || tooManyTurns ? "abort" : "none";
   }
 
   if (input.tokens >= input.limit) {
