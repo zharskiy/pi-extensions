@@ -97,13 +97,14 @@ describe("run_agent description", () => {
     expect(text).toContain("after the path). To continue, start a new agent");
   });
 
-  it("adds the Cap line only when a child cap is given, after the depth rule", () => {
+  it("adds the Cap and Delegating lines only when a child cap is given, after the depth rule", () => {
     const main = describeRunAgent(agents, { callerDepth: 1, maxDepth: 3, maxConcurrent: 4 });
     const child = describeRunAgent(agents, { callerDepth: 2, maxDepth: 3, maxConcurrent: 4, childCap: 6 });
 
     expect(main).not.toContain("- Cap:");
+    expect(main).not.toContain("- Delegating:");
     expect(child).toContain(
-      "They cannot start agents of their own.\n- Cap: you may start at most 6 agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.\n- Concurrency:",
+      "They cannot start agents of their own.\n- Cap: you may start at most 6 agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.\n- Delegating: give searching, command runs and web pages to the agents above whose descriptions fit, and ask for path:line citations with the quoted line, not conclusions.\n- Concurrency:",
     );
   });
 

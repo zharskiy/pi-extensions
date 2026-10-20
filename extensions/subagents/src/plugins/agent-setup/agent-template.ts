@@ -27,7 +27,7 @@ const KIND_DEFAULTS: Record<AgentKind, KindDefaults> = {
 };
 
 const LEAD_DELEGATION = [
-  "- Start a scout only when finding something would take more than about 10 files of searching.",
+  "- Give searches to a scout; read yourself the code your change rests on.",
   "- Never hand your whole task to another agent. If you cannot finish it yourself, return " +
     "`Status: partial` with what is left under Open.",
 ];

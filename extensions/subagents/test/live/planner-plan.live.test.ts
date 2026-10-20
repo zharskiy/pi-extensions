@@ -6,7 +6,7 @@ import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../src
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import { type PlanFile, planFiles, planStatus, relativeTo } from "../helpers/plan-rows.ts";
 
-type Fixture = { sha: string; request: string; expected: string[]; unscored: string[] };
+type Fixture = { sha: string; request: string; expected: string[]; unscored: string[]; maxHelpers?: number };
 
 type Outcome = {
   status: string;
@@ -14,7 +14,8 @@ type Outcome = {
   unscored: string[];
   missing: string[];
   globs: string[];
-  scouts: number;
+  helpers: string[];
+  calls: number;
   cost: number;
 };
 
@@ -33,6 +34,21 @@ const fixtures: Fixture[] = [
       "extensions/session-limits/src/thresholds.ts",
     ],
     unscored: ["extensions/session-limits/src/index.ts"],
+  },
+  {
+    sha: "00103e4",
+    request:
+      "In the footer, the thinking line reads `thinking high` with only the level in bold gold and the word `thinking` in the default colour. It is one mode indicator, so paint the whole `thinking <level>` label in the same bold gold; leave `thinking unavailable` and the cycle hint as they are.",
+    expected: ["extensions/footer/src/render.ts"],
+    unscored: ["extensions/footer/README.md"],
+    maxHelpers: 0,
+  },
+  {
+    sha: "aafb579",
+    request:
+      "When the composer or subagents install their custom editor, ↑ prompt history is lost on /reload and /new, and after /resume or /fork the earlier prompts of that session cannot be recalled either. pi's own editor keeps its history across all of these. Make our editor behave the same: keep the input history across reload and new, and on resume and fork seed it with the session's user messages.",
+    expected: ["core/adapter/pi-editor.ts"],
+    unscored: ["core/adapter/pi-adapter.ts", "ARCHITECTURE.md"],
   },
 ];
 
@@ -84,7 +100,8 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
       .filter((file) => !file.path.includes("*") && isMissing(live.project, file))
       .map((file) => file.path),
     globs: paths.filter((path) => path.includes("*")),
-    scouts: records.filter((record) => linkIds.includes(record.callerId) && record.agent === "scout").length,
+    helpers: records.filter((record) => linkIds.includes(record.callerId)).map((record) => record.agent),
+    calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
     cost: costOf(tree.flatMap((id) => live.usage.get(id) ?? [])),
   };
 };
@@ -93,12 +110,24 @@ const MIN_NAMED = 2;
 
 const MAX_MISSING = 2;
 
-const recalls = (outcome: Outcome) => outcome.status === "done" && outcome.named >= MIN_NAMED;
+const recalls = (fixture: Fixture, outcome: Outcome) =>
+  outcome.status === "done" && outcome.named >= Math.min(MIN_NAMED, fixture.expected.length);
 
 const clean = (outcome: Outcome) => outcome.missing.length <= MAX_MISSING;
 
+const lean = (fixture: Fixture, outcome: Outcome) =>
+  fixture.maxHelpers === undefined || outcome.helpers.length <= fixture.maxHelpers;
+
 const listed = (label: string, paths: string[]) =>
   paths.length > 0 ? `, ${label} [${paths.join(", ")}]` : "";
+
+const helperCounts = (helpers: string[]) => {
+  const kinds = [...new Set(helpers)].sort();
+
+  return kinds.length > 0
+    ? ` (${kinds.map((kind) => `${kind} ${helpers.filter((helper) => helper === kind).length}`).join(", ")})`
+    : "";
+};
 
 const line = (fixture: Fixture, outcome: Outcome) =>
   [
@@ -107,7 +136,8 @@ const line = (fixture: Fixture, outcome: Outcome) =>
     `, missing ${outcome.missing.length}`,
     outcome.missing.length > 0 ? ` [${outcome.missing.join(", ")}]` : "",
     listed("globs", outcome.globs),
-    `, scouts ${outcome.scouts}, cost $${outcome.cost.toFixed(2)}`,
+    `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
+    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
   ].join("");
 
 describeLive("live planner plan quality", () => {
@@ -118,6 +148,8 @@ describeLive("live planner plan quality", () => {
         agents: {
           planner: { from: "planner", fields: { limit: "120000" } },
           scout: { from: "scout" },
+          shell: { from: "shell" },
+          fetch: { from: "fetch" },
         },
       });
 
@@ -136,16 +168,19 @@ describeLive("live planner plan quality", () => {
           Promise.resolve([]),
         );
 
-        const recalled = outcomes.filter(recalls).length;
+        const recalled = outcomes.filter((outcome) => recalls(fixture, outcome)).length;
         const cleanRuns = outcomes.filter(clean).length;
+        const leanRuns = outcomes.filter((outcome) => lean(fixture, outcome)).length;
+        const leanText = fixture.maxHelpers === undefined ? "" : `, lean ${leanRuns}/${runs}`;
         const total = outcomes.reduce((sum, outcome) => sum + outcome.cost, 0);
 
         console.log(
-          `[live plan] ${fixture.sha}: recall ok ${recalled}/${runs}, clean ${cleanRuns}/${runs}, mean cost $${(total / runs).toFixed(2)}`,
+          `[live plan] ${fixture.sha}: recall ok ${recalled}/${runs}, clean ${cleanRuns}/${runs}${leanText}, mean cost $${(total / runs).toFixed(2)}`,
         );
 
         expect(recalled).toBeGreaterThan(runs / 2);
         expect(cleanRuns).toBeGreaterThan(runs / 2);
+        expect(leanRuns).toBeGreaterThan(runs / 2);
       } finally {
         await live.close();
       }

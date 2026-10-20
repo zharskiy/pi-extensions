@@ -103,6 +103,7 @@ const capRule = ({ childCap }: RunAgentLimits) =>
     ? []
     : [
         `- Cap: you may start at most ${childCap} agents in this run, across all your batches; further calls are refused. Do not start an agent for work of a few tool calls.`,
+        "- Delegating: give searching, command runs and web pages to the agents above whose descriptions fit, and ask for path:line citations with the quoted line, not conclusions.",
       ];
 
 export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgentLimits): string =>
