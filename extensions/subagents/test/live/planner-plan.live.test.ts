@@ -6,9 +6,6 @@ import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../src
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import { type PlanFile, planFiles, planStatus, relativeTo } from "../helpers/plan-rows.ts";
 
-// One past request from this repository: the planner sees the tree as it was
-// before the commit and plans the change. `expected` are the commit's source
-// files the plan is scored on; `unscored` ones are only logged.
 type Fixture = { sha: string; request: string; expected: string[]; unscored: string[] };
 
 type Outcome = {
@@ -27,12 +24,6 @@ const RUN_TIMEOUT_MS = 540_000;
 
 const fixtures: Fixture[] = [
   {
-    // The request is deliberately specific (it names the caps, their defaults
-    // and the footer change), so recall measures whether the planner finds the
-    // files, not whether it guesses the design. The seeded tree at 686fc95^ was
-    // checked for leaks: no token caps, no 150k/200k defaults, no changelog.
-    // Its git history is the one seed commit and the linked node_modules holds
-    // only third-party packages, so neither shows the later change.
     sha: "686fc95",
     request:
       "In session-limits, the handoff thresholds are only fractions of the context window, so on a 1M-token model the handoff comes far too late. Add absolute token caps next to the ratios (defaults 150k soft and 200k hard) so the effective threshold is whichever is lower, configurable in the settings file, and show token counts in the footer segment when the cap is the one that applies.",
@@ -41,7 +32,6 @@ const fixtures: Fixture[] = [
       "extensions/session-limits/src/settings.ts",
       "extensions/session-limits/src/thresholds.ts",
     ],
-    // The commit only renamed an import here.
     unscored: ["extensions/session-limits/src/index.ts"],
   },
 ];
@@ -54,12 +44,8 @@ const subtree = (records: AgentRecord[], rootId: string): AgentRecord[] => {
   return children.flatMap((child) => [child, ...subtree(records, child.id)]);
 };
 
-// Paths the planner wrote as absolute ones under the seeded project count as
-// relative ones; the project dir may appear through a symlink (macOS /var).
 const projectRelative = (project: string, path: string) => relativeTo([project, realpathSync(project)], path);
 
-// A path is missing only when the plan does not mark it as new and even its
-// directory does not exist, which points at an invented location.
 const isMissing = (project: string, file: PlanFile) =>
   !file.isNew && !existsSync(join(project, file.path)) && !existsSync(join(project, dirname(file.path)));
 
@@ -103,10 +89,6 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
   };
 };
 
-// Loose on purpose: model output varies between runs. Both checks must hold
-// in a majority of runs. A run recalls well when the plan is done and names
-// at least 2 of the 3 scored files; it is clean when it names at most 2
-// missing paths (more suggests invented locations).
 const MIN_NAMED = 2;
 
 const MAX_MISSING = 2;
