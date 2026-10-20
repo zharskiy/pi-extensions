@@ -65,6 +65,7 @@ describe("nested agents", () => {
     const { child } = await startGeneral();
 
     expect(child.spec.customTools?.map((tool) => tool.name)).toEqual([
+      "handoff",
       "run_agent",
       "message_agent",
       "agent_status",
@@ -79,14 +80,14 @@ describe("nested agents", () => {
 
     await runMain([{ agent: "scout", task: "look" }]);
 
-    expect(runtime.children[1].spec.customTools).toEqual([]);
+    expect(runtime.children[1].spec.customTools?.map((tool) => tool.name)).toEqual(["handoff"]);
   });
 
   it("gives no agent tools at the depth cap", async () => {
     const { startGeneral } = setup({ maxDepth: 2 });
     const { child } = await startGeneral();
 
-    expect(child.spec.customTools).toEqual([]);
+    expect(child.spec.customTools?.map((tool) => tool.name)).toEqual(["handoff"]);
   });
 
   it("starts grandchildren with the child as caller and wakes the child once, not the main session", async () => {

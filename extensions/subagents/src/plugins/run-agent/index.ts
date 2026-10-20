@@ -11,6 +11,7 @@ import {
   subagentNames,
 } from "../../model/types.ts";
 import { createHandoff } from "./handoff.ts";
+import { handoffTool } from "./handoff-tool.ts";
 import { joinTexts } from "./outbox.ts";
 import { createRunner } from "./runner.ts";
 import { createPendingCalls, describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
@@ -57,7 +58,10 @@ export const runAgentPlugin: Plugin = {
         .filter((definition): definition is AgentDefinition => definition !== undefined);
 
       const granted = own && allowlist(own.tools)?.includes("fetch") && services.has("fetchTool");
-      const extra: AnyToolSpec[] = granted ? [services.require("fetchTool").tool()] : [];
+      const extra: AnyToolSpec[] = [
+        handoffTool({ registry, handoff }, record.id),
+        ...(granted ? [services.require("fetchTool").tool()] : []),
+      ];
 
       if (allowed.length === 0 || record.depth >= settings.maxDepth) {
         return extra;

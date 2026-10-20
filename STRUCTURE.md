@@ -158,7 +158,7 @@ run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts (sk
                     #   checks), tools.ts (run_agent, message_agent), render.ts (block), placement.ts
                     #   + worktree.ts, task.ts (task text), outbox.ts, result.ts (result pick,
                     #   result.md, inlining), model-text.ts, semaphore.ts, handoff.ts (handoff
-                    #   template and schema service)
+                    #   template and schema service), handoff-tool.ts (every child's handoff tool)
 agent-status/       # status tool and snapshots
 agent-view/         # /agents overlay: index (command, routing to services), overlay.ts (list/view host),
                     #   list.ts + list-model.ts (tree sections), view.ts, loader.ts,
