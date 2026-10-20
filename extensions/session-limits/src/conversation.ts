@@ -25,6 +25,9 @@ export const conversationOnly = (host: Host): Host => {
     onTurnEnd: (handler) => {
       host.onTurnEnd(whenActive(handler));
     },
+    onAgentStart: (handler) => {
+      host.onAgentStart(whenActive(handler));
+    },
     onIdle: (handler) => {
       host.onIdle(whenActive(handler));
     },

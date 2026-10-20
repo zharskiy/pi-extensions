@@ -44,11 +44,12 @@ describe("import plan", () => {
     expect(plan.added).toEqual([]);
     expect(plan.text).toBeUndefined();
     expect(plan.skipped).toEqual([
-      { name: "same", origin: "a", reason: "already in mcp.json, left unchanged" },
+      { name: "same", origin: "a", reason: "already in mcp.json, left unchanged", present: true },
       {
         name: "my-tool",
         origin: "a",
         reason: 'pi treats it as the same server as "my_tool" in mcp.json, left unchanged',
+        present: true,
       },
     ]);
   });

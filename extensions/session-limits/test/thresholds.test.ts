@@ -134,9 +134,12 @@ describe("segmentFor", () => {
       token: "warning",
       text: "ctx 78% · handoff waits for running work",
     });
-    expect(segmentFor(at(null), "switching", limits, "session-handoff")?.text).toBe(
-      "ctx · switching session",
-    );
+    expect(segmentFor(at(null), "switching", limits, "session-handoff")?.text).toBe("switching session");
+    expect(segmentFor(undefined, "requested", limits, "session-handoff")).toEqual({
+      token: "error",
+      text: "writing handoff",
+    });
+    expect(segmentFor(undefined, "watching", limits, "session-handoff")).toBeUndefined();
     expect(segmentFor(at(78_000), "stuck", limits, "session-handoff")?.text).toBe(
       "ctx 78% · handoff failed, run /session-handoff",
     );

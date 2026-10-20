@@ -13,6 +13,14 @@ type ById = ReadonlyMap<string, AgentRecord>;
 export const isTerminal = (record: AgentRecord, byId: ById): boolean =>
   !record.successorId || !byId.has(record.successorId);
 
+export const stoppableAgents = (records: AgentRecord[]): AgentRecord[] => {
+  const byId = new Map(records.map((record) => [record.id, record]));
+
+  return records.filter(
+    (record) => isTerminal(record, byId) && (record.state === "queued" || record.state === "running"),
+  );
+};
+
 export const withLinks = (records: AgentRecord[], byId: ById): AgentRecord[] => {
   const listed = new Map(records.map((record) => [record.id, record]));
 

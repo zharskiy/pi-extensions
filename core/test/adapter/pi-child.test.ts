@@ -216,9 +216,9 @@ describe("child tool names", () => {
 
 describe("child skills", () => {
   const mainSkills = () => [
-    { name: "docs", path: "/skills/docs/SKILL.md" },
-    { name: "git", path: "/skills/git/SKILL.md" },
-    { name: "style", path: "/skills/style/SKILL.md" },
+    { name: "docs", description: "Writes docs", path: "/skills/docs/SKILL.md" },
+    { name: "git", description: "", path: "/skills/git/SKILL.md" },
+    { name: "style", description: "Checks style", path: "/skills/style/SKILL.md" },
   ];
 
   const withSkills = runtimeWith({ skillFiles: mainSkills });
@@ -254,6 +254,15 @@ describe("child skills", () => {
     expect(keptNames(named)).toEqual(["docs", "style"]);
     expect(none).toMatchObject({ noSkills: true, additionalSkillPaths: [] });
     expect(keptNames(none)).toEqual([]);
+  });
+
+  it("lists the main session's skills with their descriptions, and their names alone", () => {
+    expect(withSkills.skillCatalog()).toEqual([
+      { name: "docs", description: "Writes docs" },
+      { name: "git", description: "" },
+      { name: "style", description: "Checks style" },
+    ]);
+    expect(withSkills.skillNames()).toEqual(["docs", "git", "style"]);
   });
 });
 

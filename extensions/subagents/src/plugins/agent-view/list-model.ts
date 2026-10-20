@@ -125,6 +125,18 @@ export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] => {
   return visible.filter((record) => isTerminal(record, byId));
 };
 
+export const listCounts = (
+  records: AgentRecord[],
+  cleared: ReadonlySet<string>,
+): { running: number; completed: number } => {
+  const { terminals, isListRoot } = forestOf(visibleRecords(records, cleared));
+
+  return {
+    running: terminals.filter((record) => !isClosed(record.state)).length,
+    completed: terminals.filter((record) => isListRoot(record) && isClosed(record.state)).length,
+  };
+};
+
 export const listSections = (visible: AgentRecord[]): ListSection[] => {
   const { byId, terminals, isListRoot, rootOf } = forestOf(visible);
   const subtrees = new Map<string, AgentRecord[]>();

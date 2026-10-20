@@ -37,7 +37,7 @@ const SHUTDOWN_TIMEOUT_MS = 2_000;
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
-export type SkillFile = { name: string; path: string };
+export type SkillFile = { name: string; description: string; path: string };
 
 export type ParentSource = {
   ctx(): ExtensionContext;
@@ -366,12 +366,15 @@ export const createPiRuntime = (
     };
   };
 
+  const skillCatalog = () => parent.skillFiles().map(({ name, description }) => ({ name, description }));
+
   return {
     spawn,
     readSession: (file) => readSessionFile(file, recordEntry),
     resolveModel: (request) => resolveFromCatalog(parent.ctx(), request, defaultProvider()).resolution,
     availableModels: () => availableModels(parent.ctx()),
     defaultThinking: () => parent.thinking(),
-    skillNames: () => parent.skillFiles().map((skill) => skill.name),
+    skillCatalog,
+    skillNames: () => skillCatalog().map((skill) => skill.name),
   };
 };

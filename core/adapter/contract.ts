@@ -194,6 +194,7 @@ export type HostUi = {
   setEditorFrame(frame: EditorFrame | undefined): void;
   onEmptyEditorLeft(handler: () => void): () => void;
   onEmptyEditorDown(handler: () => void): () => void;
+  onEmptyEditorEscape(handler: () => boolean): () => void;
   captureEditorKeys(handler: EditorKeyHandler): () => void;
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
@@ -260,6 +261,8 @@ export type ContextFacts = {
 
 export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
 
+export type IdleInfo = { aborted: boolean };
+
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
 
 export type Host = {
@@ -270,7 +273,7 @@ export type Host = {
   setPromptSection(name: string, text: string | undefined): void;
   onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
-  onIdle(handler: () => void): void;
+  onIdle(handler: (info: IdleInfo) => void): void;
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   onCompact(handler: () => void): void;
   isIdle(): boolean;
@@ -347,10 +350,12 @@ export type PromptSection = { name: string; text: string };
 
 export type PromptTool = { name: string; description: string; parameters: unknown };
 
+export type SkillInfo = { name: string; description: string };
+
 export type PromptRecord = {
   sections: PromptSection[];
   tools: PromptTool[];
-  skills: { name: string; description: string }[];
+  skills: SkillInfo[];
   guidelines: string[];
   providerPayload?: unknown;
   model?: string;
@@ -414,6 +419,7 @@ export type AgentRuntime = {
   resolveModel(request: string | undefined): ModelResolution;
   availableModels(): AvailableModel[];
   defaultThinking(): string;
+  skillCatalog(): SkillInfo[];
   skillNames(): string[];
 };
 

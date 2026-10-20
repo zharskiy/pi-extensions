@@ -65,6 +65,21 @@ describe("transcript pane spacing", () => {
   });
 });
 
+describe("transcript pane routed messages", () => {
+  it("renders a routed message as a plain user message, header included", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([{ kind: "user", text: "[message from main]\nfocus on tests" }]);
+
+    const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
+    const header = lines.findIndex((line) => line.includes("[message from main]"));
+
+    expect(header).toBeGreaterThanOrEqual(0);
+    expect(lines.findIndex((line) => line.includes("focus on tests"))).toBeGreaterThan(header);
+    expect(lines.filter((line) => line.includes("message from main"))).toHaveLength(1);
+  });
+});
+
 describe("transcript pane terminal marks", () => {
   it("drops prompt marks from pi's message lines and keeps colours", () => {
     const pane = createTranscriptPane(tui, "/repo");

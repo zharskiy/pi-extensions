@@ -68,6 +68,26 @@ describe("multiLines", () => {
     ]);
   });
 
+  it("cuts a description wider than the row to one line with an ellipsis", () => {
+    const options = [
+      { label: "review", description: "Reviews diffs for correctness, style and missing tests" },
+      { label: "plan", description: "short" },
+    ];
+    const lines = multiLines(plainTheme, options, initialMulti(2), 30);
+
+    expect(lines).toEqual([" › [ ] review  Reviews diffs …", "   [ ] plan  short"]);
+  });
+
+  it("still wraps a name that alone is wider than the row", () => {
+    const options = [{ label: "a-very-long-skill-name-indeed", description: "never shown" }];
+
+    expect(multiLines(plainTheme, options, initialMulti(1), 20)).toEqual([
+      " › [ ] a-very-long-s",
+      "       kill-name-ind",
+      "       eed",
+    ]);
+  });
+
   it("says when there is nothing to choose", () => {
     expect(multiLines(plainTheme, [], initialMulti(0), 40)).toEqual([" (none available)"]);
   });

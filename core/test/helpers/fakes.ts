@@ -14,6 +14,7 @@ import {
   type FooterRender,
   type HiddenMessage,
   type Host,
+  type IdleInfo,
   type KeyPress,
   type MessageDelivery,
   type ModelInfo,
@@ -75,9 +76,11 @@ export type FakeHost = Host & {
   foreignEditor: boolean;
   emptyLeftHandlers: Set<() => void>;
   emptyDownHandlers: Set<() => void>;
+  emptyEscapeHandlers: Set<() => boolean>;
   editorCapture?: EditorKeyHandler;
   pressEmptyLeft(): boolean;
   pressEmptyDown(): boolean;
+  pressEmptyEscape(): boolean;
   pressEditorKey(key: KeyPress): "consumed" | "release" | "editor";
   idle: boolean;
   usage: UsageTotals;
@@ -89,7 +92,7 @@ export type FakeHost = Host & {
   start(parent?: string): void;
   turnEnd(context: { tokens: number | null; window: number; percent?: number | null }): void;
   compact(): void;
-  settle(): void;
+  settle(options?: { aborted?: boolean }): void;
   emit(channel: string, data: unknown): void;
   runCommand(name: string, args?: string): Promise<void>;
   shutdown(reason?: ShutdownReason): Promise<void>;
@@ -140,7 +143,7 @@ export const FAKE_FOOTER_KEY = "footer";
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
-  const idleHandlers: (() => void)[] = [];
+  const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
@@ -222,8 +225,11 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     foreignEditor: false,
     emptyLeftHandlers: new Set(),
     emptyDownHandlers: new Set(),
+    emptyEscapeHandlers: new Set(),
     pressEmptyLeft: () => pressEmpty(host.emptyLeftHandlers),
     pressEmptyDown: () => pressEmpty(host.emptyDownHandlers),
+    pressEmptyEscape: () =>
+      editorLive() && host.idle && Array.from(host.emptyEscapeHandlers).some((handler) => handler()),
     pressEditorKey: (key) => {
       if (!editorLive()) {
         return "editor";
@@ -357,6 +363,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
         return () => {
           host.emptyDownHandlers.delete(entry);
+        };
+      },
+      onEmptyEditorEscape: (handler) => {
+        const entry = () => handler();
+
+        host.emptyEscapeHandlers.add(entry);
+
+        return () => {
+          host.emptyEscapeHandlers.delete(entry);
         };
       },
       captureEditorKeys: (handler) => {
@@ -512,12 +527,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         handler();
       });
     },
-    settle: () => {
+    settle: (options) => {
       host.idle = true;
       settling = true;
+      const idleInfo: IdleInfo = { aborted: options?.aborted ?? false };
 
       idleHandlers.forEach((handler) => {
-        handler();
+        handler(idleInfo);
       });
 
       settling = false;
@@ -783,6 +799,7 @@ type FakeRuntime = AgentRuntime & {
   sessions: Map<string, SessionRecord>;
   failNextSpawn?: string;
   skills: string[];
+  skillDescriptions: Record<string, string>;
   child(id: string): FakeChild;
 };
 
@@ -813,7 +830,10 @@ export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime
         .sort((left, right) => left.ref.localeCompare(right.ref)),
     defaultThinking: () => "medium",
     skills: [],
-    skillNames: () => [...runtime.skills],
+    skillDescriptions: {},
+    skillCatalog: () =>
+      runtime.skills.map((name) => ({ name, description: runtime.skillDescriptions[name] ?? "" })),
+    skillNames: () => runtime.skillCatalog().map((skill) => skill.name),
     children: [],
     sessions: new Map(),
     spawn: async (spec) => {
