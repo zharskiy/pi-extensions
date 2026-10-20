@@ -174,7 +174,6 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
       expect(offModel).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
-      // Handoff documents of this harness's session (handoffPathFor).
       rmSync(join(tmpdir(), NAMESPACE, basename(root)), { recursive: true, force: true });
     }
   };
