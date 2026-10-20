@@ -25,9 +25,6 @@ const CHORE_MODEL_ENV = "PI_LIVE_CHORE_MODEL";
 
 const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
-// pi writes refreshed OAuth tokens back to auth.json and providers rotate
-// refresh tokens, so the temp dir links the real file instead of copying it;
-// a copy would take the new token with it on teardown.
 const LINKED_FILES = ["auth.json"];
 
 const COPIED_FILES = ["models.json"];
