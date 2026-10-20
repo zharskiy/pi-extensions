@@ -10,6 +10,7 @@ import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import {
   concurrentRuns,
   failureSuffix,
+  handoverLines,
   helperCounts,
   liveRuns,
   repoGit,
@@ -27,6 +28,7 @@ type Outcome = {
   passed: boolean;
   tests: string;
   helpers: string[];
+  handover: string[];
   calls: number;
   cost: number;
   failure: string | undefined;
@@ -139,6 +141,7 @@ const implementOnce = async (fixture: Fixture, index: number): Promise<Outcome> 
       status,
       ...hidden,
       helpers: chain.helpers,
+      handover: handoverLines(live, chain, true),
       calls: chain.calls,
       cost: chain.cost,
       failure: chain.failure,
@@ -164,7 +167,12 @@ describeLive("live implementer change quality", () => {
       const outcomes = await concurrentRuns(runs, async (index) => {
         const outcome = await implementOnce(fixture, index);
 
-        console.log(`[live implement] ${fixture.sha} run ${index + 1}/${runs}: ${describeOutcome(outcome)}`);
+        console.log(
+          [
+            `[live implement] ${fixture.sha} run ${index + 1}/${runs}: ${describeOutcome(outcome)}`,
+            ...outcome.handover,
+          ].join("\n"),
+        );
 
         return outcome;
       });

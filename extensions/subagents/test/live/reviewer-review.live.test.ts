@@ -8,6 +8,7 @@ import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import {
   concurrentRuns,
   failureSuffix,
+  handoverLines,
   helperCounts,
   liveRuns,
   repoGit,
@@ -35,6 +36,7 @@ type Outcome = {
   line: number;
   verdict: string;
   helpers: string[];
+  handover: string[];
   calls: number;
   cost: number;
   failure: string | undefined;
@@ -174,6 +176,7 @@ const reviewOnce = async (fixture: Fixture, index: number): Promise<Outcome> => 
       line,
       verdict: VERDICT.exec(text)?.[1]?.toLowerCase() ?? "none",
       helpers: chain.helpers,
+      handover: handoverLines(live, chain, true),
       calls: chain.calls,
       cost: chain.cost,
       failure: chain.failure,
@@ -201,7 +204,12 @@ describeLive("live reviewer review quality", () => {
       const outcomes = await concurrentRuns(runs, async (index) => {
         const outcome = await reviewOnce(fixture, index);
 
-        console.log(`[live review] ${fixture.sha} run ${index + 1}/${runs}: ${describeOutcome(outcome)}`);
+        console.log(
+          [
+            `[live review] ${fixture.sha} run ${index + 1}/${runs}: ${describeOutcome(outcome)}`,
+            ...outcome.handover,
+          ].join("\n"),
+        );
 
         return outcome;
       });

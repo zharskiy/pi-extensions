@@ -3,7 +3,14 @@ import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
-import { concurrentRuns, failureSuffix, helperCounts, liveRuns, runChain } from "../helpers/live-runs.ts";
+import {
+  concurrentRuns,
+  failureSuffix,
+  handoverLines,
+  helperCounts,
+  liveRuns,
+  runChain,
+} from "../helpers/live-runs.ts";
 import { type PlanFile, planFiles, planStatus, relativeTo } from "../helpers/plan-rows.ts";
 
 // One past request from this repository: the planner sees the tree as it was
@@ -19,6 +26,7 @@ type Outcome = {
   missing: string[];
   globs: string[];
   helpers: string[];
+  handover: string[];
   calls: number;
   cost: number;
   failure: string | undefined;
@@ -103,6 +111,7 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
       .map((file) => file.path),
     globs: paths.filter((path) => path.includes("*")),
     helpers: chain.helpers,
+    handover: handoverLines(live, chain, false),
     calls: chain.calls,
     cost: chain.cost,
     failure: chain.failure,
@@ -158,7 +167,12 @@ const runOnce = async (fixture: Fixture, index: number) => {
 
     const outcome = await planOnce(live, fixture);
 
-    console.log(`[live plan] ${fixture.sha} run ${index + 1}/${runs}: ${line(fixture, outcome)}`);
+    console.log(
+      [
+        `[live plan] ${fixture.sha} run ${index + 1}/${runs}: ${line(fixture, outcome)}`,
+        ...outcome.handover,
+      ].join("\n"),
+    );
 
     return outcome;
   } finally {

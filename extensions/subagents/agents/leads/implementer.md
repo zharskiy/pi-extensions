@@ -14,7 +14,7 @@ You make one scoped code change and show that it works.
 - Read the code you change and follow its style. Change only what the task needs; do not refactor around it.
 - Hand a search across more than a few files to a scout, naming the package directory when the answer is in an installed package; one question each, asking for `path:line` citations with the quoted line. Never start one to check your own work.
 - Never hand your whole task to another agent. If you cannot finish it yourself, return `Status: partial` with what is left under Open.
-- Run yourself the checks that cover the change: the named test file, the typecheck or linter. Hand a full suite or a build to a shell agent and work from its digest. Fix what you broke.
+- Once your change is in, run yourself the checks that cover it: the test file of the code you changed, the typecheck or linter, or the project's check command when its output is short. Hand a long test suite or a build to a shell agent and work from its digest. Fix what you broke.
 - Do not commit, push or change git state unless the task says so.
 - Stop when the task's Done when holds. If it cannot hold without leaving the scope, stop and say why under Open.
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { costOf, waitUntil } from "../../../../core/test/adapter/live.ts";
 import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../src/model/types.ts";
@@ -25,6 +26,7 @@ export type ChainOutcome = {
   timedOut: boolean;
   links: AgentRecord[];
   helpers: string[];
+  helperRecords: AgentRecord[];
   calls: number;
   cost: number;
   failure: string | undefined;
@@ -79,11 +81,16 @@ export const runChain = async (
   const linkIds = links.map((link) => link.id);
   const tree = [...linkIds, ...linkIds.flatMap((id) => subtree(records, id).map((record) => record.id))];
 
+  const helperRecords = records
+    .filter((record) => linkIds.includes(record.callerId))
+    .sort((left, right) => left.createdAt - right.createdAt);
+
   return {
     terminal: last,
     timedOut,
     links,
-    helpers: records.filter((record) => linkIds.includes(record.callerId)).map((record) => record.agent),
+    helpers: helperRecords.map((record) => record.agent),
+    helperRecords,
     calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
     cost: costOf(tree.flatMap((id) => live.usage.get(id) ?? [])),
     failure: failureReason(last),
@@ -110,4 +117,70 @@ export const concurrentRuns = async <T>(runs: number, once: (index: number) => P
   }
 
   return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+};
+
+const TASK_MAX = 140;
+
+const COMMAND_MAX = 80;
+
+const COMMANDS_MAX = 8;
+
+const TASK_HEADER = /^(Task from .* \(agent id .*\):|Agent folder: )/;
+
+// The first line of the brief a helper got: the prompt the runner composed,
+// without its `Task from` and `Agent folder` header lines.
+export const taskLine = (prompt: string) =>
+  (
+    prompt
+      .split("\n")
+      .map((text) => text.trim())
+      .find((text) => text !== "" && !TASK_HEADER.test(text)) ?? ""
+  ).slice(0, TASK_MAX);
+
+type SessionItem = { kind: string; text?: string; toolCalls?: { name: string; args: unknown }[] };
+
+export const bashCommands = (items: SessionItem[]) =>
+  items.flatMap((item) =>
+    (item.kind === "assistant" ? (item.toolCalls ?? []) : []).flatMap((call) => {
+      const command = (call.args as { command?: unknown } | undefined)?.command;
+
+      return call.name === "bash" && typeof command === "string" ? [command] : [];
+    }),
+  );
+
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+
+export const commandsLine = (commands: string[]) => {
+  const shown = commands.slice(0, COMMANDS_MAX).map((command) => oneLine(command).slice(0, COMMAND_MAX));
+  const more = commands.length > COMMANDS_MAX ? ", …" : "";
+
+  return shown.length > 0 ? `    bash ${commands.length}: ${shown.join(" · ")}${more}` : "    bash 0";
+};
+
+export const helperLine = (agent: string, state: string, task: string, failure?: string) =>
+  `    helper ${agent} ${state}: ${task}${failureSuffix(failure)}`;
+
+const sessionItems = (live: LiveHarness, record: AgentRecord): SessionItem[] =>
+  record.sessionFile && existsSync(record.sessionFile)
+    ? live.runtime.readSession(record.sessionFile).items
+    : [];
+
+// What the lead handed over and ran itself: one line per helper in start
+// order, then, with `commands`, the lead's own bash commands. Read before the
+// harness closes, while the session files still exist.
+export const handoverLines = (live: LiveHarness, chain: ChainOutcome, commands: boolean) => {
+  const helpers = chain.helperRecords.map((record) => {
+    const prompt = sessionItems(live, record).find((item) => item.kind === "user")?.text;
+
+    return helperLine(
+      record.agent,
+      record.state,
+      prompt ? taskLine(prompt) : record.description.slice(0, TASK_MAX),
+      failureReason(record),
+    );
+  });
+
+  return commands
+    ? [...helpers, commandsLine(chain.links.flatMap((link) => bashCommands(sessionItems(live, link))))]
+    : helpers;
 };
