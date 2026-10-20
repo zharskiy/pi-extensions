@@ -18,10 +18,6 @@ import {
   runChain,
 } from "../helpers/live-runs.ts";
 
-// One past commit of this repository that changes a few source files and adds
-// tests. The implementer gets the tree at the commit's parent and the request
-// as a user would phrase it; afterwards the commit's own test files (hidden
-// from the implementer) are copied in and run. The run passes when they pass.
 type Fixture = { sha: string; task: string; tests: string[] };
 
 type Outcome = {
@@ -43,30 +39,16 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const fixtures: Fixture[] = [
   {
-    // One function in one file: the shared editor record on globalThis may
-    // come from an older package copy without `history`. The hidden test plants
-    // such a record and checks ↑ recall. Verified: it fails at 1622d24^ (1 of 40)
-    // and passes at 1622d24.
     sha: "1622d24",
     task: 'In core/adapter/pi-editor.ts our editor keeps its shared state on globalThis under Symbol.for("pi-extensions.editor-hooks"), so every copy of the package uses one record. A record left there by an older copy of the package has only `emptyLeft` and `emptyDown`, no `history`, and then ↑ prompt recall in our editor breaks. Make the editor fill in whatever fields are missing on an existing record instead of assuming it is complete.',
     tests: ["core/test/adapter/pi-editor.test.ts"],
   },
   {
-    // State-machine change in one file: one tracked wait becomes a map of waits
-    // by owner. The hidden tests cover a dialog over a waiting form, a form
-    // over a dialog, and idle held until every wait closes. Verified: 3 of 33
-    // fail at 5af06ac^ and all pass at 5af06ac.
     sha: "5af06ac",
     task: "In the notifications extension (extensions/notifications/src/notifications.ts) only one awaiting-input wait is tracked at a time. When the questionnaire form is waiting and a pi dialog opens and closes over it, or the other way round, the wait that is still open never gets its `pi needs your input` notification, and the idle notification is not held for it either. Track every open wait by its owner: when one closes while another that has not notified yet is still open, restart the dialog delay for it; a notification uses the title of the most recently opened wait that is still open and counts as sent for every open wait; the idle notification waits until every wait has closed.",
     tests: ["extensions/notifications/test/notifications.test.ts"],
   },
   {
-    // Harder: the task names only what the user sees, so the places to change
-    // take a search across three directories of the subagents extension: the
-    // footer status in plugins/agent-panel/index.ts, its counter text in
-    // components/format.ts and the hint duration setting in model/settings.ts
-    // (old settings files that still carry the key must load cleanly).
-    // Verified: 2 of 48 fail at eb0177e^ and all pass at eb0177e.
     sha: "eb0177e",
     task: "The subagents footer status shows `N agents` while agents run and `/agents to see agents` for a while after the last one finishes. The agent panel already lists every open agent and the run_agent block says how to open the list, so both are just noise. Remove that footer status entirely, along with the setting that controls how long the hint stays and any helper that becomes unused. A settings file that still has the old key must keep loading without a warning.",
     tests: [
@@ -85,8 +67,6 @@ const execFileAsync = promisify(execFile);
 
 type ExecFailure = { stdout?: string; stderr?: string; code?: number | string; signal?: string };
 
-// Async so one run's hidden tests do not block the event loop of the other
-// runs going concurrently.
 const hiddenTests = async (live: LiveHarness, fixture: Fixture) => {
   fixture.tests.forEach((file) => {
     writeFileSync(join(live.project, file), repoGit(["show", `${fixture.sha}:${file}`]));

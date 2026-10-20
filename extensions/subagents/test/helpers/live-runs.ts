@@ -46,10 +46,6 @@ export const failureReason = (record: Pick<AgentRecord, "error"> | undefined) =>
 
 export const failureSuffix = (failure: string | undefined) => (failure ? ` (failed: ${failure})` : "");
 
-// Runs the lead on the task and waits until its chain (the lead and any
-// successors after a handoff) has closed, then sums the chain's own tool calls
-// and the cost of the whole tree under it. A chain still open after
-// `timeoutMs` is reported as timed out with its figures so far.
 export const runChain = async (
   live: LiveHarness,
   agent: string,
@@ -109,9 +105,6 @@ export const helperCounts = (helpers: string[]) => {
     : "";
 };
 
-// One harness, and so one seeded project, per run; the runs of a fixture go
-// concurrently. A failed run fails the test only after every run has settled,
-// so no run outlives the test.
 export const concurrentRuns = async <T>(runs: number, once: (index: number) => Promise<T>) => {
   const settled = await Promise.allSettled(Array.from({ length: runs }, (_, index) => once(index)));
   const failed = settled.find((result) => result.status === "rejected");
@@ -131,8 +124,6 @@ const COMMANDS_MAX = 8;
 
 const TASK_HEADER = /^(Task from .* \(agent id .*\):|Agent folder: )/;
 
-// The first line of the brief a helper got: the prompt the runner composed,
-// without its `Task from` and `Agent folder` header lines.
 export const taskLine = (prompt: string) =>
   (
     prompt
@@ -169,9 +160,6 @@ const sessionItems = (live: LiveHarness, record: AgentRecord): SessionItem[] =>
     ? live.runtime.readSession(record.sessionFile).items
     : [];
 
-// What the lead handed over and ran itself: one line per helper in start
-// order, then, with `commands`, the lead's own bash commands. Read before the
-// harness closes, while the session files still exist.
 export const handoverLines = (live: LiveHarness, chain: ChainOutcome, commands: boolean) => {
   const helpers = chain.helperRecords.map((record) => {
     const prompt = sessionItems(live, record).find((item) => item.kind === "user")?.text;

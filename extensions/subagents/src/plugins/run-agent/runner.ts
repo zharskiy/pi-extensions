@@ -522,7 +522,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     if (event.type === "turn_end") {
       const usage = live.child?.ownUsage();
-      // Tokens spent over all turns, for display; the context limit uses context.tokens from this event instead.
       const tokens = usage ? usage.input + usage.output + usage.cacheWrite : record.tokens;
       const turns = record.turns + 1;
 

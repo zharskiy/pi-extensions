@@ -16,16 +16,8 @@ import {
   runChain,
 } from "../helpers/live-runs.ts";
 
-// One past commit of this repository, applied uncommitted on top of its
-// parent, with one defect planted inside a hunk of the real change by an exact
-// string replacement. The reviewer is scored on naming the planted file and a
-// line within SLACK lines of the planted one.
 type Plant = { file: string; from: string; to: string };
 
-// `edits` keep the rest of the diff (tests, docs) consistent with the plant,
-// so the defect is not given away by a failing test or a contradicting doc.
-// `callSites` are files outside the diff where the planted defect does its
-// harm; whether a finding cites one is only logged.
 type Fixture = { sha: string; plant: Plant; edits?: Plant[]; callSites?: string[] };
 
 type Outcome = {
@@ -53,11 +45,6 @@ const TASK =
 
 const fixtures: Fixture[] = [
   {
-    // 686fc95 adds absolute token caps next to the handoff ratios; the
-    // threshold is meant to be whichever is lower. The plant turns the hard
-    // threshold's min into a max, so on a large window the cap never applies;
-    // soft keeps its min two lines above, and the README in the same diff says
-    // "whichever is lower".
     sha: "686fc95",
     plant: {
       file: "extensions/session-limits/src/thresholds.ts",
@@ -66,9 +53,6 @@ const fixtures: Fixture[] = [
     },
   },
   {
-    // 0058777 makes the questionnaire ignore a typed-ahead Enter or digit for
-    // the first 250 ms. The plant turns the guard's `||` into `&&`, which can
-    // never hold (Enter is not a digit), so typed-ahead keys go through again.
     sha: "0058777",
     plant: {
       file: "extensions/questionnaire/src/form.ts",
@@ -77,18 +61,6 @@ const fixtures: Fixture[] = [
     },
   },
   {
-    // Harder: 130e8d7 spans core/adapter, spending and subagents (5 source
-    // files, 4 test files, the spending README). The plant makes the ledger
-    // keep an agent's usage report only when its cost grew, and the edits
-    // change the one ledger test and the README sentence to match, so the
-    // diff is consistent and every test passes. The harm shows only at the
-    // publisher outside the diff: subagents' usage-report plugin sends each
-    // agent's running total on every agent:usage event, and on a zero-cost
-    // (subscription) model the cost never grows, so every report after the
-    // first is dropped and the agent's tokens freeze. Finding it means
-    // tracing who publishes on the usage channel and what they send.
-    // Verified: with the plant and edits the seeded suite fails only the
-    // unrelated `is pinned to pi 1.1.0` check, as it does unplanted.
     sha: "130e8d7",
     plant: {
       file: "extensions/spending/src/ledger.ts",

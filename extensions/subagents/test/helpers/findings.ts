@@ -55,8 +55,6 @@ export const findingRefs = (line: string): FindingRef[] =>
 const severityOf = (line: string) =>
   (SEVERITY.exec(line)?.slice(1).find(Boolean)?.toLowerCase() as Severity | undefined) ?? undefined;
 
-// Findings are the item lines of the `Findings` section; without one, every
-// line tagged with a severity in brackets counts.
 export const parseFindings = (text: string): Finding[] => {
   const lines = text.split("\n");
   const block = findingsBlock(lines);
@@ -73,8 +71,6 @@ const samePath = (roots: string[], written: string, file: string) => {
   return path === file || file.endsWith(`/${path}`);
 };
 
-// A finding hits the planted defect when one of its refs names the file and a
-// line range within `slack` lines of the planted line.
 export const hitsLine = (
   findings: Finding[],
   target: { file: string; line: number; slack: number; roots?: string[] },
@@ -88,8 +84,6 @@ export const hitsLine = (
     ),
   );
 
-// A finding cites a file when one of its refs names it or its text mentions
-// the path, with or without a line.
 export const citesFile = (findings: Finding[], file: string, roots: string[] = []) =>
   findings.some(
     (finding) => finding.text.includes(file) || finding.refs.some((ref) => samePath(roots, ref.path, file)),
