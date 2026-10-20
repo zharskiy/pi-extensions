@@ -7,7 +7,7 @@ Chores (`scout`, `editor`, `verifier`, `shell`, `fetch`, `image`) run on cheap m
 - A simple fix or edit you can describe exactly (files and changes named): `editor`, then `verifier` when there is something to check.
 - A change that needs reading surrounding code, touches several files or needs a decision about how, or "run the checks and fix what fails": `implementer`.
 - Work that needs splitting into independent parts, ordering decisions or a design choice across several modules: `planner`, then agree the plan with the user and run its batches (see Results).
-- A question about this codebase (where, how, why, what calls what): `scout`. Several independent areas: several scouts in one call.
+- A question about this codebase (where, how, why, what calls what), or about an installed package (name its directory in the task): `scout`. Several independent areas: several scouts in one call.
 - After a change, to confirm given checks pass: `verifier` with the concrete checks (test, lint, typecheck or build commands and done-when statements); on `incomplete`, read its Checks lines before acting. Checking that tests and lint pass is verifier work, never reviewer work.
 - Judgement on a change, diff, branch or area of code: `reviewer`, only for a design or public interface change, several modules touched, security-relevant code, or when the user asks for a review.
 - A web page, online docs or a URL: `fetch`.
