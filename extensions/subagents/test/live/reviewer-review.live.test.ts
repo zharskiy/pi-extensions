@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { formatDuration } from "../../../../core/manager/format.ts";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
 import { citesFile, hitsLine, parseFindings } from "../helpers/findings.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
@@ -39,6 +40,7 @@ type Outcome = {
   handover: string[];
   calls: number;
   cost: number;
+  durationMs: number;
   failure: string | undefined;
 };
 
@@ -179,6 +181,7 @@ const reviewOnce = async (fixture: Fixture, index: number): Promise<Outcome> => 
       handover: handoverLines(live, chain, true),
       calls: chain.calls,
       cost: chain.cost,
+      durationMs: chain.durationMs,
       failure: chain.failure,
     };
   } finally {
@@ -193,7 +196,7 @@ const describeOutcome = (outcome: Outcome) =>
     `, findings ${outcome.findings}, verdict ${outcome.verdict}`,
     outcome.found ? "" : ` (refs [${outcome.refs.join(", ")}], planted line ${outcome.line})`,
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
-    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
+    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}, duration ${formatDuration(outcome.durationMs)}`,
     failureSuffix(outcome.failure),
   ].join("");
 

@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
+import { formatDuration } from "../../../../core/manager/format.ts";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { largestOutput } from "../helpers/findings.ts";
@@ -31,6 +32,7 @@ type Outcome = {
   handover: string[];
   calls: number;
   cost: number;
+  durationMs: number;
   failure: string | undefined;
   largestBash: number;
 };
@@ -123,6 +125,7 @@ const implementOnce = async (fixture: Fixture, index: number): Promise<Outcome> 
       implementer: { from: "implementer", fields: { limit: "120000" } },
       scout: { from: "scout" },
       shell: { from: "shell" },
+      verifier: { from: "verifier" },
     },
   });
 
@@ -144,6 +147,7 @@ const implementOnce = async (fixture: Fixture, index: number): Promise<Outcome> 
       handover: handoverLines(live, chain, true),
       calls: chain.calls,
       cost: chain.cost,
+      durationMs: chain.durationMs,
       failure: chain.failure,
       largestBash,
     };
@@ -156,7 +160,7 @@ const describeOutcome = (outcome: Outcome) =>
   [
     `${outcome.status}, ${outcome.passed ? "passed" : "failed"} (${outcome.tests})`,
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
-    `, calls ${outcome.calls}, largest bash ${outcome.largestBash} chars, cost $${outcome.cost.toFixed(2)}`,
+    `, calls ${outcome.calls}, largest bash ${outcome.largestBash} chars, cost $${outcome.cost.toFixed(2)}, duration ${formatDuration(outcome.durationMs)}`,
     failureSuffix(outcome.failure),
   ].join("");
 

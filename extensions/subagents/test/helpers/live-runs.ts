@@ -29,6 +29,7 @@ export type ChainOutcome = {
   helperRecords: AgentRecord[];
   calls: number;
   cost: number;
+  durationMs: number;
   failure: string | undefined;
 };
 
@@ -55,6 +56,7 @@ export const runChain = async (
   task: string,
   timeoutMs: number,
 ): Promise<ChainOutcome> => {
+  const startedAt = Date.now();
   const firstId = await live.run(agent, task);
   const terminal = () => {
     const first = live.registry.get(firstId);
@@ -75,6 +77,7 @@ export const runChain = async (
     () => true,
   );
 
+  const durationMs = Date.now() - startedAt;
   const records = live.registry.list();
   const last = terminal();
   const links = last ? chainLinks(live.registry, last) : [];
@@ -93,6 +96,7 @@ export const runChain = async (
     helperRecords,
     calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
     cost: costOf(tree.flatMap((id) => live.usage.get(id) ?? [])),
+    durationMs,
     failure: failureReason(last),
   };
 };

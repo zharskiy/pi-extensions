@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
+import { formatDuration } from "../../../../core/manager/format.ts";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import {
@@ -29,6 +30,7 @@ type Outcome = {
   handover: string[];
   calls: number;
   cost: number;
+  durationMs: number;
   failure: string | undefined;
 };
 
@@ -114,6 +116,7 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
     handover: handoverLines(live, chain, false),
     calls: chain.calls,
     cost: chain.cost,
+    durationMs: chain.durationMs,
     failure: chain.failure,
   };
 };
@@ -145,7 +148,7 @@ const line = (fixture: Fixture, outcome: Outcome) =>
     outcome.missing.length > 0 ? ` [${outcome.missing.join(", ")}]` : "",
     listed("globs", outcome.globs),
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
-    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
+    `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}, duration ${formatDuration(outcome.durationMs)}`,
     failureSuffix(outcome.failure),
   ].join("");
 

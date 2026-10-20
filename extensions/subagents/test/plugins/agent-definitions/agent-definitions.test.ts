@@ -615,7 +615,7 @@ describe("definition loading", () => {
     expect(grants("implementer")).toEqual([
       ["read", "grep", "find", "ls", "edit", "write", "bash"],
       [],
-      ["scout", "shell"],
+      ["scout", "shell", "verifier"],
     ]);
     expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
     expect(grants("shell")).toEqual([["bash", "read"], [], []]);
