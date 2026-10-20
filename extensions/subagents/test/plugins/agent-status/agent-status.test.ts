@@ -171,6 +171,15 @@ describe("agent_status", () => {
     expect(result.text.split("\n")[0]).toMatch(new RegExp(`^${first.id} → ${second.id} `));
   });
 
+  it("tells every caller it is woken and must not poll", () => {
+    const harness = setup();
+    const child = harness.services.require("agentStatus").toolFor("caller");
+    const rule = "You are woken when a batch you started is done; do not call this in a loop.";
+
+    expect(harness.status.description).toContain(rule);
+    expect(child.description).toContain(rule);
+  });
+
   it("lists every agent when no ids are given", async () => {
     const harness = setup();
     const empty = await harness.status.execute({}, { update: () => {} });

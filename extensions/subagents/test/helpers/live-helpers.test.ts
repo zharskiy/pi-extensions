@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { createFakeHost } from "../../../../core/test/helpers/fakes.ts";
 import { modelForGroup, patchAgentFile, shippedGroup } from "./agent-patch.ts";
 import { planFiles, planStatus, relativeTo } from "./plan-rows.ts";
+import { createTurns } from "./turns.ts";
 
 const SHIPPED = [
   "---",
@@ -147,5 +149,76 @@ describe("plan rows", () => {
     expect(planStatus(plan)).toBe("done");
     expect(planStatus("**Status:** partial\nmore")).toBe("partial");
     expect(planStatus("no status here")).toBeUndefined();
+  });
+});
+
+describe("createTurns", () => {
+  const deferred = () => {
+    const box: { resolve: () => void } = { resolve: () => {} };
+    const promise = new Promise<void>((resolve) => {
+      box.resolve = resolve;
+    });
+
+    return { promise, resolve: () => box.resolve() };
+  };
+
+  it("keeps the host busy until the last overlapping run returns and settles once", async () => {
+    const host = createFakeHost();
+    const settled: number[] = [];
+
+    host.onIdle(() => settled.push(1));
+
+    const turn = createTurns(host);
+    const first = deferred();
+    const second = deferred();
+    const runs = [turn(() => first.promise), turn(() => second.promise)];
+
+    expect(host.idle).toBe(false);
+
+    first.resolve();
+    await runs[0];
+
+    expect(host.idle).toBe(false);
+    expect(settled).toEqual([]);
+
+    second.resolve();
+    await runs[1];
+
+    expect(host.idle).toBe(true);
+    expect(settled).toEqual([1]);
+  });
+
+  it("goes busy again for a second turn after the first settled and settles again", async () => {
+    const host = createFakeHost();
+    const settled: number[] = [];
+
+    host.onIdle(() => settled.push(settled.length + 1));
+
+    const turn = createTurns(host);
+
+    await turn(async () => undefined);
+
+    expect(host.idle).toBe(true);
+    expect(settled).toEqual([1]);
+
+    const next = deferred();
+    const run = turn(() => next.promise);
+
+    expect(host.idle).toBe(false);
+    expect(settled).toEqual([1]);
+
+    next.resolve();
+    await run;
+
+    expect(host.idle).toBe(true);
+    expect(settled).toEqual([1, 2]);
+  });
+
+  it("settles and rethrows when the run fails", async () => {
+    const host = createFakeHost();
+    const turn = createTurns(host);
+
+    await expect(turn(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(host.idle).toBe(true);
   });
 });
