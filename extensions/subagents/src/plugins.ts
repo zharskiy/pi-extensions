@@ -6,6 +6,7 @@ import { agentSetupPlugin } from "./plugins/agent-setup/index.ts";
 import { agentStatusPlugin } from "./plugins/agent-status/index.ts";
 import { agentViewPlugin } from "./plugins/agent-view/index.ts";
 import { fetchToolPlugin } from "./plugins/fetch-tool/index.ts";
+import { interruptPlugin } from "./plugins/interrupt/index.ts";
 import { limitsPlugin } from "./plugins/limits/index.ts";
 import { runAgentPlugin } from "./plugins/run-agent/index.ts";
 import { usageReportPlugin } from "./plugins/usage-report/index.ts";
@@ -18,6 +19,7 @@ export const plugins: Plugin[] = [
   agentStatusPlugin,
   limitsPlugin,
   agentPanelPlugin,
+  interruptPlugin,
   agentSetupPlugin,
   agentViewPlugin,
   fetchToolPlugin,

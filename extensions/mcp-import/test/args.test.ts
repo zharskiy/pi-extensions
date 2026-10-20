@@ -10,8 +10,11 @@ describe("mcp-import arguments", () => {
     expect(parseArgs(" cursor apply  project ")).toEqual({ source: "cursor", scope: "project", apply: true });
   });
 
-  it("rejects a missing or unknown tool and unknown words", () => {
-    expect(parseArgs("")).toEqual({ error: expect.stringMatching(/^name the tool.*usage: \/mcp-import/) });
+  it("asks for the interactive choice without arguments", () => {
+    expect(parseArgs("  ")).toEqual({ interactive: true });
+  });
+
+  it("rejects an unknown tool and unknown words", () => {
     expect(parseArgs("other")).toEqual({ error: expect.stringMatching(/^unknown tool "other"/) });
     expect(parseArgs("claude now")).toEqual({ error: expect.stringMatching(/^unknown argument "now"/) });
   });

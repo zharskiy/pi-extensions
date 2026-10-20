@@ -87,7 +87,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     mkdirSync(join(root, "skills", name), { recursive: true });
     writeFileSync(path, text);
 
-    return { name, path };
+    return { name, description: "", path };
   });
 
   const runtime = createLiveRuntime(

@@ -47,6 +47,34 @@ describe("message_agent", () => {
     ]);
   });
 
+  it("renders nothing in the chat when the message is delivered", async () => {
+    const { registry, host, send } = await setup();
+    const [record] = registry.list();
+    const result = await send(record.id, "focus on tests");
+    const rendered = host.renderTool("message_agent", {
+      call: { id: record.id, message: "focus on tests" },
+      result,
+    });
+
+    expect(result.text).toBe(`Message delivered to ${record.id} (steer).`);
+    expect(rendered.call).toBe("");
+    expect(rendered.result).toBe("");
+  });
+
+  it("renders one error box with the agent id and the reason when delivery fails", async () => {
+    const { host, send } = await setup();
+    const result = await send("ghost", "focus on tests");
+    const rendered = host.renderTool("message_agent", {
+      call: { id: "ghost", message: "focus on tests" },
+      result,
+    });
+
+    expect(result.text).toBe('Error: unknown agent "ghost".');
+    expect(rendered.call).toBe("");
+    expect(rendered.result).toBe('message_agent ghost: unknown agent "ghost".');
+    expect(rendered.tone).toBe("error");
+  });
+
   it("answers a message in the stop grace period with a follow-up turn", async () => {
     const { registry, runtime, send, services, host } = await setup();
     const [record] = registry.list();

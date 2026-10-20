@@ -2,6 +2,7 @@ import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
 import { hintLines, PAD, padded, prefixed, rule } from "../../../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../../../core/manager/list.ts";
 import {
+  descriptionFits,
   MULTI_SELECT_HINTS,
   multiLines,
   pointerMark,
@@ -31,6 +32,8 @@ export type SetupPaths = { project: string; user: string };
 const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", skills: "Skills" };
 
 const LABEL_WIDTH = 10;
+
+const DETAIL_LINES = 3;
 
 const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own agent with /agents create.";
 
@@ -83,6 +86,25 @@ const windowLines = (
     return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} `, text, width);
   });
 
+const skillDetail = (context: SetupContext, cursor: number, theme: ThemeLike, width: number) => {
+  const skill = context.skills[cursor];
+  if (
+    !skill?.description ||
+    descriptionFits(theme, { label: skill.name, description: skill.description }, width)
+  ) {
+    return [];
+  }
+
+  const cols = Math.max(1, width - PAD.length);
+  const lines = theme.wrap(skill.description, cols);
+  const shown =
+    lines.length > DETAIL_LINES
+      ? [...lines.slice(0, DETAIL_LINES - 1), theme.truncate(lines.slice(DETAIL_LINES - 1).join(" "), cols)]
+      : lines;
+
+  return ["", ...shown.map((line) => `${PAD}${theme.fg("muted", line)}`)];
+};
+
 const pickerLines = (
   context: SetupContext,
   state: SetupState,
@@ -93,9 +115,10 @@ const pickerLines = (
   const title = (text: string) => ["", ...padded(theme, theme.fg("accent", theme.bold(text)), width)];
 
   if (picker.field === "skills") {
-    const options = context.skills.map((label) => ({ label }));
+    const options = context.skills.map(({ name, description }) => ({ label: name, description }));
+    const rows = multiLines(theme, options, picker.multi, width, LIST_HEIGHT);
 
-    return [...title("Skills"), ...multiLines(theme, options, picker.multi, width, LIST_HEIGHT)];
+    return [...title("Skills"), ...rows, ...skillDetail(context, picker.multi.cursor, theme, width)];
   }
 
   if (picker.field === "model") {

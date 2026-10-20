@@ -15,6 +15,7 @@ type SharedEditor = HistoryRecord & {
   frame?: EditorFrame;
   emptyLeft: Set<() => void>;
   emptyDown: Set<() => void>;
+  emptyEscape: Set<() => boolean>;
   capture?: EditorKeyHandler;
   installed?: EditorFactory;
 };
@@ -30,6 +31,7 @@ const sharedEditor = (): SharedEditor => {
 
   hooks.emptyLeft ??= new Set();
   hooks.emptyDown ??= new Set();
+  hooks.emptyEscape ??= new Set();
 
   return hooks as SharedEditor;
 };
@@ -108,6 +110,10 @@ class HostEditor extends CustomEditor {
     });
   }
 
+  private escapeConsumed() {
+    return Array.from(this.hooks.emptyEscape).some((handler) => handler());
+  }
+
   handleInput(data: string) {
     const key = keyPress(data, this.keys);
     const capture = this.hooks.capture;
@@ -134,13 +140,22 @@ class HostEditor extends CustomEditor {
       return;
     }
 
+    if (
+      idle &&
+      this.hooks.emptyEscape.size > 0 &&
+      this.keys.matches(data, "app.interrupt") &&
+      this.escapeConsumed()
+    ) {
+      return;
+    }
+
     super.handleInput(data);
   }
 }
 
 type EditorHooksUi = Pick<
   HostUi,
-  "setEditorFrame" | "onEmptyEditorLeft" | "onEmptyEditorDown" | "captureEditorKeys"
+  "setEditorFrame" | "onEmptyEditorLeft" | "onEmptyEditorDown" | "onEmptyEditorEscape" | "captureEditorKeys"
 >;
 
 export type EditorHooks = EditorHooksUi & {
@@ -149,13 +164,20 @@ export type EditorHooks = EditorHooksUi & {
 };
 
 export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): EditorHooks => {
-  const own: Pick<SharedEditor, "frame" | "emptyLeft" | "emptyDown" | "capture"> = {
+  const own: Pick<SharedEditor, "frame" | "emptyLeft" | "emptyDown" | "emptyEscape" | "capture"> = {
     emptyLeft: new Set(),
     emptyDown: new Set(),
+    emptyEscape: new Set(),
   };
 
   const inUse = (hooks: SharedEditor) =>
-    Boolean(hooks.frame || hooks.emptyLeft.size > 0 || hooks.emptyDown.size > 0 || hooks.capture);
+    Boolean(
+      hooks.frame ||
+        hooks.emptyLeft.size > 0 ||
+        hooks.emptyDown.size > 0 ||
+        hooks.emptyEscape.size > 0 ||
+        hooks.capture,
+    );
 
   const ensureInstalled = () => {
     const ctx = tuiCtx();
@@ -206,19 +228,29 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
     }
   };
 
-  const onEmptyKey = (key: EmptyKey, handler: () => void) => {
-    const entry = () => handler();
-
-    sharedEditor()[key].add(entry);
-    own[key].add(entry);
+  const addHook = <H>(pick: (hooks: Pick<SharedEditor, EmptyKey | "emptyEscape">) => Set<H>, entry: H) => {
+    pick(sharedEditor()).add(entry);
+    pick(own).add(entry);
     ensureInstalled();
 
     return () => {
-      sharedEditor()[key].delete(entry);
-      own[key].delete(entry);
+      pick(sharedEditor()).delete(entry);
+      pick(own).delete(entry);
       releaseIfUnused();
     };
   };
+
+  const onEmptyKey = (key: EmptyKey, handler: () => void) =>
+    addHook(
+      (hooks) => hooks[key],
+      () => handler(),
+    );
+
+  const onEmptyEscape = (handler: () => boolean) =>
+    addHook(
+      (hooks) => hooks.emptyEscape,
+      () => tuiCtx()?.isIdle() === true && handler(),
+    );
 
   return {
     setEditorFrame: (frame) => {
@@ -240,6 +272,7 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
     },
     onEmptyEditorLeft: (handler) => onEmptyKey("emptyLeft", handler),
     onEmptyEditorDown: (handler) => onEmptyKey("emptyDown", handler),
+    onEmptyEditorEscape: onEmptyEscape,
     captureEditorKeys: (handler) => {
       sharedEditor().capture = handler;
       own.capture = handler;
@@ -277,6 +310,11 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
         });
         own[key].clear();
       });
+
+      own.emptyEscape.forEach((entry) => {
+        hooks.emptyEscape.delete(entry);
+      });
+      own.emptyEscape.clear();
 
       if (own.capture) {
         dropCapture(own.capture);

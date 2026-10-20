@@ -18,8 +18,9 @@ const userEntry = (content: string | { type: string; text?: string }[]) => ({
 });
 
 const fakeCtx = (existing?: Factory, entries: object[] = []) => {
-  const ui = { factory: existing, sets: 0 };
+  const ui = { factory: existing, sets: 0, idle: true };
   const ctx = {
+    isIdle: () => ui.idle,
     sessionManager: { buildContextEntries: () => entries },
     ui: {
       getEditorComponent: () => ui.factory,
@@ -448,6 +449,126 @@ describe("createEditorHooks", () => {
     hooked.handleInput(DOWN);
 
     expect(fired).toBe(1);
+  });
+
+  it("consumes the interrupt key on an empty idle editor only when an escape hook takes it", () => {
+    const { ctx, ui } = fakeCtx();
+    const answers = [false, true];
+    let asked = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return answers.shift() ?? false;
+    });
+
+    const hooked = editor(ui.factory);
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
+
+    try {
+      hooked.handleInput(ESC);
+
+      expect(asked).toBe(1);
+      expect(reached).toHaveBeenCalledTimes(1);
+
+      hooked.handleInput(ESC);
+
+      expect(asked).toBe(2);
+      expect(reached).toHaveBeenCalledTimes(1);
+    } finally {
+      reached.mockRestore();
+    }
+  });
+
+  it("leaves the interrupt key to pi with a draft, with autocomplete open or while pi is busy", () => {
+    const { ctx, ui } = fakeCtx();
+    let asked = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return true;
+    });
+
+    const hooked = editor(ui.factory);
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
+    const autocomplete = vi.spyOn(hooked, "isShowingAutocomplete");
+
+    try {
+      hooked.setText("draft");
+      hooked.handleInput(ESC);
+      hooked.setText("");
+      autocomplete.mockReturnValue(true);
+      hooked.handleInput(ESC);
+      autocomplete.mockReturnValue(false);
+      ui.idle = false;
+      hooked.handleInput(ESC);
+
+      expect(asked).toBe(0);
+      expect(reached).toHaveBeenCalledTimes(3);
+    } finally {
+      reached.mockRestore();
+      autocomplete.mockRestore();
+    }
+  });
+
+  it("follows a rebound interrupt key, not the escape byte", () => {
+    const { ctx, ui } = fakeCtx();
+    let asked = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return true;
+    });
+
+    const hooked = editor(ui.factory, bindings({ [JUMP]: "app.interrupt" }));
+    const reached = vi.spyOn(CustomEditor.prototype, "handleInput").mockImplementation(() => {});
+
+    try {
+      hooked.handleInput(ESC);
+
+      expect(asked).toBe(0);
+
+      hooked.handleInput(JUMP);
+
+      expect(asked).toBe(1);
+      expect(reached).toHaveBeenCalledTimes(1);
+    } finally {
+      reached.mockRestore();
+    }
+  });
+
+  it("stops asking once the escape hook is removed and frees the editor on release", () => {
+    const { ctx, ui } = fakeCtx();
+    const hooks = createEditorHooks(() => ctx);
+    let asked = 0;
+
+    const off = hooks.onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return true;
+    });
+
+    expect(ui.factory).toBeDefined();
+
+    off();
+
+    expect(ui.factory).toBeUndefined();
+
+    hooks.onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return true;
+    });
+
+    const hooked = editor(ui.factory);
+
+    hooks.release();
+    hooked.handleInput(ESC);
+
+    expect(asked).toBe(0);
+    expect(ui.factory).toBeUndefined();
   });
 
   it("keeps the left and down hooks independent", () => {

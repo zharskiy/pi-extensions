@@ -1,51 +1,119 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import type { Host } from "../../../../../core/adapter/contract.ts";
-import { errorText } from "../../components/format.ts";
-import { overrideModel } from "../../model/agent-override.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import type { AgentRuntime, Host, SkillInfo } from "../../../../../core/adapter/contract.ts";
 import { PLAIN_NAME, PLAIN_NAME_TEXT } from "../../model/agent-schema.ts";
 import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../model/paths.ts";
-import { agentTemplate } from "./agent-template.ts";
-import { type CreateAnswers, createAgentForm } from "./create-form.ts";
+import type { AgentDefinitions } from "../../model/types.ts";
+import { type AgentKind, agentTemplate } from "./agent-template.ts";
 
-export const CREATE_USAGE = "/agents create <name> [project]";
+const CREATE_TYPE = "pi-subagents-create";
 
-type CreateRequest = { name: string; project: boolean };
+export const CREATE_USAGE = "/agents create [<name> [project] | <what the agent is for>]";
 
-type CreateDeps = { host: Host; shippedNames: () => string[] };
+export type CreateRequest = { name?: string; project: boolean; purpose?: string };
 
-const DEFAULT_ANSWERS: CreateAnswers = { description: "", kind: "lead", model: "" };
-
-export const parseCreateArgs = (args: string): CreateRequest | { error: string } => {
-  const [name, scope, ...rest] = args.trim().split(/\s+/).filter(Boolean);
-
-  if (!name || rest.length > 0 || (scope !== undefined && scope !== "project")) {
-    return { error: `usage: ${CREATE_USAGE}` };
-  }
-
-  if (!PLAIN_NAME.test(name)) {
-    return { error: `agent name "${name}" must use ${PLAIN_NAME_TEXT}` };
-  }
-
-  return { name, project: scope === "project" };
+export type BriefInput = {
+  template: string;
+  args: string;
+  request: CreateRequest;
+  userDir: string;
+  projectDir: string;
+  trusted: boolean;
+  taken: string[];
+  skills: SkillInfo[];
 };
 
-const targetProblem = (request: CreateRequest, path: string, shipped: string[], trusted: boolean) => {
-  if (shipped.includes(request.name)) {
-    return `"${request.name}" is a shipped agent; pick another name`;
+type CreateDeps = {
+  host: Host;
+  template: string;
+  definitions: AgentDefinitions;
+  runtime: AgentRuntime;
+};
+
+export const parseCreateArgs = (args: string): CreateRequest | { error: string } => {
+  const text = args.trim();
+  const [first, ...rest] = text.split(/\s+/).filter(Boolean);
+
+  if (!first) {
+    return { project: false };
   }
 
-  if (request.project && !trusted) {
+  const scoped = rest.length === 1 && rest[0] === "project";
+
+  if (PLAIN_NAME.test(first) && (rest.length === 0 || scoped)) {
+    return { name: first, project: scoped };
+  }
+
+  if (scoped) {
+    return { error: `agent name "${first}" must use ${PLAIN_NAME_TEXT}` };
+  }
+
+  return { project: false, purpose: text.replace(/\s+/g, " ") };
+};
+
+const knownText = ({ name, purpose }: CreateRequest) => {
+  if (purpose) {
+    return `The user describes it as: "${purpose}". `;
+  }
+
+  return name ? `Its name is ${name}. ` : "";
+};
+
+const fileText = ({ request, userDir, projectDir, trusted }: BriefInput) => {
+  if (request.name) {
+    return `Write it to ${join(request.project ? projectDir : userDir, `${request.name}.md`)}.`;
+  }
+
+  const user = join(userDir, "<name>.md");
+
+  if (!trusted) {
+    return `Write it to ${user}. This project is not trusted, so project agents are not loaded; do not write one.`;
+  }
+
+  return (
+    `Write it to ${user} (a user agent, available in every project); write it to ` +
+    `${join(projectDir, "<name>.md")} instead only when the user wants it for this project alone.`
+  );
+};
+
+const skillsText = (skills: SkillInfo[]) =>
+  skills.length === 0 ? "none" : skills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
+
+const skeleton = (kind: AgentKind) =>
+  agentTemplate({ name: "<name>", description: "", kind, model: "" }).trimEnd();
+
+export const createBrief = (input: BriefInput): string => {
+  const command = ["/agents create", input.args.trim().replace(/\s+/g, " ")].filter(Boolean).join(" ");
+  const values: Record<string, string> = {
+    command,
+    known: knownText(input.request),
+    askName: input.request.name
+      ? ""
+      : " Either way, agree on a short name with the user (or propose one) before writing.",
+    file: fileText(input),
+    taken: input.taken.join(", ") || "none",
+    skills: skillsText(input.skills),
+    lead: skeleton("lead"),
+    chore: skeleton("chore"),
+  };
+
+  return input.template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match);
+};
+
+const targetProblem = (name: string, project: boolean, path: string, shipped: string[], trusted: boolean) => {
+  if (shipped.includes(name)) {
+    return `"${name}" is a shipped agent; pick another name`;
+  }
+
+  if (project && !trusted) {
     return "project agents need a trusted project; create a user agent with /agents create <name>";
   }
 
   return existsSync(path) ? `${path} already exists; edit it instead` : undefined;
 };
 
-const modelProblem = (model: string) => (model.trim() ? overrideModel(model).error : undefined);
-
 export const createAgentCommand =
-  ({ host, shippedNames }: CreateDeps) =>
+  ({ host, template, definitions, runtime }: CreateDeps) =>
   async (args: string) => {
     const fail = (message: string) => host.ui.notify(`${NAMESPACE}: ${message}`, "error");
     const request = parseCreateArgs(args);
@@ -56,42 +124,36 @@ export const createAgentCommand =
     }
 
     const info = host.session();
-    const dir = request.project ? projectAgentsDir(info) : userAgentsDir(info);
-    const path = join(dir, `${request.name}.md`);
-    const problem = targetProblem(request, path, shippedNames(), info.projectTrusted);
+    const userDir = userAgentsDir(info);
+    const projectDir = projectAgentsDir(info);
+    const loaded = definitions.list();
 
-    if (problem) {
-      fail(problem);
-      return;
+    if (request.name) {
+      const path = join(request.project ? projectDir : userDir, `${request.name}.md`);
+      const shipped = loaded.filter((definition) => definition.source === "builtin").map((d) => d.name);
+      const problem = targetProblem(request.name, request.project, path, shipped, info.projectTrusted);
+
+      if (problem) {
+        fail(problem);
+        return;
+      }
     }
 
-    const answers =
-      info.mode === "tui" ? await host.ui.showForm(createAgentForm(request.name, dir)) : DEFAULT_ANSWERS;
-
-    if (!answers) {
-      return;
-    }
-
-    const badModel = modelProblem(answers.model);
-
-    if (badModel) {
-      fail(badModel);
-      return;
-    }
-
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, agentTemplate({ name: request.name, ...answers }), {
-        encoding: "utf8",
-        flag: "wx",
-      });
-    } catch (error) {
-      fail(`cannot write ${path}: ${errorText(error)}`);
-      return;
-    }
-
+    host.sendHiddenMessage({
+      customType: CREATE_TYPE,
+      text: createBrief({
+        template,
+        args,
+        request,
+        userDir,
+        projectDir,
+        trusted: info.projectTrusted,
+        taken: loaded.map((definition) => definition.name),
+        skills: runtime.skillCatalog(),
+      }),
+    });
     host.ui.notify(
-      `${NAMESPACE}: created ${path}. Fill in its <...> parts, or ask the main session to, then /reload.`,
+      `${NAMESPACE}: asked the main session to create the agent; answer its questions, then /reload`,
       "info",
     );
   };

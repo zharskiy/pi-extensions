@@ -44,6 +44,15 @@ describe("seedText", () => {
     expect(text.endsWith("## Status\npartial")).toBe(true);
     expect(seedText(undefined, "x")).toContain("continues the previous session, which");
   });
+
+  it("says a manual handoff came from /session-handoff and repeats the focus", () => {
+    const text = seedText("/s.jsonl", "x", { manual: true, focus: "ship the release" });
+
+    expect(text).toContain("which the user handed off with /session-handoff");
+    expect(text).toContain("The user said this session is for: ship the release.");
+    expect(seedText("/s.jsonl", "x", { manual: true })).not.toContain("this session is for");
+    expect(seedText("/s.jsonl", "x", { focus: "ignored" })).toContain("which reached its context limit");
+  });
 });
 
 describe("validateMainHandoff", () => {

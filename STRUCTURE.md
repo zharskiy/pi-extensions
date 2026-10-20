@@ -19,7 +19,7 @@ pi-extensions/
 │   │   ├── pi-tools.ts          # tool wrapping, themeLike (role tokens -> pi colours) and textMetrics
 │   │   │                        #   (width, truncate, wrap), fitLines (cut lines to a width)
 │   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
-│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓ hooks, key capture
+│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓/Esc hooks, key capture
 │   │   ├── pi-editor-history.ts # ↑ input history shared by every editor, seeded on resume and fork
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
@@ -48,7 +48,7 @@ pi-extensions/
 │   │   ├── list.ts              # selectable list: lines, keys, shared hints
 │   │   ├── select.ts            # single-choice form over the list
 │   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
-│   │   ├── multi-select.ts      # checkbox list: Space, a all, n none, scroll window
+│   │   ├── multi-select.ts      # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
@@ -73,7 +73,7 @@ pi-extensions/
 │   │   │                        #   reviewer, general), chores/ (scout, editor, fetch, shell,
 │   │   │                        #   image, verifier)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
-│   │   │                        #   base-system-prompt.md, handoff.md
+│   │   │                        #   base-system-prompt.md, handoff.md, create-agent.md (the /agents create brief)
 │   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures; routing.live.test.ts
 │   │   │                        #   checks the main session's routing, planner-plan.live.test.ts
 │   │   │                        #   the planner's plan on past commits)
@@ -131,7 +131,8 @@ pi-extensions/
 │   └── mcp-import/              # /mcp-import: MCP servers from Claude Code or Cursor into pi's mcp.json
 │       ├── src/                 # index, mcp-import (command, file I/O), args (parse, complete),
 │       │                        #   sources (each tool's files), convert (one entry), plan (merge
-│       │                        #   without overwriting), report (messages)
+│       │                        #   without overwriting), pick (source and server choice without
+│       │                        #   arguments), report (messages)
 │       ├── test/
 │       └── README.md
 ├── test/architecture.test.ts    # import-boundary and layout rules
@@ -158,13 +159,14 @@ run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts (sk
                     #   result.md, inlining), model-text.ts, semaphore.ts, handoff.ts (handoff
                     #   template and schema service)
 agent-status/       # status tool and snapshots
-agent-view/         # /agents overlay: index (command, routing to services), overlay.ts (list/view host),
+agent-view/         # /agents menu and overlay: index (command, menu, routing to services), overlay.ts (list/view host),
                     #   list.ts + list-model.ts (tree sections), view.ts, loader.ts,
                     #   request-block.ts (the view's Request block)
 agent-setup/        # /agents setup and create: index (plugin, service, save), form.ts (pure state
                     #   and keys), render.ts (form lines), line.ts (one-line form), write.ts (merge
-                    #   into the file), create.ts (/agents create), create-form.ts (its three-step
-                    #   form), agent-template.ts (the new file)
+                    #   into the file), create.ts (/agents create: parse and the brief for the main
+                    #   session), agent-template.ts (the skeleton the brief embeds)
+interrupt/          # Esc after an interrupted turn: confirm to stop running agents (index.ts)
 agent-panel/        # panel below the editor: model.ts (rows, window, lingers), keys.ts (selection keys)
 limits/             # per-agent context limit steps
 usage-report/       # reports agent usage to the spending channel

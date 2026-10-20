@@ -12,11 +12,13 @@ export const USAGE = "/mcp-import <claude|cursor> [project] [apply]";
 
 const isSource = (word: string): word is Source => (SOURCES as readonly string[]).includes(word);
 
-export const parseArgs = (text: string): ImportArgs | { error: string } => {
+export const MISSING_SOURCE = `name the tool to import from; usage: ${USAGE}`;
+
+export const parseArgs = (text: string): ImportArgs | { error: string } | { interactive: true } => {
   const [first, ...rest] = text.trim().split(/\s+/).filter(Boolean);
 
   if (!first) {
-    return { error: `name the tool to import from; usage: ${USAGE}` };
+    return { interactive: true };
   }
 
   if (!isSource(first)) {

@@ -1,5 +1,6 @@
 import type { OverlayApi } from "../../../../../core/adapter/contract.ts";
-import { cutChars, errorText } from "../../components/format.ts";
+import { type SelectOption, selectForm } from "../../../../../core/manager/select.ts";
+import { cutChars, errorText, SEP } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
@@ -7,21 +8,31 @@ import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
 import { createAgentList } from "./list.ts";
-import { listedTerminals, visibleRecords } from "./list-model.ts";
+import { listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
 import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
 import { createAgentView } from "./view.ts";
 
 const SETUP_PREFIX = "setup ";
 
-const SUBCOMMANDS = ["create", "setup"] as const;
+const SUBCOMMANDS = ["view", "create", "setup"] as const;
 
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
+type SetupWord = Exclude<Subcommand, "view">;
+
 const SUBCOMMAND_TEXT: Record<Subcommand, string> = {
-  create: "new agent file",
+  view: "agents list",
+  create: "new agent",
   setup: "model, thinking and skills per agent",
 };
+
+const MENU_TEXT: Record<Subcommand, string> = {
+  ...SUBCOMMAND_TEXT,
+  create: "new agent; the main session asks what it is for and writes it",
+};
+
+const NO_TERMINAL = `${NAMESPACE}: the agents list needs the interactive terminal; /agents create works in any mode`;
 
 const isSubcommand = (word: string): word is Subcommand => (SUBCOMMANDS as readonly string[]).includes(word);
 
@@ -144,15 +155,29 @@ export const agentViewPlugin: Plugin = {
     const subcommands = (prefix: string) => {
       const service = setup();
 
-      return service
-        ? SUBCOMMANDS.filter((word) => word.startsWith(prefix)).map((word) => ({
-            value: word,
-            label: `${word} · ${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}`,
-          }))
-        : [];
+      return SUBCOMMANDS.filter((word) => word.startsWith(prefix)).flatMap(
+        (word): { value: string; label: string }[] => {
+          if (word === "view") {
+            return [{ value: word, label: `${word}${SEP}${SUBCOMMAND_TEXT[word]}` }];
+          }
+
+          return service
+            ? [{ value: word, label: `${word}${SEP}${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}` }]
+            : [];
+        },
+      );
     };
 
-    const runSubcommand = async (word: Subcommand, args: string) => {
+    const openList = async () => {
+      if (host.session().mode !== "tui") {
+        host.ui.notify(NO_TERMINAL, "info");
+        return;
+      }
+
+      await openOverlay({ kind: "list" });
+    };
+
+    const runSetupWord = async (word: SetupWord, args: string) => {
       const service = setup();
 
       if (!service) {
@@ -166,6 +191,37 @@ export const agentViewPlugin: Plugin = {
       await (word === "create" ? service.create(args) : service.run(args));
     };
 
+    const runSubcommand = (word: Subcommand, args: string) =>
+      word === "view" ? openList() : runSetupWord(word, args);
+
+    const viewText = () => {
+      const counts = listCounts(registry.list(), cleared);
+      const parts = [
+        counts.running > 0 ? `${counts.running} running` : undefined,
+        counts.completed > 0 ? `${counts.completed} done` : undefined,
+      ].filter((part) => part !== undefined);
+
+      return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(SEP);
+    };
+
+    const menu = async () => {
+      if (!setup() || host.session().mode !== "tui") {
+        await openList();
+        return;
+      }
+
+      const options: SelectOption<Subcommand>[] = [
+        { value: "view", label: "view", description: viewText() },
+        { value: "setup", label: "setup", description: MENU_TEXT.setup },
+        { value: "create", label: "create", description: MENU_TEXT.create },
+      ];
+      const choice = await host.ui.showForm(selectForm({ title: "Agents", options }));
+
+      if (choice) {
+        await runSubcommand(choice, "");
+      }
+    };
+
     const usage = setup()?.usage;
     const usageText = usage ? ` | ${usage.create} | ${usage.setup}` : "";
 
@@ -176,7 +232,7 @@ export const agentViewPlugin: Plugin = {
       }));
 
     host.registerCommand("agents", {
-      description: `Open the agents list, or one agent's view by id. Usage: /agents [id]${usageText}`,
+      description: `Agents: list, setup or create. Usage: /agents [view | <id>]${usageText}`,
       complete: (prefix) =>
         prefix.startsWith(SETUP_PREFIX)
           ? setupCompletions(prefix)
@@ -200,7 +256,7 @@ export const agentViewPlugin: Plugin = {
           return;
         }
 
-        await openOverlay({ kind: "list" });
+        await menu();
       },
     });
 

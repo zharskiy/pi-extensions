@@ -157,7 +157,10 @@ export const createUi = (
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
           createTranscript: (options) =>
-            createTranscriptPane(tui, cwd, { tools: [...state.tools.values()], owner: options?.owner }),
+            createTranscriptPane(tui, cwd, {
+              tools: [...state.tools.values()],
+              owner: options?.owner,
+            }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
         });
 
@@ -227,6 +230,7 @@ export const createUi = (
     setEditorFrame: editor.setEditorFrame,
     onEmptyEditorLeft: editor.onEmptyEditorLeft,
     onEmptyEditorDown: editor.onEmptyEditorDown,
+    onEmptyEditorEscape: editor.onEmptyEditorEscape,
     captureEditorKeys: editor.captureEditorKeys,
     setFooter: createFooterSetter(tuiCtx),
     keyText: (binding) => keyText(binding as Keybinding),
