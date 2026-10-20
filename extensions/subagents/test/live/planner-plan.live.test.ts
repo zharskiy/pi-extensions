@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
-import { concurrentRuns, helperCounts, liveRuns, runChain } from "../helpers/live-runs.ts";
+import { concurrentRuns, failureSuffix, helperCounts, liveRuns, runChain } from "../helpers/live-runs.ts";
 import { type PlanFile, planFiles, planStatus, relativeTo } from "../helpers/plan-rows.ts";
 
 // One past request from this repository: the planner sees the tree as it was
@@ -21,6 +21,7 @@ type Outcome = {
   helpers: string[];
   calls: number;
   cost: number;
+  failure: string | undefined;
 };
 
 const RUN_TIMEOUT_MS = 540_000;
@@ -104,6 +105,7 @@ const planOnce = async (live: LiveHarness, fixture: Fixture): Promise<Outcome> =
     helpers: chain.helpers,
     calls: chain.calls,
     cost: chain.cost,
+    failure: chain.failure,
   };
 };
 
@@ -135,6 +137,7 @@ const line = (fixture: Fixture, outcome: Outcome) =>
     listed("globs", outcome.globs),
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
     `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
+    failureSuffix(outcome.failure),
   ].join("");
 
 // Each run gets its own harness and seeded project, so runs of one fixture go

@@ -27,7 +27,21 @@ export type ChainOutcome = {
   helpers: string[];
   calls: number;
   cost: number;
+  failure: string | undefined;
 };
+
+const REASON_MAX = 160;
+
+export const failureReason = (record: Pick<AgentRecord, "error"> | undefined) => {
+  const first = record?.error
+    ?.split("\n")
+    .find((text) => text.trim() !== "")
+    ?.trim();
+
+  return first ? first.slice(0, REASON_MAX) : undefined;
+};
+
+export const failureSuffix = (failure: string | undefined) => (failure ? ` (failed: ${failure})` : "");
 
 // Runs the lead on the task and waits until its chain (the lead and any
 // successors after a handoff) has closed, then sums the chain's own tool calls
@@ -72,6 +86,7 @@ export const runChain = async (
     helpers: records.filter((record) => linkIds.includes(record.callerId)).map((record) => record.agent),
     calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
     cost: costOf(tree.flatMap((id) => live.usage.get(id) ?? [])),
+    failure: failureReason(last),
   };
 };
 

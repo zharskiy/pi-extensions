@@ -7,7 +7,14 @@ import { describeLive } from "../../../../core/test/adapter/live.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { largestOutput } from "../helpers/findings.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
-import { concurrentRuns, helperCounts, liveRuns, repoGit, runChain } from "../helpers/live-runs.ts";
+import {
+  concurrentRuns,
+  failureSuffix,
+  helperCounts,
+  liveRuns,
+  repoGit,
+  runChain,
+} from "../helpers/live-runs.ts";
 
 // One past commit of this repository that changes a few source files and adds
 // tests. The implementer gets the tree at the commit's parent and the request
@@ -22,6 +29,7 @@ type Outcome = {
   helpers: string[];
   calls: number;
   cost: number;
+  failure: string | undefined;
   largestBash: number;
 };
 
@@ -133,6 +141,7 @@ const implementOnce = async (fixture: Fixture, index: number): Promise<Outcome> 
       helpers: chain.helpers,
       calls: chain.calls,
       cost: chain.cost,
+      failure: chain.failure,
       largestBash,
     };
   } finally {
@@ -145,6 +154,7 @@ const describeOutcome = (outcome: Outcome) =>
     `${outcome.status}, ${outcome.passed ? "passed" : "failed"} (${outcome.tests})`,
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
     `, calls ${outcome.calls}, largest bash ${outcome.largestBash} chars, cost $${outcome.cost.toFixed(2)}`,
+    failureSuffix(outcome.failure),
   ].join("");
 
 describeLive("live implementer change quality", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeHost } from "../../../../core/test/helpers/fakes.ts";
 import { modelForGroup, patchAgentFile, shippedGroup } from "./agent-patch.ts";
+import { failureReason, failureSuffix } from "./live-runs.ts";
 import { planFiles, planStatus, relativeTo } from "./plan-rows.ts";
 import { createTurns } from "./turns.ts";
 
@@ -220,5 +221,19 @@ describe("createTurns", () => {
 
     await expect(turn(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
     expect(host.idle).toBe(true);
+  });
+});
+
+describe("failureReason", () => {
+  it("takes the first non-empty line of the error, cut to 160 chars", () => {
+    expect(failureReason({ error: "\n quota reached \nstack" })).toBe("quota reached");
+    expect(failureReason({ error: "x".repeat(200) })).toBe("x".repeat(160));
+  });
+
+  it("is absent without an error and adds nothing to the log line", () => {
+    expect(failureReason({})).toBeUndefined();
+    expect(failureReason(undefined)).toBeUndefined();
+    expect(failureSuffix(undefined)).toBe("");
+    expect(failureSuffix("quota reached")).toBe(" (failed: quota reached)");
   });
 });

@@ -5,7 +5,14 @@ import { expect, it } from "vitest";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
 import { citesFile, hitsLine, parseFindings } from "../helpers/findings.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
-import { concurrentRuns, helperCounts, liveRuns, repoGit, runChain } from "../helpers/live-runs.ts";
+import {
+  concurrentRuns,
+  failureSuffix,
+  helperCounts,
+  liveRuns,
+  repoGit,
+  runChain,
+} from "../helpers/live-runs.ts";
 
 // One past commit of this repository, applied uncommitted on top of its
 // parent, with one defect planted inside a hunk of the real change by an exact
@@ -30,6 +37,7 @@ type Outcome = {
   helpers: string[];
   calls: number;
   cost: number;
+  failure: string | undefined;
 };
 
 const RUN_TIMEOUT_MS = 480_000;
@@ -168,6 +176,7 @@ const reviewOnce = async (fixture: Fixture, index: number): Promise<Outcome> => 
       helpers: chain.helpers,
       calls: chain.calls,
       cost: chain.cost,
+      failure: chain.failure,
     };
   } finally {
     await live.close();
@@ -182,6 +191,7 @@ const describeOutcome = (outcome: Outcome) =>
     outcome.found ? "" : ` (refs [${outcome.refs.join(", ")}], planted line ${outcome.line})`,
     `, helpers ${outcome.helpers.length}${helperCounts(outcome.helpers)}`,
     `, calls ${outcome.calls}, cost $${outcome.cost.toFixed(2)}`,
+    failureSuffix(outcome.failure),
   ].join("");
 
 describeLive("live reviewer review quality", () => {
