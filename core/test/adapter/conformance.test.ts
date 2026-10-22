@@ -733,6 +733,48 @@ describe("pi adapter conformance", () => {
       expect(found["team-skill"]).toBe(extra);
     });
 
+    it("ignores the ! and - exclusions of both settings files, which still hide the skills from a main session", async () => {
+      const dirs = layout();
+      const team = skillAt(join(dirs.cwd, "team-skills"), "team-skill");
+      const excluded = (extra: string[]) => JSON.stringify({ skills: ["!**/.agents/skills/**", ...extra] });
+
+      writeFileSync(
+        join(dirs.agentDir, "settings.json"),
+        excluded([`-${join(dirs.agentDir, "skills", "user-skill")}`]),
+      );
+      writeFileSync(
+        join(dirs.cwd, ".pi", "settings.json"),
+        excluded([
+          "../team-skills",
+          `+${join(dirs.cwd, "team-skills", "team-skill")}`,
+          "-skills/project-skill",
+        ]),
+      );
+
+      const mainLoader = new pi.DefaultResourceLoader({
+        cwd: dirs.cwd,
+        agentDir: dirs.agentDir,
+        settingsManager: pi.SettingsManager.create(dirs.cwd, dirs.agentDir, { projectTrusted: true }),
+        noExtensions: true,
+      });
+
+      await mainLoader.reload();
+
+      const main = mainLoader.getSkills().skills.map((skill) => skill.name);
+      const found = byName(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(main).toEqual(["team-skill"]);
+      expect(found).toEqual({
+        "project-skill": dirs.project,
+        "project-agents-skill": dirs.projectAgents,
+        "user-skill": dirs.user,
+        "user-agents-skill": dirs.userAgents,
+        "team-skill": team,
+      });
+    });
+
     it("skips missing packages instead of installing them, and writes nothing", async () => {
       const dirs = layout();
       const settings = JSON.stringify({

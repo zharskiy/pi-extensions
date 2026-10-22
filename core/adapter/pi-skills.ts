@@ -14,6 +14,24 @@ export type SkillScope = { cwd: string; agentDir: string; projectTrusted: boolea
 
 type SettingsStorage = Parameters<typeof SettingsManager.fromStorage>[0];
 
+const isExclusion = (entry: unknown) =>
+  typeof entry === "string" && (entry.startsWith("!") || entry.startsWith("-"));
+
+const withoutSkillExclusions = (content: string) => {
+  try {
+    const settings = JSON.parse(content);
+
+    return Array.isArray(settings?.skills)
+      ? JSON.stringify({
+          ...settings,
+          skills: settings.skills.filter((entry: unknown) => !isExclusion(entry)),
+        })
+      : content;
+  } catch {
+    return content;
+  }
+};
+
 const readOnlySettings = ({ cwd, agentDir }: SkillScope): SettingsStorage => {
   const paths = {
     global: join(agentDir, "settings.json"),
@@ -22,7 +40,7 @@ const readOnlySettings = ({ cwd, agentDir }: SkillScope): SettingsStorage => {
 
   return {
     withLock: (scope, read) => {
-      read(existsSync(paths[scope]) ? readFileSync(paths[scope], "utf8") : undefined);
+      read(existsSync(paths[scope]) ? withoutSkillExclusions(readFileSync(paths[scope], "utf8")) : undefined);
     },
   };
 };

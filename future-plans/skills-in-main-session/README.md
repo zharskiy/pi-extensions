@@ -7,11 +7,11 @@ Research date: 2026-10-21. Question: how to let the pi main session use skills o
 
 ## Context
 
-The subagents extension gives each agent its own `skills:` allowlist. A separate change in progress makes the agent skill inventory independent of the main session: it is every skill pi discovers by default for the project and user (pi's own rules: `.pi/skills` and `.agents/skills` up to the repo root in a trusted project, `~/.pi/agent/skills`, `~/.agents/skills`, settings `skills` entries, packages). That change is not the subject of this folder. This folder keeps the options for the main session itself.
+The subagents extension gives each agent its own `skills:` allowlist. A separate change in progress makes the agent skill inventory independent of the main session: it is every skill pi discovers by default for the project and user (pi's own rules: `.pi/skills` and `.agents/skills` up to the repo root in a trusted project, `~/.pi/agent/skills`, `~/.agents/skills`, settings `skills` entries, packages). The inventory ignores the `!` and `-` exclusions of pi's `skills` setting, so those exclusions keep a skill out of the main session while agents keep it; this is the supported way to trim the main session's skills. That change is not the subject of this folder. This folder keeps the options for the main session itself.
 
 ## Option A: clean by configuration (dropped)
 
-Dropped: the owner does not want the main session started with `--no-skills`, and settings exclusions also hit the agent inventory.
+Dropped: the owner does not want the main session started with `--no-skills`; settings exclusions are now the supported way to keep skills out of the main session while agents keep them (see Context).
 
 - Run the main session with `--no-skills` (or `-ns`).
 - Or exclude skills in settings: `skills: ["!pattern", "-path"]`.
@@ -20,7 +20,7 @@ Dropped: the owner does not want the main session started with `--no-skills`, an
 Costs nothing. Limits:
 
 - `/skill:name` only expands skills present in the session's loader. With `--no-skills` the user cannot call undiscovered skills from the main session by command.
-- Settings exclusions also apply to the agent inventory, since that is pi's discovery too. Only the CLI flag is main-session-only.
+- Settings exclusions apply to the main session only; the agent inventory ignores them.
 
 ## Option B: dynamic providing through a `skill` tool (deferred)
 
