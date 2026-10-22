@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultSettings, disabledPlugins, loadSettings } from "../../src/model/settings.ts";
+import { createFakeRuntime } from "../../../../core/test/helpers/fakes.ts";
+import { defaultSettings, disabledPlugins, loadSettings, reloadSettings } from "../../src/model/settings.ts";
 import { tempDir } from "../helpers/harness.ts";
 
 const writeJson = (path: string, value: unknown) => {
@@ -229,6 +230,39 @@ describe("subagents settings", () => {
     expect(loaded.settings.disabledPlugins).toEqual(["agent-view"]);
     expect(loaded.errors).toEqual([
       `${projectFile}: disabledPlugins is read from the user settings file only`,
+    ]);
+  });
+});
+
+describe("codemode workers on settings reload", () => {
+  it("asks for maxConcurrent times maxDepth agent sessions and stays quiet without a shortfall", () => {
+    const { agentDir, cwd, userFile } = dirs();
+    const runtime = createFakeRuntime();
+    const warnings: string[] = [];
+
+    writeJson(userFile, { maxConcurrent: 5, maxDepth: 4 });
+    reloadSettings(defaultSettings(), { agentDir, cwd, projectTrusted: false }, runtime, (message) =>
+      warnings.push(message),
+    );
+
+    expect(runtime.workerRequests).toEqual([20]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("warns about a shortfall once per settings object, applying the request on every reload", () => {
+    const { agentDir, cwd } = dirs();
+    const runtime = createFakeRuntime();
+    const settings = defaultSettings();
+    const warnings: string[] = [];
+    const info = { agentDir, cwd, projectTrusted: false };
+
+    runtime.codemodeShortfall = { setting: "FAKE_WORKERS", workers: 3, wanted: 38 };
+    reloadSettings(settings, info, runtime, (message) => warnings.push(message));
+    reloadSettings(settings, info, runtime, (message) => warnings.push(message));
+
+    expect(runtime.workerRequests).toEqual([36, 36]);
+    expect(warnings).toEqual([
+      "FAKE_WORKERS=3 is below the 38 codemode workers the agents may need; agents' codemode scripts may wait or fail",
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import type { AgentRuntime, CodemodeShortfall } from "../../../../core/adapter/contract.ts";
 import {
   isPlainObject,
   type ObjectParse,
@@ -157,9 +158,16 @@ export const loadSettings = (agentDir: string, cwd: string, projectTrusted: bool
 
 const reportedBy = new WeakMap<Settings, Set<string>>();
 
+const shortfallMessage = ({ setting, workers, wanted }: CodemodeShortfall) =>
+  `${setting}=${workers} is below the ${wanted} codemode workers the agents may need; agents' codemode scripts may wait or fail`;
+
+const maxAgentSessions = (settings: Pick<Settings, "maxConcurrent" | "maxDepth">) =>
+  settings.maxConcurrent * settings.maxDepth;
+
 export const reloadSettings = (
   settings: Settings,
   info: { agentDir: string; cwd: string; projectTrusted: boolean },
+  runtime: Pick<AgentRuntime, "reserveCodemodeWorkers">,
   notify: (message: string) => void,
 ) => {
   const loaded = loadSettings(info.agentDir, info.cwd, info.projectTrusted);
@@ -167,6 +175,12 @@ export const reloadSettings = (
 
   reportedBy.set(settings, reported);
   Object.assign(settings, loaded.settings);
+
+  const shortfall = runtime.reserveCodemodeWorkers(maxAgentSessions(settings));
+
+  if (shortfall) {
+    loaded.errors.push(shortfallMessage(shortfall));
+  }
 
   loaded.errors
     .filter((message) => !reported.has(message))

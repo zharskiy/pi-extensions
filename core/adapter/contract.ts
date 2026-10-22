@@ -413,6 +413,8 @@ export type ModelResolution =
 
 export type AvailableModel = ModelChoice & { thinking: string[] };
 
+export type CodemodeShortfall = { setting: string; workers: number; wanted: number };
+
 export type AgentRuntime = {
   spawn(spec: SpawnSpec): Promise<ChildSession>;
   readSession(file: string): SessionRecord;
@@ -422,6 +424,7 @@ export type AgentRuntime = {
   skillCatalog(): SkillInfo[];
   skillNames(): string[];
   sessionSkillNames(): string[];
+  reserveCodemodeWorkers(agentSessions: number): CodemodeShortfall | undefined;
 };
 
 export const emptyUsage = (): UsageTotals => ({

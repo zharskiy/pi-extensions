@@ -10,6 +10,7 @@ import { THINKING_LEVELS } from "../../adapter/contract.ts";
 import { finalRunTexts } from "../../adapter/messages.ts";
 import { mcpBuiltinLoaded, sessionSkillFiles } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
+import { CODEMODE_WORKERS_SETTING } from "../../adapter/pi-codemode.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { discoverSkills } from "../../adapter/pi-skills.ts";
@@ -108,6 +109,19 @@ describe("pi adapter conformance", () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(satisfiesCaret(version, range)).toBe(true);
     expect(versionParts(version)[0]).toBe(ADAPTER_PI_MAJOR);
+  });
+
+  it("caps codemode workers through the setting the adapter raises, in the module and the binary's bundle", () => {
+    const dist = new URL("./", import.meta.resolve("@earendil-works/pi-coding-agent"));
+    const chunks = new URL("./bundle/chunks/", dist);
+    const bundled = readdirSync(chunks)
+      .filter((name) => /^execute-.*\.js$/.test(name))
+      .map((name) => new URL(name, chunks));
+    const read = `process.env.${CODEMODE_WORKERS_SETTING}`;
+
+    expect(readFileSync(new URL("./extensions/codemode/execute.js", dist), "utf8")).toContain(read);
+    expect(bundled.length).toBeGreaterThan(0);
+    expect(bundled.filter((file) => readFileSync(file, "utf8").includes(read))).not.toEqual([]);
   });
 
   it("reports the installed pi version as its VERSION", () => {
