@@ -65,6 +65,21 @@ describe("agent setup form", () => {
     expect(render(ctx, state)).toContain(" › Skills    search (changed)");
   });
 
+  it("opens all with no box ticked and keeps all unless a box is changed, even to none", () => {
+    const ctx = context();
+    const toSkills = [key("down"), key("down"), key("enter")];
+    const kept = press(ctx, initialSetup(ctx), ...toSkills);
+
+    expect(render(ctx, kept.state).filter((line) => line.includes("[ ]"))).toHaveLength(2);
+    expect(setupChanges(ctx, press(ctx, kept.state, key("down"), key("enter")).state)).toEqual([]);
+    expect(setupChanges(ctx, press(ctx, kept.state, char("a"), key("enter")).state)).toEqual([
+      { name: "lead", patch: { skills: ["docs", "search"] } },
+    ]);
+    expect(setupChanges(ctx, press(ctx, kept.state, char("n"), key("enter")).state)).toEqual([
+      { name: "lead", patch: { skills: [] } },
+    ]);
+  });
+
   it("stores every checked skill by name and leaves a field unchanged when its picker is left with Escape", () => {
     const ctx = context();
     const { state } = press(

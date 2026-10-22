@@ -33,7 +33,9 @@ export const FIELDS = ["model", "thinking", "skills"] as const;
 
 export type Field = (typeof FIELDS)[number];
 
-export type Picker = { field: "model" | "thinking"; cursor: number } | { field: "skills"; multi: MultiState };
+type SkillsPicker = { field: "skills"; multi: MultiState; touched?: boolean };
+
+export type Picker = { field: "model" | "thinking"; cursor: number } | SkillsPicker;
 
 export type SetupState = {
   drafts: Draft[];
@@ -119,8 +121,8 @@ const openPicker = (context: SetupContext, state: SetupState): SetupState => {
   const draft = state.drafts[state.tab];
 
   if (field === "skills") {
-    const has = (name: string) => draft?.skills === ALL || Boolean(draft?.skills.includes(name));
-    const checked = context.skills.map((skill) => has(skill.name));
+    const named = draft?.skills === ALL ? [] : (draft?.skills ?? []);
+    const checked = context.skills.map((skill) => named.includes(skill.name));
 
     return { ...state, picker: { field, multi: initialMulti(context.skills.length, checked) } };
   }
@@ -191,13 +193,14 @@ const chooseFromList = (
 const chooseSkills = (
   context: SetupContext,
   state: SetupState,
-  picker: { field: "skills"; multi: MultiState },
+  picker: SkillsPicker,
   key: KeyPress,
 ): SetupState => {
   if (key.name !== "enter") {
     const multi = multiKey(key, picker.multi);
+    const touched = picker.touched || multi?.checked !== picker.multi.checked;
 
-    return multi ? { ...state, picker: { ...picker, multi } } : state;
+    return multi ? { ...state, picker: { ...picker, multi, touched } } : state;
   }
 
   if (context.skills.length === 0) {
@@ -206,9 +209,9 @@ const chooseSkills = (
 
   const names = checkedIndexes(picker.multi).flatMap((index) => context.skills[index]?.name ?? []);
 
-  const unchangedAll = state.drafts[state.tab]?.skills === ALL && names.length === context.skills.length;
+  const keptAll = state.drafts[state.tab]?.skills === ALL && !picker.touched;
 
-  return setDraft(state, { skills: unchangedAll ? ALL : names });
+  return setDraft(state, { skills: keptAll ? ALL : names });
 };
 
 const pickerKey = (context: SetupContext, state: SetupState, picker: Picker, key: KeyPress): SetupState => {

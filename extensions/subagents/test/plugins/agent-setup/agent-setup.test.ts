@@ -126,9 +126,9 @@ describe("/agents setup form", () => {
     const list = lines.slice(lines.indexOf(" Skills") + 1);
 
     expect(list.slice(0, 3)).toEqual([
-      " › [x] review  Reviews diffs for…",
-      "   [x] docs  Writes docs",
-      "   [x] search  Searches the web …",
+      " › [ ] review  Reviews diffs for…",
+      "   [ ] docs  Writes docs",
+      "   [ ] search  Searches the web …",
     ]);
     expect(list.slice(3, 8)).toEqual([
       "",
@@ -146,7 +146,7 @@ describe("/agents setup form", () => {
     expect(form.render(33)).toContain(" Searches the web and cites");
     expect(form.render(33)).toContain(" sources");
 
-    form.press(char("n"), key("space"), key("enter"));
+    form.press(key("space"), key("enter"));
     goToSubmit(form);
     form.press(key("enter"));
     await run;
