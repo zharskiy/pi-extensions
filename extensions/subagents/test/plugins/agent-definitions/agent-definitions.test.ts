@@ -346,6 +346,25 @@ describe("agent overrides", () => {
     ]);
   });
 
+  it("warns about unknown skills an agent file names and keeps the definition, unless an override replaces them", () => {
+    const { list, user } = dirs();
+
+    writeAgent(user, "a.md", agentFile("a", "user", "subagents: []\nskills: [docs, lint]"));
+    writeAgent(user, "b.md", agentFile("b", "user b", "subagents: []\nskills: [lint]"));
+
+    const result = loadDefinitions(list, check({ b: { skills: ["git"] } }));
+
+    expect(result.definitions.get("a")).toMatchObject({ skills: ["docs", "lint"] });
+    expect(result.definitions.get("b")).toMatchObject({ skills: ["git"] });
+    expect(result.notices).toEqual([]);
+    expect(result.warnings).toEqual([
+      {
+        path: join(user, "a.md"),
+        message: "skills names unknown skill(s) lint (available skills: docs, git); those are not loaded",
+      },
+    ]);
+  });
+
   it("warns about an unknown agent and only informs about one defined in an untrusted project", () => {
     const { list, root } = dirs();
     const untrusted = join(root, "project-agents");

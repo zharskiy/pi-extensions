@@ -239,7 +239,11 @@ const overridden = (definition: AgentDefinition, override: AgentOverride): Agent
   };
 };
 
-const applyOverrides = (definitions: Map<string, AgentDefinition>, check: OverrideCheck) => {
+const applyOverrides = (
+  definitions: Map<string, AgentDefinition>,
+  check: OverrideCheck,
+  loaded: () => string[],
+) => {
   const entries = Object.entries(check.overrides);
 
   if (entries.length === 0) {
@@ -248,7 +252,6 @@ const applyOverrides = (definitions: Map<string, AgentDefinition>, check: Overri
 
   const untrustedDir = check.untrustedDir;
   const untrusted = once(() => (untrustedDir ? agentNamesIn(untrustedDir) : new Set<string>()));
-  const loaded = once(check.skillNames);
 
   return entries.flatMap(([name, override]): OverrideNotice[] => {
     const definition = definitions.get(name);
@@ -274,10 +277,29 @@ const applyOverrides = (definitions: Map<string, AgentDefinition>, check: Overri
   });
 };
 
+const unknownFrontmatterSkills = (
+  fromFiles: Map<string, AgentDefinition>,
+  definitions: Map<string, AgentDefinition>,
+  paths: Map<string, string>,
+  loaded: () => string[],
+) =>
+  [...definitions.values()].flatMap((definition): DefinitionError[] => {
+    const { name, skills } = definition;
+    const problem =
+      Array.isArray(skills) && skills.length > 0 && skills === fromFiles.get(name)?.skills
+        ? unknownSkillsProblem(skills, loaded())
+        : undefined;
+
+    return problem
+      ? [{ path: paths.get(name) ?? name, message: `skills ${problem}; those are not loaded` }]
+      : [];
+  });
+
 export const loadDefinitions = (dirs: DefinitionDir[], check?: OverrideCheck): LoadResult => {
   const definitions = new Map<string, AgentDefinition>();
   const errors: DefinitionError[] = [];
   const warnings: DefinitionError[] = [];
+  const paths = new Map<string, string>();
 
   dirs.forEach((dir) => {
     const seen = new Map<string, string>();
@@ -298,6 +320,7 @@ export const loadDefinitions = (dirs: DefinitionDir[], check?: OverrideCheck): L
       }
 
       seen.set(name, path);
+      paths.set(name, path);
       definitions.set(name, parsed.definition);
 
       parsed.warnings.forEach((message) => {
@@ -308,7 +331,15 @@ export const loadDefinitions = (dirs: DefinitionDir[], check?: OverrideCheck): L
 
   pruneSubagentGraph(definitions, errors);
 
-  const notices = check ? applyOverrides(definitions, check) : [];
+  if (!check) {
+    return { definitions, errors, warnings, notices: [] };
+  }
+
+  const fromFiles = new Map(definitions);
+  const loaded = once(check.skillNames);
+  const notices = applyOverrides(definitions, check, loaded);
+
+  warnings.push(...unknownFrontmatterSkills(fromFiles, definitions, paths, loaded));
 
   return { definitions, errors, warnings, notices };
 };
