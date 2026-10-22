@@ -58,9 +58,11 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
     return draft.thinking ?? "default";
   }
 
-  const none = context.skills.length === 0 && draft.skills !== ALL;
+  if (draft.skills === ALL) {
+    return `${ALL} (every skill of the agent's caller)`;
+  }
 
-  return none ? "none (no skills loaded)" : grantText(draft.skills);
+  return context.skills.length === 0 ? "none (no skills available)" : grantText(draft.skills);
 };
 
 const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>

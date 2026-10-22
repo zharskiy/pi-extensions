@@ -12,7 +12,7 @@ The user ran {{command}} and wants a new agent that the main session can start w
 
 Names taken: {{taken}}
 
-Skills of this session:
+Available skills:
 {{skills}}
 
 Lead skeleton:

@@ -11,6 +11,7 @@ pi-extensions/
 │   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, width, truncate, wrap)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
+│   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
 │   │   ├── pi-form.ts           # HostUi.showForm: the inline form shell
 │   │   ├── pi-overlay.ts        # overlaysCleared: waits until no overlay is visible

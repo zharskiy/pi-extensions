@@ -21,7 +21,7 @@ import type {
   ToolSpec,
 } from "./contract.ts";
 import { replaceMainPrompt } from "./main-prompt.ts";
-import { createPiRuntime, type SkillFile } from "./pi-child.ts";
+import { createPiRuntime } from "./pi-child.ts";
 import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
 import { entryHost } from "./pi-entries.ts";
@@ -29,6 +29,7 @@ import { footerHost } from "./pi-footer.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
+import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -37,7 +38,7 @@ import { contextOf, sumUsage } from "./usage.ts";
 export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
   pi.getCommands().some((command) => command.sourceInfo.path === "builtin:mcp");
 
-export const skillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillFile[] =>
+export const sessionSkillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillFile[] =>
   pi
     .getCommands()
     .filter((command) => command.source === "skill")
@@ -484,11 +485,19 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 export const createPiExtension =
   (
     boot: (host: Host, runtime: AgentRuntime, paths: { root: string; agentDir: string }) => void,
-    options: { root: string; namespace: string; childExclude?: readonly string[] },
+    options: { root: string; namespace: string; childExclude?: readonly string[]; skillInventory?: boolean },
   ): ExtensionFactory =>
   (pi) => {
     if (insideChildSession()) {
       return;
+    }
+
+    const inventory = createSkillInventory(() => sessionSkillFiles(pi));
+
+    if (options.skillInventory) {
+      pi.on("session_start", (_event, ctx) =>
+        inventory.scan({ cwd: ctx.cwd, agentDir: getAgentDir(), projectTrusted: ctx.isProjectTrusted() }),
+      );
     }
 
     const state: HostState = { tools: new Map() };
@@ -499,7 +508,8 @@ export const createPiExtension =
         ctx: () => liveCtx(state),
         settings: () => pi.getSettings(),
         thinking: () => pi.getThinkingLevel(),
-        skillFiles: () => skillFiles(pi),
+        inventorySkillFiles: inventory.files,
+        sessionSkillFiles: () => sessionSkillFiles(pi),
         activeTools: () => parentTools(pi),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },

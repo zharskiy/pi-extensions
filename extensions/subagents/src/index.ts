@@ -31,5 +31,5 @@ export default createPiExtension(
       await manager.disableAll();
     });
   },
-  { root, namespace: NAMESPACE, childExclude: [join(root, "src")] },
+  { root, namespace: NAMESPACE, childExclude: [join(root, "src")], skillInventory: true },
 );

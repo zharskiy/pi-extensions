@@ -28,6 +28,7 @@ import { finalRunTexts, messageText, toolCallCount } from "./messages.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
 import { applyPromptSections } from "./pi-sections.ts";
+import type { SkillFile } from "./pi-skills.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { formatRoutedMessage } from "./route.ts";
 import { promptRecordEntry, readSessionFile } from "./session-file.ts";
@@ -37,13 +38,14 @@ const SHUTDOWN_TIMEOUT_MS = 2_000;
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
-export type SkillFile = { name: string; description: string; path: string };
+export type { SkillFile } from "./pi-skills.ts";
 
 export type ParentSource = {
   ctx(): ExtensionContext;
   settings(): Settings;
   thinking(): string;
-  skillFiles(): SkillFile[];
+  inventorySkillFiles(): SkillFile[];
+  sessionSkillFiles(): SkillFile[];
   activeTools(): { name: string; path: string }[];
   mcpDisabled(): boolean;
 };
@@ -140,8 +142,8 @@ const mcpExtensions = (
 const isExcluded = (exclude: readonly string[], path: string) =>
   isAbsolute(path) && exclude.some((dir) => resolve(path).startsWith(`${resolve(dir)}${sep}`));
 
-const pickSkillFiles = (available: SkillFile[], wanted: readonly string[] | undefined) =>
-  available.filter((skill) => !wanted || wanted.includes(skill.name)).map((skill) => skill.path);
+const pickSkillFiles = (available: SkillFile[], wanted: readonly string[]) =>
+  available.filter((skill) => wanted.includes(skill.name)).map((skill) => skill.path);
 
 export const createPiRuntime = (
   parent: ParentSource,
@@ -192,21 +194,19 @@ export const createPiRuntime = (
     });
 
     const agentDir = getAgentDir();
-    const wantedSkills = spec.skills ? new Set(spec.skills) : undefined;
+    const wantedSkills = new Set(spec.skills);
 
     const loader = new DefaultResourceLoader({
       cwd: spec.cwd,
       agentDir,
       settingsManager,
       noSkills: true,
-      additionalSkillPaths: pickSkillFiles(parent.skillFiles(), spec.skills),
+      additionalSkillPaths: pickSkillFiles(parent.inventorySkillFiles(), spec.skills),
       appendSystemPromptOverride: (base) => [...base, ...spec.promptAppend],
-      skillsOverride: wantedSkills
-        ? (current) => ({
-            skills: current.skills.filter((skill) => wantedSkills.has(skill.name)),
-            diagnostics: current.diagnostics,
-          })
-        : undefined,
+      skillsOverride: (current) => ({
+        skills: current.skills.filter((skill) => wantedSkills.has(skill.name)),
+        diagnostics: current.diagnostics,
+      }),
       extensionsOverride: (result) => ({
         ...result,
         extensions: result.extensions.filter(
@@ -366,7 +366,8 @@ export const createPiRuntime = (
     };
   };
 
-  const skillCatalog = () => parent.skillFiles().map(({ name, description }) => ({ name, description }));
+  const skillCatalog = () =>
+    parent.inventorySkillFiles().map(({ name, description }) => ({ name, description }));
 
   return {
     spawn,
@@ -376,5 +377,6 @@ export const createPiRuntime = (
     defaultThinking: () => parent.thinking(),
     skillCatalog,
     skillNames: () => skillCatalog().map((skill) => skill.name),
+    sessionSkillNames: () => parent.sessionSkillFiles().map((skill) => skill.name),
   };
 };

@@ -799,6 +799,7 @@ type FakeRuntime = AgentRuntime & {
   sessions: Map<string, SessionRecord>;
   failNextSpawn?: string;
   skills: string[];
+  sessionSkills?: string[];
   skillDescriptions: Record<string, string>;
   child(id: string): FakeChild;
 };
@@ -834,6 +835,8 @@ export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime
     skillCatalog: () =>
       runtime.skills.map((name) => ({ name, description: runtime.skillDescriptions[name] ?? "" })),
     skillNames: () => runtime.skillCatalog().map((skill) => skill.name),
+    sessionSkills: undefined,
+    sessionSkillNames: () => runtime.sessionSkills ?? runtime.skillNames(),
     children: [],
     sessions: new Map(),
     spawn: async (spec) => {

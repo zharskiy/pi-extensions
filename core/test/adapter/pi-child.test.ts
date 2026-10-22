@@ -80,7 +80,8 @@ const runtimeWith = (parent: Partial<ParentSource> = {}, exclude: string[] = [])
       ctx: () => parentCtx as never,
       settings: () => ({}) as never,
       thinking: () => "off",
-      skillFiles: () => [],
+      inventorySkillFiles: () => [],
+      sessionSkillFiles: () => [],
       activeTools: () => [],
       mcpDisabled: () => false,
       ...parent,
@@ -99,6 +100,7 @@ const spec = (overrides: Partial<SpawnSpec>): SpawnSpec => ({
   customTools: [],
   promptAppend: [],
   reserveTokens: 16_384,
+  skills: [],
   ...overrides,
 });
 
@@ -215,13 +217,13 @@ describe("child tool names", () => {
 });
 
 describe("child skills", () => {
-  const mainSkills = () => [
+  const inventory = () => [
     { name: "docs", description: "Writes docs", path: "/skills/docs/SKILL.md" },
     { name: "git", description: "", path: "/skills/git/SKILL.md" },
     { name: "style", description: "Checks style", path: "/skills/style/SKILL.md" },
   ];
 
-  const withSkills = runtimeWith({ skillFiles: mainSkills });
+  const withSkills = runtimeWith({ inventorySkillFiles: inventory });
 
   const discovered = {
     skills: [{ name: "docs" }, { name: "git" }, { name: "style" }, { name: "from-extension" }],
@@ -235,18 +237,18 @@ describe("child skills", () => {
     captured.loaderOptions.length = 0;
   });
 
-  it("gives a child the main session's skill files instead of its own discovery", async () => {
-    await withSkills.spawn(spec({}));
+  it("gives a child the named inventory skill files instead of its own discovery", async () => {
+    await withSkills.spawn(spec({ skills: ["docs", "git", "style"] }));
     await withSkills.spawn(spec({ id: "a2", skills: ["docs", "style", "missing"] }));
     await withSkills.spawn(spec({ id: "a3", skills: [] }));
 
-    const [all, named, none] = captured.loaderOptions;
+    const [every, named, none] = captured.loaderOptions;
 
-    expect(all).toMatchObject({
+    expect(every).toMatchObject({
       noSkills: true,
       additionalSkillPaths: ["/skills/docs/SKILL.md", "/skills/git/SKILL.md", "/skills/style/SKILL.md"],
     });
-    expect(keptNames(all)).toEqual(["docs", "git", "style", "from-extension"]);
+    expect(keptNames(every)).toEqual(["docs", "git", "style"]);
     expect(named).toMatchObject({
       noSkills: true,
       additionalSkillPaths: ["/skills/docs/SKILL.md", "/skills/style/SKILL.md"],
@@ -256,7 +258,7 @@ describe("child skills", () => {
     expect(keptNames(none)).toEqual([]);
   });
 
-  it("lists the main session's skills with their descriptions, and their names alone", () => {
+  it("lists the inventory's skills with their descriptions, and their names alone", () => {
     expect(withSkills.skillCatalog()).toEqual([
       { name: "docs", description: "Writes docs" },
       { name: "git", description: "" },

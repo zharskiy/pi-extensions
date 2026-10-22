@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SessionRecord,
   ThemeLike,
@@ -56,6 +56,11 @@ const track = <T extends ViewComponent>(view: T): T => {
 const useFakeTime = () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
 };
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(0);
+});
 
 afterEach(() => {
   views.splice(0).forEach((view) => {

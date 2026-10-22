@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
@@ -53,6 +56,7 @@ const fakePi = () => {
       calls.push({ call: "sendMessage", message, options });
     },
     getSettings: () => ({}),
+    getCommands: () => [],
     registerEntryRenderer: (customType: string) => {
       renderers.push(customType);
     },
@@ -72,7 +76,13 @@ const fakePi = () => {
   const fire = (event: string, ctx: unknown, payload: unknown = {}) =>
     Promise.all((handlers.get(event) ?? []).map((handler) => handler(payload, ctx)));
 
-  return { pi: pi as unknown as ExtensionAPI, fire, commands, sent, calls, renderers };
+  const fireInOrder = (event: string, ctx: unknown, payload: unknown = {}) =>
+    (handlers.get(event) ?? []).reduce<Promise<unknown>>(
+      (chain, handler) => chain.then(() => handler(payload, ctx)),
+      Promise.resolve(),
+    );
+
+  return { pi: pi as unknown as ExtensionAPI, fire, fireInOrder, commands, sent, calls, renderers };
 };
 
 describe("pi adapter", () => {
@@ -833,5 +843,80 @@ describe("main session MCP", () => {
     expect(mcpBuiltinLoaded(commandsFrom("/ext/a.ts", "builtin:mcp"))).toBe(true);
     expect(mcpBuiltinLoaded(commandsFrom("/ext/other-mcp/index.ts"))).toBe(false);
     expect(mcpBuiltinLoaded(commandsFrom())).toBe(false);
+  });
+});
+
+describe("skill inventory", () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    dirs.splice(0).forEach((dir) => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+  const skillAt = (dir: string, name: string) => {
+    mkdirSync(join(dir, name), { recursive: true });
+    writeFileSync(
+      join(dir, name, "SKILL.md"),
+      `---\nname: ${name}\ndescription: ${name} skill\n---\n\nBody.\n`,
+    );
+  };
+
+  const bootWith = (options: { skillInventory?: boolean }) => {
+    const home = mkdtempSync(join(tmpdir(), "pi-adapter-home-"));
+    const cwd = mkdtempSync(join(tmpdir(), "pi-adapter-project-"));
+    const { pi, fireInOrder } = fakePi();
+    const seenAtStart: string[][] = [];
+    const sessionSeen: string[][] = [];
+    const loaded = join(cwd, "loaded", "SKILL.md");
+
+    (pi as { getCommands: unknown }).getCommands = () => [
+      { name: "skill:loaded-skill", source: "skill", description: "", sourceInfo: { path: loaded } },
+      { name: "mcp", source: "extension", sourceInfo: { path: "builtin:mcp" } },
+    ];
+    dirs.push(home, cwd);
+    skillAt(join(home, "agent", "skills"), "user-skill");
+    skillAt(join(cwd, ".pi", "skills"), "project-skill");
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("PI_CODING_AGENT_DIR", join(home, "agent"));
+
+    createPiExtension(
+      (host, runtime) => {
+        host.onSessionStart(() => {
+          seenAtStart.push(runtime.skillNames().toSorted());
+          sessionSeen.push(runtime.sessionSkillNames());
+        });
+      },
+      { root: "/ext", namespace: "test", ...options },
+    )(pi);
+
+    const start = () =>
+      fireInOrder(
+        "session_start",
+        { ...fakeCtx("tui"), cwd, isProjectTrusted: () => true },
+        { reason: "startup" },
+      );
+
+    return { start, seenAtStart, sessionSeen };
+  };
+
+  it("scans the session's trusted cwd before the start handlers run", async () => {
+    const { start, seenAtStart, sessionSeen } = bootWith({ skillInventory: true });
+
+    await start();
+
+    expect(seenAtStart).toEqual([["loaded-skill", "project-skill", "user-skill"]]);
+    expect(sessionSeen).toEqual([["loaded-skill"]]);
+  });
+
+  it("keeps to the main session's loaded skills otherwise", async () => {
+    const { start, seenAtStart, sessionSeen } = bootWith({});
+
+    await start();
+
+    expect(seenAtStart).toEqual([["loaded-skill"]]);
+    expect(sessionSeen).toEqual([["loaded-skill"]]);
   });
 });

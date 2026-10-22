@@ -339,7 +339,7 @@ export type SpawnSpec = {
   model: string;
   thinking: string;
   tools?: string[];
-  skills?: string[];
+  skills: string[];
   mcp?: boolean;
   promptAppend: string[];
   reserveTokens: number;
@@ -421,6 +421,7 @@ export type AgentRuntime = {
   defaultThinking(): string;
   skillCatalog(): SkillInfo[];
   skillNames(): string[];
+  sessionSkillNames(): string[];
 };
 
 export const emptyUsage = (): UsageTotals => ({

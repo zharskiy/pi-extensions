@@ -356,7 +356,7 @@ describe("run_agent batches", () => {
     expect(harness.runtime.children[0].spec.tools).toEqual(["read", "ls"]);
   });
 
-  it("passes no allowlist for all and an empty one for [] at spawn", async () => {
+  it("passes no tool allowlist for all and empty lists for [] at spawn", async () => {
     const harness = setup();
     const dir = join(harness.host.info.agentDir, "agents");
     const header = "description: d\nlimit: 50000\nsubagents: []\n";
@@ -374,11 +374,11 @@ describe("run_agent batches", () => {
     const [open, closed] = harness.runtime.children.map((child) => child.spec);
 
     expect(open.tools).toBeUndefined();
-    expect(open.skills).toBeUndefined();
+    expect(open.skills).toEqual([]);
     expect(closed).toMatchObject({ tools: [], skills: [] });
   });
 
-  it("passes named skills, all as no list and [] as none at spawn", async () => {
+  it("passes named skills, all as the main session's skills and [] as none at spawn", async () => {
     const harness = setup();
     const dir = join(harness.host.info.agentDir, "agents");
     const header = "description: d\nlimit: 50000\ntools: all\nsubagents: []\n";
@@ -394,6 +394,8 @@ describe("run_agent batches", () => {
     });
 
     harness.host.start();
+    harness.runtime.skills = ["docs", "git", "lint"];
+    harness.runtime.sessionSkills = ["docs", "lint"];
 
     await harness.run([
       { agent: "named", task: "a" },
@@ -403,7 +405,7 @@ describe("run_agent batches", () => {
 
     expect(harness.runtime.children.map((child) => child.spec.skills)).toEqual([
       ["docs", "git"],
-      undefined,
+      ["docs", "lint"],
       [],
     ]);
   });
