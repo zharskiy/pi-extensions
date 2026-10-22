@@ -134,7 +134,7 @@ describe("agent definition parsing", () => {
     expect(parsed.errors).toEqual([
       "limit is required (context limit in tokens, for example limit: 100000)",
       "tools is required (tool names, all for the tools active in the main session, or [] for none)",
-      "skills is required (skill names, all for every available skill, or [] for none)",
+      "skills is required (skill names, all for every skill of the agent's caller, or [] for none)",
       "subagents is required (agent names it may start, all for every other agent, or [] for none)",
     ]);
   });

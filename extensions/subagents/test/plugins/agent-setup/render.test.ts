@@ -10,7 +10,7 @@ describe("agent setup rendering", () => {
     expect(lines).toContain(" lead Leads things.");
     expect(lines).toContain(" › Model     acme/big");
     expect(lines).toContain("   Thinking  high");
-    expect(lines).toContain("   Skills    all");
+    expect(lines).toContain("   Skills    all (every skill of the agent's caller)");
     expect(lines.some((line) => line.includes("create your own agent with /agents create."))).toBe(true);
     expect(lines.some((line) => line.startsWith(" MCP: on"))).toBe(true);
   });

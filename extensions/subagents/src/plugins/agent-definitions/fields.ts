@@ -45,7 +45,7 @@ const RULES: { [K in FieldKey]: FieldRule } = {
     kind: "list",
     required: true,
     namesMeaning: "skill names",
-    allMeaning: "every available skill",
+    allMeaning: "every skill of the agent's caller",
   },
   subagents: {
     kind: "list",

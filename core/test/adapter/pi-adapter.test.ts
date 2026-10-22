@@ -869,7 +869,13 @@ describe("skill inventory", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pi-adapter-project-"));
     const { pi, fireInOrder } = fakePi();
     const seenAtStart: string[][] = [];
+    const sessionSeen: string[][] = [];
+    const loaded = join(cwd, "loaded", "SKILL.md");
 
+    (pi as { getCommands: unknown }).getCommands = () => [
+      { name: "skill:loaded-skill", source: "skill", description: "", sourceInfo: { path: loaded } },
+      { name: "mcp", source: "extension", sourceInfo: { path: "builtin:mcp" } },
+    ];
     dirs.push(home, cwd);
     skillAt(join(home, "agent", "skills"), "user-skill");
     skillAt(join(cwd, ".pi", "skills"), "project-skill");
@@ -880,6 +886,7 @@ describe("skill inventory", () => {
       (host, runtime) => {
         host.onSessionStart(() => {
           seenAtStart.push(runtime.skillNames().toSorted());
+          sessionSeen.push(runtime.sessionSkillNames());
         });
       },
       { root: "/ext", namespace: "test", ...options },
@@ -892,25 +899,30 @@ describe("skill inventory", () => {
         { reason: "startup" },
       );
 
-    return { start, seenAtStart, cwd };
+    return { start, seenAtStart, sessionSeen, cwd };
   };
 
   it("scans the session's cwd before the start handlers run, with the project's skills only when trusted", async () => {
-    const { start, seenAtStart, cwd } = bootWith({ skillInventory: true });
+    const { start, seenAtStart, sessionSeen, cwd } = bootWith({ skillInventory: true });
 
     expect(cwd).not.toBe(process.cwd());
 
     await start(true);
     await start(false);
 
-    expect(seenAtStart).toEqual([["project-skill", "user-skill"], ["user-skill"]]);
+    expect(seenAtStart).toEqual([
+      ["loaded-skill", "project-skill", "user-skill"],
+      ["loaded-skill", "user-skill"],
+    ]);
+    expect(sessionSeen).toEqual([["loaded-skill"], ["loaded-skill"]]);
   });
 
   it("keeps to the main session's loaded skills otherwise", async () => {
-    const { start, seenAtStart } = bootWith({});
+    const { start, seenAtStart, sessionSeen } = bootWith({});
 
     await start(true);
 
-    expect(seenAtStart).toEqual([[]]);
+    expect(seenAtStart).toEqual([["loaded-skill"]]);
+    expect(sessionSeen).toEqual([["loaded-skill"]]);
   });
 });

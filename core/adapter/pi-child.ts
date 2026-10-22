@@ -45,6 +45,7 @@ export type ParentSource = {
   settings(): Settings;
   thinking(): string;
   skillFiles(): SkillFile[];
+  sessionSkillFiles(): SkillFile[];
   activeTools(): { name: string; path: string }[];
   mcpDisabled(): boolean;
 };
@@ -141,8 +142,8 @@ const mcpExtensions = (
 const isExcluded = (exclude: readonly string[], path: string) =>
   isAbsolute(path) && exclude.some((dir) => resolve(path).startsWith(`${resolve(dir)}${sep}`));
 
-const pickSkillFiles = (available: SkillFile[], wanted: readonly string[] | undefined) =>
-  available.filter((skill) => !wanted || wanted.includes(skill.name)).map((skill) => skill.path);
+const pickSkillFiles = (available: SkillFile[], wanted: readonly string[]) =>
+  available.filter((skill) => wanted.includes(skill.name)).map((skill) => skill.path);
 
 export const createPiRuntime = (
   parent: ParentSource,
@@ -193,7 +194,7 @@ export const createPiRuntime = (
     });
 
     const agentDir = getAgentDir();
-    const wantedSkills = spec.skills ? new Set(spec.skills) : undefined;
+    const wantedSkills = new Set(spec.skills);
 
     const loader = new DefaultResourceLoader({
       cwd: spec.cwd,
@@ -202,12 +203,10 @@ export const createPiRuntime = (
       noSkills: true,
       additionalSkillPaths: pickSkillFiles(parent.skillFiles(), spec.skills),
       appendSystemPromptOverride: (base) => [...base, ...spec.promptAppend],
-      skillsOverride: wantedSkills
-        ? (current) => ({
-            skills: current.skills.filter((skill) => wantedSkills.has(skill.name)),
-            diagnostics: current.diagnostics,
-          })
-        : undefined,
+      skillsOverride: (current) => ({
+        skills: current.skills.filter((skill) => wantedSkills.has(skill.name)),
+        diagnostics: current.diagnostics,
+      }),
       extensionsOverride: (result) => ({
         ...result,
         extensions: result.extensions.filter(
@@ -377,5 +376,6 @@ export const createPiRuntime = (
     defaultThinking: () => parent.thinking(),
     skillCatalog,
     skillNames: () => skillCatalog().map((skill) => skill.name),
+    sessionSkillNames: () => parent.sessionSkillFiles().map((skill) => skill.name),
   };
 };

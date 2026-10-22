@@ -55,7 +55,7 @@ describe("run_agent skills", () => {
     expect(runtime.children[0].spec.skills).toEqual(["docs", "tdd"]);
   });
 
-  it("keeps all as every skill and passes no list for an item without skills", async () => {
+  it("resolves all to the main session's skills plus the item's, and [] to none", async () => {
     const { run, runtime } = setup({ every: "tools: all\nskills: all", none: "tools: all\nskills: []" });
 
     await run([
@@ -63,7 +63,7 @@ describe("run_agent skills", () => {
       { agent: "none", task: "b" },
     ]);
 
-    expect(runtime.children.map((child) => child.spec.skills)).toEqual([undefined, []]);
+    expect(runtime.children.map((child) => child.spec.skills)).toEqual([["docs", "git", "tdd"], []]);
   });
 
   it("fails the whole batch on a skill the caller lacks, lists its skills, starts nothing", async () => {
@@ -105,7 +105,7 @@ describe("run_agent skills", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
-  it("validates a skills: all caller's items against every available skill", async () => {
+  it("validates a skills: all caller's items against the skills it resolved from its caller", async () => {
     const { run, registry, runner, runtime } = setup();
 
     await run([{ agent: "general", task: "lead" }]);
@@ -125,6 +125,40 @@ describe("run_agent skills", () => {
     await flush();
 
     expect(runtime.children[1].spec.skills).toEqual(["git"]);
+  });
+
+  it("bounds the main session by its loaded skills, while the inventory names definition skills", async () => {
+    const { run, registry, runtime } = setup({ named: "tools: all\nskills: [lint]" });
+
+    runtime.skills = ["docs", "git", "lint"];
+    runtime.sessionSkills = ["docs", "git"];
+
+    await expect(run([{ agent: "scout", task: "a", skills: ["lint"] }])).rejects.toThrow(
+      "scout: skill(s) \"lint\" not in this caller's skills. This caller's skills: docs, git. Nothing was started.",
+    );
+    expect(registry.list()).toEqual([]);
+
+    await run([
+      { agent: "named", task: "a" },
+      { agent: "general", task: "b" },
+    ]);
+
+    expect(runtime.children.map((child) => child.spec.skills)).toEqual([["lint"], ["docs", "git"]]);
+  });
+
+  it("resolves all to the calling agent's skills when an agent starts the agent", async () => {
+    const { run, registry, runner, runtime } = setup({
+      lead: "tools: all\nskills: [docs]\nsubagents: [every]",
+      every: "tools: all\nskills: all",
+    });
+
+    await run([{ agent: "lead", task: "lead", skills: ["git"] }]);
+
+    runner.startBatch([{ agent: "every", task: "a" }], { callerId: registry.list()[0].id, wait: false });
+    await flush();
+
+    expect(runtime.children[1].spec.skills).toEqual(["docs", "git"]);
+    expect(registry.list()[1].skills).toEqual(["docs", "git"]);
   });
 
   it("stores each record's effective skills, all resolved to names, call-time skills added", async () => {

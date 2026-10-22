@@ -81,6 +81,7 @@ const runtimeWith = (parent: Partial<ParentSource> = {}, exclude: string[] = [])
       settings: () => ({}) as never,
       thinking: () => "off",
       skillFiles: () => [],
+      sessionSkillFiles: () => [],
       activeTools: () => [],
       mcpDisabled: () => false,
       ...parent,
@@ -99,6 +100,7 @@ const spec = (overrides: Partial<SpawnSpec>): SpawnSpec => ({
   customTools: [],
   promptAppend: [],
   reserveTokens: 16_384,
+  skills: [],
   ...overrides,
 });
 
@@ -235,18 +237,18 @@ describe("child skills", () => {
     captured.loaderOptions.length = 0;
   });
 
-  it("gives a child the inventory's skill files instead of its own discovery, all of them for all", async () => {
-    await withSkills.spawn(spec({}));
+  it("gives a child the named inventory skill files instead of its own discovery", async () => {
+    await withSkills.spawn(spec({ skills: ["docs", "git", "style"] }));
     await withSkills.spawn(spec({ id: "a2", skills: ["docs", "style", "missing"] }));
     await withSkills.spawn(spec({ id: "a3", skills: [] }));
 
-    const [all, named, none] = captured.loaderOptions;
+    const [every, named, none] = captured.loaderOptions;
 
-    expect(all).toMatchObject({
+    expect(every).toMatchObject({
       noSkills: true,
       additionalSkillPaths: ["/skills/docs/SKILL.md", "/skills/git/SKILL.md", "/skills/style/SKILL.md"],
     });
-    expect(keptNames(all)).toEqual(["docs", "git", "style", "from-extension"]);
+    expect(keptNames(every)).toEqual(["docs", "git", "style"]);
     expect(named).toMatchObject({
       noSkills: true,
       additionalSkillPaths: ["/skills/docs/SKILL.md", "/skills/style/SKILL.md"],
@@ -263,6 +265,16 @@ describe("child skills", () => {
       { name: "style", description: "Checks style" },
     ]);
     expect(withSkills.skillNames()).toEqual(["docs", "git", "style"]);
+  });
+
+  it("lists the main session's loaded skills apart from the inventory", () => {
+    const loaded = runtimeWith({
+      skillFiles: inventory,
+      sessionSkillFiles: () => [{ name: "docs", description: "Writes docs", path: "/skills/docs/SKILL.md" }],
+    });
+
+    expect(loaded.sessionSkillNames()).toEqual(["docs"]);
+    expect(loaded.skillNames()).toEqual(["docs", "git", "style"]);
   });
 });
 

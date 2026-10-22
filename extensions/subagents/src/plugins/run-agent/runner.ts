@@ -635,7 +635,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         thinking: slot.plan.thinking,
         tools: allowlist(definition.tools),
         customTools: deps.toolsFor(record),
-        skills: definition.skills === ALL ? undefined : (record.skills ?? []),
+        skills: record.skills ?? [],
         mcp: definition.mcp ?? true,
         promptAppend: deps.definitions.promptAppend(definition),
         reserveTokens: deps.settings.reserveTokens,
@@ -722,10 +722,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   };
 
   const callerSkills = (callerId: string) =>
-    callerId === MAIN_CALLER ? deps.runtime.skillNames() : (deps.registry.get(callerId)?.skills ?? []);
+    callerId === MAIN_CALLER ? deps.runtime.sessionSkillNames() : (deps.registry.get(callerId)?.skills ?? []);
 
-  const skillNamesFor = (definition: AgentDefinition, item: BatchItem) => {
-    const own = definition.skills === ALL ? deps.runtime.skillNames() : definition.skills;
+  const skillNamesFor = (definition: AgentDefinition, item: BatchItem, callerId: string) => {
+    const own = definition.skills === ALL ? callerSkills(callerId) : definition.skills;
 
     return unique(own.concat(item.skills ?? []));
   };
@@ -855,7 +855,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         dir,
         contextLimit: definition.limit,
         model: plan.label,
-        skills: skillNamesFor(definition, item),
+        skills: skillNamesFor(definition, item, options.callerId),
       });
 
       launches.set(record.id, slot);

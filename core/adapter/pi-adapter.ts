@@ -509,6 +509,7 @@ export const createPiExtension =
         settings: () => pi.getSettings(),
         thinking: () => pi.getThinkingLevel(),
         skillFiles: inventory.files,
+        sessionSkillFiles: () => skillFiles(pi),
         activeTools: () => parentTools(pi),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },

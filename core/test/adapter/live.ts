@@ -187,6 +187,7 @@ export const createLiveRuntime = (
       settings: () => ({ defaultProvider: provider }) as never,
       thinking: () => thinking ?? "off",
       skillFiles: () => parent.skillFiles ?? [],
+      sessionSkillFiles: () => parent.skillFiles ?? [],
       activeTools: () => PI_DEFAULT_TOOLS.map((name) => ({ name, path: `builtin:${name}` })),
       mcpDisabled: () => false,
     },
