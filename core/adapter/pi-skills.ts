@@ -73,7 +73,7 @@ export const discoverSkills = async (scope: SkillScope): Promise<SkillFile[]> =>
   }).skills.map((skill) => ({ name: skill.name, description: skill.description, path: skill.filePath }));
 };
 
-export const mergeSkills = (loaded: SkillFile[], discovered: SkillFile[]) => {
+const mergeSkills = (loaded: SkillFile[], discovered: SkillFile[]) => {
   const names = new Set(loaded.map((skill) => skill.name));
 
   return [...loaded, ...discovered.filter((skill) => !names.has(skill.name))];
@@ -83,16 +83,13 @@ export const createSkillInventory = (
   loaded: () => SkillFile[],
   discover: (scope: SkillScope) => Promise<SkillFile[]> = discoverSkills,
 ) => {
-  let discovered: SkillFile[] | undefined;
+  let discovered: SkillFile[] = [];
 
   return {
-    files: () => (discovered ? mergeSkills(loaded(), discovered) : loaded()),
+    files: () => mergeSkills(loaded(), discovered),
     scan: async (scope: SkillScope) => {
-      try {
-        discovered = await discover(scope);
-      } catch {
-        discovered = undefined;
-      }
+      discovered = [];
+      discovered = await discover(scope);
     },
   };
 };

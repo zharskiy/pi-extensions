@@ -80,7 +80,7 @@ const runtimeWith = (parent: Partial<ParentSource> = {}, exclude: string[] = [])
       ctx: () => parentCtx as never,
       settings: () => ({}) as never,
       thinking: () => "off",
-      skillFiles: () => [],
+      inventorySkillFiles: () => [],
       sessionSkillFiles: () => [],
       activeTools: () => [],
       mcpDisabled: () => false,
@@ -223,7 +223,7 @@ describe("child skills", () => {
     { name: "style", description: "Checks style", path: "/skills/style/SKILL.md" },
   ];
 
-  const withSkills = runtimeWith({ skillFiles: inventory });
+  const withSkills = runtimeWith({ inventorySkillFiles: inventory });
 
   const discovered = {
     skills: [{ name: "docs" }, { name: "git" }, { name: "style" }, { name: "from-extension" }],
@@ -265,16 +265,6 @@ describe("child skills", () => {
       { name: "style", description: "Checks style" },
     ]);
     expect(withSkills.skillNames()).toEqual(["docs", "git", "style"]);
-  });
-
-  it("lists the main session's loaded skills apart from the inventory", () => {
-    const loaded = runtimeWith({
-      skillFiles: inventory,
-      sessionSkillFiles: () => [{ name: "docs", description: "Writes docs", path: "/skills/docs/SKILL.md" }],
-    });
-
-    expect(loaded.sessionSkillNames()).toEqual(["docs"]);
-    expect(loaded.skillNames()).toEqual(["docs", "git", "style"]);
   });
 });
 

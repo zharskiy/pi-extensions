@@ -8,7 +8,7 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { THINKING_LEVELS } from "../../adapter/contract.ts";
 import { finalRunTexts } from "../../adapter/messages.ts";
-import { mcpBuiltinLoaded, skillFiles } from "../../adapter/pi-adapter.ts";
+import { mcpBuiltinLoaded, sessionSkillFiles } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
@@ -644,7 +644,7 @@ describe("pi adapter conformance", () => {
 
       await session.bindExtensions({ mode: "print" });
 
-      const files = seen[0] ? skillFiles(seen[0]) : [];
+      const files = seen[0] ? sessionSkillFiles(seen[0]) : [];
 
       session.dispose();
 
@@ -731,6 +731,19 @@ describe("pi adapter conformance", () => {
       );
 
       expect(found["team-skill"]).toBe(extra);
+    });
+
+    it("finds the skills of a local package named in the project settings", async () => {
+      const dirs = layout();
+      const packaged = skillAt(join(dirs.cwd, "pkg", "skills"), "package-skill");
+
+      writeFileSync(join(dirs.cwd, ".pi", "settings.json"), JSON.stringify({ packages: ["../pkg"] }));
+
+      const found = byName(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(found["package-skill"]).toBe(packaged);
     });
 
     it("ignores the ! and - exclusions of both settings files, which still hide the skills from a main session", async () => {

@@ -44,7 +44,7 @@ export type ParentSource = {
   ctx(): ExtensionContext;
   settings(): Settings;
   thinking(): string;
-  skillFiles(): SkillFile[];
+  inventorySkillFiles(): SkillFile[];
   sessionSkillFiles(): SkillFile[];
   activeTools(): { name: string; path: string }[];
   mcpDisabled(): boolean;
@@ -201,7 +201,7 @@ export const createPiRuntime = (
       agentDir,
       settingsManager,
       noSkills: true,
-      additionalSkillPaths: pickSkillFiles(parent.skillFiles(), spec.skills),
+      additionalSkillPaths: pickSkillFiles(parent.inventorySkillFiles(), spec.skills),
       appendSystemPromptOverride: (base) => [...base, ...spec.promptAppend],
       skillsOverride: (current) => ({
         skills: current.skills.filter((skill) => wantedSkills.has(skill.name)),
@@ -366,7 +366,8 @@ export const createPiRuntime = (
     };
   };
 
-  const skillCatalog = () => parent.skillFiles().map(({ name, description }) => ({ name, description }));
+  const skillCatalog = () =>
+    parent.inventorySkillFiles().map(({ name, description }) => ({ name, description }));
 
   return {
     spawn,

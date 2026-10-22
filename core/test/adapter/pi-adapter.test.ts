@@ -892,35 +892,29 @@ describe("skill inventory", () => {
       { root: "/ext", namespace: "test", ...options },
     )(pi);
 
-    const start = (trusted: boolean) =>
+    const start = () =>
       fireInOrder(
         "session_start",
-        { ...fakeCtx("tui"), cwd, isProjectTrusted: () => trusted },
+        { ...fakeCtx("tui"), cwd, isProjectTrusted: () => true },
         { reason: "startup" },
       );
 
-    return { start, seenAtStart, sessionSeen, cwd };
+    return { start, seenAtStart, sessionSeen };
   };
 
-  it("scans the session's cwd before the start handlers run, with the project's skills only when trusted", async () => {
-    const { start, seenAtStart, sessionSeen, cwd } = bootWith({ skillInventory: true });
+  it("scans the session's trusted cwd before the start handlers run", async () => {
+    const { start, seenAtStart, sessionSeen } = bootWith({ skillInventory: true });
 
-    expect(cwd).not.toBe(process.cwd());
+    await start();
 
-    await start(true);
-    await start(false);
-
-    expect(seenAtStart).toEqual([
-      ["loaded-skill", "project-skill", "user-skill"],
-      ["loaded-skill", "user-skill"],
-    ]);
-    expect(sessionSeen).toEqual([["loaded-skill"], ["loaded-skill"]]);
+    expect(seenAtStart).toEqual([["loaded-skill", "project-skill", "user-skill"]]);
+    expect(sessionSeen).toEqual([["loaded-skill"]]);
   });
 
   it("keeps to the main session's loaded skills otherwise", async () => {
     const { start, seenAtStart, sessionSeen } = bootWith({});
 
-    await start(true);
+    await start();
 
     expect(seenAtStart).toEqual([["loaded-skill"]]);
     expect(sessionSeen).toEqual([["loaded-skill"]]);

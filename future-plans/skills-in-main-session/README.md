@@ -7,7 +7,7 @@ Research date: 2026-10-21. Question: how to let the pi main session use skills o
 
 ## Context
 
-The subagents extension gives each agent its own `skills:` allowlist. A separate change in progress makes the agent skill inventory independent of the main session: it is every skill pi discovers by default for the project and user (pi's own rules: `.pi/skills` and `.agents/skills` up to the repo root in a trusted project, `~/.pi/agent/skills`, `~/.agents/skills`, settings `skills` entries, packages). The inventory ignores the `!` and `-` exclusions of pi's `skills` setting, so those exclusions keep a skill out of the main session while agents keep it; this is the supported way to trim the main session's skills. That change is not the subject of this folder. This folder keeps the options for the main session itself.
+The subagents extension gives each agent its own `skills:` allowlist. The agent skill inventory is independent of the main session's exclusions: besides the skills the main session loaded, it holds every skill pi discovers by default for the project and user (pi's own rules: `.pi/skills` and `.agents/skills` up to the repo root in a trusted project, `~/.pi/agent/skills`, `~/.agents/skills`, settings `skills` entries, packages). The inventory ignores the `!` and `-` exclusions of pi's `skills` setting, so those exclusions keep a skill out of the main session while agents keep it; this is the supported way to trim the main session's skills. That inventory is not the subject of this folder. This folder keeps the options for the main session itself.
 
 ## Option A: clean by configuration (dropped)
 

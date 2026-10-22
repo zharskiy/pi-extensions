@@ -38,7 +38,7 @@ import { contextOf, sumUsage } from "./usage.ts";
 export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
   pi.getCommands().some((command) => command.sourceInfo.path === "builtin:mcp");
 
-export const skillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillFile[] =>
+export const sessionSkillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillFile[] =>
   pi
     .getCommands()
     .filter((command) => command.source === "skill")
@@ -492,7 +492,7 @@ export const createPiExtension =
       return;
     }
 
-    const inventory = createSkillInventory(() => skillFiles(pi));
+    const inventory = createSkillInventory(() => sessionSkillFiles(pi));
 
     if (options.skillInventory) {
       pi.on("session_start", (_event, ctx) =>
@@ -508,8 +508,8 @@ export const createPiExtension =
         ctx: () => liveCtx(state),
         settings: () => pi.getSettings(),
         thinking: () => pi.getThinkingLevel(),
-        skillFiles: inventory.files,
-        sessionSkillFiles: () => skillFiles(pi),
+        inventorySkillFiles: inventory.files,
+        sessionSkillFiles: () => sessionSkillFiles(pi),
         activeTools: () => parentTools(pi),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
       },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSkillInventory, mergeSkills, type SkillFile } from "../../adapter/pi-skills.ts";
+import { createSkillInventory, type SkillFile } from "../../adapter/pi-skills.ts";
 
 const skill = (name: string, path = `/discovered/${name}/SKILL.md`): SkillFile => ({
   name,
@@ -10,25 +10,11 @@ const skill = (name: string, path = `/discovered/${name}/SKILL.md`): SkillFile =
 const scope = { cwd: "/project", agentDir: "/agent", projectTrusted: true };
 
 describe("skill inventory", () => {
-  it("puts the main session's loaded skills first and adds discovered skills by new names only", () => {
+  it("lists the loaded skills until the first scan, then adds discovered skills by new names only", async () => {
     const loaded = [skill("docs", "/cli/docs/SKILL.md")];
-
-    expect(mergeSkills(loaded, [skill("git"), skill("docs")])).toEqual([
-      skill("docs", "/cli/docs/SKILL.md"),
-      skill("git"),
-    ]);
-  });
-
-  it("lists the loaded skills until the first scan, then the merged inventory", async () => {
-    const loaded = [skill("docs", "/cli/docs/SKILL.md")];
-    const scopes: unknown[] = [];
     const inventory = createSkillInventory(
       () => loaded,
-      async (where) => {
-        scopes.push(where);
-
-        return [skill("git")];
-      },
+      async () => [skill("git"), skill("docs")],
     );
 
     expect(inventory.files()).toEqual(loaded);
@@ -36,10 +22,9 @@ describe("skill inventory", () => {
     await inventory.scan(scope);
 
     expect(inventory.files()).toEqual([...loaded, skill("git")]);
-    expect(scopes).toEqual([scope]);
   });
 
-  it("falls back to the loaded skills when a scan fails", async () => {
+  it("falls back to the loaded skills when a scan fails and lets the error reach pi", async () => {
     let fail = false;
     const inventory = createSkillInventory(
       () => [skill("docs")],
@@ -54,7 +39,8 @@ describe("skill inventory", () => {
 
     await inventory.scan(scope);
     fail = true;
-    await inventory.scan(scope);
+
+    await expect(inventory.scan(scope)).rejects.toThrow("unreadable");
 
     expect(inventory.files()).toEqual([skill("docs")]);
   });
