@@ -14,7 +14,9 @@ export default createPiExtension(
     const settings = { ...defaultSettings(), disabledPlugins: disabled };
 
     host.onSessionStart((info) => {
-      reloadSettings(settings, info, (message) => host.ui.notify(settingsWarning(message), "warning"));
+      reloadSettings(settings, info, runtime, (message) =>
+        host.ui.notify(settingsWarning(message), "warning"),
+      );
     });
 
     const manager = createExtensionManager({

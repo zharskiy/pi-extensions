@@ -25,6 +25,7 @@ import type {
   UsageTotals,
 } from "./contract.ts";
 import { finalRunTexts, messageText, toolCallCount } from "./messages.ts";
+import { reserveCodemodeWorkers } from "./pi-codemode.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
 import { applyPromptSections } from "./pi-sections.ts";
@@ -378,5 +379,6 @@ export const createPiRuntime = (
     skillCatalog,
     skillNames: () => skillCatalog().map((skill) => skill.name),
     sessionSkillNames: () => parent.sessionSkillFiles().map((skill) => skill.name),
+    reserveCodemodeWorkers,
   };
 };

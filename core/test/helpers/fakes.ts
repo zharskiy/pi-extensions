@@ -2,6 +2,7 @@ import {
   type AgentRuntime,
   type ChildEvent,
   type ChildSession,
+  type CodemodeShortfall,
   type CommandSpec,
   type ContextFacts,
   type ContextSnapshot,
@@ -801,6 +802,8 @@ type FakeRuntime = AgentRuntime & {
   skills: string[];
   sessionSkills?: string[];
   skillDescriptions: Record<string, string>;
+  workerRequests: number[];
+  codemodeShortfall: CodemodeShortfall | undefined;
   child(id: string): FakeChild;
 };
 
@@ -837,6 +840,13 @@ export const createFakeRuntime = (extraModels: CatalogModel[] = []): FakeRuntime
     skillNames: () => runtime.skillCatalog().map((skill) => skill.name),
     sessionSkills: undefined,
     sessionSkillNames: () => runtime.sessionSkills ?? runtime.skillNames(),
+    workerRequests: [],
+    codemodeShortfall: undefined,
+    reserveCodemodeWorkers: (agentSessions) => {
+      runtime.workerRequests.push(agentSessions);
+
+      return runtime.codemodeShortfall;
+    },
     children: [],
     sessions: new Map(),
     spawn: async (spec) => {
