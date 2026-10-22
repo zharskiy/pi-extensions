@@ -215,13 +215,13 @@ describe("child tool names", () => {
 });
 
 describe("child skills", () => {
-  const mainSkills = () => [
+  const inventory = () => [
     { name: "docs", description: "Writes docs", path: "/skills/docs/SKILL.md" },
     { name: "git", description: "", path: "/skills/git/SKILL.md" },
     { name: "style", description: "Checks style", path: "/skills/style/SKILL.md" },
   ];
 
-  const withSkills = runtimeWith({ skillFiles: mainSkills });
+  const withSkills = runtimeWith({ skillFiles: inventory });
 
   const discovered = {
     skills: [{ name: "docs" }, { name: "git" }, { name: "style" }, { name: "from-extension" }],
@@ -235,7 +235,7 @@ describe("child skills", () => {
     captured.loaderOptions.length = 0;
   });
 
-  it("gives a child the main session's skill files instead of its own discovery", async () => {
+  it("gives a child the inventory's skill files instead of its own discovery, all of them for all", async () => {
     await withSkills.spawn(spec({}));
     await withSkills.spawn(spec({ id: "a2", skills: ["docs", "style", "missing"] }));
     await withSkills.spawn(spec({ id: "a3", skills: [] }));
@@ -256,7 +256,7 @@ describe("child skills", () => {
     expect(keptNames(none)).toEqual([]);
   });
 
-  it("lists the main session's skills with their descriptions, and their names alone", () => {
+  it("lists the inventory's skills with their descriptions, and their names alone", () => {
     expect(withSkills.skillCatalog()).toEqual([
       { name: "docs", description: "Writes docs" },
       { name: "git", description: "" },

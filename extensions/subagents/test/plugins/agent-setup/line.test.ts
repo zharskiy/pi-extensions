@@ -32,7 +32,7 @@ describe("/agents setup one-line parser", () => {
       error: [
         'model "other/x": unknown',
         "thinking must be one of off, minimal, low, medium, high, xhigh, max",
-        "skills names unknown skill(s) ghost (loaded skills: docs)",
+        "skills names unknown skill(s) ghost (available skills: docs)",
         '"color=blue" is not key=value with a key of model, thinking, skills, scope',
       ].join("; "),
     });

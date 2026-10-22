@@ -56,7 +56,7 @@ const frontmatter = ({ name, description, kind, model }: AgentTemplate) => {
     `limit: ${defaults.limit}`,
     "# tools: tool names, all for the tools active in the main session, or [] for none.",
     `tools: ${defaults.tools}`,
-    "# skills: skill names, all for every skill of the main session, or [] for none.",
+    "# skills: skill names, all for every available skill, or [] for none.",
     "skills: []",
     "# subagents: agent names it may start, all for every other agent, or [] for none.",
     `subagents: ${defaults.subagents}`,

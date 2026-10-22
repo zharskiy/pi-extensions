@@ -26,7 +26,7 @@ Where to look: files, directories, symbols, URLs or commands.
 Scope: in and out (for example: do not commit, do not touch tests).
 Done when: the check that shows it is finished.
 Return: the sections you need back.
-Also give each agent a `description` of 3-6 words, and pass in `skills` the main-session skills whose descriptions fit the task, plus any skill the user named; chores (scout, editor, fetch, shell, image, verifier) take none.
+Also give each agent a `description` of 3-6 words, and pass in `skills` the available skills whose descriptions fit the task, plus any skill the user named; chores (scout, editor, fetch, shell, image, verifier) take none.
 
 # After starting a batch
 

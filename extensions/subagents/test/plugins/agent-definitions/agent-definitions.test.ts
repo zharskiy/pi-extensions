@@ -134,7 +134,7 @@ describe("agent definition parsing", () => {
     expect(parsed.errors).toEqual([
       "limit is required (context limit in tokens, for example limit: 100000)",
       "tools is required (tool names, all for the tools active in the main session, or [] for none)",
-      "skills is required (skill names, all for every skill of the main session, or [] for none)",
+      "skills is required (skill names, all for every available skill, or [] for none)",
       "subagents is required (agent names it may start, all for every other agent, or [] for none)",
     ]);
   });
@@ -341,7 +341,7 @@ describe("agent overrides", () => {
       { level: "warning", message: 'agents.a.model "other/x": matches no available model; dropped' },
       {
         level: "warning",
-        message: "agents.a.skills names unknown skill(s) lint (loaded skills: docs, git); dropped",
+        message: "agents.a.skills names unknown skill(s) lint (available skills: docs, git); dropped",
       },
     ]);
   });

@@ -28,6 +28,7 @@ import { finalRunTexts, messageText, toolCallCount } from "./messages.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./pi-models.ts";
 import { childScope } from "./pi-scope.ts";
 import { applyPromptSections } from "./pi-sections.ts";
+import type { SkillFile } from "./pi-skills.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { formatRoutedMessage } from "./route.ts";
 import { promptRecordEntry, readSessionFile } from "./session-file.ts";
@@ -37,7 +38,7 @@ const SHUTDOWN_TIMEOUT_MS = 2_000;
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
-export type SkillFile = { name: string; description: string; path: string };
+export type { SkillFile } from "./pi-skills.ts";
 
 export type ParentSource = {
   ctx(): ExtensionContext;

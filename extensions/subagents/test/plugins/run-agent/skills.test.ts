@@ -105,7 +105,7 @@ describe("run_agent skills", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
-  it("validates a skills: all caller's items against every skill of the main session", async () => {
+  it("validates a skills: all caller's items against every available skill", async () => {
     const { run, registry, runner, runtime } = setup();
 
     await run([{ agent: "general", task: "lead" }]);

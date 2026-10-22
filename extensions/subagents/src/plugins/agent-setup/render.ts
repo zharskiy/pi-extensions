@@ -60,7 +60,7 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
 
   const none = context.skills.length === 0 && draft.skills !== ALL;
 
-  return none ? "none (no skills loaded)" : grantText(draft.skills);
+  return none ? "none (no skills available)" : grantText(draft.skills);
 };
 
 const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>

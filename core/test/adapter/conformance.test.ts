@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
@@ -12,6 +12,7 @@ import { mcpBuiltinLoaded, skillFiles } from "../../adapter/pi-adapter.ts";
 import { childSettings, childToolNames, createChildExtension } from "../../adapter/pi-child.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
+import { discoverSkills } from "../../adapter/pi-skills.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 
 const ADAPTER_PI_MAJOR = 1;
@@ -651,6 +652,109 @@ describe("pi adapter conformance", () => {
         { name: "docs", description: "Writes and fixes docs", path: docs },
         { name: "review", description: "Reviews diffs for bugs", path: review },
       ]);
+    });
+  });
+
+  describe("skill inventory", () => {
+    const made: string[] = [];
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      made.splice(0).forEach((dir) => {
+        rmSync(dir, { recursive: true, force: true });
+      });
+    });
+
+    const skillAt = (dir: string, name: string) => {
+      const path = join(dir, name, "SKILL.md");
+
+      mkdirSync(join(dir, name), { recursive: true });
+      writeFileSync(path, `---\nname: ${name}\ndescription: ${name} skill\n---\n\nBody of ${name}.\n`);
+
+      return path;
+    };
+
+    const layout = () => {
+      const home = mkdtempSync(join(tmpdir(), "pi-conformance-home-"));
+      const agentDir = join(home, "agent");
+      const cwd = mkdtempSync(join(tmpdir(), "pi-conformance-project-"));
+
+      made.push(home, cwd);
+
+      vi.stubEnv("HOME", home);
+      vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+
+      return {
+        agentDir,
+        cwd,
+        user: skillAt(join(agentDir, "skills"), "user-skill"),
+        userAgents: skillAt(join(home, ".agents", "skills"), "user-agents-skill"),
+        project: skillAt(join(cwd, ".pi", "skills"), "project-skill"),
+        projectAgents: skillAt(join(cwd, ".agents", "skills"), "project-agents-skill"),
+      };
+    };
+
+    const byName = (files: { name: string; path: string }[]) =>
+      Object.fromEntries(files.map((file) => [file.name, file.path]));
+
+    it("finds the project's .pi and .agents skills and the user's skills, none of them loaded by a session", async () => {
+      const dirs = layout();
+      const found = byName(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(found).toEqual({
+        "project-skill": dirs.project,
+        "project-agents-skill": dirs.projectAgents,
+        "user-skill": dirs.user,
+        "user-agents-skill": dirs.userAgents,
+      });
+    });
+
+    it("leaves out the project's skills when the project is not trusted", async () => {
+      const dirs = layout();
+      const found = byName(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: false }),
+      );
+
+      expect(found).toEqual({ "user-skill": dirs.user, "user-agents-skill": dirs.userAgents });
+    });
+
+    it("follows the skills entries of the user and project settings files, each from its own dir", async () => {
+      const dirs = layout();
+      const extra = skillAt(join(dirs.cwd, "team-skills"), "team-skill");
+
+      writeFileSync(join(dirs.cwd, ".pi", "settings.json"), JSON.stringify({ skills: ["../team-skills"] }));
+
+      const found = byName(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(found["team-skill"]).toBe(extra);
+    });
+
+    it("skips missing packages instead of installing them, and writes nothing", async () => {
+      const dirs = layout();
+      const settings = JSON.stringify({
+        packages: ["npm:pi-conformance-missing-package", "git:example.invalid/a/b"],
+      });
+
+      writeFileSync(join(dirs.cwd, ".pi", "settings.json"), settings);
+      writeFileSync(join(dirs.agentDir, "settings.json"), settings);
+
+      const before = [
+        readdirSync(dirs.cwd, { recursive: true }),
+        readdirSync(dirs.agentDir, { recursive: true }),
+      ];
+      const found = byName(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(found["project-skill"]).toBe(dirs.project);
+      expect([
+        readdirSync(dirs.cwd, { recursive: true }),
+        readdirSync(dirs.agentDir, { recursive: true }),
+      ]).toEqual(before);
     });
   });
 

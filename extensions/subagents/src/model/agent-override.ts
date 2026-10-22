@@ -47,6 +47,6 @@ export const unknownSkillsProblem = (skills: string[], loaded: string[]) => {
   const available = loaded.length > 0 ? loaded.join(", ") : "none";
 
   return unknownSkills.length > 0
-    ? `names unknown skill(s) ${unknownSkills.join(", ")} (loaded skills: ${available})`
+    ? `names unknown skill(s) ${unknownSkills.join(", ")} (available skills: ${available})`
     : undefined;
 };
