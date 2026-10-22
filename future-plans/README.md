@@ -11,6 +11,7 @@ One folder per research topic. Each folder holds its research and, where one exi
 | [idle-handoff/](idle-handoff/spec-dropped.md) | dropped | Handing off while the cache is warm after a long idle. Spec and research kept in case the topic comes back. |
 | [plan-mode-and-guards/](plan-mode-and-guards/q4-q8-plan-mode-guards.md) | dropped | Harness-enforced plan mode, guards and project rules. Kept because the owner may reconsider. |
 | [sandbox/](sandbox/README.md) | researched | Running the main session and every agent in a sandbox. Whole-session isolation first (OpenShell, Docker Sandboxes, plain Docker, no code), per-agent tool policy through a `sandbox` extension second, one sandbox per agent deferred. research/ holds the pi surface, the OpenShell fact sheet and the landscape survey. |
+| [skills-in-main-session/](skills-in-main-session/README.md) | researched | Letting the main session use skills on demand without listing them all in its prompt. Deferred: a `skill` tool (modelled on OpenCode) that lists the inventory in its description and returns the body in pi's `<skill>` block, deferrable through `tool_search`. research.md holds the pi surface and the industry survey. |
 
 Dropped without a folder: the workflow engine (workflows are company skills), the code map (company business; its research sits in enterprise-workflow/company/code-exploration.md) and loading agent files from pi packages (excessive; agents are installed into the user agent dir or `.pi/agents` by script).
 
