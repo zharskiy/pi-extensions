@@ -47,9 +47,8 @@ const readOnlySettings = ({ cwd, agentDir }: SkillScope): SettingsStorage => {
 
 const skillFilePath = (resource: ResolvedResource) => {
   const skillFile = join(resource.path, "SKILL.md");
-  const discovered = resource.metadata.source === "auto" || resource.metadata.origin === "package";
 
-  return discovered && existsSync(skillFile) && statSync(resource.path).isDirectory()
+  return resource.metadata.source === "auto" && existsSync(skillFile) && statSync(resource.path).isDirectory()
     ? skillFile
     : resource.path;
 };
