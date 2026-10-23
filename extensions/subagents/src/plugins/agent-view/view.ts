@@ -1,14 +1,13 @@
 import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import { type ReceiptSegment, receiptText } from "../../../../../core/manager/format.ts";
+import { keyHints } from "../../../../../core/manager/layout.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
+  agentReceipt,
   alignRight,
-  elapsedOf,
   errorText,
   firstLine,
   formatCtx,
-  formatDuration,
-  formatTokens,
-  formatToolUses,
   innerWidth,
   PAD,
   SEP,
@@ -16,9 +15,9 @@ import {
   truncatePainted,
 } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";
-import { stateGlyph, stateToken, stateWord, stopHint } from "../../components/state-text.ts";
+import { liveGlyph, stateGlyph, stateToken, stopWords } from "../../components/state-text.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
-import { type AgentRecord, isClosed, worktreeText } from "../../model/types.ts";
+import { type AgentRecord, isClosed, type Worktree } from "../../model/types.ts";
 import type { ViewData } from "./loader.ts";
 import { requestLineCount, requestLines } from "./request-block.ts";
 
@@ -35,6 +34,8 @@ const MIN_DESCRIPTION = 8;
 
 const RELOAD_TICK_MS = 1_000;
 
+const GAP = "  ";
+
 const ctxPercent = (data: ViewData, reserveTokens: number) => {
   const { record } = data;
   const tokens = record.context?.tokens ?? data.session?.contextTokens;
@@ -46,9 +47,8 @@ const ctxPercent = (data: ViewData, reserveTokens: number) => {
 const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) => {
   const glyph = stateGlyph(record.state, now);
   const name = agentName(record);
-  const prefix = `${glyph} ${name} › `;
   const description = singleLine(record.description);
-  const room = inner - theme.width(prefix);
+  const room = inner - theme.width(`${glyph} ${name}${GAP}`);
 
   if (room < MIN_DESCRIPTION) {
     return (
@@ -59,43 +59,58 @@ const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: nu
           [glyph, (text) => theme.fg(stateToken(record.state), text)],
           [" ", (text) => text],
           [name, (text) => theme.bold(text)],
-          [` › ${description}`, (text) => text],
+          [`${GAP}${description}`, (text) => theme.fg("muted", text)],
         ],
         inner,
       )
     );
   }
 
-  return `${PAD}${theme.fg(stateToken(record.state), glyph)} ${theme.bold(name)} › ${theme.truncate(description, room)}`;
+  return `${PAD}${liveGlyph(record.state, now, theme)} ${theme.bold(name)}${GAP}${theme.fg("muted", theme.truncate(description, room))}`;
 };
 
-const statsText = (data: ViewData, now: number, reserveTokens: number) => {
-  const { record } = data;
+const receiptLine = (data: ViewData, theme: ThemeLike, inner: number, now: number, reserveTokens: number) => {
+  const context = formatCtx(ctxPercent(data, reserveTokens));
+  const segments: ReceiptSegment[] = [
+    ...agentReceipt({ ...data.record, activity: undefined }, now, { live: true }),
+    ...(context ? [{ kind: "activity" as const, text: context, token: "muted" as const }] : []),
+  ];
 
-  return [
-    formatToolUses(record.toolCalls),
-    record.tokens > 0 ? `${formatTokens(record.tokens)} tokens` : undefined,
-    formatDuration(elapsedOf(record, now)),
-    formatCtx(ctxPercent(data, reserveTokens)),
-  ]
-    .filter((part) => part !== undefined)
-    .join(SEP);
+  return PAD + theme.truncate(receiptText(segments, inner, theme), inner);
 };
 
-const outcomeLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
-  if (record.state === "failed") {
-    return [
-      PAD + theme.fg("error", theme.truncate(`error: ${firstLine(record.error ?? "unknown error")}`, inner)),
-    ];
+const chainName = (record: AgentRecord, index: number) =>
+  agentName({ agent: record.agent, chainIndex: index + 1 });
+
+const worktreeLine = (worktree: Worktree) => {
+  if (worktree.cleanup === "removed") {
+    return "Worktree removed";
   }
 
-  if (record.state === "handoff") {
-    const invalid = record.error ? ` (invalid: ${record.error})` : "";
-
-    return [PAD + theme.fg("warning", theme.truncate(`handoff: ${record.handoffPath}${invalid}`, inner))];
+  if (worktree.cleanup === "branch kept") {
+    return `Worktree removed${SEP}branch ${worktree.branch} kept`;
   }
 
-  return [];
+  const kept = worktree.cleanup === "kept" ? `${SEP}kept` : "";
+
+  return `Worktree ${worktree.path}${SEP}branch ${worktree.branch}${kept}`;
+};
+
+const errorLines = (record: AgentRecord, theme: ThemeLike, inner: number) =>
+  record.state === "failed"
+    ? theme
+        .wrap(firstLine(record.error ?? "unknown error"), inner)
+        .map((line) => PAD + theme.fg("error", line))
+    : [];
+
+const handoffLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
+  if (record.state !== "handoff") {
+    return [];
+  }
+
+  const invalid = record.error ? ` (invalid: ${record.error})` : "";
+
+  return [PAD + theme.fg("warning", theme.truncate(`Handoff file ${record.handoffPath}${invalid}`, inner))];
 };
 
 export const headerLines = (
@@ -105,18 +120,20 @@ export const headerLines = (
   now: number,
   reserveTokens: number,
 ): string[] => {
-  const { record, chain, openedId } = data;
+  const { record, chain } = data;
   const inner = innerWidth(width);
   const dim = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
-  const opened = openedId ? ` · opened ${openedId}` : "";
+  const names = chain.map((_, index) => chainName(record, index));
+  const chainText = `Chain ${names.join(" → ")} (${chain.length} sessions)${SEP}viewing ${agentName(record)}`;
 
   return [
     titleLine(record, theme, inner, now),
-    dim(`${stateWord(record.state)} · ${record.model ?? "model n/a"} · id ${record.id}`),
-    dim(statsText(data, now, reserveTokens)),
-    ...outcomeLines(record, theme, inner),
-    ...(chain.length > 1 ? [dim(`chain: ${chain.join(" → ")} (${chain.length} sessions)${opened}`)] : []),
-    ...(record.worktree ? [dim(`worktree: ${worktreeText(record.worktree)}`)] : []),
+    receiptLine(data, theme, inner, now, reserveTokens),
+    dim(`${record.model ?? "model n/a"}${SEP}id ${record.id}`),
+    ...errorLines(record, theme, inner),
+    ...(chain.length > 1 ? [dim(chainText)] : []),
+    ...handoffLines(record, theme, inner),
+    ...(record.worktree ? [dim(worktreeLine(record.worktree))] : []),
     theme.fg("dim", "─".repeat(Math.max(0, width))),
   ];
 };
@@ -195,14 +212,16 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     return { request, lines, clickable: lines.length };
   };
 
-  const hintText = () => {
+  const hintPairs = (): (readonly [string, string])[] => {
     const record = data.record;
-    const stop = isOpen() ? stopHint(record.state) : undefined;
-    const request = hasRequest() ? (requestExpanded ? "r hide request" : "r request") : undefined;
+    const exit = ["esc", deps.back ? "to go back" : "to close"] as const;
+    const stop = isOpen() ? [["x", stopWords(record.state)] as const] : [];
+    const request = hasRequest()
+      ? [["r", requestExpanded ? "to hide the request" : "to show the request"] as const]
+      : [];
+    const tools = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"] as const;
 
-    return [deps.back ? "esc to go back" : "esc to close", stop, request, `${api.toolsKey} tool detail`]
-      .filter((part) => part !== undefined)
-      .join(SEP);
+    return [exit, ...stop, ...request, tools];
   };
 
   const positionText = () => {
@@ -218,12 +237,19 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   };
 
   const hintLine = (inner: number) => {
-    const hint = hintText();
+    const theme = api.theme;
     const position = positionText();
-    const text =
-      (position && alignRight(api.theme, hint, position, inner)) || api.theme.truncate(hint, inner);
+    const right = position ? theme.fg("dim", position) : "";
+    const pairs = hintPairs();
+    const full = keyHints(pairs, theme);
+    const core = keyHints(pairs.slice(0, -1), theme);
+    const placed = right
+      ? (alignRight(theme, full, right, inner) ?? alignRight(theme, core, right, inner))
+      : theme.width(full) <= inner
+        ? full
+        : undefined;
 
-    return PAD + api.theme.fg("dim", text);
+    return PAD + (placed ?? theme.truncate(core, inner));
   };
 
   const render = (width: number) => {
@@ -260,7 +286,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       return;
     }
 
-    notice = `stop failed: ${errorText(error)}`;
+    notice = `Stop failed: ${errorText(error)}`;
     api.requestRender();
   };
 

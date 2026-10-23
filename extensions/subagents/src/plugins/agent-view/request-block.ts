@@ -62,15 +62,25 @@ export const requestLines = (
 ): string[] => {
   const inner = innerWidth(width);
   const count = requestLineCount(payload);
-  const line = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
+  const line = (text: string, hint?: string) => {
+    const full = hint ? `${text} ${hint}` : text;
+
+    if (!hint || theme.width(full) > inner) {
+      return PAD + theme.fg("muted", theme.truncate(text, inner));
+    }
+
+    return `${PAD}${theme.fg("muted", text)} ${theme.fg("dim", hint)}`;
+  };
 
   if (count === 0) {
-    return [line(open ? "▸ Request · not sent yet" : "▸ Request · not recorded")];
+    return [line(open ? "Request · not sent yet" : "Request · not recorded")];
   }
+
+  const title = `Request · ${count} ${count === 1 ? "line" : "lines"}`;
 
   if (!expanded) {
-    return [line(`▸ Request · ${count} lines`)];
+    return [line(title, "(r to expand)")];
   }
 
-  return [line(`▾ Request · ${count} lines`), ...wrappedLines(payload, Math.max(1, inner - 2), theme)];
+  return [line(title, "(r to collapse)"), ...wrappedLines(payload, Math.max(1, inner - 2), theme)];
 };

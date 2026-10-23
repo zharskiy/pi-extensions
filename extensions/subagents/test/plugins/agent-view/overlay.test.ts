@@ -63,8 +63,8 @@ describe("agents overlay", () => {
     overlay.handleKey(key("down"));
     overlay.handleKey(key("enter"));
 
-    expect(lines()[1]).toMatch(/^ \S explorer › second job$/);
-    expect(lines()[2]?.endsWith(`id ${second.id}`)).toBe(true);
+    expect(lines()[1]).toMatch(/^ \S explorer {2}second job$/);
+    expect(lines()[3]?.endsWith(`id ${second.id}`)).toBe(true);
     expect(lines().at(-2)?.startsWith(" esc to go back")).toBe(true);
     expect(state.closed).toBe(false);
     expect(harness.host.overlays).toHaveLength(1);
