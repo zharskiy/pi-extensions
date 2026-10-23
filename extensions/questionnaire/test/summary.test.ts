@@ -16,6 +16,7 @@ const answered = (cancelled: boolean): QuestionnaireDetails => ({
 
 const state = (patch: Partial<ToolRenderState> = {}): ToolRenderState => ({
   toolCallId: "call-1",
+  aborted: false,
   expanded: false,
   isPartial: false,
   isError: false,

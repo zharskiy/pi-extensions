@@ -2,10 +2,19 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createBashToolDefinition,
   createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createPowerShellToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
   initTheme,
   type Theme,
   type ToolDefinition,
+  ToolExecutionComponent,
+  type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
 import type { ToolRows } from "../../adapter/contract.ts";
 import { rowRenderers, toolRowsHost } from "../../adapter/pi-tool-rows.ts";
@@ -126,4 +135,119 @@ export const piEditDiff = async (content: string, edits: { oldText: string; newT
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+};
+
+const PI_TOOLS: Record<string, (cwd: string) => unknown> = {
+  read: createReadToolDefinition,
+  bash: createBashToolDefinition,
+  powershell: createPowerShellToolDefinition,
+  edit: createEditToolDefinition,
+  write: createWriteToolDefinition,
+  grep: createGrepToolDefinition,
+  find: createFindToolDefinition,
+  ls: createLsToolDefinition,
+};
+
+export type ToolInput = {
+  name: string;
+  args: unknown;
+  result?: string;
+  details?: unknown;
+  isError?: boolean;
+  isPartial?: boolean;
+  expanded?: boolean;
+  durationMs?: number;
+  width: number;
+  outputPad?: number;
+};
+
+const dropLeadingBlanks = (lines: string[]) => {
+  const start = lines.findIndex((line) => visible(line).trim() !== "");
+
+  return start < 0 ? [] : lines.slice(start);
+};
+
+export const renderTool = (rows: ToolRows, input: ToolInput) => {
+  initRenderTheme();
+
+  const base = PI_TOOLS[input.name]?.("/repo") as ToolRenderers | undefined;
+  const tool = new ToolExecutionComponent(
+    input.name,
+    "call-1",
+    input.args,
+    { outputPad: input.outputPad ?? 1 },
+    rowRenderers(rows, input.name, base) as never,
+    { requestRender: () => {} } as never,
+    "/repo",
+  );
+
+  tool.setArgsComplete();
+  tool.markExecutionStarted();
+
+  if (input.result !== undefined) {
+    tool.updateResult(
+      {
+        content: [{ type: "text", text: input.result }],
+        details: input.details,
+        isError: input.isError ?? false,
+        ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
+      } as never,
+      input.isPartial ?? false,
+    );
+  }
+
+  tool.setExpanded(input.expanded ?? false);
+
+  const painted = dropLeadingBlanks(tool.render(input.width));
+
+  return { painted, lines: painted.map(visible) };
+};
+
+export type PaneInput = Omit<ToolInput, "isPartial" | "outputPad"> & { stopReason?: "aborted" | "error" };
+
+export const renderPaneTool = (rows: ToolRows, input: PaneInput) => {
+  const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+
+  host.registerToolRows(rows);
+
+  const pane = createTranscriptPane({ requestRender: () => {} } as never, "/repo");
+  const stopReason = input.stopReason ?? "toolUse";
+  const assistant = {
+    kind: "assistant",
+    text: "",
+    toolCalls: [{ name: input.name, args: input.args }],
+    raw: {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "call-1", name: input.name, arguments: input.args }],
+      stopReason,
+      timestamp: 0,
+    },
+  };
+  const tool = {
+    kind: "tool",
+    toolName: input.name,
+    toolCallId: "call-1",
+    text: input.result ?? "",
+    isError: input.isError ?? false,
+    raw: {
+      role: "toolResult",
+      toolCallId: "call-1",
+      toolName: input.name,
+      content: [{ type: "text", text: input.result ?? "" }],
+      details: input.details,
+      isError: input.isError ?? false,
+      ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
+    },
+  };
+
+  pane.sync(
+    (stopReason === "toolUse" && input.result !== undefined ? [assistant, tool] : [assistant]) as never,
+  );
+  pane.setToolsExpanded(input.expanded ?? false);
+
+  const lines = dropLeadingBlanks(pane.render(input.width)).map(visible);
+
+  host.release();
+
+  return lines;
 };

@@ -17,6 +17,7 @@ describe("transcript", () => {
       isError: false,
       expanded: false,
       cwd: "/repo",
+      aborted: false,
       result: { text: "a\nb\nc\nd", images: 0 },
     });
 

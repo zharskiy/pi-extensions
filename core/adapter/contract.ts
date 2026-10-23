@@ -55,6 +55,9 @@ export type ToolRenderState = {
   isPartial: boolean;
   isError: boolean;
   args: unknown;
+  durationMs?: number;
+  aborted: boolean;
+  result?: ToolResult;
   invalidate(): void;
 };
 
@@ -92,10 +95,13 @@ export type ToolCallView = {
   isError: boolean;
   expanded: boolean;
   cwd: string;
+  durationMs?: number;
+  aborted: boolean;
+  label?: string;
   result?: ToolResult & { images: number };
 };
 
-export type ToolRow = { call: RowLines; result?: RowLines; piBody?: boolean };
+export type ToolRow = { call: RowLines; result?: RowLines; piBody?: boolean; dropTiming?: boolean };
 
 export type ToolRows = (view: ToolCallView) => ToolRow | undefined;
 

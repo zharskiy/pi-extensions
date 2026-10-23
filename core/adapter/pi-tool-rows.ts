@@ -1,8 +1,9 @@
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { GLYPHS } from "../manager/row.ts";
-import type { Host, ThemeLike, ToolCallView, ToolRows } from "./contract.ts";
-import { recordPad, rowComponent, toolRowsRecord } from "./pi-row-component.ts";
+import { CHILD_COLUMN, MARKS } from "../manager/row.ts";
+import type { Host, ThemeLike, ToolCallView, ToolRow, ToolRows } from "./contract.ts";
+import { abortedText, recordPad, rowComponent, slotFor, toolRowsRecord } from "./pi-row-component.ts";
 import { fromPiResult, type PiToolRenderContext, themeLike } from "./pi-tools.ts";
 
 export const BUILTIN_TOOLS: readonly string[] = [
@@ -23,17 +24,56 @@ type ResultOptions = Parameters<NonNullable<ToolRenderers["renderResult"]>>[1];
 const imageCount = (result: PiResult) =>
   (result.content as { type: string }[]).filter((part) => part.type === "image").length;
 
-const callView = (name: string, context: PiToolRenderContext, result?: PiResult): ToolCallView => ({
-  name,
-  args: context.args,
-  argsComplete: context.argsComplete,
-  started: context.executionStarted,
-  isPartial: context.isPartial,
-  isError: context.isError,
-  expanded: context.expanded,
-  cwd: context.cwd,
-  ...(result ? { result: { ...fromPiResult(result as never), images: imageCount(result) } } : {}),
-});
+export type ToolLabel = (name: string) => string | undefined;
+
+const MCP_NAME = /^mcp__(.+?)__(.+)$/;
+
+export const mcpLabel: ToolLabel = (name) => {
+  const match = MCP_NAME.exec(name);
+
+  return match ? `${match[1]}/${match[2]}` : undefined;
+};
+
+const MCP_SOURCE = "builtin:mcp";
+
+export const toolLabel = (pi: Pick<ExtensionAPI, "getAllTools">, name: string) => {
+  try {
+    const tool = pi.getAllTools().find((info) => info.name === name && info.sourceInfo.path === MCP_SOURCE);
+    const server = tool?.namespace?.aliases?.[0];
+    const prefix = `${tool?.namespace?.name}__`;
+
+    if (server && name.startsWith(prefix)) {
+      return `${server}/${name.slice(prefix.length)}`;
+    }
+  } catch {}
+
+  return mcpLabel(name);
+};
+
+const callView = (
+  name: string,
+  context: PiToolRenderContext,
+  result: PiResult | undefined,
+  label: ToolLabel,
+): ToolCallView => {
+  const converted = result ? fromPiResult(result as never) : undefined;
+  const tool = label(name);
+
+  return {
+    name,
+    args: context.args,
+    argsComplete: context.argsComplete,
+    started: context.executionStarted,
+    isPartial: context.isPartial,
+    isError: context.isError,
+    expanded: context.expanded,
+    cwd: context.cwd,
+    aborted: context.isError && converted !== undefined && abortedText(converted.text, name),
+    ...(context.durationMs === undefined ? {} : { durationMs: context.durationMs }),
+    ...(tool ? { label: tool } : {}),
+    ...(converted && result ? { result: { ...converted, images: imageCount(result) } } : {}),
+  };
+};
 
 const probeView = (name: string): ToolCallView => ({
   name,
@@ -44,19 +84,8 @@ const probeView = (name: string): ToolCallView => ({
   isError: false,
   expanded: false,
   cwd: "",
+  aborted: false,
 });
-
-type BodySlot = { state: object; component?: Component };
-
-const bodySlots = new WeakMap<object, BodySlot>();
-
-const slotFor = (state: object) => {
-  const slot = bodySlots.get(state) ?? { state: {} };
-
-  bodySlots.set(state, slot);
-
-  return slot;
-};
 
 const piBody = (
   base: ToolRenderers,
@@ -92,6 +121,11 @@ const fallback = (render: () => Component | undefined) => () => {
 const linesOf = (render: ((width: number, theme: ThemeLike) => string[]) | undefined, theme: ThemeLike) =>
   render ? (width: number) => render(width, theme) : () => [];
 
+const TIMING = /^(Took|Elapsed) \d/;
+
+const timingFilter = (row: ToolRow | undefined) =>
+  row?.dropTiming ? (line: string) => !TIMING.test(stripVTControlCharacters(line).trim()) : undefined;
+
 const BUILTIN_SOURCE = "builtin";
 
 export const piShipped = (pi: Pick<ExtensionAPI, "getAllTools">, name: string) => {
@@ -113,6 +147,7 @@ export const rowRenderers = (
   name: string,
   base: ToolRenderers | undefined,
   shipped: () => boolean = () => false,
+  label: ToolLabel = mcpLabel,
 ): ToolRenderers | undefined => {
   if (!rows || keepsBase(name, base, shipped) || !rows(probeView(name))) {
     return base;
@@ -123,10 +158,12 @@ export const rowRenderers = (
     renderCall: (args, theme, context) => {
       recordPad(context.outputPad);
 
-      const row = rows(callView(name, context));
+      const slot = slotFor(context.state);
+      const like = themeLike(theme);
 
       return rowComponent(context.lastComponent, {
-        lines: linesOf(row?.call, themeLike(theme)),
+        lines: (width) =>
+          linesOf(rows(callView(name, context, slot.result as PiResult, label))?.call, like)(width),
         pad: context.outputPad,
         fallback: fallback(() =>
           base?.renderCall?.(args, theme, {
@@ -140,7 +177,9 @@ export const rowRenderers = (
     renderResult: (result, options, theme, context) => {
       recordPad(context.outputPad);
 
-      const row = rows(callView(name, context, result));
+      slotFor(context.state).result = result;
+
+      const row = rows(callView(name, context, result, label));
       const body =
         context.expanded && row?.piBody && base ? piBody(base, result, options, theme, context) : undefined;
 
@@ -148,7 +187,9 @@ export const rowRenderers = (
         lines: linesOf(row?.result, themeLike(theme)),
         pad: context.outputPad,
         body,
-        lead: `  ${theme.fg("dim", GLYPHS.child)}  `,
+        lead: `  ${theme.fg("dim", MARKS.child)} `,
+        indent: CHILD_COLUMN,
+        filter: timingFilter(row),
         fallback: fallback(() =>
           base?.renderResult?.(result, options, theme, {
             ...context,
@@ -179,7 +220,15 @@ export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer" | "ge
       shared.owners.set(owner, rows);
       shared.rows = rows;
 
-      pi.registerToolRenderer((name, next) => rowRenderers(rows, name, next(), () => piShipped(pi, name)));
+      pi.registerToolRenderer((name, next) =>
+        rowRenderers(
+          rows,
+          name,
+          next(),
+          () => piShipped(pi, name),
+          (tool) => toolLabel(pi, tool),
+        ),
+      );
     }) satisfies Host["registerToolRows"],
     release: () => {
       const shared = toolRowsRecord();

@@ -246,6 +246,30 @@ describe("toPiTool row shell", () => {
     expect(tool.renderResult(piResult("x"), options, theme, context()).render(30)).toEqual([]);
   });
 
+  it("lets the row call see the latest result, its duration and an abort when it is drawn", () => {
+    const states: ToolRenderState[] = [];
+    const tool = piTool<unknown, unknown>({
+      ...baseSpec,
+      renderShell: "row",
+      renderCall: (_params, _theme, state) => {
+        states.push(state);
+        return `● probe${state.result ? ` · ${state.result.text}` : ""}`;
+      },
+      renderResult: () => "",
+    });
+    const shared = context({ state: {}, isError: true, durationMs: 7_000 });
+    const call = tool.renderCall({}, theme, shared);
+
+    tool.renderResult(piResult("Operation aborted"), options, theme, shared);
+
+    expect(call.render(40).map(stripVTControlCharacters)).toEqual([" ● probe · Operation aborted"]);
+    expect(states.at(-1)).toMatchObject({
+      durationMs: 7_000,
+      aborted: true,
+      result: { text: "Operation aborted" },
+    });
+  });
+
   it("draws the row with the blank line pi puts between tool rows and no tool background", () => {
     const tool = piTool<unknown, unknown>({
       ...baseSpec,

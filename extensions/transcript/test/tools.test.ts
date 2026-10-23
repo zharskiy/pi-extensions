@@ -33,6 +33,7 @@ const view = (name: string, args: unknown, patch: Partial<ToolCallView> = {}): T
   isError: false,
   expanded: false,
   cwd: "/repo",
+  aborted: false,
   ...patch,
 });
 

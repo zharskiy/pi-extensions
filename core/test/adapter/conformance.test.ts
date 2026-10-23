@@ -217,6 +217,10 @@ describe("pi adapter conformance", () => {
             factory: (api) => {
               seen.api = api;
               api.registerTool({ ...namedTool("probe_tool"), exposure: "model-only" } as never);
+              api.registerTool({
+                ...namedTool("mcp__probe_srv__search"),
+                namespace: { name: "mcp__probe_srv", aliases: ["probe"] },
+              } as never);
               api.on("session_start", (_event, ctx) => {
                 seen.ui = ctx.ui;
               });
@@ -269,6 +273,12 @@ describe("pi adapter conformance", () => {
       ).toEqual([]);
       expect(typeof probe?.sourceInfo.path).toBe("string");
       expect(probe?.exposure).toBe("model-only");
+      expect(
+        seen.api?.getAllTools().find((tool) => tool.name === "mcp__probe_srv__search")?.namespace,
+      ).toEqual({
+        name: "mcp__probe_srv",
+        aliases: ["probe"],
+      });
 
       session.dispose();
     } finally {
@@ -955,6 +965,36 @@ describe("pi adapter conformance", () => {
         expect(typeof context.state).toBe("object");
         expect("lastComponent" in context).toBe(true);
       });
+    });
+
+    it("draws the call before the result in one update and hands both the recorded duration", () => {
+      initRenderTheme();
+
+      const order: string[] = [];
+      const durations: unknown[] = [];
+      const capture =
+        (name: string) =>
+        (_value: unknown, ...rest: unknown[]) => {
+          order.push(name);
+          durations.push((rest.at(-1) as { durationMs?: number }).durationMs);
+          return new tui.Text(name, 0, 0);
+        };
+      const component = new pi.ToolExecutionComponent(
+        "probe",
+        "call-1",
+        {},
+        { outputPad: 1 },
+        { renderShell: "self", renderCall: capture("call"), renderResult: capture("result") } as never,
+        fakeTui,
+        "/repo",
+      );
+
+      order.length = 0;
+      durations.length = 0;
+      component.updateResult({ ...(textResult("out") as object), durationMs: 4_200 } as never);
+
+      expect(order).toEqual(["call", "result"]);
+      expect(durations).toEqual([4_200, 4_200]);
     });
 
     it("shows the edit diff from the result details when the call was never drawn", () => {

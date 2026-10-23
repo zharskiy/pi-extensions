@@ -32,7 +32,7 @@ pi-extensions/
 │   │   ├── pi-entries.ts        # Host.registerEntryRenderer and registerMessageRenderer over pi's renderers
 │   │   ├── pi-message-rows.ts   # user and assistant row look over pi's message components (the only module
 │   │   │                        #   that overrides pi internals), the shared hidden thinking label
-│   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ⎿), the
+│   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ↳), the
 │   │   │                        #   tool-rows record on globalThis and the shared output pad
 │   │   ├── pi-tool-rows.ts      # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins
 │   │   │                        #   included) in the self shell, shared with transcript panes

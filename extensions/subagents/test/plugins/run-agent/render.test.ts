@@ -108,6 +108,7 @@ const renderResult = (
         isPartial: false,
         isError: result.isError ?? false,
         args: params,
+        aborted: false,
         invalidate: () => {},
         ...state,
       },
@@ -128,6 +129,7 @@ const renderCall = (
     isPartial,
     isError: false,
     args: params,
+    aborted: false,
     invalidate: () => {},
   });
 
@@ -522,6 +524,7 @@ describe("run_agent block", () => {
           isPartial: false,
           isError: false,
           args: { agents: THREE },
+          aborted: false,
           invalidate: () => {},
         },
         plainTheme,

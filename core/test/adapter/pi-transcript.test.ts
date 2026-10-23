@@ -1,11 +1,12 @@
 import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
+import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../adapter/contract.ts";
 import { installMessageRows, uninstallMessageRows } from "../../adapter/pi-message-rows.ts";
 import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
 import { initRenderTheme } from "./render-theme.ts";
+import { renderPaneTool } from "./tool-rows.ts";
 
 initRenderTheme();
 
@@ -387,6 +388,41 @@ describe("transcript pane tool rows", () => {
 
     expect(rows).toContain(" ● Read src/a.ts\n   ⎿  Read 2 lines");
     expect(readRow()).not.toContain("● Read");
+  });
+});
+
+describe("transcript pane tool views", () => {
+  const seen: ToolCallView[] = [];
+  const rows = (view: ToolCallView) => {
+    seen.push(view);
+
+    return { call: () => [`● ${view.label ?? view.name}`], result: () => [] };
+  };
+
+  it("passes the duration stored in the result to the rows", () => {
+    seen.length = 0;
+    renderPaneTool(rows, {
+      name: "read",
+      args: { path: "a.ts" },
+      result: "one",
+      durationMs: 6_000,
+      width: 60,
+    });
+
+    expect(seen.filter((view) => view.result).map((view) => view.durationMs)).toContain(6_000);
+  });
+
+  it("marks the calls of an aborted assistant turn aborted", () => {
+    seen.length = 0;
+    renderPaneTool(rows, { name: "bash", args: { command: "ls" }, stopReason: "aborted", width: 60 });
+
+    expect(seen.at(-1)).toMatchObject({ aborted: true, isError: true });
+  });
+
+  it("labels MCP tools by pi's naming pattern", () => {
+    expect(renderPaneTool(rows, { name: "mcp__notes__search", args: {}, result: "x", width: 60 })[0]).toBe(
+      " ● notes/search",
+    );
   });
 });
 

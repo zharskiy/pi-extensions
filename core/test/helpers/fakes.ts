@@ -611,6 +611,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         isPartial: false,
         isError: result?.isError ?? false,
         args: call,
+        aborted: false,
+        ...(result ? { result } : {}),
         invalidate: () => {},
         ...overrides,
       };

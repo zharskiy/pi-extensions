@@ -18,7 +18,7 @@ import type {
   ToolResult,
   ToolSpec,
 } from "./contract.ts";
-import { recordPad, rowComponent } from "./pi-row-component.ts";
+import { abortedText, recordPad, rowComponent, slotFor } from "./pi-row-component.ts";
 
 const ESC = "\x1b";
 
@@ -159,29 +159,55 @@ export type PiToolRenderContext = Parameters<NonNullable<ToolDefinition["renderC
 
 type RenderContext = Pick<
   PiToolRenderContext,
-  "toolCallId" | "expanded" | "isPartial" | "isError" | "args" | "outputPad" | "invalidate" | "lastComponent"
+  | "toolCallId"
+  | "expanded"
+  | "isPartial"
+  | "isError"
+  | "args"
+  | "outputPad"
+  | "invalidate"
+  | "lastComponent"
+  | "durationMs"
+  | "state"
 >;
 
-const renderState = (context: RenderContext): ToolRenderState => ({
+const latestResult = (context: RenderContext) => slotFor(context.state).result as ToolResult | undefined;
+
+const renderState = (
+  name: string,
+  context: RenderContext,
+  result = latestResult(context),
+): ToolRenderState => ({
   toolCallId: context.toolCallId,
   expanded: context.expanded,
   isPartial: context.isPartial,
   isError: context.isError,
   args: context.args,
+  aborted: context.isError && result !== undefined && abortedText(result.text, name),
+  ...(context.durationMs === undefined ? {} : { durationMs: context.durationMs }),
+  ...(result ? { result } : {}),
   invalidate: context.invalidate,
 });
 
-const shellComponent = <P, D>(spec: ToolSpec<P, D>, context: RenderContext, text: ToolRender): Component => {
+const shellComponent = <P, D>(
+  spec: ToolSpec<P, D>,
+  context: RenderContext,
+  render: () => ToolRender,
+): Component => {
   if (spec.renderShell === "row") {
     recordPad(context.outputPad);
 
     return rowComponent(context.lastComponent, {
-      lines: (width) => splitLines(typeof text === "function" ? text(width) : text),
+      lines: (width) => {
+        const text = render();
+
+        return splitLines(typeof text === "function" ? text(width) : text);
+      },
       pad: context.outputPad,
     });
   }
 
-  return textComponent(context.lastComponent, text);
+  return textComponent(context.lastComponent, render());
 };
 
 export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionContext) => void = () => {}) =>
@@ -219,17 +245,24 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
           shellComponent(
             spec,
             context,
-            spec.renderCall?.(args as P, themeLike(theme), renderState(context)) ?? "",
+            () => spec.renderCall?.(args as P, themeLike(theme), renderState(spec.name, context)) ?? "",
           )
       : undefined,
     renderResult: spec.renderResult
       ? (result: unknown, _options: { expanded: boolean }, theme: Theme, context: RenderContext) => {
-          const converted = fromPiResult(result as never) as ToolResult<D>;
+          const converted = fromPiResult({
+            ...(result as object),
+            isError: context.isError,
+          } as never) as ToolResult<D>;
+
+          slotFor(context.state).result = converted;
 
           return shellComponent(
             spec,
             context,
-            spec.renderResult?.(converted, renderState(context), themeLike(theme)) ?? "",
+            () =>
+              spec.renderResult?.(converted, renderState(spec.name, context, converted), themeLike(theme)) ??
+              "",
           );
         }
       : undefined,

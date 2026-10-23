@@ -12,9 +12,17 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ToolCallView, ToolRows } from "../../adapter/contract.ts";
-import { applyToolRows, rowRenderers, toolRowsHost } from "../../adapter/pi-tool-rows.ts";
+import { abortedText } from "../../adapter/pi-row-component.ts";
+import {
+  applyToolRows,
+  mcpLabel,
+  rowRenderers,
+  toolLabel,
+  toolRowsHost,
+} from "../../adapter/pi-tool-rows.ts";
 import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
 import { initRenderTheme } from "./render-theme.ts";
+import { renderTool } from "./tool-rows.ts";
 
 beforeAll(() => {
   initRenderTheme();
@@ -146,7 +154,7 @@ describe("rowRenderers", () => {
     expect(expanded[0]).toBe("   ⎿  done ok");
     expect(expanded.slice(1).some((line) => line.includes("old line"))).toBe(true);
     expect(expanded.slice(1).some((line) => line.includes("new line"))).toBe(true);
-    expect(expanded.slice(1).every((line) => line.startsWith("      "))).toBe(true);
+    expect(expanded.slice(1).every((line) => line.startsWith(" ".repeat(5)))).toBe(true);
   });
 
   it("draws pi's own call and result when the rows throw", () => {
@@ -311,7 +319,7 @@ describe("rows for tools pi ships", () => {
         .render(40) ?? [],
     );
 
-    expect(lines).toEqual(["   ⎿  done ok", "      pi body"]);
+    expect(lines).toEqual(["   ⎿  done ok", "     pi body"]);
   });
 });
 
@@ -383,6 +391,132 @@ describe("rows through pi's tool component", () => {
 
     expect(before).toEqual(["", " ● bash done", "   ⎿  one"]);
     expect(result?.handled).toBe(true);
-    expect(shown(tool)).toEqual(["", " ● bash done", "   ⎿  one", "      two"]);
+    expect(shown(tool)).toEqual(["", " ● bash done", "   ↳ one", "     two"]);
+  });
+});
+
+describe("the call view sees the result", () => {
+  const seen: ToolCallView[] = [];
+  const titled: ToolRows = (view) => {
+    seen.push(view);
+
+    return {
+      call: () => [`● ${view.name}${view.result ? ` · ${view.result.text.split("\n")[0]}` : ""}`],
+      result: () => [],
+      piBody: true,
+      dropTiming: true,
+    };
+  };
+
+  afterEach(() => {
+    seen.length = 0;
+  });
+
+  it("draws the title from the result in the same render pass", () => {
+    const { lines } = renderTool(titled, {
+      name: "read",
+      args: { path: "a.ts" },
+      result: "file not found",
+      isError: true,
+      width: 60,
+    });
+
+    expect(lines[0]).toBe(" ● read · file not found");
+  });
+
+  it("passes pi's recorded duration to the call and the result", () => {
+    renderTool(titled, { name: "read", args: { path: "a.ts" }, result: "ok", durationMs: 12_000, width: 60 });
+
+    expect(seen.filter((view) => view.result).every((view) => view.durationMs === 12_000)).toBe(true);
+    expect(seen.some((view) => view.result)).toBe(true);
+  });
+
+  it.each([
+    ["read", "Operation aborted"],
+    ["read", "Aborted after 3 retry attempts"],
+    ["read", "Aborted after 1 retry attempt"],
+    ["bash", "partial output\nCommand aborted"],
+  ])("marks a %s call aborted for %j", (name, text) => {
+    renderTool(titled, {
+      name,
+      args: { command: "ls", path: "a.ts" },
+      result: text,
+      isError: true,
+      width: 60,
+    });
+
+    expect(seen.at(-1)?.aborted).toBe(true);
+  });
+
+  it("keeps a failed command, a read saying Command aborted and a success unaborted", () => {
+    expect(abortedText("out\nCommand exited with code 1", "bash")).toBe(false);
+    expect(abortedText("Command aborted", "read")).toBe(false);
+
+    renderTool(titled, { name: "bash", args: { command: "ls" }, result: "Operation aborted", width: 60 });
+
+    expect(seen.at(-1)?.aborted).toBe(false);
+  });
+
+  it("hangs pi's body at column 4 under ↳ when the row draws no result line, without pi's timing line", () => {
+    const { lines } = renderTool(titled, {
+      name: "bash",
+      args: { command: "printf 'one\\n\\ntwo'" },
+      result: "one\n\ntwo",
+      durationMs: 4_200,
+      expanded: true,
+      width: 60,
+    });
+
+    expect(lines.slice(1, 4).map((line) => line.trimEnd())).toEqual(["   ↳ one", "", "     two"]);
+    expect(lines.some((line) => /^\s*(Took|Elapsed) \d/.test(line))).toBe(false);
+  });
+
+  it("keeps pi's timing line when the row does not ask to drop it", () => {
+    const keeps: ToolRows = (view) => ({ call: () => [`● ${view.name}`], result: () => [], piBody: true });
+    const { lines } = renderTool(keeps, {
+      name: "bash",
+      args: { command: "ls" },
+      result: "one",
+      durationMs: 4_200,
+      expanded: true,
+      width: 60,
+    });
+
+    expect(lines.some((line) => /^\s*Took \d/.test(line))).toBe(true);
+  });
+
+  it("puts no pad on empty row lines", () => {
+    const gaps: ToolRows = () => ({ call: () => ["● call", "", "  next"], result: () => ["", "  ↳ out"] });
+    const { lines } = renderTool(gaps, { name: "read", args: { path: "a.ts" }, result: "x", width: 40 });
+
+    expect(lines).toEqual([" ● call", "", "   next", "", "   ↳ out"]);
+  });
+});
+
+describe("MCP labels", () => {
+  const labelled: ToolRows = (view) => ({ call: () => [`● ${view.label ?? view.name}`] });
+
+  it("names an MCP tool by its server alias and tool name from pi's tool list", () => {
+    const tools = [
+      {
+        name: "mcp__notes_srv__search",
+        sourceInfo: { source: "builtin", path: "builtin:mcp" },
+        namespace: { name: "mcp__notes_srv", aliases: ["notes"] },
+      },
+    ];
+
+    expect(toolLabel({ getAllTools: () => tools } as never, "mcp__notes_srv__search")).toBe("notes/search");
+  });
+
+  it("falls back to pi's mcp__server__tool pattern and leaves other tools unlabelled", () => {
+    expect(toolLabel({ getAllTools: () => [] } as never, "mcp__notes__search")).toBe("notes/search");
+    expect(mcpLabel("lint_fix")).toBeUndefined();
+  });
+
+  it("passes the label to the rows", () => {
+    const renderers = rowRenderers(labelled, "mcp__notes__search", undefined);
+    const lines = renderers?.renderCall?.({}, theme(), context()).render(40) ?? [];
+
+    expect(plain(lines)).toEqual([" ● notes/search"]);
   });
 });
