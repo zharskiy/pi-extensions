@@ -41,7 +41,6 @@ import {
   type ToolRows,
   type ToolSpec,
   type UsageTotals,
-  type WorkingIndicator,
 } from "../../adapter/contract.ts";
 import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
 import { textMetrics } from "../../adapter/pi-tools.ts";
@@ -117,7 +116,6 @@ export type FakeHost = Host & {
       width?: number;
     },
   ): { call?: string; result?: string; state: ToolRenderState };
-  workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
   agentStart(): void;
@@ -339,9 +337,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (message, channel) => {
         host.terminalNotices.push({ message, channel });
-      },
-      setWorkingIndicator: (indicator) => {
-        host.workingIndicators.push(indicator);
       },
       setWorkingMessage: (text) => {
         host.workingMessages.push(text);
@@ -625,7 +620,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         state,
       };
     },
-    workingIndicators: [],
     workingMessages: [],
     workingVisibility: [],
     onAgentStart: (handler) => {

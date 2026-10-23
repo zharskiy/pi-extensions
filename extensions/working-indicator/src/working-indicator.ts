@@ -3,6 +3,7 @@ import { isAbsolute, relative, sep } from "node:path";
 import type { Host, Phase, PhaseDetail, RunningTool } from "../../../core/adapter/contract.ts";
 import { formatDuration, homeRelative } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
+import { ELLIPSIS } from "../../../core/manager/row.ts";
 
 export const TICK_MS = 1000;
 
@@ -15,8 +16,6 @@ const BORDER_COLUMNS = 5;
 const FRAME_COLUMNS = 3;
 
 const MIN_ACTIVITY = 12;
-
-const ELLIPSIS = "...";
 
 const MCP_NAME = /^mcp__(.+?)__(.+)$/;
 

@@ -15,13 +15,6 @@ export type ThemeToken =
   | "warning"
   | "error"
   | "text"
-  | "comment"
-  | "keyword"
-  | "function"
-  | "string"
-  | "number"
-  | "type"
-  | "heading"
   | "thinkingOff"
   | "thinkingMinimal"
   | "thinkingLow"
@@ -194,8 +187,6 @@ export type FormFactory<T> = (api: FormApi<T>) => ViewComponent;
 
 export type WidgetHandle = { refresh(): void };
 
-export type WorkingIndicator = { frames: string[]; intervalMs: number };
-
 export type EditorLayout = { bottom: number; scrolled: boolean };
 
 export type EditorFrame = {
@@ -224,7 +215,6 @@ export type HostUi = {
   showForm<T>(factory: FormFactory<T>, options?: { signal?: AbortSignal }): Promise<T | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(message: string, channel: NotifyChannel): void;
-  setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
   setWorkingVisible(visible: boolean): void;
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;

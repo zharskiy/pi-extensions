@@ -69,7 +69,7 @@ const submitLines = (state: FormState, theme: ThemeLike, width: number) => {
   const missing = unanswered(state).map((question) => question.label);
   const status = missing.length
     ? theme.fg("warning", `Unanswered: ${missing.join(", ")}`)
-    : theme.fg("success", "Press Enter to submit");
+    : theme.fg("success", "Press enter to submit");
   const title = missing.length ? "Answers" : "Ready to submit";
 
   return [

@@ -603,7 +603,7 @@ describe("pi adapter", () => {
     await fire("session_start", fakeCtx("tui"));
 
     expect(host.ui.style("warning", "ctx")).toBe("<warning>ctx");
-    expect(host.ui.style("heading", "ctx")).toBe("<mdHeading>ctx");
+    expect(host.ui.style("thinkingHigh", "ctx")).toBe("<thinkingHigh>ctx");
   });
 
   it("is not idle without a live session and runs shutdown handlers before the session goes stale", async () => {

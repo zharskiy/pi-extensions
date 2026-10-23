@@ -36,7 +36,6 @@ describe("working indicator", () => {
 
     host.agentStart();
 
-    expect(host.workingIndicators).toEqual([]);
     expect(host.workingMessages).toEqual([message(WAITING)]);
   });
 

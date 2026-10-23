@@ -59,8 +59,8 @@ const rows: ToolRows = (view) => {
   }
 
   return {
-    call: (_width, theme) => [`● ${theme.bold(view.name)}`],
-    result: () => [`  ⎿  done ${view.result?.text ?? ""}`.trimEnd()],
+    call: (_width, theme) => [`✓ ${theme.bold(view.name)}`],
+    result: () => [`  ↳ done ${view.result?.text ?? ""}`.trimEnd()],
     piBody: true,
   };
 };
@@ -103,8 +103,8 @@ describe("rowRenderers", () => {
     const padded = renderers?.renderCall?.({}, theme(), context({ outputPad: 1 })).render(40) ?? [];
     const flush = renderers?.renderCall?.({}, theme(), context({ outputPad: 0 })).render(40) ?? [];
 
-    expect(plain(padded)).toEqual([" ● read"]);
-    expect(plain(flush)).toEqual(["● read"]);
+    expect(plain(padded)).toEqual([" ✓ read"]);
+    expect(plain(flush)).toEqual(["✓ read"]);
   });
 
   it("passes the call state and the result to the rows", () => {
@@ -147,11 +147,11 @@ describe("rowRenderers", () => {
           .render(60) ?? [],
       );
 
-    expect(render(false)).toEqual(["   ⎿  done ok"]);
+    expect(render(false)).toEqual(["   ↳ done ok"]);
 
     const expanded = render(true);
 
-    expect(expanded[0]).toBe("   ⎿  done ok");
+    expect(expanded[0]).toBe("   ↳ done ok");
     expect(expanded.slice(1).some((line) => line.includes("old line"))).toBe(true);
     expect(expanded.slice(1).some((line) => line.includes("new line"))).toBe(true);
     expect(expanded.slice(1).every((line) => line.startsWith(" ".repeat(5)))).toBe(true);
@@ -319,16 +319,16 @@ describe("rows for tools pi ships", () => {
         .render(40) ?? [],
     );
 
-    expect(lines).toEqual(["   ⎿  done ok", "     pi body"]);
+    expect(lines).toEqual(["   ↳ done ok", "     pi body"]);
   });
 });
 
 describe("rows through pi's tool component", () => {
   const stateRows: ToolRows = (view) => ({
     call: () => [
-      `● ${view.name} ${view.started ? "" : "queued "}${view.isPartial ? "running" : view.isError ? "failed" : "done"}`,
+      `✓ ${view.name} ${view.started ? "" : "queued "}${view.isPartial ? "running" : view.isError ? "failed" : "done"}`,
     ],
-    result: () => (view.expanded ? [] : [`  ⎿  ${view.result?.text.split("\n")[0] ?? ""}`]),
+    result: () => (view.expanded ? [] : [`  ↳ ${view.result?.text.split("\n")[0] ?? ""}`]),
     piBody: true,
   });
 
@@ -350,19 +350,19 @@ describe("rows through pi's tool component", () => {
 
     const tool = component();
 
-    expect(shown(tool)).toEqual(["", " ● bash queued running"]);
+    expect(shown(tool)).toEqual(["", " ✓ bash queued running"]);
 
     tool.markExecutionStarted();
 
-    expect(shown(tool)).toEqual(["", " ● bash running"]);
+    expect(shown(tool)).toEqual(["", " ✓ bash running"]);
 
     tool.updateResult({ content: [{ type: "text", text: "half" }], isError: false } as never, true);
 
-    expect(shown(tool)).toEqual(["", " ● bash running", "   ⎿  half"]);
+    expect(shown(tool)).toEqual(["", " ✓ bash running", "   ↳ half"]);
 
     tool.updateResult({ content: [{ type: "text", text: "boom" }], isError: true } as never);
 
-    expect(shown(tool)).toEqual(["", " ● bash failed", "   ⎿  boom"]);
+    expect(shown(tool)).toEqual(["", " ✓ bash failed", "   ↳ boom"]);
   });
 
   it("toggles a row on a click and hangs pi's expanded body under the child glyph", () => {
@@ -389,9 +389,9 @@ describe("rows through pi's tool component", () => {
       clickCount: 1,
     });
 
-    expect(before).toEqual(["", " ● bash done", "   ⎿  one"]);
+    expect(before).toEqual(["", " ✓ bash done", "   ↳ one"]);
     expect(result?.handled).toBe(true);
-    expect(shown(tool)).toEqual(["", " ● bash done", "   ↳ one", "     two"]);
+    expect(shown(tool)).toEqual(["", " ✓ bash done", "   ↳ one", "     two"]);
   });
 });
 
@@ -401,7 +401,7 @@ describe("the call view sees the result", () => {
     seen.push(view);
 
     return {
-      call: () => [`● ${view.name}${view.result ? ` · ${view.result.text.split("\n")[0]}` : ""}`],
+      call: () => [`✓ ${view.name}${view.result ? ` · ${view.result.text.split("\n")[0]}` : ""}`],
       result: () => [],
       piBody: true,
       dropTiming: true,
@@ -421,7 +421,7 @@ describe("the call view sees the result", () => {
       width: 60,
     });
 
-    expect(lines[0]).toBe(" ● read · file not found");
+    expect(lines[0]).toBe(" ✓ read · file not found");
   });
 
   it("passes pi's recorded duration to the call and the result", () => {
@@ -472,7 +472,7 @@ describe("the call view sees the result", () => {
   });
 
   it("keeps pi's timing line when the row does not ask to drop it", () => {
-    const keeps: ToolRows = (view) => ({ call: () => [`● ${view.name}`], result: () => [], piBody: true });
+    const keeps: ToolRows = (view) => ({ call: () => [`✓ ${view.name}`], result: () => [], piBody: true });
     const { lines } = renderTool(keeps, {
       name: "bash",
       args: { command: "ls" },
@@ -486,15 +486,15 @@ describe("the call view sees the result", () => {
   });
 
   it("puts no pad on empty row lines", () => {
-    const gaps: ToolRows = () => ({ call: () => ["● call", "", "  next"], result: () => ["", "  ↳ out"] });
+    const gaps: ToolRows = () => ({ call: () => ["✓ call", "", "  next"], result: () => ["", "  ↳ out"] });
     const { lines } = renderTool(gaps, { name: "read", args: { path: "a.ts" }, result: "x", width: 40 });
 
-    expect(lines).toEqual([" ● call", "", "   next", "", "   ↳ out"]);
+    expect(lines).toEqual([" ✓ call", "", "   next", "", "   ↳ out"]);
   });
 });
 
 describe("MCP labels", () => {
-  const labelled: ToolRows = (view) => ({ call: () => [`● ${view.label ?? view.name}`] });
+  const labelled: ToolRows = (view) => ({ call: () => [`✓ ${view.label ?? view.name}`] });
 
   it("names an MCP tool by its server alias and tool name from pi's tool list", () => {
     const tools = [
@@ -517,6 +517,6 @@ describe("MCP labels", () => {
     const renderers = rowRenderers(labelled, "mcp__notes__search", undefined);
     const lines = renderers?.renderCall?.({}, theme(), context()).render(40) ?? [];
 
-    expect(plain(lines)).toEqual([" ● notes/search"]);
+    expect(plain(lines)).toEqual([" ✓ notes/search"]);
   });
 });

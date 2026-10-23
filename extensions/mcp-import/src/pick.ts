@@ -1,5 +1,6 @@
 import type { Host } from "../../../core/adapter/contract.ts";
 import { multiSelectForm } from "../../../core/manager/multi-select.ts";
+import { ELLIPSIS } from "../../../core/manager/row.ts";
 import { selectForm } from "../../../core/manager/select.ts";
 import type { Scope, Source } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
@@ -79,7 +80,7 @@ export const scanPairs = (candidates: readonly Pair[], trusted: boolean): Scan =
 const nameList = (names: readonly string[]) => {
   const over = names.findIndex((_, index) => names.slice(0, index + 1).join(", ").length > NAMES_ROOM);
   const shown = names.slice(0, over === -1 ? names.length : over);
-  const rest = shown.length < names.length ? (shown.length > 0 ? ", …" : "…") : "";
+  const rest = shown.length < names.length ? (shown.length > 0 ? `, ${ELLIPSIS}` : ELLIPSIS) : "";
 
   return `${shown.join(", ")}${rest}`;
 };

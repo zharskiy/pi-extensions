@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { CHILD_COLUMN, expandHintFor, type RowRender, row, wrapChild } from "../../../core/manager/row.ts";
+import { CHILD_COLUMN, expandHint, type RowRender, row, wrapChild } from "../../../core/manager/row.ts";
 
 export const SEED_TITLE = "Handoff from the previous session";
 
@@ -19,6 +19,6 @@ export const seedRow =
       mark: "info",
       title: theme.bold(SEED_TITLE),
       children: expanded ? [wrapChild(text.trim(), width, CHILD_COLUMN, theme).join("\n")] : [summary(text)],
-      hint: expanded ? undefined : expandHintFor(expandKey),
+      hint: expanded ? undefined : expandHint(expandKey),
       hintCuts: true,
     })(width, theme);

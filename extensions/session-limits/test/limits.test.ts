@@ -754,7 +754,7 @@ describe("/session-handoff on demand", () => {
 
 describe("/session-handoff during a turn", () => {
   const FOCUS = "fix the flaky login test";
-  const QUEUED = "The session handoff starts when the current turn ends; stopping the turn (Esc) cancels it.";
+  const QUEUED = "The session handoff starts when the current turn ends; stopping the turn (esc) cancels it.";
 
   afterEach(() => {
     vi.useRealTimers();

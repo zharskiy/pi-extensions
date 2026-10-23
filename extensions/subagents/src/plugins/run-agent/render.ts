@@ -2,7 +2,7 @@ import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core
 import { type ReceiptSegment, receipt, receiptText } from "../../../../../core/manager/format.ts";
 import {
   countLine,
-  expandHintFor,
+  expandHint,
   failureSuffix,
   type Mark,
   type MarkedRow,
@@ -332,7 +332,7 @@ const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, widt
   }
 
   const shown = state.expanded ? lines : [reason];
-  const more = !state.expanded && lines.length > 1 ? expandHintFor(hints.expandKey?.() ?? "") : undefined;
+  const more = !state.expanded && lines.length > 1 ? expandHint(hints.expandKey?.() ?? "") : undefined;
 
   return row({
     mark: "error",

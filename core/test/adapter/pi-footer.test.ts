@@ -158,7 +158,7 @@ describe("setFooter with pi's interactive layout", () => {
       footer: { render: () => ["pi footer"], invalidate: () => {} },
       footerDataProvider: {
         getGitBranch: () => "main",
-        getExtensionStatuses: () => new Map([["pi-subagents", "← to agents"]]),
+        getExtensionStatuses: () => new Map([["pi-subagents", "← to list agents"]]),
         onBranchChange: () => () => {},
       },
       ui: { requestRender: () => {} },
@@ -208,7 +208,7 @@ describe("setFooter with pi's interactive layout", () => {
 
     footer();
 
-    expect(below()).toEqual(["usage", "thinking", "← to agents"]);
+    expect(below()).toEqual(["usage", "thinking", "← to list agents"]);
   });
 
   it("keeps the footer block above a panel set later, across a reset and a second set", () => {
@@ -218,13 +218,13 @@ describe("setFooter with pi's interactive layout", () => {
     ui.setWidget("panel", () => ["panel row"]);
     footer();
 
-    expect(below()).toEqual(["usage", "thinking", "← to agents", "panel row"]);
+    expect(below()).toEqual(["usage", "thinking", "← to list agents", "panel row"]);
 
     reset();
     footer();
     ui.setWidget("panel", () => ["panel row"]);
 
-    expect(below()).toEqual(["usage", "thinking", "← to agents", "panel row"]);
+    expect(below()).toEqual(["usage", "thinking", "← to list agents", "panel row"]);
   });
 
   it("puts a panel set before the footer block above it", () => {
@@ -233,7 +233,7 @@ describe("setFooter with pi's interactive layout", () => {
     ui.setWidget("panel", () => ["panel row"]);
     footer();
 
-    expect(below()).toEqual(["panel row", "usage", "thinking", "← to agents"]);
+    expect(below()).toEqual(["panel row", "usage", "thinking", "← to list agents"]);
   });
 });
 

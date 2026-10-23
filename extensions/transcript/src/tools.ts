@@ -3,7 +3,7 @@ import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../core/a
 import { formatDuration, homeRelative } from "../../../core/manager/format.ts";
 import {
   CHILD_COLUMN,
-  expandHintFor,
+  expandHint,
   failureSuffix,
   markOf,
   type RowRender,
@@ -281,7 +281,7 @@ const resultRows = (look: Look, context: Context) => (width: number, theme: Them
 
   const { reasonShown } = heading(look, context, width, theme);
   const outcome = look.outcome(context, width - CHILD_COLUMN, theme, reasonShown);
-  const hint = outcome.hint && !context.view.expanded ? expandHintFor(context.key) : undefined;
+  const hint = outcome.hint && !context.view.expanded ? expandHint(context.key) : undefined;
 
   return rowChildren({ children: outcome.lines, hint, hintCuts: true, body: outcome.body })(width, theme);
 };

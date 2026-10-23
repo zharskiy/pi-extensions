@@ -224,7 +224,7 @@ describe("toPiTool row shell", () => {
       renderShell: "row",
       renderCall: () => (width) => {
         widths.push(width);
-        return `● probe ${"x".repeat(width)}`;
+        return `✓ probe ${"x".repeat(width)}`;
       },
       renderResult: () => "",
     });
@@ -241,8 +241,8 @@ describe("toPiTool row shell", () => {
       .map(stripVTControlCharacters);
 
     expect(widths).toEqual([29, 30]);
-    expect(padded).toEqual([` ● probe ${"x".repeat(18)}...`]);
-    expect(flush).toEqual([`● probe ${"x".repeat(19)}...`]);
+    expect(padded).toEqual([` ✓ probe ${"x".repeat(18)}...`]);
+    expect(flush).toEqual([`✓ probe ${"x".repeat(19)}...`]);
     expect(tool.renderResult(piResult("x"), options, theme, context()).render(30)).toEqual([]);
   });
 
@@ -253,7 +253,7 @@ describe("toPiTool row shell", () => {
       renderShell: "row",
       renderCall: (_params, _theme, state) => {
         states.push(state);
-        return `● probe${state.result ? ` · ${state.result.text}` : ""}`;
+        return `✓ probe${state.result ? ` · ${state.result.text}` : ""}`;
       },
       renderResult: () => "",
     });
@@ -262,7 +262,7 @@ describe("toPiTool row shell", () => {
 
     tool.renderResult(piResult("Operation aborted"), options, theme, shared);
 
-    expect(call.render(40).map(stripVTControlCharacters)).toEqual([" ● probe · Operation aborted"]);
+    expect(call.render(40).map(stripVTControlCharacters)).toEqual([" ✓ probe · Operation aborted"]);
     expect(states.at(-1)).toMatchObject({
       durationMs: 7_000,
       aborted: true,
@@ -274,8 +274,8 @@ describe("toPiTool row shell", () => {
     const tool = piTool<unknown, unknown>({
       ...baseSpec,
       renderShell: "row",
-      renderCall: () => "● probe",
-      renderResult: () => "  ⎿  done",
+      renderCall: () => "✓ probe",
+      renderResult: () => "  ↳ done",
     });
     const component = new ToolExecutionComponent(
       "probe",
@@ -291,8 +291,8 @@ describe("toPiTool row shell", () => {
 
     expect(component.render(40).map((line) => stripVTControlCharacters(line).trimEnd())).toEqual([
       "",
-      " ● probe",
-      "   ⎿  done",
+      " ✓ probe",
+      "   ↳ done",
     ]);
   });
 });
@@ -303,19 +303,8 @@ describe("themeLike colours", () => {
     const like = themeLike(recording);
 
     expect(
-      (["warning", "comment", "keyword", "function", "string", "number", "type", "heading"] as const).map(
-        (token) => like.fg(token, "x"),
-      ),
-    ).toEqual([
-      "<warning>x",
-      "<syntaxComment>x",
-      "<syntaxKeyword>x",
-      "<syntaxFunction>x",
-      "<syntaxString>x",
-      "<syntaxNumber>x",
-      "<syntaxType>x",
-      "<mdHeading>x",
-    ]);
+      (["warning", "accent", "thinkingOff", "thinkingXhigh"] as const).map((token) => like.fg(token, "x")),
+    ).toEqual(["<warning>x", "<accent>x", "<thinkingOff>x", "<thinkingXhigh>x"]);
   });
 
   it("paints the thinking-level tokens with pi's thinking colours", () => {

@@ -1,7 +1,7 @@
 import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import {
   EXPAND_BINDING,
-  expandHintFor,
+  expandHint,
   markOf,
   noun,
   row,
@@ -122,7 +122,7 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
 
     const count = result.details?.agents.length ?? 0;
     const summary = `${theme.fg("text", String(count))} ${theme.fg("muted", noun(count, "agent"))}`;
-    const hint = expandHintFor(scope.expandKey());
+    const hint = expandHint(scope.expandKey());
 
     return rowText(rowChildren({ children: [summary], hint }), theme);
   },

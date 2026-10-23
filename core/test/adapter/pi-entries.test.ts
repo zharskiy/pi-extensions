@@ -26,7 +26,7 @@ describe("entryHost", () => {
 
     entryHost(api, () => 1).registerEntryRenderer("x:entry", (data, width, expanded, themed) => {
       seen.push({ data, width, expanded });
-      return [themed.fg("keyword", "0123456789"), "ok"];
+      return [themed.fg("accent", "0123456789"), "ok"];
     });
 
     const component = renderers.get("x:entry")?.(
@@ -36,7 +36,7 @@ describe("entryHost", () => {
     );
 
     expect(component?.render(12).map((line) => stripVTControlCharacters(line))).toEqual([
-      " syntaxKe...",
+      " accent:0...",
       " ok",
     ]);
     expect(seen).toEqual([{ data: { a: 1 }, width: 11, expanded: true }]);
@@ -49,7 +49,7 @@ describe("entryHost", () => {
 
     entryHost(api).registerMessageRenderer("x:message", (message, width, expanded) => {
       seen.push({ message, width, expanded });
-      return ["● Handoff", "x".repeat(40)];
+      return ["✓ Handoff", "x".repeat(40)];
     });
 
     const render = (outputPad: number) =>
@@ -69,8 +69,8 @@ describe("entryHost", () => {
         ?.render(12)
         .map((line) => stripVTControlCharacters(line));
 
-    expect(render(1)).toEqual([" ● Handoff", ` ${"x".repeat(8)}...`]);
-    expect(render(0)).toEqual(["● Handoff", `${"x".repeat(9)}...`]);
+    expect(render(1)).toEqual([" ✓ Handoff", ` ${"x".repeat(8)}...`]);
+    expect(render(0)).toEqual(["✓ Handoff", `${"x".repeat(9)}...`]);
     expect(seen[0]).toEqual({ message: { text: "seed", details: { a: 1 } }, width: 11, expanded: false });
   });
 });

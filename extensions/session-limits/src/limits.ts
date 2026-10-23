@@ -381,7 +381,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     state = { ...state, phase: "queued", focus };
 
     host.ui.notify(
-      "The session handoff starts when the current turn ends; stopping the turn (Esc) cancels it.",
+      "The session handoff starts when the current turn ends; stopping the turn (esc) cancels it.",
       "info",
     );
   };

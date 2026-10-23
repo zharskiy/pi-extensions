@@ -197,7 +197,7 @@ describe("renderFooter", () => {
     ]);
 
     expect(render({}, null, statuses).slice(-4)).toEqual(["", " first line", " last", ""]);
-    expect(render().some((line) => line.includes("← to agents"))).toBe(false);
+    expect(render().some((line) => line.includes("← to list agents"))).toBe(false);
     expect(render({}, null, new Map([[SPENDING_STATUS_KEY, "main $1.000"]]))).toEqual(render());
   });
 });

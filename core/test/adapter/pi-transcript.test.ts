@@ -159,9 +159,9 @@ describe("pi renderers in the transcript pane", () => {
     const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
 
     host.registerToolRows((view) => ({
-      call: () => [`● ${view.name}`],
+      call: () => [`✓ ${view.name}`],
       result: () => [
-        `  ⎿  ${(view.result?.details as { calls?: unknown[] } | undefined)?.calls?.length} tool call`,
+        `  ↳ ${(view.result?.details as { calls?: unknown[] } | undefined)?.calls?.length} tool call`,
       ],
     }));
 
@@ -178,7 +178,7 @@ describe("pi renderers in the transcript pane", () => {
 
     host.release();
 
-    expect(text).toContain("● codemode\n   ⎿  1 tool call");
+    expect(text).toContain("✓ codemode\n   ↳ 1 tool call");
     expect(text).not.toContain("✓ grep");
   });
 
@@ -378,16 +378,16 @@ describe("transcript pane tool rows", () => {
     expect(readRow()).toContain("read src/a.ts");
 
     host.registerToolRows((view) => ({
-      call: () => [`● Read ${(view.args as { path: string }).path}`],
-      result: () => [`  ⎿  Read ${view.result?.text.split("\n").length} lines`],
+      call: () => [`✓ Read ${(view.args as { path: string }).path}`],
+      result: () => [`  ↳ Read ${view.result?.text.split("\n").length} lines`],
     }));
 
     const rows = readRow();
 
     host.release();
 
-    expect(rows).toContain(" ● Read src/a.ts\n   ⎿  Read 2 lines");
-    expect(readRow()).not.toContain("● Read");
+    expect(rows).toContain(" ✓ Read src/a.ts\n   ↳ Read 2 lines");
+    expect(readRow()).not.toContain("✓ Read");
   });
 });
 
@@ -396,7 +396,7 @@ describe("transcript pane tool views", () => {
   const rows = (view: ToolCallView) => {
     seen.push(view);
 
-    return { call: () => [`● ${view.label ?? view.name}`], result: () => [] };
+    return { call: () => [`✓ ${view.label ?? view.name}`], result: () => [] };
   };
 
   it("passes the duration stored in the result to the rows", () => {
@@ -421,7 +421,7 @@ describe("transcript pane tool views", () => {
 
   it("labels MCP tools by pi's naming pattern", () => {
     expect(renderPaneTool(rows, { name: "mcp__notes__search", args: {}, result: "x", width: 60 })[0]).toBe(
-      " ● notes/search",
+      " ✓ notes/search",
     );
   });
 });

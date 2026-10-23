@@ -78,7 +78,7 @@ describe("renderForm", () => {
       " Scope: (wrote) both",
       " Priority: Now",
       "",
-      " Press Enter to submit",
+      " Press enter to submit",
       "",
     ]);
     expect(renderForm(complete, plainTheme, 60).at(-2)).toBe(

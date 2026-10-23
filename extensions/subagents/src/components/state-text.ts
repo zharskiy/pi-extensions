@@ -69,5 +69,3 @@ export const displayWord = (
 
 export const stopWords = (state: AgentState): string =>
   isClosed(state) ? "to clear" : state === "grace" ? "to close now" : "to stop";
-
-export const stopHint = (state: AgentState): string => `x ${stopWords(state)}`;

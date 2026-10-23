@@ -8,7 +8,7 @@ import {
   stateGlyph,
   stateToken,
   stateWord,
-  stopHint,
+  stopWords,
 } from "../../src/components/state-text.ts";
 import type { AgentState } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
@@ -59,6 +59,6 @@ describe("agent state text", () => {
   it("names what x does for the state", () => {
     const states: AgentState[] = ["running", "grace", "done"];
 
-    expect(states.map(stopHint)).toEqual(["x to stop", "x to close now", "x to clear"]);
+    expect(states.map(stopWords)).toEqual(["to stop", "to close now", "to clear"]);
   });
 });
