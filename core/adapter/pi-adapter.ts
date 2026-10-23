@@ -26,6 +26,7 @@ import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
 import { entryHost } from "./pi-entries.ts";
 import { footerHost } from "./pi-footer.ts";
+import { createNotices, syncNotices } from "./pi-notice.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
@@ -117,6 +118,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const held: HiddenCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
+  const notices = createNotices(state);
   const sections = createPromptSections();
 
   const capture = (ctx: ExtensionContext) => {
@@ -200,6 +202,12 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     capture(ctx);
     editor.sync(event.reason);
 
+    const tui = tuiContext(state);
+
+    if (tui) {
+      syncNotices(tui);
+    }
+
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
     const parent = created ? ctx.sessionManager.getHeader()?.parentSession : undefined;
@@ -230,6 +238,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     );
 
     editor.release();
+    notices.release();
     sections.release();
     state.ctx = undefined;
 
@@ -388,7 +397,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       .map((entry) => entry.data as T);
 
   return {
-    ui: createUi(state, process.stdout, process.env, editor),
+    ui: createUi(state, process.stdout, process.env, editor, notices),
     registerTool,
     registerCommand,
     setMainPrompt: (text) => {

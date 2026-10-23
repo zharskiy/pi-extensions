@@ -28,6 +28,7 @@ const fakeCtx = (mode: string, idle = true) => ({
     setStatus: () => {},
     confirm: async () => true,
     getEditorComponent: () => undefined,
+    setWidget: () => {},
     theme: { fg: (token: string, text: string) => `<${token}>${text}` },
   },
 });
@@ -103,6 +104,34 @@ describe("pi adapter", () => {
 
     expect(seen).toEqual(["start /sessions/s1.jsonl print", "agent", "turn 1000/100000 1%", "idle"]);
     expect(host.session().mode).toBe("tui");
+  });
+
+  it("reserves the notice slot under the editor at a tui session start, before the extension's handlers", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const widgets: string[] = [];
+    const ctxOf = (mode: string) => {
+      const ctx = fakeCtx(mode);
+
+      return {
+        ...ctx,
+        ui: {
+          ...ctx.ui,
+          setWidget: (key: string, _factory: unknown, options?: { placement?: string }) =>
+            widgets.push(`${key} ${options?.placement}`),
+        },
+      };
+    };
+
+    host.onSessionStart(() => widgets.push("start handler"));
+
+    await fire("session_start", ctxOf("rpc"));
+
+    expect(widgets).toEqual(["start handler"]);
+
+    await fire("session_start", ctxOf("tui"));
+
+    expect(widgets).toEqual(["start handler", "pi-notices belowEditor", "start handler"]);
   });
 
   it("tells idle handlers whether the settled run was aborted", async () => {

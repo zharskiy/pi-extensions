@@ -179,6 +179,7 @@ export type EditorKeyHandler = (key: KeyPress) => "consumed" | "release";
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
+  setNotice(key: string, text: string | undefined): void;
   confirm(title: string, message: string): Promise<boolean>;
   setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;

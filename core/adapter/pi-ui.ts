@@ -19,6 +19,7 @@ import { captureTui, createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
 import { createShowForm } from "./pi-form.ts";
 import { keyPress } from "./pi-keys.ts";
+import type { Notices } from "./pi-notice.ts";
 import { fitLines, piColor, themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
@@ -97,6 +98,7 @@ export const createUi = (
   stdout: TerminalOut,
   env: TerminalEnv,
   editor: EditorHooks,
+  notices: Notices,
 ): HostUi => {
   const widgetTuis = new Map<string, TUI>();
   let lastTui: TUI | undefined;
@@ -198,6 +200,7 @@ export const createUi = (
     setStatus: (key, text) => {
       state.ctx?.ui.setStatus(key, text);
     },
+    setNotice: notices.setNotice,
     confirm: async (title, message) => {
       const ctx = state.ctx;
 

@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { createNotices } from "../../adapter/pi-notice.ts";
 import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
 import { createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
 
@@ -32,6 +33,7 @@ const keyContext = (mode: string) => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     ),
     inputs,
     removed,
@@ -81,6 +83,7 @@ const captured = (mode: string, env = {}) => {
     { write: (data: string) => writes.push(data) },
     env,
     createEditorHooks(() => undefined),
+    createNotices(state),
   );
 
   return { ui, writes, state };
@@ -179,6 +182,7 @@ describe("overlay input routing", () => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     ).openOverlay(() => view);
 
     return components[0] as OverlayComponent;
@@ -292,6 +296,7 @@ describe("showForm", () => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     );
 
     void ui.showForm(() => ({ render: () => ["question"], handleKey: () => {} }));

@@ -24,6 +24,7 @@ pi-extensions/
 │   │   ├── pi-editor-history.ts # ↑ input history shared by every editor, seeded on resume and fork
 │   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
+│   │   ├── pi-notice.ts         # HostUi.setNotice: one-line notices between the editor and the footer
 │   │   ├── pi-context.ts        # Host.contextFacts and request usage, composed
 │   │   ├── pi-context-prompt.ts # prompt sections (replay or system prompt) and tools with source and exposure
 │   │   ├── pi-context-messages.ts # per-message and per-block token estimates
