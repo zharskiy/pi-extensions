@@ -24,7 +24,7 @@ describe("agent setup rendering", () => {
     expect(lines).toContain(" lead: thinking off");
     expect(lines).toContain(`   1. This project  ${PATHS.project} (project not trusted)`);
     expect(lines).toContain(` › 2. User  ${PATHS.user}`);
-    expect(lines.some((line) => line.includes("Enter save"))).toBe(true);
+    expect(lines.some((line) => line.includes("enter to save"))).toBe(true);
   });
 
   it("shows only the window of model options around the cursor", () => {

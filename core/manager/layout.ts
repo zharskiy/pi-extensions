@@ -16,10 +16,29 @@ export const prefixed = (theme: ThemeLike, first: string, text: string, width: n
 
 export const padded = (theme: ThemeLike, text: string, width: number) => prefixed(theme, PAD, text, width);
 
-export const hintLines = (theme: ThemeLike, hints: readonly string[], width: number) =>
-  padded(theme, theme.fg("dim", hints.join(DOT)), width);
+export type KeyHint = readonly [key: string, words: string];
 
-export const keyHints = (pairs: readonly (readonly [key: string, words: string])[], theme: ThemeLike) =>
+export const keyHints = (pairs: readonly KeyHint[], theme: ThemeLike) =>
   pairs
     .map(([key, words]) => `${theme.fg("dim", key)} ${theme.fg("muted", words)}`)
     .join(theme.fg("dim", DOT));
+
+export const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: number) => {
+  const room = Math.max(1, width - PAD.length);
+  const fits = (pairs: readonly KeyHint[]) => theme.width(keyHints(pairs, theme)) <= room;
+  const groups = hints.reduce<KeyHint[][]>((lines, hint) => {
+    const last = lines.at(-1);
+
+    if (last && fits([...last, hint])) {
+      last.push(hint);
+
+      return lines;
+    }
+
+    lines.push([hint]);
+
+    return lines;
+  }, []);
+
+  return groups.map((pairs) => `${PAD}${theme.truncate(keyHints(pairs, theme), room)}`);
+};

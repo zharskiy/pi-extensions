@@ -58,7 +58,8 @@ describe("selectForm", () => {
       " › 2. Beta ✓",
       "   3. Gamma  third one",
       "",
-      " ↑↓ select · 1-9 pick · Enter choose · Esc cancel",
+      " ↑↓ to select · 1-9 to pick · enter to choose",
+      " esc to cancel",
       "─".repeat(60),
     ]);
   });

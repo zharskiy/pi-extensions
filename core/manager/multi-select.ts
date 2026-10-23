@@ -1,12 +1,17 @@
 import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, PAD, padded, prefixed, rule } from "./layout.ts";
+import { hintLines, type KeyHint, PAD, padded, prefixed, rule } from "./layout.ts";
 import { CANCEL_HINT, clampIndex } from "./list.ts";
 
 export type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
-export const MULTI_SELECT_HINTS = ["↑↓ select", "Space toggle", "a all", "n none"] as const;
+export const MULTI_SELECT_HINTS: readonly KeyHint[] = [
+  ["↑↓", "to select"],
+  ["space", "to toggle"],
+  ["a", "for all"],
+  ["n", "for none"],
+];
 
 const DEFAULT_HEIGHT = 10;
 
@@ -128,7 +133,11 @@ export type MultiSelectSpec<T> = {
 export const multiSelectForm =
   <T>(spec: MultiSelectSpec<T>): FormFactory<T[] | undefined> =>
   (api) => {
-    const hints = [...MULTI_SELECT_HINTS, `Enter ${spec.submitHint ?? "confirm"}`, CANCEL_HINT];
+    const hints: readonly KeyHint[] = [
+      ...MULTI_SELECT_HINTS,
+      ["enter", `to ${spec.submitHint ?? "confirm"}`],
+      CANCEL_HINT,
+    ];
     let state = initialMulti(spec.options.length, spec.checked);
 
     return {

@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { hintLines, PAD, padded, prefixed, rule } from "../../../../../core/manager/layout.ts";
+import { hintLines, type KeyHint, PAD, padded, prefixed, rule } from "../../../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../../../core/manager/list.ts";
 import {
   descriptionFits,
@@ -201,22 +201,24 @@ const submitLines = (
   ];
 };
 
-const hints = (context: SetupContext, state: SetupState, ready: boolean) => {
+const BACK_HINT: KeyHint = ["esc", "to go back"];
+
+const hints = (context: SetupContext, state: SetupState, ready: boolean): readonly KeyHint[] => {
   if (state.picker?.field === "skills") {
-    return [...MULTI_SELECT_HINTS, "Enter confirm", "Esc back"];
+    return [...MULTI_SELECT_HINTS, ["enter", "to confirm"], BACK_HINT];
   }
 
   if (state.picker) {
-    return ["↑↓ select", "Enter choose", "Esc back"];
+    return [["↑↓", "to select"], ["enter", "to choose"], BACK_HINT];
   }
 
   if (onSubmitTab(context, state)) {
-    const enter = ready ? "Enter save" : "Enter close";
+    const enter: KeyHint = ["enter", ready ? "to save" : "to close"];
 
     return [...SELECT_HINTS, enter, TAB_SWITCH_HINT, CANCEL_HINT];
   }
 
-  return ["↑↓ field", "Enter change", TAB_SWITCH_HINT, CANCEL_HINT];
+  return [["↑↓", "to select a field"], ["enter", "to change"], TAB_SWITCH_HINT, CANCEL_HINT];
 };
 
 export const renderSetup = (

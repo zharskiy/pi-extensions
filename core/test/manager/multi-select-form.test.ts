@@ -46,14 +46,19 @@ describe("multiSelectForm", () => {
     expect(text).toContain("› [x] github  stdio · gh");
     expect(text).toContain("[ ] linear");
     expect(text).toContain("[x] sentry");
-    expect(text).toContain("↑↓ select · Space toggle · a all · n none · Enter add · Esc cancel");
+    expect(text).toContain(
+      " ↑↓ to select · space to toggle · a for all · n for none\n enter to add · esc to cancel",
+    );
   });
 
   it("starts with nothing checked and says confirm when no checks or submit word are given", () => {
     const lines = open().view.render(80);
 
     expect(lines.filter((line) => line.includes("[x]"))).toEqual([]);
-    expect(lines.at(-2)).toContain("Enter confirm");
+    expect(lines.slice(-3, -1)).toEqual([
+      " ↑↓ to select · space to toggle · a for all · n for none · enter to confirm",
+      " esc to cancel",
+    ]);
   });
 
   it("returns every value on Enter when all start checked", () => {

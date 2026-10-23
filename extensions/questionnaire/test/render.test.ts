@@ -20,7 +20,8 @@ describe("renderForm", () => {
       "      Keep the UI as it is",
       "   3. Type something.",
       "",
-      " ↑↓ select · 1-9 pick · Enter submit · Esc cancel",
+      " ↑↓ to select · 1-9 to pick · enter to submit",
+      " esc to cancel",
       rule(60),
     ]);
   });
@@ -30,7 +31,10 @@ describe("renderForm", () => {
     const lines = renderForm(state, plainTheme, 80);
 
     expect(lines.slice(0, 3)).toEqual([rule(80), " ← ■ Scope  □ Priority  ✓ Submit →", ""]);
-    expect(lines.at(-2)).toBe(" ↑↓ select · 1-9 pick · Tab/←→ switch · Enter confirm · Esc cancel");
+    expect(lines.slice(-3, -1)).toEqual([
+      " ↑↓ to select · 1-9 to pick · tab/←→ to switch · enter to confirm",
+      " esc to cancel",
+    ]);
 
     const bar = renderForm(state, tagged, 120)[1];
 
@@ -61,7 +65,7 @@ describe("renderForm", () => {
       "",
       " Unanswered: Priority",
       "",
-      " Tab/←→ switch · Esc cancel",
+      " tab/←→ to switch · esc to cancel",
       rule(60),
     ]);
     expect(renderForm(submit, tagged, 60).find((line) => line.includes("Unanswered"))).toContain("<warning>");
@@ -77,7 +81,9 @@ describe("renderForm", () => {
       " Press Enter to submit",
       "",
     ]);
-    expect(renderForm(complete, plainTheme, 60).at(-2)).toBe(" Tab/←→ switch · Enter submit · Esc cancel");
+    expect(renderForm(complete, plainTheme, 60).at(-2)).toBe(
+      " tab/←→ to switch · enter to submit · esc to cancel",
+    );
   });
 
   it("shows the text input below the options while typing", () => {
@@ -95,7 +101,7 @@ describe("renderForm", () => {
       " Your answer:",
       " [input]",
       "",
-      " Enter save · Esc back to options",
+      " enter to save · esc to go back to options",
       rule(60),
     ]);
   });

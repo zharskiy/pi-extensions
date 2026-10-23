@@ -30,9 +30,29 @@ describe("padded", () => {
 });
 
 describe("hintLines", () => {
+  it("wraps between hints, never inside one", () => {
+    const hints = [
+      ["↑↓", "to select"],
+      ["enter", "to choose"],
+      ["esc", "to cancel"],
+    ] as const;
+
+    expect(hintLines(plainTheme, hints, 34)).toEqual([" ↑↓ to select · enter to choose", " esc to cancel"]);
+    expect(hintLines(plainTheme, [["enter", "to save the whole thing"]], 12)).toEqual([" enter to..."]);
+  });
+
   it("joins the hints with a dot in the dim colour", () => {
-    expect(hintLines(plainTheme, ["Enter save", "Esc back"], 40)).toEqual([" Enter save · Esc back"]);
-    expect(hintLines(tagged, ["Enter save"], 40)[0]).toContain("<dim>Enter save");
+    expect(
+      hintLines(
+        plainTheme,
+        [
+          ["enter", "to save"],
+          ["esc", "to go back"],
+        ],
+        40,
+      ),
+    ).toEqual([" enter to save · esc to go back"]);
+    expect(hintLines(tagged, [["enter", "to save"]], 40)[0]).toBe(" <dim>enter</> <muted>to save</>");
   });
 });
 

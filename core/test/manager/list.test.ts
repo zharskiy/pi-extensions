@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { KeyPress, ThemeLike } from "../../adapter/contract.ts";
-import { listKey, listLines } from "../../manager/list.ts";
+import { keyHints } from "../../manager/layout.ts";
+import { CANCEL_HINT, listKey, listLines, SELECT_HINTS } from "../../manager/list.ts";
 import { plainTheme } from "../helpers/fakes.ts";
 
 const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
@@ -74,5 +75,14 @@ describe("listKey", () => {
     expect(listKey(digit("4"), 0, 3)).toBeUndefined();
     expect(listKey(digit("0"), 0, 3)).toBeUndefined();
     expect(listKey(key("tab"), 0, 3)).toBeUndefined();
+  });
+});
+
+describe("list hints", () => {
+  it("phrase each key as key to verb, keys dim and words muted", () => {
+    expect(keyHints([...SELECT_HINTS, CANCEL_HINT], plainTheme)).toBe(
+      "↑↓ to select · 1-9 to pick · esc to cancel",
+    );
+    expect(keyHints([CANCEL_HINT], tagged)).toBe("<dim>esc</> <muted>to cancel</>");
   });
 });

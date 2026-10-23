@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { KeyPress, ThemeLike } from "../../adapter/contract.ts";
-import { tabBar, tabStep } from "../../manager/tabs.ts";
+import { keyHints } from "../../manager/layout.ts";
+import { TAB_SWITCH_HINT, tabBar, tabStep } from "../../manager/tabs.ts";
 import { plainTheme } from "../helpers/fakes.ts";
 
 const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
@@ -40,5 +41,11 @@ describe("tabBar", () => {
     expect(bar).toContain("<success>✓ Submit</>");
     expect(tabBar(tagged, TABS, 0, false)).toContain("<dim>✓ Submit</>");
     expect(tabBar(tagged, TABS, 2, false)).toContain("<accent>✓ Submit</>");
+  });
+});
+
+describe("tab hint", () => {
+  it("names the switch keys in lower case", () => {
+    expect(keyHints([TAB_SWITCH_HINT], plainTheme)).toBe("tab/←→ to switch");
   });
 });
