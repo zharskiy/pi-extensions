@@ -26,7 +26,7 @@ export const MARKS = {
 
 export type Mark = "pending" | "success" | "error" | "stopped" | "info";
 
-export const MARK_TOKENS: Record<Mark, ThemeToken> = {
+const MARK_TOKENS: Record<Mark, ThemeToken> = {
   pending: "dim",
   success: "success",
   error: "error",
@@ -167,7 +167,6 @@ export type TitleParts = {
   args?: string;
   reason?: { text: string; token?: ThemeToken };
   duration?: string;
-  hint?: Styled;
 };
 
 const segment = (text: string | undefined, theme: ThemeLike, token: ThemeToken = "muted") =>
@@ -227,10 +226,8 @@ export const titleLine = (parts: TitleParts, width: number, theme: ThemeLike) =>
   const room = width - fixedWidth(parts, theme);
   const full = targetWidth(parts.target, theme) + argsWidth(parts, theme);
   const duration = segment(parts.duration, theme);
-  const hint = parts.hint === undefined ? "" : ` ${paint(parts.hint, theme)}`;
   const keepDuration = full + theme.width(duration) <= room;
-  const keepHint = keepDuration && full + theme.width(duration) + theme.width(hint) <= room;
-  const left = room - (keepDuration ? theme.width(duration) : 0) - (keepHint ? theme.width(hint) : 0);
+  const left = room - (keepDuration ? theme.width(duration) : 0);
   const verb = parts.verb === undefined ? "" : paint(parts.verb, theme);
   const gap = verb && (parts.target || parts.args) ? " " : "";
   const line = [
@@ -240,7 +237,6 @@ export const titleLine = (parts: TitleParts, width: number, theme: ThemeLike) =>
     placeTarget(parts, left, theme),
     segment(parts.reason?.text, theme, parts.reason?.token ?? "error"),
     keepDuration ? duration : "",
-    keepHint ? hint : "",
   ].join("");
 
   return theme.truncate(line, width);

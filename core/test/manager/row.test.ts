@@ -231,7 +231,7 @@ describe("row", () => {
       const long = "word ".repeat(20);
       const lines = row({
         mark: "error",
-        title: read({ reason: { text: "file not found" }, duration: "12s", hint: expandHint("ctrl+o") }),
+        title: read({ reason: { text: "file not found" }, duration: "12s" }),
         children: [long, { mark: "pending", title: long, children: [long] }, ""],
         hint: expandHint("ctrl+o"),
         hintCuts: true,
@@ -253,16 +253,13 @@ describe("titleLine", () => {
     ...patch,
   });
 
-  it("puts the reason, then the duration, then the hint after the target", () => {
-    expect(titleLine(shell({ hint: "(ctrl+o to expand)" }), 79, plainTheme)).toBe(
-      "✗ $ npm test -- --run src/stats.test.ts · exit 1 · 9s (ctrl+o to expand)",
-    );
+  it("puts the reason, then the duration after the target", () => {
+    expect(titleLine(shell(), 79, plainTheme)).toBe("✗ $ npm test -- --run src/stats.test.ts · exit 1 · 9s");
   });
 
-  it("drops the hint first, then the duration, and keeps the reason while it cuts the target", () => {
-    expect(titleLine(shell({ hint: "(ctrl+o to expand)" }), 60, plainTheme)).toBe(
-      "✗ $ npm test -- --run src/stats.test.ts · exit 1 · 9s",
-    );
+  it("drops the duration first and keeps the reason while it cuts the target", () => {
+    expect(titleLine(shell(), 53, plainTheme)).toBe("✗ $ npm test -- --run src/stats.test.ts · exit 1 · 9s");
+    expect(titleLine(shell(), 52, plainTheme)).toBe("✗ $ npm test -- --run src/stats.test.ts · exit 1");
     expect(titleLine(shell(), 39, plainTheme)).toBe("✗ $ npm test -- --run src/s... · exit 1");
   });
 

@@ -126,7 +126,7 @@ export const receipt = (facts: ReceiptFacts): ReceiptSegment[] => {
 export const plainReceipt = (segments: readonly ReceiptSegment[]) =>
   segments.map((part) => part.text).join(DOT);
 
-export const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
+const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
   DROP_ORDER.reduce<readonly ReceiptSegment[]>(
     (kept, kind) =>
       theme.width(plainReceipt(kept)) <= room ? kept : kept.filter((part) => part.kind !== kind),

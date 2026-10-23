@@ -43,7 +43,7 @@ const DISPLAY_WORDS: Partial<Record<AgentState, string>> = {
   handoff: "Handed off",
 };
 
-export const STARTING = "Starting";
+const STARTING = "Starting";
 
 export const stateMark = (state: AgentState): Mark => STATE_MARKS[state];
 

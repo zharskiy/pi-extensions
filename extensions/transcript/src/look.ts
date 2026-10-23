@@ -7,7 +7,7 @@ export type Args = Record<string, unknown>;
 
 export type Context = { view: ToolCallView; args: Args; home: string; key: string };
 
-export type Title = Omit<TitleParts, "mark" | "reason" | "duration" | "hint">;
+export type Title = Omit<TitleParts, "mark" | "reason" | "duration">;
 
 export type Failure = { text: string; timedOut?: boolean };
 
