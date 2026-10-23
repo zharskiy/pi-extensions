@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { CHEVRON, createFrame } from "../src/frame.ts";
 
 const ESC = String.fromCharCode(27);
 const ANSI = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
-const bold = (text: string) => `${ESC}[1m${text}${ESC}[22m`;
+const recording: ThemeLike = {
+  ...plainTheme,
+  fg: (token, text) => `<${token}>${text}</${token}>`,
+  bold: (text) => `<b>${text}</b>`,
+};
 
 const plain = (text: string) => text;
 const bracketed = (text: string) => `[${text}]`;
@@ -28,7 +33,7 @@ describe("createFrame", () => {
       plainTheme,
     );
 
-    expect(lines).toEqual(["─────────", ` ${bold(CHEVRON)} abcdef`, "   ghijkl", "─────────"]);
+    expect(lines).toEqual(["─────────", ` ${CHEVRON} abcdef`, "   ghijkl", "─────────"]);
   });
 
   it("keeps every line as wide as the given width", () => {
@@ -57,10 +62,14 @@ describe("createFrame", () => {
     expect(visible(lines[0] ?? "")).toBe(visible(rule) + frame.chrome);
   });
 
-  it("paints the extension and the chevron with the given colour", () => {
-    const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed, plainTheme);
+  it("uses pi's message cursor as the prompt", () => {
+    expect(CHEVRON).toBe("›");
+  });
 
-    expect(lines).toEqual(["[───]──", ` ${bold(`[${CHEVRON}]`)} ab`, "──[───]"]);
+  it("paints the extension with the border colour and the prompt bold in accent", () => {
+    const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed, recording);
+
+    expect(lines).toEqual(["[───]──", " <b><accent>›</accent></b> ab", "──[───]"]);
   });
 
   it("puts the extension in front of the top rule so pi's working status starts right of the gutter", () => {
