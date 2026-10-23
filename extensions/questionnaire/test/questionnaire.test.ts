@@ -136,7 +136,7 @@ describe("questionnaire tool", () => {
       ["Scope (scope): wrote: both", "Priority (priority): selected 2. Later [value: later]"].join("\n"),
     );
     expect(host.renderTool("questionnaire", { result }).result).toBe(
-      ["  ⎿  ✓ Scope: (wrote) both", "     ✓ Priority: 2. Later"].join("\n"),
+      ["  ↳ Scope: both (wrote)", "    Priority: 2. Later"].join("\n"),
     );
   });
 
@@ -269,7 +269,7 @@ describe("questionnaire tool", () => {
     const { host } = setup();
 
     expect(host.renderTool("questionnaire", { call: { questions: [SCOPE, PRIORITY] } }).call).toBe(
-      "● Questionnaire 2 questions (Scope, Priority)",
+      "✓ Questionnaire · 2 questions",
     );
   });
 });

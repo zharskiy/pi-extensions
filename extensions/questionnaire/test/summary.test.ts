@@ -30,37 +30,64 @@ const drawn = (render: ToolRender, width = 80) => (typeof render === "function" 
 const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
 
 describe("rendering", () => {
-  it("renders the call as a row with the count and the dim labels", () => {
+  it("renders the call as a row with the question count", () => {
     expect(
       drawn(callText({ questions: [SCOPE, { ...PRIORITY, label: undefined }] }, plainTheme, state())),
-    ).toBe("● Questionnaire 2 questions (Scope, Q2)");
-    expect(drawn(callText({ questions: [SCOPE] }, plainTheme, state()))).toBe(
-      "● Questionnaire 1 question (Scope)",
-    );
-    expect(drawn(callText({}, plainTheme, state()))).toBe("● Questionnaire 0 questions");
+    ).toBe("✓ Questionnaire · 2 questions");
+    expect(drawn(callText({ questions: [SCOPE] }, plainTheme, state()))).toBe("✓ Questionnaire · 1 question");
+    expect(drawn(callText({}, plainTheme, state()))).toBe("✓ Questionnaire · 0 questions");
     expect(drawn(callText({ questions: "nope" as never }, plainTheme, state()))).toBe(
-      "● Questionnaire 0 questions",
+      "✓ Questionnaire · 0 questions",
     );
-    expect(drawn(callText({ questions: [SCOPE] }, tagged, state()))).toContain("<dim> (Scope)");
+    expect(drawn(callText({ questions: [SCOPE] }, tagged, state()))).toBe(
+      "<success>✓ Questionnaire<muted> · 1 question",
+    );
   });
 
-  it("paints the bullet by the call's state", () => {
-    expect(drawn(callText({}, tagged, state({ isPartial: true })))).toMatch(/^<dim>●/);
-    expect(drawn(callText({}, tagged, state()))).toMatch(/^<success>●/);
-    expect(drawn(callText({}, tagged, state({ isError: true })))).toMatch(/^<error>●/);
+  it("marks the call by its state", () => {
+    expect(drawn(callText({}, tagged, state({ isPartial: true })))).toMatch(/^<dim>◌ /);
+    expect(drawn(callText({}, tagged, state({ isError: true })))).toMatch(/^<error>✗ /);
+    expect(drawn(callText({}, plainTheme, state({ isError: true, aborted: true })))).toBe(
+      "⊘ Questionnaire · cancelled",
+    );
   });
 
-  it("renders one child line per answer with a check mark and a cancel in warning colour", () => {
+  it("marks a cancelled questionnaire as stopped", () => {
+    const details = answered(true);
+    const cancelled = state({ result: { text: resultText(details), details } });
+
+    expect(drawn(callText({ questions: [SCOPE, PRIORITY] }, plainTheme, cancelled))).toBe(
+      "⊘ Questionnaire · cancelled",
+    );
+    expect(drawn(callText({}, tagged, cancelled))).toBe("<muted>⊘ Questionnaire<muted> · cancelled");
+  });
+
+  it("lists the answers on a ↳ line without a check mark, typed answers marked (wrote)", () => {
     const details = answered(false);
 
     expect(drawn(resultSummary({ text: resultText(details), details }, plainTheme))).toBe(
-      ["  ⎿  ✓ Scope: 2. Backend only", "     ✓ Priority: (wrote) next sprint"].join("\n"),
+      ["  ↳ Scope: 2. Backend only", "    Priority: next sprint (wrote)"].join("\n"),
     );
-    expect(drawn(resultSummary({ text: "", details: answered(true) }, tagged))).toBe(
-      ["  <dim>⎿  <warning>Cancelled", "     <success>✓ <accent>Scope: 2. Backend only"].join("\n"),
+    expect(drawn(resultSummary({ text: resultText(details), details }, tagged))).toBe(
+      [
+        "  <dim>↳ <accent>Scope: <text>2. Backend only",
+        "    <accent>Priority: <text>next sprint <dim>(wrote)",
+      ].join("\n"),
     );
+  });
+
+  it("keeps the answers given before a cancel and nothing else", () => {
+    expect(drawn(resultSummary({ text: "", details: answered(true) }, plainTheme))).toBe(
+      "  ↳ Scope: 2. Backend only",
+    );
+    expect(drawn(resultSummary({ text: "", details: { ...answered(true), answers: [] } }, plainTheme))).toBe(
+      "",
+    );
+  });
+
+  it("shows an error in the error colour on the ↳ line", () => {
     expect(drawn(resultSummary({ text: "Error: No questions provided", isError: true }, tagged))).toBe(
-      "  <dim>⎿  <error>Error: No questions provided",
+      "  <dim>↳ <error>Error: No questions provided",
     );
   });
 });

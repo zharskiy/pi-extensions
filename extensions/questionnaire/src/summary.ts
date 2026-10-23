@@ -1,8 +1,7 @@
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../core/adapter/contract.ts";
-import { childRow, noun, rowText, type Styled, toolRow, toolState } from "../../../core/manager/row.ts";
+import { markOf, noun, type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
 import {
   type Answer,
-  defaultLabel,
   labelOf,
   type Question,
   type QuestionnaireDetails,
@@ -10,46 +9,45 @@ import {
   questionInputs,
 } from "./result.ts";
 
+const cancelledOf = (state: ToolRenderState) =>
+  (state.result?.details as QuestionnaireDetails | undefined)?.cancelled === true;
+
 export const callText = (
   params: QuestionnaireParams,
   theme: ThemeLike,
   state: ToolRenderState,
 ): ToolRender => {
-  const questions = questionInputs(params);
-  const labels = questions.map((question, index) => question?.label?.trim() || defaultLabel(index));
-  const count = `${questions.length} ${noun(questions.length, "question")}`;
-  const title = (paint: ThemeLike) => {
-    const named = `${paint.bold("Questionnaire")} ${count}`;
+  const count = questionInputs(params).length;
+  const cancelled = cancelledOf(state);
+  const mark = cancelled ? "stopped" : markOf(state);
+  const suffix = cancelled || state.aborted ? "cancelled" : `${count} ${noun(count, "question")}`;
+  const title = (paint: ThemeLike) => `${paint.bold("Questionnaire")}${paint.fg("muted", ` · ${suffix}`)}`;
 
-    return labels.length > 0 ? `${named}${paint.fg("dim", ` (${labels.join(", ")})`)}` : named;
-  };
-
-  return rowText(toolRow({ state: toolState(state), title }), theme);
+  return rowText(row({ mark, title }), theme);
 };
 
-const answerSummary = (questions: Question[], answer: Answer) => (theme: ThemeLike) => {
+const answerLine = (questions: Question[], answer: Answer, theme: ThemeLike) => {
+  const label = theme.fg("accent", `${labelOf(questions, answer)}:`);
   const shown = answer.wasCustom
-    ? `${theme.fg("dim", "(wrote)")} ${answer.label}`
-    : `${answer.index}. ${answer.label}`;
+    ? `${theme.fg("text", answer.label)} ${theme.fg("dim", "(wrote)")}`
+    : theme.fg("text", `${answer.index}. ${answer.label}`);
 
-  return `${theme.fg("success", "✓")} ${theme.fg("accent", labelOf(questions, answer))}: ${shown}`;
+  return `${label} ${shown}`;
 };
 
-const resultChildren = (result: ToolResult<QuestionnaireDetails>): Styled[] => {
+const resultChildren = (result: ToolResult<QuestionnaireDetails>, theme: ThemeLike): RowChild[] => {
   const details = result.details;
 
   if (result.isError) {
-    return [(theme) => theme.fg("error", result.text)];
+    return [theme.fg("error", result.text)];
   }
 
   if (!details) {
-    return [result.text];
+    return [theme.fg("muted", result.text)];
   }
 
-  const answers = details.answers.map((answer) => answerSummary(details.questions, answer));
-
-  return details.cancelled ? [(theme) => theme.fg("warning", "Cancelled"), ...answers] : answers;
+  return details.answers.map((answer) => answerLine(details.questions, answer, theme));
 };
 
 export const resultSummary = (result: ToolResult<QuestionnaireDetails>, theme: ThemeLike): ToolRender =>
-  rowText(childRow({ children: resultChildren(result) }), theme);
+  rowText(rowChildren({ children: resultChildren(result, theme) }), theme);
