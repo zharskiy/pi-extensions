@@ -106,7 +106,7 @@ const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean): St
   const token = stateToken(terminal.state);
 
   if (terminal.state === "queued") {
-    return { lead: "Queued", leadToken: token };
+    return { lead: "Queued", leadToken: "muted" };
   }
 
   if (terminal.state === "running") {
@@ -120,7 +120,7 @@ const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean): St
   }
 
   if (terminal.state === "grace") {
-    return { lead: "Stopping…", leadToken: token };
+    return { lead: "Stopping…", leadToken: "muted" };
   }
 
   if (terminal.state === "done") {

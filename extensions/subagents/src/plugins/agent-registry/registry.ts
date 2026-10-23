@@ -91,6 +91,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       turns: 0,
       toolCalls: 0,
       tokens: 0,
+      cost: 0,
       lastText: "",
       handoffPath: options.handoffPath(id),
       handoffRequested: false,

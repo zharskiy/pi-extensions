@@ -16,6 +16,7 @@ const AUTH = { id: "explorer-1a2b", description: "Map the auth module" };
 const row = (record: AgentRecord, patch: Partial<RowInput> = {}): RowInput => ({
   record,
   depth: 0,
+  first: true,
   last: true,
   ancestorsContinue: [],
   openDescendants: 0,
@@ -121,14 +122,14 @@ const cases: Case[] = [
     input: row(queued),
     now: 65_000,
     width: 80,
-    expected: "   ○ worker  Rename parseDate callers  queued",
+    expected: "   ◌ worker  Rename parseDate callers  queued",
   },
   {
     name: "keeps the status word on a narrow row",
     input: row(queued),
     now: 65_000,
     width: 32,
-    expected: "   ○ worker  Rename ...  queued",
+    expected: "   ◌ worker  Rename ...  queued",
   },
   {
     name: "shows done with the duration",
@@ -164,7 +165,7 @@ const cases: Case[] = [
     input: row(agentRecord({ ...AUTH, state: "queued", tokens: 12_300 })),
     now: 99_000,
     width: 80,
-    expected: "   ○ explorer  Map the auth module  queued",
+    expected: "   ◌ explorer  Map the auth module  queued",
   },
   {
     name: "omits the description and pads the name when fewer than 8 columns remain",
@@ -185,21 +186,21 @@ const cases: Case[] = [
     input: row(grace),
     now: 130_000,
     width: 80,
-    expected: "   ◐ worker  Fix the login redirect  stopping",
+    expected: "   ◌ worker  Fix the login redirect  stopping",
   },
   {
     name: "shows stopped with the duration",
     input: row(stopped),
     now: 9_000,
     width: 80,
-    expected: "   ■ worker  Fix the login redirect  stopped · 3s",
+    expected: "   ⊘ worker  Fix the login redirect  stopped · 3s",
   },
   {
     name: "shows handed off with the duration",
     input: row(handedOff),
     now: 9_000_000,
     width: 80,
-    expected: "   ↪ explorer  Map the auth module  handed off · 1h 2m",
+    expected: "   ⊘ explorer  Map the auth module  handed off · 1h 2m",
   },
   {
     name: "appends the chain index to the name",

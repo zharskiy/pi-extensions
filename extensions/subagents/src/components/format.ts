@@ -1,4 +1,7 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
+import { type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
+import type { AgentRecord } from "../model/types.ts";
+import { displayWord, isStarting } from "./state-text.ts";
 
 export { errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
 
@@ -9,7 +12,7 @@ export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" :
 export const formatToolUses = (n: number): string => plural(n, "tool use");
 
 export const formatCtx = (percent: number | null | undefined): string | undefined =>
-  percent === null || percent === undefined ? undefined : `${Math.round(percent)}% ctx`;
+  percent === null || percent === undefined ? undefined : `${Math.round(percent)}% context`;
 
 export const singleLine = (text: string): string => text.replace(/\s+/g, " ").trim();
 
@@ -23,6 +26,43 @@ export const elapsedOf = (
   record: { startedAt?: number; createdAt: number; endedAt?: number },
   now: number,
 ): number => (record.endedAt ?? now) - (record.startedAt ?? record.createdAt);
+
+type ReceiptRecord = Pick<
+  AgentRecord,
+  "state" | "turns" | "toolCalls" | "tokens" | "cost" | "activity" | "createdAt" | "startedAt" | "endedAt"
+>;
+
+export type ReceiptOptions = { live: boolean; reason?: string };
+
+const figures = (record: ReceiptRecord, now: number) => ({
+  elapsedMs: elapsedOf(record, now),
+  calls: record.toolCalls,
+  tokens: record.tokens,
+  cost: record.cost,
+});
+
+const receiptFacts = (record: ReceiptRecord, now: number, options: ReceiptOptions): ReceiptFacts => {
+  const word = displayWord(record);
+
+  if (record.state === "queued" || isStarting(record)) {
+    return { word, running: false };
+  }
+
+  if (record.state === "grace") {
+    return { word, running: true, elapsedMs: elapsedOf(record, now) };
+  }
+
+  if (record.state === "running") {
+    return options.live
+      ? { ...figures(record, now), running: true, activity: record.activity }
+      : { word: "Running", running: false };
+  }
+
+  return { ...figures(record, now), word, reason: options.reason, running: false };
+};
+
+export const agentReceipt = (record: ReceiptRecord, now: number, options: ReceiptOptions): ReceiptSegment[] =>
+  receipt(receiptFacts(record, now, options));
 
 export const cutChars = (text: string, limit: number): string =>
   text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 3))}...`;

@@ -408,7 +408,7 @@ describe("agent view header", () => {
     const table: [Partial<AgentRecord>, string[]][] = [
       [
         { state: "queued" },
-        [" ○ explorer › Map the auth module", " queued · provider/model · id explorer-1"],
+        [" ◌ explorer › Map the auth module", " queued · provider/model · id explorer-1"],
       ],
       [
         { state: "running" },
@@ -416,7 +416,7 @@ describe("agent view header", () => {
       ],
       [
         { state: "grace" },
-        [" ◐ explorer › Map the auth module", " stopping · provider/model · id explorer-1"],
+        [" ◌ explorer › Map the auth module", " stopping · provider/model · id explorer-1"],
       ],
       [
         { state: "done", endedAt: 0 },
@@ -428,11 +428,11 @@ describe("agent view header", () => {
       ],
       [
         { state: "stopped", endedAt: 0 },
-        [" ■ explorer › Map the auth module", " stopped · provider/model · id explorer-1"],
+        [" ⊘ explorer › Map the auth module", " stopped · provider/model · id explorer-1"],
       ],
       [
         { state: "handoff", endedAt: 0, handoffPath: "/tmp/h.md" },
-        [" ↪ explorer › Map the auth module", " handed off · provider/model · id explorer-1"],
+        [" ⊘ explorer › Map the auth module", " handed off · provider/model · id explorer-1"],
       ],
     ];
 
@@ -824,7 +824,7 @@ describe("agent view with live agents", () => {
     await flush();
     vi.advanceTimersByTime(350);
 
-    expect(plain(view.render(100))[3]).toMatch(/ · 85% ctx$/);
+    expect(plain(view.render(100))[3]).toMatch(/ · 85% context$/);
   });
 });
 
@@ -858,14 +858,14 @@ describe("agent view past sessions", () => {
   it("opens from the manifest with the definition's limit", async () => {
     const lines = await openFromManifest({ id: "explorer-dead", agent: "scout" });
 
-    expect(lines[3]).toMatch(/ · 2% ctx$/);
+    expect(lines[3]).toMatch(/ · 2% context$/);
   });
 
   it("prefers the limit stored in the manifest, and shows no ctx without a known limit", async () => {
     const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
     const gone = await openFromManifest({ id: "removed-old", agent: "removed" });
 
-    expect(stored[3]).toMatch(/ · 3% ctx$/);
+    expect(stored[3]).toMatch(/ · 3% context$/);
     expect(gone[3]).not.toContain("ctx");
   });
 
@@ -880,7 +880,7 @@ describe("agent view past sessions", () => {
       endedAt: 65_000,
     });
 
-    expect(lines[3]).toBe(" 4 tool uses · 12.3k tokens · 1m 5s · 2% ctx");
+    expect(lines[3]).toBe(" 4 tool uses · 12.3k tokens · 1m 5s · 2% context");
   });
 
   it("shows 0 tool uses for a manifest written before counters were stored", async () => {
@@ -891,7 +891,7 @@ describe("agent view past sessions", () => {
       endedAt: 3_000,
     });
 
-    expect(lines[3]).toBe(" 0 tool uses · 3s · 2% ctx");
+    expect(lines[3]).toBe(" 0 tool uses · 3s · 2% context");
   });
 
   it("follows a chain of an earlier session to its last link", async () => {

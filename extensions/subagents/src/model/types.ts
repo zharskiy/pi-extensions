@@ -59,6 +59,7 @@ export type AgentRecord = {
   turns: number;
   toolCalls: number;
   tokens: number;
+  cost: number;
   context?: ContextSnapshot;
   lastText: string;
   resultText?: string;

@@ -113,6 +113,7 @@ export const chainTotals = (links: AgentRecord[]): AgentRecord => {
     startedAt: first.startedAt ?? first.createdAt,
     toolCalls: links.reduce((sum, link) => sum + link.toolCalls, 0),
     tokens: links.reduce((sum, link) => sum + link.tokens, 0),
+    cost: links.reduce((sum, link) => sum + link.cost, 0),
   };
 };
 

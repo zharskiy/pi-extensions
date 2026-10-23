@@ -817,7 +817,7 @@ describe("run_agent block colours", () => {
 
     patch(harness, first, { state: "grace" });
 
-    expect(statusOf(0)).toBe("<warning>Stopping…</warning>");
+    expect(statusOf(0)).toBe("<muted>Stopping…</muted>");
 
     closed(second, { state: "done", toolCalls: 4, tokens: 12_345, endedAt: 65_000 });
     expect(statusOf(1)).toBe("<success>Done</success><dim> · 4 tool uses · 12.3k tokens · 1m 5s</dim>");
@@ -829,7 +829,7 @@ describe("run_agent block colours", () => {
     expect(statusOf(1)).toBe("<muted>Stopped · 0 tool uses · 3s</muted>");
 
     closed(second, { state: "handoff", toolCalls: 4, tokens: 12_345, endedAt: 3_720_000 });
-    expect(statusOf(1)).toBe("<warning>Handed off · 4 tool uses · 12.3k tokens · 1h 2m</warning>");
+    expect(statusOf(1)).toBe("<muted>Handed off · 4 tool uses · 12.3k tokens · 1h 2m</muted>");
 
     closed(third, { state: "done", toolCalls: 1, tokens: 0, endedAt: 1_000 });
     patch(harness, third, {

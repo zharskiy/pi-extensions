@@ -10,6 +10,7 @@ import {
   type SessionInfo,
   type StopReason,
   splitModelRequest,
+  type UsageTotals,
 } from "../../../../../core/adapter/contract.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
 import { errorText } from "../../components/format.ts";
@@ -276,6 +277,16 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     });
   };
 
+  const noteUsage = (id: string, usage: UsageTotals) => {
+    const record = deps.registry.get(id);
+
+    if (record && record.cost !== usage.cost.total) {
+      deps.registry.update(id, { cost: usage.cost.total });
+    }
+
+    deps.bus.emit("agent:usage", { id, usage });
+  };
+
   const disposeLive = async (id: string, live: Live) => {
     live.unsubscribe?.();
     live.turn = "idle";
@@ -289,7 +300,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.child = undefined;
 
     if (child) {
-      deps.bus.emit("agent:usage", { id, usage: child.ownUsage() });
+      noteUsage(id, child.ownUsage());
       await child.dispose().catch(() => undefined);
     }
   };
@@ -523,9 +534,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     if (event.type === "turn_end") {
       const usage = live.child?.ownUsage();
       const tokens = usage ? usage.input + usage.output + usage.cacheWrite : record.tokens;
+      const cost = usage ? usage.cost.total : record.cost;
       const turns = record.turns + 1;
 
-      deps.registry.update(id, { turns, context: event.context, tokens, lastText: live.lastText });
+      deps.registry.update(id, { turns, context: event.context, tokens, cost, lastText: live.lastText });
 
       if (usage) {
         deps.bus.emit("agent:usage", { id, usage });
@@ -569,7 +581,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       }
 
       if (live.child) {
-        deps.bus.emit("agent:usage", { id, usage: live.child.ownUsage() });
+        noteUsage(id, live.child.ownUsage());
       }
 
       if (record.state === "grace") {

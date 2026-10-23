@@ -97,7 +97,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual([expect.stringMatching(/^ {3}○ explorer {2}look around +queued$/), ""]);
+    expect(panel.lines()).toEqual([expect.stringMatching(/^ {3}◌ explorer {2}look around +queued$/), ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });

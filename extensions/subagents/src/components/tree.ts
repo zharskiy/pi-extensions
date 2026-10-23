@@ -1,14 +1,19 @@
+import { MARKS } from "../../../../core/manager/row.ts";
 import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../model/types.ts";
 
 export type TreeRow = {
   record: AgentRecord;
   depth: number;
+  first: boolean;
   last: boolean;
   ancestorsContinue: boolean[];
   openDescendants: number;
 };
 
 type ById = ReadonlyMap<string, AgentRecord>;
+
+export const nestPrefix = (row: Pick<TreeRow, "depth" | "first">): string =>
+  row.depth === 0 ? "" : `${"  ".repeat(row.depth - 1)}${row.first ? `${MARKS.child} ` : "  "}`;
 
 export const isTerminal = (record: AgentRecord, byId: ById): boolean =>
   !record.successorId || !byId.has(record.successorId);
@@ -90,7 +95,14 @@ export const treeOrder = (records: AgentRecord[], roots?: (record: AgentRecord) 
 
     return siblings.reduce((open, record, index) => {
       const last = index === siblings.length - 1;
-      const row: TreeRow = { record, depth, last, ancestorsContinue: continues, openDescendants: 0 };
+      const row: TreeRow = {
+        record,
+        depth,
+        first: index === 0,
+        last,
+        ancestorsContinue: continues,
+        openDescendants: 0,
+      };
 
       rows.push(row);
 

@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { receiptText } from "../../../../core/manager/format.ts";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
+  agentReceipt,
   alignRight,
   cutChars,
   firstLine,
+  formatCtx,
   singleLine,
   truncatePainted,
   wrapCols,
 } from "../../src/components/format.ts";
+import type { AgentRecord } from "../../src/model/types.ts";
+import { agentRecord } from "../helpers/records.ts";
+
+const worked = { startedAt: 0, toolCalls: 4, tokens: 12_300, cost: 0.04, turns: 2 };
+
+const shown = (patch: Partial<AgentRecord>, live = true, reason?: string, room = 200) =>
+  receiptText(agentReceipt(agentRecord({ id: "a", ...patch }), 65_000, { live, reason }), room, plainTheme);
 
 describe("format helpers", () => {
   it("collapses whitespace and picks the first non-empty line", () => {
@@ -53,5 +63,38 @@ describe("format helpers", () => {
 
     expect(pieces.every((piece) => plainTheme.width(piece) <= 38)).toBe(true);
     expect(pieces.join("")).toBe("漢字".repeat(60));
+  });
+
+  it("shows the context share as a word", () => {
+    expect(formatCtx(31.4)).toBe("31% context");
+    expect(formatCtx(null)).toBeUndefined();
+  });
+
+  it("composes one receipt per agent state", () => {
+    expect(shown({ ...worked, activity: "grep TODO" })).toBe(
+      "Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04 · grep TODO",
+    );
+    expect(shown({ ...worked }, false)).toBe("Running");
+    expect(shown({ state: "running" })).toBe("Starting");
+    expect(shown({ state: "queued" })).toBe("Queued");
+    expect(shown({ state: "grace", startedAt: 0 })).toBe("Stopping · Elapsed 1m 5s");
+    expect(shown({ ...worked, state: "done", endedAt: 65_000 })).toBe(
+      "1m 5s · 4 calls · 12.3k tokens · $0.04",
+    );
+    expect(shown({ ...worked, state: "done", cost: 0.001, endedAt: 65_000 })).toContain("· <$0.01");
+    expect(shown({ ...worked, state: "failed", endedAt: 65_000 }, true, "tests failed twice")).toBe(
+      "tests failed twice · 1m 5s · 4 calls · 12.3k tokens · $0.04",
+    );
+    expect(shown({ state: "stopped", endedAt: 3_000 })).toBe("Stopped · 3s · 0 calls");
+    expect(shown({ ...worked, state: "handoff", endedAt: 3_720_000 })).toBe(
+      "Handed off · 1h 2m · 4 calls · 12.3k tokens · $0.04",
+    );
+  });
+
+  it("drops activity, cost, calls and tokens before the time or the word", () => {
+    expect(shown({ ...worked, activity: "grep" }, true, undefined, 20)).toBe("Elapsed 1m 5s");
+    expect(shown({ ...worked, state: "handoff", endedAt: 3_720_000 }, true, undefined, 5)).toBe(
+      "Handed off · 1h 2m",
+    );
   });
 });

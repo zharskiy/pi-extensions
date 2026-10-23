@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { carrySelection, isTerminal, treeOrder, withLinks } from "../../src/components/tree.ts";
+import { carrySelection, isTerminal, nestPrefix, treeOrder, withLinks } from "../../src/components/tree.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
 
@@ -34,6 +34,24 @@ describe("tree order", () => {
     expect(byId(rows, "a1")?.ancestorsContinue).toEqual([]);
     expect(byId(rows, "a1x")?.ancestorsContinue).toEqual([true]);
     expect(byId(rows, "a2x")?.ancestorsContinue).toEqual([false]);
+  });
+
+  it("prefixes the first child with the child mark and later siblings and deeper levels with spaces", () => {
+    const rows = treeOrder([
+      agentRecord({ id: "a", createdAt: 1 }),
+      agentRecord({ id: "a1", callerId: "a", createdAt: 2 }),
+      agentRecord({ id: "a2", callerId: "a", createdAt: 3 }),
+      agentRecord({ id: "a1x", callerId: "a1", createdAt: 4 }),
+      agentRecord({ id: "a1y", callerId: "a1", createdAt: 5 }),
+    ]);
+
+    expect(rows.map((row) => [row.record.id, nestPrefix(row)])).toEqual([
+      ["a", ""],
+      ["a1", "↳ "],
+      ["a1x", "  ↳ "],
+      ["a1y", "    "],
+      ["a2", "  "],
+    ]);
   });
 
   it("renders a child whose caller is absent at depth 0", () => {

@@ -25,6 +25,18 @@ type AgentSourceDeps = {
 export const createAgentSource = (deps: AgentSourceDeps) => {
   const { host, runtime, registry } = deps;
 
+  const costOf = (file: string | undefined) => {
+    if (!file) {
+      return 0;
+    }
+
+    try {
+      return host.sessionUsage(file).cost.total;
+    } catch {
+      return 0;
+    }
+  };
+
   const fromManifest = (id: string): AgentRecord | undefined => {
     const session = host.session();
     const dir = join(agentsDirFor(session), id);
@@ -44,6 +56,7 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
       turns: 0,
       toolCalls: 0,
       tokens: 0,
+      cost: costOf(manifest.sessionFile),
       lastText: "",
       handoffRequested: false,
       contextLimit: deps.limitOf(manifest.agent),

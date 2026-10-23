@@ -69,6 +69,28 @@ describe("usage report", () => {
     ]);
   });
 
+  it("keeps each agent's own cost on its record", async () => {
+    const { startGeneral, spawnFrom, registry } = setup();
+    const child = await startGeneral();
+    const grandchild = await spawnFrom(child, "scout");
+
+    expect(registry.get(child.id)?.cost).toBe(0);
+
+    child.usage = usageOf(0.1);
+    grandchild.usage = usageOf(0.2);
+    child.turn({});
+    grandchild.turn({});
+    await flush();
+
+    expect([registry.get(child.id)?.cost, registry.get(grandchild.id)?.cost]).toEqual([0.1, 0.2]);
+
+    child.usage = usageOf(0.3);
+    child.finish("done");
+    await flush();
+
+    expect(registry.get(child.id)?.cost).toBe(0.3);
+  });
+
   it("stops publishing once disabled", async () => {
     const { startGeneral, reports, bus, manager } = setup();
     const child = await startGeneral();
