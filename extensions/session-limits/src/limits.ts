@@ -4,6 +4,7 @@ import type { ContextSnapshot, Host, SessionControl } from "../../../core/adapte
 import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
 import { errorText } from "../../../core/manager/format.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
+import { seedRow } from "./seed-row.ts";
 import {
   contextLevel,
   type HandoffFile,
@@ -22,6 +23,8 @@ const NOTICE_KEY = "pi-session-limits";
 const HANDOFF_COMMAND = "session-handoff";
 
 const HANDOFF_TYPE = "pi-session-limits-handoff";
+
+const EXPAND_BINDING = "app.tools.expand";
 
 const REQUEST_TYPE = "pi-session-limits-request";
 
@@ -438,6 +441,10 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
 
     refresh();
   };
+
+  host.registerMessageRenderer(HANDOFF_TYPE, (message, width, expanded, theme) =>
+    seedRow(message.text, expanded, host.ui.keyText(EXPAND_BINDING))(width, theme),
+  );
 
   host.registerCommand(HANDOFF_COMMAND, {
     description:

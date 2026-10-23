@@ -95,7 +95,7 @@ pi-extensions/
 │   │   └── README.md
 │   ├── session-limits/          # main session hands over before it fills
 │   │   ├── src/                 # index, conversation, limits, thresholds,
-│   │   │                        #   handoff, settings
+│   │   │                        #   handoff, settings, seed-row (the handoff seed message as a row)
 │   │   ├── prompts/handoff.md   # handoff instruction template
 │   │   ├── test/
 │   │   └── README.md

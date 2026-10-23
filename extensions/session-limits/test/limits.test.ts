@@ -1147,3 +1147,14 @@ describe("release timer", () => {
     expect(host.dispatched).toEqual([]);
   });
 });
+
+describe("handoff seed message", () => {
+  it("draws the seed of a new session as a row with the expand key the host names", () => {
+    const { host } = setup();
+
+    expect(host.renderMessage("pi-session-limits-handoff", { text: "Carry on. More." })).toEqual([
+      "● Handoff from previous session",
+      "  ⎿  Carry on. (<app.tools.expand> expand)",
+    ]);
+  });
+});
