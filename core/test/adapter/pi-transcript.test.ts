@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
+import { installMessageRows, uninstallMessageRows } from "../../adapter/pi-message-rows.ts";
 import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
 import { initRenderTheme } from "./render-theme.ts";
@@ -359,5 +360,33 @@ describe("transcript pane tool rows", () => {
 
     expect(rows).toContain(" ● Read src/a.ts\n   ⎿  Read 2 lines");
     expect(readRow()).not.toContain("● Read");
+  });
+});
+
+describe("transcript pane message rows", () => {
+  it("draws the agent view's user messages and built-in tools as rows once they are installed", async () => {
+    const themeModule = await import(
+      new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+    );
+    const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+
+    installMessageRows(() => themeModule.theme);
+    host.registerToolRows(() => ({ call: () => ["● Read a.ts"], result: () => ["  ⎿  Read 2 lines"] }));
+
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([
+      { kind: "user", text: "find the files" },
+      assistantCall("read", { path: "a.ts" }),
+      toolResult("read", "one\ntwo"),
+    ]);
+
+    const text = visibleText(pane.render(60));
+
+    host.release();
+    uninstallMessageRows();
+
+    expect(text).toContain(" ❯ find the files");
+    expect(text).toContain(" ● Read a.ts\n   ⎿  Read 2 lines");
   });
 });
