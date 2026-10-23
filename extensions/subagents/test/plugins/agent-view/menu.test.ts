@@ -52,7 +52,7 @@ describe("/agents menu", () => {
     await running;
   });
 
-  it("counts running and completed agents beside view", async () => {
+  it("counts running and finished agents beside view", async () => {
     const { host, create } = setup();
 
     create("running");
@@ -61,7 +61,7 @@ describe("/agents menu", () => {
 
     const running = host.runCommand("agents");
 
-    expect(host.form().render(120).join("\n")).toContain("agents list · 2 running, 1 done");
+    expect(host.form().render(120).join("\n")).toContain("agents list · 2 running, 1 finished");
 
     host.form().press({ name: "escape" });
     await running;

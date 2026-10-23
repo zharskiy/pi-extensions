@@ -1,11 +1,6 @@
 import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../core/adapter/contract.ts";
-import {
-  layoutOf,
-  measureRows,
-  type RowLayout,
-  type RowMeasure,
-  renderRow,
-} from "../../components/agent-row.ts";
+import { keyHints } from "../../../../../core/manager/layout.ts";
+import { type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
 import { errorText, innerWidth, PAD, truncatePainted } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";
 import { carrySelection, stoppableAgents, type TreeRow } from "../../components/tree.ts";
@@ -49,7 +44,6 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
   let slots: Slot[] = [];
   let placeholders: string[] = [""];
   let lineOf = new Map<string, number>();
-  let measure: RowMeasure | undefined;
   let subtitleText = "";
   let selectedId: string | undefined;
   let feedback: Feedback | undefined;
@@ -71,7 +65,6 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     lineOf = new Map(
       slots.flatMap((slot, line) => (slot.kind === "row" ? [[slot.row.record.id, line]] : [])),
     );
-    measure = rows.length > 0 ? measureRows(rows, api.theme) : undefined;
     selectedId = carrySelection(previousIds, ids, selectedId) ?? ids[0];
   };
 
@@ -117,7 +110,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
       return;
     }
 
-    showFeedback(`stop failed: ${errorText(error)}`, "warning", STOP_FAILED_MS);
+    showFeedback(`Stop failed: ${errorText(error)}`, "warning", STOP_FAILED_MS);
     api.requestRender();
   };
 
@@ -146,7 +139,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     const slot = slots[index];
 
     if (!slot || !layout) {
-      return PAD + theme.fg("muted", theme.truncate("No agents running", inner));
+      return PAD + theme.fg("muted", theme.truncate("No running agents", inner));
     }
 
     if (slot.kind === "gap") {
@@ -157,12 +150,17 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
       return PAD + theme.bold(theme.truncate(slot.title, inner));
     }
 
-    return renderRow({ ...slot.row, selected: slot.row.record.id === selectedId }, now, width, theme, layout);
+    return renderRow(
+      { ...slot.row, selected: slot.row.record.id === selectedId },
+      inner + PAD.length,
+      theme,
+      layout,
+    );
   };
 
   const footerLines = (inner: number) => {
     const theme = api.theme;
-    const hint = PAD + theme.fg("dim", theme.truncate(listHint(selected()), inner));
+    const hint = theme.truncate(PAD + keyHints(listHint(selected()), theme), inner + PAD.length);
 
     return feedback ? [PAD + theme.fg(feedback.token, theme.truncate(feedback.text, inner)), hint] : [hint];
   };
@@ -184,7 +182,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
 
     const start = scroll.state().top;
     const now = Date.now();
-    const layout = measure ? layoutOf(measure, now, width, api.theme) : undefined;
+    const layout = rows.length > 0 ? rowLayout(rows, now, inner + PAD.length, api.theme) : undefined;
     const body = window.map((_, offset) => bodyLine(start + offset, width, inner, now, layout));
     const padding = Array.from({ length: height - body.length }, () => "");
 
@@ -233,7 +231,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
       }
 
       pendingStopAll = true;
-      showFeedback("Press X again to stop all agents", "warning", STOP_ALL_CONFIRM_MS);
+      showFeedback("Press shift+x again to stop all agents", "warning", STOP_ALL_CONFIRM_MS);
       return;
     }
 

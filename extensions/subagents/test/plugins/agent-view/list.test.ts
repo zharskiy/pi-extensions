@@ -76,8 +76,8 @@ describe("agents list", () => {
 
     expect(lines()[0]).toBe("");
     expect(lines()[1]).toBe(" Agents");
-    expect(lines()).toContain(" No agents running");
-    expect(lines().at(-2)).toBe(" → to main");
+    expect(lines()).toContain(" No running agents");
+    expect(lines().at(-2)).toBe(" esc to close");
     expect(lines().at(-1)).toBe("");
   });
 
@@ -111,15 +111,23 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
     const body = lines().slice(0, 12);
 
-    expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 3 done", "", " Running"]);
+    expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 3 finished", "", " Running"]);
     expect(body[4]).toMatch(/^ › ⠋ explorer \(\+1\) +map the auth module/);
-    expect(body[5]).toMatch(/^ {3}├─ ⠋ explorer +find callers/);
-    expect(body[6]).toMatch(/^ {3}└─ ✓ explorer +find parseDate +done · \d+m? ?\d+s$/);
+    expect(body[5]).toMatch(/^ {3}↳ ⠋ explorer +find callers/);
+    expect(body[6]).toMatch(/^ {5}✓ explorer +find parseDate +\d+m? ?\d+s$/);
     expect(body[7]).toBe("");
-    expect(body[8]).toBe(" Completed (1)");
-    expect(body[9]).toMatch(/^ {3}✓ reviewer +review the diff +done · /);
-    expect(body[10]).toMatch(/^ {3}└─ ✓ explorer +collect files +done · /);
-    expect(new Set([6, 9, 10].map((index) => body[index].indexOf("done · "))).size).toBe(1);
+    expect(body[8]).toBe(" Finished (1)");
+    expect(body[9]).toMatch(/^ {3}✓ reviewer +review the diff +\d/);
+    expect(body[10]).toMatch(/^ {3}↳ ✓ explorer +collect files +\d/);
+    expect(
+      new Set(
+        [
+          [6, "find parseDate"],
+          [9, "review the diff"],
+          [10, "collect files"],
+        ].map(([index, text]) => body[index as number].indexOf(text as string)),
+      ).size,
+    ).toBe(1);
     expect(lines().join("\n")).not.toContain(child.id);
   });
 
@@ -134,12 +142,16 @@ describe("agents list", () => {
     const { view, lines } = await harness.openList();
 
     expect(selectedRow(lines())).toContain("first");
-    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to stop · X to stop all · → to main");
+    expect(lines().at(-2)).toBe(
+      " ↑↓ to select · enter to view · x to stop · shift+x to stop all · esc to close",
+    );
 
     view.handleKey(key("down"));
 
     expect(selectedRow(lines())).toContain("closed one");
-    expect(lines().at(-2)).toBe(" ↑/↓ to select · enter to view · x to clear · X to stop all · → to main");
+    expect(lines().at(-2)).toBe(
+      " ↑↓ to select · enter to view · x to clear · shift+x to stop all · esc to close",
+    );
 
     view.handleKey(key("down"));
 
@@ -198,7 +210,7 @@ describe("agents list", () => {
 
     view.handleKey(char("X"));
 
-    expect(lines().at(-3)).toBe(" Press X again to stop all agents");
+    expect(lines().at(-3)).toBe(" Press shift+x again to stop all agents");
     expect(lines().at(-4)).toBe("");
 
     vi.advanceTimersByTime(2_000);
@@ -209,7 +221,7 @@ describe("agents list", () => {
     expect(harness.registry.get(running.id)?.state).toBe("grace");
     expect(harness.registry.get(queued.id)?.state).toBe("stopped");
     expect(harness.registry.get(grace.id)?.state).toBe("grace");
-    expect(lines()).not.toContain(" Press X again to stop all agents");
+    expect(lines()).not.toContain(" Press shift+x again to stop all agents");
   });
 
   it("drops the confirmation after 3 s or on any other key", async () => {
@@ -217,7 +229,7 @@ describe("agents list", () => {
     const records = [harness.create({ description: "one", createdAt: 1 }), harness.create({ createdAt: 2 })];
     const states = () => records.map((record) => harness.registry.get(record.id)?.state);
     const { view, state, lines } = await harness.openList();
-    const feedback = " Press X again to stop all agents";
+    const feedback = " Press shift+x again to stop all agents";
 
     view.handleKey(char("X"));
     vi.advanceTimersByTime(3_001);
@@ -307,7 +319,7 @@ describe("agents list", () => {
       expect(lines[0]).toBe("");
       expect(lines.at(-4)).toBe("");
       expect(lines.at(-1)).toBe("");
-      expect(lines.at(-3)).toBe(" Press X again to stop all agents");
+      expect(lines.at(-3)).toBe(" Press shift+x again to stop all agents");
       lines
         .filter((line) => line !== "")
         .forEach((line) => {
@@ -316,7 +328,7 @@ describe("agents list", () => {
         });
       rows.forEach((line) => {
         expect(line.slice(0, 3)).toMatch(/^ ( |›) $/);
-        expect(line.slice(3, 4)).toMatch(/[⠋✓├└]/);
+        expect(line.slice(3, 4)).toMatch(/[⠋✓↳]/);
       });
     });
   });
@@ -424,7 +436,7 @@ describe("agents list", () => {
     vi.advanceTimersByTime(600_000);
 
     expect(lines().join("\n")).toContain("long gone");
-    expect(lines()).not.toContain(" No agents running");
+    expect(lines()).not.toContain(" No running agents");
   });
 
   it("clears a closed row with x, selects the next row, and keeps it cleared after reopening /agents", async () => {
@@ -481,7 +493,7 @@ describe("agents list", () => {
     const harness = setup();
     const { lines } = await harness.openList();
 
-    expect(lines()).toContain(" No agents running");
+    expect(lines()).toContain(" No running agents");
 
     harness.create({ description: "late arrival" });
     vi.advanceTimersByTime(0);
@@ -555,12 +567,12 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
     const text = lines().join("\n");
 
-    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running · 3 done", "", " Running"]);
+    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running · 3 finished", "", " Running"]);
     expect(lines()[4]).toMatch(/^ › ⠋ explorer +open root/);
-    expect(lines()[5]).toMatch(/^ {3}└─ ✓ explorer +old child +done/);
-    expect(lines()[6]).toMatch(/^ {6}├─ ✓ explorer +stale grandchild +done/);
-    expect(lines()[7]).toMatch(/^ {6}└─ ✓ explorer +recent grandchild +done/);
-    expect(text).not.toContain("Completed");
+    expect(lines()[5]).toMatch(/^ {3}↳ ✓ explorer +old child/);
+    expect(lines()[6]).toMatch(/^ {5}↳ ✓ explorer +stale grandchild/);
+    expect(lines()[7]).toMatch(/^ {7}✓ explorer +recent grandchild/);
+    expect(text).not.toContain("Finished");
   });
 
   it("moves a closed subtree to Completed and keeps it there", async () => {
@@ -574,17 +586,17 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
 
     expect(lines().slice(3, 6)).toEqual([
-      " Completed (1)",
-      expect.stringMatching(/^ › ✓ explorer +done root +done/),
-      expect.stringMatching(/^ {3}└─ ✓ explorer +early child +done/),
+      " Finished (1)",
+      expect.stringMatching(/^ › ✓ explorer +done root/),
+      expect.stringMatching(/^ {3}↳ ✓ explorer +early child/),
     ]);
 
     vi.advanceTimersByTime(600_000);
 
     expect(lines().slice(3, 6)).toEqual([
-      " Completed (1)",
-      expect.stringMatching(/^ › ✓ explorer +done root +done/),
-      expect.stringMatching(/^ {3}└─ ✓ explorer +early child +done/),
+      " Finished (1)",
+      expect.stringMatching(/^ › ✓ explorer +done root/),
+      expect.stringMatching(/^ {3}↳ ✓ explorer +early child/),
     ]);
   });
 
@@ -611,7 +623,7 @@ describe("agents list", () => {
     expect(lines()[1]).toBe(" Agents · 3 running");
     expect(lines()[4]).toMatch(/^ › ⠋ explorer +other root/);
     expect(lines()[5]).toMatch(/^ {3}⠋ explorer #2 \(\+1\) +chained job/);
-    expect(lines()[6]).toMatch(/^ {3}└─ ⠋ explorer +child of the first link/);
+    expect(lines()[6]).toMatch(/^ {3}↳ ⠋ explorer +child of the first link/);
     expect(text.match(/chained job/g)).toHaveLength(1);
   });
 });

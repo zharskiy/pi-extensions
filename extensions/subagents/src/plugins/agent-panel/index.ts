@@ -11,7 +11,7 @@ const WIDGET_KEY = "pi-subagents-agents";
 
 const HINT_KEY = NAMESPACE;
 
-const HINT = "← to agents";
+const HINT = "← to list agents";
 
 export const agentPanelPlugin: Plugin = {
   id: "agent-panel",

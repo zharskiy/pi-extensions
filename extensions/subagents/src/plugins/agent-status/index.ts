@@ -4,10 +4,12 @@ import {
   EXPAND_BINDING,
   expandHint,
   noun,
+  rowChildren,
   rowText,
   toolRow,
   toolState,
 } from "../../../../../core/manager/row.ts";
+import { type RowInput, renderRows } from "../../components/agent-row.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, chainTerminal } from "../../model/types.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "./snapshot.ts";
@@ -33,6 +35,34 @@ const defaultIds = ({ registry, callerId }: StatusScope) =>
     .list()
     .filter((record) => (callerId === undefined || record.callerId === callerId) && !record.successorId)
     .map((record) => record.id);
+
+const rowOf = (snapshot: AgentSnapshot): RowInput => ({
+  record: {
+    agent: snapshot.agent,
+    chainIndex: snapshot.chainIndex,
+    description: snapshot.description,
+    model: snapshot.model,
+    state: snapshot.state,
+    turns: 1,
+    toolCalls: snapshot.toolCalls,
+    tokens: snapshot.tokens,
+    cost: snapshot.cost ?? 0,
+    createdAt: 0,
+    startedAt: 0,
+    endedAt: snapshot.elapsedMs,
+  },
+  depth: 0,
+  first: true,
+  openDescendants: 0,
+});
+
+const expandedBody = (details: AgentStatusDetails | undefined) =>
+  rowChildren({
+    body: (width, theme) => [
+      ...renderRows((details?.agents ?? []).map(rowOf), 0, width, theme, { spinner: false, bare: true }),
+      ...(details?.unknown ?? []).map((id) => theme.fg("muted", `${id}: unknown agent`)),
+    ],
+  });
 
 const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
   name: "agent_status",
@@ -79,6 +109,12 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
 
     if (result.isError) {
       return rowText(childRow({ children: lines.map((line) => (paint) => paint.fg("error", line)) }), theme);
+    }
+
+    const listed = (result.details?.agents.length ?? 0) + (result.details?.unknown.length ?? 0);
+
+    if (state.expanded && listed > 0) {
+      return rowText(expandedBody(result.details), theme);
     }
 
     if (state.expanded) {

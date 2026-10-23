@@ -117,7 +117,7 @@ describe("agents overlay", () => {
 
     const { lines } = harness.openLast();
 
-    expect(lines().join("\n")).toContain("No agents running");
+    expect(lines().join("\n")).toContain("No running agents");
   });
 
   it("right closes the list opened with left and returns to the editor", () => {
@@ -128,21 +128,22 @@ describe("agents overlay", () => {
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().at(-2)?.endsWith("→ to main")).toBe(true);
+    expect(lines().at(-2)?.endsWith("esc to close")).toBe(true);
 
     overlay.handleKey(key("right"));
 
     expect(state.closed).toBe(true);
   });
 
-  it("Esc still closes the list without being advertised", () => {
+  it("Esc closes the list and is the one exit key the hint names", () => {
     const harness = setup();
 
     harness.host.pressEmptyLeft();
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().join("\n")).not.toMatch(/esc/i);
+    expect(lines().at(-2)).toBe(" esc to close");
+    expect(lines().join("\n")).not.toContain("→");
 
     overlay.handleKey(key("escape"));
 
@@ -185,7 +186,7 @@ describe("agents overlay", () => {
     harness.registry.close(record.id, { state: "done" });
     overlay.handleKey(key("escape"));
 
-    expect(lines()).toContain(" Completed (1)");
+    expect(lines()).toContain(" Finished (1)");
     expect(lines().join("\n")).toContain("closing job");
   });
 

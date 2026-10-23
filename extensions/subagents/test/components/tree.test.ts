@@ -18,22 +18,7 @@ describe("tree order", () => {
 
     expect(rows.map((row) => row.record.id)).toEqual(["b", "a", "d", "c"]);
     expect(rows.map((row) => row.depth)).toEqual([0, 0, 1, 1]);
-    expect(rows.map((row) => row.last)).toEqual([false, true, false, true]);
-  });
-
-  it("marks continuation per ancestor level", () => {
-    const rows = treeOrder([
-      agentRecord({ id: "a", createdAt: 1 }),
-      agentRecord({ id: "b", createdAt: 2 }),
-      agentRecord({ id: "a1", callerId: "a", createdAt: 3 }),
-      agentRecord({ id: "a2", callerId: "a", createdAt: 4 }),
-      agentRecord({ id: "a1x", callerId: "a1", createdAt: 5 }),
-      agentRecord({ id: "a2x", callerId: "a2", createdAt: 6 }),
-    ]);
-
-    expect(byId(rows, "a1")?.ancestorsContinue).toEqual([]);
-    expect(byId(rows, "a1x")?.ancestorsContinue).toEqual([true]);
-    expect(byId(rows, "a2x")?.ancestorsContinue).toEqual([false]);
+    expect(rows.map((row) => row.first)).toEqual([true, false, true, false]);
   });
 
   it("prefixes the first child with the child mark and later siblings and deeper levels with spaces", () => {
@@ -58,7 +43,7 @@ describe("tree order", () => {
     const rows = treeOrder([agentRecord({ id: "c", callerId: "gone" })]);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ depth: 0, ancestorsContinue: [] });
+    expect(rows[0]).toMatchObject({ depth: 0, first: true });
   });
 
   it("collapses a chain to its terminal at the first link's position", () => {

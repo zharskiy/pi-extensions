@@ -5,8 +5,6 @@ export type TreeRow = {
   record: AgentRecord;
   depth: number;
   first: boolean;
-  last: boolean;
-  ancestorsContinue: boolean[];
   openDescendants: number;
 };
 
@@ -90,31 +88,20 @@ export const treeOrder = (records: AgentRecord[], roots?: (record: AgentRecord) 
 
   const rows: TreeRow[] = [];
 
-  const walk = (parentId: string | undefined, depth: number, continues: boolean[]): number => {
+  const walk = (parentId: string | undefined, depth: number): number => {
     const siblings = children.get(parentId) ?? [];
 
     return siblings.reduce((open, record, index) => {
-      const last = index === siblings.length - 1;
-      const row: TreeRow = {
-        record,
-        depth,
-        first: index === 0,
-        last,
-        ancestorsContinue: continues,
-        openDescendants: 0,
-      };
+      const row: TreeRow = { record, depth, first: index === 0, openDescendants: 0 };
 
       rows.push(row);
-
-      const below = depth === 0 ? [] : [...continues, !last];
-
-      row.openDescendants = walk(record.id, depth + 1, below);
+      row.openDescendants = walk(record.id, depth + 1);
 
       return open + row.openDescendants + (isClosed(record.state) ? 0 : 1);
     }, 0);
   };
 
-  walk(undefined, 0, []);
+  walk(undefined, 0);
 
   return rows;
 };

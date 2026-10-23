@@ -198,7 +198,7 @@ export const agentViewPlugin: Plugin = {
       const counts = listCounts(registry.list(), cleared);
       const parts = [
         counts.running > 0 ? `${counts.running} running` : undefined,
-        counts.completed > 0 ? `${counts.completed} done` : undefined,
+        counts.completed > 0 ? `${counts.completed} finished` : undefined,
       ].filter((part) => part !== undefined);
 
       return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(SEP);

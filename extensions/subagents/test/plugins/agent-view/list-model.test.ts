@@ -21,7 +21,7 @@ const sectionRows = (records: AgentRecord[]) =>
   }));
 
 describe("list model", () => {
-  it("splits Running and Completed by the state of the root", () => {
+  it("splits Running and Finished by the state of the root", () => {
     const records = [
       agentRecord({ id: "a", createdAt: 1 }),
       agentRecord({ id: "a1", callerId: "a", createdAt: 2 }),
@@ -32,7 +32,7 @@ describe("list model", () => {
 
     expect(sectionRows(visible(records))).toEqual([
       { title: "Running", rows: ["0:a", "1:a1", "1:a2", "0:r1"] },
-      { title: "Completed (1)", rows: ["0:r"] },
+      { title: "Finished (1)", rows: ["0:r"] },
     ]);
     expect(sectionRows(visible([agentRecord({ id: "a" })]))).toEqual([{ title: "Running", rows: ["0:a"] }]);
     expect(listSections([])).toEqual([]);
@@ -57,14 +57,14 @@ describe("list model", () => {
       "0:b",
     ]);
     expect(rows.map((row) => row.openDescendants)).toEqual([2, 0, 1, 0, 0]);
-    expect(rows.map((row) => row.last)).toEqual([false, false, true, true, true]);
+    expect(rows.map((row) => row.first)).toEqual([true, true, false, true, false]);
   });
 
-  it("orders Completed roots by newest endedAt first with their descendants under them and counts roots", () => {
+  it("orders Finished roots by newest endedAt first with their descendants under them and counts roots", () => {
     const records = [done("r", NOW - 20), done("s", NOW - 10), done("r1", NOW - 30, { callerId: "r" })];
     const sections = listSections(visible(records));
 
-    expect(sections.map((section) => section.title)).toEqual(["Completed (2)"]);
+    expect(sections.map((section) => section.title)).toEqual(["Finished (2)"]);
     expect(sections[0]?.rows.map((row) => `${row.depth}:${row.record.id}`)).toEqual(["0:s", "0:r", "1:r1"]);
   });
 
@@ -73,7 +73,7 @@ describe("list model", () => {
 
     expect(sectionRows(visible(records))).toEqual([
       { title: "Running", rows: ["0:a"] },
-      { title: "Completed (1)", rows: ["0:r", "1:r1"] },
+      { title: "Finished (1)", rows: ["0:r", "1:r1"] },
     ]);
   });
 
@@ -155,7 +155,7 @@ describe("list model", () => {
     const sections = listSections(visibleRecords(records, new Set()));
 
     expect(records.length).toBeGreaterThan(4_000);
-    expect(sections.map((section) => section.title)).toEqual(["Running", `Completed (${MAX_CLOSED_ROOTS})`]);
+    expect(sections.map((section) => section.title)).toEqual(["Running", `Finished (${MAX_CLOSED_ROOTS})`]);
     expect(sections[1]?.rows).toHaveLength(MAX_CLOSED_ROOTS * 10);
     expect(reads.predecessorId).toBeLessThanOrEqual(records.length * 4);
     expect(reads.successorId).toBeLessThanOrEqual(records.length * 4);

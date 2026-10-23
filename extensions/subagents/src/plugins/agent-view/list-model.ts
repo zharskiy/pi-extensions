@@ -1,5 +1,5 @@
 import { SEP } from "../../components/format.ts";
-import { stopHint } from "../../components/state-text.ts";
+import { stopWords } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
 import { type AgentRecord, isClosed, MAIN_CALLER } from "../../model/types.ts";
 
@@ -166,7 +166,7 @@ export const listSections = (visible: AgentRecord[]): ListSection[] => {
 
   const sections: ListSection[] = [
     { title: "Running", rows: treeOrder(withLinks(running, byId), isListRoot) },
-    { title: `Completed (${completedRoots.length})`, rows: completed },
+    { title: `Finished (${completedRoots.length})`, rows: completed },
   ];
 
   return sections.filter((section) => section.rows.length > 0);
@@ -177,7 +177,7 @@ export const subtitle = (visible: AgentRecord[]): string => {
   const open = terminals.filter((record) => !isClosed(record.state)).length;
   const done = terminals.length - open;
 
-  const parts = [open > 0 ? `${open} running` : undefined, done > 0 ? `${done} done` : undefined].filter(
+  const parts = [open > 0 ? `${open} running` : undefined, done > 0 ? `${done} finished` : undefined].filter(
     (part) => part !== undefined,
   );
 
@@ -217,10 +217,18 @@ export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
   ];
 };
 
-export const listHint = (selected: AgentRecord | undefined): string => {
+export type HintPair = readonly [key: string, words: string];
+
+export const listHint = (selected: AgentRecord | undefined): HintPair[] => {
   if (!selected) {
-    return "→ to main";
+    return [["esc", "to close"]];
   }
 
-  return ["↑/↓ to select", "enter to view", stopHint(selected.state), "X to stop all", "→ to main"].join(SEP);
+  return [
+    ["↑↓", "to select"],
+    ["enter", "to view"],
+    ["x", stopWords(selected.state)],
+    ["shift+x", "to stop all"],
+    ["esc", "to close"],
+  ];
 };

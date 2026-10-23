@@ -25,6 +25,7 @@ export type AgentSnapshot = {
   elapsedMs: number;
   tokens: number;
   toolCalls: number;
+  cost?: number;
   contextPercent: number | null;
   lastLine: string;
   resultPath?: string;
@@ -68,6 +69,7 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   elapsedMs: elapsedOf(record, now),
   tokens: record.tokens,
   toolCalls: record.toolCalls,
+  cost: record.cost,
   contextPercent: record.context?.percent ?? null,
   lastLine: lastLineOf(record.lastText),
   resultPath: record.resultPath,
