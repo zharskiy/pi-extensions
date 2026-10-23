@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ThemeToken } from "../../core/adapter/contract.ts";
 import { plainTheme } from "../../core/test/helpers/fakes.ts";
-import { childRow, expandHint, type RowState, toolRow, toolState } from "../row.ts";
+import { childRow, expandHint, type RowState, rowText, toolRow, toolState } from "../row.ts";
 
 const recordingTheme = () => {
   const painted: { token: ThemeToken; text: string }[] = [];
@@ -98,5 +98,13 @@ describe("toolState", () => {
     expect(toolState({ isPartial: true, isError: true })).toBe("pending");
     expect(toolState({ isPartial: false, isError: true })).toBe("error");
     expect(toolState({ started: true, isPartial: false, isError: false })).toBe("success");
+  });
+});
+
+describe("rowText", () => {
+  it("joins a row's lines for a width-function tool render", () => {
+    expect(rowText(toolRow({ state: "success", title: "Run", children: ["ok"] }), plainTheme)(40)).toBe(
+      "● Run\n  ⎿  ok",
+    );
   });
 });

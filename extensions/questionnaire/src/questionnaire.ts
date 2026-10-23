@@ -125,7 +125,8 @@ export const questionnaireTool = (
       waiting(false);
     }
   },
-  renderCall: (params, theme) => callText(params, theme),
+  renderShell: "row",
+  renderCall: (params, theme, state) => callText(params, theme, state),
   renderResult: (result, _state, theme) => resultSummary(result, theme),
 });
 

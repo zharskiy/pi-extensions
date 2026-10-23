@@ -79,3 +79,6 @@ export const childRow =
 export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 
 export const expandHint = (key: string, theme: ThemeLike) => theme.fg("dim", `(${key} expand)`);
+
+export const rowText = (render: RowRender, theme: ThemeLike) => (width: number) =>
+  render(width, theme).join("\n");
