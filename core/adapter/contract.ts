@@ -23,6 +23,8 @@ export type ThemeToken =
   | "type"
   | "heading";
 
+export const CHILD_COLUMNS = 5;
+
 export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
 
 export type ThemeLike = {

@@ -65,16 +65,59 @@ describe("diff rows", () => {
     ]);
   });
 
-  it("expands tabs", () => {
-    expect(rows("+1 \tx", 12, plainTheme)).toEqual(["1 +     x   "]);
+  it("keeps the ellipsis when the cut lands right after a changed word", () => {
+    expect(rows("-1 ab cde f\n+1 ab cdx f", 10)).toEqual([
+      "<bg:removed>1 <error>-</> ab </bg><bg:removedWord>cd…</bg>",
+      "<bg:added>1 <success>+</> ab </bg><bg:addedWord>cd…</bg>",
+    ]);
+  });
+
+  it("cuts wide characters by their width and never splits an emoji", () => {
+    const [old, now] = rows("-1 hello world 😀\n+1 hello world 😃", 24);
+    const [cjk] = rows("+1 日本語テキスト", 10, plainTheme);
+
+    expect(old).toContain("<bg:removedWord>😀</bg>");
+    expect(now).toContain("<bg:addedWord>😃</bg>");
+    expect([old, now].some((row) => /\p{Cs}/u.test(row ?? ""))).toBe(false);
+    expect(cjk).toBe("1 + 日本… ");
+    expect(plainTheme.width(cjk ?? "")).toBe(10);
+  });
+
+  it("pairs only the first lines of a longer removed run", () => {
+    expect(rows("-1 a = 1;\n-2 b = 2;\n-3 c = 3;\n+1 a = 9;", 14)).toEqual([
+      `<bg:removed>1 <error>-</> a = </bg><bg:removedWord>1</bg><bg:removed>;${pad(4)}</bg>`,
+      `<bg:removed>2 <error>-</> b = 2;${pad(4)}</bg>`,
+      `<bg:removed>3 <error>-</> c = 3;${pad(4)}</bg>`,
+      `<bg:added>1 <success>+</> a = </bg><bg:addedWord>9</bg><bg:added>;${pad(4)}</bg>`,
+    ]);
+  });
+
+  it("does not pair an added run with the removed run after it", () => {
+    expect(rows("+1 a = 9;\n-2 a = 1;", 14)).toEqual([
+      `<bg:added>1 <success>+</> a = 9;${pad(4)}</bg>`,
+      `<bg:removed>2 <error>-</> a = 1;${pad(4)}</bg>`,
+    ]);
+  });
+
+  it("draws a diff that starts with a gap", () => {
+    expect(rows("    ...\n 40 keep\n+41 new", 14)).toEqual([
+      "<dim>     ...</>",
+      "<dim>40   keep</>",
+      `<bg:added>41 <success>+</> new${pad(6)}</bg>`,
+    ]);
+  });
+
+  it("expands tabs to three spaces and drops control characters", () => {
+    expect(rows("+1 \tx", 12, plainTheme)).toEqual(["1 +    x    "]);
+    expect(rows(`+1 a${String.fromCharCode(7)}b\r`, 8, plainTheme)).toEqual(["1 + ab  "]);
   });
 
   it("parses nothing from a diff it does not recognise", () => {
     expect(parseDiff("@@ -1 +1 @@\n-old\n+new")).toBeUndefined();
     expect(parseDiff("")).toBeUndefined();
     expect(parseDiff("+1 \n-2")).toEqual([
-      { kind: "add", num: "1", text: "" },
-      { kind: "del", num: "2", text: "" },
+      { kind: "added", num: "1", text: "" },
+      { kind: "removed", num: "2", text: "" },
     ]);
   });
 });

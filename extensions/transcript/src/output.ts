@@ -3,7 +3,13 @@ import { noun } from "../../../shared/row.ts";
 
 export type Truncated = { lines: string[]; hidden: number };
 
-export const truncatedOutput = (text: string, max = 3, keep: "head" | "tail" = "head"): Truncated => {
+export const PREVIEW_LINES = 3;
+
+export const truncatedOutput = (
+  text: string,
+  max = PREVIEW_LINES,
+  keep: "head" | "tail" = "head",
+): Truncated => {
   const lines = text.replace(/\s+$/, "").split("\n");
   const all = lines.length === 1 && lines[0] === "" ? [] : lines;
   const shown = keep === "head" ? all.slice(0, max) : all.slice(Math.max(0, all.length - max));

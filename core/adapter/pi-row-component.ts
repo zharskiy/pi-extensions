@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
-import type { ToolRows } from "./contract.ts";
+import { CHILD_COLUMNS, type ToolRows } from "./contract.ts";
 
 type RowsRecord = { rows?: ToolRows; owner?: object; pad: number };
 
@@ -21,8 +21,6 @@ export const recordPad = (pad: unknown) => {
     toolRowsRecord().pad = pad;
   }
 };
-
-export const CHILD_INDENT = 5;
 
 export type RowParts = {
   lines: (width: number) => string[];
@@ -57,9 +55,9 @@ export class RowComponent implements Component {
     const { lines, pad, body, lead } = this.parts;
     const margin = " ".repeat(pad);
     const own = lines(Math.max(1, width - pad)).map((line) => `${margin}${line}`);
-    const indent = `${margin}${" ".repeat(CHILD_INDENT)}`;
+    const indent = `${margin}${" ".repeat(CHILD_COLUMNS)}`;
     const first = own.length === 0 && lead !== undefined ? `${margin}${lead}` : indent;
-    const shown = body ? bodyLines(body, width - pad - CHILD_INDENT) : [];
+    const shown = body ? bodyLines(body, width - pad - CHILD_COLUMNS) : [];
     const hung = shown.map((line, index) => `${index === 0 ? first : indent}${line}`);
 
     return [...own, ...hung].map((line) => truncateToWidth(line, width, "…"));

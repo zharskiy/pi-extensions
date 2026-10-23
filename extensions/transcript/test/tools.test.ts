@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ThemeToken, ToolCallView } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { diffCounts } from "../src/diff.ts";
+import { diffCounts, parseDiff } from "../src/diff.ts";
 import { transcriptRows } from "../src/tools.ts";
 
 const recording = () => {
@@ -177,24 +177,32 @@ describe("results", () => {
     ]);
   });
 
-  it("shows an expanded write's first ten lines as added lines and how many more there are", () => {
-    const content = Array.from({ length: 12 }, (_value, index) => `line ${index + 1}`).join("\n");
+  it("shows every line of an expanded write as added lines, without carriage returns", () => {
+    const content = Array.from({ length: 12 }, (_value, index) => `line ${index + 1}`).join("\r\n");
     const write = draw(view("write", { path: "a.ts", content }, done("ok", { expanded: true })), 20);
 
     expect(write.result).toEqual([
       "  ⎿  Wrote 12 lines",
-      "      1 + line 1    ",
-      "      2 + line 2    ",
-      "      3 + line 3    ",
-      "      4 + line 4    ",
-      "      5 + line 5    ",
-      "      6 + line 6    ",
-      "      7 + line 7    ",
-      "      8 + line 8    ",
-      "      9 + line 9    ",
-      "     10 + line 10   ",
-      "     … +2 lines",
+      ...Array.from({ length: 12 }, (_value, index) =>
+        `${String(index + 1).padStart(2)} + line ${index + 1}`.padEnd(15).padStart(20),
+      ),
     ]);
+    expect(write.result.join("")).not.toContain("\r");
+  });
+
+  it("shows only the count of an expanded empty write", () => {
+    expect(draw(view("write", { path: "a.ts", content: "" }, done("ok", { expanded: true }))).result).toEqual(
+      ["  ⎿  Wrote 0 lines"],
+    );
+  });
+
+  it("shows an expanded edit's error lines without a body", () => {
+    const failed = draw(
+      view("edit", { path: "a.ts" }, done("Could not edit\nno match", { isError: true, expanded: true })),
+    );
+
+    expect(failed.result).toEqual(["  ⎿  Could not edit", "     no match"]);
+    expect(failed.piBody).toBe(false);
   });
 
   it("shows the first three lines of shell output and how many more there are", () => {
@@ -345,7 +353,10 @@ describe("codemode rows", () => {
 
 describe("diffCounts", () => {
   it("counts numbered added and removed lines only", () => {
-    expect(diffCounts("  1 same\n- 2 old\n+ 2 new\n+ 3 more\n   ...")).toEqual({ added: 2, removed: 1 });
-    expect(diffCounts("")).toEqual({ added: 0, removed: 0 });
+    expect(diffCounts(parseDiff("  1 same\n- 2 old\n+ 2 new\n+ 3 more\n    ..."))).toEqual({
+      added: 2,
+      removed: 1,
+    });
+    expect(diffCounts(parseDiff(""))).toEqual({ added: 0, removed: 0 });
   });
 });

@@ -1,4 +1,4 @@
-import type { ThemeLike, ThemeToken } from "../core/adapter/contract.ts";
+import { CHILD_COLUMNS, type ThemeLike, type ThemeToken } from "../core/adapter/contract.ts";
 
 const GLYPHS = { bullet: "●", thinking: "∴", prompt: "❯", child: "⎿" } as const;
 
@@ -25,11 +25,11 @@ export type Styled = string | ((theme: ThemeLike) => string);
 
 export type RowRender = (width: number, theme: ThemeLike) => string[];
 
-export type RowChildren = { children?: Styled[]; hint?: Styled };
+export type RowChildren = { children?: Styled[]; hint?: Styled; body?: RowRender };
 
 export type RowSpec = RowChildren & { state: RowState; title: Styled };
 
-export const CHILD_INDENT = "     ";
+export const CHILD_INDENT = " ".repeat(CHILD_COLUMNS);
 
 export const TITLE_INDENT = "  ";
 
@@ -61,6 +61,9 @@ const childLines = (children: Styled[], theme: ThemeLike) => {
   return hang(`  ${theme.fg("dim", GLYPHS.child)}  `, CHILD_INDENT, lines);
 };
 
+const bodyLines = (body: RowRender | undefined, width: number, theme: ThemeLike) =>
+  body ? body(Math.max(1, width - CHILD_COLUMNS), theme).map((line) => `${CHILD_INDENT}${line}`) : [];
+
 export const bullet = (state: RowState, theme: ThemeLike) => theme.fg(bulletToken(state), GLYPHS.bullet);
 
 export const toolRow =
@@ -68,13 +71,18 @@ export const toolRow =
   (width, theme) => {
     const title = `${bullet(spec.state, theme)} ${paint(spec.title, theme)}`;
 
-    return withHint([title, ...childLines(spec.children ?? [], theme)], spec.hint, width, theme);
+    return [
+      ...withHint([title, ...childLines(spec.children ?? [], theme)], spec.hint, width, theme),
+      ...bodyLines(spec.body, width, theme),
+    ];
   };
 
 export const childRow =
   (spec: RowChildren): RowRender =>
-  (width, theme) =>
-    withHint(childLines(spec.children ?? [], theme), spec.hint, width, theme);
+  (width, theme) => [
+    ...withHint(childLines(spec.children ?? [], theme), spec.hint, width, theme),
+    ...bodyLines(spec.body, width, theme),
+  ];
 
 export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 

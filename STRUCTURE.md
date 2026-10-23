@@ -61,7 +61,8 @@ pi-extensions/
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
-│       │                        #   offline.ts (pi loaded offline for extension tests)
+│       │                        #   offline.ts (pi loaded offline for extension tests), tool-rows.ts
+│       │                        #   (tool rows rendered through pi for extension tests)
 │       ├── manager/
 │       └── helpers/             # fakes.ts (fake host, runtime and child session), fake-form.ts (fake showForm)
 ├── shared/                      # pi-free code several extensions share, over contract.ts and core/manager
@@ -145,7 +146,8 @@ pi-extensions/
 │   │   └── README.md
 │   ├── transcript/              # transcript rows: ❯ user, ● assistant and tool rows, ∴ thinking, ⎿ summaries
 │   │   ├── src/                 # index, transcript (wiring), tools (titles and summaries per tool), output
-│   │   │                        #   (head or tail lines, … +N lines), diff (an edit's added and removed lines)
+│   │   │                        #   (head or tail lines, … +N lines), diff (parse, count and draw an edit's
+│   │   │                        #   diff), words (changed words of a line pair)
 │   │   ├── test/
 │   │   └── README.md
 │   └── mcp-import/              # /mcp-import: MCP servers from Claude Code or Cursor into pi's mcp.json

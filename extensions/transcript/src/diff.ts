@@ -1,43 +1,29 @@
-import type { BgToken, ThemeLike } from "../../../core/adapter/contract.ts";
+import type { ThemeLike } from "../../../core/adapter/contract.ts";
+import { merged, type Span, wordSpans } from "./words.ts";
 
-export type DiffCounts = { added: number; removed: number };
-
-export const diffCounts = (diff: string): DiffCounts => {
-  const changed = diff.split("\n").filter((line) => /^[+-]\s*\d/.test(line));
-
-  return {
-    added: changed.filter((line) => line.startsWith("+")).length,
-    removed: changed.filter((line) => line.startsWith("-")).length,
-  };
-};
-
-type Kind = "add" | "del" | "ctx" | "gap";
+type Kind = "added" | "removed" | "context" | "gap";
 
 export type DiffLine = { kind: Kind; num: string; text: string };
 
-type Span = { text: string; changed: boolean };
+export type DiffCounts = { added: number; removed: number };
 
 type Line = DiffLine & { spans?: Span[] };
 
-const MOSTLY_CHANGED = 0.5;
+const TAB = "   ";
 
-const MAX_TOKENS = 400;
+const KINDS: Record<string, Kind> = { "+": "added", "-": "removed", " ": "context" };
 
-const TAB = "    ";
-
-const KINDS: Record<string, Kind> = { "+": "add", "-": "del", " ": "ctx" };
-
-const MARKS: Record<Kind, string> = { add: "+", del: "-", ctx: " ", gap: " " };
+const MARKS: Record<Kind, string> = { added: "+", removed: "-", context: " ", gap: " " };
 
 const parseLine = (line: string): DiffLine | undefined => {
   if (/^ +\.\.\.$/.test(line)) {
     return { kind: "gap", num: "", text: "..." };
   }
 
-  const match = /^([+\- ]) *(\d+)(?: (.*))?$/.exec(line);
+  const match = /^([+\- ]) *(\d+)(?: (.*))?$/s.exec(line);
 
   return match
-    ? { kind: KINDS[match[1] ?? " "] ?? "ctx", num: match[2] ?? "", text: match[3] ?? "" }
+    ? { kind: KINDS[match[1] ?? " "] ?? "context", num: match[2] ?? "", text: match[3] ?? "" }
     : undefined;
 };
 
@@ -51,97 +37,12 @@ export const parseDiff = (diff: string): DiffLine[] | undefined => {
   return lines as DiffLine[];
 };
 
-const merged = (spans: Span[]) =>
-  spans.reduce<Span[]>((all, span) => {
-    const last = all[all.length - 1];
+export const diffCounts = (lines: DiffLine[] | undefined): DiffCounts => ({
+  added: lines?.filter((line) => line.kind === "added").length ?? 0,
+  removed: lines?.filter((line) => line.kind === "removed").length ?? 0,
+});
 
-    if (last && last.changed === span.changed) {
-      last.text += span.text;
-    } else {
-      all.push({ ...span });
-    }
-
-    return all;
-  }, []);
-
-const tokens = (text: string) => text.match(/\w+|\s+|[^\w\s]/g) ?? [];
-
-const lcsTable = (a: string[], b: string[]) =>
-  a.reduce(
-    (rows, token) => {
-      const prev = rows[rows.length - 1] ?? [];
-      const row = b.reduce(
-        (acc, other, j) => {
-          acc.push(token === other ? (prev[j] ?? 0) + 1 : Math.max(prev[j + 1] ?? 0, acc[j] ?? 0));
-
-          return acc;
-        },
-        [0],
-      );
-
-      rows.push(row);
-
-      return rows;
-    },
-    [b.map(() => 0).concat(0)],
-  );
-
-type Marks = { a: boolean[]; b: boolean[] };
-
-const backtrack = (
-  table: number[][],
-  a: string[],
-  b: string[],
-  i: number,
-  j: number,
-  marks: Marks,
-): Marks => {
-  if (i === 0 || j === 0) {
-    return marks;
-  }
-
-  if (a[i - 1] === b[j - 1]) {
-    marks.a[i - 1] = false;
-    marks.b[j - 1] = false;
-
-    return backtrack(table, a, b, i - 1, j - 1, marks);
-  }
-
-  return (table[i - 1]?.[j] ?? 0) >= (table[i]?.[j - 1] ?? 0)
-    ? backtrack(table, a, b, i - 1, j, marks)
-    : backtrack(table, a, b, i, j - 1, marks);
-};
-
-const spansOf = (parts: string[], changed: boolean[]) =>
-  merged(parts.map((text, index) => ({ text, changed: changed[index] ?? true })));
-
-const changedShare = (parts: string[], changed: boolean[]) =>
-  parts.reduce((sum, text, index) => sum + (changed[index] ? text.length : 0), 0);
-
-const wordSpans = (old: string, now: string): [Span[], Span[]] | undefined => {
-  const a = tokens(old);
-  const b = tokens(now);
-
-  if (a.length + b.length > MAX_TOKENS) {
-    return undefined;
-  }
-
-  const marks = backtrack(lcsTable(a, b), a, b, a.length, b.length, {
-    a: a.map(() => true),
-    b: b.map(() => true),
-  });
-  const total = old.length + now.length;
-  const share = total === 0 ? 0 : (changedShare(a, marks.a) + changedShare(b, marks.b)) / total;
-
-  return share > MOSTLY_CHANGED ? undefined : [spansOf(a, marks.a), spansOf(b, marks.b)];
-};
-
-const withSpans = (old: DiffLine, now: DiffLine, side: 0 | 1): Line => {
-  const spans = wordSpans(old.text.replaceAll("\t", TAB), now.text.replaceAll("\t", TAB));
-  const line = side === 0 ? old : now;
-
-  return spans ? { ...line, spans: spans[side] } : line;
-};
+const clean = (text: string) => text.replaceAll("\t", TAB).replace(/\p{Cc}/gu, "");
 
 const runsOf = (lines: DiffLine[]) =>
   lines.reduce<DiffLine[][]>((runs, line) => {
@@ -149,99 +50,93 @@ const runsOf = (lines: DiffLine[]) =>
 
     if (last?.[0]?.kind === line.kind) {
       last.push(line);
-
-      return runs;
+    } else {
+      runs.push([line]);
     }
-
-    runs.push([line]);
 
     return runs;
   }, []);
 
 const paired = (lines: DiffLine[]): Line[] => {
   const runs = runsOf(lines);
+  const spans = new Map<DiffLine, Span[]>();
 
-  return runs.flatMap((run, index): Line[] => {
-    const before = runs[index - 1];
-    const after = runs[index + 1];
+  runs.forEach((run, index) => {
+    const next = runs[index + 1];
 
-    if (run[0]?.kind === "del" && after?.[0]?.kind === "add") {
-      return run.map((line, at) => {
-        const partner = after[at];
-
-        return partner ? withSpans(line, partner, 0) : line;
-      });
+    if (run[0]?.kind !== "removed" || next?.[0]?.kind !== "added") {
+      return;
     }
 
-    if (run[0]?.kind === "add" && before?.[0]?.kind === "del") {
-      return run.map((line, at) => {
-        const partner = before[at];
+    run.forEach((old, at) => {
+      const now = next[at];
+      const pair = now && wordSpans(old.text, now.text);
 
-        return partner ? withSpans(partner, line, 1) : line;
-      });
-    }
-
-    return run;
+      if (now && pair) {
+        spans.set(old, pair[0]);
+        spans.set(now, pair[1]);
+      }
+    });
   });
+
+  return lines.map((line) => ({ ...line, spans: spans.get(line) }));
 };
 
-const LINE_BG: Record<"add" | "del", BgToken> = { add: "added", del: "removed" };
+const fitSpans = (spans: Span[], room: number, theme: ThemeLike): Span[] => {
+  const plain = spans.map((span) => span.text).join("");
+  const cut = theme.truncate(plain, room);
 
-const WORD_BG: Record<"add" | "del", BgToken> = { add: "addedWord", del: "removedWord" };
-
-const fitSpans = (spans: Span[], room: number, theme: ThemeLike) => {
-  const total = spans.reduce((sum, span) => sum + theme.width(span.text), 0);
-
-  if (total <= room) {
+  if (cut === plain) {
     return spans;
   }
 
-  return spans.reduce(
-    (state, span) => {
-      if (state.done) {
-        return state;
-      }
+  const kept = cut.endsWith("…") ? cut.slice(0, -1) : cut;
+  const ends = spans.reduce<number[]>((all, span) => {
+    all.push((all[all.length - 1] ?? 0) + span.text.length);
 
-      const width = theme.width(span.text);
+    return all;
+  }, []);
+  const sliced = spans
+    .map((span, index) => {
+      const end = ends[index] ?? 0;
 
-      if (width <= state.budget) {
-        return { kept: [...state.kept, span], budget: state.budget - width, done: false };
-      }
+      return { ...span, text: kept.slice(end - span.text.length, end) };
+    })
+    .filter((span) => span.text !== "");
+  const last = sliced[sliced.length - 1];
 
-      return {
-        kept: [...state.kept, { ...span, text: theme.truncate(span.text, state.budget + 1) }],
-        budget: 0,
-        done: true,
-      };
-    },
-    { kept: [] as Span[], budget: room - 1, done: false },
-  ).kept;
+  return last
+    ? [...sliced.slice(0, -1), { ...last, text: `${last.text}…` }]
+    : [{ text: "…", changed: false }];
 };
 
 const diffLine = (line: Line, digits: number, width: number, theme: ThemeLike) => {
   const gutter = `${line.num.padStart(digits)} ${MARKS[line.kind]} `;
   const room = Math.max(1, width - gutter.length);
-  const text = line.text.replaceAll("\t", TAB);
 
-  if (line.kind === "ctx" || line.kind === "gap") {
-    return theme.fg("dim", `${gutter}${theme.truncate(text, room)}`);
+  if (line.kind === "context" || line.kind === "gap") {
+    return theme.fg("dim", `${gutter}${theme.truncate(line.text, room)}`);
   }
 
   const kind = line.kind;
-  const spans = fitSpans(line.spans ?? [{ text, changed: false }], room, theme);
+  const spans = fitSpans(line.spans ?? [{ text: line.text, changed: false }], room, theme);
   const used = spans.reduce((sum, span) => sum + theme.width(span.text), 0);
-  const mark = theme.fg(kind === "add" ? "success" : "error", MARKS[kind]);
+  const mark = theme.fg(kind === "added" ? "success" : "error", MARKS[kind]);
   const pieces = merged([
     { text: `${line.num.padStart(digits)} ${mark} `, changed: false },
     ...spans,
     { text: " ".repeat(Math.max(0, room - used)), changed: false },
   ]);
 
-  return pieces.map((piece) => theme.bg(piece.changed ? WORD_BG[kind] : LINE_BG[kind], piece.text)).join("");
+  return pieces
+    .filter((piece) => piece.text !== "")
+    .map((piece) => theme.bg(piece.changed ? `${kind}Word` : kind, piece.text))
+    .join("");
 };
 
 export const diffRows = (lines: DiffLine[], width: number, theme: ThemeLike) => {
   const digits = lines.reduce((max, line) => Math.max(max, line.num.length), 0);
+  const cleaned = lines.map((line) => ({ ...line, text: clean(line.text) }));
 
-  return paired(lines).map((line) => diffLine(line, digits, width, theme));
+  return paired(cleaned).map((line) => diffLine(line, digits, width, theme));
 };

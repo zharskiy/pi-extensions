@@ -961,37 +961,108 @@ describe("pi adapter conformance", () => {
       expect(lines.some((line) => line.includes("new line"))).toBe(true);
     });
 
-    it("formats the edit diff as numbered added, removed and context lines with a gap row between hunks", async () => {
-      const { generateDiffString } = await import(
-        new URL("core/tools/edit-diff.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
-      );
-      const old = Array.from({ length: 20 }, (_value, index) => `line ${index + 1}`);
-      const now = old.map((line, index) => (index === 1 || index === 17 ? `${line} changed` : line));
-      const { diff } = generateDiffString(`${old.join("\n")}\n`, `${now.join("\n")}\n`);
-      const lines: string[] = diff.split("\n");
+    it("returns an edit diff of numbered added, removed and context lines the rows parse", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const lines = Array.from({ length: 20 }, (_value, index) => `line ${index + 1}`);
 
-      expect(lines).toContain("- 2 line 2");
-      expect(lines).toContain("+ 2 line 2 changed");
-      expect(lines).toContain("  1 line 1");
-      expect(lines).toContain("    ...");
-      expect(lines.filter((line) => !/^[+\- ] *\d+ /.test(line) && !/^ +\.\.\.$/.test(line))).toEqual([]);
+      writeFileSync(join(dir, "a.txt"), `${lines.join("\n")}\n`);
+
+      const edit = pi.createEditToolDefinition(dir) as unknown as pi.ToolDefinition;
+      const result = await edit.execute(
+        "call-1",
+        {
+          path: "a.txt",
+          edits: [
+            { oldText: "line 2\n", newText: "line 2 changed\n" },
+            { oldText: "line 18\n", newText: "line 18 changed\n" },
+          ],
+        } as never,
+        undefined,
+        undefined,
+        undefined as never,
+      );
+      const diff = (result.details as { diff: string }).diff;
+
+      rmSync(dir, { recursive: true, force: true });
+
+      expect(diff.split("\n")).toEqual(
+        expect.arrayContaining(["- 2 line 2", "+ 2 line 2 changed", "    ..."]),
+      );
+      expect(
+        diff.split("\n").filter((line) => !/^[+\- ] *\d+ /.test(line) && !/^ +\.\.\.$/.test(line)),
+      ).toEqual([]);
+      expect(pi.generateDiffString("a\n", "b\n").diff).toBe("-1 a\n+1 b");
     });
 
     it("has the theme colours, background style and colour mixing the diff backgrounds use", async () => {
-      const { theme } = await import(
+      const themes = await import(
         new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
           .href
       );
 
       pi.initTheme("dark", false);
 
-      const colors = ["toolSuccessBg", "toolErrorBg", "toolDiffAdded", "toolDiffRemoved"];
+      const theme: pi.Theme = themes.theme;
+      const colors = ["toolSuccessBg", "toolErrorBg", "toolDiffAdded", "toolDiffRemoved"] as const;
       const mixed = tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
 
       expect(colors.filter((name) => theme.colors[name] === undefined)).toEqual([]);
       expect(theme.style("x", { bg: "toolSuccessBg" })).toContain("\x1b[48;");
       expect(theme.style("x", { bg: mixed })).toContain("\x1b[48;");
       expect(tui.stripTerminalSequences(theme.style("x", { bg: mixed }))).toBe("x");
+    });
+
+    it("closes a foreground with its own reset only, so a surrounding background stays", async () => {
+      const themes = await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      );
+
+      pi.initTheme("dark", false);
+
+      const theme: pi.Theme = themes.theme;
+      const painted = (["success", "error", "dim", "text"] as const).map((token) => theme.fg(token, "x"));
+
+      painted.forEach((text) => {
+        expect(text.endsWith("\x1b[39m")).toBe(true);
+        expect(text).not.toContain("\x1b[0m");
+        expect(text).not.toContain("\x1b[49m");
+      });
+    });
+
+    it("gives concrete colours for tokens set to the terminal default", async () => {
+      const themes = await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      );
+      const dark = JSON.parse(
+        readFileSync(
+          new URL(
+            "modes/interactive/theme/dark.json",
+            import.meta.resolve("@earendil-works/pi-coding-agent"),
+          ),
+          "utf8",
+        ),
+      );
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const path = join(dir, "blank.json");
+
+      writeFileSync(
+        path,
+        JSON.stringify({
+          ...dark,
+          name: "blank",
+          colors: { ...dark.colors, toolSuccessBg: "", toolDiffAdded: "" },
+        }),
+      );
+
+      const theme: pi.Theme = themes.loadThemeFromPath(path, "truecolor");
+
+      rmSync(dir, { recursive: true, force: true });
+
+      expect(theme.colors.toolSuccessBg).toBeDefined();
+      expect(theme.colors.toolDiffAdded).toBeDefined();
+      expect(() => tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4)).not.toThrow();
     });
 
     it("shows the whole read and bash output when expanded", () => {
