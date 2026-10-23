@@ -19,6 +19,12 @@ import { captureTui, createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
 import { createShowForm } from "./pi-form.ts";
 import { keyPress } from "./pi-keys.ts";
+import {
+  installMessageRows,
+  releaseHiddenThinkingLabel,
+  storeHiddenThinkingLabel,
+  uninstallMessageRows,
+} from "./pi-message-rows.ts";
 import type { Notices } from "./pi-notice.ts";
 import { fitLines, piColor, themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
@@ -93,12 +99,45 @@ export const notificationSequence = (message: string, channel: NotifyChannel, en
 
 export const tuiContext = (state: HostState) => (state.ctx?.mode === "tui" ? state.ctx : undefined);
 
+export type MessageRowsUi = Pick<HostUi, "enableMessageRows" | "setHiddenThinkingLabel"> & {
+  release(): void;
+};
+
+export const createMessageRowsUi = (tuiCtx: () => ExtensionContext | undefined): MessageRowsUi => {
+  const owner = {};
+
+  return {
+    enableMessageRows: () => {
+      if (!tuiCtx()) {
+        return;
+      }
+
+      installMessageRows(() => tuiCtx()?.ui.theme, owner);
+    },
+    setHiddenThinkingLabel: (label) => {
+      const ctx = tuiCtx();
+
+      if (!ctx) {
+        return;
+      }
+
+      ctx.ui.setHiddenThinkingLabel(label);
+      storeHiddenThinkingLabel(label, owner);
+    },
+    release: () => {
+      uninstallMessageRows(owner);
+      releaseHiddenThinkingLabel(owner);
+    },
+  };
+};
+
 export const createUi = (
   state: HostState,
   stdout: TerminalOut,
   env: TerminalEnv,
   editor: EditorHooks,
   notices: Notices,
+  messageRows: MessageRowsUi = createMessageRowsUi(() => tuiContext(state)),
 ): HostUi => {
   const widgetTuis = new Map<string, TUI>();
   let lastTui: TUI | undefined;
@@ -237,6 +276,8 @@ export const createUi = (
     captureEditorKeys: editor.captureEditorKeys,
     setFooter: createFooterSetter(tuiCtx),
     keyText: (binding) => keyText(binding as Keybinding),
+    enableMessageRows: messageRows.enableMessageRows,
+    setHiddenThinkingLabel: messageRows.setHiddenThinkingLabel,
     onKeyPress: (listener) =>
       tuiCtx()?.ui.onTerminalInput((data) => {
         if (!isKeyRelease(data) && !data.startsWith("\x1b[<") && !data.startsWith("\x1b[M")) {

@@ -239,17 +239,26 @@ describe("pi adapter conformance", () => {
       const api = [
         "registerEntryRenderer",
         "registerToolRenderer",
+        "registerMessageRenderer",
         "getSettings",
         "getAllTools",
         "getActiveTools",
         "getCommands",
       ];
-      const ui = ["custom", "getEditorComponent", "setEditorComponent", "setWidget", "onTerminalInput"];
+      const ui = [
+        "custom",
+        "getEditorComponent",
+        "setEditorComponent",
+        "setWidget",
+        "onTerminalInput",
+        "setHiddenThinkingLabel",
+      ];
       const probe = seen.api?.getAllTools().find((tool) => tool.name === "probe_tool");
 
       expect(api.filter((name) => typeof Reflect.get(seen.api ?? {}, name) !== "function")).toEqual([]);
       expect(ui.filter((name) => typeof Reflect.get(seen.ui ?? {}, name) !== "function")).toEqual([]);
       expect(typeof seen.api?.getSettings()).toBe("object");
+      expect(Reflect.has(seen.ui ?? {}, "theme")).toBe(true);
       expect(typeof probe?.sourceInfo.path).toBe("string");
       expect(probe?.exposure).toBe("model-only");
 
@@ -970,6 +979,69 @@ describe("pi adapter conformance", () => {
       expect(render(pi.createReadToolDefinition("/repo") as never, { path: "a.txt" })).toContain("out 20");
       expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 20");
       expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 1");
+    });
+  });
+
+  describe("message rows", () => {
+    const message = {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "plan" },
+        { type: "text", text: "answer" },
+      ],
+      stopReason: "error",
+      errorMessage: "boom",
+      timestamp: 0,
+    } as never;
+
+    it("builds the assistant message from one content container of spacers, thinking regions, markdown and notices", () => {
+      initRenderTheme();
+
+      const component = new pi.AssistantMessageComponent(message, false, pi.getMarkdownTheme());
+      const content = component.children[0] as tui.Container;
+
+      expect(component.children).toHaveLength(1);
+      expect(content).toBeInstanceOf(tui.Container);
+      expect(content.children.map((child) => child.constructor.name)).toEqual([
+        tui.Spacer.name,
+        tui.MouseRegion.name,
+        tui.Spacer.name,
+        tui.Markdown.name,
+        tui.Spacer.name,
+        tui.Text.name,
+      ]);
+      expect(typeof Reflect.get(component, "outputPad")).toBe("number");
+    });
+
+    it("draws the user message as one padded markdown block between prompt marks", () => {
+      initRenderTheme();
+
+      const component = new pi.UserMessageComponent("hello", pi.getMarkdownTheme());
+      const lines = component.render(30);
+      const text = lines.map((line) => tui.stripTerminalSequences(line).trim());
+
+      expect(component.children).toHaveLength(1);
+      expect(component.children[0]).toBeInstanceOf(tui.Markdown);
+      expect(typeof Reflect.get(component, "outputPad")).toBe("number");
+      expect([text[0], text.at(-1)]).toEqual(["", ""]);
+      expect(text[1]).toBe("hello");
+      expect(lines[0]?.startsWith("\x1b]133;A\x07")).toBe(true);
+      expect(lines.at(-1)?.startsWith("\x1b]133;B\x07\x1b]133;C\x07")).toBe(true);
+    });
+
+    it("routes clicks through the child layout of the last render and slices lines keeping earlier colours", () => {
+      expect(typeof tui.Container.prototype.handleMouse).toBe("function");
+      expect(tui.sliceByColumn("\x1b[41mab", 1, 1)).toBe("\x1b[41mb");
+    });
+
+    it("takes the hidden thinking label as the fourth constructor argument", () => {
+      initRenderTheme();
+
+      const component = new pi.AssistantMessageComponent(message, true, pi.getMarkdownTheme(), "∴ Thinking…");
+
+      expect(
+        component.render(40).some((line) => tui.stripTerminalSequences(line).includes("∴ Thinking…")),
+      ).toBe(true);
     });
   });
 });

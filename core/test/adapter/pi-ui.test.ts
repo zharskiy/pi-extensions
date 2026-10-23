@@ -1,10 +1,23 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
+import {
+  type ExtensionContext,
+  getMarkdownTheme,
+  UserMessageComponent,
+} from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { hiddenThinkingLabel, uninstallMessageRows } from "../../adapter/pi-message-rows.ts";
 import { createNotices } from "../../adapter/pi-notice.ts";
 import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
-import { createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
+import {
+  createMessageRowsUi,
+  createUi,
+  type HostState,
+  notificationSequence,
+  tuiContext,
+} from "../../adapter/pi-ui.ts";
+import { initRenderTheme } from "./render-theme.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
@@ -308,5 +321,81 @@ describe("showForm", () => {
     await vi.advanceTimersByTimeAsync(OVERLAY_POLL_MS);
 
     expect(shown).toEqual([["question"]]);
+  });
+});
+
+describe("message rows", () => {
+  const rowsContext = (mode: string) => {
+    const labels: (string | undefined)[] = [];
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode,
+        ui: {
+          theme: { fg: (_token: string, text: string) => text, bg: (_token: string, text: string) => text },
+          setHiddenThinkingLabel: (label?: string) => {
+            labels.push(label);
+          },
+        },
+      } as unknown as ExtensionContext,
+    };
+    const rows = createMessageRowsUi(() => tuiContext(state));
+
+    return { rows, labels, state };
+  };
+
+  const userLine = () =>
+    stripVTControlCharacters(new UserMessageComponent("hello", getMarkdownTheme()).render(30)[0] ?? "");
+
+  afterEach(() => {
+    uninstallMessageRows();
+  });
+
+  it("restyles pi's message rows in tui mode until the session that enabled them ends", () => {
+    initRenderTheme();
+
+    const { rows, state } = rowsContext("tui");
+    const other = rowsContext("tui");
+    const piLook = userLine();
+
+    rows.enableMessageRows();
+
+    expect(userLine()).toContain("❯ hello");
+
+    other.rows.release();
+
+    expect(userLine()).toContain("❯ hello");
+
+    rows.release();
+    state.ctx = undefined;
+
+    expect(userLine()).toBe(piLook);
+  });
+
+  it("does nothing outside tui mode", () => {
+    initRenderTheme();
+
+    const { rows, labels } = rowsContext("rpc");
+    const piLook = userLine();
+
+    rows.enableMessageRows();
+    rows.setHiddenThinkingLabel("∴ Thinking…");
+
+    expect(userLine()).toBe(piLook);
+    expect(labels).toEqual([]);
+    expect(hiddenThinkingLabel()).toBeUndefined();
+  });
+
+  it("sets pi's hidden thinking label and keeps it for transcripts until the session ends", () => {
+    const { rows, labels } = rowsContext("tui");
+
+    rows.setHiddenThinkingLabel("∴ Thinking…");
+
+    expect(labels).toEqual(["∴ Thinking…"]);
+    expect(hiddenThinkingLabel()).toBe("∴ Thinking…");
+
+    rows.release();
+
+    expect(hiddenThinkingLabel()).toBeUndefined();
   });
 });

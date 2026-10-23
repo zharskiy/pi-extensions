@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
 import type { AnyToolSpec, TranscriptItem, TranscriptPane } from "./contract.ts";
+import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "./pi-message-rows.ts";
 import { applyToolRows } from "./pi-tool-rows.ts";
 import { toPiResult, toPiTool } from "./pi-tools.ts";
 
@@ -83,9 +84,6 @@ export type TranscriptPaneOptions = {
   tools?: AnyToolSpec[];
   owner?: string;
 };
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
-const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 
 export const createTranscriptPane = (
   tui: TUI,
@@ -177,7 +175,9 @@ export const createTranscriptPane = (
     if (item.kind === "assistant") {
       const message = item.raw as RawAssistant;
 
-      container.addChild(new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme()));
+      container.addChild(
+        new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme(), hiddenThinkingLabel()),
+      );
 
       message.content
         .filter((part) => part.type === "toolCall")

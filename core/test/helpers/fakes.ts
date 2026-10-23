@@ -18,6 +18,7 @@ import {
   type IdleInfo,
   type KeyPress,
   type MessageDelivery,
+  type MessageRender,
   type ModelInfo,
   type NewSessionOptions,
   type NotifyChannel,
@@ -129,6 +130,14 @@ export type FakeHost = Host & {
   pressKey(): void;
   entryRenderers: Map<string, EntryRender>;
   toolRows?: ToolRows;
+  messageRowsEnabled: boolean;
+  thinkingLabels: (string | undefined)[];
+  messageRenderers: Map<string, MessageRender>;
+  renderMessage(
+    customType: string,
+    message: { text: string; details?: unknown },
+    options?: { width?: number; expanded?: boolean; theme?: ThemeLike },
+  ): string[];
   renderEntry(
     customType: string,
     data: unknown,
@@ -416,6 +425,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           host.keyListeners.delete(entry);
         };
       },
+      enableMessageRows: () => {
+        host.messageRowsEnabled = true;
+      },
+      setHiddenThinkingLabel: (label) => {
+        host.thinkingLabels.push(label);
+      },
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -651,6 +666,23 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     registerToolRows: (rows) => {
       host.toolRows = rows;
+    },
+    messageRowsEnabled: false,
+    thinkingLabels: [],
+    messageRenderers: new Map(),
+    registerMessageRenderer: (customType, render) => {
+      host.messageRenderers.set(customType, render);
+    },
+    renderMessage: (customType, message, { width = 80, expanded = false, theme = plainTheme } = {}) => {
+      const render = host.messageRenderers.get(customType);
+
+      if (!render) {
+        throw new Error(`message renderer ${customType} not registered`);
+      }
+
+      return render(structuredClone(message), width, expanded, theme).map((line) =>
+        theme.truncate(line, width),
+      );
     },
     renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme } = {}) => {
       const render = host.entryRenderers.get(customType);

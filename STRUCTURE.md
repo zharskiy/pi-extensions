@@ -12,7 +12,7 @@ pi-extensions/
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery
-│   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation
+│   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation, message rows and thinking label
 │   │   ├── pi-form.ts           # HostUi.showForm: the inline form shell
 │   │   ├── pi-overlay.ts        # overlaysCleared: waits until no overlay is visible
 │   │   ├── pi-text-input.ts     # form TextInput over pi-tui's Editor, its theme and focus
@@ -29,7 +29,9 @@ pi-extensions/
 │   │   ├── pi-context-prompt.ts # prompt sections (replay or system prompt) and tools with source and exposure
 │   │   ├── pi-context-messages.ts # per-message and per-block token estimates
 │   │   ├── pi-usage.ts          # last and main request usage, main memoised on session and leaf
-│   │   ├── pi-entries.ts        # Host.registerEntryRenderer over pi's entry renderers
+│   │   ├── pi-entries.ts        # Host.registerEntryRenderer and registerMessageRenderer over pi's renderers
+│   │   ├── pi-message-rows.ts   # user and assistant row look over pi's message components (the only module
+│   │   │                        #   that overrides pi internals), the shared hidden thinking label
 │   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ⎿), the
 │   │   │                        #   tool-rows record on globalThis and the shared output pad
 │   │   ├── pi-tool-rows.ts      # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins

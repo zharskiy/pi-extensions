@@ -218,6 +218,8 @@ export type HostUi = {
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
+  enableMessageRows(): void;
+  setHiddenThinkingLabel(label: string | undefined): void;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -280,6 +282,13 @@ export type ContextFacts = {
 
 export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
 
+export type MessageRender = (
+  message: { text: string; details?: unknown },
+  width: number,
+  expanded: boolean,
+  theme: ThemeLike,
+) => string[];
+
 export type IdleInfo = { aborted: boolean };
 
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
@@ -304,6 +313,7 @@ export type Host = {
   appendEntry(customType: string, data: unknown): void;
   registerEntryRenderer(customType: string, render: EntryRender): void;
   registerToolRows(rows: ToolRows): void;
+  registerMessageRenderer(customType: string, render: MessageRender): void;
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
