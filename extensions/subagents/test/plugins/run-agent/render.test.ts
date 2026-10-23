@@ -663,7 +663,7 @@ describe("run_agent block", () => {
 });
 
 describe("run_agent block bullet", () => {
-  const BULLET_TONES: Record<string, string> = { dim: "pending", accent: "success", error: "error" };
+  const BULLET_TONES: Record<string, string> = { dim: "pending", success: "success", error: "error" };
 
   const tone = (
     harness: Harness,

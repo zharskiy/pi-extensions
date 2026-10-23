@@ -45,7 +45,7 @@ describe("rendering", () => {
 
   it("paints the bullet by the call's state", () => {
     expect(drawn(callText({}, tagged, state({ isPartial: true })))).toMatch(/^<dim>●/);
-    expect(drawn(callText({}, tagged, state()))).toMatch(/^<accent>●/);
+    expect(drawn(callText({}, tagged, state()))).toMatch(/^<success>●/);
     expect(drawn(callText({}, tagged, state({ isError: true })))).toMatch(/^<error>●/);
   });
 

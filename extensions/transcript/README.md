@@ -27,7 +27,7 @@ A pi extension that draws pi's transcript in the row style of Claude Code: one g
 - User messages start with a muted `❯` on pi's user background, which spans the whole width; pi's blank background lines above and below the text are dropped.
 - Assistant text starts with `●` in the text colour, a thinking run with a dim `∴`, an error, abort or truncation notice with `●` in the error colour. Wrapped lines hang two columns in.
 - A hidden thinking run reads `∴ Thinking…` (pi's `Ctrl+T` still hides and shows thinking, and a click on a run toggles it).
-- Every tool call is one `●` title: dim while it streams or runs, the accent colour when it succeeded, the error colour when it failed. pi's built-in tools get their own titles and one-line summaries:
+- Every tool call is one `●` title: dim while it streams or runs, the success colour when it succeeded, the error colour when it failed. pi's built-in tools get their own titles and one-line summaries:
 
 | Tool | Title | Result |
 |---|---|---|
@@ -50,7 +50,6 @@ A pi extension that draws pi's transcript in the row style of Claude Code: one g
 
 Deliberate, not oversights:
 
-- A successful tool's bullet uses pi's `accent` colour (violet in the default theme) instead of green, so it follows your pi theme.
 - The bullet of a running tool does not blink: a changing row above the screen would make pi's regular-mode renderer clear and redraw the scrollback.
 - Streaming text is not coalesced to 100 ms; pi's own 60 frames per second apply.
 - Consecutive tool calls are not folded into one group row (`Read 2 files, ran 1 shell command`); pi draws one row per call.

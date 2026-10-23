@@ -60,7 +60,7 @@ describe("call titles", () => {
   it("paints the bullet by state: dim until the result, accent on success, error on failure", () => {
     expect(tokenOf(draw(view("read", { path: "a.ts" }, { isPartial: true })).painted, "●")).toBe("dim");
     expect(tokenOf(draw(view("read", { path: "a.ts" }, { started: false })).painted, "●")).toBe("dim");
-    expect(tokenOf(draw(view("read", { path: "a.ts" }, done("x"))).painted, "●")).toBe("accent");
+    expect(tokenOf(draw(view("read", { path: "a.ts" }, done("x"))).painted, "●")).toBe("success");
     expect(tokenOf(draw(view("read", { path: "a.ts" }, done("x", { isError: true }))).painted, "●")).toBe(
       "error",
     );

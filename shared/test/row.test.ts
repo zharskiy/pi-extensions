@@ -22,7 +22,7 @@ const tokenOf = (painted: { token: ThemeToken; text: string }[], text: string) =
 describe("toolRow", () => {
   it.each<[RowState, ThemeToken]>([
     ["pending", "dim"],
-    ["success", "accent"],
+    ["success", "success"],
     ["error", "error"],
     ["text", "text"],
   ])("paints the %s bullet with %s", (state, token) => {

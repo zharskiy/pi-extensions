@@ -6,7 +6,7 @@ export type RowState = "pending" | "success" | "error" | "text";
 
 const BULLET_TOKENS: Record<RowState, ThemeToken> = {
   pending: "dim",
-  success: "accent",
+  success: "success",
   error: "error",
   text: "text",
 };
