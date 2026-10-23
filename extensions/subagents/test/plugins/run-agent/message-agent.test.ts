@@ -61,7 +61,7 @@ describe("message_agent", () => {
     expect(rendered.result).toBe("");
   });
 
-  it("renders one error box with the agent id and the reason when delivery fails", async () => {
+  it("renders one error row with the agent id and the reason when delivery fails", async () => {
     const { host, send } = await setup();
     const result = await send("ghost", "focus on tests");
     const rendered = host.renderTool("message_agent", {
@@ -71,8 +71,7 @@ describe("message_agent", () => {
 
     expect(result.text).toBe('Error: unknown agent "ghost".');
     expect(rendered.call).toBe("");
-    expect(rendered.result).toBe('message_agent ghost: unknown agent "ghost".');
-    expect(rendered.tone).toBe("error");
+    expect(rendered.result).toBe(["● Message ghost", '  ⎿  unknown agent "ghost".'].join("\n"));
   });
 
   it("answers a message in the stop grace period with a follow-up turn", async () => {

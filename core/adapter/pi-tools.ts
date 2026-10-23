@@ -1,7 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
-  Box,
   type Component,
   Text,
   truncateToWidth,
@@ -9,15 +8,7 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type {
-  ThemeLike,
-  ThemeToken,
-  ToolRender,
-  ToolRenderState,
-  ToolResult,
-  ToolSpec,
-  ToolTone,
-} from "./contract.ts";
+import type { ThemeLike, ThemeToken, ToolRender, ToolRenderState, ToolResult, ToolSpec } from "./contract.ts";
 import { recordPad, rowComponent } from "./pi-row-component.ts";
 
 const ESC = "\x1b";
@@ -103,22 +94,6 @@ const textComponent = (previous: unknown, text: ToolRender): Component => {
 
 const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
 
-class CutLines implements Component {
-  private readonly source: ToolRender;
-
-  constructor(source: ToolRender) {
-    this.source = source;
-  }
-
-  render(width: number): string[] {
-    const text = typeof this.source === "function" ? this.source(width) : this.source;
-
-    return fitLines(splitLines(text), width);
-  }
-
-  invalidate() {}
-}
-
 export const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
@@ -154,45 +129,7 @@ const renderState = (context: RenderContext): ToolRenderState => ({
   invalidate: context.invalidate,
 });
 
-const TONE_BG = {
-  pending: "toolPendingBg",
-  success: "toolSuccessBg",
-  error: "toolErrorBg",
-} as const satisfies Record<ToolTone, Parameters<Theme["bg"]>[0]>;
-
-const piTone = (context: RenderContext): ToolTone =>
-  context.isPartial ? "pending" : context.isError ? "error" : "success";
-
-const reuseBox = (box: Box, pad: number, bg: (line: string) => string) => {
-  box.clear();
-  box.setBgFn(bg);
-  box.setPaddingX(pad);
-
-  return box;
-};
-
-const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
-  const pad = context.outputPad;
-  const bg = (line: string) => theme.bg(TONE_BG[tone], line);
-  const box =
-    context.lastComponent instanceof Box ? reuseBox(context.lastComponent, pad, bg) : new Box(pad, 1, bg);
-
-  box.addChild(new CutLines(text));
-
-  return box;
-};
-
-const shellComponent = <P, D>(
-  spec: ToolSpec<P, D>,
-  theme: Theme,
-  context: RenderContext,
-  text: ToolRender,
-  result?: ToolResult<D>,
-): Component => {
-  if (spec.renderShell === "box") {
-    return toolBox(theme, context, text, spec.renderTone?.(renderState(context), result) ?? piTone(context));
-  }
-
+const shellComponent = <P, D>(spec: ToolSpec<P, D>, context: RenderContext, text: ToolRender): Component => {
   if (spec.renderShell === "row") {
     recordPad(context.outputPad);
 
@@ -215,7 +152,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     parameters: Type.Unsafe<P>(spec.parameters),
     executionMode: spec.executionMode,
     exposure: spec.modelOnly ? "model-only" : undefined,
-    renderShell: spec.renderShell === "box" || spec.renderShell === "row" ? "self" : undefined,
+    renderShell: spec.renderShell === "row" ? "self" : undefined,
     execute: async (
       toolCallId: string,
       params: unknown,
@@ -239,7 +176,6 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
       ? (args: unknown, theme: Theme, context: RenderContext) =>
           shellComponent(
             spec,
-            theme,
             context,
             spec.renderCall?.(args as P, themeLike(theme), renderState(context)) ?? "",
           )
@@ -250,10 +186,8 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
 
           return shellComponent(
             spec,
-            theme,
             context,
             spec.renderResult?.(converted, renderState(context), themeLike(theme)) ?? "",
-            converted,
           );
         }
       : undefined,

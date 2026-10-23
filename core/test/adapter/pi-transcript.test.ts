@@ -194,7 +194,7 @@ describe("transcript pane pending results", () => {
       label: "Run agent",
       description: "run",
       parameters: {},
-      renderShell: "box",
+      renderShell: "row",
       execute: async () => ({ text: "" }),
       renderCall: () => "",
       renderResult: (result: { details?: { n: number } }, state: { isPartial: boolean }) =>

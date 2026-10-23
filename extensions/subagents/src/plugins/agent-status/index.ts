@@ -1,4 +1,5 @@
-import type { AnyToolSpec, ToolSpec } from "../../../../../core/adapter/contract.ts";
+import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
+import { childRow, expandHint, noun, rowText, toolRow, toolState } from "../../../../../shared/row.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, chainTerminal } from "../../model/types.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "./snapshot.ts";
@@ -10,6 +11,7 @@ export type AgentStatusDetails = { agents: AgentSnapshot[]; unknown: string[] };
 type StatusScope = {
   registry: AgentRegistry;
   callerId?: string;
+  expandKey: () => string;
 };
 
 const MAIN_DESCRIPTION =
@@ -57,8 +59,29 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
     const text = lines.length > 0 ? lines.join("\n") : "No agents in this session.";
     return { text, details: { agents, unknown: unknownIds } };
   },
-  renderCall: (params, theme) =>
-    `${theme.bold("agent_status")} ${theme.fg("muted", params.ids?.join(", ") ?? "all")}`,
+  renderShell: "row",
+  renderCall: (params, theme, state) => {
+    const ids = params.ids && params.ids.length > 0 ? params.ids.join(", ") : "all";
+    const title = (paint: ThemeLike) => `${paint.bold("Agent status")} ${paint.fg("muted", ids)}`;
+
+    return rowText(toolRow({ state: toolState(state), title }), theme);
+  },
+  renderResult: (result, state, theme) => {
+    const lines = result.text.split("\n");
+
+    if (result.isError) {
+      return rowText(childRow({ children: lines.map((line) => (paint) => paint.fg("error", line)) }), theme);
+    }
+
+    if (state.expanded) {
+      return rowText(childRow({ children: lines }), theme);
+    }
+
+    const count = result.details?.agents.length ?? 0;
+    const hint = (paint: ThemeLike) => expandHint(scope.expandKey(), paint);
+
+    return rowText(childRow({ children: [`${count} ${noun(count, "agent")}`], hint }), theme);
+  },
 });
 
 export const agentStatusPlugin: Plugin = {
@@ -66,10 +89,12 @@ export const agentStatusPlugin: Plugin = {
   requires: ["agent-registry"],
   enable: ({ host, services }) => {
     const registry = services.require("registry");
-    host.registerTool(statusTool({ registry }));
+    const expandKey = () => host.ui.keyText("app.tools.expand");
+
+    host.registerTool(statusTool({ registry, expandKey }));
 
     services.provide("agentStatus", {
-      toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId }),
+      toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId, expandKey }),
     });
   },
 };

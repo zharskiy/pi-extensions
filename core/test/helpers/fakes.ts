@@ -40,7 +40,6 @@ import {
   type ToolResult,
   type ToolRows,
   type ToolSpec,
-  type ToolTone,
   type UsageTotals,
   type WorkingIndicator,
 } from "../../adapter/contract.ts";
@@ -109,7 +108,7 @@ export type FakeHost = Host & {
       state?: Partial<ToolRenderState>;
       width?: number;
     },
-  ): { call?: string; result?: string; state: ToolRenderState; tone?: ToolTone };
+  ): { call?: string; result?: string; state: ToolRenderState };
   workingIndicators: (WorkingIndicator | undefined)[];
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
@@ -608,10 +607,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         ...overrides,
       };
 
-      const shelled = spec.renderShell === "box";
-      const margin = shelled ? 2 : spec.renderShell === "row" ? 1 : 0;
-      const inner = Math.max(1, width - margin);
-      const piTone: ToolTone = state.isPartial ? "pending" : state.isError ? "error" : "success";
+      const inner = Math.max(1, width - (spec.renderShell === "row" ? 1 : 0));
       const resolve = (render: ToolRender | undefined) =>
         typeof render === "function" ? render(inner) : render;
 
@@ -619,7 +615,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         call: call === undefined ? undefined : resolve(spec.renderCall?.(call, plainTheme, state)),
         result: result === undefined ? undefined : resolve(spec.renderResult?.(result, state, plainTheme)),
         state,
-        ...(spec.renderShell === "box" ? { tone: spec.renderTone?.(state, result) ?? piTone } : {}),
       };
     },
     workingIndicators: [],

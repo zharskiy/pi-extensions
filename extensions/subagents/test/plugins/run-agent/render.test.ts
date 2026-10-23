@@ -167,8 +167,8 @@ describe("run_agent block", () => {
     const text = renderResult(harness, { text: "", details: updates[0] }, params, { isPartial: true });
 
     expect(lines(text)).toHaveLength(7);
-    expect(lines(text)[0]).toBe("3 agents launched");
-    expect(lines(text)[1]).toMatch(/^├─ scout \(Map the auth module\)/);
+    expect(lines(text)[0]).toBe("● 3 agents launched");
+    expect(lines(text)[1]).toMatch(/^ {2}├─ scout \(Map the auth module\)/);
 
     const background = renderResult(
       harness,
@@ -177,7 +177,7 @@ describe("run_agent block", () => {
       { isPartial: true },
     );
 
-    expect(lines(background)[0]).toBe("3 background agents launched (↓ to manage · ← to list)");
+    expect(lines(background)[0]).toBe("● 3 background agents launched (↓ to manage · ← to list)");
   });
 
   it("headers: launched with hint, launched without hint, finished", async () => {
@@ -186,7 +186,7 @@ describe("run_agent block", () => {
     const params = { agents: THREE };
 
     expect(lines(renderResult(harness, result, params))[0]).toBe(
-      "3 background agents launched (↓ to manage · ← to list)",
+      "● 3 background agents launched (↓ to manage · ← to list)",
     );
 
     harness.runtime.children.forEach((child) => {
@@ -194,13 +194,13 @@ describe("run_agent block", () => {
     });
     await flush();
 
-    expect(lines(renderResult(harness, result, params))[0]).toBe("3 background agents launched");
-    expect(lines(renderResult(harness, result, { ...params, wait: true }))[0]).toBe("3 agents finished");
+    expect(lines(renderResult(harness, result, params))[0]).toBe("● 3 background agents launched");
+    expect(lines(renderResult(harness, result, { ...params, wait: true }))[0]).toBe("● 3 agents finished");
 
     const single = await launched(harness, [item("worker", "one")]);
 
     expect(lines(renderResult(harness, single, { agents: [item("worker", "one")] }))[0]).toBe(
-      "1 background worker agent launched (↓ to manage · ← to list)",
+      "● 1 background worker agent launched (↓ to manage · ← to list)",
     );
   });
 
@@ -210,8 +210,8 @@ describe("run_agent block", () => {
     const header = (width: number) =>
       lines(renderResult(harness, result, { agents: THREE }, {}, plainTheme, width))[0];
 
-    expect(header(54)).toBe("3 background agents launched (↓ to manage · ← to list)");
-    expect(header(53)).toBe("3 background agents launched (↓ to manage)");
+    expect(header(56)).toBe("● 3 background agents launched (↓ to manage · ← to list)");
+    expect(header(55)).toBe("● 3 background agents launched (↓ to manage)");
   });
 
   it("headers name the agent when the batch shares one", async () => {
@@ -220,27 +220,27 @@ describe("run_agent block", () => {
     const result = await launched(harness, scouts);
 
     expect(lines(renderResult(harness, result, { agents: scouts, wait: true }, { isPartial: true }))[0]).toBe(
-      "3 scout agents launched",
+      "● 3 scout agents launched",
     );
     expect(lines(renderResult(harness, result, { agents: scouts }))[0]).toBe(
-      "3 background scout agents launched (↓ to manage · ← to list)",
+      "● 3 background scout agents launched (↓ to manage · ← to list)",
     );
     expect(lines(renderResult(harness, result, { agents: scouts, wait: true }))[0]).toBe(
-      "3 scout agents finished",
+      "● 3 scout agents finished",
     );
-    expect(lines(renderResult(harness, result, { agents: scouts }))[1]).toMatch(/^├─ scout \(a\)/);
+    expect(lines(renderResult(harness, result, { agents: scouts }))[1]).toMatch(/^ {2}├─ scout \(a\)/);
 
     const one = await launched(harness, [scouts[0]]);
 
     expect(lines(renderResult(harness, one, { agents: [scouts[0]] }))[0]).toBe(
-      "1 background scout agent launched (↓ to manage · ← to list)",
+      "● 1 background scout agent launched (↓ to manage · ← to list)",
     );
 
     const mixed = [item("scout", "a"), item("worker", "b")];
     const both = await launched(harness, mixed);
 
     expect(lines(renderResult(harness, both, { agents: mixed }))[0]).toBe(
-      "2 background agents launched (↓ to manage · ← to list)",
+      "● 2 background agents launched (↓ to manage · ← to list)",
     );
   });
 
@@ -254,11 +254,11 @@ describe("run_agent block", () => {
       )[0];
     };
 
-    expect(await header([])).toBe("3 background agents launched (↓ to manage · ← to list)");
-    expect(await header(["agent-view"])).toBe("3 background agents launched (↓ to manage)");
-    expect(await header(["agent-panel"])).toBe("3 background agents launched (← to list)");
-    expect(await header(["agent-panel"], 40)).toBe("3 background agents launched");
-    expect(await header(["agent-panel", "agent-view"])).toBe("3 background agents launched");
+    expect(await header([])).toBe("● 3 background agents launched (↓ to manage · ← to list)");
+    expect(await header(["agent-view"])).toBe("● 3 background agents launched (↓ to manage)");
+    expect(await header(["agent-panel"])).toBe("● 3 background agents launched (← to list)");
+    expect(await header(["agent-panel"], 40)).toBe("● 3 background agents launched");
+    expect(await header(["agent-panel", "agent-view"])).toBe("● 3 background agents launched");
   });
 
   it("points Status unavailable at /agents only while the list plugin is on", () => {
@@ -275,8 +275,8 @@ describe("run_agent block", () => {
         }).result ?? "",
       )[2];
 
-    expect(status([])).toBe("   Status unavailable · /agents scout-abc");
-    expect(status(["agent-view"])).toBe("   Status unavailable");
+    expect(status([])).toBe("     Status unavailable · /agents scout-abc");
+    expect(status(["agent-view"])).toBe("     Status unavailable");
   });
 
   it("draws no hint for a batch an agent started", async () => {
@@ -291,7 +291,7 @@ describe("run_agent block", () => {
     const agents = [item("scout", "Find the callers")];
     const result = await nested.execute({ agents }, { update: () => {} });
 
-    expect(lines(renderResult(harness, result, { agents }))[0]).toBe("1 background scout agent launched");
+    expect(lines(renderResult(harness, result, { agents }))[0]).toBe("● 1 background scout agent launched");
   });
 
   it("keeps a drawn block until it is rendered again", async () => {
@@ -338,7 +338,7 @@ describe("run_agent block", () => {
       lines(renderResult(harness, result, { agents: THREE, wait })).filter(
         (_, index) => index % 2 === 0 && index > 0,
       );
-    const statusOf = (index: number, wait = false) => status(wait)[index].slice(3);
+    const statusOf = (index: number, wait = false) => status(wait)[index].slice(5);
 
     expect(statusOf(0)).toBe("Initializing…");
     expect(statusOf(2)).toBe("Queued");
@@ -432,8 +432,8 @@ describe("run_agent block", () => {
 
     const rendered = lines(renderResult(harness, result, { agents: [THREE[0]] }));
 
-    expect(rendered[1]).toMatch(/^└─ scout #2 \(Map the auth module\)/);
-    expect(rendered[2]).toBe("   Done · 5 tool uses · 1m 5s");
+    expect(rendered[1]).toMatch(/^ {2}└─ scout #2 \(Map the auth module\)/);
+    expect(rendered[2]).toBe("     Done · 5 tool uses · 1m 5s");
   });
 
   it("cuts the description to the width and drops the model first", async () => {
@@ -472,7 +472,7 @@ describe("run_agent block", () => {
     const short = await launched(harness, [THREE[0]]);
 
     expect(lines(renderResult(harness, short, { agents: [THREE[0]] }))[1]).toMatch(
-      /^└─ scout \(Map the auth module\) · \S+\/\S+:\w+$/,
+      /^ {2}└─ scout \(Map the auth module\) · \S+\/\S+:\w+$/,
     );
   });
 
@@ -482,12 +482,12 @@ describe("run_agent block", () => {
     const params = { agents: [item("x", "y")] };
 
     expect(renderResult(harness, result, params)).toBe(
-      "✗ No agents started: unknown agent(s): x. Available: scout",
+      "● No agents started: unknown agent(s): x. Available: scout",
     );
     expect(lines(renderResult(harness, result, params, { expanded: true }))).toEqual([
-      "✗ No agents started: unknown agent(s): x. Available: scout",
-      "   unknown agent(s): x. Available: scout",
-      "   Nothing was started.",
+      "● No agents started: unknown agent(s): x. Available: scout",
+      "  ⎿  unknown agent(s): x. Available: scout",
+      "     Nothing was started.",
     ]);
   });
 
@@ -528,9 +528,9 @@ describe("run_agent block", () => {
     );
 
     expect(lines(text).slice(0, 3)).toEqual([
-      "3 background agents launched",
-      "├─ scout (Map the auth module) · fake/model:high",
-      "│  Status unavailable · /agents scout-abc",
+      "● 3 background agents launched",
+      "  ├─ scout (Map the auth module) · fake/model:high",
+      "  │  Status unavailable · /agents scout-abc",
     ]);
   });
 
@@ -662,16 +662,22 @@ describe("run_agent block", () => {
   });
 });
 
-describe("run_agent block box tone", () => {
+describe("run_agent block bullet", () => {
+  const BULLET_TONES: Record<string, string> = { dim: "pending", accent: "success", error: "error" };
+
   const tone = (
     harness: Harness,
     result: ToolResult<RunAgentDetails>,
     params: RunAgentParams,
     state: { isPartial?: boolean; isError?: boolean } = {},
-  ) => harness.host.renderTool("run_agent", { call: params, result, state }).tone;
+  ) => {
+    const first = lines(renderResult(harness, result, params, state, tagged))[0] ?? "";
 
-  it("draws pi's tool box", () => {
-    expect(setup().tool.renderShell).toBe("box");
+    return BULLET_TONES[/^<(\w+)>●/.exec(first)?.[1] ?? ""];
+  };
+
+  it("draws a transcript row", () => {
+    expect(setup().tool.renderShell).toBe("row");
   });
 
   it("background batch: pending after the call returned while an agent is open, success once all are done", async () => {
@@ -739,7 +745,7 @@ describe("run_agent block box tone", () => {
     expect(tone(harness, { ...result, isError: true }, params)).toBe("error");
   });
 
-  it("falls back to pi's rule without registry records", () => {
+  it("falls back to the call's state without registry records", () => {
     const harness = setup();
     const details: RunAgentDetails = {
       batchId: "b-old",
@@ -748,9 +754,6 @@ describe("run_agent block box tone", () => {
     };
     const params = { agents: [THREE[0]] };
 
-    expect(
-      harness.tool.renderTone?.(harness.host.renderTool("run_agent", {}).state, { text: "", details }),
-    ).toBe(undefined);
     expect(tone(harness, { text: "", details }, params)).toBe("success");
     expect(tone(harness, { text: "", details }, params, { isPartial: true })).toBe("pending");
   });
@@ -763,15 +766,15 @@ describe("run_agent block colours", () => {
 
     expect(
       lines(renderResult(harness, result, { agents: THREE, wait: true }, { isPartial: true }, tagged))[0],
-    ).toBe("<b>3</b> agents launched");
+    ).toBe("<dim>●</dim> <b>3</b> agents launched");
     expect(lines(renderResult(harness, result, { agents: THREE }, {}, tagged))[0]).toBe(
-      "<b>3</b> background agents launched <dim>(↓ to manage · ← to list)</dim>",
+      "<dim>●</dim> <b>3</b> background agents launched <dim>(↓ to manage · ← to list)</dim>",
     );
     expect(lines(renderResult(harness, result, { agents: THREE, wait: true }, {}, tagged))[0]).toBe(
-      "<b>3</b> agents finished",
+      "<dim>●</dim> <b>3</b> agents finished",
     );
     expect(renderResult(harness, { isError: true, text: "bad\nmore" }, { agents: THREE }, {}, tagged)).toBe(
-      "<error>✗ No agents started: bad</error>",
+      "<error>●</error> No agents started: bad",
     );
   });
 
@@ -781,7 +784,7 @@ describe("run_agent block colours", () => {
     const model = harness.registry.list()[0].model;
 
     expect(lines(renderResult(harness, result, { agents: [THREE[0]] }, {}, tagged))[1]).toBe(
-      `└─ <b>scout</b> <muted>(Map the auth module)</muted><dim> · ${model}</dim>`,
+      `  └─ <b>scout</b> <muted>(Map the auth module)</muted><dim> · ${model}</dim>`,
     );
   });
 
@@ -793,7 +796,7 @@ describe("run_agent block colours", () => {
     const result = await launched(harness, THREE);
     const [first, second, third] = ids(harness);
     const statusOf = (index: number, wait = false) =>
-      lines(renderResult(harness, result, { agents: THREE, wait }, {}, tagged))[2 + index * 2].slice(3);
+      lines(renderResult(harness, result, { agents: THREE, wait }, {}, tagged))[2 + index * 2].slice(5);
     const closed = (id: string, values: Partial<AgentRecord>) => {
       patch(harness, id, { startedAt: 0, ...values });
       harness.registry.close(id, { state: "done", ...values });
@@ -851,7 +854,7 @@ describe("run_agent block colours", () => {
       ),
     );
 
-    expect(lines(text)[2]).toBe("   <dim>Status unavailable · /agents scout-abc</dim>");
+    expect(lines(text)[2]).toBe("     <dim>Status unavailable · /agents scout-abc</dim>");
   });
 });
 
@@ -866,9 +869,9 @@ describe("run_agent block width", () => {
     const at = (width: number) =>
       lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
 
-    expect(at(80)).toBe(`└─ scout (${forty}) · ${model}`);
-    expect(plainTheme.width(at(80))).toBeLessThanOrEqual(78);
-    expect(at(120)).toBe(`└─ scout (${forty}) · ${model}`);
+    expect(at(80)).toBe(`  └─ scout (${forty}) · ${model}`);
+    expect(plainTheme.width(at(80))).toBeLessThanOrEqual(79);
+    expect(at(120)).toBe(`  └─ scout (${forty}) · ${model}`);
   });
 
   it("cuts the description, never the model, against the real width and drops the model when it does not fit", async () => {
@@ -880,11 +883,11 @@ describe("run_agent block width", () => {
       lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
 
     expect(at(80).endsWith(`…) · ${model}`)).toBe(true);
-    expect(plainTheme.width(at(80))).toBe(78);
-    expect(at(120)).toBe(`└─ scout (${"d".repeat(60)}) · ${model}`);
+    expect(plainTheme.width(at(80))).toBe(79);
+    expect(at(120)).toBe(`  └─ scout (${"d".repeat(60)}) · ${model}`);
     expect(at(50)).not.toContain(model);
     expect(at(50).endsWith("…)")).toBe(true);
-    expect(plainTheme.width(at(50))).toBeLessThanOrEqual(48);
+    expect(plainTheme.width(at(50))).toBeLessThanOrEqual(49);
     expect(plainTheme.width(at(200))).toBeLessThanOrEqual(BLOCK_WIDTH);
   });
 
@@ -903,7 +906,8 @@ describe("run_agent block width", () => {
     const body = rendered.slice(1);
 
     expect(body.length).toBeGreaterThan(2);
-    expect(body.every((line) => line.startsWith("   "))).toBe(true);
-    expect(body.map((line) => line.slice(3)).join("")).toBe(error);
+    expect(body[0]?.startsWith("  ⎿  ")).toBe(true);
+    expect(body.slice(1).every((line) => line.startsWith("     "))).toBe(true);
+    expect(body.map((line) => line.slice(5)).join("")).toBe(error);
   });
 });

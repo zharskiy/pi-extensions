@@ -193,3 +193,34 @@ describe("agent_status", () => {
     expect(all.details?.agents).toHaveLength(1);
   });
 });
+
+describe("agent_status rows", () => {
+  const details = (count: number): AgentStatusDetails => ({
+    agents: Array.from({ length: count }, () => ({}) as AgentStatusDetails["agents"][number]),
+    unknown: [],
+  });
+
+  it("names the ids, or all, after the bold title", () => {
+    const { host } = setup();
+
+    expect(host.renderTool("agent_status", { call: { ids: ["a-1", "b-2"] } }).call).toBe(
+      "● Agent status a-1, b-2",
+    );
+    expect(host.renderTool("agent_status", { call: {} }).call).toBe("● Agent status all");
+  });
+
+  it("counts the agents until expanded, then shows the snapshot", () => {
+    const { host } = setup();
+    const result = { text: "a-1: running\nb-2: done", details: details(2) };
+
+    expect(host.renderTool("agent_status", { result }).result).toBe(
+      "  ⎿  2 agents (<app.tools.expand> expand)",
+    );
+    expect(host.renderTool("agent_status", { result, state: { expanded: true } }).result).toBe(
+      ["  ⎿  a-1: running", "     b-2: done"].join("\n"),
+    );
+    expect(host.renderTool("agent_status", { result: { text: "x", details: details(1) } }).result).toBe(
+      "  ⎿  1 agent (<app.tools.expand> expand)",
+    );
+  });
+});

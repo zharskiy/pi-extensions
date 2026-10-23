@@ -13,7 +13,7 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { ToolRenderState, ToolResult, ToolSpec, ToolTone } from "../../adapter/contract.ts";
+import type { ToolRenderState, ToolResult, ToolSpec } from "../../adapter/contract.ts";
 import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
 
 initTheme("dark", false);
@@ -209,134 +209,6 @@ describe("toPiTool render state", () => {
 
     expect(widths).toEqual([60]);
     expect(lines[0]?.trimEnd()).toBe("head 60");
-  });
-});
-
-type Phase = "partial" | "final" | "error";
-
-const toolRow = (definition: ToolDefinition, phase: Phase, width = 40) => {
-  const component = new ToolExecutionComponent(
-    "probe",
-    "call-7",
-    {},
-    {},
-    definition,
-    { requestRender() {} } as never,
-    "/repo",
-  );
-
-  component.markExecutionStarted();
-  component.updateResult(
-    { content: [{ type: "text", text: "body" }], ...(phase === "error" ? { isError: true } : {}) } as never,
-    phase === "partial",
-  );
-
-  return component.render(width);
-};
-
-const BACKGROUND = new RegExp(`${String.fromCharCode(27)}\\[48;[0-9;]*m`);
-
-const background = (line: string | undefined) => line?.match(BACKGROUND)?.[0];
-
-const native = (phase: Phase) =>
-  background(
-    toolRow(toPiTool({ ...baseSpec, renderCall: () => "", renderResult: (result) => result.text }), phase)[1],
-  );
-
-const boxed = (tone: () => ToolTone | undefined, phase: Phase, renderCall = () => "") =>
-  toolRow(
-    toPiTool<unknown, unknown>({
-      ...baseSpec,
-      renderShell: "box",
-      renderCall,
-      renderResult: (result) => `${result.text}\n${"z".repeat(60)}`,
-      renderTone: () => tone(),
-    }),
-    phase,
-  );
-
-describe("toPiTool box shell", () => {
-  it("draws pi's tool box with the background of the chosen tone, like a native tool", () => {
-    const tones = { pending: native("partial"), success: native("final"), error: native("error") };
-
-    expect(new Set(Object.values(tones)).size).toBe(3);
-    expect(Object.values(tones).every((bg) => bg !== undefined)).toBe(true);
-
-    (["pending", "success", "error"] as const).forEach((tone) => {
-      const lines = boxed(() => tone, "final");
-      const plain = lines.map(stripVTControlCharacters);
-
-      expect(plain[0]).toBe("");
-      expect(lines.slice(1).every((line) => background(line) === tones[tone])).toBe(true);
-      expect(plain.slice(1).map((line) => line.trimEnd())).toEqual(["", " body", ` ${"z".repeat(37)}…`, ""]);
-      expect(plain.slice(1).every((line) => visibleWidth(line) === 40)).toBe(true);
-    });
-  });
-
-  it("falls back to pi's rule when renderTone gives no tone", () => {
-    (["partial", "final", "error"] as const).forEach((phase) => {
-      expect(background(boxed(() => undefined, phase)[1])).toBe(native(phase));
-    });
-  });
-
-  it("draws no box for an empty render", () => {
-    const lines = boxed(() => "pending", "final");
-    const withCall = boxed(
-      () => "pending",
-      "final",
-      () => "call",
-    );
-
-    expect(lines).toHaveLength(5);
-    expect(withCall).toHaveLength(8);
-  });
-
-  it("calls a width-function render with the width inside the box padding on every render", () => {
-    const widths: number[] = [];
-    const tool = piTool<unknown, unknown>({
-      ...baseSpec,
-      renderShell: "box",
-      renderResult: () => (width) => {
-        widths.push(width);
-        return width < 50 ? "" : `head\n${"y".repeat(width + 5)}`;
-      },
-    });
-    const component = tool.renderResult(piResult("x"), options, theme, context({ outputPad: 1 }));
-
-    const wide = component.render(80).map(stripVTControlCharacters);
-    const narrow = component.render(40).map(stripVTControlCharacters);
-    const flush = tool
-      .renderResult(piResult("x"), options, theme, context({ outputPad: 0 }))
-      .render(60)
-      .map(stripVTControlCharacters);
-
-    expect(widths).toEqual([78, 38, 60]);
-    expect(wide.map((line) => line.trimEnd())).toEqual(["", " head", ` ${"y".repeat(77)}…`, ""]);
-    expect(wide.every((line) => visibleWidth(line) === 80)).toBe(true);
-    expect(narrow).toEqual([]);
-    expect(flush.map((line) => line.trimEnd())).toEqual(["", "head", `${"y".repeat(59)}…`, ""]);
-  });
-
-  it("passes the render state and the result to renderTone and reuses the box", () => {
-    const seen: [boolean, string | undefined][] = [];
-    const tool = piTool({
-      ...baseSpec,
-      renderShell: "box",
-      renderResult: () => "x",
-      renderTone: (state, result) => {
-        seen.push([state.isPartial, result?.text]);
-        return undefined;
-      },
-    });
-
-    const first = tool.renderResult(piResult("out"), options, theme, context({ isPartial: true }));
-    const second = tool.renderResult(piResult("out"), options, theme, context({ lastComponent: first }));
-
-    expect(seen).toEqual([
-      [true, "out"],
-      [false, "out"],
-    ]);
-    expect(second).toBe(first);
   });
 });
 

@@ -46,8 +46,6 @@ export type ToolRenderState = {
   invalidate(): void;
 };
 
-export type ToolTone = "pending" | "success" | "error";
-
 export type ToolRender = string | ((width: number) => string);
 
 export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
@@ -59,7 +57,7 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   parameters: Record<string, unknown>;
   executionMode?: "sequential" | "parallel";
   modelOnly?: boolean;
-  renderShell?: "default" | "box" | "row";
+  renderShell?: "default" | "row";
   execute(
     params: P,
     ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
@@ -67,7 +65,6 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   pendingResult?(toolCallId: string, owner: string | undefined): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
-  renderTone?(state: ToolRenderState, result: ToolResult<D> | undefined): ToolTone | undefined;
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;

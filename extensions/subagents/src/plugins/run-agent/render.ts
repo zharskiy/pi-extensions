@@ -1,9 +1,5 @@
-import type {
-  ThemeLike,
-  ToolRenderState,
-  ToolResult,
-  ToolTone,
-} from "../../../../../core/adapter/contract.ts";
+import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
+import { CHILD_INDENT, type RowState, TITLE_INDENT, toolRow, toolState } from "../../../../../shared/row.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
   elapsedOf,
@@ -206,26 +202,17 @@ const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, w
   });
 };
 
-const ERROR_INDENT = "   ";
-
 const errorBlock = (
   result: ToolResult<RunAgentDetails>,
   expanded: boolean,
   theme: ThemeLike,
   width: number,
 ) => {
-  const header = theme.fg("error", `✗ No agents started: ${firstLine(result.text)}`);
+  const cols = Math.max(1, width - CHILD_INDENT.length);
+  const body = expanded ? result.text.split("\n").flatMap((line) => wrapCols(theme, line, cols)) : [];
+  const title = `No agents started: ${firstLine(result.text)}`;
 
-  if (!expanded) {
-    return header;
-  }
-
-  const cols = Math.max(1, width - ERROR_INDENT.length);
-  const body = result.text
-    .split("\n")
-    .flatMap((line) => wrapCols(theme, line, cols).map((piece) => `${ERROR_INDENT}${piece}`));
-
-  return [header, ...body].join("\n");
+  return toolRow({ state: "error", title, children: body })(width, theme).join("\n");
 };
 
 const hintText = (hints: BlockHints, short: boolean) => {
@@ -280,8 +267,14 @@ const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
   }
 
   const wait = input.params?.wait === true;
+  const inner = Math.max(1, width - TITLE_INDENT.length);
+  const title = toolRow({
+    state: blockState(input.registry, input.state, result),
+    title: header(input, details, wait, inner),
+  })(width, theme);
+  const rows = agentRows(input, details, wait, inner).map((line) => `${TITLE_INDENT}${line}`);
 
-  return [header(input, details, wait, width), ...agentRows(input, details, wait, width)].join("\n");
+  return [...title, ...rows].join("\n");
 };
 
 export const renderBlock = (input: BlockInput) => {
@@ -296,11 +289,11 @@ export const renderBlock = (input: BlockInput) => {
   };
 };
 
-export const blockTone = (
+const blockState = (
   registry: Pick<AgentRegistry, "get">,
   state: ToolRenderState,
   result: ToolResult<RunAgentDetails> | undefined,
-): ToolTone | undefined => {
+): RowState => {
   if (state.isError || result?.isError) {
     return "error";
   }
@@ -312,7 +305,7 @@ export const blockTone = (
   });
 
   if (terminals.length === 0) {
-    return undefined;
+    return toolState(state);
   }
 
   if (terminals.some((record) => !isClosed(record.state))) {

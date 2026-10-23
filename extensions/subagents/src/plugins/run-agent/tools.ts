@@ -1,4 +1,5 @@
 import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
+import { rowText, toolRow } from "../../../../../shared/row.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,
@@ -7,13 +8,7 @@ import {
   isNone,
   MAIN_CALLER,
 } from "../../model/types.ts";
-import {
-  type BlockHints,
-  blockTone,
-  type RunAgentDetails,
-  type RunAgentParams,
-  renderBlock,
-} from "./render.ts";
+import { type BlockHints, type RunAgentDetails, type RunAgentParams, renderBlock } from "./render.ts";
 import type { Runner } from "./runner.ts";
 
 export type MessageAgentParams = { id: string; message: string };
@@ -203,7 +198,7 @@ export const runAgentTool = (
   description,
   promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
   parameters: runAgentParameters,
-  renderShell: "box",
+  renderShell: "row",
   execute: async (params, ctx) => {
     const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
 
@@ -270,7 +265,6 @@ export const runAgentTool = (
       hints: deps.hints,
     });
   },
-  renderTone: (state, result) => blockTone(deps.registry, state, result),
   pendingResult: (toolCallId, owner) => {
     const details = owner === undefined ? undefined : deps.calls.get(owner, toolCallId);
 
@@ -310,7 +304,7 @@ export const messageAgentTool = (
       details: { delivery: routed.delivery },
     };
   },
-  renderShell: "box",
+  renderShell: "row",
   renderCall: () => "",
   renderResult: (result, state, theme) => {
     if (!result.isError) {
@@ -318,8 +312,15 @@ export const messageAgentTool = (
     }
 
     const id = String((state.args as MessageAgentParams | undefined)?.id ?? "");
+    const error = result.text.replace(/^Error:\s*/, "");
 
-    return `${theme.bold("message_agent")} ${theme.fg("accent", id)}: ${result.text.replace(/^Error:\s*/, "")}`;
+    return rowText(
+      toolRow({
+        state: "error",
+        title: (paint) => `Message ${paint.bold(id)}`,
+        children: [(paint) => paint.fg("error", error)],
+      }),
+      theme,
+    );
   },
-  renderTone: (_state, result) => (result?.isError ? "error" : undefined),
 });
