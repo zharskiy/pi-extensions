@@ -88,12 +88,15 @@ const keepAll = () => true;
 export class RowComponent implements Component {
   private parts: RowParts;
 
+  private drawn?: { width: number; lines: string[] };
+
   constructor(parts: RowParts) {
     this.parts = parts;
   }
 
   set(parts: RowParts) {
     this.parts = parts;
+    this.drawn = undefined;
 
     return this;
   }
@@ -118,14 +121,21 @@ export class RowComponent implements Component {
   }
 
   private own(lines: RowParts["lines"], width: number) {
+    if (this.drawn?.width === width) {
+      return this.drawn.lines;
+    }
+
     try {
-      return lines(width);
+      this.drawn = { width, lines: lines(width) };
+
+      return this.drawn.lines;
     } catch {
       return undefined;
     }
   }
 
   invalidate() {
+    this.drawn = undefined;
     this.parts.body?.invalidate();
   }
 }

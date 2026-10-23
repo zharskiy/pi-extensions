@@ -224,8 +224,21 @@ export const applyToolRows = (
   shipped: () => boolean = () => false,
 ) => rowRenderers(toolRowsRecord().rows, name, base, shipped);
 
+const memoised = (label: ToolLabel): ToolLabel => {
+  const known = new Map<string, string | undefined>();
+
+  return (name) => {
+    if (!known.has(name)) {
+      known.set(name, label(name));
+    }
+
+    return known.get(name);
+  };
+};
+
 export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer" | "getAllTools">) => {
   const owner = {};
+  const label = memoised((tool) => toolLabel(pi, tool));
 
   return {
     registerToolRows: ((rows) => {
@@ -237,13 +250,7 @@ export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer" | "ge
       shared.rows = rows;
 
       pi.registerToolRenderer((name, next) =>
-        rowRenderers(
-          rows,
-          name,
-          next(),
-          () => piShipped(pi, name),
-          (tool) => toolLabel(pi, tool),
-        ),
+        rowRenderers(rows, name, next(), () => piShipped(pi, name), label),
       );
     }) satisfies Host["registerToolRows"],
     release: () => {

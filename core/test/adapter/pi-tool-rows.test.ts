@@ -248,6 +248,55 @@ describe("toolRowsHost", () => {
   });
 });
 
+describe("row frames", () => {
+  it("draws a row once per width until pi updates it, and looks an MCP label up once per tool", () => {
+    const lookups: string[] = [];
+    const resolvers: ToolRendererResolver[] = [];
+    const api = {
+      registerToolRenderer: (resolver: ToolRendererResolver) => {
+        resolvers.push(resolver);
+      },
+      getAllTools: () => {
+        lookups.push("all");
+
+        return [];
+      },
+    } as unknown as Pick<ExtensionAPI, "registerToolRenderer" | "getAllTools">;
+    const host = toolRowsHost(api);
+    const drawn: number[] = [];
+    const counted: ToolRows = (view) => ({
+      call: (width) => {
+        drawn.push(width);
+
+        return [`✓ ${view.label}`];
+      },
+    });
+
+    host.registerToolRows(counted);
+
+    const renderers = resolvers[0]?.("mcp__notes__search", () => undefined);
+    const state = {};
+    const first = renderers?.renderCall?.({}, theme(), context({ state }));
+
+    [40, 40, 40, 60, 60].forEach((width) => {
+      first?.render(width);
+    });
+
+    expect(plain(first?.render(40) ?? [])).toEqual([" ✓ notes/search"]);
+    expect(drawn).toEqual([39, 59, 39]);
+
+    renderers?.renderCall?.({}, theme(), context({ state, lastComponent: first }));
+    first?.render(40);
+    first?.invalidate();
+    first?.render(40);
+
+    expect(drawn).toEqual([39, 59, 39, 39, 39]);
+    expect(lookups).toEqual(["all"]);
+
+    host.release();
+  });
+});
+
 describe("rowRenderers for other tools", () => {
   it("keeps a non-built-in tool that renders itself on pi's default shell", () => {
     const own: ToolRenderers = { renderCall: () => new Text("own", 0, 0) };
