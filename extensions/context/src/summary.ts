@@ -5,10 +5,10 @@ import type { Snapshot } from "./snapshot.ts";
 
 export const modelName = (model: UsageModel) => model.model ?? "no model";
 
-export const figuresText = (model: UsageModel) => {
+export const figuresText = (model: UsageModel, unit = true) => {
   const mark = model.estimated ? "~" : "";
 
-  return `${mark}${formatTokens(model.used)}/${formatWindow(model.window)} tokens (${Math.round(model.percent)}%)`;
+  return `${mark}${formatTokens(model.used)}/${formatWindow(model.window)}${unit ? " tokens" : ""} (${Math.round(model.percent)}%)`;
 };
 
 const cacheText = (model: UsageModel) => {

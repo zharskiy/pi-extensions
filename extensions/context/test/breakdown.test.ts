@@ -9,14 +9,14 @@ const render = (patch = {}) =>
 
 const legend = (lines: string[]) =>
   lines
-    .map((line) => /[⛁⛶⛝] ([^:]+): ([\d.]+k?)/.exec(line.slice(24)))
+    .map((line) => /[■·░] ([^:]+): ([\d.]+k?)/.exec(line.slice(26)))
     .filter((match) => match !== null)
     .map((match) => `${match[1]} ${match[2]}`);
 
 const grid = (lines: string[]) =>
   lines
     .slice(1, 11)
-    .map((line) => line.slice(2, 21))
+    .map((line) => line.slice(4, 23))
     .join(" ");
 
 const cacheLine = (lines: string[]) =>
@@ -64,9 +64,9 @@ describe("usage model", () => {
     const full = render({ breakdown: breakdown({ total: 190_000 }) });
     const over = render({ breakdown: breakdown({ total: 205_000 }) });
 
-    expect(full).toContain("                        ⛶ Free space: 0 (0%)");
+    expect(full).toContain("                          · Free space: 0 (0%)");
     expect(full.some((line) => line.includes("exceeds"))).toBe(false);
-    expect(over).toContain("  Context exceeds the window by 5.0k tokens · /compact");
+    expect(over).toContain("    Context exceeds the window by 5.0k tokens · /compact");
   });
 });
 
@@ -74,16 +74,16 @@ describe("grid", () => {
   it("fills categories row-major in legend order, then free, then the reserve at the end", () => {
     expect(grid(render())).toBe(
       [
-        "⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛁ ⛁ ⛀ ⛁",
-        "⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁",
-        "⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁",
-        "⛀ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶",
-        "⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶",
-        "⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶",
-        "⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶",
-        "⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶",
-        "⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶",
-        "⛶ ⛶ ⛝ ⛝ ⛝ ⛝ ⛝ ⛝ ⛝ ⛝",
+        "■ ■ ■ ■ ■ ■ ■ ■ ■ ■",
+        "■ ■ ■ ■ ■ ■ ■ ■ ■ ■",
+        "■ ■ ■ ■ ■ ■ ■ ■ ■ ■",
+        "■ · · · · · · · · ·",
+        "· · · · · · · · · ·",
+        "· · · · · · · · · ·",
+        "· · · · · · · · · ·",
+        "· · · · · · · · · ·",
+        "· · · · · · · · · ·",
+        "· · ░ ░ ░ ░ ░ ░ ░ ░",
       ].join(" "),
     );
   });
@@ -91,12 +91,12 @@ describe("grid", () => {
   it("never lets used cells eat the reserve", () => {
     const cells = grid(render({ breakdown: breakdown({ total: 400_000 }) }));
 
-    expect(cells.match(/⛝/g)).toHaveLength(8);
-    expect(cells).not.toContain("⛶");
+    expect(cells.match(/░/g)).toHaveLength(8);
+    expect(cells).not.toContain("·");
   });
 
   it("is all free without a known window", () => {
-    expect(grid(render({ breakdown: breakdown({ window: 0 }) }))).not.toMatch(/[⛁⛀⛝]/);
+    expect(grid(render({ breakdown: breakdown({ window: 0 }) }))).not.toMatch(/[■░]/);
   });
 });
 

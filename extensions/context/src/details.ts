@@ -1,6 +1,7 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
-import { DOT, PAD } from "../../../core/manager/layout.ts";
+import { DOT } from "../../../core/manager/layout.ts";
+import { MARKS, TITLE_COLUMN } from "../../../core/manager/row.ts";
 import { type Breakdown, type MessageKey, type Part, sumParts } from "./buckets.ts";
 
 type Section = {
@@ -32,10 +33,15 @@ const BUCKETS: readonly { key: MessageKey; label: string }[] = [
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-const branch = (theme: ThemeLike, text: string) => `${PAD}${theme.fg("dim", "└")} ${text}`;
+const children = (theme: ThemeLike, texts: string[]) =>
+  texts.map((text, index) =>
+    index === 0
+      ? `${theme.fg("dim", MARKS.child)} ${theme.fg("muted", text)}`
+      : `${" ".repeat(TITLE_COLUMN)}${theme.fg("muted", text)}`,
+  );
 
-export const title = (theme: ThemeLike, name: string, hint?: string) =>
-  `${PAD}${theme.bold(name)}${hint ? theme.fg("dim", `${DOT}${hint}`) : ""}`;
+const title = (theme: ThemeLike, name: string, hint?: string) =>
+  `${theme.bold(name)}${hint ? theme.fg("dim", `${DOT}${hint}`) : ""}`;
 
 const waits = (section: Section, part: Part) => section.onDemand === true && part.tokens === 0;
 
@@ -65,8 +71,11 @@ const sectionLines = (theme: ThemeLike, section: Section, breakdown: Breakdown, 
   }
 
   const body = expanded
-    ? byTokens(parts).map((part) => branch(theme, partText(theme, section, part)))
-    : [branch(theme, summaryOf(section, parts))];
+    ? children(
+        theme,
+        byTokens(parts).map((part) => partText(theme, section, part)),
+      )
+    : children(theme, [summaryOf(section, parts)]);
 
   return [title(theme, section.name, section.hint), ...body];
 };
@@ -86,11 +95,21 @@ const messageLines = (theme: ThemeLike, messages: Breakdown["messages"], expande
   ].join(DOT);
 
   const body = expanded
-    ? buckets.map((bucket) => branch(theme, `${bucket.label}: ${formatTokens(bucket.tokens)} tokens`))
-    : [branch(theme, summary)];
+    ? children(
+        theme,
+        buckets.map((bucket) => `${bucket.label}: ${formatTokens(bucket.tokens)} tokens`),
+      )
+    : children(theme, [summary]);
 
   return [title(theme, "Messages"), ...body];
 };
+
+const bucketCount = (messages: Breakdown["messages"]) =>
+  messages.count === 0 ? 0 : BUCKETS.filter(({ key }) => messages[key] > 0).length;
+
+export const itemCount = (breakdown: Breakdown) =>
+  SECTIONS.reduce((sum, section) => sum + section.parts(breakdown).length, 0) +
+  bucketCount(breakdown.messages);
 
 export const detailLines = (theme: ThemeLike, breakdown: Breakdown, expanded: boolean) => [
   ...SECTIONS.flatMap((section) => sectionLines(theme, section, breakdown, expanded)),

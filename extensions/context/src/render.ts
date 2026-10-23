@@ -1,8 +1,8 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { cachePercentText } from "../../../core/manager/cache.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
-import { DOT, PAD } from "../../../core/manager/layout.ts";
-import { bullet } from "../../../core/manager/row.ts";
+import { DOT } from "../../../core/manager/layout.ts";
+import { CHILD_COLUMN, countLine, markGlyph } from "../../../core/manager/row.ts";
 import {
   type CacheFigures,
   type Category,
@@ -10,7 +10,7 @@ import {
   type UsageModel,
   usageModel,
 } from "./breakdown.ts";
-import { detailLines } from "./details.ts";
+import { detailLines, itemCount } from "./details.ts";
 import { GAP, gridOf, legendGlyph } from "./grid.ts";
 import type { Snapshot } from "./snapshot.ts";
 import { figuresText, modelName } from "./summary.ts";
@@ -29,6 +29,8 @@ const LABELS: Record<CategoryKey, string> = {
   reserve: "Compaction reserve",
 };
 
+const INDENT = " ".repeat(CHILD_COLUMN);
+
 const percentText = (percent: number) => `${percent.toFixed(1)}%`;
 
 const legendText = (theme: ThemeLike, category: Category, full: boolean) => {
@@ -45,12 +47,18 @@ const legendText = (theme: ThemeLike, category: Category, full: boolean) => {
 const legendLine = (theme: ThemeLike, category: Category, full: boolean) =>
   `${legendGlyph(theme, category.key)} ${legendText(theme, category, full)}`;
 
-const headerText = (theme: ThemeLike, model: UsageModel) =>
+const headerText = (theme: ThemeLike, model: UsageModel, unit: boolean) =>
   [
     theme.fg("text", modelName(model)),
-    figuresText(model),
+    figuresText(model, unit),
     ...(model.estimated ? [theme.fg("dim", "estimated")] : []),
   ].join(theme.fg("dim", DOT));
+
+const fittedHeader = (theme: ThemeLike, model: UsageModel, room: number) => {
+  const full = headerText(theme, model, true);
+
+  return theme.width(full) <= room ? full : headerText(theme, model, false);
+};
 
 const lastTurnText = (theme: ThemeLike, lastTurn: number, missed: boolean) =>
   missed ? theme.fg("warning", `${Math.round(lastTurn)}%`) : cachePercentText(theme, lastTurn);
@@ -64,22 +72,21 @@ const cacheText = (theme: ThemeLike, cache: CacheFigures) => {
   return `Cache hit: ${[...last, `session ${cachePercentText(theme, cache.session)}`].join(theme.fg("dim", DOT))}`;
 };
 
-const sideLines = (theme: ThemeLike, model: UsageModel) => [
-  headerText(theme, model),
+const sideLines = (theme: ThemeLike, model: UsageModel, room: number) => [
+  fittedHeader(theme, model, room),
   ...(model.cache ? [cacheText(theme, model.cache)] : []),
   "",
   theme.bold("Estimated usage by category"),
   ...model.categories.map((category) => legendLine(theme, category, model.full)),
 ];
 
-const indented = (line: string) => (line ? `${PAD}${line}` : line);
-
 const bodyLines = (theme: ThemeLike, model: UsageModel, width: number) => {
-  const side = sideLines(theme, model);
-  const grid = gridOf(theme, model, width, Math.max(...side.map((line) => theme.width(line))));
+  const room = Math.max(1, width - CHILD_COLUMN);
+  const side = sideLines(theme, model, room);
+  const grid = gridOf(theme, model, width, room, Math.max(...side.map((line) => theme.width(line))));
 
   if (!grid.beside) {
-    return [...grid.rows.map(indented), "", ...side.map(indented)];
+    return [...grid.rows, ...side];
   }
 
   const blank = " ".repeat(grid.columns * 2 - 1);
@@ -89,10 +96,10 @@ const bodyLines = (theme: ThemeLike, model: UsageModel, width: number) => {
     const left = grid.rows[index];
 
     if (left === undefined) {
-      return right ? `${PAD}${blank}${GAP}${right}` : "";
+      return right ? `${blank}${GAP}${right}` : "";
     }
 
-    return right ? `${PAD}${left}${GAP}${right}` : `${PAD}${left}`;
+    return right ? `${left}${GAP}${right}` : left;
   });
 };
 
@@ -107,33 +114,38 @@ const clockText = (timestamp: number) => {
 const overflowLines = (theme: ThemeLike, model: UsageModel) =>
   model.overflow > 0
     ? [
-        `${PAD}${theme.fg("error", `Context exceeds the window by ${formatTokens(model.overflow)} tokens${DOT}/compact`)}`,
+        theme.fg(
+          "error",
+          `Context exceeds the window by ${formatTokens(model.overflow)} tokens${DOT}/compact`,
+        ),
       ]
     : [];
 
-const toggleLines = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions) => {
-  if (snapshot.expandedByDefault || options.expanded) {
+const countLines = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions) => {
+  const hidden = itemCount(snapshot.breakdown);
+
+  if (snapshot.expandedByDefault || options.expanded || hidden === 0) {
     return [];
   }
 
-  return [`${PAD}${theme.fg("dim", `(${options.expandKey} expand)`)}`];
+  const room = Math.max(1, options.width - CHILD_COLUMN);
+
+  return [countLine({ hidden, end: "more", noun: "item", key: options.expandKey }, room, theme)];
 };
 
 const titleLine = (theme: ThemeLike, stamp: string | undefined) =>
-  `${bullet("text", theme)} ${theme.bold("Context Usage")}${stamp ? theme.fg("dim", `${DOT}${stamp}`) : ""}`;
+  `${markGlyph("info", theme)} ${theme.bold("Context usage")}${stamp ? theme.fg("dim", `${DOT}${stamp}`) : ""}`;
 
-const hung = (line: string) => (line ? ` ${line}` : line);
+const indented = (line: string) => (line ? `${INDENT}${line}` : line);
 
 export const renderSnapshot = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions): string[] => {
   const model = usageModel(snapshot);
   const details = detailLines(theme, snapshot.breakdown, options.expanded || snapshot.expandedByDefault);
   const stamp = snapshot.timestamp > 0 ? clockText(snapshot.timestamp) : undefined;
-  const footer = details.length > 0 ? ["", ...details, ...toggleLines(theme, snapshot, options)] : [];
-  const body = [
-    ...bodyLines(theme, model, Math.max(1, options.width - 1)),
-    ...overflowLines(theme, model),
-    ...footer,
-  ];
+  const footer = details.length > 0 ? ["", ...details, ...countLines(theme, snapshot, options)] : [];
+  const body = [...bodyLines(theme, model, options.width), ...overflowLines(theme, model), ...footer];
 
-  return [titleLine(theme, stamp), ...body.map(hung)];
+  return [titleLine(theme, stamp), ...body.map(indented)].map((line) =>
+    line === "" ? line : theme.truncate(line, Math.max(1, options.width)),
+  );
 };
