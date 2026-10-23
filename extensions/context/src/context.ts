@@ -1,13 +1,12 @@
 import type { Host } from "../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../core/manager/format.ts";
+import { EXPAND_BINDING } from "../../../core/manager/row.ts";
 import { type Breakdown, breakdownOf } from "./buckets.ts";
 import { renderSnapshot } from "./render.ts";
 import { parseSnapshot, type Snapshot } from "./snapshot.ts";
 import { summaryLine } from "./summary.ts";
 
 export const SNAPSHOT_ENTRY = "pi-context:snapshot";
-
-const EXPAND_BINDING = "app.tools.expand";
 
 const ALL = "all";
 

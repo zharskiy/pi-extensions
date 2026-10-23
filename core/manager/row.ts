@@ -1,6 +1,10 @@
-import { CHILD_COLUMNS, type ThemeLike, type ThemeToken } from "../core/adapter/contract.ts";
+import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
 
-const GLYPHS = { bullet: "●", thinking: "∴", prompt: "❯", child: "⎿" } as const;
+export const GLYPHS = { bullet: "●", thinking: "∴", chevron: "❯", child: "⎿" } as const;
+
+export const CHILD_COLUMNS = 5;
+
+export const EXPAND_BINDING = "app.tools.expand";
 
 export type RowState = "pending" | "success" | "error" | "text";
 

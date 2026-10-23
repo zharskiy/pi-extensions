@@ -2,7 +2,7 @@ import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { cachePercentText } from "../../../core/manager/cache.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
 import { DOT, PAD } from "../../../core/manager/layout.ts";
-import { bullet } from "../../../shared/row.ts";
+import { bullet } from "../../../core/manager/row.ts";
 import {
   type CacheFigures,
   type Category,

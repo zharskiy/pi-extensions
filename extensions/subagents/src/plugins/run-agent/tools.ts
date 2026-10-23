@@ -1,5 +1,5 @@
 import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
-import { rowText, toolRow } from "../../../../../shared/row.ts";
+import { rowText, toolRow } from "../../../../../core/manager/row.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,

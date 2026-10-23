@@ -1,5 +1,5 @@
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../core/adapter/contract.ts";
-import { childRow, noun, rowText, type Styled, toolRow, toolState } from "../../../shared/row.ts";
+import { childRow, noun, rowText, type Styled, toolRow, toolState } from "../../../core/manager/row.ts";
 import {
   type Answer,
   defaultLabel,

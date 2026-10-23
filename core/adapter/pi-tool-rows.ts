@@ -1,5 +1,6 @@
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
+import { GLYPHS } from "../manager/row.ts";
 import type { Host, ThemeLike, ToolCallView, ToolRows } from "./contract.ts";
 import { recordPad, rowComponent, toolRowsRecord } from "./pi-row-component.ts";
 import { fromPiResult, type PiToolRenderContext, themeLike } from "./pi-tools.ts";
@@ -132,7 +133,7 @@ export const rowRenderers = (
         lines: linesOf(row?.result, themeLike(theme)),
         pad: context.outputPad,
         body,
-        lead: `  ${theme.fg("dim", "⎿")}  `,
+        lead: `  ${theme.fg("dim", GLYPHS.child)}  `,
       });
     },
   };

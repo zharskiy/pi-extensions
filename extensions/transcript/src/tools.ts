@@ -9,7 +9,7 @@ import {
   type Styled,
   toolRow,
   toolState,
-} from "../../../shared/row.ts";
+} from "../../../core/manager/row.ts";
 import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";
 import { moreLine, PREVIEW_LINES, truncatedOutput } from "./output.ts";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike, ThemeToken } from "../../core/adapter/contract.ts";
-import { plainTheme } from "../../core/test/helpers/fakes.ts";
-import { childRow, expandHint, type RowState, rowText, toolRow, toolState } from "../row.ts";
+import type { ThemeLike, ThemeToken } from "../../adapter/contract.ts";
+import { childRow, expandHint, type RowState, rowText, toolRow, toolState } from "../../manager/row.ts";
+import { plainTheme } from "../helpers/fakes.ts";
 
 const recordingTheme = () => {
   const painted: { token: ThemeToken; text: string }[] = [];

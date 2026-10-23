@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
-import { CHILD_COLUMNS, type ToolRows } from "./contract.ts";
+import { CHILD_COLUMNS } from "../manager/row.ts";
+import type { ToolRows } from "./contract.ts";
 
 type RowsRecord = { rows?: ToolRows; owner?: object; pad: number };
 

@@ -58,6 +58,8 @@ pi-extensions/
 │   │   ├── select.ts            # single-choice form over the list
 │   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
 │   │   ├── multi-select.ts      # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
+│   │   ├── row.ts               # transcript row language: GLYPHS, bullet colours, toolState, toolRow/childRow
+│   │   │                        #   (● title, ⎿ children, expand hint), CHILD_COLUMNS, EXPAND_BINDING
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
@@ -65,10 +67,6 @@ pi-extensions/
 │       │                        #   (tool rows rendered through pi for extension tests)
 │       ├── manager/
 │       └── helpers/             # fakes.ts (fake host, runtime and child session), fake-form.ts (fake showForm)
-├── shared/                      # pi-free code several extensions share, over contract.ts and core/manager
-│   ├── row.ts                   # transcript row language: bullet colours, toolState, toolRow/childRow
-│   │                            #   (● title, ⎿ children, expand hint)
-│   └── test/
 ├── extensions/
 │   ├── subagents/               # background agents (main extension)
 │   │   ├── src/
@@ -198,7 +196,7 @@ usage-report/       # reports agent usage to the spending channel
 
 - Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules, including that extension tests reach the adapter only through `contract.ts` and `core/test/adapter`.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
-- Extensions never import each other; they only share `core/` and `shared/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
+- Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
 - `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same). `extensions/subagents/test/helpers/live.ts` builds the live harness on top (`seed(sha)` fills the project from `git archive`), with the pure `agent-patch.ts`, `plan-rows.ts` and `findings.ts` beside it, `turns.ts` to keep the fake host busy across overlapping runs and settle it once per turn, and `live-runs.ts` to run a lead's chain to its close and repeat a fixture in parallel.
 - Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. The files the extensions write are listed in ARCHITECTURE.md (Persistence summary).
@@ -208,16 +206,16 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Published vs development-only
 
-- Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `shared` (without `shared/test`), `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
+- Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
 - Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/src/index.ts`.
-- Development-only: `core/test`, `shared/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
+- Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files
 
 - `package.json`: version, pi entry points, `files`, scripts (`check`, `test`, `test:live`).
-- `tsconfig.json`: strict NodeNext, no emit, includes `core`, `extensions`, `shared`, `test`.
-- `vitest.config.ts`: unit tests (`core/test`, `extensions/*/test`, `shared/test`, `test`), excludes `*.live.test.ts`.
+- `tsconfig.json`: strict NodeNext, no emit, includes `core`, `extensions`, `test`.
+- `vitest.config.ts`: unit tests (`core/test`, `extensions/*/test`, `test`), excludes `*.live.test.ts`.
 - `vitest.live.config.ts`: only live tests, serial, long timeouts.
-- `biome.json`: format/lint, plus the pi-import restriction outside the adapter (`shared/**` included).
+- `biome.json`: format/lint, plus the pi-import restriction outside the adapter.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests.
 - `.gitignore`: node_modules, .DS_Store, .claude.

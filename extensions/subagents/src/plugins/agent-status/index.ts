@@ -1,5 +1,13 @@
 import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
-import { childRow, expandHint, noun, rowText, toolRow, toolState } from "../../../../../shared/row.ts";
+import {
+  childRow,
+  EXPAND_BINDING,
+  expandHint,
+  noun,
+  rowText,
+  toolRow,
+  toolState,
+} from "../../../../../core/manager/row.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, chainTerminal } from "../../model/types.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "./snapshot.ts";
@@ -89,7 +97,7 @@ export const agentStatusPlugin: Plugin = {
   requires: ["agent-registry"],
   enable: ({ host, services }) => {
     const registry = services.require("registry");
-    const expandKey = () => host.ui.keyText("app.tools.expand");
+    const expandKey = () => host.ui.keyText(EXPAND_BINDING);
 
     host.registerTool(statusTool({ registry, expandKey }));
 

@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { CHILD_INDENT, expandHint, type RowRender, toolRow } from "../../../shared/row.ts";
+import { CHILD_INDENT, expandHint, type RowRender, toolRow } from "../../../core/manager/row.ts";
 
 export const SEED_TITLE = "Handoff from previous session";
 

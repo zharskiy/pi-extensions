@@ -10,13 +10,12 @@ import {
   Text,
   type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
+import { GLYPHS } from "../manager/row.ts";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
 export const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 
 const GLYPH_COLUMNS = 2;
-
-const THINKING = "∴";
 
 type Render = (this: Container, width: number) => string[];
 
@@ -87,7 +86,7 @@ const userRows = (component: Container, width: number, original: Render, theme: 
   const start = isBlank(lines[0] ?? "") ? 1 : 0;
   const end = lines.length > start && isBlank(lines.at(-1) ?? "") ? lines.length - 1 : lines.length;
   const pad = padOf(component);
-  const prompt = theme.bg("userMessageBg", `${theme.fg("muted", "❯")} `);
+  const prompt = theme.bg("userMessageBg", `${theme.fg("muted", GLYPHS.chevron)} `);
   const indent = theme.bg("userMessageBg", "  ");
   const rows = lines
     .slice(start, end)
@@ -98,11 +97,11 @@ const userRows = (component: Container, width: number, original: Render, theme: 
 
 const glyphFor = (child: Component, line: string, pad: number, theme: Theme) => {
   if (child instanceof Markdown) {
-    return `${theme.fg("text", "●")} `;
+    return `${theme.fg("text", GLYPHS.bullet)} `;
   }
 
   if (child instanceof Text) {
-    return `${theme.fg("error", "●")} `;
+    return `${theme.fg("error", GLYPHS.bullet)} `;
   }
 
   if (!(child instanceof MouseRegion)) {
@@ -111,7 +110,7 @@ const glyphFor = (child: Component, line: string, pad: number, theme: Theme) => 
 
   const shown = stripTerminalSequences(sliceByColumn(line, pad, Number.MAX_SAFE_INTEGER)).trimStart();
 
-  return shown.startsWith(THINKING) ? "" : `${theme.fg("dim", THINKING)} `;
+  return shown.startsWith(GLYPHS.thinking) ? "" : `${theme.fg("dim", GLYPHS.thinking)} `;
 };
 
 const childRows = (child: Component, lines: string[], pad: number, width: number, theme: Theme) => {

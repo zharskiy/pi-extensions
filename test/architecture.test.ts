@@ -8,8 +8,6 @@ const ADAPTER = join(CORE, "adapter");
 const MANAGER = join(CORE, "manager");
 const CORE_TESTS = join(CORE, "test");
 const EXTENSIONS = join(ROOT, "extensions");
-const SHARED = join(ROOT, "shared");
-const SHARED_TESTS = join(SHARED, "test");
 const CONTRACT = join(ADAPTER, "contract.ts");
 const PI_ADAPTER = join(ADAPTER, "pi-adapter.ts");
 
@@ -68,8 +66,6 @@ const coreCode = () => sourceFiles(CORE).filter((file) => !isInside(CORE_TESTS)(
 
 const extensionCode = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "src")));
 
-const sharedCode = () => sourceFiles(SHARED).filter((file) => !isInside(SHARED_TESTS)(file));
-
 const extensionTests = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "test")));
 
 const isPiPackage = (specifier: string) =>
@@ -80,7 +76,7 @@ const isEntry = (file: string) =>
 
 describe("architecture", () => {
   it("outside core/adapter only the contract is imported, except pi-adapter by each extension's entry", () => {
-    const offenders = importsIn([...coreCode(), ...extensionCode(), ...sharedCode()])
+    const offenders = importsIn([...coreCode(), ...extensionCode()])
       .filter((entry) => !isInside(ADAPTER)(entry.file))
       .filter((entry) => entry.target !== undefined && isInside(ADAPTER)(entry.target))
       .filter((entry) => entry.target !== CONTRACT)
@@ -90,8 +86,8 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("extension and shared tests reach the adapter only through the contract and core/test/adapter", () => {
-    const offenders = importsIn([...extensionTests(), ...sourceFiles(SHARED_TESTS)])
+  it("extension tests reach the adapter only through the contract and core/test/adapter", () => {
+    const offenders = importsIn(extensionTests())
       .filter(
         (entry) =>
           isPiPackage(entry.specifier) ||
@@ -135,34 +131,6 @@ describe("architecture", () => {
     const offenders = importsIn(sourceFiles(CORE))
       .filter((entry) => entry.target !== undefined && isInside(EXTENSIONS)(entry.target))
       .map(describeImport);
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("shared code imports only itself, the contract and core/manager", () => {
-    const offenders = importsIn(sharedCode())
-      .filter(
-        (entry) =>
-          entry.target === undefined ||
-          !(isInside(SHARED)(entry.target) || entry.target === CONTRACT || isInside(MANAGER)(entry.target)),
-      )
-      .map(describeImport);
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("core/manager never imports shared", () => {
-    const offenders = importsIn(sourceFiles(MANAGER))
-      .filter((entry) => entry.target !== undefined && isInside(SHARED)(entry.target))
-      .map(describeImport);
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("keeps shared tests in shared/test", () => {
-    const offenders = sharedCode()
-      .filter((file) => file.endsWith(".test.ts"))
-      .map((file) => relative(ROOT, file));
 
     expect(offenders).toEqual([]);
   });

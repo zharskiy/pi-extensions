@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { noun } from "../../../shared/row.ts";
+import { noun } from "../../../core/manager/row.ts";
 
 export type Truncated = { lines: string[]; hidden: number };
 

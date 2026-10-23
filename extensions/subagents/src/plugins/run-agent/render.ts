@@ -1,5 +1,11 @@
 import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
-import { CHILD_INDENT, type RowState, TITLE_INDENT, toolRow, toolState } from "../../../../../shared/row.ts";
+import {
+  CHILD_INDENT,
+  type RowState,
+  TITLE_INDENT,
+  toolRow,
+  toolState,
+} from "../../../../../core/manager/row.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
   elapsedOf,

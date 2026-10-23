@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../../../core/manager/format.ts";
-import { childRow, rowText, toolRow, toolState } from "../../../../../shared/row.ts";
+import { childRow, rowText, toolRow, toolState } from "../../../../../core/manager/row.ts";
 import { errorText } from "../../components/format.ts";
 import type { AgentRegistry, HandoffService } from "../../model/types.ts";
 
