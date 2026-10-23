@@ -83,16 +83,29 @@ const piBody = (
 const linesOf = (render: ((width: number, theme: ThemeLike) => string[]) | undefined, theme: ThemeLike) =>
   render ? (width: number) => render(width, theme) : () => [];
 
-const keepsBase = (name: string, base: ToolRenderers | undefined) =>
-  !BUILTIN_TOOLS.includes(name) &&
-  (base?.renderShell === "self" || base?.renderCall !== undefined || base?.renderResult !== undefined);
+const BUILTIN_SOURCE = "builtin";
+
+export const piShipped = (pi: Pick<ExtensionAPI, "getAllTools">, name: string) => {
+  try {
+    return pi.getAllTools().some((tool) => tool.name === name && tool.sourceInfo.source === BUILTIN_SOURCE);
+  } catch {
+    return false;
+  }
+};
+
+const hasOwnRenderer = (base: ToolRenderers | undefined) =>
+  base?.renderShell === "self" || base?.renderCall !== undefined || base?.renderResult !== undefined;
+
+const keepsBase = (name: string, base: ToolRenderers | undefined, shipped: () => boolean) =>
+  !BUILTIN_TOOLS.includes(name) && hasOwnRenderer(base) && !shipped();
 
 export const rowRenderers = (
   rows: ToolRows | undefined,
   name: string,
   base: ToolRenderers | undefined,
+  shipped: () => boolean = () => false,
 ): ToolRenderers | undefined => {
-  if (!rows || keepsBase(name, base) || !rows(probeView(name))) {
+  if (!rows || keepsBase(name, base, shipped) || !rows(probeView(name))) {
     return base;
   }
 
@@ -125,10 +138,13 @@ export const rowRenderers = (
   };
 };
 
-export const applyToolRows = (name: string, base: ToolRenderers | undefined) =>
-  rowRenderers(toolRowsRecord().rows, name, base);
+export const applyToolRows = (
+  name: string,
+  base: ToolRenderers | undefined,
+  shipped: () => boolean = () => false,
+) => rowRenderers(toolRowsRecord().rows, name, base, shipped);
 
-export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer">) => {
+export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer" | "getAllTools">) => {
   const owner = {};
 
   return {
@@ -138,7 +154,7 @@ export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer">) => 
       shared.rows = rows;
       shared.owner = owner;
 
-      pi.registerToolRenderer((name, next) => rowRenderers(rows, name, next()));
+      pi.registerToolRenderer((name, next) => rowRenderers(rows, name, next(), () => piShipped(pi, name)));
     }) satisfies Host["registerToolRows"],
     release: () => {
       const shared = toolRowsRecord();

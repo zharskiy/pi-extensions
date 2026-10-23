@@ -14,8 +14,9 @@ import { CODEMODE_WORKERS_SETTING } from "../../adapter/pi-codemode.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { discoverSkills } from "../../adapter/pi-skills.ts";
-import { BUILTIN_TOOLS } from "../../adapter/pi-tool-rows.ts";
+import { BUILTIN_TOOLS, piShipped } from "../../adapter/pi-tool-rows.ts";
 import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
+import { capturePiRenderers } from "../../adapter/pi-transcript.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
@@ -979,6 +980,76 @@ describe("pi adapter conformance", () => {
       expect(render(pi.createReadToolDefinition("/repo") as never, { path: "a.txt" })).toContain("out 20");
       expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 20");
       expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 1");
+    });
+
+    it("marks pi's own tools, codemode among them, with the builtin source and a third-party tool without it", async () => {
+      vi.stubEnv("PI_CODING_AGENT_DIR", mkdtempSync(join(tmpdir(), "pi-conformance-")));
+
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const seen: { api?: pi.ExtensionAPI } = {};
+      const settingsManager = pi.SettingsManager.inMemory({});
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "probe",
+            factory: (api) => {
+              seen.api = api;
+              api.registerTool({
+                ...namedTool("probe_tool"),
+                renderCall: () => new tui.Text("own", 0, 0),
+              } as never);
+            },
+          },
+          { name: "codemode", factory: pi.createCodemodeExtension(), replaceable: true, builtin: true },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const api = seen.api as pi.ExtensionAPI;
+      const shipped = ["read", "codemode", "probe_tool"].map((name) => piShipped(api, name));
+
+      session.dispose();
+      vi.unstubAllEnvs();
+
+      expect(shipped).toEqual([true, true, false]);
+    });
+
+    it("pi's codemode renderer drops the `Script … Wall time … Output:` header", () => {
+      initRenderTheme();
+
+      const captured = capturePiRenderers({ codemode: pi.createCodemodeExtension });
+      const header = { type: "text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" };
+      const lines = plain(
+        captured.codemode?.renderResult?.(
+          {
+            content: [header, { type: "text", text: "out 1" }],
+            details: { calls: [] },
+            isError: false,
+          } as never,
+          { expanded: true, isPartial: false },
+          { fg: (_token: string, text: string) => text, bold: (text: string) => text } as never,
+          renderContext({ args: { code: "return 1" } }),
+        ) as never,
+      );
+
+      expect(lines).toContain("out 1");
+      expect(lines.some((line) => line.includes("Wall time"))).toBe(false);
     });
   });
 

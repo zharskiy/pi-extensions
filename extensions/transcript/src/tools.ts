@@ -16,6 +16,7 @@ type ToolLook = {
   key?: string;
   title(context: Context, value: string): Styled;
   summary?(context: Context): Summary;
+  handlesErrors?: boolean;
   piBody?: boolean;
 };
 
@@ -112,6 +113,76 @@ const shellTitle = (prompt: string) => (_context: Context, command: string) => (
 
 const shellBody = (context: Context): Summary =>
   context.view.expanded ? { children: [], more: false } : shellOutput(context);
+
+const SCRIPT_HEADER = /^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n+/;
+
+const scriptOutput = (text: string) => text.replace(SCRIPT_HEADER, "");
+
+const nestedCalls = (view: ToolCallView) => {
+  const calls = (view.result?.details as { calls?: unknown } | undefined)?.calls;
+
+  return Array.isArray(calls) ? (calls as { status?: unknown }[]) : [];
+};
+
+const OPTIONS_LINE = /^\/\/\s*@options:/;
+
+const SPACER = "";
+
+const codeTitle = (_context: Context, code: string) => (theme: ThemeLike) => {
+  const lines = code.trim().split("\n");
+  const [first = "", ...rest] = OPTIONS_LINE.test(lines[0] ?? "") ? lines.slice(1) : lines;
+  const more = rest.length > 0 ? theme.fg("dim", " …") : "";
+
+  return `${theme.bold("codemode")} ${first}${more}`;
+};
+
+const codeSummary = (context: Context): Summary => {
+  const calls = nestedCalls(context.view);
+  const failed = calls.filter((call) => call.status === "error").length;
+  const output = scriptOutput(context.view.result?.text ?? "");
+  const lines = lineCount(output);
+  const ran = calls.length > 0 ? [counted(calls.length, "tool call")] : [];
+
+  if (context.view.isPartial) {
+    return {
+      children: [
+        (theme) =>
+          [theme.fg("dim", "Running…"), ...ran.map((part) => part(theme))].join(theme.fg("dim", " · ")),
+      ],
+      more: false,
+    };
+  }
+
+  const failure = context.view.isError;
+
+  if (!context.view.expanded && failure) {
+    return outputLines(output || "Error", "head", "error");
+  }
+
+  if (context.view.expanded) {
+    const code = truncatedOutput(textArg(context.args, "code") ?? "", Number.MAX_SAFE_INTEGER).lines;
+
+    if (failure) {
+      return { children: [...code, SPACER, ...allLines(output || "Error", "error").children], more: false };
+    }
+
+    const gap = calls.length > 0 || lines > 0 ? [SPACER] : [];
+
+    return { children: [...code, ...gap], more: false };
+  }
+
+  const parts = [
+    ...ran,
+    ...(failed > 0 ? [(theme: ThemeLike) => theme.fg("error", `${failed} failed`)] : []),
+    ...(lines > 0 ? [(theme: ThemeLike) => `${counted(lines, "line")(theme)} of output`] : []),
+  ];
+  const children =
+    parts.length > 0
+      ? [(theme: ThemeLike) => parts.map((part) => part(theme)).join(", ")]
+      : [dim("(No output)")];
+
+  return { children, more: true };
+};
 
 const readSummary = (context: Context): Summary => {
   const result = context.view.result;
@@ -210,6 +281,14 @@ const LOOKS: Record<string, ToolLook> = {
     piBody: true,
   },
   ls: { name: "List", title: pathTitle("List"), summary: listSummary, piBody: true },
+  codemode: {
+    name: "codemode",
+    key: "code",
+    title: codeTitle,
+    summary: codeSummary,
+    handlesErrors: true,
+    piBody: true,
+  },
 };
 
 const valueText = (value: unknown) => {
@@ -257,7 +336,7 @@ const titleOf = (look: ToolLook | undefined, context: Context): Styled => {
 };
 
 const summaryOf = (look: ToolLook | undefined, context: Context): Summary => {
-  if (context.view.isError && !context.view.isPartial) {
+  if (context.view.isError && !context.view.isPartial && !look?.handlesErrors) {
     return errorSummary(context);
   }
 

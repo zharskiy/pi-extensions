@@ -154,6 +154,33 @@ describe("pi renderers in the transcript pane", () => {
     expect(text).not.toContain('"code"');
   });
 
+  it("draws a codemode call as a row once rows are registered", () => {
+    const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+
+    host.registerToolRows((view) => ({
+      call: () => [`● ${view.name}`],
+      result: () => [
+        `  ⎿  ${(view.result?.details as { calls?: unknown[] } | undefined)?.calls?.length} tool call`,
+      ],
+    }));
+
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([
+      assistantCall("codemode", { code: "return 1" }),
+      toolResult("codemode", "src/auth/login.ts", {
+        calls: [{ id: "n1", name: "grep", args: "{}", status: "ok", durationMs: 12 }],
+      }),
+    ]);
+
+    const text = visibleText(pane.render(80));
+
+    host.release();
+
+    expect(text).toContain("● codemode\n   ⎿  1 tool call");
+    expect(text).not.toContain("✓ grep");
+  });
+
   it("renders custom specs passed to createTranscript with their own renderers", () => {
     const spec = {
       name: "run_agent",

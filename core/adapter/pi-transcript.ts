@@ -118,7 +118,11 @@ export const createTranscriptPane = (
     return renderers[name];
   };
 
-  const resolveDefinition = (name: string) => applyToolRows(name, baseDefinition(name));
+  const resolveDefinition = (name: string) => {
+    const base = baseDefinition(name);
+
+    return applyToolRows(name, base, () => base === renderers[name]);
+  };
 
   const definitionFor = (name: string) => {
     if (!definitions.has(name)) {

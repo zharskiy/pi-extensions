@@ -165,7 +165,7 @@ describe("toolRowsHost", () => {
       registerToolRenderer: (resolver: ToolRendererResolver) => {
         resolvers.push(resolver);
       },
-    } as unknown as Pick<ExtensionAPI, "registerToolRenderer">;
+    } as unknown as Pick<ExtensionAPI, "registerToolRenderer" | "getAllTools">;
     const host = toolRowsHost(api);
 
     host.registerToolRows(rows);
@@ -180,7 +180,10 @@ describe("toolRowsHost", () => {
   });
 
   it("keeps rows another adapter copy registered later", () => {
-    const api = { registerToolRenderer: () => {} } as unknown as Pick<ExtensionAPI, "registerToolRenderer">;
+    const api = { registerToolRenderer: () => {} } as unknown as Pick<
+      ExtensionAPI,
+      "registerToolRenderer" | "getAllTools"
+    >;
     const first = toolRowsHost(api);
     const second = toolRowsHost(api);
 
@@ -203,6 +206,69 @@ describe("rowRenderers for other tools", () => {
     expect(rowRenderers(rows, "notes_search", result)).toBe(result);
     expect(rowRenderers(rows, "notes_search", undefined)?.renderShell).toBe("self");
     expect(rowRenderers(rows, "notes_search", { renderShell: "default" })?.renderShell).toBe("self");
+  });
+});
+
+describe("rows for tools pi ships", () => {
+  const own: ToolRenderers = {
+    renderCall: () => new Text("own", 0, 0),
+    renderResult: () => new Text("own", 0, 0),
+  };
+
+  const listed = (source: string) => () => [
+    { name: "codemode", sourceInfo: { source, path: `${source}:codemode` } },
+  ];
+
+  const resolve = (getAllTools: () => unknown[]) => {
+    const resolvers: ToolRendererResolver[] = [];
+    const api = {
+      registerToolRenderer: (resolver: ToolRendererResolver) => {
+        resolvers.push(resolver);
+      },
+      getAllTools,
+    } as unknown as Pick<ExtensionAPI, "registerToolRenderer" | "getAllTools">;
+    const host = toolRowsHost(api);
+
+    host.registerToolRows(rows);
+
+    const renderers = resolvers[0]?.("codemode", () => own);
+
+    host.release();
+
+    return renderers;
+  };
+
+  it("draws a pi-shipped tool with its own renderer as a row", () => {
+    expect(resolve(listed("builtin"))?.renderShell).toBe("self");
+  });
+
+  it("keeps the renderer of the same tool when a third-party extension registered it", () => {
+    expect(resolve(listed("npm"))).toBe(own);
+  });
+
+  it("keeps the renderer when pi cannot list its tools", () => {
+    expect(
+      resolve(() => {
+        throw new Error("not bound");
+      }),
+    ).toBe(own);
+  });
+
+  it("hangs pi's own result under the row when expanded", () => {
+    const body: ToolRenderers = { renderResult: () => new Text("pi body", 0, 0) };
+    const renderers = rowRenderers(rows, "codemode", body, () => true);
+    const lines = plain(
+      renderers
+        ?.renderResult?.(
+          { content: [{ type: "text", text: "ok" }] } as never,
+          { expanded: true, isPartial: false },
+          theme(),
+          context({ expanded: true }),
+        )
+        .render(40) ?? [],
+    );
+
+    expect(lines).toEqual(["   ⎿  done ok", "      pi body"]);
   });
 });
 

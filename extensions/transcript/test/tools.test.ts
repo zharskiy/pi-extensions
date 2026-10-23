@@ -229,6 +229,85 @@ describe("results", () => {
   });
 });
 
+describe("codemode rows", () => {
+  const code = 'const hits = await tools.grep({ pattern: "login" });\nreturn hits;';
+  const header = "Script completed\nWall time 0.4 seconds\nOutput:\n\n";
+  const calls = [
+    { name: "grep", status: "ok" },
+    { name: "read", status: "error" },
+  ];
+  const codemode = (text: string, patch: Partial<ToolCallView> = {}, details: unknown = { calls }) =>
+    draw(view("codemode", { code }, done(text, patch, details)));
+
+  it("names the call by the first line of its script", () => {
+    expect(draw(view("codemode", { code })).call).toEqual([
+      '● codemode const hits = await tools.grep({ pattern: "login" }); …',
+    ]);
+    expect(draw(view("codemode", {}, { argsComplete: false })).call).toEqual(["● codemode"]);
+  });
+
+  it("counts the nested calls, the failed ones and the output lines, without the script header", () => {
+    expect(codemode(`${header}${numbered(1611)}`).result).toEqual([
+      "  ⎿  2 tool calls, 1 failed, 1611 lines of output (ctrl+o expand)",
+    ]);
+    expect(codemode(`${header}`, {}, { calls: [] }).result).toEqual(["  ⎿  (No output) (ctrl+o expand)"]);
+    expect(codemode(header, { isPartial: true }).result).toEqual(["  ⎿  Running… · 2 tool calls"]);
+    expect(codemode(header, { isPartial: true }, { calls: [] }).result).toEqual(["  ⎿  Running…"]);
+  });
+
+  it("shows the whole script above pi's own calls and output when expanded", () => {
+    const expanded = codemode(`${header}out`, { expanded: true });
+
+    expect(expanded.result).toEqual([
+      '  ⎿  const hits = await tools.grep({ pattern: "login" });',
+      "     return hits;",
+      "     ",
+    ]);
+    expect(expanded.piBody).toBe(true);
+  });
+
+  const failure =
+    "Script failed\nWall time 0.1 seconds\nOutput:\n\nhalf done\nScript error:\nReferenceError: x\n\n" +
+    "Tool calls made before the failure (they are not undone): grep (ok), read (error)";
+
+  it("shows the first lines of a failed script's error without the script header", () => {
+    const failed = codemode(failure, { isError: true });
+
+    expect(failed.result).toEqual([
+      "  ⎿  half done",
+      "     Script error:",
+      "     ReferenceError: x",
+      "     … +2 lines (ctrl+o expand)",
+    ]);
+    expect(tokenOf(failed.painted, "ReferenceError: x")).toBe("error");
+    expect(failed.piBody).toBe(false);
+  });
+
+  it("keeps the script above the whole error when a failed script is expanded", () => {
+    const failed = draw(
+      view("codemode", { code }, done(failure, { isError: true, expanded: true }, { calls })),
+      120,
+    );
+
+    expect(failed.result).toEqual([
+      '  ⎿  const hits = await tools.grep({ pattern: "login" });',
+      "     return hits;",
+      "     ",
+      "     half done",
+      "     Script error:",
+      "     ReferenceError: x",
+      "     ",
+      "     Tool calls made before the failure (they are not undone): grep (ok), read (error)",
+    ]);
+  });
+
+  it("names the call by the line after pi's options line", () => {
+    const options = draw(view("codemode", { code: '// @options: {"timeout_ms": 1000}\nreturn 1;' }));
+
+    expect(options.call).toEqual(["● codemode return 1;"]);
+  });
+});
+
 describe("diffCounts", () => {
   it("counts numbered added and removed lines only", () => {
     expect(diffCounts("  1 same\n- 2 old\n+ 2 new\n+ 3 more\n   ...")).toEqual({ added: 2, removed: 1 });

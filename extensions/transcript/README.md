@@ -38,11 +38,12 @@ A pi extension that draws pi's transcript in the row style of Claude Code: one g
 | grep | `Grep pattern in path` | `Found N lines`, `No matches` |
 | find | `Find pattern` | `Found N files` |
 | ls | `List path` | `Listed N entries` |
-| any other tool (MCP, codemode, …) | the bold tool name and up to three arguments | like shell output |
+| codemode | `codemode` and the first line of the script (after an `// @options:` line) | `N tool calls, M failed, K lines of output`, `Running… · N tool calls` while it runs, a failed script's first error lines; expanded, the whole script and pi's own call list and output, or the whole error |
+| any other tool (MCP, …) | the bold tool name and up to three arguments | like shell output |
 
 - A failed call shows its error lines in the error colour, three of them until expanded. Paths are shown relative to the working directory, or as `~/…` under your home directory.
 - The dim `(ctrl+o expand)` hint names pi's own `app.tools.expand` key, and shows only when expanding would show more.
-- Tools that already draw themselves (this package's own tools, and any other extension's tool with its own renderer or frame) keep their look; this package's tools use the same row language through `shared/row.ts`.
+- Tools that already draw themselves (this package's own tools, and any other extension's tool with its own renderer or frame) keep their look; this package's tools use the same row language through `shared/row.ts`. Tools of pi's built-in extensions (e.g. codemode) get rows even though pi gives them a renderer; a third-party extension that replaces one of them keeps its own look. An extension that only restyles such a tool keeps its look when it loads before this one, and gets rows when it loads after.
 - The agent view (`/agents`, subagents) draws its transcript with the same rows.
 - Turn the extension off (pi's extension settings) and pi's own look returns; nothing is stored.
 
