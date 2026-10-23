@@ -12,5 +12,5 @@
     "types": ["node"],
     "lib": ["ES2023"]
   },
-  "include": ["core", "extensions", "test", "vitest.config.ts", "vitest.live.config.ts"]
+  "include": ["core", "extensions", "shared", "test", "vitest.config.ts", "vitest.live.config.ts"]
 }

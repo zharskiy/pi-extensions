@@ -28,7 +28,7 @@
       }
     },
     {
-      "includes": ["core/**", "extensions/*/src/**", "!core/adapter/**", "!core/test/**"],
+      "includes": ["core/**", "extensions/*/src/**", "shared/**", "!core/adapter/**", "!core/test/**"],
       "linter": {
         "rules": {
           "style": {

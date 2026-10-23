@@ -23,6 +23,8 @@
   "files": [
     "core/adapter",
     "core/manager",
+    "shared",
+    "!shared/test",
     "extensions/*/src/**",
     "extensions/*/prompts/**",
     "extensions/subagents/agents",
