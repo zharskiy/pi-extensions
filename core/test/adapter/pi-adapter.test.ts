@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
+import { sharedPad } from "../../adapter/pi-row-component.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -104,6 +105,22 @@ describe("pi adapter", () => {
 
     expect(seen).toEqual(["start /sessions/s1.jsonl print", "agent", "turn 1000/100000 1%", "idle"]);
     expect(host.session().mode).toBe("tui");
+  });
+
+  it("takes the output pad for entries from pi's settings at a tui session start", async () => {
+    const { pi, fire } = fakePi();
+    const settings: { outputPad?: number } = { outputPad: 0 };
+
+    createPiHost({ ...pi, getSettings: () => settings } as never, { tools: new Map() });
+
+    await fire("session_start", fakeCtx("tui"));
+
+    expect(sharedPad()).toBe(0);
+
+    settings.outputPad = undefined;
+    await fire("session_start", fakeCtx("tui"));
+
+    expect(sharedPad()).toBe(1);
   });
 
   it("reserves the notice slot under the editor at a tui session start, before the extension's handlers", async () => {

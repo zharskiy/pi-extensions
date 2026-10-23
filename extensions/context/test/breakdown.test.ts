@@ -9,14 +9,14 @@ const render = (patch = {}) =>
 
 const legend = (lines: string[]) =>
   lines
-    .map((line) => /[⛁⛶⛝] ([^:]+): ([\d.]+k?)/.exec(line.slice(23)))
+    .map((line) => /[⛁⛶⛝] ([^:]+): ([\d.]+k?)/.exec(line.slice(24)))
     .filter((match) => match !== null)
     .map((match) => `${match[1]} ${match[2]}`);
 
 const grid = (lines: string[]) =>
   lines
     .slice(1, 11)
-    .map((line) => line.slice(1, 20))
+    .map((line) => line.slice(2, 21))
     .join(" ");
 
 const cacheLine = (lines: string[]) =>
@@ -64,9 +64,9 @@ describe("usage model", () => {
     const full = render({ breakdown: breakdown({ total: 190_000 }) });
     const over = render({ breakdown: breakdown({ total: 205_000 }) });
 
-    expect(full).toContain("                       ⛶ Free space: 0 (0%)");
+    expect(full).toContain("                        ⛶ Free space: 0 (0%)");
     expect(full.some((line) => line.includes("exceeds"))).toBe(false);
-    expect(over).toContain(" Context exceeds the window by 5.0k tokens · /compact");
+    expect(over).toContain("  Context exceeds the window by 5.0k tokens · /compact");
   });
 });
 

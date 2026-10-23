@@ -19,12 +19,12 @@ const fakeApi = () => {
 };
 
 describe("entryHost", () => {
-  it("registers an entry renderer that passes pi's data, expanded flag and theme and cuts lines to the width", () => {
+  it("registers an entry renderer that passes pi's data, expanded flag and theme and cuts lines to the width after the pad", () => {
     const { api, renderers } = fakeApi();
     const seen: unknown[] = [];
     const theme = { fg: (token: string, text: string) => `${token}:${text}`, bold: (text: string) => text };
 
-    entryHost(api).registerEntryRenderer("x:entry", (data, width, expanded, themed) => {
+    entryHost(api, () => 1).registerEntryRenderer("x:entry", (data, width, expanded, themed) => {
       seen.push({ data, width, expanded });
       return [themed.fg("keyword", "0123456789"), "ok"];
     });
@@ -36,10 +36,10 @@ describe("entryHost", () => {
     );
 
     expect(component?.render(12).map((line) => stripVTControlCharacters(line))).toEqual([
-      "syntaxKeywo…",
-      "ok",
+      " syntaxKeyw…",
+      " ok",
     ]);
-    expect(seen).toEqual([{ data: { a: 1 }, width: 12, expanded: true }]);
+    expect(seen).toEqual([{ data: { a: 1 }, width: 11, expanded: true }]);
   });
 
   it("registers a message renderer that gets the message text and details inside pi's output pad", () => {

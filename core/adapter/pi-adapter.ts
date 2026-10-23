@@ -28,6 +28,7 @@ import { entryHost } from "./pi-entries.ts";
 import { footerHost } from "./pi-footer.ts";
 import { createNotices, syncNotices } from "./pi-notice.ts";
 import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
+import { recordPad } from "./pi-row-component.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
@@ -209,6 +210,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     if (tui) {
       syncNotices(tui);
+      recordPad(pi.getSettings().outputPad === 0 ? 0 : 1);
     }
 
     const info = sessionInfo(ctx);

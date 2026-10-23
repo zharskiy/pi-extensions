@@ -1,7 +1,8 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { cachePercentText } from "../../../core/manager/cache.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
-import { DOT, hintLines, PAD } from "../../../core/manager/layout.ts";
+import { DOT, PAD } from "../../../core/manager/layout.ts";
+import { bullet } from "../../../shared/row.ts";
 import {
   type CacheFigures,
   type Category,
@@ -9,7 +10,7 @@ import {
   type UsageModel,
   usageModel,
 } from "./breakdown.ts";
-import { detailLines, title } from "./details.ts";
+import { detailLines } from "./details.ts";
 import { GAP, gridOf, legendGlyph } from "./grid.ts";
 import type { Snapshot } from "./snapshot.ts";
 import { figuresText, modelName } from "./summary.ts";
@@ -115,23 +116,24 @@ const toggleLines = (theme: ThemeLike, snapshot: Snapshot, options: RenderOption
     return [];
   }
 
-  return hintLines(
-    theme,
-    [`${options.expandKey} to ${options.expanded ? "collapse" : "expand"}`],
-    options.width,
-  );
+  return [`${PAD}${theme.fg("dim", `(${options.expandKey} ${options.expanded ? "collapse" : "expand"})`)}`];
 };
+
+const titleLine = (theme: ThemeLike, stamp: string | undefined) =>
+  `${bullet("success", theme)} ${theme.bold("Context Usage")}${stamp ? theme.fg("dim", `${DOT}${stamp}`) : ""}`;
+
+const hung = (line: string) => (line ? ` ${line}` : line);
 
 export const renderSnapshot = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions): string[] => {
   const model = usageModel(snapshot);
   const details = detailLines(theme, snapshot.breakdown, options.expanded || snapshot.expandedByDefault);
   const stamp = snapshot.timestamp > 0 ? clockText(snapshot.timestamp) : undefined;
   const footer = details.length > 0 ? ["", ...details, ...toggleLines(theme, snapshot, options)] : [];
-
-  return [
-    title(theme, "Context Usage", stamp),
-    ...bodyLines(theme, model, options.width),
+  const body = [
+    ...bodyLines(theme, model, Math.max(1, options.width - 1)),
     ...overflowLines(theme, model),
     ...footer,
   ];
+
+  return [titleLine(theme, stamp), ...body.map(hung)];
 };

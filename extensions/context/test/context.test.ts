@@ -30,10 +30,10 @@ describe("/context", () => {
     const lines = stored(host);
 
     expect(host.entries.map((entry) => entry.customType)).toEqual([SNAPSHOT_ENTRY]);
-    expect(lines[0]).toBe(" Context Usage · 14:32");
-    expect(lines).toContain(" ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: last turn 87% · session 91%");
+    expect(lines[0]).toBe("● Context Usage · 14:32");
+    expect(lines).toContain("  ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Cache hit: last turn 87% · session 91%");
     expect(lines.some((line) => line.endsWith("Test Model · 61.2k/200k tokens (31%)"))).toBe(true);
-    expect(lines.at(-1)).toBe(" <app.tools.expand> to expand");
+    expect(lines.at(-1)).toBe("  (<app.tools.expand> expand)");
   });
 
   it("buckets pi's facts into sections with short paths, listing every item when expanded", async () => {
@@ -43,28 +43,28 @@ describe("/context", () => {
 
     const lines = stored(host, { expanded: true });
 
-    expect(lines.slice(lines.indexOf(" Memory files · AGENTS.md"))).toEqual([
-      " Memory files · AGENTS.md",
-      " └ ./AGENTS.md: 2.1k tokens",
-      " └ ~/.pi/agent/AGENTS.md: 1.1k tokens",
-      " Skills · /skill:<name>",
-      " └ code & style: 900 tokens",
-      " └ commits: 500 tokens",
-      " MCP tools · /mcp",
-      " └ search_docs: 1.8k tokens",
-      " └ fetch_page: loaded on demand",
-      " Extension tools",
-      " └ run_agent: 2.6k tokens",
-      " System tools",
-      " └ read: 3.0k tokens",
-      " Messages",
-      " └ tool results: 31.0k tokens",
-      " └ assistant: 7.0k tokens",
-      " └ user: 2.1k tokens",
-      " └ thinking: 1.8k tokens",
-      " └ tool calls: 900 tokens",
-      " └ other: 40 tokens",
-      " <app.tools.expand> to collapse",
+    expect(lines.slice(lines.indexOf("  Memory files · AGENTS.md"))).toEqual([
+      "  Memory files · AGENTS.md",
+      "  └ ./AGENTS.md: 2.1k tokens",
+      "  └ ~/.pi/agent/AGENTS.md: 1.1k tokens",
+      "  Skills · /skill:<name>",
+      "  └ code & style: 900 tokens",
+      "  └ commits: 500 tokens",
+      "  MCP tools · /mcp",
+      "  └ search_docs: 1.8k tokens",
+      "  └ fetch_page: loaded on demand",
+      "  Extension tools",
+      "  └ run_agent: 2.6k tokens",
+      "  System tools",
+      "  └ read: 3.0k tokens",
+      "  Messages",
+      "  └ tool results: 31.0k tokens",
+      "  └ assistant: 7.0k tokens",
+      "  └ user: 2.1k tokens",
+      "  └ thinking: 1.8k tokens",
+      "  └ tool calls: 900 tokens",
+      "  └ other: 40 tokens",
+      "  (<app.tools.expand> collapse)",
     ]);
     expect(lines.some((line) => line.endsWith("⛁ System prompt: 1.0k tokens (0.5%)"))).toBe(true);
   });
@@ -76,10 +76,10 @@ describe("/context", () => {
 
     const lines = stored(host);
 
-    expect(lines).toContain(" └ 2 tools · 1.8k tokens · 1 loaded on demand");
-    expect(lines).toContain(" └ 1 tool · 2.6k tokens");
-    expect(lines.find((line) => line.startsWith(" └ 4 messages"))).toBe(
-      " └ 4 messages · tool results 31.0k · assistant 7.0k · user 2.1k · thinking 1.8k · tool calls 900 · other 40",
+    expect(lines).toContain("  └ 2 tools · 1.8k tokens · 1 loaded on demand");
+    expect(lines).toContain("  └ 1 tool · 2.6k tokens");
+    expect(lines.find((line) => line.startsWith("  └ 4 messages"))).toBe(
+      "  └ 4 messages · tool results 31.0k · assistant 7.0k · user 2.1k · thinking 1.8k · tool calls 900 · other 40",
     );
   });
 
@@ -87,12 +87,12 @@ describe("/context", () => {
     const host = setup();
     const spec = host.commands.get("context");
 
-    await host.runCommand("context", " all ");
+    await host.runCommand("context", "  all ");
 
     const lines = stored(host);
 
-    expect(lines).toContain(" └ commits: 500 tokens");
-    expect(lines.some((line) => line.includes("to expand") || line.includes("to collapse"))).toBe(false);
+    expect(lines).toContain("  └ commits: 500 tokens");
+    expect(lines.some((line) => line.includes("expand)") || line.includes("collapse)"))).toBe(false);
     expect(spec?.complete?.("a")).toEqual([{ value: "all", label: "all" }]);
     expect(spec?.complete?.("x")).toBeNull();
   });
