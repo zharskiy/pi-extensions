@@ -204,6 +204,18 @@ export const layoutOf = (measure: RowMeasure, now: number, width: number, theme:
 export const rowLayout = (rows: TreeRow[], now: number, width: number, theme: ThemeLike): RowLayout =>
   layoutOf(measureRows(rows, theme), now, width, theme);
 
+export const modelLabel = (theme: ThemeLike, model: string, cols: number) => {
+  const cut = model.lastIndexOf(":");
+  const suffix = cut > 0 ? model.slice(cut) : "";
+  const room = cols - theme.width(suffix);
+
+  if (theme.width(model) <= cols || suffix === "" || room < 2) {
+    return theme.truncate(model, cols);
+  }
+
+  return `${theme.truncate(model.slice(0, cut), room)}${suffix}`;
+};
+
 const modelCell = (theme: ThemeLike, label: string, cols: number) =>
   (label ? theme.fg("dim", label) : "") + " ".repeat(Math.max(0, cols - theme.width(label)));
 
@@ -239,7 +251,7 @@ export const renderRow = (
     return head + paintName(input, Math.max(0, nameRoom), theme) + tail;
   }
 
-  const label = modelGap > 0 ? theme.truncate(record.model ?? "", modelCols) : "";
+  const label = modelGap > 0 ? modelLabel(theme, record.model ?? "", modelCols) : "";
   const followed = stats.plain !== "" || label !== "";
   const cols = Math.max(0, Math.min(room, followed ? infoAt - fixed : DESCRIPTION_COLS_MAX));
   const description = theme.truncate(singleLine(record.description), cols);

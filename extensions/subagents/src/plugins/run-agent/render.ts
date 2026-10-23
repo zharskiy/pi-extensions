@@ -215,10 +215,11 @@ const errorBlock = (
   width: number,
 ) => {
   const cols = Math.max(1, width - CHILD_INDENT.length);
-  const body = expanded ? result.text.split("\n").flatMap((line) => wrapCols(theme, line, cols)) : [];
-  const title = `No agents started: ${firstLine(result.text)}`;
+  const reason = expanded
+    ? result.text.split("\n").flatMap((line) => wrapCols(theme, line, cols))
+    : [firstLine(result.text)];
 
-  return toolRow({ state: "error", title, children: body })(width, theme).join("\n");
+  return toolRow({ state: "error", title: "No agents started", children: reason })(width, theme).join("\n");
 };
 
 const hintText = (hints: BlockHints, short: boolean) => {

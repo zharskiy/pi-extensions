@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
-import { type RowInput, type RowLayout, renderRow, rowLayout } from "../../src/components/agent-row.ts";
+import {
+  modelLabel,
+  type RowInput,
+  type RowLayout,
+  renderRow,
+  rowLayout,
+} from "../../src/components/agent-row.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
 
@@ -476,6 +482,22 @@ describe("agent row", () => {
 
       expect(lines[1]).not.toContain("acme");
       expect(infoStart(lines[1], "done")).toBe(infoStart(lines[0], "grep"));
+    });
+
+    it("cuts a long model in the middle and keeps its thinking suffix", () => {
+      const long = "acme/model-large-extended-preview-2026:high";
+      const [line] = render(
+        [row(agentRecord({ ...AUTH, tokens: 12_300, activity: "grep", model: long }))],
+        160,
+      );
+
+      expect(modelLabel(plainTheme, long, 32)).toBe("acme/model-large-extended-…:high");
+      expect(line).toContain("acme/model-large-extended-…:high  grep");
+    });
+
+    it("cuts the end of a long model without a suffix", () => {
+      expect(modelLabel(plainTheme, "acme/".padEnd(40, "x"), 10)).toBe("acme/xxxx…");
+      expect(modelLabel(plainTheme, "acme/x:high", 32)).toBe("acme/x:high");
     });
 
     it("paints the label dim", () => {

@@ -476,16 +476,17 @@ describe("run_agent block", () => {
     );
   });
 
-  it("renders the error header and the full error when expanded", () => {
+  it("renders the error header with the reason under it once, all of it when expanded", () => {
     const harness = setup();
     const result = { isError: true, text: "unknown agent(s): x. Available: scout\nNothing was started." };
     const params = { agents: [item("x", "y")] };
 
-    expect(renderResult(harness, result, params)).toBe(
-      "● No agents started: unknown agent(s): x. Available: scout",
-    );
+    expect(lines(renderResult(harness, result, params))).toEqual([
+      "● No agents started",
+      "  ⎿  unknown agent(s): x. Available: scout",
+    ]);
     expect(lines(renderResult(harness, result, params, { expanded: true }))).toEqual([
-      "● No agents started: unknown agent(s): x. Available: scout",
+      "● No agents started",
       "  ⎿  unknown agent(s): x. Available: scout",
       "     Nothing was started.",
     ]);
@@ -773,9 +774,9 @@ describe("run_agent block colours", () => {
     expect(lines(renderResult(harness, result, { agents: THREE, wait: true }, {}, tagged))[0]).toBe(
       "<dim>●</dim> <b>3</b> agents finished",
     );
-    expect(renderResult(harness, { isError: true, text: "bad\nmore" }, { agents: THREE }, {}, tagged)).toBe(
-      "<error>●</error> No agents started: bad",
-    );
+    expect(
+      lines(renderResult(harness, { isError: true, text: "bad\nmore" }, { agents: THREE }, {}, tagged))[0],
+    ).toBe("<error>●</error> No agents started");
   });
 
   it("paints the name line: agent bold, description muted, model dim", async () => {
