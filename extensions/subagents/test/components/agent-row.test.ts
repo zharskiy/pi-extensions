@@ -79,14 +79,14 @@ const cases: Case[] = [
     input: row(grepping),
     now: 65_000,
     width: 80,
-    expected: "   ⠋ explorer  Map the auth module  grep · 1m 5s · ↓ 12.3k tokens",
+    expected: "   ⠋ explorer  Map the auth module  grep · 12.3k tokens · 1m 5s",
   },
   {
     name: "cuts the description before dropping stats",
     input: row(grepping),
     now: 65_000,
     width: 62,
-    expected: "   ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
+    expected: "   ⠋ explorer  Map the auth …  grep · 12.3k tokens · 1m 5s",
   },
   {
     name: "drops the activity, then the tokens, when the description would fall below 12 columns",
@@ -108,7 +108,7 @@ const cases: Case[] = [
     now: 65_000,
     layout: { nameCols: 9, infoAt: 33, modelCols: 0 },
     width: 59,
-    expected: "   ⠋ explorer   Map the auth modu…  1m 5s · ↓ 12.3k tokens",
+    expected: "   ⠋ explorer   Map the auth modu…  12.3k tokens · 1m 5s",
   },
   {
     name: "shows queued as the status word",
@@ -137,6 +137,28 @@ const cases: Case[] = [
     now: 99_000,
     width: 32,
     expected: "   ✓ explorer  Map the a…  done",
+  },
+  {
+    name: "shows the tokens of a closed row between its status word and the duration",
+    input: row(agentRecord({ ...AUTH, state: "done", endedAt: 65_000, tokens: 12_300 })),
+    now: 99_000,
+    width: 80,
+    expected: "   ✓ explorer  Map the auth module  done · 12.3k tokens · 1m 5s",
+  },
+  {
+    name: "drops the tokens of a closed row before its duration",
+    input: row(agentRecord({ ...AUTH, state: "failed", endedAt: 65_000, tokens: 12_300 })),
+    now: 99_000,
+    layout: { nameCols: 8, infoAt: 33, modelCols: 0 },
+    width: 54,
+    expected: "   ✗ explorer  Map the auth module  failed · 1m 5s",
+  },
+  {
+    name: "keeps only the status word of a queued row with tokens",
+    input: row(agentRecord({ ...AUTH, state: "queued", tokens: 12_300 })),
+    now: 99_000,
+    width: 80,
+    expected: "   ○ explorer  Map the auth module  queued",
   },
   {
     name: "omits the description and pads the name when fewer than 8 columns remain",
@@ -178,7 +200,7 @@ const cases: Case[] = [
     input: row(chained),
     now: 130_000,
     width: 80,
-    expected: "   ⠋ explorer #2  Map the auth module  bash · 2m 10s · ↓ 30.1k tokens",
+    expected: "   ⠋ explorer #2  Map the auth module  bash · 30.1k tokens · 2m 10s",
   },
   {
     name: "draws the connector of a last child",
@@ -186,7 +208,7 @@ const cases: Case[] = [
     now: 12_000,
     layout: { nameCols: 13, infoAt: 46, modelCols: 0 },
     width: 80,
-    expected: "   └─ ⠋ explorer       Find callers of login     read · 12s · ↓ 1.1k tokens",
+    expected: "   └─ ⠋ explorer       Find callers of login     read · 1.1k tokens · 12s",
   },
   {
     name: "draws continuation bars for deeper rows",
@@ -194,7 +216,7 @@ const cases: Case[] = [
     now: 12_000,
     layout: { nameCols: 13, infoAt: 46, modelCols: 0 },
     width: 80,
-    expected: "   │  ├─ ⠋ explorer       Find callers of login  read · 12s · ↓ 1.1k tokens",
+    expected: "   │  ├─ ⠋ explorer       Find callers of login  read · 1.1k tokens · 12s",
   },
   {
     name: "keeps only the name on a deep row too narrow for any stats",
@@ -209,7 +231,7 @@ const cases: Case[] = [
     input: row(reviewer, { openDescendants: 1, selected: true }),
     now: 45_000,
     width: 80,
-    expected: " › ⠋ reviewer (+1)  Review the diff of PR 5  writing · 45s · ↓ 8.2k tokens",
+    expected: " › ⠋ reviewer (+1)  Review the diff of PR 5  writing · 8.2k tokens · 45s",
   },
   {
     name: "omits zero tokens",
@@ -267,7 +289,7 @@ describe("agent row", () => {
     expect(infoStart(lines[0], "grep")).toBe(1 + layout.infoAt + 2);
     expect(infoStart(lines[1], "queued")).toBe(1 + layout.infoAt + 2);
     expect(infoStart(lines[2], "done")).toBe(1 + layout.infoAt + 2);
-    expect(lines[0]).toBe("   ⠋ explorer  Map the auth module       grep · 1m 39s · ↓ 12.3k tokens");
+    expect(lines[0]).toBe("   ⠋ explorer  Map the auth module       grep · 12.3k tokens · 1m 39s");
     expect(lines[2]).toBe("   ✓ explorer  Map the auth module       done · 1m 5s");
   });
 
@@ -288,7 +310,7 @@ describe("agent row", () => {
     expect(layout.infoAt).toBe(60 - 2 - 30);
     expect(infoStart(lines[0], "grep")).toBe(infoStart(lines[1], "done"));
     expect(lines).toEqual([
-      "   ⠋ explorer  Map the auth …  grep · 1m 5s · ↓ 12.3k tokens",
+      "   ⠋ explorer  Map the auth …  grep · 12.3k tokens · 1m 5s",
       "   ✓ explorer  Map the auth …  done · 1m 5s",
     ]);
   });
@@ -321,17 +343,17 @@ describe("agent row", () => {
     const lines = [root, deep].map((input) => renderRow(input, 5_000, 70, plainTheme, layout));
 
     expect(lines).toEqual([
-      "   ⠋ explorer (+1)  Map the auth module       5s · ↓ 123.5k tokens",
-      "   │  │  │  └─ ⠋ explorer       Map the aut…  ls · 5s · ↓ 10 tokens",
+      "   ⠋ explorer (+1)  Map the auth module       123.5k tokens · 5s",
+      "   │  │  │  └─ ⠋ explorer       Map the aut…  ls · 10 tokens · 5s",
     ]);
-    expect(infoStart(lines[0], "5s")).toBe(infoStart(lines[1], "ls"));
+    expect(infoStart(lines[0], "123.5k")).toBe(infoStart(lines[1], "ls"));
   });
 
   it("keeps the stats of a row with a short description", () => {
     const short = row(agentRecord({ ...AUTH, description: "ab", tokens: 12_300, activity: "grep" }));
     const line = renderRow(short, 65_000, 80, plainTheme, rowLayout([short], 65_000, 80, plainTheme));
 
-    expect(line).toBe("   ⠋ explorer  ab  grep · 1m 5s · ↓ 12.3k tokens");
+    expect(line).toBe("   ⠋ explorer  ab  grep · 12.3k tokens · 1m 5s");
   });
 
   it("reserves the pointer columns on every row, selected or not", () => {

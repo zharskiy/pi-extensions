@@ -64,29 +64,29 @@ const plainStats = (text: string, token: ThemeToken): Stats => ({
 const join = (parts: (string | undefined)[]) => parts.filter((part) => part !== undefined).join(SEP);
 
 const statsVariants = (record: AgentRecord, now: number): Stats[] => {
-  const elapsed = formatDuration(elapsedOf(record, now));
-
-  if (isClosed(record.state)) {
-    const word = stateWord(record.state);
-
-    return [
-      {
-        plain: word + SEP + elapsed,
-        token: stateToken(record.state),
-        paint: (theme) =>
-          theme.fg(stateToken(record.state), word) + theme.fg("dim", SEP) + theme.fg("dim", elapsed),
-      },
-      plainStats(word, stateToken(record.state)),
-    ];
-  }
-
   if (record.state === "grace" || record.state === "queued") {
     return [plainStats(stateWord(record.state), stateToken(record.state))];
   }
 
-  const tokens = record.tokens > 0 ? `↓ ${formatTokens(record.tokens)} tokens` : undefined;
+  const elapsed = formatDuration(elapsedOf(record, now));
+  const tokens = record.tokens > 0 ? `${formatTokens(record.tokens)} tokens` : undefined;
 
-  return [join([record.activity, elapsed, tokens]), join([elapsed, tokens]), elapsed, ""].map((text) =>
+  if (isClosed(record.state)) {
+    const word = stateWord(record.state);
+    const token = stateToken(record.state);
+    const closedStats = (rest: string[]): Stats => ({
+      plain: join([word, ...rest]),
+      token,
+      paint: (theme) =>
+        theme.fg(token, word) + rest.map((part) => theme.fg("dim", SEP) + theme.fg("dim", part)).join(""),
+    });
+
+    const variants = tokens ? [[tokens, elapsed], [elapsed], []] : [[elapsed], []];
+
+    return variants.map(closedStats);
+  }
+
+  return [join([record.activity, tokens, elapsed]), join([tokens, elapsed]), elapsed, ""].map((text) =>
     plainStats(text, "dim"),
   );
 };
