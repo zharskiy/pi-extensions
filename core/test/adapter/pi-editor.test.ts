@@ -56,6 +56,7 @@ const LEFT = `${ESC}[D`;
 const DOWN = `${ESC}[B`;
 const UP = `${ESC}[A`;
 const JUMP = String.fromCharCode(29);
+const BACKSPACE = String.fromCharCode(127);
 
 const bindings = (map: Record<string, string>) => ({
   matches: (data: string, id: string) => map[data] === id,
@@ -510,6 +511,36 @@ describe("createEditorHooks", () => {
       reached.mockRestore();
       autocomplete.mockRestore();
     }
+  });
+
+  it("hands the interrupt key to the escape hook after typed text is deleted", () => {
+    const { ctx, ui } = fakeCtx();
+    let asked = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return true;
+    });
+
+    const keys = piKeys();
+    const matches = keys.matches.bind(keys);
+
+    keys.matches = (data, id) => (id === "app.interrupt" ? data === ESC : matches(data, id));
+
+    const hooked = editor(ui.factory, keys);
+
+    hooked.handleInput("a");
+    hooked.handleInput(ESC);
+
+    expect(hooked.getText()).toBe("a");
+    expect(asked).toBe(0);
+
+    hooked.handleInput(BACKSPACE);
+    hooked.handleInput(ESC);
+
+    expect(hooked.getText()).toBe("");
+    expect(asked).toBe(1);
   });
 
   it("follows a rebound interrupt key, not the escape byte", () => {
