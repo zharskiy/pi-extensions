@@ -37,6 +37,7 @@ import {
   type ToolRender,
   type ToolRenderState,
   type ToolResult,
+  type ToolRows,
   type ToolSpec,
   type ToolTone,
   type UsageTotals,
@@ -127,6 +128,7 @@ export type FakeHost = Host & {
   keyListeners: Set<() => void>;
   pressKey(): void;
   entryRenderers: Map<string, EntryRender>;
+  toolRows?: ToolRows;
   renderEntry(
     customType: string,
     data: unknown,
@@ -592,7 +594,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       };
 
       const shelled = spec.renderShell === "box";
-      const inner = shelled ? Math.max(1, width - 2) : width;
+      const margin = shelled ? 2 : spec.renderShell === "row" ? 1 : 0;
+      const inner = Math.max(1, width - margin);
       const piTone: ToolTone = state.isPartial ? "pending" : state.isError ? "error" : "success";
       const resolve = (render: ToolRender | undefined) =>
         typeof render === "function" ? render(inner) : render;
@@ -645,6 +648,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     entryRenderers: new Map(),
     registerEntryRenderer: (customType, render) => {
       host.entryRenderers.set(customType, render);
+    },
+    registerToolRows: (rows) => {
+      host.toolRows = rows;
     },
     renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme } = {}) => {
       const render = host.entryRenderers.get(customType);

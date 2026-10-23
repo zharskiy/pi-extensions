@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
+import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
@@ -330,5 +331,33 @@ describe("transcript pane clicks", () => {
     pane.setToolsExpanded(false);
 
     expect(plainLines(pane.render(80))).toEqual(collapsed);
+  });
+});
+
+describe("transcript pane tool rows", () => {
+  const readRow = () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([assistantCall("read", { path: "src/a.ts" }), toolResult("read", "one\ntwo")]);
+
+    return visibleText(pane.render(60));
+  };
+
+  it("draws built-in tools with the registered rows, and with pi's renderers without them", () => {
+    const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+
+    expect(readRow()).toContain("read src/a.ts");
+
+    host.registerToolRows((view) => ({
+      call: () => [`● Read ${(view.args as { path: string }).path}`],
+      result: () => [`  ⎿  Read ${view.result?.text.split("\n").length} lines`],
+    }));
+
+    const rows = readRow();
+
+    host.release();
+
+    expect(rows).toContain(" ● Read src/a.ts\n   ⎿  Read 2 lines");
+    expect(readRow()).not.toContain("● Read");
   });
 });

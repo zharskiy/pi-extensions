@@ -18,6 +18,7 @@ import type {
   ToolSpec,
   ToolTone,
 } from "./contract.ts";
+import { recordPad, rowComponent } from "./pi-row-component.ts";
 
 const ESC = "\x1b";
 
@@ -124,7 +125,7 @@ export const toPiResult = (result: ToolResult) => ({
   ...(result.isError ? { isError: true } : {}),
 });
 
-const fromPiResult = (result: {
+export const fromPiResult = (result: {
   content: { type: string; text?: string }[];
   details?: unknown;
   isError?: boolean;
@@ -192,6 +193,15 @@ const shellComponent = <P, D>(
     return toolBox(theme, context, text, spec.renderTone?.(renderState(context), result) ?? piTone(context));
   }
 
+  if (spec.renderShell === "row") {
+    recordPad(context.outputPad);
+
+    return rowComponent(context.lastComponent, {
+      lines: (width) => splitLines(typeof text === "function" ? text(width) : text),
+      pad: context.outputPad,
+    });
+  }
+
   return textComponent(context.lastComponent, text);
 };
 
@@ -205,7 +215,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     parameters: Type.Unsafe<P>(spec.parameters),
     executionMode: spec.executionMode,
     exposure: spec.modelOnly ? "model-only" : undefined,
-    renderShell: spec.renderShell === "box" ? "self" : undefined,
+    renderShell: spec.renderShell === "box" || spec.renderShell === "row" ? "self" : undefined,
     execute: async (
       toolCallId: string,
       params: unknown,

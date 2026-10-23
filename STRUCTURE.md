@@ -30,6 +30,10 @@ pi-extensions/
 │   │   ├── pi-context-messages.ts # per-message and per-block token estimates
 │   │   ├── pi-usage.ts          # last and main request usage, main memoised on session and leaf
 │   │   ├── pi-entries.ts        # Host.registerEntryRenderer over pi's entry renderers
+│   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ⎿), the
+│   │   │                        #   tool-rows record on globalThis and the shared output pad
+│   │   ├── pi-tool-rows.ts      # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins
+│   │   │                        #   included) in the self shell, shared with transcript panes
 │   │   ├── pi-models.ts / model-resolver.ts  # model catalog (availableModels: credentialed models with
 │   │   │                        #   their thinking levels), matching
 │   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)

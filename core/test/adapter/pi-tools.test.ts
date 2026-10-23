@@ -340,6 +340,63 @@ describe("toPiTool box shell", () => {
   });
 });
 
+describe("toPiTool row shell", () => {
+  it("hands pi a self shell, puts each line after the output pad and cuts it to the width", () => {
+    const widths: number[] = [];
+    const tool = piTool<unknown, unknown>({
+      ...baseSpec,
+      renderShell: "row",
+      renderCall: () => (width) => {
+        widths.push(width);
+        return `● probe ${"x".repeat(width)}`;
+      },
+      renderResult: () => "",
+    });
+
+    expect(tool.renderShell).toBe("self");
+
+    const padded = tool
+      .renderCall({}, theme, context({ outputPad: 1 }))
+      .render(30)
+      .map(stripVTControlCharacters);
+    const flush = tool
+      .renderCall({}, theme, context({ outputPad: 0 }))
+      .render(30)
+      .map(stripVTControlCharacters);
+
+    expect(widths).toEqual([29, 30]);
+    expect(padded).toEqual([` ● probe ${"x".repeat(20)}…`]);
+    expect(flush).toEqual([`● probe ${"x".repeat(21)}…`]);
+    expect(tool.renderResult(piResult("x"), options, theme, context()).render(30)).toEqual([]);
+  });
+
+  it("draws the row with the blank line pi puts between tool rows and no tool background", () => {
+    const tool = piTool<unknown, unknown>({
+      ...baseSpec,
+      renderShell: "row",
+      renderCall: () => "● probe",
+      renderResult: () => "  ⎿  done",
+    });
+    const component = new ToolExecutionComponent(
+      "probe",
+      "call-1",
+      {},
+      {},
+      tool as unknown as ToolDefinition,
+      { requestRender: () => {} } as never,
+      "/repo",
+    );
+
+    component.updateResult({ content: [{ type: "text", text: "x" }], isError: false } as never);
+
+    expect(component.render(40).map((line) => stripVTControlCharacters(line).trimEnd())).toEqual([
+      "",
+      " ● probe",
+      "   ⎿  done",
+    ]);
+  });
+});
+
 describe("themeLike colours", () => {
   it("paints role tokens with pi's matching theme colours", () => {
     const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;

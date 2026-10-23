@@ -59,7 +59,7 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   parameters: Record<string, unknown>;
   executionMode?: "sequential" | "parallel";
   modelOnly?: boolean;
-  renderShell?: "default" | "box";
+  renderShell?: "default" | "box" | "row";
   execute(
     params: P,
     ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
@@ -71,6 +71,24 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;
+
+export type RowLines = (width: number, theme: ThemeLike) => string[];
+
+export type ToolCallView = {
+  name: string;
+  args: unknown;
+  argsComplete: boolean;
+  started: boolean;
+  isPartial: boolean;
+  isError: boolean;
+  expanded: boolean;
+  cwd: string;
+  result?: ToolResult & { images: number };
+};
+
+export type ToolRow = { call: RowLines; result?: RowLines; piBody?: boolean };
+
+export type ToolRows = (view: ToolCallView) => ToolRow | undefined;
 
 export type KeyPress = {
   name:
@@ -285,6 +303,7 @@ export type Host = {
   subscribe(channel: string, handler: (data: unknown) => void): () => void;
   appendEntry(customType: string, data: unknown): void;
   registerEntryRenderer(customType: string, render: EntryRender): void;
+  registerToolRows(rows: ToolRows): void;
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;

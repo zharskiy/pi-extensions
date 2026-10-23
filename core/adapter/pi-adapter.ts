@@ -31,6 +31,7 @@ import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
+import { toolRowsHost } from "./pi-tool-rows.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -120,6 +121,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const editor = createEditorHooks(() => tuiContext(state));
   const notices = createNotices(state);
   const sections = createPromptSections();
+  const toolRows = toolRowsHost(pi);
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -240,6 +242,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     editor.release();
     notices.release();
     sections.release();
+    toolRows.release();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -488,6 +491,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     ...footerHost(pi, state),
     ...contextHost(pi, state),
     ...entryHost(pi),
+    registerToolRows: toolRows.registerToolRows,
   };
 };
 

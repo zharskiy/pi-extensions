@@ -14,7 +14,10 @@ import { CODEMODE_WORKERS_SETTING } from "../../adapter/pi-codemode.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { discoverSkills } from "../../adapter/pi-skills.ts";
+import { BUILTIN_TOOLS } from "../../adapter/pi-tool-rows.ts";
+import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
+import { initRenderTheme } from "./render-theme.ts";
 
 const ADAPTER_PI_MAJOR = 1;
 
@@ -233,7 +236,14 @@ describe("pi adapter conformance", () => {
 
       await session.bindExtensions({ mode: "print" });
 
-      const api = ["registerEntryRenderer", "getSettings", "getAllTools", "getActiveTools", "getCommands"];
+      const api = [
+        "registerEntryRenderer",
+        "registerToolRenderer",
+        "getSettings",
+        "getAllTools",
+        "getActiveTools",
+        "getCommands",
+      ];
       const ui = ["custom", "getEditorComponent", "setEditorComponent", "setWidget", "onTerminalInput"];
       const probe = seen.api?.getAllTools().find((tool) => tool.name === "probe_tool");
 
@@ -852,6 +862,114 @@ describe("pi adapter conformance", () => {
       );
       expect(servers.isMcpToolName(serverTool)).toBe(true);
       expect(servers.createToolNameMatcher(added)(serverTool)).toBe(true);
+    });
+  });
+
+  describe("transcript rows", () => {
+    const fakeTui = { requestRender: () => {} } as never;
+
+    const plain = (component: { render(width: number): string[] }, width = 80) =>
+      component.render(width).map((line) => tui.stripTerminalSequences(line).trimEnd());
+
+    const textResult = (text: string, details?: unknown) =>
+      ({ content: [{ type: "text", text }], details, isError: false }) as never;
+
+    const renderContext = (patch: Partial<PiToolRenderContext> = {}) =>
+      ({
+        args: {},
+        toolCallId: "call-1",
+        invalidate: () => {},
+        lastComponent: undefined,
+        state: {},
+        cwd: "/repo",
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: false,
+        expanded: true,
+        showImages: false,
+        isError: false,
+        durationMs: undefined,
+        outputPad: 0,
+        ...patch,
+      }) as PiToolRenderContext;
+
+    it("names the same built-in tools as pi", async () => {
+      const tools = await import(
+        new URL("core/tools/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+      );
+
+      expect([...BUILTIN_TOOLS].toSorted()).toEqual([...tools.allToolNames].toSorted());
+    });
+
+    it("hands renderers the context fields the rows read, and puts one blank line before a self-drawn tool", () => {
+      initRenderTheme();
+
+      const contexts: Record<string, unknown>[] = [];
+      const capture = (_value: unknown, ...rest: unknown[]) => {
+        contexts.push(rest.at(-1) as Record<string, unknown>);
+        return new tui.Text("row", 0, 0);
+      };
+      const component = new pi.ToolExecutionComponent(
+        "probe",
+        "call-1",
+        { a: 1 },
+        { outputPad: 1 },
+        { renderShell: "self", renderCall: capture, renderResult: capture } as never,
+        fakeTui,
+        "/repo",
+      );
+
+      component.updateResult(textResult("out"));
+
+      const fields = ["args", "argsComplete", "executionStarted", "isPartial", "isError", "expanded", "cwd"];
+
+      expect(plain(component)).toEqual(["", "row", "row"]);
+      expect(contexts.length).toBeGreaterThan(0);
+      contexts.forEach((context) => {
+        expect(fields.filter((field) => !(field in context))).toEqual([]);
+        expect(typeof context.outputPad).toBe("number");
+        expect(typeof context.state).toBe("object");
+        expect("lastComponent" in context).toBe(true);
+      });
+    });
+
+    it("shows the edit diff from the result details when the call was never drawn", () => {
+      initRenderTheme();
+
+      const edit = pi.createEditToolDefinition("/repo") as unknown as pi.ToolDefinition;
+      const lines = plain(
+        edit.renderResult?.(
+          textResult("ok", { diff: "-1 old line\n+1 new line" }),
+          { expanded: false, isPartial: false },
+          {} as never,
+          renderContext({ args: { path: "a.ts" }, expanded: false }),
+        ) as never,
+      );
+
+      expect(lines.some((line) => line.includes("old line"))).toBe(true);
+      expect(lines.some((line) => line.includes("new line"))).toBe(true);
+    });
+
+    it("shows the whole read and bash output when expanded", () => {
+      initRenderTheme();
+
+      const output = Array.from({ length: 20 }, (_value, index) => `out ${index + 1}`).join("\n");
+      const render = (definition: pi.ToolDefinition, args: unknown) =>
+        plain(
+          definition.renderResult?.(
+            textResult(output),
+            { expanded: true, isPartial: false },
+            {
+              fg: (_token: string, text: string) => text,
+              bold: (text: string) => text,
+            } as never,
+            renderContext({ args }),
+          ) as never,
+        );
+
+      expect(render(pi.createReadToolDefinition("/repo") as never, { path: "a.txt" })).toContain("out 20");
+      expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 20");
+      expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 1");
     });
   });
 });

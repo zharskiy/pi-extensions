@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
 import type { AnyToolSpec, TranscriptItem, TranscriptPane } from "./contract.ts";
+import { applyToolRows } from "./pi-tool-rows.ts";
 import { toPiResult, toPiTool } from "./pi-tools.ts";
 
 const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
@@ -101,11 +102,11 @@ export const createTranscriptPane = (
   let synced = 0;
   let rendered = 0;
 
-  const resolveDefinition = (name: string): object | undefined => {
+  const baseDefinition = (name: string): ToolRenderers | undefined => {
     const builtin = toolDefinitionFactories[name];
 
     if (builtin) {
-      return builtin(cwd);
+      return builtin(cwd) as ToolRenderers;
     }
 
     const spec = options.tools?.find((tool) => tool.name === name);
@@ -118,6 +119,8 @@ export const createTranscriptPane = (
 
     return renderers[name];
   };
+
+  const resolveDefinition = (name: string) => applyToolRows(name, baseDefinition(name));
 
   const definitionFor = (name: string) => {
     if (!definitions.has(name)) {
