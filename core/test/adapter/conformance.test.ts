@@ -1,6 +1,8 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
@@ -1273,12 +1275,15 @@ describe("pi adapter conformance", () => {
     it("draws the composed hint dim and not italic after the italic label", async () => {
       initRenderTheme();
 
-      const { default: chalk } = await import("chalk");
+      const themeUrl = new URL(
+        "modes/interactive/theme/theme.js",
+        import.meta.resolve("@earendil-works/pi-coding-agent"),
+      );
+      const { default: chalk } = (await import(
+        pathToFileURL(createRequire(themeUrl).resolve("chalk")).href
+      )) as { default: { level: number } };
       const level = chalk.level;
-      const { theme } = (await import(
-        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
-          .href
-      )) as { theme: pi.Theme };
+      const { theme } = (await import(themeUrl.href)) as { theme: pi.Theme };
 
       chalk.level = 1;
 
