@@ -13,9 +13,6 @@ export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: strin
 
 export type Limits = { softRatio: number; hardRatio: number; softTokens: number; hardTokens: number };
 
-const percentOf = (context: ContextTokens) =>
-  context.tokens === null || context.window <= 0 ? null : Math.floor((context.tokens * 100) / context.window);
-
 export const thresholdsFor = (window: number, limits: Limits) => ({
   soft: Math.min(window * limits.softRatio, limits.softTokens),
   hard: Math.min(window * limits.hardRatio, limits.hardTokens),
@@ -64,11 +61,11 @@ export const handoffStep = (input: HandoffInput) => {
 };
 
 const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
-  queued: "handoff after this turn",
-  requested: "writing handoff",
-  waiting: "handoff waits for running work",
-  switching: "switching session",
-  stuck: `handoff failed, run /${command}`,
+  queued: "Handoff after this turn",
+  requested: "Handoff: writing the handoff document",
+  waiting: "Handoff waits for running work",
+  switching: "Switching session",
+  stuck: `Handoff failed, run /${command}`,
 });
 
 export const segmentFor = (
@@ -77,14 +74,10 @@ export const segmentFor = (
   limits: Limits,
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
-  const percent = context ? percentOf(context) : null;
-
   if (phase !== "watching") {
-    const label = pendingLabels(command)[phase];
-
     return {
       token: phase === "waiting" || phase === "queued" ? "warning" : "error",
-      text: percent === null ? label : `ctx ${percent}% · ${label}`,
+      text: pendingLabels(command)[phase],
     };
   }
 
@@ -98,12 +91,9 @@ export const segmentFor = (
     return undefined;
   }
 
-  const text =
-    context.window * limits.hardRatio <= limits.hardTokens
-      ? `ctx ${percent}% · handoff at ${Math.round(limits.hardRatio * 100)}%`
-      : `ctx ${formatWindow(context.tokens ?? 0)} · handoff at ${formatWindow(limits.hardTokens)}`;
+  const { hard } = thresholdsFor(context.window, limits);
 
-  return { token: "warning", text };
+  return { token: "warning", text: `Warning: automatic handoff will happen at ${formatWindow(hard)}` };
 };
 
 export const retryInstruction = (instruction: string, errors: string[]) =>

@@ -17,7 +17,7 @@ import {
   shouldRequest,
 } from "./thresholds.ts";
 
-const STATUS_KEY = "pi-session-limits";
+const NOTICE_KEY = "pi-session-limits";
 
 const HANDOFF_COMMAND = "session-handoff";
 
@@ -109,7 +109,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
       (state.context || state.phase !== "watching") &&
       segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
 
-    host.ui.setStatus(STATUS_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
+    host.ui.setNotice(NOTICE_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
   };
 
   const sendRequest = (path: string, origin: RequestOrigin) => {
