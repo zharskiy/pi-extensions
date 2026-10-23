@@ -34,15 +34,15 @@ const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${tex
 describe("handoff tool rows", () => {
   it("draws the bold title as a row", () => {
     expect(tool.renderShell).toBe("row");
-    expect(drawn(tool.renderCall?.({ content: "" }, plainTheme, state()))).toBe("● Handoff");
+    expect(drawn(tool.renderCall?.({ content: "" }, plainTheme, state()))).toBe("✓ Handoff");
   });
 
   it("names the saved file under the home directory, or the error lines", () => {
     expect(drawn(tool.renderResult?.({ text: "Handoff saved" }, state(), plainTheme))).toBe(
-      "  ⎿  Saved ~/work/handoff.md",
+      "  ↳ Saved ~/work/handoff.md",
     );
     expect(drawn(tool.renderResult?.({ text: "Error: bad\nmore", isError: true }, state(), tagged))).toBe(
-      ["  <dim>⎿  <error>Error: bad", "     <error>more"].join("\n"),
+      ["  <dim>↳ <error>Error: bad", "    <error>more"].join("\n"),
     );
   });
 });

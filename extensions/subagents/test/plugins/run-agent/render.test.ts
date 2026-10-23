@@ -1,20 +1,17 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike, ToolRender, ToolResult } from "../../../../../core/adapter/contract.ts";
 import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
-import type { AgentRecord, AgentRegistry } from "../../../src/model/types.ts";
+import type { AgentRecord, AgentRegistry, AgentState } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import {
-  BLOCK_WIDTH,
-  type RunAgentDetails,
-  type RunAgentParams,
-} from "../../../src/plugins/run-agent/render.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import type { Runner } from "../../../src/plugins/run-agent/runner.ts";
 import { createPendingCalls, runAgentTool } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness, tempDir } from "../../helpers/harness.ts";
+import { newAgentInput } from "../../helpers/records.ts";
 
 type Agent = RunAgentParams["agents"][number];
 
@@ -38,11 +35,15 @@ const WORKER = [
   "Work.",
 ].join("\n");
 
+const NOW = 1_000_000;
+
+const WIDE = 79;
+
 const toolDeps = (runner: Runner, registry: AgentRegistry) => ({
   runner,
   registry,
   calls: createPendingCalls(),
-  hints: { manage: () => true, list: () => true },
+  hints: { manage: () => true, list: () => true, expandKey: () => "ctrl+o" },
 });
 
 const setup = (overrides = {}) => {
@@ -67,40 +68,37 @@ const withWorker = (overrides = {}) => {
 
 type Harness = ReturnType<typeof setup>;
 
-const start = async (harness: Harness, agents: Agent[], wait = false) => {
-  const updates: (RunAgentDetails | undefined)[] = [];
-
+const launched = async (harness: Harness, agents: Agent[]) => {
   harness.host.idle = false;
 
-  const pending = harness.tool.execute(
-    { agents, wait },
-    { update: (_text, details) => updates.push(details) },
-  );
+  const pending = harness.tool.execute({ agents }, { update: () => {} });
 
   await flush();
-
-  return { updates, pending };
-};
-
-const launched = async (harness: Harness, agents: Agent[]) => {
-  const { pending } = await start(harness, agents);
 
   return pending;
 };
 
-const resolve = (render: ToolRender | undefined, width = BLOCK_WIDTH) =>
+const resolve = (render: ToolRender | undefined, width = WIDE) =>
   typeof render === "function" ? render(width) : (render ?? "");
 
-const renderResult = (
-  harness: Harness,
+type RenderState = {
+  isPartial?: boolean;
+  expanded?: boolean;
+  isError?: boolean;
+  aborted?: boolean;
+  invalidate?: () => void;
+};
+
+const renderWith = (
+  tool: Harness["tool"],
   result: ToolResult<RunAgentDetails>,
   params: RunAgentParams,
-  state: { isPartial?: boolean; expanded?: boolean; isError?: boolean; invalidate?: () => void } = {},
+  state: RenderState = {},
   theme: ThemeLike = plainTheme,
-  width = BLOCK_WIDTH,
+  width = WIDE,
 ) =>
   resolve(
-    harness.tool.renderResult?.(
+    tool.renderResult?.(
       result,
       {
         toolCallId: "call-1",
@@ -117,21 +115,14 @@ const renderResult = (
     width,
   );
 
-const renderCall = (
+const renderResult = (
   harness: Harness,
-  params: Partial<RunAgentParams>,
-  isPartial: boolean,
+  result: ToolResult<RunAgentDetails>,
+  params: RunAgentParams,
+  state: RenderState = {},
   theme: ThemeLike = plainTheme,
-) =>
-  harness.tool.renderCall?.(params as RunAgentParams, theme, {
-    toolCallId: "call-1",
-    expanded: false,
-    isPartial,
-    isError: false,
-    args: params,
-    aborted: false,
-    invalidate: () => {},
-  });
+  width = WIDE,
+) => renderWith(harness.tool, result, params, state, theme, width);
 
 const lines = (text: string) => text.split("\n");
 
@@ -146,104 +137,317 @@ const ids = (harness: Harness) => harness.registry.list().map((record) => record
 const patch = (harness: Harness, id: string, values: Partial<AgentRecord>) =>
   harness.registry.update(id, values);
 
+type Spec = {
+  agent: string;
+  description: string;
+  model?: string;
+  state?: AgentState;
+  start?: number;
+  end?: number;
+  values?: Partial<AgentRecord>;
+};
+
+const MODEL_A = "prov/model-a:low";
+
+const MODEL_B = "prov/model-b:high";
+
+const batch = (specs: Spec[], options: { callerId?: string } = {}) => {
+  const harness = setup();
+  const registry = createRegistry({ bus: harness.bus, handoffPath: (id: string) => `/tmp/${id}-handoff.md` });
+  const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
+  const records = specs.map((spec) => {
+    const record = registry.create(
+      newAgentInput(tempDir(), {
+        agent: spec.agent,
+        description: spec.description,
+        model: spec.model ?? MODEL_A,
+        callerId: options.callerId ?? "main",
+      }),
+    );
+    const state = spec.state ?? "running";
+
+    registry.update(record.id, { state, startedAt: spec.start ?? 0, turns: 1, ...spec.values });
+
+    if (state !== "queued" && state !== "running" && state !== "grace") {
+      registry.close(record.id, { state });
+      registry.update(record.id, { endedAt: spec.end ?? 0 });
+    }
+
+    return registry.get(record.id) as AgentRecord;
+  });
+  const details: RunAgentDetails = {
+    batchId: "b-1",
+    ids: records.map((record) => record.id),
+    agents: records.map((record) => ({
+      id: record.id,
+      agent: record.agent,
+      description: record.description,
+      model: record.model,
+    })),
+  };
+  const params = { agents: specs.map((spec) => item(spec.agent, spec.description)) };
+  const draw = (width = WIDE, options: { wait?: boolean; state?: RenderState; theme?: ThemeLike } = {}) =>
+    lines(
+      renderWith(
+        tool,
+        { text: "model text", details },
+        { ...params, wait: options.wait },
+        options.state,
+        options.theme,
+        width,
+      ),
+    );
+
+  return { harness, registry, records, draw };
+};
+
+const SAMPLE_RUNNING: Spec[] = [
+  { agent: "scout", description: "Map the auth module", values: { toolCalls: 2 } },
+  { agent: "worker", description: "Fix the login redirect", state: "queued" },
+  {
+    agent: "reviewer",
+    description: "Review the diff of PR 5",
+    model: MODEL_B,
+    values: { turns: 0 },
+  },
+];
+
+const SAMPLE_CLOSED: Spec[] = [
+  {
+    agent: "scout",
+    description: "Map the auth module",
+    state: "done",
+    end: 65_000,
+    values: { toolCalls: 4, tokens: 12_300, cost: 0.04 },
+  },
+  {
+    agent: "worker",
+    description: "Fix the login redirect",
+    state: "failed",
+    end: 130_000,
+    values: { toolCalls: 31, tokens: 52_400, cost: 0.21, error: "tests failed twice" },
+  },
+  {
+    agent: "reviewer",
+    description: "Review the diff of PR 5",
+    model: MODEL_B,
+    state: "stopped",
+    start: 239_000,
+    end: 242_000,
+    values: { worktree: { path: "/w", branch: "pi-agents/r-1", base: "abc", cwd: "/w", cleanup: "removed" } },
+  },
+];
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
 afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("run_agent block", () => {
-  it("renders nothing for the call, partial or final", () => {
+describe("run_agent block samples", () => {
+  it("draws a running background batch with static words and the hint", () => {
+    expect(batch(SAMPLE_RUNNING).draw()).toEqual([
+      "◌ 3 background agents (↓ to manage, ← to list)",
+      "  ↳ ◌ scout  Map the auth module · model-a:low",
+      "      Running",
+      "    ◌ worker  Fix the login redirect · model-a:low",
+      "      Queued",
+      "    ◌ reviewer  Review the diff of PR 5 · model-b:high",
+      "      Starting",
+    ]);
+  });
+
+  it("draws a closed batch with the batch receipt and each agent's outcome", () => {
+    expect(batch(SAMPLE_CLOSED).draw()).toEqual([
+      "✗ 3 background agents · 4m 2s · 35 calls · 64.7k tokens · $0.25",
+      "  ↳ ✓ scout  Map the auth module · model-a:low",
+      "      1m 5s · 4 calls · 12.3k tokens · $0.04",
+      "    ✗ worker  Fix the login redirect · model-a:low",
+      "      tests failed twice · 2m 10s · 31 calls · 52.4k tokens · $0.21",
+      "    ⊘ reviewer  Review the diff of PR 5 · model-b:high",
+      "      Stopped · 3s · 0 calls · worktree removed",
+    ]);
+  });
+
+  it("draws a waiting batch with live figures", () => {
+    const { draw } = batch([
+      {
+        agent: "scout",
+        description: "Find callers of login",
+        start: NOW - 42_000,
+        values: { toolCalls: 9, tokens: 6_100, cost: 0.01, activity: "grep" },
+      },
+      {
+        agent: "scout",
+        description: "Map the auth module",
+        state: "done",
+        end: 65_000,
+        values: { chainIndex: 2, toolCalls: 4, tokens: 12_300, cost: 0.04 },
+      },
+    ]);
+
+    expect(draw(WIDE, { wait: true, state: { isPartial: true } })).toEqual([
+      "◌ 2 scout agents",
+      "  ↳ ◌ scout  Find callers of login · model-a:low",
+      "      Elapsed 42s · 9 calls · 6.1k tokens · $0.01",
+      "    ✓ scout #2  Map the auth module · model-a:low",
+      "      1m 5s · 4 calls · 12.3k tokens · $0.04",
+    ]);
+  });
+
+  it("puts a long failure reason under the receipt, two rows and a count line, all of it when expanded", () => {
+    const reason = Array.from({ length: 5 }, (_, index) => `line ${index + 1} of the failure`).join("\n");
+    const { draw } = batch([
+      {
+        agent: "worker",
+        description: "Fix the login redirect",
+        state: "failed",
+        end: 130_000,
+        values: { toolCalls: 31, tokens: 52_400, cost: 0.21, error: reason },
+      },
+    ]);
+
+    expect(draw()).toEqual([
+      "✗ 1 background worker agent · 2m 10s · 31 calls · 52.4k tokens · $0.21",
+      "  ↳ ✗ worker  Fix the login redirect · model-a:low",
+      "      2m 10s · 31 calls · 52.4k tokens · $0.21",
+      "      line 1 of the failure",
+      "      line 2 of the failure",
+      "      ... (3 more lines, ctrl+o to expand)",
+    ]);
+    expect(draw(WIDE, { state: { expanded: true } }).slice(3)).toEqual(
+      reason.split("\n").map((line) => `      ${line}`),
+    );
+  });
+
+  it("leads with a short reason and wraps a long one-line reason", () => {
+    const long =
+      "npm test failed twice after the redirect change; the session cookie is not set on the callback route";
+    const { draw } = batch([
+      {
+        agent: "worker",
+        description: "Fix the login redirect",
+        state: "failed",
+        end: 130_000,
+        values: { toolCalls: 31, error: long },
+      },
+    ]);
+
+    expect(draw().slice(2)).toEqual([
+      "      2m 10s · 31 calls",
+      "      npm test failed twice after the redirect change; the session cookie is",
+      "      not set on the callback route",
+    ]);
+  });
+
+  it("says no agents started with the reason in the title, or under it when it is long", () => {
     const harness = setup();
+    const params = { agents: [item("x", "y")] };
 
-    expect(renderCall(harness, { agents: THREE }, true)).toBe("");
-    expect(renderCall(harness, {}, true)).toBe("");
-    expect(renderCall(harness, { agents: THREE }, false)).toBe("");
+    expect(lines(renderResult(harness, { isError: true, text: 'unknown agent "x"' }, params))).toEqual([
+      '✗ No agents started · unknown agent "x"',
+    ]);
+
+    const long = { isError: true, text: "unknown agent(s): x. Available: scout\nNothing was started." };
+
+    expect(lines(renderResult(harness, long, params))).toEqual([
+      "✗ No agents started",
+      "  ↳ unknown agent(s): x. Available: scout (ctrl+o to expand)",
+    ]);
+    expect(lines(renderResult(harness, long, params, { expanded: true }))).toEqual([
+      "✗ No agents started",
+      "  ↳ unknown agent(s): x. Available: scout",
+      "    Nothing was started.",
+    ]);
   });
 
-  it("draws the launched header and the rows while partial", async () => {
-    const harness = withWorker();
-    const params = { agents: THREE, wait: true };
-    const { updates } = await start(harness, THREE, true);
-
-    expect(updates).toHaveLength(1);
-
-    const text = renderResult(harness, { text: "", details: updates[0] }, params, { isPartial: true });
-
-    expect(lines(text)).toHaveLength(7);
-    expect(lines(text)[0]).toBe("● 3 agents launched");
-    expect(lines(text)[1]).toMatch(/^ {2}├─ scout \(Map the auth module\)/);
-
-    const background = renderResult(
-      harness,
-      { text: "", details: updates[0] },
-      { agents: THREE },
-      { isPartial: true },
-    );
-
-    expect(lines(background)[0]).toBe("● 3 background agents launched (↓ to manage · ← to list)");
-  });
-
-  it("headers: launched with hint, launched without hint, finished", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, THREE);
-    const params = { agents: THREE };
-
-    expect(lines(renderResult(harness, result, params))[0]).toBe(
-      "● 3 background agents launched (↓ to manage · ← to list)",
-    );
-
-    harness.runtime.children.forEach((child) => {
-      child.finish("ok");
-    });
-    await flush();
-
-    expect(lines(renderResult(harness, result, params))[0]).toBe("● 3 background agents launched");
-    expect(lines(renderResult(harness, result, { ...params, wait: true }))[0]).toBe("● 3 agents finished");
-
-    const single = await launched(harness, [item("worker", "one")]);
-
-    expect(lines(renderResult(harness, single, { agents: [item("worker", "one")] }))[0]).toBe(
-      "● 1 background worker agent launched (↓ to manage · ← to list)",
-    );
-  });
-
-  it("shortens the hint to the panel key when the header does not fit", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, THREE);
-    const header = (width: number) =>
-      lines(renderResult(harness, result, { agents: THREE }, {}, plainTheme, width))[0];
-
-    expect(header(56)).toBe("● 3 background agents launched (↓ to manage · ← to list)");
-    expect(header(55)).toBe("● 3 background agents launched (↓ to manage)");
-  });
-
-  it("headers name the agent when the batch shares one", async () => {
-    const harness = withWorker();
+  it("draws an interrupted waiting call as stopped", () => {
+    const harness = setup();
     const scouts = [item("scout", "a"), item("scout", "b"), item("scout", "c")];
-    const result = await launched(harness, scouts);
+    const result = { isError: true, text: "Operation aborted" };
 
-    expect(lines(renderResult(harness, result, { agents: scouts, wait: true }, { isPartial: true }))[0]).toBe(
-      "● 3 scout agents launched",
-    );
-    expect(lines(renderResult(harness, result, { agents: scouts }))[0]).toBe(
-      "● 3 background scout agents launched (↓ to manage · ← to list)",
-    );
-    expect(lines(renderResult(harness, result, { agents: scouts, wait: true }))[0]).toBe(
-      "● 3 scout agents finished",
-    );
-    expect(lines(renderResult(harness, result, { agents: scouts }))[1]).toMatch(/^ {2}├─ scout \(a\)/);
+    expect(lines(renderResult(harness, result, { agents: scouts, wait: true }, { aborted: true }))).toEqual([
+      "⊘ 3 scout agents · stopped",
+    ]);
+  });
 
-    const one = await launched(harness, [scouts[0]]);
+  it("falls back to Status unavailable after a rebuild without records", () => {
+    const harness = setup();
+    const registry = createRegistry({
+      bus: harness.bus,
+      handoffPath: (id: string) => `/tmp/${id}-handoff.md`,
+    });
+    const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
+    const details: RunAgentDetails = {
+      batchId: "b-old",
+      ids: ["scout-ab12", "worker-def"],
+      agents: [
+        { id: "scout-ab12", agent: "scout", description: "Map the auth module", model: MODEL_A },
+        { id: "worker-def", agent: "worker", description: "Fix the login redirect" },
+      ],
+    };
 
-    expect(lines(renderResult(harness, one, { agents: [scouts[0]] }))[0]).toBe(
-      "● 1 background scout agent launched (↓ to manage · ← to list)",
+    expect(lines(renderWith(tool, { text: "Started batch", details }, { agents: THREE }))).toEqual([
+      "◌ 2 background agents",
+      "  ↳ » scout  Map the auth module · model-a:low",
+      "      Status unavailable · /agents scout-ab12",
+      "    » worker  Fix the login redirect",
+      "      Status unavailable · /agents worker-def",
+    ]);
+  });
+
+  it("draws the 40-column samples", () => {
+    expect(batch(SAMPLE_RUNNING).draw(39)).toEqual([
+      "◌ 3 background agents (↓ to manage)",
+      "  ↳ ◌ scout  Map the auth module",
+      "      Running",
+      "    ◌ worker  Fix the login redirect",
+      "      Queued",
+      "    ◌ reviewer  Review the diff of PR 5",
+      "      Starting",
+    ]);
+    expect(batch(SAMPLE_CLOSED).draw(39)).toEqual([
+      "✗ 3 background agents · 4m 2s",
+      "  ↳ ✓ scout  Map the auth module",
+      "      1m 5s · 4 calls · 12.3k tokens",
+      "    ✗ worker  Fix the login redirect",
+      "      tests failed twice · 2m 10s",
+      "    ⊘ reviewer  Review the diff of PR 5",
+      "      Stopped · 3s · 0 calls",
+    ]);
+  });
+});
+
+describe("run_agent block header", () => {
+  const closed = (state: AgentState): Spec => ({
+    agent: "scout",
+    description: "a",
+    state,
+    end: 1_000,
+    values: { toolCalls: 1 },
+  });
+
+  it("picks the glyph: open, then failed, then all stopped, else done with the stopped count", () => {
+    const head = (specs: Spec[], state?: RenderState) => batch(specs).draw(WIDE, { state })[0];
+
+    expect(head([closed("done"), { agent: "scout", description: "b" }])).toMatch(/^◌ /);
+    expect(head([closed("done"), closed("failed")])).toMatch(/^✗ 2 background scout agents · 1s · 2 calls$/);
+    expect(head([closed("stopped"), closed("handoff")])).toMatch(/^⊘ /);
+    expect(head([closed("done"), closed("stopped")])).toBe(
+      "✓ 2 background scout agents · 1 stopped · 1s · 2 calls",
     );
+    expect(head([closed("done")], { isError: true })).toMatch(/^✗ /);
+  });
 
-    const mixed = [item("scout", "a"), item("worker", "b")];
-    const both = await launched(harness, mixed);
+  it("drops ← to list first, then the whole hint, as the width shrinks", () => {
+    const { draw } = batch(SAMPLE_RUNNING);
 
-    expect(lines(renderResult(harness, both, { agents: mixed }))[0]).toBe(
-      "● 2 background agents launched (↓ to manage · ← to list)",
-    );
+    expect(draw(46)[0]).toBe("◌ 3 background agents (↓ to manage, ← to list)");
+    expect(draw(45)[0]).toBe("◌ 3 background agents (↓ to manage)");
+    expect(draw(34)[0]).toBe("◌ 3 background agents");
   });
 
   it("names only the keys of the enabled panel and list plugins", async () => {
@@ -256,11 +460,24 @@ describe("run_agent block", () => {
       )[0];
     };
 
-    expect(await header([])).toBe("● 3 background agents launched (↓ to manage · ← to list)");
-    expect(await header(["agent-view"])).toBe("● 3 background agents launched (↓ to manage)");
-    expect(await header(["agent-panel"])).toBe("● 3 background agents launched (← to list)");
-    expect(await header(["agent-panel"], 40)).toBe("● 3 background agents launched");
-    expect(await header(["agent-panel", "agent-view"])).toBe("● 3 background agents launched");
+    expect(await header([])).toBe("◌ 3 background agents (↓ to manage, ← to list)");
+    expect(await header(["agent-view"])).toBe("◌ 3 background agents (↓ to manage)");
+    expect(await header(["agent-panel"])).toBe("◌ 3 background agents (← to list)");
+    expect(await header(["agent-panel"], 30)).toBe("◌ 3 background agents");
+    expect(await header(["agent-panel", "agent-view"])).toBe("◌ 3 background agents");
+  });
+
+  it("names the agent when the batch shares one", () => {
+    expect(batch([{ agent: "scout", description: "a" }]).draw()[0]).toBe(
+      "◌ 1 background scout agent (↓ to manage, ← to list)",
+    );
+    expect(batch([{ agent: "scout", description: "a" }]).draw(WIDE, { wait: true })[0]).toBe(
+      "◌ 1 scout agent",
+    );
+  });
+
+  it("draws no hint for a batch an agent started", () => {
+    expect(batch(SAMPLE_RUNNING, { callerId: "general-1" }).draw()[0]).toBe("◌ 3 background agents");
   });
 
   it("points Status unavailable at /agents only while the list plugin is on", () => {
@@ -277,138 +494,51 @@ describe("run_agent block", () => {
         }).result ?? "",
       )[2];
 
-    expect(status([])).toBe("     Status unavailable · /agents scout-abc");
-    expect(status(["agent-view"])).toBe("     Status unavailable");
+    expect(status([])).toBe("      Status unavailable · /agents scout-abc");
+    expect(status(["agent-view"])).toBe("      Status unavailable");
+  });
+});
+
+describe("run_agent block rows", () => {
+  it("renders nothing for the call", () => {
+    const harness = setup();
+    const state = harness.host.renderTool("run_agent", {}).state;
+
+    expect(harness.tool.renderCall?.({ agents: THREE }, plainTheme, state)).toBe("");
+    expect(harness.tool.renderShell).toBe("row");
   });
 
-  it("draws no hint for a batch an agent started", async () => {
-    const harness = withWorker();
+  it("shows Stopping without a ticking time in the background and with it while waiting", () => {
+    const { draw } = batch([{ agent: "scout", description: "a", state: "grace", start: NOW - 5_000 }]);
 
-    await launched(harness, [item("general", "Lead the fix")]);
-
-    const [parent] = ids(harness);
-    const nested = harness.runtime
-      .child(parent)
-      .spec.customTools?.find((spec) => spec.name === "run_agent") as unknown as typeof harness.tool;
-    const agents = [item("scout", "Find the callers")];
-    const result = await nested.execute({ agents }, { update: () => {} });
-
-    expect(lines(renderResult(harness, result, { agents }))[0]).toBe("● 1 background scout agent launched");
+    expect(draw()[2]).toBe("      Stopping");
+    expect(draw(WIDE, { wait: true })[2]).toBe("      Stopping · Elapsed 5s");
   });
 
-  it("keeps a drawn block until it is rendered again", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, [THREE[0]]);
-    const [id] = ids(harness);
-    const draw = harness.tool.renderResult?.(
-      result,
-      { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [THREE[0]] } },
-      plainTheme,
-    );
-    const at = (width: number) => (typeof draw === "function" ? draw(width) : "");
-    const before = at(BLOCK_WIDTH);
-
-    expect(before).toContain("Initializing…");
-
-    patch(harness, id, { turns: 1, toolCalls: 2 });
-
-    expect(at(BLOCK_WIDTH)).toBe(before);
-    expect(at(80)).toContain("Running in the background");
-    expect(renderResult(harness, result, { agents: [THREE[0]] })).toContain("Running in the background");
-  });
-
-  it("keeps every line within BLOCK_WIDTH and leaves the padding to the adapter", async () => {
-    const harness = withWorker();
-    const long = [item("scout", "x".repeat(300)), item("worker", "y".repeat(300))];
-    const result = await launched(harness, long);
-    const rendered = lines(renderResult(harness, result, { agents: long }));
-
-    rendered.forEach((line) => {
-      expect(plainTheme.width(line)).toBeLessThanOrEqual(BLOCK_WIDTH);
-    });
-    expect(rendered[0].startsWith(" ")).toBe(false);
-  });
-
-  it("status lines per state", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(0);
-
-    const harness = withWorker({ maxConcurrent: 1 });
-    const result = await launched(harness, THREE);
-    const [first, second, third] = ids(harness);
-    const status = (wait = false) =>
-      lines(renderResult(harness, result, { agents: THREE, wait })).filter(
-        (_, index) => index % 2 === 0 && index > 0,
-      );
-    const statusOf = (index: number, wait = false) => status(wait)[index].slice(5);
-
-    expect(statusOf(0)).toBe("Initializing…");
-    expect(statusOf(2)).toBe("Queued");
-
-    patch(harness, first, { toolCalls: 4, tokens: 12_345, turns: 2 });
-
-    expect(statusOf(0)).toBe("Running in the background");
-    expect(statusOf(0, true)).toBe("Running · 4 tool uses · 12.3k tokens");
-
-    patch(harness, first, { tokens: 0 });
-
-    expect(statusOf(0, true)).toBe("Running · 4 tool uses");
-
-    patch(harness, first, { state: "grace" });
-
-    expect(statusOf(0)).toBe("Stopping…");
-
-    const closed = (id: string, values: Partial<AgentRecord>) => {
-      patch(harness, id, { startedAt: 0, ...values });
-      harness.registry.close(id, { state: "done", ...values });
-      patch(harness, id, { ...values });
-    };
-
-    closed(second, { state: "done", toolCalls: 4, tokens: 12_345, endedAt: 65_000 });
-    expect(statusOf(1)).toBe("Done · 4 tool uses · 12.3k tokens · 1m 5s");
-
-    closed(second, { state: "failed", error: "tests failed twice\nstack" });
-    expect(statusOf(1)).toBe("Failed: tests failed twice");
-
-    closed(second, { state: "stopped", toolCalls: 0, tokens: 0, endedAt: 3_000 });
-    expect(statusOf(1)).toBe("Stopped · 0 tool uses · 3s");
-
-    closed(second, { state: "handoff", toolCalls: 4, tokens: 12_345, endedAt: 3_720_000 });
-    expect(statusOf(1)).toBe("Handed off · 4 tool uses · 12.3k tokens · 1h 2m");
-
-    closed(third, { state: "failed", error: "e".repeat(200) });
-
-    const failed = status()[2];
-
-    expect(plainTheme.width(failed)).toBeLessThanOrEqual(BLOCK_WIDTH);
-    expect(failed.endsWith("...")).toBe(true);
-  });
-
-  it("appends the worktree outcome to closed rows", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, [THREE[0]]);
-    const [id] = ids(harness);
+  it("appends the worktree outcome to closed rows", () => {
     const worktree = { path: "/w", branch: "pi-agents/x-1", base: "abc", cwd: "/w" };
-    const status = () => lines(renderResult(harness, result, { agents: [THREE[0]] }))[2];
+    const status = (cleanup: "removed" | "branch kept" | "kept", state: AgentState = "done") =>
+      batch([
+        {
+          agent: "scout",
+          description: "a",
+          state,
+          end: 1_000,
+          values: { worktree: { ...worktree, cleanup } },
+        },
+      ]).draw()[2];
 
-    patch(harness, id, { worktree: { ...worktree, cleanup: "removed" } });
-
-    expect(status()).not.toContain("worktree removed");
-
-    harness.registry.close(id, { state: "done" });
-
-    expect(status()).toMatch(/ · worktree removed$/);
-
-    patch(harness, id, { worktree: { ...worktree, cleanup: "branch kept" } });
-
-    expect(status()).toMatch(/ · branch pi-agents\/x-1 kept$/);
-
-    patch(harness, id, { worktree: { ...worktree, cleanup: "kept" } });
-
-    expect(status()).toMatch(/ · worktree kept$/);
+    expect(status("removed")).toBe("      1s · worktree removed");
+    expect(status("branch kept", "handoff")).toBe("      Handed off · 1s · branch pi-agents/x-1 kept");
+    expect(status("kept")).toBe("      1s · worktree kept");
+    expect(
+      batch([
+        { agent: "scout", description: "a", values: { worktree: { ...worktree, cleanup: "removed" } } },
+      ]).draw()[2],
+    ).toBe("      Running");
   });
 
-  it("renders a chain as one row with #n and summed stats", async () => {
+  it("renders a chain as one row with #n and summed figures", async () => {
     const harness = withWorker();
     const result = await launched(harness, [THREE[0]]);
     const [first] = ids(harness);
@@ -421,123 +551,89 @@ describe("run_agent block", () => {
       batchId: base.batchId,
       dir: tempDir(),
       contextLimit: base.contextLimit,
-      model: base.model,
+      model: MODEL_A,
       chainIndex: 2,
       predecessorId: first,
     });
 
-    patch(harness, first, { toolCalls: 2, startedAt: 0 });
+    patch(harness, first, { toolCalls: 2, startedAt: 0, cost: 0.01 });
     harness.registry.close(first, { state: "handoff", successorId: successor.id });
-    patch(harness, successor.id, { toolCalls: 3, startedAt: 10_000 });
+    patch(harness, successor.id, { toolCalls: 3, startedAt: 10_000, cost: 0.02 });
     harness.registry.close(successor.id, { state: "done" });
     patch(harness, successor.id, { endedAt: 65_000 });
 
     const rendered = lines(renderResult(harness, result, { agents: [THREE[0]] }));
 
-    expect(rendered[1]).toMatch(/^ {2}└─ scout #2 \(Map the auth module\)/);
-    expect(rendered[2]).toBe("     Done · 5 tool uses · 1m 5s");
+    expect(rendered[1]).toBe("  ↳ ✓ scout #2  Map the auth module · model-a:low");
+    expect(rendered[2]).toBe("      1m 5s · 5 calls · $0.03");
   });
 
-  it("cuts the description to the width and drops the model first", async () => {
-    const harness = withWorker();
-    const long = [item("scout", "d".repeat(120))];
-    const result = await launched(harness, long);
-    const row = lines(renderResult(harness, result, { agents: long }))[1];
+  it("drops the model when fewer than 20 columns would stay for the description, then cuts the description", () => {
+    const { draw } = batch([{ agent: "scout", description: "d".repeat(120) }]);
 
-    expect(plainTheme.width(row)).toBeLessThanOrEqual(BLOCK_WIDTH);
-    expect(row).toMatch(/d\.\.\.\) · \S+\/\S+:\w+$/);
-
-    const rebuilt = runAgentTool(
-      toolDeps(harness.runner, createRegistry({ bus: harness.bus, handoffPath: (id) => id })),
-      "run agents",
-    );
-    const name = "n".repeat(70);
-    const details: RunAgentDetails = {
-      batchId: "b-old",
-      ids: ["a-1"],
-      agents: [{ id: "a-1", agent: name, description: "d".repeat(120), model: "fake/model:high" }],
-    };
-    const crowded = lines(
-      resolve(
-        rebuilt.renderResult?.(
-          { text: "", details },
-          { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [] } },
-          plainTheme,
-        ),
-      ),
-    )[1];
-
-    expect(crowded.endsWith("...)")).toBe(true);
-    expect(crowded).not.toContain("fake/model");
-    expect(plainTheme.width(crowded)).toBeLessThanOrEqual(BLOCK_WIDTH);
-
-    const short = await launched(harness, [THREE[0]]);
-
-    expect(lines(renderResult(harness, short, { agents: [THREE[0]] }))[1]).toMatch(
-      /^ {2}└─ scout \(Map the auth module\) · \S+\/\S+:\w+$/,
-    );
+    expect(draw()[1]).toBe(`  ↳ ◌ scout  ${"d".repeat(49)}... · model-a:low`);
+    expect(draw(40)[1]).toBe(`  ↳ ◌ scout  ${"d".repeat(24)}...`);
   });
 
-  it("renders the error header with the reason under it once, all of it when expanded", () => {
-    const harness = setup();
-    const result = { isError: true, text: "unknown agent(s): x. Available: scout\nNothing was started." };
-    const params = { agents: [item("x", "y")] };
+  it("spans the width with no fixed cap and keeps every line within it", () => {
+    const long = [
+      { agent: "scout", description: "x".repeat(300) },
+      { agent: "worker", description: "y".repeat(300) },
+    ];
+    const { draw } = batch(long);
 
-    expect(lines(renderResult(harness, result, params))).toEqual([
-      "● No agents started",
-      "  ⎿  unknown agent(s): x. Available: scout",
-    ]);
-    expect(lines(renderResult(harness, result, params, { expanded: true }))).toEqual([
-      "● No agents started",
-      "  ⎿  unknown agent(s): x. Available: scout",
-      "     Nothing was started.",
-    ]);
-  });
-
-  it("falls back to Status unavailable after a rebuild without records", () => {
-    const harness = setup();
-    const registry = createRegistry({
-      bus: harness.bus,
-      handoffPath: (id: string) => `/tmp/${id}-handoff.md`,
+    expect(draw(200)[1].length).toBe(200);
+    [1, 2, 3, 5, 8, 12, 20, 39, 79, 200].forEach((width) => {
+      [...draw(width), ...batch(SAMPLE_CLOSED).draw(width)].forEach((line) => {
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width);
+      });
     });
-    const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
-    const details: RunAgentDetails = {
-      batchId: "b-old",
-      ids: ["scout-abc", "worker-def", "reviewer-123"],
-      agents: [
-        {
-          id: "scout-abc",
-          agent: "scout",
-          description: "Map the auth module",
-          model: "fake/model:high",
-        },
-        { id: "worker-def", agent: "worker", description: "Fix the login redirect" },
-        { id: "reviewer-123", agent: "reviewer", description: "Review the diff of PR 5" },
-      ],
-    };
-    const text = resolve(
-      tool.renderResult?.(
-        { text: "Started batch", details },
-        {
-          toolCallId: "c",
-          expanded: false,
-          isPartial: false,
-          isError: false,
-          args: { agents: THREE },
-          aborted: false,
-          invalidate: () => {},
-        },
-        plainTheme,
-      ),
-    );
-
-    expect(lines(text).slice(0, 3)).toEqual([
-      "● 3 background agents launched",
-      "  ├─ scout (Map the auth module) · fake/model:high",
-      "  │  Status unavailable · /agents scout-abc",
-    ]);
   });
 
+  it("keeps a drawn block until it is rendered again", async () => {
+    const harness = withWorker();
+    const result = await launched(harness, [THREE[0]]);
+    const [id] = ids(harness);
+    const draw = harness.tool.renderResult?.(
+      result,
+      { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [THREE[0]] } },
+      plainTheme,
+    );
+    const at = (width: number) => (typeof draw === "function" ? draw(width) : "");
+    const before = at(WIDE);
+
+    expect(before).toContain("Starting");
+
+    patch(harness, id, { turns: 1, toolCalls: 2 });
+
+    expect(at(WIDE)).toBe(before);
+    expect(at(80)).toContain("Running");
+    expect(renderResult(harness, result, { agents: [THREE[0]] })).toContain("Running");
+  });
+});
+
+describe("run_agent block colours", () => {
+  it("paints the header, the hint, the name line and the status by role", () => {
+    const running = batch([SAMPLE_RUNNING[0]]).draw(400, { theme: tagged });
+
+    expect(running[0]).toBe(
+      "<dim>◌</dim> <b><text>1</text></b> <text>background scout agent</text> <muted>(</muted><dim>↓</dim> <muted>to manage</muted><muted>, </muted><dim>←</dim> <muted>to list</muted><muted>)</muted>",
+    );
+    expect(running[1]).toBe(
+      "  <dim>↳</dim> <dim>◌</dim> <b><text>scout</text></b>  <muted>Map the auth module</muted><dim> · model-a:low</dim>",
+    );
+    expect(running[2]).toBe("      <muted>Running</muted>");
+
+    const failed = batch([SAMPLE_CLOSED[1]]).draw(400, { theme: tagged });
+
+    expect(failed[0]).toMatch(/^<error>✗<\/error> /);
+    expect(failed[2]).toBe(
+      "      <error>tests failed twice</error><muted> · </muted><muted>2m 10s</muted><muted> · </muted><muted>31 calls</muted><muted> · </muted><muted>52.4k tokens</muted><muted> · </muted><muted>$0.21</muted>",
+    );
+  });
+});
+
+describe("run_agent block invalidation", () => {
   it("invalidates at once, then at most once per renderThrottleMs, and stops at batch:settled", async () => {
     const harness = withWorker({ renderThrottleMs: 50 });
     const main = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
@@ -663,255 +759,5 @@ describe("run_agent block", () => {
 
     expect(broken).toHaveBeenCalledTimes(1);
     expect(working).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("run_agent block bullet", () => {
-  const BULLET_TONES: Record<string, string> = { dim: "pending", success: "success", error: "error" };
-
-  const tone = (
-    harness: Harness,
-    result: ToolResult<RunAgentDetails>,
-    params: RunAgentParams,
-    state: { isPartial?: boolean; isError?: boolean } = {},
-  ) => {
-    const first = lines(renderResult(harness, result, params, state, tagged))[0] ?? "";
-
-    return BULLET_TONES[/^<(\w+)>●/.exec(first)?.[1] ?? ""];
-  };
-
-  it("draws a transcript row", () => {
-    expect(setup().tool.renderShell).toBe("row");
-  });
-
-  it("background batch: pending after the call returned while an agent is open, success once all are done", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, THREE);
-    const params = { agents: THREE };
-
-    expect(tone(harness, result, params)).toBe("pending");
-
-    const [first, ...rest] = harness.runtime.children;
-
-    first?.finish("ok");
-    await flush();
-
-    expect(tone(harness, result, params)).toBe("pending");
-
-    rest.forEach((child) => {
-      child.finish("ok");
-    });
-    await flush();
-
-    expect(tone(harness, result, params)).toBe("success");
-  });
-
-  it("waiting batch: pending while partial, success on the final result", async () => {
-    const harness = withWorker();
-    const params = { agents: THREE, wait: true };
-    const { updates, pending } = await start(harness, THREE, true);
-
-    expect(tone(harness, { text: "", details: updates[0] }, params, { isPartial: true })).toBe("pending");
-
-    harness.runtime.children.forEach((child) => {
-      child.finish("ok");
-    });
-
-    expect(tone(harness, await pending, params)).toBe("success");
-  });
-
-  it("error once every agent closed and one failed; stopped stays success", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, THREE);
-    const [first, second, third] = ids(harness);
-    const params = { agents: THREE };
-
-    harness.registry.close(first, { state: "failed", error: "boom" });
-
-    expect(tone(harness, result, params)).toBe("pending");
-
-    harness.registry.close(second, { state: "stopped" });
-    harness.registry.close(third, { state: "done" });
-
-    expect(tone(harness, result, params)).toBe("error");
-
-    patch(harness, first, { state: "handoff" });
-
-    expect(tone(harness, result, params)).toBe("success");
-  });
-
-  it("error when the tool errored", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, THREE);
-    const params = { agents: THREE };
-
-    expect(tone(harness, { isError: true, text: "unknown agent(s): x" }, params)).toBe("error");
-    expect(tone(harness, { ...result, isError: true }, params)).toBe("error");
-  });
-
-  it("falls back to the call's state without registry records", () => {
-    const harness = setup();
-    const details: RunAgentDetails = {
-      batchId: "b-old",
-      ids: ["scout-abc"],
-      agents: [{ id: "scout-abc", agent: "scout", description: "Map the auth module" }],
-    };
-    const params = { agents: [THREE[0]] };
-
-    expect(tone(harness, { text: "", details }, params)).toBe("success");
-    expect(tone(harness, { text: "", details }, params, { isPartial: true })).toBe("pending");
-  });
-});
-
-describe("run_agent block colours", () => {
-  it("paints the header: count bold, hint dim", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, THREE);
-
-    expect(
-      lines(renderResult(harness, result, { agents: THREE, wait: true }, { isPartial: true }, tagged))[0],
-    ).toBe("<dim>●</dim> <b>3</b> agents launched");
-    expect(lines(renderResult(harness, result, { agents: THREE }, {}, tagged))[0]).toBe(
-      "<dim>●</dim> <b>3</b> background agents launched <dim>(↓ to manage · ← to list)</dim>",
-    );
-    expect(lines(renderResult(harness, result, { agents: THREE, wait: true }, {}, tagged))[0]).toBe(
-      "<dim>●</dim> <b>3</b> agents finished",
-    );
-    expect(
-      lines(renderResult(harness, { isError: true, text: "bad\nmore" }, { agents: THREE }, {}, tagged))[0],
-    ).toBe("<error>●</error> No agents started");
-  });
-
-  it("paints the name line: agent bold, description muted, model dim", async () => {
-    const harness = withWorker();
-    const result = await launched(harness, [THREE[0]]);
-    const model = harness.registry.list()[0].model;
-
-    expect(lines(renderResult(harness, result, { agents: [THREE[0]] }, {}, tagged))[1]).toBe(
-      `  └─ <b>scout</b> <muted>(Map the auth module)</muted><dim> · ${model}</dim>`,
-    );
-  });
-
-  it("paints every status line in its state token", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(0);
-
-    const harness = withWorker({ maxConcurrent: 1 });
-    const result = await launched(harness, THREE);
-    const [first, second, third] = ids(harness);
-    const statusOf = (index: number, wait = false) =>
-      lines(renderResult(harness, result, { agents: THREE, wait }, {}, tagged))[2 + index * 2].slice(5);
-    const closed = (id: string, values: Partial<AgentRecord>) => {
-      patch(harness, id, { startedAt: 0, ...values });
-      harness.registry.close(id, { state: "done", ...values });
-      patch(harness, id, { ...values });
-    };
-
-    expect(statusOf(2)).toBe("<muted>Queued</muted>");
-    expect(statusOf(0)).toBe("<muted>Initializing…</muted>");
-
-    patch(harness, first, { toolCalls: 4, tokens: 12_345, turns: 2 });
-
-    expect(statusOf(0)).toBe("<muted>Running in the background</muted>");
-    expect(statusOf(0, true)).toBe("<muted>Running · 4 tool uses · 12.3k tokens</muted>");
-
-    patch(harness, first, { state: "grace" });
-
-    expect(statusOf(0)).toBe("<muted>Stopping…</muted>");
-
-    closed(second, { state: "done", toolCalls: 4, tokens: 12_345, endedAt: 65_000 });
-    expect(statusOf(1)).toBe("<success>Done</success><dim> · 4 tool uses · 12.3k tokens · 1m 5s</dim>");
-
-    closed(second, { state: "failed", error: "tests failed twice\nstack" });
-    expect(statusOf(1)).toBe("<error>Failed: tests failed twice</error>");
-
-    closed(second, { state: "stopped", toolCalls: 0, tokens: 0, endedAt: 3_000 });
-    expect(statusOf(1)).toBe("<muted>Stopped · 0 tool uses · 3s</muted>");
-
-    closed(second, { state: "handoff", toolCalls: 4, tokens: 12_345, endedAt: 3_720_000 });
-    expect(statusOf(1)).toBe("<muted>Handed off · 4 tool uses · 12.3k tokens · 1h 2m</muted>");
-
-    closed(third, { state: "done", toolCalls: 1, tokens: 0, endedAt: 1_000 });
-    patch(harness, third, {
-      worktree: { path: "/w", branch: "pi-agents/x-1", base: "abc", cwd: "/w", cleanup: "removed" },
-    });
-
-    expect(statusOf(2)).toBe(
-      "<success>Done</success><dim> · 1 tool use · 1s</dim><dim> · worktree removed</dim>",
-    );
-  });
-
-  it("paints Status unavailable dim", () => {
-    const harness = setup();
-    const registry = createRegistry({ bus: harness.bus, handoffPath: (id: string) => id });
-    const tool = runAgentTool(toolDeps(harness.runner, registry), "run agents");
-    const details: RunAgentDetails = {
-      batchId: "b-old",
-      ids: ["scout-abc"],
-      agents: [{ id: "scout-abc", agent: "scout", description: "Map the auth module" }],
-    };
-    const text = resolve(
-      tool.renderResult?.(
-        { text: "Started batch", details },
-        { ...harness.host.renderTool("run_agent", {}).state, args: { agents: [THREE[0]] } },
-        tagged,
-      ),
-    );
-
-    expect(lines(text)[2]).toBe("     <dim>Status unavailable · /agents scout-abc</dim>");
-  });
-});
-
-describe("run_agent block width", () => {
-  const forty = `${"d".repeat(39)}e`;
-
-  it("keeps the description and the whole model at width 80 and at width 120", async () => {
-    const harness = withWorker();
-    const agents = [item("scout", forty)];
-    const result = await launched(harness, agents);
-    const model = harness.registry.list()[0].model as string;
-    const at = (width: number) =>
-      lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
-
-    expect(at(80)).toBe(`  └─ scout (${forty}) · ${model}`);
-    expect(plainTheme.width(at(80))).toBeLessThanOrEqual(79);
-    expect(at(120)).toBe(`  └─ scout (${forty}) · ${model}`);
-  });
-
-  it("cuts the description, never the model, against the real width and drops the model when it does not fit", async () => {
-    const harness = withWorker();
-    const agents = [item("scout", "d".repeat(60))];
-    const result = await launched(harness, agents);
-    const model = harness.registry.list()[0].model as string;
-    const at = (width: number) =>
-      lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
-
-    expect(at(80).endsWith(`...) · ${model}`)).toBe(true);
-    expect(plainTheme.width(at(80))).toBe(79);
-    expect(at(120)).toBe(`  └─ scout (${"d".repeat(60)}) · ${model}`);
-    expect(at(50)).not.toContain(model);
-    expect(at(50).endsWith("...)")).toBe(true);
-    expect(plainTheme.width(at(50))).toBeLessThanOrEqual(49);
-    expect(plainTheme.width(at(200))).toBeLessThanOrEqual(BLOCK_WIDTH);
-  });
-
-  it("wraps an expanded long error at the real width instead of cutting it", () => {
-    const harness = setup();
-    const error = `unknown agent(s): ${"x".repeat(150)}`;
-    const result = { isError: true, text: error };
-    const rendered = lines(
-      harness.host.renderTool("run_agent", {
-        call: { agents: [item("x", "y")] },
-        result,
-        state: { expanded: true },
-        width: 80,
-      }).result ?? "",
-    );
-    const body = rendered.slice(1);
-
-    expect(body.length).toBeGreaterThan(2);
-    expect(body[0]?.startsWith("  ⎿  ")).toBe(true);
-    expect(body.slice(1).every((line) => line.startsWith("     "))).toBe(true);
-    expect(body.map((line) => line.slice(5)).join("")).toBe(error);
   });
 });

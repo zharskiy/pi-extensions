@@ -1,13 +1,12 @@
 import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import {
-  childRow,
   EXPAND_BINDING,
-  expandHint,
+  expandHintFor,
+  markOf,
   noun,
+  row,
   rowChildren,
   rowText,
-  toolRow,
-  toolState,
 } from "../../../../../core/manager/row.ts";
 import { type RowInput, renderRows } from "../../components/agent-row.ts";
 import type { Plugin } from "../../model/plugin.ts";
@@ -100,15 +99,15 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
   renderShell: "row",
   renderCall: (params, theme, state) => {
     const ids = params.ids && params.ids.length > 0 ? params.ids.join(", ") : "all";
-    const title = (paint: ThemeLike) => `${paint.bold("Agent status")} ${paint.fg("muted", ids)}`;
+    const verb = (paint: ThemeLike) => paint.bold("Agent status");
 
-    return rowText(toolRow({ state: toolState(state), title }), theme);
+    return rowText(row({ mark: markOf(state), title: { verb, target: { text: ids } } }), theme);
   },
   renderResult: (result, state, theme) => {
     const lines = result.text.split("\n");
 
     if (result.isError) {
-      return rowText(childRow({ children: lines.map((line) => (paint) => paint.fg("error", line)) }), theme);
+      return rowText(rowChildren({ children: lines.map((line) => theme.fg("error", line)) }), theme);
     }
 
     const listed = (result.details?.agents.length ?? 0) + (result.details?.unknown.length ?? 0);
@@ -118,13 +117,14 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
     }
 
     if (state.expanded) {
-      return rowText(childRow({ children: lines }), theme);
+      return rowText(rowChildren({ children: lines.map((line) => theme.fg("muted", line)) }), theme);
     }
 
     const count = result.details?.agents.length ?? 0;
-    const hint = (paint: ThemeLike) => expandHint(scope.expandKey(), paint);
+    const summary = `${theme.fg("text", String(count))} ${theme.fg("muted", noun(count, "agent"))}`;
+    const hint = expandHintFor(scope.expandKey());
 
-    return rowText(childRow({ children: [`${count} ${noun(count, "agent")}`], hint }), theme);
+    return rowText(rowChildren({ children: [summary], hint }), theme);
   },
 });
 

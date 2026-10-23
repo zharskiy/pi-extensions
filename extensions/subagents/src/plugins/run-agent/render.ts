@@ -1,23 +1,20 @@
 import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
+import { type ReceiptSegment, receipt, receiptText } from "../../../../../core/manager/format.ts";
 import {
-  CHILD_INDENT,
-  type RowState,
-  TITLE_INDENT,
-  toolRow,
-  toolState,
+  countLine,
+  expandHintFor,
+  failureSuffix,
+  type Mark,
+  type MarkedRow,
+  markOf,
+  NEST,
+  noun,
+  row,
+  TITLE_COLUMN,
 } from "../../../../../core/manager/row.ts";
-import { agentName } from "../../components/agent-row.ts";
-import {
-  elapsedOf,
-  firstLine,
-  formatDuration,
-  formatTokens,
-  formatToolUses,
-  SEP,
-  singleLine,
-  wrapCols,
-} from "../../components/format.ts";
-import { stateToken } from "../../components/state-text.ts";
+import { modelId } from "../../components/agent-row.ts";
+import { agentReceipt, firstLine, SEP, singleLine } from "../../components/format.ts";
+import { stateMark } from "../../components/state-text.ts";
 import {
   type AgentRecord,
   type AgentRegistry,
@@ -38,7 +35,7 @@ export type RunAgentDetails = {
   agents: { id: string; agent: string; description: string; model?: string }[];
 };
 
-export type BlockHints = { manage(): boolean; list(): boolean };
+export type BlockHints = { manage(): boolean; list(): boolean; expandKey?(): string };
 
 type BlockInput = {
   params: RunAgentParams | undefined;
@@ -49,17 +46,15 @@ type BlockInput = {
   hints: BlockHints;
 };
 
-export const BLOCK_WIDTH = 100;
-
-const blockWidth = (width: number) => Math.max(1, Math.min(width, BLOCK_WIDTH));
-
-const CONTINUATION = 3;
-
 const MODEL_MIN_BUDGET = 20;
 
 const DESCRIPTION_MIN = 8;
 
-const agentsWord = (n: number) => (n === 1 ? "agent" : "agents");
+const REASON_MAX = 40;
+
+const REASON_ROWS = 2;
+
+const AGENT_TEXT = NEST + TITLE_COLUMN;
 
 const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
   const first = agents[0]?.agent;
@@ -71,10 +66,11 @@ const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
   return first;
 };
 
-const namedAgents = (agents: { agent?: string }[], n: number) => {
+const nounPhrase = (agents: { agent?: string }[], background: boolean) => {
   const kind = sharedAgent(agents);
+  const words = [background ? "background" : undefined, kind, noun(agents.length, "agent")];
 
-  return kind ? `${kind} ${agentsWord(n)}` : agentsWord(n);
+  return words.filter((word) => word !== undefined).join(" ");
 };
 
 const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
@@ -91,173 +87,271 @@ const cleanupText = (record: AgentRecord) => {
     : undefined;
 };
 
-const statsOf = (totals: AgentRecord, withDuration: boolean) =>
-  [
-    formatToolUses(totals.toolCalls),
-    totals.tokens > 0 ? `${formatTokens(totals.tokens)} tokens` : undefined,
-    withDuration ? formatDuration(elapsedOf(totals, totals.endedAt ?? totals.createdAt)) : undefined,
-  ]
-    .filter((part): part is string => part !== undefined)
-    .join(SEP);
+type Entry = RunAgentDetails["agents"][number];
 
-type Status = { lead: string; leadToken: Parameters<ThemeLike["fg"]>[0]; rest?: string };
+const agentLine = (
+  theme: ThemeLike,
+  cols: number,
+  parts: { name: string; chainIndex: number; description: string; model?: string },
+) => {
+  const suffix = parts.chainIndex > 1 ? ` #${parts.chainIndex}` : "";
+  const head = `${parts.name}${suffix}  `;
+  const description = singleLine(parts.description);
+  const tail = parts.model ? `${SEP}${modelId(parts.model)}` : "";
+  const fits = theme.width(head) + theme.width(description) + theme.width(tail) <= cols;
+  const keepModel = tail !== "" && (fits || cols - theme.width(head) - theme.width(tail) >= MODEL_MIN_BUDGET);
+  const room = Math.max(DESCRIPTION_MIN, cols - theme.width(head) - (keepModel ? theme.width(tail) : 0));
+  const name = `${theme.bold(theme.fg("text", parts.name))}${suffix ? theme.fg("muted", suffix) : ""}`;
+  const model = keepModel ? theme.fg("dim", tail) : "";
 
-const statusOf = (terminal: AgentRecord, totals: AgentRecord, wait: boolean): Status => {
-  const token = stateToken(terminal.state);
-
-  if (terminal.state === "queued") {
-    return { lead: "Queued", leadToken: "muted" };
-  }
-
-  if (terminal.state === "running") {
-    if (terminal.turns === 0 && terminal.toolCalls === 0 && !terminal.activity) {
-      return { lead: "Initializing…", leadToken: "muted" };
-    }
-
-    return wait
-      ? { lead: ["Running", statsOf(totals, false)].join(SEP), leadToken: "muted" }
-      : { lead: "Running in the background", leadToken: "muted" };
-  }
-
-  if (terminal.state === "grace") {
-    return { lead: "Stopping…", leadToken: "muted" };
-  }
-
-  if (terminal.state === "done") {
-    return { lead: "Done", leadToken: token, rest: `${SEP}${statsOf(totals, true)}` };
-  }
-
-  if (terminal.state === "failed") {
-    return { lead: `Failed: ${firstLine(terminal.error ?? "unknown error")}`, leadToken: token };
-  }
-
-  if (terminal.state === "stopped") {
-    return { lead: `Stopped${SEP}${statsOf(totals, true)}`, leadToken: token };
-  }
-
-  return { lead: `Handed off${SEP}${statsOf(totals, true)}`, leadToken: token };
+  return `${name}  ${theme.fg("muted", theme.truncate(description, room))}${model}`;
 };
 
-const statusLine = (
+const withCleanup = (
+  segments: ReceiptSegment[],
+  cleanup: string | undefined,
+  cols: number,
+  theme: ThemeLike,
+) => {
+  const suffix = cleanup ? `${SEP}${cleanup}` : "";
+  const whole = theme.width(segments.map((part) => part.text).join(SEP)) + theme.width(suffix);
+
+  if (!suffix || whole > cols) {
+    return receiptText(segments, cols, theme);
+  }
+
+  return `${receiptText(segments, cols, theme)}${theme.fg("muted", suffix)}`;
+};
+
+const reasonLeads = (reason: string, totals: AgentRecord, cols: number, theme: ThemeLike) => {
+  const time = agentReceipt(totals, 0, { live: false }).find((part) => part.kind === "time");
+  const lead = `${reason}${time ? `${SEP}${time.text}` : ""}`;
+
+  return !reason.includes("\n") && theme.width(reason) <= REASON_MAX && theme.width(lead) <= cols;
+};
+
+const failureLines = (
   terminal: AgentRecord,
   totals: AgentRecord,
-  wait: boolean,
-  theme: ThemeLike,
-  width: number,
-) => {
-  const status = statusOf(terminal, totals, wait);
+  cols: number,
+  input: BlockInput,
+): string[] => {
+  const { theme, state, hints } = input;
+  const reason = (terminal.error ?? "unknown error").trim();
   const cleanup = cleanupText(terminal);
-  const suffix = cleanup ? `${SEP}${cleanup}` : "";
-  const budget = width - CONTINUATION - theme.width(suffix);
-  const lead = theme.truncate(status.lead, budget);
-  const rest = status.rest ? theme.truncate(status.rest, Math.max(0, budget - theme.width(lead))) : "";
-  const painted = `${theme.fg(status.leadToken, lead)}${rest ? theme.fg("dim", rest) : ""}`;
 
-  return suffix ? `${painted}${theme.fg("dim", suffix)}` : painted;
+  if (reasonLeads(reason, totals, cols, theme)) {
+    return [withCleanup(agentReceipt(totals, 0, { live: false, reason }), cleanup, cols, theme)];
+  }
+
+  const wrapped = reason.split("\n").flatMap((line) => theme.wrap(line, Math.max(1, cols)));
+  const hidden = state.expanded ? 0 : Math.max(0, wrapped.length - REASON_ROWS);
+  const shown = hidden > 0 ? wrapped.slice(0, REASON_ROWS) : wrapped;
+  const count =
+    hidden > 0
+      ? [countLine({ hidden, end: "more", noun: "line", key: hints.expandKey?.() }, cols, theme)]
+      : [];
+
+  return [
+    withCleanup(agentReceipt(totals, 0, { live: false }), cleanup, cols, theme),
+    ...shown.map((line) => theme.fg("error", line)),
+    ...count,
+  ];
 };
 
-const nameLine = (
-  connector: string,
-  name: string,
-  description: string,
-  model: string | undefined,
-  theme: ThemeLike,
-  width: number,
+const statusLines = (
+  terminal: AgentRecord,
+  totals: AgentRecord,
+  input: BlockInput,
+  cols: number,
+  wait: boolean,
 ) => {
-  const head = `${connector}${name} (`;
-  const fullTail = model ? `)${SEP}${model}` : ")";
-  const budgetWith = width - theme.width(head) - theme.width(fullTail);
-  const keepModel = model !== undefined && budgetWith >= MODEL_MIN_BUDGET;
-  const tail = keepModel ? fullTail : ")";
-  const budget = Math.max(DESCRIPTION_MIN, width - theme.width(head) - theme.width(tail));
-  const cut = theme.truncate(singleLine(description), budget);
-  const modelPart = keepModel ? theme.fg("dim", `${SEP}${model}`) : "";
+  const { theme } = input;
 
-  return `${connector}${theme.bold(name)} ${theme.fg("muted", `(${cut})`)}${modelPart}`;
+  if (terminal.state === "failed") {
+    return failureLines(terminal, totals, cols, input);
+  }
+
+  const segments = agentReceipt({ ...totals, activity: undefined }, Date.now(), { live: wait });
+
+  return [withCleanup(segments, cleanupText(terminal), cols, theme)];
 };
 
-const agentRows = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
-  const { registry, theme, hints } = input;
+const unavailableRow = (entry: Entry, input: BlockInput, cols: number): MarkedRow => {
+  const { theme, hints } = input;
+  const status = hints.list() ? `Status unavailable${SEP}/agents ${entry.id}` : "Status unavailable";
+  const line = agentLine(theme, cols, { name: entry.agent, chainIndex: 1, ...entry });
 
-  return details.agents.flatMap((entry, index) => {
-    const last = index === details.agents.length - 1;
-    const connector = last ? "└─ " : "├─ ";
-    const continuation = last ? "   " : "│  ";
-    const record = registry.get(entry.id);
+  return { mark: "info", title: `${line}\n${theme.fg("muted", theme.truncate(status, cols))}` };
+};
 
-    if (!record) {
-      return [
-        nameLine(connector, entry.agent, entry.description, entry.model, theme, width),
-        `${continuation}${theme.fg("dim", hints.list() ? `Status unavailable${SEP}/agents ${entry.id}` : "Status unavailable")}`,
-      ];
-    }
+const agentRow = (entry: Entry, input: BlockInput, cols: number, wait: boolean): MarkedRow => {
+  const { registry, theme } = input;
+  const record = registry.get(entry.id);
 
-    const terminal = chainTerminal(registry, record);
-    const totals = chainTotals(chainLinks(registry, terminal));
-    return [
-      nameLine(
-        connector,
-        agentName(terminal),
-        terminal.description,
-        terminal.model ?? entry.model,
-        theme,
-        width,
-      ),
-      `${continuation}${statusLine(terminal, totals, wait, theme, width)}`,
-    ];
+  if (!record) {
+    return unavailableRow(entry, input, cols);
+  }
+
+  const terminal = chainTerminal(registry, record);
+  const totals = chainTotals(chainLinks(registry, terminal));
+  const line = agentLine(theme, cols, {
+    name: terminal.agent,
+    chainIndex: terminal.chainIndex,
+    description: terminal.description,
+    model: terminal.model ?? entry.model,
+  });
+
+  return {
+    mark: stateMark(terminal.state),
+    title: [line, ...statusLines(terminal, totals, input, cols, wait)].join("\n"),
+  };
+};
+
+const terminalsOf = (input: BlockInput, ids: string[]) =>
+  ids.flatMap((id) => {
+    const record = input.registry.get(id);
+
+    return record ? [chainTerminal(input.registry, record)] : [];
+  });
+
+const blockMark = (input: BlockInput, terminals: AgentRecord[]): Mark => {
+  const { state, result } = input;
+
+  if (state.isError || result?.isError) {
+    return "error";
+  }
+
+  if (terminals.length === 0) {
+    return (result?.details?.ids.length ?? 0) > 0 ? "pending" : markOf(state);
+  }
+
+  if (terminals.some((record) => !isClosed(record.state))) {
+    return "pending";
+  }
+
+  if (terminals.some((record) => record.state === "failed")) {
+    return "error";
+  }
+
+  return terminals.every((record) => record.state === "stopped" || record.state === "handoff")
+    ? "stopped"
+    : "success";
+};
+
+const hintText = (hints: BlockHints, short: boolean, theme: ThemeLike) => {
+  const parts = [
+    hints.manage() ? (["↓", "to manage"] as const) : undefined,
+    !short && hints.list() ? (["←", "to list"] as const) : undefined,
+  ].filter((part) => part !== undefined);
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  const inner = parts
+    .map(([key, words]) => `${theme.fg("dim", key)} ${theme.fg("muted", words)}`)
+    .join(theme.fg("muted", ", "));
+
+  return `${theme.fg("muted", "(")}${inner}${theme.fg("muted", ")")}`;
+};
+
+const batchReceipt = (input: BlockInput, ids: string[]): ReceiptSegment[] => {
+  const totals = terminalsOf(input, ids).map((terminal) => chainTotals(chainLinks(input.registry, terminal)));
+  const starts = totals.map((record) => record.startedAt ?? record.createdAt);
+  const ends = totals.map((record) => record.endedAt ?? record.createdAt);
+  const sum = (pick: (record: AgentRecord) => number) =>
+    totals.reduce((acc, record) => acc + pick(record), 0);
+
+  if (totals.length === 0) {
+    return [];
+  }
+
+  return receipt({
+    running: false,
+    elapsedMs: Math.max(...ends) - Math.min(...starts),
+    calls: sum((record) => record.toolCalls),
+    tokens: sum((record) => record.tokens),
+    cost: sum((record) => record.cost),
   });
 };
 
-const errorBlock = (
-  result: ToolResult<RunAgentDetails>,
-  expanded: boolean,
-  theme: ThemeLike,
-  width: number,
-) => {
-  const cols = Math.max(1, width - CHILD_INDENT.length);
-  const reason = expanded
-    ? result.text.split("\n").flatMap((line) => wrapCols(theme, line, cols))
-    : [firstLine(result.text)];
+const outcomeCounts = (terminals: AgentRecord[]) =>
+  [
+    ["stopped", terminals.filter((record) => record.state === "stopped").length],
+    ["handed off", terminals.filter((record) => record.state === "handoff").length],
+  ] as const;
 
-  return toolRow({ state: "error", title: "No agents started", children: reason })(width, theme).join("\n");
-};
+const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number, mark: Mark) => {
+  const { theme, registry, hints } = input;
+  const count = details.agents.length;
+  const words = nounPhrase(details.agents, !wait);
+  const title = `${theme.bold(theme.fg("text", String(count)))} ${theme.fg("text", words)}`;
+  const room = width - TITLE_COLUMN - theme.width(`${count} ${words}`);
+  const terminals = terminalsOf(input, details.ids);
+  const records = details.batchId ? registry.batch(details.batchId) : [];
+  const open = terminals.some((record) => !isClosed(record.state));
 
-const hintText = (hints: BlockHints, short: boolean) => {
-  const parts = [hints.manage() && "↓ to manage", !short && hints.list() && "← to list"].filter(
-    (part): part is string => typeof part === "string",
+  if (open) {
+    const hinted = !wait && records[0]?.callerId === MAIN_CALLER;
+    const hint = hinted
+      ? [hintText(hints, false, theme), hintText(hints, true, theme)].find(
+          (text) => text !== undefined && theme.width(text) + 1 <= room,
+        )
+      : undefined;
+
+    return hint ? `${title} ${hint}` : title;
+  }
+
+  const outcomes =
+    mark === "success"
+      ? outcomeCounts(terminals)
+          .filter(([, n]) => n > 0)
+          .map(([word, n]) => `${n} ${word}`)
+      : [];
+  const lead = outcomes.map((text) => `${SEP}${text}`).join("");
+  const fitted = receiptText(
+    batchReceipt(input, details.ids),
+    Math.max(0, room - theme.width(lead) - SEP.length),
+    theme,
   );
 
-  return parts.length > 0 ? `(${parts.join(SEP)})` : "";
+  return `${title}${theme.fg("muted", lead)}${fitted ? `${theme.fg("muted", SEP)}${fitted}` : ""}`;
 };
 
-const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number) => {
-  const { theme, registry, hints, state } = input;
-  const n = details.agents.length;
-  const named = namedAgents(details.agents, n);
-  const count = theme.bold(String(n));
+const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, width: number) => {
+  const { theme, state, hints } = input;
+  const lines = result.text.split("\n").filter((line) => line.trim() !== "");
+  const reason = firstLine(result.text);
+  const parts = { verb: (paint: ThemeLike) => paint.bold("No agents started") };
+  const suffix =
+    lines.length === 1 ? failureSuffix(reason, { ...parts, mark: "error" }, width, theme) : undefined;
 
-  if (wait) {
-    return `${count} ${named} ${state.isPartial ? "launched" : "finished"}`;
+  if (suffix) {
+    return row({ mark: "error", title: { ...parts, reason: { text: suffix } } })(width, theme);
   }
 
-  const text = `${count} background ${named} launched`;
-  const records = details.batchId ? registry.batch(details.batchId) : [];
-  const hinted = records[0]?.callerId === MAIN_CALLER && records.some((record) => !isClosed(record.state));
-  const full = hinted ? hintText(hints, false) : "";
+  const shown = state.expanded ? lines : [reason];
+  const more = !state.expanded && lines.length > 1 ? expandHintFor(hints.expandKey?.() ?? "") : undefined;
 
-  if (!full) {
-    return text;
-  }
-
-  const fits = theme.width(`${n} background ${named} launched ${full}`) <= width;
-  const hint = fits ? full : hintText(hints, true);
-
-  return hint ? `${text} ${theme.fg("dim", hint)}` : text;
+  return row({
+    mark: "error",
+    title: parts,
+    children: shown.map((line) => theme.fg("error", line)),
+    hint: more,
+  })(width, theme);
 };
 
-const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
-  const { result, state, theme } = input;
-  const width = blockWidth(renderWidth);
+const stoppedBlock = (input: BlockInput, params: RunAgentParams, width: number) => {
+  const { theme } = input;
+  const words = nounPhrase(params.agents, params.wait !== true);
+  const title = `${theme.bold(theme.fg("text", String(params.agents.length)))} ${theme.fg("text", words)}${theme.fg("muted", `${SEP}stopped`)}`;
+
+  return row({ mark: "stopped", title })(width, theme);
+};
+
+const renderBlockAt = (input: BlockInput, width: number): string => {
+  const { result, state, theme, params } = input;
 
   if (!result) {
     return "";
@@ -265,23 +359,27 @@ const renderBlockAt = (input: BlockInput, renderWidth: number): string => {
 
   const details = result.details;
 
+  if (state.aborted && !details?.batchId && params?.agents?.length) {
+    return stoppedBlock(input, params, width).join("\n");
+  }
+
   if ((state.isError || result.isError) && !details?.batchId) {
-    return errorBlock(result, state.expanded, theme, width);
+    return errorBlock(input, result, width).join("\n");
   }
 
   if (!details?.agents) {
     return state.isPartial ? "" : result.text;
   }
 
-  const wait = input.params?.wait === true;
-  const inner = Math.max(1, width - TITLE_INDENT.length);
-  const title = toolRow({
-    state: blockState(input.registry, input.state, result),
-    title: header(input, details, wait, inner),
-  })(width, theme);
-  const rows = agentRows(input, details, wait, inner).map((line) => `${TITLE_INDENT}${line}`);
+  const wait = params?.wait === true;
+  const cols = Math.max(1, width - AGENT_TEXT);
+  const mark = blockMark(input, terminalsOf(input, details.ids));
 
-  return [...title, ...rows].join("\n");
+  return row({
+    mark,
+    title: header(input, details, wait, width, mark),
+    children: details.agents.map((entry) => agentRow(entry, input, cols, wait)),
+  })(width, theme).join("\n");
 };
 
 export const renderBlock = (input: BlockInput) => {
@@ -294,30 +392,4 @@ export const renderBlock = (input: BlockInput) => {
 
     return last.text;
   };
-};
-
-const blockState = (
-  registry: Pick<AgentRegistry, "get">,
-  state: ToolRenderState,
-  result: ToolResult<RunAgentDetails> | undefined,
-): RowState => {
-  if (state.isError || result?.isError) {
-    return "error";
-  }
-
-  const terminals = (result?.details?.ids ?? []).flatMap((id) => {
-    const record = registry.get(id);
-
-    return record ? [chainTerminal(registry, record)] : [];
-  });
-
-  if (terminals.length === 0) {
-    return toolState(state);
-  }
-
-  if (terminals.some((record) => !isClosed(record.state))) {
-    return "pending";
-  }
-
-  return terminals.some((record) => record.state === "failed") ? "error" : "success";
 };

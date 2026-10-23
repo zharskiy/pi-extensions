@@ -205,9 +205,12 @@ describe("agent_status rows", () => {
     const { host } = setup();
 
     expect(host.renderTool("agent_status", { call: { ids: ["a-1", "b-2"] } }).call).toBe(
-      "● Agent status a-1, b-2",
+      "✓ Agent status a-1, b-2",
     );
-    expect(host.renderTool("agent_status", { call: {} }).call).toBe("● Agent status all");
+    expect(host.renderTool("agent_status", { call: {} }).call).toBe("✓ Agent status all");
+    expect(host.renderTool("agent_status", { call: {}, state: { isPartial: true } }).call).toBe(
+      "◌ Agent status all",
+    );
   });
 
   const snapshot = (patch: Partial<AgentSnapshot>): AgentSnapshot => ({
@@ -231,14 +234,14 @@ describe("agent_status rows", () => {
     const result = { text: "a-1: running\nb-2: done", details: details(2) };
 
     expect(host.renderTool("agent_status", { result }).result).toBe(
-      "  ⎿  2 agents (<app.tools.expand> expand)",
+      "  ↳ 2 agents (<app.tools.expand> to expand)",
     );
     expect(
       host.renderTool("agent_status", {
-        result: { text: "", details: { agents: [], unknown: [] } },
+        result: { text: "No agents in this session.", details: { agents: [], unknown: [] } },
         state: { expanded: true },
       }).result,
-    ).toBe("  ⎿  ");
+    ).toBe("  ↳ No agents in this session.");
   });
 
   it("draws one agent row per agent at column 4 when expanded", () => {
@@ -274,7 +277,7 @@ describe("agent_status rows", () => {
       "    gone-1: unknown agent",
     ]);
     expect(host.renderTool("agent_status", { result: { text: "x", details: details(1) } }).result).toBe(
-      "  ⎿  1 agent (<app.tools.expand> expand)",
+      "  ↳ 1 agent (<app.tools.expand> to expand)",
     );
   });
 });

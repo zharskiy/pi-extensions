@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../../../core/manager/format.ts";
-import { childRow, rowText, toolRow, toolState } from "../../../../../core/manager/row.ts";
+import { markOf, row, rowChildren, rowText } from "../../../../../core/manager/row.ts";
 import { errorText } from "../../components/format.ts";
 import type { AgentRegistry, HandoffService } from "../../model/types.ts";
 
@@ -62,17 +62,17 @@ export const handoffTool = (deps: HandoffToolDeps, agentId: string): ToolSpec<Ha
   },
   renderShell: "row",
   renderCall: (_params, theme, state) =>
-    rowText(toolRow({ state: toolState(state), title: (paint) => paint.bold("Handoff") }), theme),
+    rowText(row({ mark: markOf(state), title: { verb: (paint) => paint.bold("Handoff") } }), theme),
   renderResult: (result, _state, theme) => {
     if (result.isError) {
       const lines = result.text.split("\n");
 
-      return rowText(childRow({ children: lines.map((line) => (paint) => paint.fg("error", line)) }), theme);
+      return rowText(rowChildren({ children: lines.map((line) => theme.fg("error", line)) }), theme);
     }
 
     const path = deps.registry.get(agentId)?.handoffPath;
     const saved = path ? `Saved ${homeRelative(path, homedir())}` : result.text;
 
-    return rowText(childRow({ children: [saved] }), theme);
+    return rowText(rowChildren({ children: [theme.fg("muted", saved)] }), theme);
   },
 });

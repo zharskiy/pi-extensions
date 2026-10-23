@@ -1199,20 +1199,20 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" 2 background scout agents launched");
+    expect(shown).toContain(" ◌ 2 background scout agents");
     expect(shown).not.toContain("to manage");
     expect(shown).not.toContain("to list");
-    expect(shown).toContain("scout (find callers)");
-    expect(shown).toContain("scout (find tests)");
-    expect(shown).toContain("Initializing…");
+    expect(shown).toContain("scout  find callers");
+    expect(shown).toContain("scout  find tests");
+    expect(shown).toContain("Starting");
   });
 
   it("draws a waiting nested call while its batch runs and its final block once the result is written", async () => {
     const { harness, running, nested, show, text } = await nestedSetup(true);
     const live = await text();
 
-    expect(live()).toContain(" 2 scout agents launched");
-    expect(live()).toContain("Initializing…");
+    expect(live()).toContain(" ◌ 2 scout agents");
+    expect(live()).toContain("Starting");
 
     nested.forEach((record) => {
       harness.runtime.child(record.id).finish(`${record.id} done`);
@@ -1221,15 +1221,15 @@ describe("agent view nested run_agent calls", () => {
     const result = await running;
 
     await flush();
-    expect(live()).toContain(" 2 scout agents launched");
-    expect(live()).toContain("Done · 0 tool uses");
+    expect(live()).toContain(" ✓ 2 scout agents · 0s");
+    expect(live()).toContain("✓ scout  find callers");
 
     show(nestedSession({ ...ARGS, wait: true }, result), "written");
 
     const final = (await text())();
 
-    expect(final).toContain(" 2 scout agents finished");
-    expect(final).toContain("Done · 0 tool uses");
+    expect(final).toContain(" ✓ 2 scout agents · 0s");
+    expect(final).toContain("✓ scout  find tests");
   });
 
   it("draws the live block when the saved arguments carry a null optional field", async () => {
@@ -1239,8 +1239,8 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" 2 background scout agents launched");
-    expect(shown).toContain("Initializing…");
+    expect(shown).toContain(" ◌ 2 background scout agents");
+    expect(shown).toContain("Starting");
   });
 });
 

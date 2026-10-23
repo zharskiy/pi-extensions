@@ -1,5 +1,5 @@
 import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
-import { rowText, toolRow } from "../../../../../core/manager/row.ts";
+import { failureSuffix, row, type TitleParts } from "../../../../../core/manager/row.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,
@@ -312,15 +312,16 @@ export const messageAgentTool = (
     }
 
     const id = String((state.args as MessageAgentParams | undefined)?.id ?? "");
-    const error = result.text.replace(/^Error:\s*/, "");
+    const error = result.text.replace(/^Error:\s*/, "").trim();
+    const parts: TitleParts = { mark: "error", verb: (paint) => paint.bold("Message"), target: { text: id } };
 
-    return rowText(
-      toolRow({
-        state: "error",
-        title: (paint) => `Message ${paint.bold(id)}`,
-        children: [(paint) => paint.fg("error", error)],
-      }),
-      theme,
-    );
+    return (width: number) => {
+      const suffix = failureSuffix(error, parts, width, theme);
+      const spec = suffix
+        ? { mark: parts.mark, title: { ...parts, reason: { text: suffix } } }
+        : { mark: parts.mark, title: parts, children: [theme.fg("error", error)] };
+
+      return row(spec)(width, theme).join("\n");
+    };
   },
 });

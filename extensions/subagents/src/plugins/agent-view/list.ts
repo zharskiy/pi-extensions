@@ -134,7 +134,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     );
   };
 
-  const bodyLine = (index: number, width: number, inner: number, now: number, layout?: RowLayout) => {
+  const bodyLine = (index: number, inner: number, layout?: RowLayout) => {
     const theme = api.theme;
     const slot = slots[index];
 
@@ -183,7 +183,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     const start = scroll.state().top;
     const now = Date.now();
     const layout = rows.length > 0 ? rowLayout(rows, now, inner + PAD.length, api.theme) : undefined;
-    const body = window.map((_, offset) => bodyLine(start + offset, width, inner, now, layout));
+    const body = window.map((_, offset) => bodyLine(start + offset, inner, layout));
     const padding = Array.from({ length: height - body.length }, () => "");
 
     return ["", titleLine(inner), "", ...body, ...padding, "", ...footer, ""];

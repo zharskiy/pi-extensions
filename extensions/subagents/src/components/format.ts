@@ -49,7 +49,9 @@ const receiptFacts = (record: ReceiptRecord, now: number, options: ReceiptOption
   }
 
   if (record.state === "grace") {
-    return { word, running: true, elapsedMs: elapsedOf(record, now) };
+    return options.live
+      ? { word, running: true, elapsedMs: elapsedOf(record, now) }
+      : { word, running: false };
   }
 
   if (record.state === "running") {
