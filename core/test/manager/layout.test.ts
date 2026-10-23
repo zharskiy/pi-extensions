@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../adapter/contract.ts";
-import { hintLines, padded, prefixed, rule } from "../../manager/layout.ts";
+import { hintLines, keyHints, padded, prefixed, rule } from "../../manager/layout.ts";
 import { plainTheme } from "../helpers/fakes.ts";
 
 const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
@@ -33,5 +33,19 @@ describe("hintLines", () => {
   it("joins the hints with a dot in the dim colour", () => {
     expect(hintLines(plainTheme, ["Enter save", "Esc back"], 40)).toEqual([" Enter save · Esc back"]);
     expect(hintLines(tagged, ["Enter save"], 40)[0]).toContain("<dim>Enter save");
+  });
+});
+
+describe("keyHints", () => {
+  it("joins key-to-verb pairs with keys dim, words muted and a dim dot", () => {
+    const pairs = [
+      ["enter", "to view"],
+      ["x", "to stop"],
+    ] as const;
+
+    expect(keyHints(pairs, plainTheme)).toBe("enter to view · x to stop");
+    expect(keyHints(pairs, tagged)).toBe(
+      "<dim>enter</> <muted>to view</><dim> · </><dim>x</> <muted>to stop</>",
+    );
   });
 });

@@ -18,3 +18,8 @@ export const padded = (theme: ThemeLike, text: string, width: number) => prefixe
 
 export const hintLines = (theme: ThemeLike, hints: readonly string[], width: number) =>
   padded(theme, theme.fg("dim", hints.join(DOT)), width);
+
+export const keyHints = (pairs: readonly (readonly [key: string, words: string])[], theme: ThemeLike) =>
+  pairs
+    .map(([key, words]) => `${theme.fg("dim", key)} ${theme.fg("muted", words)}`)
+    .join(theme.fg("dim", DOT));
