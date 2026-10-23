@@ -126,15 +126,15 @@ describe("/agents setup form", () => {
     const list = lines.slice(lines.indexOf(" Skills") + 1);
 
     expect(list.slice(0, 3)).toEqual([
-      " › [ ] review  Reviews diffs for…",
+      " › [ ] review  Reviews diffs f...",
       "   [ ] docs  Writes docs",
-      "   [ ] search  Searches the web …",
+      "   [ ] search  Searches the we...",
     ]);
     expect(list.slice(3, 8)).toEqual([
       "",
       " Reviews diffs for correctness,",
       " missing tests, risky changes and",
-      " unclear naming, then reports ev…",
+      " unclear naming, then reports ...",
       "",
     ]);
 

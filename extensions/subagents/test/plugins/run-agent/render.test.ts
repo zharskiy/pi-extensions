@@ -379,7 +379,7 @@ describe("run_agent block", () => {
     const failed = status()[2];
 
     expect(plainTheme.width(failed)).toBeLessThanOrEqual(BLOCK_WIDTH);
-    expect(failed.endsWith("…")).toBe(true);
+    expect(failed.endsWith("...")).toBe(true);
   });
 
   it("appends the worktree outcome to closed rows", async () => {
@@ -443,7 +443,7 @@ describe("run_agent block", () => {
     const row = lines(renderResult(harness, result, { agents: long }))[1];
 
     expect(plainTheme.width(row)).toBeLessThanOrEqual(BLOCK_WIDTH);
-    expect(row).toMatch(/d…\) · \S+\/\S+:\w+$/);
+    expect(row).toMatch(/d\.\.\.\) · \S+\/\S+:\w+$/);
 
     const rebuilt = runAgentTool(
       toolDeps(harness.runner, createRegistry({ bus: harness.bus, handoffPath: (id) => id })),
@@ -465,7 +465,7 @@ describe("run_agent block", () => {
       ),
     )[1];
 
-    expect(crowded.endsWith("…)")).toBe(true);
+    expect(crowded.endsWith("...)")).toBe(true);
     expect(crowded).not.toContain("fake/model");
     expect(plainTheme.width(crowded)).toBeLessThanOrEqual(BLOCK_WIDTH);
 
@@ -883,11 +883,11 @@ describe("run_agent block width", () => {
     const at = (width: number) =>
       lines(harness.host.renderTool("run_agent", { call: { agents }, result, width }).result ?? "")[1];
 
-    expect(at(80).endsWith(`…) · ${model}`)).toBe(true);
+    expect(at(80).endsWith(`...) · ${model}`)).toBe(true);
     expect(plainTheme.width(at(80))).toBe(79);
     expect(at(120)).toBe(`  └─ scout (${"d".repeat(60)}) · ${model}`);
     expect(at(50)).not.toContain(model);
-    expect(at(50).endsWith("…)")).toBe(true);
+    expect(at(50).endsWith("...)")).toBe(true);
     expect(plainTheme.width(at(50))).toBeLessThanOrEqual(49);
     expect(plainTheme.width(at(200))).toBeLessThanOrEqual(BLOCK_WIDTH);
   });

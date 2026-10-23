@@ -36,7 +36,7 @@ describe("toolRow", () => {
     const lines = toolRow({ state: "success", title: "x".repeat(50) })(20, plainTheme);
 
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.endsWith("…")).toBe(true);
+    expect(lines[0]?.endsWith("...")).toBe(true);
     expect(plainTheme.width(lines[0] ?? "")).toBe(20);
   });
 
@@ -70,7 +70,7 @@ describe("toolRow", () => {
   it("drops the hint rather than cut the line it follows", () => {
     const [line] = toolRow({ state: "success", title: "y".repeat(60), hint: "(k expand)" })(40, plainTheme);
 
-    expect(line).toBe(`● ${"y".repeat(37)}…`);
+    expect(line).toBe(`● ${"y".repeat(35)}...`);
     expect(plainTheme.width(line ?? "")).toBe(40);
   });
 

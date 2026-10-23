@@ -57,18 +57,18 @@ describe("diff rows", () => {
   });
 
   it("truncates long lines at the width with an ellipsis instead of wrapping", () => {
-    expect(rows("+1 abcdefghijklmnop", 10, plainTheme)).toEqual(["1 + abcde…"]);
-    expect(rows(" 1 abcdefghijklmnop", 10, plainTheme)).toEqual(["1   abcde…"]);
+    expect(rows("+1 abcdefghijklmnop", 10, plainTheme)).toEqual(["1 + abc..."]);
+    expect(rows(" 1 abcdefghijklmnop", 10, plainTheme)).toEqual(["1   abc..."]);
     expect(rows("-1 let total = 1;\n+1 let total = 2;", 12, plainTheme)).toEqual([
-      "1 - let tot…",
-      "1 + let tot…",
+      "1 - let t...",
+      "1 + let t...",
     ]);
   });
 
   it("keeps the ellipsis when the cut lands right after a changed word", () => {
-    expect(rows("-1 ab cde f\n+1 ab cdx f", 10)).toEqual([
-      "<bg:removed>1 <error>-</> ab </bg><bg:removedWord>cd…</bg>",
-      "<bg:added>1 <success>+</> ab </bg><bg:addedWord>cd…</bg>",
+    expect(rows("-1 ab cdefg h\n+1 ab cdxfg h", 12)).toEqual([
+      "<bg:removed>1 <error>-</> ab </bg><bg:removedWord>cd...</bg>",
+      "<bg:added>1 <success>+</> ab </bg><bg:addedWord>cd...</bg>",
     ]);
   });
 
@@ -79,7 +79,7 @@ describe("diff rows", () => {
     expect(old).toContain("<bg:removedWord>😀</bg>");
     expect(now).toContain("<bg:addedWord>😃</bg>");
     expect([old, now].some((row) => /\p{Cs}/u.test(row ?? ""))).toBe(false);
-    expect(cjk).toBe("1 + 日本… ");
+    expect(cjk).toBe("1 + 日... ");
     expect(plainTheme.width(cjk ?? "")).toBe(10);
   });
 

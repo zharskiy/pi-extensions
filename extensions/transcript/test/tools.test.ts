@@ -116,7 +116,7 @@ describe("call titles", () => {
   it("summarises an unknown tool by its bold name and up to three arguments", () => {
     const mcp = draw(view("notes_search", { query: "a\nb", limit: 2, deep: true, extra: "x" }));
 
-    expect(mcp.call).toEqual(["● notes_search query: a…, limit: 2, deep: true"]);
+    expect(mcp.call).toEqual(["● notes_search query: a..., limit: 2, deep: true"]);
     expect(mcp.bolded).toContain("notes_search");
   });
 
@@ -124,7 +124,7 @@ describe("call titles", () => {
     const [line, ...rest] = draw(view("bash", { command: "x".repeat(100) }), 30).call;
 
     expect(rest).toEqual([]);
-    expect(line?.endsWith("…")).toBe(true);
+    expect(line?.endsWith("...")).toBe(true);
   });
 });
 

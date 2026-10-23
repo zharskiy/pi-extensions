@@ -335,7 +335,7 @@ const valueText = (value: unknown) => {
   const [first = ""] = text.split("\n");
   const cut = first.length > MAX_VALUE ? first.slice(0, MAX_VALUE) : first;
 
-  return cut === text ? text : `${cut}…`;
+  return cut === text ? text : `${cut}...`;
 };
 
 const pairs = (args: Args) =>

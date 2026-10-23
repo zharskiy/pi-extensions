@@ -25,7 +25,7 @@ const ESC = "\x1b";
 export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
   width: visibleWidth,
   truncate: (text, cols) => {
-    const cut = truncateToWidth(text, cols, "…");
+    const cut = truncateToWidth(text, cols, "...");
 
     return text.includes(ESC) ? cut : stripVTControlCharacters(cut);
   },
@@ -33,7 +33,7 @@ export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
 };
 
 export const fitLines = (lines: string[], width: number) =>
-  lines.map((line) => truncateToWidth(line, width, "…"));
+  lines.map((line) => truncateToWidth(line, width, "..."));
 
 const PI_COLORS = {
   accent: "accent",
@@ -50,11 +50,19 @@ const PI_COLORS = {
   number: "syntaxNumber",
   type: "syntaxType",
   heading: "mdHeading",
+  thinkingOff: "thinkingOff",
+  thinkingMinimal: "thinkingMinimal",
+  thinkingLow: "thinkingLow",
+  thinkingMedium: "thinkingMedium",
+  thinkingHigh: "thinkingHigh",
+  thinkingXhigh: "thinkingXhigh",
 } as const satisfies Record<ThemeToken, Parameters<Theme["fg"]>[0]>;
 
 export const piColor = (token: ThemeToken) => PI_COLORS[token];
 
 const WORD_MIX = 0.4;
+
+const NO_BG = "\x1b[49m";
 
 const LINE_BGS = { added: "toolSuccessBg", removed: "toolErrorBg" } as const;
 
@@ -77,6 +85,11 @@ export const themeLike = (theme: Theme): ThemeLike => ({
   fg: (token, text) => theme.fg(piColor(token), text),
   bg: (token, text) => theme.style(text, { bg: piBg(theme, token) }),
   bold: (text) => theme.bold(text),
+  italic: (text) => theme.italic(text),
+  inverse: (text) => theme.inverse(text),
+  get panels() {
+    return theme.getBgAnsi("toolSuccessBg") !== NO_BG;
+  },
   ...textMetrics,
 });
 

@@ -92,21 +92,21 @@ const cases: Case[] = [
     input: row(grepping),
     now: 65_000,
     width: 62,
-    expected: "   ⠋ explorer  Map the auth …  grep · 12.3k tokens · 1m 5s",
+    expected: "   ⠋ explorer  Map the aut...  grep · 12.3k tokens · 1m 5s",
   },
   {
     name: "drops the activity, then the tokens, when the description would fall below 12 columns",
     input: row(grepping),
     now: 65_000,
     width: 40,
-    expected: "   ⠋ explorer  Map the aut…  1m 5s",
+    expected: "   ⠋ explorer  Map the a...  1m 5s",
   },
   {
     name: "drops the elapsed too and keeps the description",
     input: row(grepping),
     now: 65_000,
     width: 32,
-    expected: "   ⠋ explorer  Map the auth mo…",
+    expected: "   ⠋ explorer  Map the auth ...",
   },
   {
     name: "drops the activity when it does not fit after the info column",
@@ -114,7 +114,7 @@ const cases: Case[] = [
     now: 65_000,
     layout: { nameCols: 9, infoAt: 33, modelCols: 0 },
     width: 59,
-    expected: "   ⠋ explorer   Map the auth modu…  12.3k tokens · 1m 5s",
+    expected: "   ⠋ explorer   Map the auth mo...  12.3k tokens · 1m 5s",
   },
   {
     name: "shows queued as the status word",
@@ -128,7 +128,7 @@ const cases: Case[] = [
     input: row(queued),
     now: 65_000,
     width: 32,
-    expected: "   ○ worker  Rename pa…  queued",
+    expected: "   ○ worker  Rename ...  queued",
   },
   {
     name: "shows done with the duration",
@@ -142,7 +142,7 @@ const cases: Case[] = [
     input: row(done),
     now: 99_000,
     width: 32,
-    expected: "   ✓ explorer  Map the a…  done",
+    expected: "   ✓ explorer  Map the...  done",
   },
   {
     name: "shows the tokens of a closed row between its status word and the duration",
@@ -305,7 +305,7 @@ describe("agent row", () => {
     const line = renderRow(long, 99_000, 200, plainTheme, layout);
 
     expect(layout.infoAt).toBe(14 + 48);
-    expect(line).toBe(`   ✓ explorer  ${"d".repeat(47)}…  done · 1m 5s`);
+    expect(line).toBe(`   ✓ explorer  ${"d".repeat(45)}...  done · 1m 5s`);
   });
 
   it("moves the info column left to keep 30 columns for running stats on a narrow terminal", () => {
@@ -316,8 +316,8 @@ describe("agent row", () => {
     expect(layout.infoAt).toBe(60 - 2 - 30);
     expect(infoStart(lines[0], "grep")).toBe(infoStart(lines[1], "done"));
     expect(lines).toEqual([
-      "   ⠋ explorer  Map the auth …  grep · 12.3k tokens · 1m 5s",
-      "   ✓ explorer  Map the auth …  done · 1m 5s",
+      "   ⠋ explorer  Map the aut...  grep · 12.3k tokens · 1m 5s",
+      "   ✓ explorer  Map the aut...  done · 1m 5s",
     ]);
   });
 
@@ -350,7 +350,7 @@ describe("agent row", () => {
 
     expect(lines).toEqual([
       "   ⠋ explorer (+1)  Map the auth module       123.5k tokens · 5s",
-      "   │  │  │  └─ ⠋ explorer       Map the aut…  ls · 10 tokens · 5s",
+      "   │  │  │  └─ ⠋ explorer       Map the a...  ls · 10 tokens · 5s",
     ]);
     expect(infoStart(lines[0], "123.5k")).toBe(infoStart(lines[1], "ls"));
   });
@@ -491,12 +491,12 @@ describe("agent row", () => {
         160,
       );
 
-      expect(modelLabel(plainTheme, long, 32)).toBe("acme/model-large-extended-…:high");
-      expect(line).toContain("acme/model-large-extended-…:high  grep");
+      expect(modelLabel(plainTheme, long, 32)).toBe("acme/model-large-extende...:high");
+      expect(line).toContain("acme/model-large-extende...:high  grep");
     });
 
     it("cuts the end of a long model without a suffix", () => {
-      expect(modelLabel(plainTheme, "acme/".padEnd(40, "x"), 10)).toBe("acme/xxxx…");
+      expect(modelLabel(plainTheme, "acme/".padEnd(40, "x"), 10)).toBe("acme/xx...");
       expect(modelLabel(plainTheme, "acme/x:high", 32)).toBe("acme/x:high");
     });
 

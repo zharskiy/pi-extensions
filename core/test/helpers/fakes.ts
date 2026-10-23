@@ -51,6 +51,9 @@ export const plainTheme: ThemeLike = {
   fg: (_token, text) => text,
   bg: (_token, text) => text,
   bold: (text) => text,
+  italic: (text) => text,
+  inverse: (text) => text,
+  panels: true,
   ...textMetrics,
 };
 

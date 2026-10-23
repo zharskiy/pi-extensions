@@ -68,7 +68,7 @@ export class RowComponent implements Component {
     const shown = body ? bodyLines(body, width - pad - CHILD_COLUMNS) : [];
     const hung = shown.map((line, index) => `${index === 0 ? first : indent}${line}`);
 
-    return [...own, ...hung].map((line) => truncateToWidth(line, width, "…"));
+    return [...own, ...hung].map((line) => truncateToWidth(line, width, "..."));
   }
 
   private own(lines: RowParts["lines"], width: number) {

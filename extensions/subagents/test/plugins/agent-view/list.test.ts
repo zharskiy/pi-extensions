@@ -89,7 +89,7 @@ describe("agents list", () => {
 
     const { lines } = await harness.openList(40, 14, recordingTheme);
 
-    expect(lines()[1]).toBe(" <b>Agents</b><dim> · 2 …</>");
+    expect(lines()[1]).toBe(" <b>Agents</b><dim> · ...</>");
   });
 
   it("shows the sections, headers, rows and subtitle", async () => {

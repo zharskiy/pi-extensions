@@ -25,7 +25,7 @@ export const elapsedOf = (
 ): number => (record.endedAt ?? now) - (record.startedAt ?? record.createdAt);
 
 export const cutChars = (text: string, limit: number): string =>
-  text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
+  text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 3))}...`;
 
 type Painted = readonly [text: string, paint: (text: string) => string];
 

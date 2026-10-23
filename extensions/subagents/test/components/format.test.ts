@@ -17,9 +17,9 @@ describe("format helpers", () => {
   });
 
   it("cuts by characters with a trailing ellipsis", () => {
-    expect(cutChars("Map the auth module", 8)).toBe("Map the…");
+    expect(cutChars("Map the auth module", 8)).toBe("Map t...");
     expect(cutChars("short", 10)).toBe("short");
-    expect(cutChars("x", 0)).toBe("…");
+    expect(cutChars("x", 0)).toBe("...");
   });
 
   it("aligns right inside the given columns", () => {
@@ -40,8 +40,8 @@ describe("format helpers", () => {
     ] as const;
 
     expect(truncatePainted(plainTheme, parts, 40)).toBe("<b>Agents</b><dim> · 3 running</dim>");
-    expect(truncatePainted(plainTheme, parts, 10)).toBe("<b>Agents</b><dim> · …</dim>");
-    expect(truncatePainted(plainTheme, parts, 4)).toBe("<b>Age…</b>");
+    expect(truncatePainted(plainTheme, parts, 10)).toBe("<b>Agents</b><dim> ...</dim>");
+    expect(truncatePainted(plainTheme, parts, 4)).toBe("<b>A...</b>");
   });
 
   it("wraps at the column budget with at least one character per piece and whole wide characters", () => {

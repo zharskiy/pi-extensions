@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import {
   initTheme,
@@ -238,8 +241,8 @@ describe("toPiTool row shell", () => {
       .map(stripVTControlCharacters);
 
     expect(widths).toEqual([29, 30]);
-    expect(padded).toEqual([` ● probe ${"x".repeat(20)}…`]);
-    expect(flush).toEqual([`● probe ${"x".repeat(21)}…`]);
+    expect(padded).toEqual([` ● probe ${"x".repeat(18)}...`]);
+    expect(flush).toEqual([`● probe ${"x".repeat(19)}...`]);
     expect(tool.renderResult(piResult("x"), options, theme, context()).render(30)).toEqual([]);
   });
 
@@ -290,6 +293,56 @@ describe("themeLike colours", () => {
       "<mdHeading>x",
     ]);
   });
+
+  it("paints the thinking-level tokens with pi's thinking colours", () => {
+    const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
+    const like = themeLike(recording);
+    const levels = ["Off", "Minimal", "Low", "Medium", "High", "Xhigh"] as const;
+
+    expect(levels.map((level) => like.fg(`thinking${level}`, "x"))).toEqual(
+      levels.map((level) => `<thinking${level}>x`),
+    );
+  });
+
+  it("styles italic and inverse text through pi's theme", async () => {
+    const live = await themeModule();
+    const like = themeLike(live.theme);
+
+    expect(like.italic("x")).toBe(live.theme.italic("x"));
+    expect(like.inverse("x")).toBe(live.theme.inverse("x"));
+  });
+});
+
+const themeModule = async () =>
+  (await import(
+    new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+  )) as { theme: Theme; loadThemeFromPath(path: string, mode: string): Theme };
+
+describe("themeLike panels", () => {
+  const withSuccessBg = async (value: string) => {
+    const { loadThemeFromPath } = await themeModule();
+    const source = new URL(
+      "modes/interactive/theme/dark.json",
+      import.meta.resolve("@earendil-works/pi-coding-agent"),
+    );
+    const json = JSON.parse(readFileSync(source, "utf8"));
+    const file = join(mkdtempSync(join(tmpdir(), "pi-theme-")), "probe.json");
+
+    writeFileSync(
+      file,
+      JSON.stringify({ ...json, name: "probe", colors: { ...json.colors, toolSuccessBg: value } }),
+    );
+
+    return themeLike(loadThemeFromPath(file, "truecolor"));
+  };
+
+  it("reports panels when the tool success background has a colour", async () => {
+    expect((await withSuccessBg("#103010")).panels).toBe(true);
+  });
+
+  it("reports no panels when the tool success background is the terminal default", async () => {
+    expect((await withSuccessBg("")).panels).toBe(false);
+  });
 });
 
 describe("themeLike backgrounds", () => {
@@ -335,16 +388,18 @@ describe("themeLike text metrics", () => {
     expect(like.width("日本")).toBe(visibleWidth("日本"));
     expect(like.width("a\tb")).toBe(visibleWidth("a\tb"));
     expect(like.width("🚀 \x1b[31mab\x1b[0m")).toBe(visibleWidth("🚀 \x1b[31mab\x1b[0m"));
-    expect(like.truncate("Map the auth module", 8)).toBe("Map the…");
-    expect(like.truncate("日本語テキスト", 5)).toBe("日本…");
+    expect(like.truncate("Map the auth module", 8)).toBe("Map t...");
+    expect(like.truncate("日本語テキスト", 5)).toBe("日...");
     expect(like.truncate("short", 10)).toBe("short");
     expect(like.truncate("x", 0)).toBe("");
+    expect(like.truncate("Map the auth module", 12).endsWith("...")).toBe(true);
+    expect(like.truncate("Map the auth module", 12)).not.toContain("…");
   });
 
   it("keeps pi's resets around the ellipsis of a painted line", () => {
     const painted = "\x1b[31mMap the auth module\x1b[0m";
 
-    expect(themeLike(theme).truncate(painted, 8)).toBe(truncateToWidth(painted, 8, "…"));
+    expect(themeLike(theme).truncate(painted, 8)).toBe(truncateToWidth(painted, 8, "..."));
   });
 
   it("wraps with pi-tui at word boundaries and keeps at least one column", () => {

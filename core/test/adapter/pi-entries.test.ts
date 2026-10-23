@@ -36,7 +36,7 @@ describe("entryHost", () => {
     );
 
     expect(component?.render(12).map((line) => stripVTControlCharacters(line))).toEqual([
-      " syntaxKeyw…",
+      " syntaxKe...",
       " ok",
     ]);
     expect(seen).toEqual([{ data: { a: 1 }, width: 11, expanded: true }]);
@@ -69,8 +69,8 @@ describe("entryHost", () => {
         ?.render(12)
         .map((line) => stripVTControlCharacters(line));
 
-    expect(render(1)).toEqual([" ● Handoff", ` ${"x".repeat(10)}…`]);
-    expect(render(0)).toEqual(["● Handoff", `${"x".repeat(11)}…`]);
+    expect(render(1)).toEqual([" ● Handoff", ` ${"x".repeat(8)}...`]);
+    expect(render(0)).toEqual(["● Handoff", `${"x".repeat(9)}...`]);
     expect(seen[0]).toEqual({ message: { text: "seed", details: { a: 1 } }, width: 11, expanded: false });
   });
 });

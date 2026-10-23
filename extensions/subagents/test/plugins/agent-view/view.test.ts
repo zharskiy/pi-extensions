@@ -460,8 +460,8 @@ describe("agent view header", () => {
   it("keeps the glyph colour and the bold name when line 1 is cut below 8 columns of description", () => {
     const record = base({ state: "done", endedAt: 0 });
 
-    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b> › …");
-    expect(header(record, recordingTheme, 8)[0]).toBe(" <success>✓</> <b>exp…</b>");
+    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b> ...");
+    expect(header(record, recordingTheme, 8)[0]).toBe(" <success>✓</> <b>e...</b>");
   });
 
   it("names the agent and the description on line 1 and the id only on line 2", () => {
@@ -493,7 +493,7 @@ describe("agent view header", () => {
       expect(line.startsWith(" ")).toBe(true);
       expect(plainTheme.width(line)).toBeLessThanOrEqual(39);
     });
-    expect(lines[0]).toMatch(/ › d{8,}…$/);
+    expect(lines[0]).toMatch(/ › d{6,}\.\.\.$/);
     expect(lines.at(-1)).toBe(RULE(40));
   });
 
@@ -562,7 +562,7 @@ describe("agent view hint", () => {
     const narrow = viewOf(fixture(), { record: agentRecord({ id: "explorer-1" }), width: 40 });
     const hintLine = narrow.lines().at(-2) ?? "";
 
-    expect(hintLine).toBe(" esc to close · x to stop · r request …");
+    expect(hintLine).toBe(" esc to close · x to stop · r reques...");
     expect(plainTheme.width(hintLine)).toBe(39);
 
     const items = Array.from({ length: 900 }, (_, index) => ({

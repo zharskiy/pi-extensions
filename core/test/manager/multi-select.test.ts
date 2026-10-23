@@ -75,7 +75,7 @@ describe("multiLines", () => {
     ];
     const lines = multiLines(plainTheme, options, initialMulti(2), 30);
 
-    expect(lines).toEqual([" › [ ] review  Reviews diffs …", "   [ ] plan  short"]);
+    expect(lines).toEqual([" › [ ] review  Reviews diff...", "   [ ] plan  short"]);
   });
 
   it("still wraps a name that alone is wider than the row", () => {

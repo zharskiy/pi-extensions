@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
@@ -261,6 +262,11 @@ describe("pi adapter conformance", () => {
       expect(ui.filter((name) => typeof Reflect.get(seen.ui ?? {}, name) !== "function")).toEqual([]);
       expect(typeof seen.api?.getSettings()).toBe("object");
       expect(Reflect.has(seen.ui ?? {}, "theme")).toBe(true);
+      expect(
+        ["getBgAnsi", "italic", "inverse"].filter(
+          (name) => typeof Reflect.get(pi.Theme.prototype, name) !== "function",
+        ),
+      ).toEqual([]);
       expect(typeof probe?.sourceInfo.path).toBe("string");
       expect(probe?.exposure).toBe("model-only");
 
@@ -268,6 +274,13 @@ describe("pi adapter conformance", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("cuts with the ASCII ellipsis inside the width", () => {
+    const cut = tui.truncateToWidth("Map the auth module", 10, "...");
+
+    expect(tui.visibleWidth(cut)).toBe(10);
+    expect(stripVTControlCharacters(cut)).toBe("Map the...");
   });
 
   it("names only assistant event types pi has", () => {

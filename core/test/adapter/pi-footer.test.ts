@@ -80,7 +80,7 @@ describe("setFooter", () => {
       mountWidget()
         ?.render(6)
         .map((line) => line.replace(ANSI, "")),
-    ).toEqual(["main v", "01234…"]);
+    ).toEqual(["main v", "012..."]);
   });
 
   it("paints the ellipsis with the current theme on each render", () => {
@@ -95,8 +95,8 @@ describe("setFooter", () => {
 
     const [line = ""] = component?.render(6) ?? [];
 
-    expect(line).toContain("\x1b[2m…");
-    expect(line.replace(ANSI, "")).toBe("01234…");
+    expect(line).toContain("\x1b[2m...");
+    expect(line.replace(ANSI, "")).toBe("012...");
   });
 
   it("re-renders on refresh and branch changes without setting the widget again, and unsubscribes on dispose", () => {

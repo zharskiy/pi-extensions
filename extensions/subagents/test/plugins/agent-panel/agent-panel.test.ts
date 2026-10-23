@@ -595,7 +595,7 @@ describe("agent panel", () => {
       expect(drawn.at(-1)).toBe("");
     });
 
-    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop ·…");
+    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop...");
   });
 
   it("degrades without agent-view and run-agent", () => {

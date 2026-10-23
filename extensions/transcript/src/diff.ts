@@ -82,6 +82,8 @@ const paired = (lines: DiffLine[]): Line[] => {
   return lines.map((line) => ({ ...line, spans: spans.get(line) }));
 };
 
+const ELLIPSIS = "...";
+
 const fitSpans = (spans: Span[], room: number, theme: ThemeLike): Span[] => {
   const plain = spans.map((span) => span.text).join("");
   const cut = theme.truncate(plain, room);
@@ -90,7 +92,8 @@ const fitSpans = (spans: Span[], room: number, theme: ThemeLike): Span[] => {
     return spans;
   }
 
-  const kept = cut.endsWith("…") ? cut.slice(0, -1) : cut;
+  const kept = cut.endsWith(ELLIPSIS) ? cut.slice(0, -ELLIPSIS.length) : "";
+  const tail = cut.slice(kept.length);
   const ends = spans.reduce<number[]>((all, span) => {
     all.push((all[all.length - 1] ?? 0) + span.text.length);
 
@@ -106,8 +109,8 @@ const fitSpans = (spans: Span[], room: number, theme: ThemeLike): Span[] => {
   const last = sliced[sliced.length - 1];
 
   return last
-    ? [...sliced.slice(0, -1), { ...last, text: `${last.text}…` }]
-    : [{ text: "…", changed: false }];
+    ? [...sliced.slice(0, -1), { ...last, text: `${last.text}${tail}` }]
+    : [{ text: tail, changed: false }];
 };
 
 const diffLine = (line: Line, digits: number, width: number, theme: ThemeLike) => {

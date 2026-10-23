@@ -29,7 +29,7 @@ export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): 
 
   const draw = (width: number, theme: Theme, data: ReadonlyFooterDataProvider | undefined) =>
     [...noticeLines(), ...(current?.(width, themeLike(theme), dataOf(data)) ?? [])].map((line) =>
-      truncateToWidth(line, width, theme.fg("dim", "…")),
+      truncateToWidth(line, width, theme.fg("dim", "...")),
     );
 
   const mountFooter = (ctx: ExtensionContext) => {

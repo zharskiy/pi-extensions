@@ -98,7 +98,7 @@ describe("showForm", () => {
 
     expect(await pending).toBe("picked");
     expect(entry.options).toBeUndefined();
-    expect(entry.component.render(6)).toEqual([truncateToWidth("a long line of text", 6, "…")]);
+    expect(entry.component.render(6)).toEqual([truncateToWidth("a long line of text", 6, "...")]);
     expect(keys.map((key) => [key.name, key.char])).toEqual([
       ["backTab", undefined],
       ["tab", undefined],
