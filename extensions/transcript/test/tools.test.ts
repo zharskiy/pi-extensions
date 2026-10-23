@@ -42,336 +42,542 @@ const done = (text: string, patch: Partial<ToolCallView> = {}, details?: unknown
   ...patch,
 });
 
-const draw = (input: ToolCallView, width = 80) => {
+const draw = (input: ToolCallView, columns = 80) => {
   const { theme, painted, bolded } = recording();
   const row = rows(input);
-  const call = row?.call(width, theme) ?? [];
-  const result = row?.result?.(width, theme) ?? [];
+  const width = columns - 1;
+  const lines = [...(row?.call(width, theme) ?? []), ...(row?.result?.(width, theme) ?? [])];
 
-  return { call, result, painted, bolded, piBody: row?.piBody };
+  return {
+    lines: lines.map((line) => (line === "" ? "" : ` ${line}`)),
+    painted,
+    bolded,
+    piBody: row?.piBody,
+    dropTiming: row?.dropTiming,
+  };
 };
 
 const tokenOf = (painted: { token: ThemeToken; text: string }[], text: string) =>
   painted.find((entry) => entry.text === text)?.token;
 
-const numbered = (count: number) =>
-  Array.from({ length: count }, (_value, index) => `out ${index + 1}`).join("\n");
+const numbered = (count: number, word = "out") =>
+  Array.from({ length: count }, (_value, index) => `${word} ${index + 1}`).join("\n");
 
-describe("call titles", () => {
-  it("paints the bullet by state: dim until the result, accent on success, error on failure", () => {
-    expect(tokenOf(draw(view("read", { path: "a.ts" }, { isPartial: true })).painted, "●")).toBe("dim");
-    expect(tokenOf(draw(view("read", { path: "a.ts" }, { started: false })).painted, "●")).toBe("dim");
-    expect(tokenOf(draw(view("read", { path: "a.ts" }, done("x"))).painted, "●")).toBe("success");
-    expect(tokenOf(draw(view("read", { path: "a.ts" }, done("x", { isError: true }))).painted, "●")).toBe(
-      "error",
+const enoent = "ENOENT: no such file or directory, access '/Users/me/proj/src/auth/sesion.ts'";
+
+describe("S1 tool row states", () => {
+  const read = (patch: Partial<ToolCallView>) => view("read", { path: "src/auth/session.ts" }, patch);
+
+  it("draws the state glyph in its token at column 0 and the title at column 2", () => {
+    expect(tokenOf(draw(read({ isPartial: true })).painted, "◌")).toBe("dim");
+    expect(tokenOf(draw(read({ started: false })).painted, "◌")).toBe("dim");
+    expect(tokenOf(draw(read(done("x"))).painted, "✓")).toBe("success");
+    expect(tokenOf(draw(read(done("boom", { isError: true }))).painted, "✗")).toBe("error");
+    expect(
+      tokenOf(draw(read(done("Operation aborted", { isError: true, aborted: true }))).painted, "⊘"),
+    ).toBe("muted");
+  });
+
+  it("shows only the verb while the key argument streams, then the full title", () => {
+    expect(draw(view("read", {}, { argsComplete: false, isPartial: true })).lines).toEqual([" ◌ Read"]);
+    expect(draw(read({ isPartial: true })).lines).toEqual([" ◌ Read src/auth/session.ts"]);
+  });
+
+  it("adds the recorded duration to a finished row from five seconds on, never to a running one", () => {
+    expect(draw(read(done("x", { durationMs: 4999 }))).lines[0]).toBe(" ✓ Read src/auth/session.ts");
+    expect(draw(read(done("x", { durationMs: 12_400 }))).lines[0]).toBe(" ✓ Read src/auth/session.ts · 12s");
+    expect(draw(read({ isPartial: true, durationMs: 12_400 })).lines[0]).toBe(" ◌ Read src/auth/session.ts");
+  });
+
+  it("marks a stopped call with a muted state word and its duration", () => {
+    const stopped = draw(
+      read(done("Operation aborted", { isError: true, aborted: true, durationMs: 72_000 })),
     );
+
+    expect(stopped.lines).toEqual([" ⊘ Read src/auth/session.ts · stopped · 1m 12s"]);
+    expect(tokenOf(stopped.painted, "stopped")).toBe("muted");
   });
 
-  it("names a read with its bold path and the dim line range", () => {
-    const plain = draw(view("read", { path: "/repo/src/a.ts" }));
-    const ranged = draw(view("read", { path: "src/a.ts", offset: 5, limit: 10 }));
+  it("puts a short failure reason on the title in the error colour", () => {
+    const failed = draw(read(done("Path is a directory", { isError: true })));
 
-    expect(plain.call).toEqual(["● Read src/a.ts"]);
-    expect(plain.bolded).toContain("src/a.ts");
-    expect(ranged.call).toEqual(["● Read src/a.ts (lines 5–14)"]);
-    expect(tokenOf(ranged.painted, " (lines 5–14)")).toBe("dim");
+    expect(failed.lines).toEqual([" ✗ Read src/auth/session.ts · Path is a directory"]);
+    expect(tokenOf(failed.painted, "Path is a directory")).toBe("error");
   });
 
-  it("shortens paths under the working directory and the home directory", () => {
-    expect(draw(view("write", { path: "/home/me/notes.md", content: "" })).call).toEqual([
-      "● Write ~/notes.md",
-    ]);
-    expect(draw(view("edit", { path: "/etc/hosts" })).call).toEqual(["● Update /etc/hosts"]);
-    expect(draw(view("edit", { file_path: "/repo/b.ts" })).call).toEqual(["● Update b.ts"]);
-  });
-
-  it("shows the first line of a shell command after a dim prompt", () => {
-    const bash = draw(view("bash", { command: "npm test\nnpm run lint" }));
-
-    expect(bash.call).toEqual(["● $ npm test …"]);
-    expect(tokenOf(bash.painted, "$")).toBe("dim");
-    expect(tokenOf(bash.painted, " …")).toBe("dim");
-    expect(draw(view("powershell", { command: "Get-ChildItem" })).call).toEqual(["● PS> Get-ChildItem"]);
-  });
-
-  it("names searches and listings", () => {
-    expect(draw(view("grep", { pattern: "TODO", path: "/repo/src" })).call).toEqual(["● Grep TODO in src"]);
-    expect(draw(view("grep", { pattern: "TODO" })).call).toEqual(["● Grep TODO"]);
-    expect(draw(view("find", { pattern: "*.ts" })).call).toEqual(["● Find *.ts"]);
-    expect(draw(view("ls", {})).call).toEqual(["● List ."]);
-    expect(draw(view("ls", { path: "/repo/src" })).call).toEqual(["● List src"]);
-  });
-
-  it("shows only the bold tool name while the key argument is still streaming", () => {
-    const streaming = { argsComplete: false, started: false, isPartial: true };
-
-    expect(draw(view("read", {}, streaming)).call).toEqual(["● Read"]);
-    expect(draw(view("edit", {}, streaming)).call).toEqual(["● Update"]);
-    expect(draw(view("bash", {}, streaming)).call).toEqual(["● Bash"]);
-    expect(draw(view("ls", {}, streaming)).call).toEqual(["● List"]);
-    expect(draw(view("read", { path: "a.ts" }, streaming)).call).toEqual(["● Read a.ts"]);
-    expect(draw(view("read", {}, streaming)).bolded).toContain("Read");
-    expect(draw(view("read", {}, streaming)).result).toEqual([]);
-  });
-
-  it("summarises an unknown tool by its bold name and up to three arguments", () => {
-    const mcp = draw(view("notes_search", { query: "a\nb", limit: 2, deep: true, extra: "x" }));
-
-    expect(mcp.call).toEqual(["● notes_search query: a..., limit: 2, deep: true"]);
-    expect(mcp.bolded).toContain("notes_search");
-  });
-
-  it("cuts a long title to one line", () => {
-    const [line, ...rest] = draw(view("bash", { command: "x".repeat(100) }), 30).call;
-
-    expect(rest).toEqual([]);
-    expect(line?.endsWith("...")).toBe(true);
-  });
-});
-
-describe("results", () => {
-  it("counts the lines a read returned without an expand hint", () => {
-    const read = draw(view("read", { path: "a.ts" }, done("one\ntwo\nthree\n")));
-
-    expect(read.result).toEqual(["  ⎿  Read 3 lines"]);
-    expect(read.bolded).toContain("3");
-    expect(read.piBody).toBe(true);
-    expect(draw(view("read", { path: "a.ts" }, { ...done("one"), expanded: true })).result).toEqual([
-      "  ⎿  Read 1 line",
-    ]);
-  });
-
-  it("names an image read", () => {
-    const image = draw(view("read", { path: "a.png" }, { result: { text: "", images: 1 } }));
-
-    expect(image.result).toEqual(["  ⎿  Read image"]);
-  });
-
-  it("counts an edit's added and removed lines", () => {
-    const edit = (diff: string, patch: Partial<ToolCallView> = {}) =>
-      draw(view("edit", { path: "a.ts" }, done("ok", patch, { diff }))).result;
-
-    expect(edit("-1 old\n+1 new")).toEqual(["  ⎿  Added 1 line, removed 1 line (ctrl+o expand)"]);
-    expect(edit("+1 a\n+2 b")).toEqual(["  ⎿  Added 2 lines (ctrl+o expand)"]);
-    expect(edit("-1 a\n-2 b")).toEqual(["  ⎿  Removed 2 lines (ctrl+o expand)"]);
-    expect(edit("-1 old\n+1 new", { expanded: true })).toEqual([
-      "  ⎿  Added 1 line, removed 1 line",
-      `     1 - old${" ".repeat(68)}`,
-      `     1 + new${" ".repeat(68)}`,
-    ]);
-  });
-
-  it("draws an expanded edit's diff itself and falls back to pi's body when the diff does not parse", () => {
-    const edit = (diff: string) =>
-      draw(view("edit", { path: "a.ts" }, done("ok", { expanded: true }, { diff })));
-
-    expect(edit("-1 old\n+1 new").piBody).toBe(false);
-    expect(edit("@@ -1 +1 @@\n-old\n+new")).toMatchObject({ result: [], piBody: true });
-  });
-
-  it("counts the lines a write wrote", () => {
-    expect(draw(view("write", { path: "a.ts", content: "a\nb\n" }, done("ok"))).result).toEqual([
-      "  ⎿  Wrote 2 lines (ctrl+o expand)",
-    ]);
-    expect(draw(view("write", { path: "a.ts", content: "" }, done("ok"))).result).toEqual([
-      "  ⎿  Wrote 0 lines",
-    ]);
-  });
-
-  it("shows every line of an expanded write as added lines, without carriage returns", () => {
-    const content = Array.from({ length: 12 }, (_value, index) => `line ${index + 1}`).join("\r\n");
-    const write = draw(view("write", { path: "a.ts", content }, done("ok", { expanded: true })), 20);
-
-    expect(write.result).toEqual([
-      "  ⎿  Wrote 12 lines",
-      ...Array.from({ length: 12 }, (_value, index) =>
-        `${String(index + 1).padStart(2)} + line ${index + 1}`.padEnd(15).padStart(20),
+  it("keeps every line within the width at any width", () => {
+    const inputs = [
+      read(done(enoent, { isError: true, durationMs: 9000 })),
+      view(
+        "bash",
+        { command: "npm test -- --run" },
+        done(`${numbered(9)}\n\nCommand exited with code 1`, { isError: true }),
       ),
-    ]);
-    expect(write.result.join("")).not.toContain("\r");
-  });
+      view("edit", { path: "src/stats.py" }, done("ok", {}, { diff: "-1 a\n+1 b" })),
+      view("mcp__notes__search", { query: "auth" }, done(numbered(9), { label: "notes/search" })),
+    ];
 
-  it("shows only the count of an expanded empty write", () => {
-    expect(draw(view("write", { path: "a.ts", content: "" }, done("ok", { expanded: true }))).result).toEqual(
-      ["  ⎿  Wrote 0 lines"],
-    );
-  });
-
-  it("shows an expanded edit's error lines without a body", () => {
-    const failed = draw(
-      view("edit", { path: "a.ts" }, done("Could not edit\nno match", { isError: true, expanded: true })),
-    );
-
-    expect(failed.result).toEqual(["  ⎿  Could not edit", "     no match"]);
-    expect(failed.piBody).toBe(false);
-  });
-
-  it("shows the first three lines of shell output and how many more there are", () => {
-    const bash = draw(view("bash", { command: "ls" }, done(numbered(10))));
-
-    expect(bash.result).toEqual([
-      "  ⎿  out 1",
-      "     out 2",
-      "     out 3",
-      "     … +7 lines (ctrl+o expand)",
-    ]);
-    expect(tokenOf(bash.painted, "out 1")).toBe("muted");
-    expect(tokenOf(bash.painted, "… +7 lines")).toBe("dim");
-    expect(tokenOf(bash.painted, "(ctrl+o expand)")).toBe("dim");
-  });
-
-  it("marks empty, running and expanded shell output", () => {
-    const shell = (patch: Partial<ToolCallView>) => draw(view("bash", { command: "ls" }, patch));
-
-    expect(shell(done("")).result).toEqual(["  ⎿  (No output)"]);
-    expect(shell({ ...done(""), isPartial: true }).result).toEqual(["  ⎿  Running…"]);
-    expect(shell({ ...done(numbered(5)), isPartial: true }).result).toEqual([
-      "  ⎿  … +2 lines",
-      "     out 3",
-      "     out 4",
-      "     out 5",
-    ]);
-    expect(shell({ ...done(numbered(10)), expanded: true })).toMatchObject({ result: [], piBody: true });
-  });
-
-  it("counts search and listing results", () => {
-    expect(draw(view("grep", { pattern: "x" }, done("a.ts:1: x\nb.ts:2: x"))).result).toEqual([
-      "  ⎿  Found 2 lines",
-    ]);
-    expect(draw(view("grep", { pattern: "x" }, done("No matches found"))).result).toEqual([
-      "  ⎿  No matches",
-    ]);
-    expect(draw(view("find", { pattern: "*.ts" }, done("a.ts\nb.ts\nc.ts"))).result).toEqual([
-      "  ⎿  Found 3 files",
-    ]);
-    expect(draw(view("ls", {}, done("a\nb/"))).result).toEqual(["  ⎿  Listed 2 entries"]);
-    expect(draw(view("ls", {}, done("(empty directory)"))).result).toEqual(["  ⎿  Listed 0 entries"]);
-  });
-
-  it("shows an unknown tool's output like shell output", () => {
-    expect(draw(view("notes_search", {}, done(numbered(4)))).result).toEqual([
-      "  ⎿  out 1",
-      "     out 2",
-      "     out 3",
-      "     … +1 line (ctrl+o expand)",
-    ]);
-  });
-
-  it("shows an error in the error colour, cut to three lines until expanded, without pi's body", () => {
-    const failed = (expanded: boolean) =>
-      draw(view("read", { path: "a.ts" }, { ...done(numbered(5), { isError: true }), expanded }));
-
-    expect(failed(false).result).toEqual([
-      "  ⎿  out 1",
-      "     out 2",
-      "     out 3",
-      "     … +2 lines (ctrl+o expand)",
-    ]);
-    expect(tokenOf(failed(false).painted, "out 1")).toBe("error");
-    expect(failed(false).piBody).toBe(false);
-    expect(failed(true).result).toHaveLength(5);
-  });
-
-  it("keeps the last lines of a failed shell command, where the error is", () => {
-    const failed = (expanded: boolean) =>
-      draw(view("bash", { command: "make" }, { ...done(numbered(5), { isError: true }), expanded }));
-
-    expect(failed(false).result).toEqual([
-      "  ⎿  … +2 lines",
-      "     out 3",
-      "     out 4",
-      "     out 5 (ctrl+o expand)",
-    ]);
-    expect(tokenOf(failed(false).painted, "out 5")).toBe("error");
-    expect(failed(true).result).toHaveLength(5);
+    [1, 2, 3, 5, 8, 12, 40, 80].forEach((columns) => {
+      inputs.forEach((input) => {
+        draw(input, columns).lines.forEach((line) => {
+          expect(plainTheme.width(line)).toBeLessThanOrEqual(Math.max(columns, 1));
+        });
+      });
+    });
   });
 });
 
-describe("codemode rows", () => {
-  const code = 'const hits = await tools.grep({ pattern: "login" });\nreturn hits;';
-  const header = "Script completed\nWall time 0.4 seconds\nOutput:\n\n";
-  const calls = [
-    { name: "grep", status: "ok" },
-    { name: "read", status: "error" },
-  ];
-  const codemode = (text: string, patch: Partial<ToolCallView> = {}, details: unknown = { calls }) =>
-    draw(view("codemode", { code }, done(text, patch, details)));
+describe("S2 read", () => {
+  const read = (args: unknown, patch: Partial<ToolCallView> = {}) => view("read", args, patch);
 
-  it("names the call by the first line of its script", () => {
-    expect(draw(view("codemode", { code })).call).toEqual([
-      '● codemode const hits = await tools.grep({ pattern: "login" }); …',
-    ]);
-    expect(draw(view("codemode", {}, { argsComplete: false })).call).toEqual(["● codemode"]);
+  it("titles a read with its accent path and muted range, and counts the lines without a hint", () => {
+    const drawn = draw(read({ path: "/repo/src/auth/session.ts", offset: 5, limit: 10 }, done(numbered(10))));
+
+    expect(drawn.lines).toEqual([" ✓ Read src/auth/session.ts:5-14", "   ↳ 10 lines"]);
+    expect(tokenOf(drawn.painted, "src/auth/session.ts")).toBe("accent");
+    expect(tokenOf(drawn.painted, ":5-14")).toBe("muted");
+    expect(tokenOf(drawn.painted, "↳")).toBe("dim");
+    expect(tokenOf(drawn.painted, "10")).toBe("text");
+    expect(tokenOf(drawn.painted, " lines")).toBe("muted");
+    expect(drawn.bolded).toContain("Read");
   });
 
-  it("counts the nested calls, the failed ones and the output lines, without the script header", () => {
-    expect(codemode(`${header}${numbered(1611)}`).result).toEqual([
-      "  ⎿  2 tool calls, 1 failed, 1611 lines of output (ctrl+o expand)",
-    ]);
-    expect(codemode(`${header}`, {}, { calls: [] }).result).toEqual(["  ⎿  (No output) (ctrl+o expand)"]);
-    expect(codemode(header, { isPartial: true }).result).toEqual(["  ⎿  Running… · 2 tool calls"]);
-    expect(codemode(header, { isPartial: true }, { calls: [] }).result).toEqual(["  ⎿  Running…"]);
+  it("names an image and an empty file", () => {
+    const image = read({ path: "a.png" }, { result: { text: "", images: 1 } });
+
+    expect(draw(image).lines).toEqual([" ✓ Read a.png", "   ↳ Image"]);
+    expect(draw(read({ path: "a.txt" }, done(""))).lines).toEqual([" ✓ Read a.txt", "   ↳ 0 lines"]);
   });
 
-  it("shows the whole script above pi's own calls and output when expanded", () => {
-    const expanded = codemode(`${header}out`, { expanded: true });
-
-    expect(expanded.result).toEqual([
-      '  ⎿  const hits = await tools.grep({ pattern: "login" });',
-      "     return hits;",
-      "     ",
+  it("names a missing file on the title, and gives the long error its own wrapped line when the title has no room", () => {
+    expect(draw(read({ path: "src/auth/sesion.ts" }, done(enoent, { isError: true }))).lines).toEqual([
+      " ✗ Read src/auth/sesion.ts · file not found",
     ]);
-    expect(expanded.piBody).toBe(true);
+    expect(draw(read({ path: "src/auth/sesion.ts" }, done(enoent, { isError: true })), 24).lines).toEqual([
+      " ✗ Read ...uth/sesion.ts",
+      "   ↳ ENOENT: no such",
+      "     file or directory,",
+      "     ... (1 more line)",
+    ]);
   });
 
-  const failure =
-    "Script failed\nWall time 0.1 seconds\nOutput:\n\nhalf done\nScript error:\nReferenceError: x\n\n" +
-    "Tool calls made before the failure (they are not undone): grep (ok), read (error)";
-
-  it("shows the first lines of a failed script's error without the script header", () => {
-    const failed = codemode(failure, { isError: true });
-
-    expect(failed.result).toEqual([
-      "  ⎿  half done",
-      "     Script error:",
-      "     ReferenceError: x",
-      "     … +2 lines (ctrl+o expand)",
-    ]);
-    expect(tokenOf(failed.painted, "ReferenceError: x")).toBe("error");
-    expect(failed.piBody).toBe(false);
-  });
-
-  it("keeps the script above the whole error when a failed script is expanded", () => {
-    const failed = draw(
-      view("codemode", { code }, done(failure, { isError: true, expanded: true }, { calls })),
-      120,
+  it("cuts the path at the start on a narrow terminal so the file name stays", () => {
+    const drawn = draw(
+      read({ path: "src/auth/middleware/session.ts", offset: 5, limit: 10 }, done(numbered(10))),
+      40,
     );
 
-    expect(failed.result).toEqual([
-      '  ⎿  const hits = await tools.grep({ pattern: "login" });',
-      "     return hits;",
-      "     ",
-      "     half done",
-      "     Script error:",
-      "     ReferenceError: x",
-      "     ",
-      "     Tool calls made before the failure (they are not undone): grep (ok), read (error)",
+    expect(drawn.lines).toEqual([" ✓ Read ...th/middleware/session.ts:5-14", "   ↳ 10 lines"]);
+  });
+
+  it("asks for pi's body under the count when expanded, and writes the range pi's way", () => {
+    expect(draw(read({ path: "a.ts" }, done("x", { expanded: true }))).piBody).toBe(true);
+    expect(draw(read({ path: "a.ts", offset: 7 })).lines[0]).toBe(" ✓ Read a.ts:7");
+    expect(draw(read({ path: "a.ts", limit: 3 })).lines[0]).toBe(" ✓ Read a.ts:1-3");
+  });
+});
+
+describe("S3 edit", () => {
+  const edit = (diff: string, patch: Partial<ToolCallView> = {}, columns = 80) =>
+    draw(view("edit", { path: "src/stats.py" }, done("ok", patch, { diff })), columns);
+
+  it("uses pi's verb and counts the changed lines with a dim hint", () => {
+    const drawn = edit("-1 old\n+1 new");
+
+    expect(drawn.lines).toEqual([
+      " ✓ Edit src/stats.py",
+      "   ↳ Added 1 line, removed 1 line (ctrl+o to expand)",
     ]);
+    expect(tokenOf(drawn.painted, "(ctrl+o to expand)")).toBe("dim");
+    expect(edit("+1 a\n+2 b").lines[1]).toBe("   ↳ Added 2 lines (ctrl+o to expand)");
+    expect(edit("-1 a\n-2 b").lines[1]).toBe("   ↳ Removed 2 lines (ctrl+o to expand)");
+  });
+
+  it("drops the hint before the summary on a narrow terminal", () => {
+    expect(edit("-1 old\n+1 new", {}, 40).lines).toEqual([
+      " ✓ Edit src/stats.py",
+      "   ↳ Added 1 line, removed 1 line",
+    ]);
+  });
+
+  it("draws the expanded diff itself, and falls back to pi's body when the diff does not parse", () => {
+    const expanded = edit("-1 old\n+1 new", { expanded: true });
+
+    expect(expanded.lines.map((line) => line.trimEnd())).toEqual([
+      " ✓ Edit src/stats.py",
+      "   ↳ Added 1 line, removed 1 line",
+      "     -1 old",
+      "     +1 new",
+    ]);
+    expect(expanded.piBody).toBe(false);
+    expect(edit("@@ -1 +1 @@\n-old\n+new", { expanded: true })).toMatchObject({
+      lines: [" ✓ Edit src/stats.py"],
+      piBody: true,
+    });
+  });
+
+  it("wraps a long error at column 4", () => {
+    const error =
+      "Could not find the exact text in src/stats.py. The old text must match exactly including all whitespace and newlines.";
+    const drawn = draw(view("edit", { path: "src/stats.py" }, done(error, { isError: true })));
+
+    expect(drawn.lines).toEqual([
+      " ✗ Edit src/stats.py",
+      "   ↳ Could not find the exact text in src/stats.py. The old text must match",
+      "     exactly including all whitespace and newlines.",
+    ]);
+    expect(drawn.piBody).toBe(false);
+  });
+});
+
+describe("S5 write", () => {
+  it("counts the written lines with a hint, and names an empty file without one", () => {
+    expect(
+      draw(view("write", { path: "/home/me/notes.md", content: numbered(12) }, done("ok"))).lines,
+    ).toEqual([" ✓ Write ~/notes.md", "   ↳ 12 lines (ctrl+o to expand)"]);
+    expect(draw(view("write", { path: "/home/me/empty.txt", content: "" }, done("ok"))).lines).toEqual([
+      " ✓ Write ~/empty.txt",
+      "   ↳ Empty file",
+    ]);
+  });
+
+  it("shows every line as added when expanded, without carriage returns", () => {
+    const drawn = draw(
+      view("write", { path: "a.txt", content: "one\r\ntwo" }, done("ok", { expanded: true })),
+    );
+
+    expect(drawn.lines.map((line) => line.trimEnd())).toEqual([
+      " ✓ Write a.txt",
+      "   ↳ 2 lines",
+      "     +1 one",
+      "     +2 two",
+    ]);
+  });
+});
+
+describe("S6 bash and powershell", () => {
+  const bash = (command: string, patch: Partial<ToolCallView>, columns = 80) =>
+    draw(view("bash", { command }, patch), columns);
+
+  it("shows a running command without output or duration", () => {
+    expect(bash("npm test -- --run", { isPartial: true, durationMs: 12_000 }).lines).toEqual([
+      " ◌ $ npm test -- --run",
+    ]);
+  });
+
+  it("keeps the tail of running output under a keyed count line", () => {
+    expect(bash("npm test -- --run", done(numbered(40), { isPartial: true })).lines).toEqual([
+      " ◌ $ npm test -- --run",
+      "   ↳ ... (37 earlier lines, ctrl+o to expand)",
+      "     out 38",
+      "     out 39",
+      "     out 40",
+    ]);
+  });
+
+  it("keeps the tail on success too, with the duration", () => {
+    const drawn = bash("npm test -- --run", done(numbered(43), { durationMs: 14_000 }));
+
+    expect(drawn.lines).toEqual([
+      " ✓ $ npm test -- --run · 14s",
+      "   ↳ ... (40 earlier lines, ctrl+o to expand)",
+      "     out 41",
+      "     out 42",
+      "     out 43",
+    ]);
+    expect(tokenOf(drawn.painted, "$")).toBe("muted");
+    expect(tokenOf(drawn.painted, "npm test -- --run")).toBe("text");
+    expect(tokenOf(drawn.painted, "out 43")).toBe("muted");
+    expect(tokenOf(drawn.painted, "... (40 earlier lines, ")).toBe("muted");
+    expect(tokenOf(drawn.painted, "ctrl+o")).toBe("dim");
+    expect(drawn.bolded).not.toContain("npm test -- --run");
+  });
+
+  it("says when there is no output", () => {
+    expect(bash("git add -A", done("")).lines).toEqual([" ✓ $ git add -A", "   ↳ No output"]);
+  });
+
+  it("puts the exit code on the title and keeps the output muted without pi's status line", () => {
+    const drawn = bash(
+      "npm test -- --run",
+      done(`${numbered(55)}\n\nCommand exited with code 1`, { isError: true, durationMs: 9000 }),
+    );
+
+    expect(drawn.lines).toEqual([
+      " ✗ $ npm test -- --run · exit 1 · 9s",
+      "   ↳ ... (52 earlier lines, ctrl+o to expand)",
+      "     out 53",
+      "     out 54",
+      "     out 55",
+    ]);
+    expect(tokenOf(drawn.painted, "exit 1")).toBe("error");
+    expect(tokenOf(drawn.painted, "out 55")).toBe("muted");
+  });
+
+  it("drops the hint, then the duration, and keeps the reason at 40 columns", () => {
+    const drawn = bash(
+      "npm test -- --run src/stats.test.ts",
+      done(
+        `${numbered(52)}\nFAIL src/stats.test.ts > mean > counts the first value\nAssertionError: expected 2 to be 3\n\nCommand exited with code 1`,
+        {
+          isError: true,
+          durationMs: 9000,
+        },
+      ),
+      40,
+    );
+
+    expect(drawn.lines).toEqual([
+      " ✗ $ npm test -- --run src/s... · exit 1",
+      "   ↳ ... (51 earlier lines)",
+      "     out 52",
+      "     FAIL src/stats.test.ts > mean > ...",
+      "     AssertionError: expected 2 to be 3",
+    ]);
+  });
+
+  it("marks a stopped command and a timeout, without pi's status lines", () => {
+    expect(
+      bash(
+        "npm run dev",
+        done(`${numbered(11)}\n\nCommand aborted`, { isError: true, aborted: true, durationMs: 72_000 }),
+      ).lines,
+    ).toEqual([
+      " ⊘ $ npm run dev · stopped · 1m 12s",
+      "   ↳ ... (8 earlier lines, ctrl+o to expand)",
+      "     out 9",
+      "     out 10",
+      "     out 11",
+    ]);
+    expect(
+      bash("sleep 100", done("Command timed out after 30 seconds", { isError: true, durationMs: 30_000 }))
+        .lines,
+    ).toEqual([" ✗ $ sleep 100 · timed out after 30s"]);
+  });
+
+  it("shows a multi-line command as its first line and a muted marker", () => {
+    const drawn = bash("cd app\nnpm test", { isPartial: true });
+
+    expect(drawn.lines).toEqual([" ◌ $ cd app ..."]);
+    expect(tokenOf(drawn.painted, " ...")).toBe("muted");
+    expect(draw(view("powershell", { command: "Get-Item ." }, { isPartial: true })).lines).toEqual([
+      " ◌ PS> Get-Item .",
+    ]);
+  });
+
+  it("hands the expanded output to pi's body without its timing line", () => {
+    const drawn = bash("ls", done(numbered(5), { expanded: true }));
+
+    expect(drawn.lines).toEqual([" ✓ $ ls"]);
+    expect(drawn).toMatchObject({ piBody: true, dropTiming: true });
+    expect(bash("ls", done("", { expanded: true }))).toMatchObject({ lines: [" ✓ $ ls", "   ↳ No output"] });
+  });
+
+  it("shows a shell error with no status line as an error", () => {
+    expect(bash("ls", done("spawn /bin/sh ENOENT", { isError: true })).lines).toEqual([
+      " ✗ $ ls · spawn /bin/sh ENOENT",
+    ]);
+  });
+});
+
+describe("S7 grep, find and ls", () => {
+  it("counts the results without repeating the verb, with a muted separator and no hint", () => {
+    const grep = draw(view("grep", { pattern: "TODO", path: "/repo/src" }, done(numbered(12))));
+
+    expect(grep.lines).toEqual([" ✓ Grep TODO in src", "   ↳ 12 matching lines"]);
+    expect(tokenOf(grep.painted, "TODO")).toBe("accent");
+    expect(tokenOf(grep.painted, "src")).toBe("accent");
+    expect(grep.painted.find((entry) => entry.text.startsWith(" in "))?.token).toBe("muted");
+    expect(draw(view("grep", { pattern: "FIXME" }, done("No matches found"))).lines).toEqual([
+      " ✓ Grep FIXME",
+      "   ↳ No matches",
+    ]);
+    expect(draw(view("find", { pattern: "**/*.test.ts" }, done(numbered(3)))).lines).toEqual([
+      " ✓ Find **/*.test.ts",
+      "   ↳ 3 files",
+    ]);
+    expect(draw(view("find", { pattern: "*.md" }, done("No files found matching pattern"))).lines[1]).toBe(
+      "   ↳ No files",
+    );
+    expect(draw(view("ls", { path: "src" }, done(numbered(8)))).lines).toEqual([
+      " ✓ List src",
+      "   ↳ 8 entries",
+    ]);
+    expect(draw(view("ls", {}, done("(empty directory)"))).lines).toEqual([
+      " ✓ List .",
+      "   ↳ Empty directory",
+    ]);
+    expect(draw(view("ls", {}, done("a", { expanded: true }))).piBody).toBe(true);
+  });
+});
+
+describe("S8 codemode", () => {
+  const code =
+    'const hits = await tools.grep({ pattern: "login" });\nconst file = await tools.read({ path: hits[0].path });\nreturn file.slice(0, 200);';
+  const calls = [
+    { name: "grep", args: '{"pattern":"login"}', status: "ok", durationMs: 12 },
+    {
+      name: "read",
+      args: '{"path":"src/old.ts"}',
+      status: "error",
+      durationMs: 3,
+      error: "ENOENT: no such file or directory, open 'src/old.ts'",
+    },
+    { name: "jira/search_issues", args: '{"query":"auth"}', status: "cancelled", cost: 0.0012 },
+    { name: "models.classify", args: '{"text":"..."}', status: "running" },
+  ];
+  const header = "Script completed\nWall time 1.2 seconds\nOutput:\n";
+  const title = ' codemode const hits = await tools.grep({ pattern: "login" }); ...';
+  const codemode = (patch: Partial<ToolCallView>) => draw(view("codemode", { code }, patch));
+
+  it("counts the calls while it runs", () => {
+    expect(codemode(done("", { isPartial: true }, { calls: calls.slice(0, 2) })).lines).toEqual([
+      ` ◌${title}`,
+      "   ↳ 2 calls",
+    ]);
+  });
+
+  it("summarises the calls, the failed ones and the output lines with a hint", () => {
+    const drawn = codemode(done(`${header}${numbered(1611)}`, {}, { calls: calls.slice(0, 3) }));
+
+    expect(drawn.lines).toEqual([
+      ` ✓${title}`,
+      "   ↳ 3 calls, 1 failed · 1611 lines of output (ctrl+o to expand)",
+    ]);
+    expect(tokenOf(drawn.painted, "1 failed")).toBe("error");
+    expect(tokenOf(drawn.painted, "1611")).toBe("text");
+    expect(drawn.bolded).toContain("codemode");
+  });
+
+  it("shows the head of a failed script's error and counts the rest", () => {
+    const error =
+      "TypeError: Cannot read properties of undefined (reading 'path')\n    at script:3:27\na\nb\nc\nd";
+
+    expect(codemode(done(error, { isError: true })).lines).toEqual([
+      ` ✗${title}`,
+      "   ↳ TypeError: Cannot read properties of undefined (reading 'path')",
+      "         at script:3:27",
+      "     ... (4 more lines, ctrl+o to expand)",
+    ]);
+  });
+
+  it("draws its own call list when expanded: script, calls with nested marks, output", () => {
+    const drawn = codemode(
+      done(`${header}export function login(user: User) {\n...`, { expanded: true }, { calls }),
+    );
+
+    expect(drawn.lines).toEqual([
+      ` ✓${title}`,
+      "   ↳ 4 calls, 1 failed · 2 lines of output",
+      '     const hits = await tools.grep({ pattern: "login" });',
+      "     const file = await tools.read({ path: hits[0].path });",
+      "     return file.slice(0, 200);",
+      "",
+      '     ✓ grep {"pattern":"login"} 12ms',
+      '     ✗ read {"path":"src/old.ts"} 3ms',
+      "       ENOENT: no such file or directory, open 'src/old.ts'",
+      '     ⊘ jira/search_issues {"query":"auth"} $0.0012',
+      '     ◌ models.classify {"text":"..."}',
+      "",
+      "     export function login(user: User) {",
+      "     ...",
+    ]);
+    expect(drawn.piBody).toBe(false);
+    expect(tokenOf(drawn.painted, "12ms")).toBe("dim");
+    expect(tokenOf(drawn.painted, '{"pattern":"login"}')).toBe("muted");
   });
 
   it("names the call by the line after pi's options line", () => {
-    const options = draw(view("codemode", { code: '// @options: {"timeout_ms": 1000}\nreturn 1;' }));
+    expect(draw(view("codemode", { code: "// @options: {}\nreturn 1;" }, { isPartial: true })).lines).toEqual(
+      [" ◌ codemode return 1;"],
+    );
+  });
+});
 
-    expect(options.call).toEqual(["● codemode return 1;"]);
+describe("S9 MCP tools", () => {
+  const output = [
+    '{"results":[{"id":"n-12","title":"Auth flow notes","score":0.92},{"id":"n-13","title":"Login"},',
+    '{"id":"n-14","title":"Session tokens","score":0.71},',
+    '{"id":"n-15","title":"Refresh flow","score":0.66}]}',
+    ...Array.from({ length: 14 }, (_value, index) => `line ${index}`),
+  ].join("\n");
+  const mcp = (patch: Partial<ToolCallView>, columns = 80) =>
+    draw(
+      view(
+        "mcp__notes__search",
+        { query: "auth flow", limit: 2, deep: true },
+        { label: "notes/search", ...patch },
+      ),
+      columns,
+    );
+
+  it("titles the call server/tool with pi's key=value args and keeps the head of the output", () => {
+    const drawn = mcp(done(output, { label: "notes/search" }));
+
+    expect(drawn.lines).toEqual([
+      ' ✓ notes/search query="auth flow" limit=2 deep=true',
+      '   ↳ {"results":[{"id":"n-12","title":"Auth flow notes","score":0.92},{"id":"...',
+      '     {"id":"n-14","title":"Session tokens","score":0.71},',
+      '     {"id":"n-15","title":"Refresh flow","score":0.66}]}',
+      "     ... (14 more lines, ctrl+o to expand)",
+    ]);
+    expect(tokenOf(drawn.painted, "notes/search")).toBe("accent");
+    expect(drawn.bolded).toContain("notes/search");
+    expect(tokenOf(drawn.painted, 'query="auth flow" limit=2 deep=true')).toBe("muted");
+  });
+
+  it("cuts the title and every preview line at 40 columns and drops the key from the count", () => {
+    expect(mcp(done(output, { label: "notes/search" }), 40).lines).toEqual([
+      ' ✓ notes/search query="auth flow" lim...',
+      '   ↳ {"results":[{"id":"n-12","title"...',
+      '     {"id":"n-14","title":"Session to...',
+      '     {"id":"n-15","title":"Refresh fl...',
+      "     ... (14 more lines)",
+    ]);
+  });
+
+  it("wraps every line at column 4 when expanded", () => {
+    const drawn = mcp(done('{"a":"aaaaaaaaaa bbbbbbbbbb cccccccccc"}\nend', { expanded: true }), 30);
+
+    expect(drawn.lines.slice(1)).toEqual([
+      '   ↳ {"a":"aaaaaaaaaa',
+      '     bbbbbbbbbb cccccccccc"}',
+      "     end",
+    ]);
+  });
+
+  it("cuts each argument at 40 columns and shows at most three", () => {
+    const args = { a: "x".repeat(60), b: 1, c: true, d: "hidden" };
+    const title = draw(view("lint_fix", args, { isPartial: true }), 200).lines[0];
+
+    expect(title).toBe(` ◌ lint_fix a="${"x".repeat(36)}... b=1 c=true`);
+  });
+});
+
+describe("S10 unknown tools", () => {
+  it("titles the call with the bold raw name", () => {
+    const drawn = draw(view("lint_fix", { paths: ["src"], fix: true }, done("Fixed 3 files")));
+
+    expect(drawn.lines).toEqual([' ✓ lint_fix paths=["src"] fix=true', "   ↳ Fixed 3 files"]);
+    expect(drawn.bolded).toContain("lint_fix");
+  });
+
+  it("gives a cut single line the hint, and an error the error colour", () => {
+    expect(draw(view("lint_fix", {}, done("x".repeat(100)))).lines[1]).toBe(
+      `   ↳ ${"x".repeat(53)}... (ctrl+o to expand)`,
+    );
+    expect(draw(view("lint_fix", {}, done("x".repeat(100))), 40).lines[1]).toBe(`   ↳ ${"x".repeat(32)}...`);
+
+    const failed = draw(view("lint_fix", {}, done("first\nsecond", { isError: true })));
+
+    expect(failed.lines).toEqual([" ✗ lint_fix", "   ↳ first", "     second"]);
+    expect(tokenOf(failed.painted, "second")).toBe("error");
   });
 });
 
 describe("diffCounts", () => {
   it("counts numbered added and removed lines only", () => {
-    expect(diffCounts(parseDiff("  1 same\n- 2 old\n+ 2 new\n+ 3 more\n    ..."))).toEqual({
-      added: 2,
-      removed: 1,
-    });
-    expect(diffCounts(parseDiff(""))).toEqual({ added: 0, removed: 0 });
+    expect(diffCounts(parseDiff("-1 a\n+1 b\n+2 c\n 3 d\n   ..."))).toEqual({ added: 2, removed: 1 });
+    expect(diffCounts(undefined)).toEqual({ added: 0, removed: 0 });
   });
 });

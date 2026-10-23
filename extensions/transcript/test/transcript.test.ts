@@ -21,8 +21,8 @@ describe("transcript", () => {
       result: { text: "a\nb\nc\nd", images: 0 },
     });
 
-    expect(row?.call(40, plainTheme)).toEqual(["● $ ls"]);
-    expect(row?.result?.(60, plainTheme).at(-1)).toBe("     … +1 line (<app.tools.expand> expand)");
+    expect(row?.call(40, plainTheme)).toEqual(["✓ $ ls"]);
+    expect(row?.result?.(60, plainTheme)[0]).toBe("  ↳ ... (1 earlier line, <app.tools.expand> to expand)");
   });
 
   it("sets the thinking label with the toggle hint at a tui session start", () => {

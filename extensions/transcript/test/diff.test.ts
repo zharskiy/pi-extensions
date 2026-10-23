@@ -7,111 +7,110 @@ const tagged: ThemeLike = {
   ...plainTheme,
   fg: (token, text) => `<${token}>${text}</>`,
   bg: (token, text) => `<bg:${token}>${text}</bg>`,
+  inverse: (text) => `<inv>${text}</inv>`,
 };
+
+const flat: ThemeLike = { ...tagged, panels: false };
 
 const rows = (diff: string, width = 30, theme = tagged) => diffRows(parseDiff(diff) ?? [], width, theme);
 
 const pad = (count: number) => " ".repeat(count);
 
-describe("diff rows", () => {
-  it("draws added lines with the number, the marker and the added background to the full width", () => {
-    expect(rows("+1 one\n+2 two", 12)).toEqual([
-      `<bg:added>1 <success>+</> one${pad(5)}</bg>`,
-      `<bg:added>2 <success>+</> two${pad(5)}</bg>`,
-    ]);
-  });
+const lead = (kind: "added" | "removed", gutter: string) =>
+  `<bg:${kind}><${kind === "added" ? "success" : "error"}>${gutter[0]}</></bg><bg:${kind}><muted>${gutter.slice(1)}</></bg>`;
 
-  it("draws removed lines on the removed background", () => {
-    expect(rows("-7 gone", 12)).toEqual([`<bg:removed>7 <error>-</> gone${pad(4)}</bg>`]);
+describe("diff rows on a theme with panels", () => {
+  it("draws the mark, the right-aligned number and a space, then the line on its background to the width", () => {
+    expect(rows("+1 one\n+2 two", 12)).toEqual([
+      `${lead("added", "+1 ")}<bg:added>one${pad(6)}</bg>`,
+      `${lead("added", "+2 ")}<bg:added>two${pad(6)}</bg>`,
+    ]);
+    expect(rows("-7 gone", 12)).toEqual([`${lead("removed", "-7 ")}<bg:removed>gone${pad(5)}</bg>`]);
   });
 
   it("highlights the changed words of a changed line pair", () => {
-    expect(rows("-3 let total = 1;\n+3 let total = 2;", 22)).toEqual([
-      `<bg:removed>3 <error>-</> let total = </bg><bg:removedWord>1</bg><bg:removed>;${pad(4)}</bg>`,
-      `<bg:added>3 <success>+</> let total = </bg><bg:addedWord>2</bg><bg:added>;${pad(4)}</bg>`,
+    expect(rows("-3 let total = 1;\n+3 let total = 2;", 20)).toEqual([
+      `${lead("removed", "-3 ")}<bg:removed>let total = </bg><bg:removedWord>1</bg><bg:removed>;${pad(3)}</bg>`,
+      `${lead("added", "+3 ")}<bg:added>let total = </bg><bg:addedWord>2</bg><bg:added>;${pad(3)}</bg>`,
     ]);
   });
 
   it("skips word highlighting when most of the line changed", () => {
     expect(rows("-1 alpha beta\n+1 gamma delta", 20)).toEqual([
-      `<bg:removed>1 <error>-</> alpha beta${pad(6)}</bg>`,
-      `<bg:added>1 <success>+</> gamma delta${pad(5)}</bg>`,
+      `${lead("removed", "-1 ")}<bg:removed>alpha beta${pad(7)}</bg>`,
+      `${lead("added", "+1 ")}<bg:added>gamma delta${pad(6)}</bg>`,
     ]);
   });
 
-  it("pairs a removed run with the following added run line by line", () => {
+  it("pairs a removed run with the following added run line by line, never the other way", () => {
     const [first, second, third] = rows("-1 a = 1;\n-2 b = 2;\n+1 a = 9;\n+2 b = 2;\n+3 c = 3;", 14);
 
     expect(first).toContain("<bg:removedWord>1</bg>");
-    expect(second).toBe(`<bg:removed>2 <error>-</> b = 2;${pad(4)}</bg>`);
+    expect(second).toBe(`${lead("removed", "-2 ")}<bg:removed>b = 2;${pad(5)}</bg>`);
     expect(third).toContain("<bg:addedWord>9</bg>");
+    expect(rows("+1 a = 9;\n-2 a = 1;", 14).join("")).not.toContain("Word");
   });
 
-  it("dims context lines and the gap between hunks, with the numbers padded to the widest", () => {
+  it("draws context lines and the gap in muted with no background, the numbers padded to the widest", () => {
     expect(rows(" 9 keep\n+10 new\n    ...\n 99 tail", 14)).toEqual([
-      "<dim> 9   keep</>",
-      `<bg:added>10 <success>+</> new${pad(6)}</bg>`,
-      "<dim>     ...</>",
-      "<dim>99   tail</>",
+      "<muted>  9 keep</>",
+      `${lead("added", "+10 ")}<bg:added>new${pad(7)}</bg>`,
+      "<muted>...</>",
+      "<muted> 99 tail</>",
     ]);
   });
 
-  it("truncates long lines at the width with an ellipsis instead of wrapping", () => {
-    expect(rows("+1 abcdefghijklmnop", 10, plainTheme)).toEqual(["1 + abc..."]);
-    expect(rows(" 1 abcdefghijklmnop", 10, plainTheme)).toEqual(["1   abc..."]);
-    expect(rows("-1 let total = 1;\n+1 let total = 2;", 12, plainTheme)).toEqual([
-      "1 - let t...",
-      "1 + let t...",
+  it("wraps a long line under a blank gutter that keeps the background", () => {
+    expect(rows("-2 total = sum(values) if values else 0", 20, plainTheme)).toEqual(
+      ["-2 total =", "   sum(values) if", "   values else 0"].map((line) => line.padEnd(20)),
+    );
+    expect(rows("+1 aaaa bbbb", 10, tagged)).toEqual([
+      `${lead("added", "+1 ")}<bg:added>aaaa   </bg>`,
+      `<bg:added>   </bg><bg:added>bbbb   </bg>`,
     ]);
   });
 
-  it("keeps the ellipsis when the cut lands right after a changed word", () => {
-    expect(rows("-1 ab cdefg h\n+1 ab cdxfg h", 12)).toEqual([
-      "<bg:removed>1 <error>-</> ab </bg><bg:removedWord>cd...</bg>",
-      "<bg:added>1 <success>+</> ab </bg><bg:addedWord>cd...</bg>",
-    ]);
-  });
+  it("keeps the changed-word background across a wrap", () => {
+    const [first, second] = rows("-1 aaaa bbbb cccc\n+1 aaaa bbbb dddd", 12);
 
-  it("cuts wide characters by their width and never splits an emoji", () => {
-    const [old, now] = rows("-1 hello world 😀\n+1 hello world 😃", 24);
-    const [cjk] = rows("+1 日本語テキスト", 10, plainTheme);
-
-    expect(old).toContain("<bg:removedWord>😀</bg>");
-    expect(now).toContain("<bg:addedWord>😃</bg>");
-    expect([old, now].some((row) => /\p{Cs}/u.test(row ?? ""))).toBe(false);
-    expect(cjk).toBe("1 + 日... ");
-    expect(plainTheme.width(cjk ?? "")).toBe(10);
-  });
-
-  it("pairs only the first lines of a longer removed run", () => {
-    expect(rows("-1 a = 1;\n-2 b = 2;\n-3 c = 3;\n+1 a = 9;", 14)).toEqual([
-      `<bg:removed>1 <error>-</> a = </bg><bg:removedWord>1</bg><bg:removed>;${pad(4)}</bg>`,
-      `<bg:removed>2 <error>-</> b = 2;${pad(4)}</bg>`,
-      `<bg:removed>3 <error>-</> c = 3;${pad(4)}</bg>`,
-      `<bg:added>1 <success>+</> a = </bg><bg:addedWord>9</bg><bg:added>;${pad(4)}</bg>`,
-    ]);
-  });
-
-  it("does not pair an added run with the removed run after it", () => {
-    expect(rows("+1 a = 9;\n-2 a = 1;", 14)).toEqual([
-      `<bg:added>1 <success>+</> a = 9;${pad(4)}</bg>`,
-      `<bg:removed>2 <error>-</> a = 1;${pad(4)}</bg>`,
-    ]);
-  });
-
-  it("draws a diff that starts with a gap", () => {
-    expect(rows("    ...\n 40 keep\n+41 new", 14)).toEqual([
-      "<dim>     ...</>",
-      "<dim>40   keep</>",
-      `<bg:added>41 <success>+</> new${pad(6)}</bg>`,
-    ]);
+    expect(first).toBe(`${lead("removed", "-1 ")}<bg:removed>aaaa bbbb</bg>`);
+    expect(second).toBe(`<bg:removed>   </bg><bg:removedWord>cccc</bg><bg:removed>${pad(5)}</bg>`);
   });
 
   it("expands tabs to three spaces and drops control characters", () => {
-    expect(rows("+1 \tx", 12, plainTheme)).toEqual(["1 +    x    "]);
-    expect(rows(`+1 a${String.fromCharCode(7)}b\r`, 8, plainTheme)).toEqual(["1 + ab  "]);
+    expect(rows("+1 \tx", 12, plainTheme)).toEqual(["+1    x     "]);
+    expect(rows(`+1 a${String.fromCharCode(7)}b\r`, 8, plainTheme)).toEqual(["+1 ab   "]);
   });
 
+  it("keeps every row within the width, wide characters included", () => {
+    [8, 12, 20].forEach((width) => {
+      rows("-1 hello world 😀 日本語テキスト\n+1 hello world 😃 日本語テキスト", width, plainTheme).forEach(
+        (row) => {
+          expect(plainTheme.width(row)).toBeLessThanOrEqual(width);
+        },
+      );
+    });
+  });
+});
+
+describe("diff rows without panels", () => {
+  it("colours whole changed lines and inverts the changed words, with no background", () => {
+    expect(rows("-2 total = sum(values[1:])\n+2 total = sum(values)\n 3 keep", 40, flat)).toEqual([
+      "<error>-2 </><error>total = sum(values</><inv><error>[1:]</></inv><error>)</>",
+      "<success>+2 </><success>total = sum(values)</>",
+      "<muted> 3 keep</>",
+    ]);
+  });
+
+  it("wraps under a blank gutter", () => {
+    expect(rows("+1 aaaa bbbb", 10, flat)).toEqual([
+      "<success>+1 </><success>aaaa</>",
+      "   <success>bbbb</>",
+    ]);
+  });
+});
+
+describe("parseDiff", () => {
   it("parses nothing from a diff it does not recognise", () => {
     expect(parseDiff("@@ -1 +1 @@\n-old\n+new")).toBeUndefined();
     expect(parseDiff("")).toBeUndefined();

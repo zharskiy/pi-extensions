@@ -1,4 +1,5 @@
-import type { ThemeLike } from "../../../core/adapter/contract.ts";
+import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
+import { cleanLine } from "./output.ts";
 import { merged, type Span, wordSpans } from "./words.ts";
 
 type Kind = "added" | "removed" | "context" | "gap";
@@ -9,15 +10,19 @@ export type DiffCounts = { added: number; removed: number };
 
 type Line = DiffLine & { spans?: Span[] };
 
-const TAB = "   ";
+type Changed = "added" | "removed";
 
 const KINDS: Record<string, Kind> = { "+": "added", "-": "removed", " ": "context" };
 
 const MARKS: Record<Kind, string> = { added: "+", removed: "-", context: " ", gap: " " };
 
+const TOKENS: Record<Changed, ThemeToken> = { added: "success", removed: "error" };
+
+const GAP = "...";
+
 const parseLine = (line: string): DiffLine | undefined => {
   if (/^ +\.\.\.$/.test(line)) {
-    return { kind: "gap", num: "", text: "..." };
+    return { kind: "gap", num: "", text: GAP };
   }
 
   const match = /^([+\- ]) *(\d+)(?: (.*))?$/s.exec(line);
@@ -41,8 +46,6 @@ export const diffCounts = (lines: DiffLine[] | undefined): DiffCounts => ({
   added: lines?.filter((line) => line.kind === "added").length ?? 0,
   removed: lines?.filter((line) => line.kind === "removed").length ?? 0,
 });
-
-const clean = (text: string) => text.replaceAll("\t", TAB).replace(/\p{Cc}/gu, "");
 
 const runsOf = (lines: DiffLine[]) =>
   lines.reduce<DiffLine[][]>((runs, line) => {
@@ -82,64 +85,98 @@ const paired = (lines: DiffLine[]): Line[] => {
   return lines.map((line) => ({ ...line, spans: spans.get(line) }));
 };
 
-const ELLIPSIS = "...";
+type Placed = { start: number; text: string };
 
-const fitSpans = (spans: Span[], room: number, theme: ThemeLike): Span[] => {
-  const plain = spans.map((span) => span.text).join("");
-  const cut = theme.truncate(plain, room);
+type Cursor = { at: number; rows: Placed[] };
 
-  if (cut === plain) {
-    return spans;
-  }
+const wrapPlain = (text: string, room: number, theme: ThemeLike) =>
+  theme.wrap(text, room).reduce<Cursor>(
+    (cursor, row) => {
+      const found = text.indexOf(row, cursor.at);
+      const start = found < 0 ? cursor.at : found;
 
-  const kept = cut.endsWith(ELLIPSIS) ? cut.slice(0, -ELLIPSIS.length) : "";
-  const tail = cut.slice(kept.length);
-  const ends = spans.reduce<number[]>((all, span) => {
-    all.push((all[all.length - 1] ?? 0) + span.text.length);
+      return { at: start + row.length, rows: [...cursor.rows, { start, text: row }] };
+    },
+    { at: 0, rows: [] },
+  ).rows;
 
-    return all;
-  }, []);
-  const sliced = spans
+const sliceSpans = (spans: Span[], row: Placed): Span[] => {
+  const end = row.start + row.text.length;
+  const offsets = spans.map((_, index) =>
+    spans.slice(0, index).reduce((sum, span) => sum + span.text.length, 0),
+  );
+  const cut = spans
     .map((span, index) => {
-      const end = ends[index] ?? 0;
+      const from = offsets[index] ?? 0;
 
-      return { ...span, text: kept.slice(end - span.text.length, end) };
+      return { ...span, text: span.text.slice(Math.max(0, row.start - from), Math.max(0, end - from)) };
     })
     .filter((span) => span.text !== "");
-  const last = sliced[sliced.length - 1];
 
-  return last
-    ? [...sliced.slice(0, -1), { ...last, text: `${last.text}${tail}` }]
-    : [{ text: tail, changed: false }];
+  return cut.map((span) => span.text).join("") === row.text ? cut : [{ text: row.text, changed: false }];
+};
+
+const rowsOf = (line: Line, room: number, theme: ThemeLike) => {
+  const spans = line.spans ?? [{ text: line.text, changed: false }];
+
+  return wrapPlain(line.text, room, theme).map((row) => sliceSpans(spans, row));
+};
+
+const tinted = (line: Line, kind: Changed, gutter: string, room: number, theme: ThemeLike) => {
+  const blank = theme.bg(kind, " ".repeat(theme.width(gutter)));
+  const lead = `${theme.bg(kind, theme.fg(TOKENS[kind], MARKS[kind]))}${theme.bg(kind, theme.fg("muted", gutter.slice(1)))}`;
+
+  return rowsOf(line, room, theme).map((spans, index) => {
+    const used = spans.reduce((sum, span) => sum + theme.width(span.text), 0);
+    const pieces = merged([...spans, { text: " ".repeat(Math.max(0, room - used)), changed: false }])
+      .filter((piece) => piece.text !== "")
+      .map((piece) => theme.bg(piece.changed ? `${kind}Word` : kind, piece.text));
+
+    return `${index === 0 ? lead : blank}${pieces.join("")}`;
+  });
+};
+
+const plain = (line: Line, kind: Changed, gutter: string, room: number, theme: ThemeLike) => {
+  const token = TOKENS[kind];
+  const blank = " ".repeat(theme.width(gutter));
+
+  return rowsOf(line, room, theme).map((spans, index) => {
+    const text = spans
+      .map((span) => (span.changed ? theme.inverse(theme.fg(token, span.text)) : theme.fg(token, span.text)))
+      .join("");
+
+    return `${index === 0 ? theme.fg(token, gutter) : blank}${text}`;
+  });
+};
+
+const context = (line: Line, gutter: string, room: number, theme: ThemeLike) => {
+  const blank = " ".repeat(theme.width(gutter));
+
+  return theme
+    .wrap(line.text, room)
+    .map((row, index) => theme.fg("muted", `${index === 0 ? gutter : blank}${row}`));
 };
 
 const diffLine = (line: Line, digits: number, width: number, theme: ThemeLike) => {
-  const gutter = `${line.num.padStart(digits)} ${MARKS[line.kind]} `;
-  const room = Math.max(1, width - gutter.length);
-
-  if (line.kind === "context" || line.kind === "gap") {
-    return theme.fg("dim", `${gutter}${theme.truncate(line.text, room)}`);
+  if (line.kind === "gap") {
+    return [theme.fg("muted", GAP)];
   }
 
-  const kind = line.kind;
-  const spans = fitSpans(line.spans ?? [{ text: line.text, changed: false }], room, theme);
-  const used = spans.reduce((sum, span) => sum + theme.width(span.text), 0);
-  const mark = theme.fg(kind === "added" ? "success" : "error", MARKS[kind]);
-  const pieces = merged([
-    { text: `${line.num.padStart(digits)} ${mark} `, changed: false },
-    ...spans,
-    { text: " ".repeat(Math.max(0, room - used)), changed: false },
-  ]);
+  const gutter = `${MARKS[line.kind]}${line.num.padStart(digits)} `;
+  const room = Math.max(1, width - theme.width(gutter));
 
-  return pieces
-    .filter((piece) => piece.text !== "")
-    .map((piece) => theme.bg(piece.changed ? `${kind}Word` : kind, piece.text))
-    .join("");
+  if (line.kind === "context") {
+    return context(line, gutter, room, theme);
+  }
+
+  return theme.panels
+    ? tinted(line, line.kind, gutter, room, theme)
+    : plain(line, line.kind, gutter, room, theme);
 };
 
 export const diffRows = (lines: DiffLine[], width: number, theme: ThemeLike) => {
   const digits = lines.reduce((max, line) => Math.max(max, line.num.length), 0);
-  const cleaned = lines.map((line) => ({ ...line, text: clean(line.text) }));
+  const cleaned = lines.map((line) => ({ ...line, text: cleanLine(line.text) }));
 
-  return paired(cleaned).map((line) => diffLine(line, digits, width, theme));
+  return paired(cleaned).flatMap((line) => diffLine(line, digits, width, theme));
 };
