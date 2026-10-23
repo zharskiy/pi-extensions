@@ -76,6 +76,6 @@ export const childRow =
   (width, theme) =>
     withHint(childLines(spec.children ?? [], theme), spec.hint, width, theme);
 
-export const noun = (count: number, word: string) => (count === 1 ? word : `${word}s`);
+export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 
 export const expandHint = (key: string, theme: ThemeLike) => theme.fg("dim", `(${key} expand)`);

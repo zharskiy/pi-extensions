@@ -143,6 +143,11 @@ pi-extensions/
 │   │   ├── src/                 # index, footer (wiring), render (pure line builders)
 │   │   ├── test/
 │   │   └── README.md
+│   ├── transcript/              # transcript rows: ❯ user, ● assistant and tool rows, ∴ thinking, ⎿ summaries
+│   │   ├── src/                 # index, transcript (wiring), tools (titles and summaries per tool), output
+│   │   │                        #   (head or tail lines, … +N lines), diff (an edit's added and removed lines)
+│   │   ├── test/
+│   │   └── README.md
 │   └── mcp-import/              # /mcp-import: MCP servers from Claude Code or Cursor into pi's mcp.json
 │       ├── src/                 # index, mcp-import (command, file I/O), args (parse, complete),
 │       │                        #   sources (each tool's files), convert (one entry), plan (merge
@@ -202,7 +207,7 @@ usage-report/       # reports agent usage to the spending channel
 ### Published vs development-only
 
 - Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `shared` (without `shared/test`), `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import}/src/index.ts`.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/src/index.ts`.
 - Development-only: `core/test`, `shared/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files
