@@ -1,5 +1,6 @@
 import type { ContextSnapshot, ThemeToken } from "../../../core/adapter/contract.ts";
-import { formatWindow } from "../../../core/manager/format.ts";
+import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
+import { MARKS } from "../../../core/manager/row.ts";
 
 type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
@@ -60,13 +61,16 @@ export const handoffStep = (input: HandoffInput) => {
   return input.instructions < MAX_INSTRUCTIONS ? "resend" : "give-up";
 };
 
-const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
-  queued: "Handoff: after this turn",
-  requested: "Handoff: writing the document",
-  waiting: "Handoff: waiting for running work",
-  switching: "Handoff: switching session",
-  stuck: `Handoff failed · run /${command}`,
-});
+const SEP = " · ";
+
+const pendingLabels: Record<Exclude<Phase, "watching" | "stuck">, string> = {
+  queued: "Handoff after this turn",
+  requested: "Handoff writing the document",
+  waiting: "Handoff waiting for running work",
+  switching: "Handoff switching to a new session",
+};
+
+const notice = (text: string) => ({ token: "warning" as const, text: `${MARKS.info} ${text}` });
 
 export const segmentFor = (
   context: ContextTokens | undefined,
@@ -74,11 +78,12 @@ export const segmentFor = (
   limits: Limits,
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
+  if (phase === "stuck") {
+    return { token: "error", text: `${MARKS.error} Handoff failed${SEP}run /${command}` };
+  }
+
   if (phase !== "watching") {
-    return {
-      token: phase === "waiting" || phase === "queued" ? "warning" : "error",
-      text: pendingLabels(command)[phase],
-    };
+    return notice(pendingLabels[phase]);
   }
 
   if (!context) {
@@ -93,7 +98,9 @@ export const segmentFor = (
 
   const { hard } = thresholdsFor(context.window, limits);
 
-  return { token: "warning", text: `Warning: automatic handoff will happen at ${formatWindow(hard)} tokens` };
+  const used = context.tokens === null ? "" : `${SEP}${formatTokens(context.tokens)} used`;
+
+  return notice(`Handoff at ${formatWindow(hard)} tokens${used}`);
 };
 
 export const retryInstruction = (instruction: string, errors: string[]) =>

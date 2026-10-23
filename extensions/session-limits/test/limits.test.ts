@@ -105,13 +105,13 @@ describe("session limits", () => {
     expect(notice()).toBeUndefined();
 
     turn(50_000);
-    expect(notice()).toBe("<warning>Warning: automatic handoff will happen at 60k tokens");
+    expect(notice()).toBe("<warning>» Handoff at 60k tokens · 50.0k used");
 
     turn(40_000);
     expect(notice()).toBeUndefined();
 
     turn(76_000);
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
     expect(host.statuses.has(NOTICE_KEY)).toBe(false);
   });
 
@@ -119,12 +119,12 @@ describe("session limits", () => {
     const { host, requests, notice } = setup(0, { ...LIMITS, softTokens: 125_000, hardTokens: 175_000 });
 
     host.turnEnd({ tokens: 160_000, window: 1_000_000 });
-    expect(notice()).toBe("<warning>Warning: automatic handoff will happen at 175k tokens");
+    expect(notice()).toBe("<warning>» Handoff at 175k tokens · 160.0k used");
     expect(requests()).toHaveLength(0);
 
     host.turnEnd({ tokens: 175_000, window: 1_000_000 });
     expect(requests()).toHaveLength(1);
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
   });
 
   it("sends the handoff instruction once as a hidden message and says so once", () => {
@@ -172,7 +172,7 @@ describe("session limits", () => {
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
     expect(host.confirmations).toEqual([]);
     expect(requests()).toHaveLength(1);
-    expect(notice()).toBe("<error>Handoff: switching session");
+    expect(notice()).toBe("<warning>» Handoff switching to a new session");
   });
 
   it("waits while a source reports running work and switches once it is released", async () => {
@@ -185,7 +185,7 @@ describe("session limits", () => {
     await flush();
 
     expect(host.dispatched).toEqual([]);
-    expect(notice()).toBe("<warning>Handoff: waiting for running work");
+    expect(notice()).toBe("<warning>» Handoff waiting for running work");
 
     busy(false);
     await flush();
@@ -332,7 +332,7 @@ describe("session limits", () => {
     expect(warnings()[0].message).toContain(handoffPath);
     expect(warnings()[0].message).toContain(`/${HANDOFF_COMMAND}`);
     expect(host.dispatched).toEqual([]);
-    expect(notice()).toBe(`<error>Handoff failed · run /${HANDOFF_COMMAND}`);
+    expect(notice()).toBe(`<error>✗ Handoff failed · run /${HANDOFF_COMMAND}`);
   });
 
   it("still resends an automatic request after Esc", () => {
@@ -407,7 +407,7 @@ describe("session limits", () => {
     const { turn, notice } = setup();
 
     turn(50_000);
-    expect(notice()).toBe("<warning>Warning: automatic handoff will happen at 60k tokens");
+    expect(notice()).toBe("<warning>» Handoff at 60k tokens · 50.0k used");
 
     turn(null);
     expect(notice()).toBeUndefined();
@@ -422,11 +422,11 @@ describe("session limits", () => {
     host.settle();
     await flush();
 
-    expect(notice()).toBe("<error>Handoff: switching session");
+    expect(notice()).toBe("<warning>» Handoff switching to a new session");
 
     host.settle();
 
-    expect(notice()).toBe(`<error>Handoff failed · run /${HANDOFF_COMMAND}`);
+    expect(notice()).toBe(`<error>✗ Handoff failed · run /${HANDOFF_COMMAND}`);
   });
 
   it("ignores a second command while the first one waits for the confirmation", async () => {
@@ -464,7 +464,7 @@ describe("session limits", () => {
 
     turn(51_000);
 
-    expect(notice()).toBe("<warning>Warning: automatic handoff will happen at 60k tokens");
+    expect(notice()).toBe("<warning>» Handoff at 60k tokens · 51.0k used");
   });
 
   it("keeps a busy signal that a source announced in its own session start", () => {
@@ -491,7 +491,7 @@ describe("session limits", () => {
     host.settle();
 
     expect(host.dispatched).toEqual([]);
-    expect(host.editorNotices.get(NOTICE_KEY)).toBe("<warning>Handoff: waiting for running work");
+    expect(host.editorNotices.get(NOTICE_KEY)).toBe("<warning>» Handoff waiting for running work");
   });
 
   it("ignores malformed busy signals", () => {
@@ -524,7 +524,7 @@ describe("session limits", () => {
       },
     ]);
     expect(host.newSessions).toEqual([]);
-    expect(notice()).toBe("<warning>Handoff: waiting for running work");
+    expect(notice()).toBe("<warning>» Handoff waiting for running work");
 
     host.confirmAnswer = true;
     await host.runCommand(HANDOFF_COMMAND);
@@ -564,7 +564,7 @@ describe("/session-handoff on demand", () => {
         level: "info",
       },
     ]);
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
   });
 
   it("shows the label alone while the context size is unknown and leaves out an empty focus", async () => {
@@ -572,7 +572,7 @@ describe("/session-handoff on demand", () => {
 
     await host.runCommand(HANDOFF_COMMAND, "   ");
 
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
     expect(requests()[0]).not.toContain("next session is for");
     expect(requests()[0]).toMatch(/now, so this is your very next step\.\n\nWrite the handoff file/);
   });
@@ -670,7 +670,7 @@ describe("/session-handoff on demand", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.confirmations).toHaveLength(1);
     expect(host.newSessions).toEqual([]);
-    expect(notice()).toBe("<warning>Handoff: waiting for running work");
+    expect(notice()).toBe("<warning>» Handoff waiting for running work");
 
     busy(false);
     await flush();
@@ -712,7 +712,7 @@ describe("/session-handoff on demand", () => {
     expect(host.newSessions).toHaveLength(1);
     expect(requests()).toHaveLength(2);
     expect(requests()[1]).toContain(FOCUS);
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
   });
 
   it("asks for a fresh handoff when stuck without a valid file", async () => {
@@ -786,7 +786,7 @@ describe("/session-handoff during a turn", () => {
       message: `Writing a session handoff to ${handoffPath}; the session switches to a new one when it is ready.`,
       level: "info",
     });
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
   });
 
   it("drops a queued handoff on an aborted settle and sends nothing afterwards", async () => {
@@ -818,7 +818,7 @@ describe("/session-handoff during a turn", () => {
     turn(34_000);
     await host.runCommand(HANDOFF_COMMAND);
 
-    expect(notice()).toBe("<warning>Handoff: after this turn");
+    expect(notice()).toBe("<warning>» Handoff after this turn");
 
     await host.runCommand(HANDOFF_COMMAND);
 
@@ -833,7 +833,7 @@ describe("/session-handoff during a turn", () => {
       message: "Session handoff queued; the focus is updated.",
       level: "info",
     });
-    expect(notice()).toBe("<warning>Handoff: after this turn");
+    expect(notice()).toBe("<warning>» Handoff after this turn");
 
     await host.runCommand(HANDOFF_COMMAND);
     host.settle();
@@ -850,7 +850,7 @@ describe("/session-handoff during a turn", () => {
     turn(76_000);
 
     expect(requests()).toEqual([]);
-    expect(notice()).toBe("<warning>Handoff: after this turn");
+    expect(notice()).toBe("<warning>» Handoff after this turn");
 
     host.settle();
 
@@ -860,7 +860,7 @@ describe("/session-handoff during a turn", () => {
     );
     expect(requests()[0]).toContain(FOCUS);
     expect(host.notices.filter((notice) => notice.message.startsWith("Context is nearly full"))).toEqual([]);
-    expect(notice()).toBe("<error>Handoff: writing the document");
+    expect(notice()).toBe("<warning>» Handoff writing the document");
   });
 
   it("still sends at once when idle", async () => {
@@ -1020,7 +1020,7 @@ describe("/session-handoff during a turn", () => {
 
     expect(requests()).toHaveLength(2);
     expect(warnings()).toHaveLength(1);
-    expect(notice()).toBe("<error>Handoff failed · run /session-handoff");
+    expect(notice()).toBe("<error>✗ Handoff failed · run /session-handoff");
   });
 });
 
@@ -1045,7 +1045,7 @@ describe("session limits around the dispatch window", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.confirmations).toHaveLength(1);
     expect(host.newSessions).toEqual([]);
-    expect(notice()).toBe("<warning>Handoff: waiting for running work");
+    expect(notice()).toBe("<warning>» Handoff waiting for running work");
 
     busy(false);
     await flush();
@@ -1114,7 +1114,7 @@ describe("release timer", () => {
     await vi.advanceTimersByTimeAsync(RELEASE_MS);
 
     expect(host.dispatched).toEqual([]);
-    expect(notice()).toBe("<warning>Handoff: waiting for running work");
+    expect(notice()).toBe("<warning>» Handoff waiting for running work");
   });
 
   it("holds the switch when a source turns busy again before the timer fires", async () => {
@@ -1153,8 +1153,8 @@ describe("handoff seed message", () => {
     const { host } = setup();
 
     expect(host.renderMessage("pi-session-limits-handoff", { text: "Carry on. More." })).toEqual([
-      "● Handoff from previous session",
-      "  ⎿  Carry on. (<app.tools.expand> expand)",
+      "» Handoff from the previous session",
+      "  ↳ Carry on. (<app.tools.expand> to expand)",
     ]);
   });
 });

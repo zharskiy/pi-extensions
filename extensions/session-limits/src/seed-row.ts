@@ -1,7 +1,7 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { CHILD_INDENT, expandHint, type RowRender, toolRow } from "../../../core/manager/row.ts";
+import { CHILD_COLUMN, expandHintFor, type RowRender, row, wrapChild } from "../../../core/manager/row.ts";
 
-export const SEED_TITLE = "Handoff from previous session";
+export const SEED_TITLE = "Handoff from the previous session";
 
 export const firstSentence = (text: string) => {
   const [line = ""] = text.trim().split("\n");
@@ -10,17 +10,15 @@ export const firstSentence = (text: string) => {
   return end ? line.slice(0, end.index + 1) : line;
 };
 
-const wrapped = (text: string, width: number, theme: ThemeLike) =>
-  text
-    .split("\n")
-    .flatMap((line) => (line === "" ? [""] : theme.wrap(line, Math.max(1, width - CHILD_INDENT.length))));
+const summary = (text: string) => (theme: ThemeLike) => theme.fg("muted", firstSentence(text));
 
 export const seedRow =
   (text: string, expanded: boolean, expandKey: string): RowRender =>
   (width, theme) =>
-    toolRow({
-      state: "text",
-      title: SEED_TITLE,
-      children: expanded ? wrapped(text.trim(), width, theme) : [firstSentence(text)],
-      hint: expanded ? undefined : (paint) => expandHint(expandKey, paint),
+    row({
+      mark: "info",
+      title: theme.bold(SEED_TITLE),
+      children: expanded ? [wrapChild(text.trim(), width, CHILD_COLUMN, theme).join("\n")] : [summary(text)],
+      hint: expanded ? undefined : expandHintFor(expandKey),
+      hintCuts: true,
     })(width, theme);
