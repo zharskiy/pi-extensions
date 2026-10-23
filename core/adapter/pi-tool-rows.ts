@@ -3,7 +3,14 @@ import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-codi
 import type { Component } from "@earendil-works/pi-tui";
 import { CHILD_COLUMN, MARKS } from "../manager/row.ts";
 import type { Host, ThemeLike, ToolCallView, ToolRow, ToolRows } from "./contract.ts";
-import { abortedText, recordPad, rowComponent, slotFor, toolRowsRecord } from "./pi-row-component.ts";
+import {
+  abortedText,
+  abortNotice,
+  recordPad,
+  rowComponent,
+  slotFor,
+  toolRowsRecord,
+} from "./pi-row-component.ts";
 import { fromPiResult, type PiToolRenderContext, themeLike } from "./pi-tools.ts";
 
 export const BUILTIN_TOOLS: readonly string[] = [
@@ -58,20 +65,29 @@ const callView = (
 ): ToolCallView => {
   const converted = result ? fromPiResult(result as never) : undefined;
   const tool = label(name);
+  const aborted = context.isError && converted !== undefined && abortedText(converted.text, name);
 
   return {
     name,
     args: context.args,
     argsComplete: context.argsComplete,
-    started: context.executionStarted,
+    started: context.executionStarted || result !== undefined,
     isPartial: context.isPartial,
     isError: context.isError,
     expanded: context.expanded,
     cwd: context.cwd,
-    aborted: context.isError && converted !== undefined && abortedText(converted.text, name),
+    aborted,
     ...(context.durationMs === undefined ? {} : { durationMs: context.durationMs }),
     ...(tool ? { label: tool } : {}),
-    ...(converted && result ? { result: { ...converted, images: imageCount(result) } } : {}),
+    ...(converted && result
+      ? {
+          result: {
+            ...converted,
+            text: aborted && abortNotice(converted.text) ? "" : converted.text,
+            images: imageCount(result),
+          },
+        }
+      : {}),
   };
 };
 

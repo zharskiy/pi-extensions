@@ -159,6 +159,7 @@ export type ToolInput = {
   durationMs?: number;
   width: number;
   outputPad?: number;
+  started?: boolean;
 };
 
 const dropLeadingBlanks = (lines: string[]) => {
@@ -182,7 +183,10 @@ export const renderTool = (rows: ToolRows, input: ToolInput) => {
   );
 
   tool.setArgsComplete();
-  tool.markExecutionStarted();
+
+  if (input.started !== false) {
+    tool.markExecutionStarted();
+  }
 
   if (input.result !== undefined) {
     tool.updateResult(
@@ -203,7 +207,9 @@ export const renderTool = (rows: ToolRows, input: ToolInput) => {
   return { painted, lines: painted.map(visible) };
 };
 
-export type PaneInput = Omit<ToolInput, "isPartial" | "outputPad"> & { stopReason?: "aborted" | "error" };
+export type PaneInput = Omit<ToolInput, "isPartial" | "outputPad" | "started"> & {
+  stopReason?: "aborted" | "error";
+};
 
 export const renderPaneTool = (rows: ToolRows, input: PaneInput) => {
   const host = toolRowsHost({ registerToolRenderer: () => {} } as never);

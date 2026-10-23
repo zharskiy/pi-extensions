@@ -43,12 +43,18 @@ const SHELL_ABORTED = "Command aborted";
 
 const SHELLS: readonly string[] = ["bash", "powershell"];
 
-export const abortedText = (text: string, name: string) => {
+export const abortNotice = (text: string) => {
   const trimmed = text.trim();
 
-  if (trimmed === ABORTED || RETRIES_ABORTED.test(trimmed)) {
+  return trimmed === ABORTED || RETRIES_ABORTED.test(trimmed);
+};
+
+export const abortedText = (text: string, name: string) => {
+  if (abortNotice(text)) {
     return true;
   }
+
+  const trimmed = text.trim();
 
   const last = trimmed
     .split("\n")

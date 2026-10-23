@@ -3,6 +3,7 @@ import {
   piEditDiff,
   renderExpandedEdit,
   renderPaneEdit,
+  renderPaneTool,
   renderTool,
   visible,
 } from "../../../core/test/adapter/tool-rows.ts";
@@ -166,5 +167,85 @@ describe("pi's bodies under the rows", () => {
         });
       });
     });
+  });
+});
+
+describe("finished rows pi replays without a start", () => {
+  const trimmed = (lines: string[]) => lines.map((line) => line.trimEnd());
+
+  it("marks a resumed read and bash done", () => {
+    expect(
+      trimmed(
+        renderTool(rows, {
+          name: "read",
+          args: { path: "/repo/a.ts" },
+          result: "one\ntwo",
+          durationMs: 7_000,
+          started: false,
+          width: 60,
+        }).lines,
+      ),
+    ).toEqual([" ✓ Read a.ts · 7s", "   ↳ 2 lines"]);
+    expect(
+      trimmed(
+        renderTool(rows, {
+          name: "bash",
+          args: { command: "ls" },
+          result: "a.ts",
+          durationMs: 7_000,
+          started: false,
+          width: 60,
+        }).lines,
+      ),
+    ).toEqual([" ✓ $ ls · 7s", "   ↳ a.ts"]);
+  });
+
+  it("marks a call of an aborted turn stopped, without pi's abort text as output", () => {
+    expect(
+      trimmed(
+        renderTool(rows, {
+          name: "bash",
+          args: { command: "npm run dev" },
+          result: "Operation aborted",
+          isError: true,
+          started: false,
+          width: 60,
+        }).lines,
+      ),
+    ).toEqual([" ⊘ $ npm run dev · stopped"]);
+  });
+
+  it("marks a call of a failed turn failed", () => {
+    expect(
+      renderTool(rows, {
+        name: "read",
+        args: { path: "/repo/a.ts" },
+        result: "Error",
+        isError: true,
+        started: false,
+        width: 60,
+      }).lines[0]?.trimEnd(),
+    ).toBe(" ✗ Read a.ts · Error");
+  });
+
+  it("marks the open calls of an aborted or failed agent turn stopped or failed in the pane", () => {
+    expect(
+      trimmed(
+        renderPaneTool(rows, {
+          name: "bash",
+          args: { command: "npm run dev" },
+          stopReason: "aborted",
+          width: 60,
+        }),
+      ),
+    ).toEqual([" ⊘ $ npm run dev · stopped"]);
+    expect(
+      renderPaneTool(rows, {
+        name: "read",
+        args: { path: "/repo/a.ts" },
+        stopReason: "error",
+        width: 60,
+      })[0]?.trimEnd(),
+    ).toBe(" ✗ Read a.ts · Error");
   });
 });

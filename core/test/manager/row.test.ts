@@ -10,7 +10,6 @@ import {
   MARKS,
   type Mark,
   type MarkedRow,
-  markOf,
   preview,
   row,
   rowChildren,
@@ -242,16 +241,6 @@ describe("row", () => {
       expect(lines.filter((line) => plainTheme.width(line) > width)).toEqual([]);
     },
   );
-});
-
-describe("markOf", () => {
-  it("is pending until started and while partial, stopped when aborted, then error or success", () => {
-    expect(markOf({ started: false, isPartial: false, isError: false })).toBe("pending");
-    expect(markOf({ isPartial: true, isError: true, aborted: true })).toBe("pending");
-    expect(markOf({ isPartial: false, isError: true, aborted: true })).toBe("stopped");
-    expect(markOf({ isPartial: false, isError: true })).toBe("error");
-    expect(markOf({ started: true, isPartial: false, isError: false })).toBe("success");
-  });
 });
 
 describe("titleLine", () => {

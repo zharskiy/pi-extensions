@@ -5,6 +5,7 @@ import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../adapter/co
 import { releaseLabel, storeLabel } from "../../adapter/pi-thinking-label.ts";
 import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
+import { MARKS, markOf } from "../../manager/row.ts";
 import { initRenderTheme } from "./render-theme.ts";
 import { renderPaneTool } from "./tool-rows.ts";
 
@@ -396,7 +397,7 @@ describe("transcript pane tool views", () => {
   const rows = (view: ToolCallView) => {
     seen.push(view);
 
-    return { call: () => [`✓ ${view.label ?? view.name}`], result: () => [] };
+    return { call: () => [`${MARKS[markOf(view)]} ${view.label ?? view.name}`], result: () => [] };
   };
 
   it("passes the duration stored in the result to the rows", () => {
@@ -412,11 +413,18 @@ describe("transcript pane tool views", () => {
     expect(seen.filter((view) => view.result).map((view) => view.durationMs)).toContain(6_000);
   });
 
-  it("marks the calls of an aborted assistant turn aborted", () => {
-    seen.length = 0;
-    renderPaneTool(rows, { name: "bash", args: { command: "ls" }, stopReason: "aborted", width: 60 });
+  it("draws the open calls of an aborted turn stopped and of a failed turn failed", () => {
+    const drawn = (stopReason: "aborted" | "error") =>
+      renderPaneTool(rows, { name: "bash", args: { command: "ls" }, stopReason, width: 60 })[0];
 
-    expect(seen.at(-1)).toMatchObject({ aborted: true, isError: true });
+    expect(drawn("aborted")).toBe(" ⊘ bash");
+    expect(drawn("error")).toBe(" ✗ bash");
+  });
+
+  it("draws a finished call done", () => {
+    expect(renderPaneTool(rows, { name: "read", args: { path: "a.ts" }, result: "one", width: 60 })[0]).toBe(
+      " ✓ read",
+    );
   });
 
   it("labels MCP tools by pi's naming pattern", () => {
