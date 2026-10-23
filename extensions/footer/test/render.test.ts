@@ -42,9 +42,9 @@ describe("renderFooter", () => {
     expect(render()).toEqual([
       "",
       " 150.1k · $4.00 · test-model (1M context)",
-      " session total (agents included) 162.4k / $4.42",
+      " session total (agents included) 162.4k · $4.42",
       " my-project",
-      " ▶▶ thinking high (shift+tab to cycle)",
+      " thinking high (shift+tab to cycle)",
       "",
     ]);
   });
@@ -55,9 +55,9 @@ describe("renderFooter", () => {
     expect(lines).toEqual([
       "",
       " 150.1k · $4.00 · test-model (1M context)",
-      " session total (agents included) 162.4k / $4.42",
+      " session total (agents included) 162.4k · $4.42",
       " my-project git:(feature-branch) • refactor",
-      " ▶▶ thinking high (shift+tab to cycle)",
+      " thinking high (shift+tab to cycle)",
       "",
       " busy",
       "",
@@ -69,7 +69,7 @@ describe("renderFooter", () => {
       "",
       " 150.1k · test-model (1M context)",
       " my-project",
-      " ▶▶ thinking high (shift+tab to cycle)",
+      " thinking high (shift+tab to cycle)",
       "",
     ]);
   });
@@ -78,7 +78,7 @@ describe("renderFooter", () => {
     expect([0, -1, 0.004, 0.01, 4.425].map(costOf)).toEqual([
       " 150.1k · $0.00 · test-model (1M context)",
       " 150.1k · $0.00 · test-model (1M context)",
-      " 150.1k · $0.004 · test-model (1M context)",
+      " 150.1k · <$0.01 · test-model (1M context)",
       " 150.1k · $0.01 · test-model (1M context)",
       " 150.1k · $4.42 · test-model (1M context)",
     ]);
@@ -124,15 +124,31 @@ describe("renderFooter", () => {
   it("renders the session total label dim before its values", () => {
     const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[2];
 
-    expect(plain(line)).toBe(" <dim>session total (agents included) 162.4k<dim> / $4.42");
+    expect(plain(line)).toBe(" <dim>session total (agents included) <text>162.4k<muted> · <text>$4.42");
   });
 
-  it("paints the thinking label and its level in one bold span", () => {
-    const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[4];
+  it("paints the thinking label bold in the colour of its level, without a mode mark", () => {
+    const boldTheme: ThemeLike = { ...tokenTheme, bold: (text) => `<b>${text}</b>` };
+    const line = (thinking: string) =>
+      renderFooter(boldTheme, state({ thinking }), { branch: null, statuses: new Map() })[4];
 
-    const bold = line.slice(line.indexOf("\x1b[1m"));
+    expect(line("high")).toBe(" <b><thinkingHigh>thinking high</b> <dim>(shift+tab to cycle)");
+    expect(line("")).toContain("<b><thinkingOff>thinking off</b>");
+    expect(line("xhigh")).toContain("<thinkingXhigh>thinking xhigh");
+    expect(line("max")).toContain("<thinkingXhigh>thinking max");
+  });
 
-    expect(plain(bold.slice(0, bold.indexOf("\x1b[0m")))).toBe("thinking high");
+  it("paints every segment through theme tokens, with muted separators", () => {
+    const lines = renderFooter(tokenTheme, state({ sessionName: "refactor" }), {
+      branch: "feature-branch",
+      statuses: new Map(),
+    });
+
+    expect(lines[1]).toBe(
+      " <text>150.1k<muted> · <text>$4.00<muted> · <accent>test-model <muted>(1M context)",
+    );
+    expect(lines[3]).toBe(" <accent>my-project<muted> git:(<text>feature-branch<muted>)<dim> • refactor");
+    expect(lines.join("")).not.toContain(`${String.fromCharCode(27)}[38;5;`);
   });
 
   it("drops the cache segment first when the line is too narrow", () => {
@@ -152,7 +168,7 @@ describe("renderFooter", () => {
   it("marks subscription sessions on the session total", () => {
     const sub = { ...totals, subscription: true };
 
-    expect(render({ totals: sub })[2]).toBe(" session total (agents included) 162.4k / $4.42 (sub)");
+    expect(render({ totals: sub })[2]).toBe(" session total (agents included) 162.4k · $4.42 (sub)");
     expect(
       renderFooter(tokenTheme, state({ totals: sub }), { branch: null, statuses: new Map() })[2],
     ).toContain("<dim> (sub)");
@@ -166,9 +182,9 @@ describe("renderFooter", () => {
   });
 
   it("shows the thinking level, off when empty and unavailable without reasoning", () => {
-    expect(render({ thinking: "" })[4]).toBe(" ▶▶ thinking off (shift+tab to cycle)");
+    expect(render({ thinking: "" })[4]).toBe(" thinking off (shift+tab to cycle)");
     expect(render({ model: { ...model, reasoning: false } })[4]).toBe(
-      " ▶▶ thinking unavailable (shift+tab to cycle)",
+      " thinking unavailable (shift+tab to cycle)",
     );
   });
 

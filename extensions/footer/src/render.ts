@@ -1,22 +1,24 @@
-import type { ContextSnapshot, FooterData, ModelInfo, ThemeLike } from "../../../core/adapter/contract.ts";
+import type {
+  ContextSnapshot,
+  FooterData,
+  ModelInfo,
+  ThemeLike,
+  ThemeToken,
+} from "../../../core/adapter/contract.ts";
 import { cachePercentText } from "../../../core/manager/cache.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
-import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
+import { formatCost, formatTokens, formatWindow } from "../../../core/manager/format.ts";
 import { DOT, PAD } from "../../../core/manager/layout.ts";
 
-const MODE_MARK = "▶▶";
-
-const RESET = "\x1b[0m";
-
-const BOLD = "\x1b[1m";
-
-const COLORS = {
-  green: "\x1b[38;5;151m",
-  gold: "\x1b[38;5;186m",
-  cyan: "\x1b[38;5;152m",
-  blue: "\x1b[38;5;153m",
-  yellow: "\x1b[38;5;223m",
-} as const;
+const LEVEL_TOKENS: Record<string, ThemeToken> = {
+  off: "thinkingOff",
+  minimal: "thinkingMinimal",
+  low: "thinkingLow",
+  medium: "thinkingMedium",
+  high: "thinkingHigh",
+  xhigh: "thinkingXhigh",
+  max: "thinkingXhigh",
+};
 
 export type FooterState = {
   context: ContextSnapshot;
@@ -29,17 +31,7 @@ export type FooterState = {
   cache: number | undefined;
 };
 
-const paint = (color: string, text: string) => `${color}${text}${RESET}`;
-
-const paintBold = (color: string, text: string) => `${BOLD}${color}${text}${RESET}`;
-
-const formatCost = (cost: number) => {
-  if (cost <= 0) {
-    return "$0.00";
-  }
-
-  return cost < 0.01 ? `$${cost.toFixed(3)}` : `$${cost.toFixed(2)}`;
-};
+const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
 
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
@@ -59,15 +51,17 @@ const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
     return theme.fg("warning", text);
   }
 
-  return paint(COLORS.green, text);
+  return theme.fg("text", text);
 };
 
-const modelText = (context: ContextSnapshot, model: ModelInfo | undefined) => {
+const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo | undefined) => {
   if (!model) {
-    return "no model";
+    return theme.fg("accent", "no model");
   }
 
-  return `${model.name} (${formatWindow(model.contextWindow || context.window)} context)`;
+  const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
+
+  return `${theme.fg("accent", model.name)} ${theme.fg("muted", window)}`;
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
@@ -78,9 +72,9 @@ const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
     [
       contextTokens(theme, state.context),
       ...(cache === undefined ? [] : [cacheSegment(theme, cache)]),
-      ...(state.totals === undefined ? [] : [paint(COLORS.gold, formatCost(state.totals.main.cost))]),
-      paint(COLORS.cyan, modelText(state.context, state.model)),
-    ].join(theme.fg("dim", DOT));
+      ...(state.totals === undefined ? [] : [theme.fg("text", money(state.totals.main.cost))]),
+      modelText(theme, state.context, state.model),
+    ].join(theme.fg("muted", DOT));
   const full = join(state.cache);
 
   return theme.width(`${PAD}${full}`) > width ? join(undefined) : full;
@@ -93,27 +87,30 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
 
   return [
     theme.fg("dim", "session total (agents included) "),
-    paint(COLORS.green, formatTokens(tokens)),
-    theme.fg("dim", " / "),
-    paint(COLORS.gold, formatCost(cost)),
+    theme.fg("text", formatTokens(tokens)),
+    theme.fg("muted", DOT),
+    theme.fg("text", money(cost)),
     ...(totals.subscription ? [theme.fg("dim", " (sub)")] : []),
   ].join("");
 };
 
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
-  const folder = paint(COLORS.blue, folderName(cwd));
-  const place = branch ? `${folder} ${paint(COLORS.yellow, `git:(${branch})`)}` : folder;
+  const folder = theme.fg("accent", folderName(cwd));
+  const place = branch
+    ? `${folder}${theme.fg("muted", " git:(")}${theme.fg("text", branch)}${theme.fg("muted", ")")}`
+    : folder;
 
   return sessionName ? `${place}${theme.fg("dim", ` • ${sessionName}`)}` : place;
 };
 
 const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {
+  const name = thinking || "off";
   const level =
     model?.reasoning === false
       ? theme.fg("dim", "thinking unavailable")
-      : paintBold(COLORS.gold, `thinking ${thinking || "off"}`);
+      : theme.bold(theme.fg(LEVEL_TOKENS[name] ?? "thinkingOff", `thinking ${name}`));
 
-  return `${paint(COLORS.gold, MODE_MARK)} ${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
+  return `${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
 };
 
 const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>

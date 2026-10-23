@@ -1,6 +1,8 @@
+import { formatCost } from "../../../core/manager/format.ts";
+
 type SourceCost = { source: string; cost: number };
 
-const formatCost = (usd: number) => `$${usd.toFixed(3)}`;
+const money = (usd: number) => formatCost(usd, { zero: "show" }) ?? "$0.00";
 
 export const footerText = ({
   main,
@@ -19,9 +21,9 @@ export const footerText = ({
   const total = sources.reduce((sum, entry) => sum + entry.cost, main);
 
   const parts = [
-    `main ${formatCost(main)}`,
-    ...sources.map((entry) => `${entry.source} ${formatCost(entry.cost)}`),
-    `total ${formatCost(total)}`,
+    `main ${money(main)}`,
+    ...sources.map((entry) => `${entry.source} ${money(entry.cost)}`),
+    `total ${money(total)}`,
   ];
 
   return `${parts.join(" · ")}${suffix}`;

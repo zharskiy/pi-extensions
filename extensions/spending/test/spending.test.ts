@@ -46,7 +46,7 @@ describe("spending", () => {
     report("agents", "a2", 0.2);
     report("agents", "a1", 0.05);
 
-    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.300 · total $1.300");
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.30 · total $1.30");
   });
 
   it("lists each source and marks subscription sessions", () => {
@@ -55,9 +55,7 @@ describe("spending", () => {
     report("jobs", "j1", 0.25);
     report("agents", "a1", 0.5);
 
-    expect(host.statuses.get(STATUS_KEY)).toBe(
-      "main $0.000 · agents $0.500 · jobs $0.250 · total $0.750 (sub)",
-    );
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $0.00 · agents $0.50 · jobs $0.25 · total $0.75 (sub)");
   });
 
   it("ignores malformed payloads", () => {
@@ -78,7 +76,7 @@ describe("spending", () => {
     host.usage = usageOf(2);
     host.settle();
 
-    expect(host.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.100 · total $2.100");
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $2.00 · agents $0.10 · total $2.10");
   });
 
   it("persists changed figures on idle, not on every event while busy", () => {
@@ -123,7 +121,7 @@ describe("spending", () => {
     createSpending(resumed);
     resumed.start();
 
-    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.300 · total $0.300");
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.00 · agents $0.30 · total $0.30");
   });
 
   it("keeps the totals across a compaction", () => {
@@ -134,7 +132,7 @@ describe("spending", () => {
     host.compact();
     host.settle();
 
-    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.300 · total $1.300");
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.30 · total $1.30");
   });
 
   it("inherits the whole parent session's totals in a fork, also after resuming the fork", () => {
@@ -155,7 +153,7 @@ describe("spending", () => {
     createSpending(fork);
     fork.start("/sessions/parent.jsonl");
 
-    expect(fork.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.500 · total $2.500");
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $2.00 · agents $0.50 · total $2.50");
 
     const resumed = createFakeHost();
 
@@ -164,7 +162,7 @@ describe("spending", () => {
     createSpending(resumed);
     resumed.start();
 
-    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.500 · total $2.750");
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $2.25 · agents $0.50 · total $2.75");
   });
 
   it("keeps the totals across a handoff switch (new session with a parent)", () => {
@@ -181,12 +179,12 @@ describe("spending", () => {
     createSpending(next);
     next.start("/sessions/previous.jsonl");
 
-    expect(next.statuses.get(STATUS_KEY)).toBe("main $2.000 · agents $0.400 · total $2.400");
+    expect(next.statuses.get(STATUS_KEY)).toBe("main $2.00 · agents $0.40 · total $2.40");
 
     next.usage = usageOf(0.25);
     next.emit(USAGE_CHANNEL, { source: "agents", id: "a1", usage: usageOf(0.1) });
 
-    expect(next.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.500 · total $2.750");
+    expect(next.statuses.get(STATUS_KEY)).toBe("main $2.25 · agents $0.50 · total $2.75");
   });
 
   it("carries inherited totals into a fork of a fork", () => {
@@ -200,7 +198,7 @@ describe("spending", () => {
     grandchild.start("/sessions/fork.jsonl");
     grandchild.emit(USAGE_CHANNEL, { source: "agents", id: "a3", usage: usageOf(0.1) });
 
-    expect(grandchild.statuses.get(STATUS_KEY)).toBe("main $2.250 · agents $0.100 · total $2.350");
+    expect(grandchild.statuses.get(STATUS_KEY)).toBe("main $2.25 · agents $0.10 · total $2.35");
   });
 
   it("counts a new agent that draws the id of a parent agent, also after resuming the fork", () => {
@@ -217,7 +215,7 @@ describe("spending", () => {
     fork.emit(USAGE_CHANNEL, { source: "agents", id: "a1", usage: usageOf(0.1) });
     fork.settle();
 
-    expect(fork.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.600 · total $0.600");
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $0.00 · agents $0.60 · total $0.60");
 
     const resumed = createFakeHost();
 
@@ -225,7 +223,7 @@ describe("spending", () => {
     createSpending(resumed);
     resumed.start();
 
-    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.000 · agents $0.600 · total $0.600");
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $0.00 · agents $0.60 · total $0.60");
   });
 
   it("publishes the totals with chargeable tokens on every refresh", () => {
@@ -311,7 +309,7 @@ describe("spending", () => {
     host.usage = usageOf(1);
     host.compact();
 
-    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.300 · total $1.300");
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.30 · total $1.30");
   });
 
   it("inherits once when the session starts twice with the same parent, also after resuming", () => {
@@ -326,7 +324,7 @@ describe("spending", () => {
     fork.start("/sessions/parent.jsonl");
     fork.start("/sessions/parent.jsonl");
 
-    expect(fork.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.400 · total $1.400");
+    expect(fork.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.40 · total $1.40");
     expect(fork.entries.filter((entry) => entry.customType === MAIN_OFFSET_ENTRY)).toHaveLength(1);
 
     const resumed = createFakeHost();
@@ -335,7 +333,7 @@ describe("spending", () => {
     createSpending(resumed);
     resumed.start();
 
-    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.400 · total $1.400");
+    expect(resumed.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.40 · total $1.40");
   });
 
   it("falls back to the session's own entries and warns when the parent cannot be read", () => {
@@ -348,7 +346,7 @@ describe("spending", () => {
     createSpending(host);
     host.start("/sessions/missing.jsonl");
 
-    expect(host.statuses.get(STATUS_KEY)).toBe("main $0.500 · agents $0.200 · total $0.700");
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $0.50 · agents $0.20 · total $0.70");
     expect(host.notices).toEqual([
       {
         message: "spending: could not read the parent session missing.jsonl; totals cover this session only",
@@ -370,7 +368,7 @@ describe("spending", () => {
     createSpending(host);
     host.start();
 
-    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.000 · agents $0.200 · total $1.200");
+    expect(host.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.20 · total $1.20");
     expect(host.published.at(-1)?.data).toMatchObject({ main: { cost: 1, tokens: 300 } });
   });
 });

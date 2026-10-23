@@ -31,7 +31,7 @@ describe("footer", () => {
       "",
       " 50.0k · test-model (200k context)",
       " my-project git:(main)",
-      " ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
+      " thinking medium (<app.thinking.cycle> to cycle)",
       "",
     ]);
   });
@@ -60,7 +60,7 @@ describe("footer", () => {
     expect(host.footerRefreshes).toBe(1);
     expect(lines().slice(1, 3)).toEqual([
       " 50.0k · $1.50 · test-model (200k context)",
-      " session total (agents included) 50.0k / $2.00",
+      " session total (agents included) 50.0k · $2.00",
     ]);
   });
 
@@ -97,6 +97,6 @@ describe("footer", () => {
 
     expect(lines()).toContain(" 190.0k · test-model (200k context)");
     expect(lines()).toContain(" my-project git:(main) • refactor");
-    expect(lines()).toContain(" ▶▶ thinking high (<app.thinking.cycle> to cycle)");
+    expect(lines()).toContain(" thinking high (<app.thinking.cycle> to cycle)");
   });
 });
