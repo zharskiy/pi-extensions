@@ -32,8 +32,8 @@ A pi extension that draws pi's transcript in the row style of Claude Code: one g
 | Tool | Title | Result |
 |---|---|---|
 | read | `Read path` (dim ` (lines a–b)`) | `Read N lines`, `Read image` |
-| edit | `Update path` | `Added N lines, removed M lines`; expanded, pi's diff under it |
-| write | `Write path` | `Wrote N lines` |
+| edit | `Update path` | `Added N lines, removed M lines`; expanded, the diff under it (below) |
+| write | `Write path` | `Wrote N lines`; expanded, the first ten lines of the content as added lines and `… +N lines` |
 | bash, powershell | `$ first line of the command` (`PS>`) | the first three output lines and `… +N lines`, `(No output)`, `Running…` with the last lines while it runs; expanded, pi's whole output |
 | grep | `Grep pattern in path` | `Found N lines`, `No matches` |
 | find | `Find pattern` | `Found N files` |
@@ -41,6 +41,7 @@ A pi extension that draws pi's transcript in the row style of Claude Code: one g
 | codemode | `codemode` and the first line of the script (after an `// @options:` line) | `N tool calls, M failed, K lines of output`, `Running… · N tool calls` while it runs, a failed script's first error lines; expanded, the whole script and pi's own call list and output, or the whole error |
 | any other tool (MCP, …) | the bold tool name and up to three arguments | like shell output |
 
+- An expanded edit draws its diff the Claude Code way: a `NN -` / `NN +` gutter, removed and added lines on a background that spans the width (pi's tool error and success backgrounds), the changed words of a removed line and the added line that replaces it on a brighter background (skipped when more than half of the pair changed), dim context lines and a dim `...` between hunks. Long lines are cut with `…`, not wrapped; tabs become four spaces. A diff the rows cannot read falls back to pi's own.
 - A failed call shows its error lines in the error colour, three of them until expanded. Paths are shown relative to the working directory, or as `~/…` under your home directory.
 - The dim `(ctrl+o expand)` hint names pi's own `app.tools.expand` key, and shows only when expanding would show more.
 - Tools that already draw themselves (this package's own tools, and any other extension's tool with its own renderer or frame) keep their look; this package's tools use the same row language through `shared/row.ts`. Tools of pi's built-in extensions (e.g. codemode) get rows even though pi gives them a renderer; a third-party extension that replaces one of them keeps its own look. An extension that only restyles such a tool keeps its look when it loads before this one, and gets rows when it loads after.
@@ -55,6 +56,8 @@ Deliberate, not oversights:
 - Streaming text is not coalesced to 100 ms; pi's own 60 frames per second apply.
 - Consecutive tool calls are not folded into one group row (`Read 2 files, ran 1 shell command`); pi draws one row per call.
 - There is no `Thought for Ns` row; a hidden thinking run reads `∴ Thinking…`.
+- Diff lines are not syntax highlighted, and their colours come from pi's theme (the word background mixes the line background with the theme's diff colour) rather than Claude Code's fixed palette.
+- An expanded write shows the new content only: pi does not report what the file held before.
 
 ## Limits
 
@@ -62,4 +65,4 @@ Deliberate, not oversights:
 
 ## Layout
 
-`src/index.ts` is the pi entry. `src/transcript.ts` registers the tool rows and, at a tui session start, switches on the message rows and the thinking label. `src/tools.ts` builds each tool's title and summary over `shared/row.ts`, `src/output.ts` keeps the first or last lines of output and names the hidden ones, and `src/diff.ts` counts an edit's added and removed lines. The pi side (the tool renderer, the message component overrides) lives in `core/adapter/pi-tool-rows.ts` and `core/adapter/pi-message-rows.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry. `src/transcript.ts` registers the tool rows and, at a tui session start, switches on the message rows and the thinking label. `src/tools.ts` builds each tool's title and summary over `shared/row.ts`, `src/output.ts` keeps the first or last lines of output and names the hidden ones, and `src/diff.ts` reads pi's edit diff, counts its added and removed lines and draws its rows. The pi side (the tool renderer, the message component overrides) lives in `core/adapter/pi-tool-rows.ts` and `core/adapter/pi-message-rows.ts`. Tests are under `test/`.

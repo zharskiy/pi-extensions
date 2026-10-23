@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
+  mixColors,
   Text,
   truncateToWidth,
   visibleWidth,
@@ -288,6 +289,42 @@ describe("themeLike colours", () => {
       "<syntaxType>x",
       "<mdHeading>x",
     ]);
+  });
+});
+
+describe("themeLike backgrounds", () => {
+  const live = async () => {
+    const module = await import(
+      new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+    );
+
+    return module.theme as Theme;
+  };
+
+  it("paints diff lines on pi's tool success and error backgrounds", () => {
+    const styled: unknown[] = [];
+    const recording = {
+      style: (text: string, options: unknown) => {
+        styled.push(options);
+        return text;
+      },
+    } as unknown as Theme;
+
+    themeLike(recording).bg("added", "x");
+    themeLike(recording).bg("removed", "x");
+
+    expect(styled).toEqual([{ bg: "toolSuccessBg" }, { bg: "toolErrorBg" }]);
+  });
+
+  it("paints changed words on a background mixed from the line background and the diff colour", async () => {
+    const theme = await live();
+    const like = themeLike(theme);
+    const word = mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
+
+    expect(like.bg("added", "x")).toBe(theme.style("x", { bg: "toolSuccessBg" }));
+    expect(like.bg("addedWord", "x")).toBe(theme.style("x", { bg: word }));
+    expect(like.bg("removedWord", "x")).not.toBe(like.bg("removed", "x"));
+    expect(stripVTControlCharacters(like.bg("removedWord", "x"))).toBe("x");
   });
 });
 

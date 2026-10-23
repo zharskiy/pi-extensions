@@ -173,6 +173,7 @@ describe("pi adapter conformance", () => {
       "isKeyRelease",
       "Key",
       "matchesKey",
+      "mixColors",
       "ScrollView",
       "Text",
       "truncateToWidth",
@@ -958,6 +959,39 @@ describe("pi adapter conformance", () => {
 
       expect(lines.some((line) => line.includes("old line"))).toBe(true);
       expect(lines.some((line) => line.includes("new line"))).toBe(true);
+    });
+
+    it("formats the edit diff as numbered added, removed and context lines with a gap row between hunks", async () => {
+      const { generateDiffString } = await import(
+        new URL("core/tools/edit-diff.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+      );
+      const old = Array.from({ length: 20 }, (_value, index) => `line ${index + 1}`);
+      const now = old.map((line, index) => (index === 1 || index === 17 ? `${line} changed` : line));
+      const { diff } = generateDiffString(`${old.join("\n")}\n`, `${now.join("\n")}\n`);
+      const lines: string[] = diff.split("\n");
+
+      expect(lines).toContain("- 2 line 2");
+      expect(lines).toContain("+ 2 line 2 changed");
+      expect(lines).toContain("  1 line 1");
+      expect(lines).toContain("    ...");
+      expect(lines.filter((line) => !/^[+\- ] *\d+ /.test(line) && !/^ +\.\.\.$/.test(line))).toEqual([]);
+    });
+
+    it("has the theme colours, background style and colour mixing the diff backgrounds use", async () => {
+      const { theme } = await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      );
+
+      pi.initTheme("dark", false);
+
+      const colors = ["toolSuccessBg", "toolErrorBg", "toolDiffAdded", "toolDiffRemoved"];
+      const mixed = tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
+
+      expect(colors.filter((name) => theme.colors[name] === undefined)).toEqual([]);
+      expect(theme.style("x", { bg: "toolSuccessBg" })).toContain("\x1b[48;");
+      expect(theme.style("x", { bg: mixed })).toContain("\x1b[48;");
+      expect(tui.stripTerminalSequences(theme.style("x", { bg: mixed }))).toBe("x");
     });
 
     it("shows the whole read and bash output when expanded", () => {

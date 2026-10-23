@@ -1,15 +1,24 @@
 import { isAbsolute, relative, sep } from "node:path";
 import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../core/manager/format.ts";
-import { childRow, expandHint, noun, type Styled, toolRow, toolState } from "../../../shared/row.ts";
-import { diffCounts } from "./diff.ts";
+import {
+  CHILD_INDENT,
+  childRow,
+  expandHint,
+  noun,
+  type RowRender,
+  type Styled,
+  toolRow,
+  toolState,
+} from "../../../shared/row.ts";
+import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";
 import { moreLine, truncatedOutput } from "./output.ts";
 
 type Args = Record<string, unknown>;
 
 type Context = { view: ToolCallView; args: Args; home: string; key: () => string };
 
-type Summary = { children: Styled[]; more: boolean };
+type Summary = { children: Styled[]; more: boolean; body?: RowRender };
 
 type ToolLook = {
   name: string;
@@ -17,12 +26,14 @@ type ToolLook = {
   title(context: Context, value: string): Styled;
   summary?(context: Context): Summary;
   handlesErrors?: boolean;
-  piBody?: boolean;
+  piBody?: boolean | ((context: Context) => boolean);
 };
 
 const MAX_PAIRS = 3;
 
 const MAX_VALUE = 60;
+
+const MAX_WRITE = 10;
 
 const argsOf = (view: ToolCallView): Args =>
   typeof view.args === "object" && view.args !== null ? (view.args as Args) : {};
@@ -196,9 +207,24 @@ const readSummary = (context: Context): Summary => {
   return { children: [(theme) => `Read ${counted(count, "line")(theme)}`], more: count > 0 };
 };
 
-const editSummary = (context: Context): Summary => {
+const editDiff = (context: Context) => {
   const diff = (context.view.result?.details as { diff?: unknown } | undefined)?.diff;
-  const { added, removed } = diffCounts(typeof diff === "string" ? diff : "");
+
+  return typeof diff === "string" ? diff : "";
+};
+
+const diffBody = (lines: DiffLine[] | undefined, more: Styled[] = []): RowRender | undefined =>
+  lines
+    ? (width, theme) =>
+        [
+          ...diffRows(lines, width - CHILD_INDENT.length, theme),
+          ...more.map((line) => (typeof line === "function" ? line(theme) : line)),
+        ].map((line) => `${CHILD_INDENT}${line}`)
+    : undefined;
+
+const editSummary = (context: Context): Summary => {
+  const diff = editDiff(context);
+  const { added, removed } = diffCounts(diff);
   const parts = [
     ...(added > 0 ? [(theme: ThemeLike) => `Added ${counted(added, "line")(theme)}`] : []),
     ...(removed > 0
@@ -213,13 +239,26 @@ const editSummary = (context: Context): Summary => {
   return {
     children: [(theme) => parts.map((part) => part(theme)).join(", ")],
     more: true,
+    body: context.view.expanded ? diffBody(parseDiff(diff)) : undefined,
   };
+};
+
+const writeLines = (content: string) => {
+  const { lines, hidden } = truncatedOutput(content, MAX_WRITE);
+  const rows = lines.map((text, index): DiffLine => ({ kind: "add", num: String(index + 1), text }));
+
+  return diffBody(rows, hidden > 0 ? [(theme: ThemeLike) => moreLine(hidden, theme)] : []);
 };
 
 const writeSummary = (context: Context): Summary => {
   const content = textArg(context.args, "content") ?? "";
+  const count = lineCount(content);
 
-  return { children: [(theme) => `Wrote ${counted(lineCount(content), "line")(theme)}`], more: false };
+  return {
+    children: [(theme) => `Wrote ${counted(count, "line")(theme)}`],
+    more: count > 0,
+    body: context.view.expanded && count > 0 ? writeLines(content) : undefined,
+  };
 };
 
 const foundSummary =
@@ -251,7 +290,13 @@ const LOOKS: Record<string, ToolLook> = {
     summary: readSummary,
     piBody: true,
   },
-  edit: { name: "Update", key: "path", title: pathTitle("Update"), summary: editSummary, piBody: true },
+  edit: {
+    name: "Update",
+    key: "path",
+    title: pathTitle("Update"),
+    summary: editSummary,
+    piBody: (context) => parseDiff(editDiff(context)) === undefined,
+  },
   write: { name: "Write", key: "path", title: pathTitle("Write"), summary: writeSummary },
   bash: { name: "Bash", key: "command", title: shellTitle("$"), summary: shellBody, piBody: true },
   powershell: {
@@ -350,8 +395,14 @@ const resultRow = (look: ToolLook | undefined, context: Context) => {
       ? (theme: ThemeLike) => expandHint(context.key(), theme)
       : undefined;
 
-  return childRow({ children: summary.children, hint });
+  const row = childRow({ children: summary.children, hint });
+  const body = summary.body;
+
+  return body ? (width: number, theme: ThemeLike) => [...row(width, theme), ...body(width, theme)] : row;
 };
+
+const piBodyOf = (look: ToolLook | undefined, context: Context) =>
+  typeof look?.piBody === "function" ? look.piBody(context) : look?.piBody === true;
 
 export const transcriptRows =
   (key: () => string, home: string): ToolRows =>
@@ -362,6 +413,6 @@ export const transcriptRows =
     return {
       call: toolRow({ state: toolState(view), title: titleOf(look, context) }),
       result: view.result ? resultRow(look, context) : undefined,
-      piBody: look?.piBody === true && !view.isError,
+      piBody: piBodyOf(look, context) && !view.isError,
     };
   };

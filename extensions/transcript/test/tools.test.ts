@@ -153,12 +153,47 @@ describe("results", () => {
     expect(edit("-1 old\n+1 new")).toEqual(["  ⎿  Added 1 line, removed 1 line (ctrl+o expand)"]);
     expect(edit("+1 a\n+2 b")).toEqual(["  ⎿  Added 2 lines (ctrl+o expand)"]);
     expect(edit("-1 a\n-2 b")).toEqual(["  ⎿  Removed 2 lines (ctrl+o expand)"]);
-    expect(edit("-1 old\n+1 new", { expanded: true })).toEqual(["  ⎿  Added 1 line, removed 1 line"]);
+    expect(edit("-1 old\n+1 new", { expanded: true })).toEqual([
+      "  ⎿  Added 1 line, removed 1 line",
+      `     1 - old${" ".repeat(68)}`,
+      `     1 + new${" ".repeat(68)}`,
+    ]);
+  });
+
+  it("draws an expanded edit's diff itself and falls back to pi's body when the diff does not parse", () => {
+    const edit = (diff: string) =>
+      draw(view("edit", { path: "a.ts" }, done("ok", { expanded: true }, { diff })));
+
+    expect(edit("-1 old\n+1 new").piBody).toBe(false);
+    expect(edit("@@ -1 +1 @@\n-old\n+new")).toMatchObject({ result: [], piBody: true });
   });
 
   it("counts the lines a write wrote", () => {
     expect(draw(view("write", { path: "a.ts", content: "a\nb\n" }, done("ok"))).result).toEqual([
-      "  ⎿  Wrote 2 lines",
+      "  ⎿  Wrote 2 lines (ctrl+o expand)",
+    ]);
+    expect(draw(view("write", { path: "a.ts", content: "" }, done("ok"))).result).toEqual([
+      "  ⎿  Wrote 0 lines",
+    ]);
+  });
+
+  it("shows an expanded write's first ten lines as added lines and how many more there are", () => {
+    const content = Array.from({ length: 12 }, (_value, index) => `line ${index + 1}`).join("\n");
+    const write = draw(view("write", { path: "a.ts", content }, done("ok", { expanded: true })), 20);
+
+    expect(write.result).toEqual([
+      "  ⎿  Wrote 12 lines",
+      "      1 + line 1    ",
+      "      2 + line 2    ",
+      "      3 + line 3    ",
+      "      4 + line 4    ",
+      "      5 + line 5    ",
+      "      6 + line 6    ",
+      "      7 + line 7    ",
+      "      8 + line 8    ",
+      "      9 + line 9    ",
+      "     10 + line 10   ",
+      "     … +2 lines",
     ]);
   });
 

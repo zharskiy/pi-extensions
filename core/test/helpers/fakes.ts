@@ -47,7 +47,12 @@ import { type CatalogModel, type ModelPreferences, resolveModel } from "../../ad
 import { textMetrics } from "../../adapter/pi-tools.ts";
 import { type FakeForm, openFakeForm } from "./fake-form.ts";
 
-export const plainTheme: ThemeLike = { fg: (_token, text) => text, bold: (text) => text, ...textMetrics };
+export const plainTheme: ThemeLike = {
+  fg: (_token, text) => text,
+  bg: (_token, text) => text,
+  bold: (text) => text,
+  ...textMetrics,
+};
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 

@@ -23,8 +23,11 @@ export type ThemeToken =
   | "type"
   | "heading";
 
+export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
+
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
+  bg(token: BgToken, text: string): string;
   bold(text: string): string;
   width(text: string): number;
   truncate(text: string, cols: number): string;
