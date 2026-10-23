@@ -379,7 +379,7 @@ describe("thinking label", () => {
   });
 });
 
-describe("terminalColumns", () => {
+describe("workingColumns", () => {
   const columnsUi = (mode: string) => {
     const screen = { terminal: { columns: 97 }, requestRender: () => {} };
     const state: HostState = {
@@ -406,17 +406,17 @@ describe("terminalColumns", () => {
     };
   };
 
-  it("reads the columns of pi's terminal and follows a resize", () => {
+  it("leaves the working message pi's terminal columns without the status border and spinner, after a resize too", () => {
     const { ui, screen } = columnsUi("tui");
 
-    expect(ui.terminalColumns()).toBe(97);
+    expect(ui.workingColumns()).toBe(90);
 
     screen.terminal.columns = 40;
 
-    expect(ui.terminalColumns()).toBe(40);
+    expect(ui.workingColumns()).toBe(33);
   });
 
   it("knows no columns outside tui mode", () => {
-    expect(columnsUi("rpc").ui.terminalColumns()).toBeUndefined();
+    expect(columnsUi("rpc").ui.workingColumns()).toBeUndefined();
   });
 });

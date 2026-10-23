@@ -136,7 +136,7 @@ export type FakeHost = Host & {
   entryRenderers: Map<string, EntryRender>;
   toolRows?: ToolRows;
   thinkingLabels: { label: string | undefined; hint?: string }[];
-  columns?: number;
+  workingColumns?: number;
   messageRenderers: Map<string, MessageRender>;
   renderMessage(
     customType: string,
@@ -430,7 +430,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       setHiddenThinkingLabel: (label, hint) => {
         host.thinkingLabels.push(hint === undefined ? { label } : { label, hint });
       },
-      terminalColumns: () => host.columns,
+      workingColumns: () => host.workingColumns,
+      metrics: textMetrics,
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);

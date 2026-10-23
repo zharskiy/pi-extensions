@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode, RunningTool } from "../../../core/adapter/contract.ts";
-import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createWorkingIndicator, TICK_MS } from "../src/working-indicator.ts";
 
 const HOME = "/home/me";
@@ -8,7 +8,7 @@ const HOME = "/home/me";
 const setup = (mode: RunMode = "tui", columns?: number) => {
   const host = createFakeHost({ mode });
 
-  host.columns = columns;
+  host.workingColumns = columns;
   createWorkingIndicator(host, HOME);
   host.start();
 
@@ -304,7 +304,6 @@ describe("working activity", () => {
     [{ name: "ls", args: {} }, "Listing ."],
     [{ name: "codemode", args: { code: "1" } }, "Running codemode"],
     [{ name: "mcp__notes__search", args: {}, label: "notes/search" }, "Calling notes/search"],
-    [{ name: "mcp__notes__search", args: {} }, "Calling notes/search"],
     [{ name: "run_agent", args: { wait: true, agents: [{}, {}] } }, "Waiting for 2 agents"],
     [{ name: "run_agent", args: { wait: true } }, "Waiting for 1 agent"],
     [{ name: "run_agent", args: { agents: [{}] } }, "Running run_agent"],
@@ -339,25 +338,37 @@ describe("working activity", () => {
 
   const npm = { name: "bash", args: { command: "npm test -- --run" } };
 
-  it("keeps the whole line at 80 columns", () => {
-    expect(during([npm], 80)).toBe(message("Running npm test -- --run", "12s"));
+  it("keeps the whole line in the 70 columns the host leaves on an 80-column terminal", () => {
+    expect(during([npm], 70)).toBe(message("Running npm test -- --run", "12s"));
   });
 
-  it("drops the hint and cuts the activity at 40 columns, keeping the elapsed time", () => {
-    expect(during([npm], 40)).toBe("Running npm test -- -... · 12s");
+  it("drops the hint and cuts the activity in 30 columns, keeping the elapsed time", () => {
+    expect(during([npm], 30)).toBe("Running npm test -- -... · 12s");
   });
 
   it("cuts the activity before dropping the hint, down to 12 columns", () => {
-    expect(during([npm], 72)).toBe(message("Running npm test -- --run", "12s"));
-    expect(during([npm], 71)).toBe(`Running npm test -- -... · 12s${HINT}`);
-    expect(during([npm], 59)).toBe(`Running n... · 12s${HINT}`);
-    expect(during([npm], 58)).toBe("Running npm test -- --run · 12s");
+    expect(during([npm], 62)).toBe(message("Running npm test -- --run", "12s"));
+    expect(during([npm], 61)).toBe(`Running npm test -- -... · 12s${HINT}`);
+    expect(during([npm], 49)).toBe(`Running n... · 12s${HINT}`);
+    expect(during([npm], 48)).toBe("Running npm test -- --run · 12s");
   });
 
   it("cuts a path at its start", () => {
-    expect(during([{ name: "read", args: { path: "src/very/long/path/session.ts" } }], 36)).toBe(
+    expect(during([{ name: "read", args: { path: "src/very/long/path/session.ts" } }], 26)).toBe(
       "Reading ...ession.ts · 12s",
     );
+  });
+
+  it("cuts wide characters by the columns they take", () => {
+    const wide = (text: string) => plainTheme.width(text);
+    const path = during([{ name: "read", args: { path: "src/資料/設定ファイル.ts" } }], 26) ?? "";
+    const command =
+      during([{ name: "bash", args: { command: "echo 日本語のテキストを表示する" } }], 26) ?? "";
+
+    expect(path).toBe("Reading ...ァイル.ts · 12s");
+    expect(wide(path)).toBeLessThanOrEqual(26);
+    expect(command).toBe("Running echo 日本... · 12s");
+    expect(wide(command)).toBeLessThanOrEqual(26);
   });
 
   it("composes the full text when the terminal width is unknown", () => {

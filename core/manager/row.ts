@@ -69,7 +69,7 @@ const MAX_REASON = 32;
 
 const graphemes = new Intl.Segmenter();
 
-export const cutStart = (text: string, cols: number, theme: ThemeLike) => {
+export const cutStart = (text: string, cols: number, theme: Pick<ThemeLike, "width">) => {
   if (theme.width(text) <= cols) {
     return text;
   }

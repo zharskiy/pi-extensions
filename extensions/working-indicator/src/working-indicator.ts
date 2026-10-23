@@ -1,23 +1,15 @@
 import { homedir } from "node:os";
 import { isAbsolute, relative, sep } from "node:path";
-import type { Host, Phase, PhaseDetail, RunningTool } from "../../../core/adapter/contract.ts";
+import type { Host, Phase, PhaseDetail, RunningTool, ThemeLike } from "../../../core/adapter/contract.ts";
 import { formatDuration, homeRelative } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
-import { ELLIPSIS } from "../../../core/manager/row.ts";
+import { cutStart, ELLIPSIS } from "../../../core/manager/row.ts";
 
 export const TICK_MS = 1000;
 
 const INTERRUPT_BINDING = "app.interrupt";
 
-const SPINNER_COLUMNS = 2;
-
-const BORDER_COLUMNS = 5;
-
-const FRAME_COLUMNS = 3;
-
 const MIN_ACTIVITY = 12;
-
-const MCP_NAME = /^mcp__(.+?)__(.+)$/;
 
 type Cut = "start" | "end";
 
@@ -55,7 +47,6 @@ const toolActivity = (tool: RunningTool, place: Place): Activity => {
   const path = textArg(args.path);
   const pattern = textArg(args.pattern);
   const command = textArg(args.command);
-  const mcp = tool.label ?? tool.name.match(MCP_NAME)?.slice(1, 3).join("/");
 
   if (PATH_VERBS[tool.name] && path) {
     return { verb: PATH_VERBS[tool.name] ?? "", target: shortPath(path, place), cut: "start" };
@@ -83,8 +74,8 @@ const toolActivity = (tool: RunningTool, place: Place): Activity => {
     return { verb: `Waiting for ${count} ${count === 1 ? "agent" : "agents"}` };
   }
 
-  if (mcp) {
-    return { verb: "Calling", target: mcp, cut: "end" };
+  if (tool.label) {
+    return { verb: "Calling", target: tool.label, cut: "end" };
   }
 
   return { verb: "Running", target: tool.name, cut: "end" };
@@ -108,45 +99,25 @@ export const activityOf = (phase: Phase, detail: PhaseDetail, place: Place): Act
   return toolActivity(tools[0] as RunningTool, place);
 };
 
-const columnsOf = (text: string) => [...text].length;
-
-const cutEnd = (text: string, cols: number) => {
-  const chars = [...text];
-
-  if (chars.length <= cols) {
-    return text;
-  }
-
-  return cols <= ELLIPSIS.length
-    ? ELLIPSIS.slice(0, cols)
-    : `${chars.slice(0, cols - ELLIPSIS.length).join("")}${ELLIPSIS}`;
-};
-
-const cutHead = (text: string, cols: number) => {
-  const chars = [...text];
-
-  return chars.length <= cols
-    ? text
-    : `${ELLIPSIS}${chars.slice(chars.length - (cols - ELLIPSIS.length)).join("")}`;
-};
+type Metrics = Pick<ThemeLike, "width" | "truncate">;
 
 const activityText = (activity: Activity) =>
   activity.target === undefined ? activity.verb : `${activity.verb} ${activity.target}`;
 
-const fitActivity = (activity: Activity, cols: number) => {
+const fitActivity = (activity: Activity, cols: number, metrics: Metrics) => {
   const full = activityText(activity);
 
-  if (columnsOf(full) <= cols) {
+  if (metrics.width(full) <= cols) {
     return full;
   }
 
-  const targetRoom = cols - columnsOf(activity.verb) - 1;
+  const targetRoom = cols - metrics.width(activity.verb) - 1;
 
   if (activity.target === undefined || activity.cut !== "start" || targetRoom <= ELLIPSIS.length) {
-    return cutEnd(full, cols);
+    return metrics.truncate(full, cols);
   }
 
-  return `${activity.verb} ${cutHead(activity.target, targetRoom)}`;
+  return `${activity.verb} ${cutStart(activity.target, targetRoom, metrics)}`;
 };
 
 export type WorkingParts = {
@@ -156,7 +127,7 @@ export type WorkingParts = {
   columns: number | undefined;
 };
 
-export const workingText = (parts: WorkingParts, dim: (text: string) => string) => {
+export const workingText = (parts: WorkingParts, dim: (text: string) => string, metrics: Metrics) => {
   const elapsed = parts.elapsedMs >= TICK_MS ? `${DOT}${formatDuration(parts.elapsedMs)}` : "";
   const hint = parts.hint ? ` ${parts.hint}` : "";
   const full = activityText(parts.activity);
@@ -167,16 +138,16 @@ export const workingText = (parts: WorkingParts, dim: (text: string) => string) 
     return compose(full, true);
   }
 
-  const room = parts.columns - FRAME_COLUMNS - BORDER_COLUMNS - SPINNER_COLUMNS;
-  const hinted = room - columnsOf(elapsed) - columnsOf(hint);
+  const room = parts.columns;
+  const hinted = room - metrics.width(elapsed) - metrics.width(hint);
 
-  if (hinted >= columnsOf(full) || (hint && hinted >= MIN_ACTIVITY)) {
-    return compose(fitActivity(parts.activity, hinted), true);
+  if (hinted >= metrics.width(full) || (hint && hinted >= MIN_ACTIVITY)) {
+    return compose(fitActivity(parts.activity, hinted, metrics), true);
   }
 
-  const bare = room - columnsOf(elapsed);
+  const bare = room - metrics.width(elapsed);
 
-  return compose(fitActivity(parts.activity, Math.max(bare, ELLIPSIS.length + 1)), false);
+  return compose(fitActivity(parts.activity, Math.max(bare, ELLIPSIS.length + 1), metrics), false);
 };
 
 type Run = {
@@ -199,9 +170,10 @@ export const createWorkingIndicator = (host: Host, home = homedir()) => {
         activity: activityOf(phase, detail, place),
         elapsedMs: Date.now() - active.startedAt,
         hint: active.hint,
-        columns: host.ui.terminalColumns(),
+        columns: host.ui.workingColumns(),
       },
       (hint) => host.ui.style("dim", hint),
+      host.ui.metrics,
     );
 
     if (text === written) {

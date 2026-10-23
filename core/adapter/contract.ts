@@ -229,7 +229,8 @@ export type HostUi = {
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
   setHiddenThinkingLabel(label: string | undefined, hint?: string): void;
-  terminalColumns(): number | undefined;
+  workingColumns(): number | undefined;
+  readonly metrics: Pick<ThemeLike, "width" | "truncate">;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };

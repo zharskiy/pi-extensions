@@ -163,6 +163,7 @@ type EditorHooksUi = Pick<
 >;
 
 export type EditorHooks = EditorHooksUi & {
+  frameColumns(width: number): number;
   sync(reason: SessionStartEvent["reason"]): void;
   release(): void;
 };
@@ -275,6 +276,12 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
 
       own.frame = undefined;
       releaseIfUnused();
+    },
+    frameColumns: (width) => {
+      const hooks = sharedEditor();
+      const shown = hooks.installed !== undefined && tuiCtx()?.ui.getEditorComponent() === hooks.installed;
+
+      return hooks.frame && shown && width >= hooks.frame.minWidth ? hooks.frame.chrome : 0;
     },
     onEmptyEditorLeft: (handler) => onEmptyKey("emptyLeft", handler),
     onEmptyEditorDown: (handler) => onEmptyKey("emptyDown", handler),

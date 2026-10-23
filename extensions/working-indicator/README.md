@@ -26,7 +26,7 @@ A pi extension that replaces pi's plain `Working...` line with what the agent is
   | any other tool | `Running <tool name>` |
 
 - The line hides while the assistant's answer text streams in, and comes back as soon as the text stops. When the run settles the line disappears and the message goes back to pi's default.
-- Narrow terminals: the message is composed to the terminal width (less the editor's border, the spinner and the composer's 3-column frame). The activity is cut first with `...`, paths at the start and commands at the end, down to 12 columns; if it still does not fit, the hint is dropped. The elapsed time is never dropped. At 40 columns:
+- Narrow terminals: the message is composed to the terminal width (less the editor's border, the spinner and the composer's frame when it is on, as the host reports; wide characters count by their columns). The activity is cut first with `...`, paths at the start and commands at the end, down to 12 columns; if it still does not fit, the hint is dropped. The elapsed time is never dropped. At 40 columns:
 
   ```
   ── ⠹ Running npm test -- -... · 12s ───
