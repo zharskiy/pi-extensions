@@ -106,7 +106,7 @@ const cases: Case[] = [
     name: "drops the activity when it does not fit after the info column",
     input: row(grepping),
     now: 65_000,
-    layout: { nameCols: 9, infoAt: 33 },
+    layout: { nameCols: 9, infoAt: 33, modelCols: 0 },
     width: 59,
     expected: "   ⠋ explorer   Map the auth modu…  1m 5s · ↓ 12.3k tokens",
   },
@@ -184,7 +184,7 @@ const cases: Case[] = [
     name: "draws the connector of a last child",
     input: row(child, { depth: 1, last: true }),
     now: 12_000,
-    layout: { nameCols: 13, infoAt: 46 },
+    layout: { nameCols: 13, infoAt: 46, modelCols: 0 },
     width: 80,
     expected: "   └─ ⠋ explorer       Find callers of login     read · 12s · ↓ 1.1k tokens",
   },
@@ -192,7 +192,7 @@ const cases: Case[] = [
     name: "draws continuation bars for deeper rows",
     input: row(child, { depth: 2, last: false, ancestorsContinue: [true] }),
     now: 12_000,
-    layout: { nameCols: 13, infoAt: 46 },
+    layout: { nameCols: 13, infoAt: 46, modelCols: 0 },
     width: 80,
     expected: "   │  ├─ ⠋ explorer       Find callers of login  read · 12s · ↓ 1.1k tokens",
   },
@@ -200,7 +200,7 @@ const cases: Case[] = [
     name: "keeps only the name on a deep row too narrow for any stats",
     input: row(child, { depth: 2, last: false, ancestorsContinue: [true] }),
     now: 12_000,
-    layout: { nameCols: 13, infoAt: 46 },
+    layout: { nameCols: 13, infoAt: 46, modelCols: 0 },
     width: 26,
     expected: "   │  ├─ ⠋ explorer      ",
   },
@@ -263,7 +263,7 @@ describe("agent row", () => {
     const layout = rowLayout(rows, 99_000, 200, plainTheme);
     const lines = rows.map((input) => renderRow(input, 99_000, 200, plainTheme, layout));
 
-    expect(layout).toEqual({ nameCols: 8, infoAt: 14 + 24 });
+    expect(layout).toEqual({ nameCols: 8, infoAt: 14 + 24, modelCols: 0 });
     expect(infoStart(lines[0], "grep")).toBe(1 + layout.infoAt + 2);
     expect(infoStart(lines[1], "queued")).toBe(1 + layout.infoAt + 2);
     expect(infoStart(lines[2], "done")).toBe(1 + layout.infoAt + 2);
@@ -388,6 +388,80 @@ describe("agent row", () => {
     expect(nameCols([first])).toBe(8);
     expect(nameCols([first, second])).toBe(16);
     expect(nameCols([first, second, third])).toBe(24);
+  });
+
+  describe("model label", () => {
+    const MODEL = "acme/model-large:high";
+    const labelled = row(agentRecord({ ...AUTH, tokens: 12_300, activity: "grep", model: MODEL }));
+    const closed = row(agentRecord({ ...AUTH, state: "done", endedAt: 65_000, model: MODEL }));
+    const render = (rows: RowInput[], width: number) => {
+      const layout = rowLayout(rows, 65_000, width, plainTheme);
+
+      return rows.map((input) => renderRow(input, 65_000, width, plainTheme, layout));
+    };
+
+    it("shows the model after the description and before the stats on a wide row", () => {
+      const [line] = render([labelled], 140);
+
+      expect(line).toMatch(/^ {3}⠋ explorer {2}Map the auth module {2}acme\/model-large:high {2}grep · /);
+    });
+
+    it("drops the label instead of the activity when long running stats fill the row", () => {
+      const searching = row(agentRecord({ ...AUTH, tokens: 123_400, activity: "web_search", model: MODEL }));
+      const [line] = render([searching], 88);
+      const late = rowLayout([searching], 754_000, 88, plainTheme);
+      const lateLine = renderRow(searching, 754_000, 88, plainTheme, late);
+
+      expect(line).not.toContain("acme");
+      expect(lateLine).not.toContain("acme");
+      expect(lateLine).toContain("web_search · ");
+      expect(lateLine).toContain("123.4k tokens");
+      expect(lateLine).toContain("Map the auth module");
+    });
+
+    it("keeps the label decision while the elapsed time and tokens grow", () => {
+      const at = (tokens: number) =>
+        row(agentRecord({ ...AUTH, tokens, activity: "web_search", model: MODEL }));
+      const shown = (input: RowInput, now: number, width: number) =>
+        renderRow(input, now, width, plainTheme, rowLayout([input], now, width, plainTheme)).includes("acme");
+
+      Array.from({ length: 61 }, (_, index) => 80 + index).forEach((width) => {
+        expect(shown(at(1_100), 5_000, width)).toBe(shown(at(123_400), 754_000, width));
+      });
+    });
+
+    it("drops the label before the description falls below a readable width or the stats degrade", () => {
+      const [line] = render([labelled], 70);
+
+      expect(line).not.toContain("acme");
+      expect(line).toContain("Map the auth module");
+      expect(line).toContain("grep · ");
+    });
+
+    it("keeps the name and the state glyph on a narrow row", () => {
+      [40, 30].forEach((width) => {
+        const [line] = render([closed], width);
+
+        expect(line).toMatch(/^ {3}✓ explorer/);
+        expect(line).not.toContain("acme");
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
+      });
+    });
+
+    it("leaves the slot blank for a row without a model and keeps the stats aligned", () => {
+      const bare = row(agentRecord({ ...AUTH, state: "done", endedAt: 65_000 }));
+      const lines = render([labelled, bare], 140);
+
+      expect(lines[1]).not.toContain("acme");
+      expect(infoStart(lines[1], "done")).toBe(infoStart(lines[0], "grep"));
+    });
+
+    it("paints the label dim", () => {
+      const recording: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+      const layout = rowLayout([labelled], 65_000, 140, plainTheme);
+
+      expect(renderRow(labelled, 65_000, 140, recording, layout)).toContain(`<dim>${MODEL}`);
+    });
   });
 
   it("collapses whitespace in the description", () => {
