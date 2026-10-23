@@ -50,8 +50,9 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # token, window, duration, error-text and ~/ path formatters, and the
-│   │   │                        #   receipt: formatCost, formatCalls, receipt, fitReceipt/receiptText
+│   │   ├── format.ts            # token, window, duration, error-text, ~/ and short path formatters,
+│   │   │                        #   noun/counted, and the receipt: formatCost, formatCalls, receipt,
+│   │   │                        #   receiptText, plainReceipt
 │   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
 │   │   ├── layout.ts            # padding, dot separator, accent rule, wrapped and hint lines, keyHints
 │   │   ├── list.ts              # selectable list: lines, keys, shared hints

@@ -5,12 +5,12 @@ import { agentName } from "../../components/agent-row.ts";
 import {
   agentReceipt,
   alignRight,
+  DOT,
   errorText,
   firstLine,
   formatCtx,
   innerWidth,
   PAD,
-  SEP,
   singleLine,
   truncatePainted,
 } from "../../components/format.ts";
@@ -88,12 +88,12 @@ const worktreeLine = (worktree: Worktree) => {
   }
 
   if (worktree.cleanup === "branch kept") {
-    return `Worktree removed${SEP}branch ${worktree.branch} kept`;
+    return `Worktree removed${DOT}branch ${worktree.branch} kept`;
   }
 
-  const kept = worktree.cleanup === "kept" ? `${SEP}kept` : "";
+  const kept = worktree.cleanup === "kept" ? `${DOT}kept` : "";
 
-  return `Worktree ${worktree.path}${SEP}branch ${worktree.branch}${kept}`;
+  return `Worktree ${worktree.path}${DOT}branch ${worktree.branch}${kept}`;
 };
 
 const errorLines = (record: AgentRecord, theme: ThemeLike, inner: number) =>
@@ -124,12 +124,12 @@ export const headerLines = (
   const inner = innerWidth(width);
   const dim = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
   const names = chain.map((_, index) => chainName(record, index));
-  const chainText = `Chain ${names.join(" → ")} (${chain.length} sessions)${SEP}viewing ${agentName(record)}`;
+  const chainText = `Chain ${names.join(" → ")} (${chain.length} sessions)${DOT}viewing ${agentName(record)}`;
 
   return [
     titleLine(record, theme, inner, now),
     receiptLine(data, theme, inner, now, reserveTokens),
-    dim(`${record.model ?? "model n/a"}${SEP}id ${record.id}`),
+    dim(`${record.model ?? "model n/a"}${DOT}id ${record.id}`),
     ...errorLines(record, theme, inner),
     ...(chain.length > 1 ? [dim(chainText)] : []),
     ...handoffLines(record, theme, inner),

@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { formatTokens } from "../../../core/manager/format.ts";
+import { counted, formatTokens } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
 import { MARKS, TITLE_COLUMN } from "../../../core/manager/row.ts";
 import { type Breakdown, type MessageKey, type Part, sumParts } from "./buckets.ts";
@@ -31,8 +31,6 @@ const BUCKETS: readonly { key: MessageKey; label: string }[] = [
   { key: "other", label: "other" },
 ];
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
 const children = (theme: ThemeLike, texts: string[]) =>
   texts.map((text, index) =>
     index === 0
@@ -57,7 +55,7 @@ const summaryOf = (section: Section, parts: readonly Part[]) => {
   const waiting = parts.filter((part) => waits(section, part)).length;
 
   return [
-    plural(parts.length, section.one, section.many),
+    counted(parts.length, section.one, section.many),
     `${formatTokens(sumParts(parts))} tokens`,
     ...(waiting > 0 ? [`${waiting} loaded on demand`] : []),
   ].join(DOT);
@@ -90,7 +88,7 @@ const messageLines = (theme: ThemeLike, messages: Breakdown["messages"], expande
     .sort((left, right) => right.tokens - left.tokens);
 
   const summary = [
-    plural(messages.count, "message", "messages"),
+    counted(messages.count, "message", "messages"),
     ...buckets.map((bucket) => `${bucket.label} ${formatTokens(bucket.tokens)}`),
   ].join(DOT);
 

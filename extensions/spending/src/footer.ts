@@ -1,4 +1,5 @@
 import { formatCost } from "../../../core/manager/format.ts";
+import { DOT } from "../../../core/manager/layout.ts";
 
 type SourceCost = { source: string; cost: number };
 
@@ -26,5 +27,5 @@ export const footerText = ({
     `total ${money(total)}`,
   ];
 
-  return `${parts.join(" · ")}${suffix}`;
+  return `${parts.join(DOT)}${suffix}`;
 };

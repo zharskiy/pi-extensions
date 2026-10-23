@@ -1,5 +1,6 @@
 import type { ThemeLike, ToolCallView } from "../../../core/adapter/contract.ts";
-import { noun, type RowRender, type Styled, type TitleParts } from "../../../core/manager/row.ts";
+import { noun } from "../../../core/manager/format.ts";
+import type { RowRender, Styled, TitleParts } from "../../../core/manager/row.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 
 export type Args = Record<string, unknown>;

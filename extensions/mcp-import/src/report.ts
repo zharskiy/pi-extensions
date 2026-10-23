@@ -1,3 +1,4 @@
+import { counted } from "../../../core/manager/format.ts";
 import type { ImportArgs } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
 import type { Entry, Plan, Skipped } from "./plan.ts";
@@ -11,8 +12,6 @@ const command = (args: ImportArgs, apply: boolean) =>
     ...(args.scope === "project" ? ["project"] : []),
     ...(apply ? ["apply"] : []),
   ].join(" ");
-
-const plural = (count: number) => (count === 1 ? "1 server" : `${count} servers`);
 
 const preview = (entries: readonly Entry[]) =>
   JSON.stringify(
@@ -67,7 +66,7 @@ export const dryRunReport = (input: ReportInput) => {
   return [
     ...head,
     "",
-    `would add ${plural(plan.added.length)}:`,
+    `would add ${counted(plan.added.length, "server")}:`,
     preview(plan.added),
     ...detail(input),
     ...gap(oauthLines(signIn(plan.added))),
@@ -84,7 +83,7 @@ const addedReport = (subject: string, input: ReportInput) => {
   }
 
   return [
-    `${subject} added ${plural(plan.added.length)} to ${target}: ${plan.added.map((entry) => entry.name).join(", ")}`,
+    `${subject} added ${counted(plan.added.length, "server")} to ${target}: ${plan.added.map((entry) => entry.name).join(", ")}`,
     ...detail(input),
     "",
     "run /reload to connect them, then /mcp to check them",

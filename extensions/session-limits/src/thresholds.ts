@@ -1,5 +1,6 @@
 import type { ContextSnapshot, ThemeToken } from "../../../core/adapter/contract.ts";
 import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
+import { DOT } from "../../../core/manager/layout.ts";
 import { MARKS } from "../../../core/manager/row.ts";
 
 type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
@@ -61,8 +62,6 @@ export const handoffStep = (input: HandoffInput) => {
   return input.instructions < MAX_INSTRUCTIONS ? "resend" : "give-up";
 };
 
-const SEP = " · ";
-
 const pendingLabels: Record<Exclude<Phase, "watching" | "stuck">, string> = {
   queued: "Handoff after this turn",
   requested: "Handoff writing the document",
@@ -79,7 +78,7 @@ export const segmentFor = (
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
   if (phase === "stuck") {
-    return { token: "error", text: `${MARKS.error} Handoff failed${SEP}run /${command}` };
+    return { token: "error", text: `${MARKS.error} Handoff failed${DOT}run /${command}` };
   }
 
   if (phase !== "watching") {
@@ -98,7 +97,7 @@ export const segmentFor = (
 
   const { hard } = thresholdsFor(context.window, limits);
 
-  const used = context.tokens === null ? "" : `${SEP}${formatTokens(context.tokens)} used`;
+  const used = context.tokens === null ? "" : `${DOT}${formatTokens(context.tokens)} used`;
 
   return notice(`Handoff at ${formatWindow(hard)} tokens${used}`);
 };

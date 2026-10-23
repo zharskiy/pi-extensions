@@ -1,5 +1,6 @@
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../core/adapter/contract.ts";
-import { markOf, noun, type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
+import { counted } from "../../../core/manager/format.ts";
+import { markOf, type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
 import {
   type Answer,
   labelOf,
@@ -20,7 +21,7 @@ export const callText = (
   const count = questionInputs(params).length;
   const cancelled = cancelledOf(state);
   const mark = cancelled ? "stopped" : markOf(state);
-  const suffix = cancelled || state.aborted ? "cancelled" : `${count} ${noun(count, "question")}`;
+  const suffix = cancelled || state.aborted ? "cancelled" : counted(count, "question");
   const title = (paint: ThemeLike) => `${paint.bold("Questionnaire")}${paint.fg("muted", ` · ${suffix}`)}`;
 
   return rowText(row({ mark, title }), theme);

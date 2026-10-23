@@ -1,4 +1,4 @@
-import { SEP } from "../../components/format.ts";
+import { DOT } from "../../components/format.ts";
 import { stopWords } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
 import { type AgentRecord, isClosed, MAIN_CALLER } from "../../model/types.ts";
@@ -181,7 +181,7 @@ export const subtitle = (visible: AgentRecord[]): string => {
     (part) => part !== undefined,
   );
 
-  return parts.length === 0 ? "" : SEP + parts.join(SEP);
+  return parts.length === 0 ? "" : DOT + parts.join(DOT);
 };
 
 export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {

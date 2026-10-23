@@ -1,5 +1,6 @@
-import { sep } from "node:path";
+import { isAbsolute, relative, sep } from "node:path";
 import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
+import { DOT } from "./layout.ts";
 
 export const formatTokens = (n: number): string => {
   if (n < 1_000) {
@@ -46,6 +47,14 @@ export const errorText = (error: unknown): string => (error instanceof Error ? e
 export const homeRelative = (path: string, home: string): string =>
   home && (path === home || path.startsWith(`${home}${sep}`)) ? `~${path.slice(home.length)}` : path;
 
+export const shortPath = (path: string, cwd: string, home: string): string => {
+  if (cwd && isAbsolute(path) && (path === cwd || path.startsWith(`${cwd}${sep}`))) {
+    return relative(cwd, path) || ".";
+  }
+
+  return homeRelative(path, home);
+};
+
 export const formatCost = (usd: number, options: { zero?: "omit" | "show" } = {}): string | undefined => {
   if (usd <= 0) {
     return options.zero === "show" ? "$0.00" : undefined;
@@ -54,7 +63,12 @@ export const formatCost = (usd: number, options: { zero?: "omit" | "show" } = {}
   return usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
 };
 
-export const formatCalls = (count: number): string => `${count} ${count === 1 ? "call" : "calls"}`;
+export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
+
+export const counted = (count: number, word: string, plural?: string) =>
+  `${count} ${noun(count, word, plural)}`;
+
+export const formatCalls = (count: number): string => counted(count, "call");
 
 export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity";
 
@@ -109,10 +123,8 @@ export const receipt = (facts: ReceiptFacts): ReceiptSegment[] => {
     .map(([kind, text, token]) => ({ kind, text, token }));
 };
 
-const RECEIPT_SEP = " · ";
-
-const plainReceipt = (segments: readonly ReceiptSegment[]) =>
-  segments.map((part) => part.text).join(RECEIPT_SEP);
+export const plainReceipt = (segments: readonly ReceiptSegment[]) =>
+  segments.map((part) => part.text).join(DOT);
 
 export const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
   DROP_ORDER.reduce<readonly ReceiptSegment[]>(
@@ -124,4 +136,4 @@ export const fitReceipt = (segments: readonly ReceiptSegment[], room: number, th
 export const receiptText = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
   fitReceipt(segments, room, theme)
     .map((part) => theme.fg(part.token, part.text))
-    .join(theme.fg("muted", RECEIPT_SEP));
+    .join(theme.fg("muted", DOT));

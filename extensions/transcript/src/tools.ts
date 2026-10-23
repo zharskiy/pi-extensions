@@ -1,6 +1,5 @@
-import { isAbsolute, relative, sep } from "node:path";
 import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../core/adapter/contract.ts";
-import { formatDuration, homeRelative } from "../../../core/manager/format.ts";
+import { formatDuration, shortPath } from "../../../core/manager/format.ts";
 import {
   CHILD_COLUMN,
   expandHint,
@@ -36,14 +35,6 @@ const SLOW_MS = 5000;
 
 const argsOf = (view: ToolCallView): Args =>
   typeof view.args === "object" && view.args !== null ? (view.args as Args) : {};
-
-export const shortPath = (path: string, cwd: string, home: string) => {
-  if (cwd && isAbsolute(path) && (path === cwd || path.startsWith(`${cwd}${sep}`))) {
-    return relative(cwd, path) || ".";
-  }
-
-  return homeRelative(path, home);
-};
 
 const listed = (text: string) =>
   text

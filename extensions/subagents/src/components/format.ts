@@ -1,15 +1,13 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
+import { counted, type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
+import { PAD } from "../../../../core/manager/layout.ts";
 import type { AgentRecord } from "../model/types.ts";
 import { displayWord, isStarting } from "./state-text.ts";
 
-export { errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
+export { counted, errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
+export { DOT, PAD } from "../../../../core/manager/layout.ts";
 
-export const SEP = " · ";
-
-export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-export const formatToolUses = (n: number): string => plural(n, "tool use");
+export const formatToolUses = (n: number): string => counted(n, "tool use");
 
 export const formatCtx = (percent: number | null | undefined): string | undefined =>
   percent === null || percent === undefined ? undefined : `${Math.round(percent)}% context`;
@@ -93,8 +91,6 @@ export const truncatePainted = (theme: ThemeLike, parts: readonly Painted[], col
 
 export const padEndCols = (theme: ThemeLike, text: string, cols: number): string =>
   text + " ".repeat(Math.max(0, cols - theme.width(text)));
-
-export const PAD = " ";
 
 export const innerWidth = (width: number): number => Math.max(1, width - 2 * PAD.length);
 

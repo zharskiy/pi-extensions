@@ -1,4 +1,4 @@
-import { errorText, plural } from "../../components/format.ts";
+import { counted, errorText } from "../../components/format.ts";
 import { stoppableAgents } from "../../components/tree.ts";
 import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
@@ -10,7 +10,7 @@ export const stillRunningText = (ids: string[]) => {
   const more = ids.length - shown.length;
   const names = more > 0 ? `${shown.join(", ")} and ${more} more` : shown.join(", ");
 
-  return `${plural(ids.length, "agent")} ${ids.length === 1 ? "is" : "are"} still running: ${names}.`;
+  return `${counted(ids.length, "agent")} ${ids.length === 1 ? "is" : "are"} still running: ${names}.`;
 };
 
 export const interruptPlugin: Plugin = {
@@ -33,7 +33,7 @@ export const interruptPlugin: Plugin = {
         return;
       }
 
-      host.ui.notify(`${NAMESPACE}: stopping ${plural(ids.length, "agent")}`, "info");
+      host.ui.notify(`${NAMESPACE}: stopping ${counted(ids.length, "agent")}`, "info");
       await Promise.all(ids.map((id) => runner.stop(id)));
     };
 

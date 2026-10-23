@@ -1,5 +1,11 @@
 import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
-import { type ReceiptSegment, receipt, receiptText } from "../../../../../core/manager/format.ts";
+import {
+  noun,
+  plainReceipt,
+  type ReceiptSegment,
+  receipt,
+  receiptText,
+} from "../../../../../core/manager/format.ts";
 import {
   countLine,
   expandHint,
@@ -8,12 +14,11 @@ import {
   type MarkedRow,
   markOf,
   NEST,
-  noun,
   row,
   TITLE_COLUMN,
 } from "../../../../../core/manager/row.ts";
 import { modelId } from "../../components/agent-row.ts";
-import { agentReceipt, firstLine, SEP, singleLine } from "../../components/format.ts";
+import { agentReceipt, DOT, firstLine, singleLine } from "../../components/format.ts";
 import { stateMark } from "../../components/state-text.ts";
 import {
   type AgentRecord,
@@ -97,7 +102,7 @@ const agentLine = (
   const suffix = parts.chainIndex > 1 ? ` #${parts.chainIndex}` : "";
   const head = `${parts.name}${suffix}  `;
   const description = singleLine(parts.description);
-  const tail = parts.model ? `${SEP}${modelId(parts.model)}` : "";
+  const tail = parts.model ? `${DOT}${modelId(parts.model)}` : "";
   const fits = theme.width(head) + theme.width(description) + theme.width(tail) <= cols;
   const keepModel = tail !== "" && (fits || cols - theme.width(head) - theme.width(tail) >= MODEL_MIN_BUDGET);
   const room = Math.max(DESCRIPTION_MIN, cols - theme.width(head) - (keepModel ? theme.width(tail) : 0));
@@ -113,8 +118,8 @@ const withCleanup = (
   cols: number,
   theme: ThemeLike,
 ) => {
-  const suffix = cleanup ? `${SEP}${cleanup}` : "";
-  const whole = theme.width(segments.map((part) => part.text).join(SEP)) + theme.width(suffix);
+  const suffix = cleanup ? `${DOT}${cleanup}` : "";
+  const whole = theme.width(plainReceipt(segments)) + theme.width(suffix);
 
   if (!suffix || whole > cols) {
     return receiptText(segments, cols, theme);
@@ -125,7 +130,7 @@ const withCleanup = (
 
 const reasonLeads = (reason: string, totals: AgentRecord, cols: number, theme: ThemeLike) => {
   const time = agentReceipt(totals, 0, { live: false }).find((part) => part.kind === "time");
-  const lead = `${reason}${time ? `${SEP}${time.text}` : ""}`;
+  const lead = `${reason}${time ? `${DOT}${time.text}` : ""}`;
 
   return !reason.includes("\n") && theme.width(reason) <= REASON_MAX && theme.width(lead) <= cols;
 };
@@ -179,7 +184,7 @@ const statusLines = (
 
 const unavailableRow = (entry: Entry, input: BlockInput, cols: number): MarkedRow => {
   const { theme, hints } = input;
-  const status = hints.list() ? `Status unavailable${SEP}/agents ${entry.id}` : "Status unavailable";
+  const status = hints.list() ? `Status unavailable${DOT}/agents ${entry.id}` : "Status unavailable";
   const line = agentLine(theme, cols, { name: entry.agent, chainIndex: 1, ...entry });
 
   return { mark: "info", title: `${line}\n${theme.fg("muted", theme.truncate(status, cols))}` };
@@ -309,14 +314,14 @@ const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, widt
           .filter(([, n]) => n > 0)
           .map(([word, n]) => `${n} ${word}`)
       : [];
-  const lead = outcomes.map((text) => `${SEP}${text}`).join("");
+  const lead = outcomes.map((text) => `${DOT}${text}`).join("");
   const fitted = receiptText(
     batchReceipt(input, details.ids),
-    Math.max(0, room - theme.width(lead) - SEP.length),
+    Math.max(0, room - theme.width(lead) - DOT.length),
     theme,
   );
 
-  return `${title}${theme.fg("muted", lead)}${fitted ? `${theme.fg("muted", SEP)}${fitted}` : ""}`;
+  return `${title}${theme.fg("muted", lead)}${fitted ? `${theme.fg("muted", DOT)}${fitted}` : ""}`;
 };
 
 const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, width: number) => {
@@ -345,7 +350,7 @@ const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, widt
 const stoppedBlock = (input: BlockInput, params: RunAgentParams, width: number) => {
   const { theme } = input;
   const words = nounPhrase(params.agents, params.wait !== true);
-  const title = `${theme.bold(theme.fg("text", String(params.agents.length)))} ${theme.fg("text", words)}${theme.fg("muted", `${SEP}stopped`)}`;
+  const title = `${theme.bold(theme.fg("text", String(params.agents.length)))} ${theme.fg("text", words)}${theme.fg("muted", `${DOT}stopped`)}`;
 
   return row({ mark: "stopped", title })(width, theme);
 };

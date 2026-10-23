@@ -1,6 +1,6 @@
 import type { OverlayApi } from "../../../../../core/adapter/contract.ts";
 import { type SelectOption, selectForm } from "../../../../../core/manager/select.ts";
-import { cutChars, errorText, SEP } from "../../components/format.ts";
+import { cutChars, DOT, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
 import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
@@ -148,7 +148,7 @@ export const agentViewPlugin: Plugin = {
     services.provide("agentView", { open });
 
     const label = (record: AgentRecord) =>
-      cutChars(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
+      cutChars(`${record.id}${DOT}${stateWord(record.state)}${DOT}${record.description}`, 100);
 
     const setup = () => (services.has("agentSetup") ? services.require("agentSetup") : undefined);
 
@@ -158,11 +158,11 @@ export const agentViewPlugin: Plugin = {
       return SUBCOMMANDS.filter((word) => word.startsWith(prefix)).flatMap(
         (word): { value: string; label: string }[] => {
           if (word === "view") {
-            return [{ value: word, label: `${word}${SEP}${SUBCOMMAND_TEXT[word]}` }];
+            return [{ value: word, label: `${word}${DOT}${SUBCOMMAND_TEXT[word]}` }];
           }
 
           return service
-            ? [{ value: word, label: `${word}${SEP}${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}` }]
+            ? [{ value: word, label: `${word}${DOT}${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}` }]
             : [];
         },
       );
@@ -201,7 +201,7 @@ export const agentViewPlugin: Plugin = {
         counts.completed > 0 ? `${counts.completed} finished` : undefined,
       ].filter((part) => part !== undefined);
 
-      return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(SEP);
+      return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(DOT);
     };
 
     const menu = async () => {

@@ -1,9 +1,9 @@
 import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
+import { noun } from "../../../../../core/manager/format.ts";
 import {
   EXPAND_BINDING,
   expandHint,
   markOf,
-  noun,
   row,
   rowChildren,
   rowText,

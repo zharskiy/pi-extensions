@@ -1,5 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
+import { noun } from "./format.ts";
+import { DOT } from "./layout.ts";
 
 export const EXPAND_BINDING = "app.tools.expand";
 
@@ -8,8 +10,6 @@ export type Styled = string | ((theme: ThemeLike) => string);
 export type RowRender = (width: number, theme: ThemeLike) => string[];
 
 const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? text(theme) : text);
-
-export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 
 export const rowText = (render: RowRender, theme: ThemeLike) => (width: number) =>
   render(width, theme).join("\n");
@@ -170,15 +170,13 @@ export type TitleParts = {
   hint?: Styled;
 };
 
-const SEP = " · ";
-
 const segment = (text: string | undefined, theme: ThemeLike, token: ThemeToken = "muted") =>
-  text === undefined ? "" : `${theme.fg("muted", SEP)}${theme.fg(token, text)}`;
+  text === undefined ? "" : `${theme.fg("muted", DOT)}${theme.fg(token, text)}`;
 
 const fixedWidth = (parts: TitleParts, theme: ThemeLike) => {
   const verb = parts.verb === undefined ? 0 : theme.width(paint(parts.verb, theme));
   const gap = parts.verb !== undefined && (parts.target || parts.args) ? 1 : 0;
-  const reason = parts.reason ? theme.width(`${SEP}${parts.reason.text}`) : 0;
+  const reason = parts.reason ? theme.width(`${DOT}${parts.reason.text}`) : 0;
 
   return TITLE_COLUMN + verb + gap + reason;
 };

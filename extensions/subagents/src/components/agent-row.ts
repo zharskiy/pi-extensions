@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { type ReceiptSegment, receiptText } from "../../../../core/manager/format.ts";
+import { plainReceipt, type ReceiptSegment, receiptText } from "../../../../core/manager/format.ts";
 import { MARKS } from "../../../../core/manager/row.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 import { agentReceipt, PAD, padEndCols, singleLine } from "./format.ts";
@@ -83,8 +83,7 @@ export const modelLabel = (theme: ThemeLike, model: string, cols: number) => {
 const statusOf = (record: RowRecord, now: number): ReceiptSegment[] =>
   agentReceipt(record, now, { live: true });
 
-const plainWidth = (segments: ReceiptSegment[], theme: ThemeLike) =>
-  theme.width(segments.map((part) => part.text).join(" · "));
+const plainWidth = (segments: ReceiptSegment[], theme: ThemeLike) => theme.width(plainReceipt(segments));
 
 const widest = (values: number[]) => values.reduce((most, value) => Math.max(most, value), 0);
 

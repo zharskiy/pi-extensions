@@ -1,4 +1,5 @@
 import type { Host } from "../../../core/adapter/contract.ts";
+import { DOT } from "../../../core/manager/layout.ts";
 import { multiSelectForm } from "../../../core/manager/multi-select.ts";
 import { ELLIPSIS } from "../../../core/manager/row.ts";
 import { selectForm } from "../../../core/manager/select.ts";
@@ -115,7 +116,7 @@ const serverDescription = (entry: Entry) => {
     ...(notes > 0 ? [notes === 1 ? "1 note" : `${notes} notes`] : []),
   ];
 
-  return parts.join(" · ");
+  return parts.join(DOT);
 };
 
 export const serverOptions = (plan: Plan) =>

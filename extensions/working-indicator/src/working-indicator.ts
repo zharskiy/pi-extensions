@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
-import { isAbsolute, relative, sep } from "node:path";
 import type { Host, Phase, PhaseDetail, RunningTool, ThemeLike } from "../../../core/adapter/contract.ts";
-import { formatDuration, homeRelative } from "../../../core/manager/format.ts";
+import { formatDuration, shortPath } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
 import { cutStart, ELLIPSIS } from "../../../core/manager/row.ts";
 
@@ -30,14 +29,6 @@ const argsOf = (tool: RunningTool): Args =>
 
 const textArg = (value: unknown) => (typeof value === "string" && value.trim() !== "" ? value : undefined);
 
-const shortPath = (path: string, place: Place) => {
-  if (place.cwd && isAbsolute(path) && (path === place.cwd || path.startsWith(`${place.cwd}${sep}`))) {
-    return relative(place.cwd, path) || ".";
-  }
-
-  return homeRelative(path, place.home);
-};
-
 const firstLine = (text: string) => text.trim().split("\n")[0]?.trim() ?? "";
 
 const agentCount = (args: Args) => (Array.isArray(args.agents) ? Math.max(1, args.agents.length) : 1);
@@ -49,7 +40,11 @@ const toolActivity = (tool: RunningTool, place: Place): Activity => {
   const command = textArg(args.command);
 
   if (PATH_VERBS[tool.name] && path) {
-    return { verb: PATH_VERBS[tool.name] ?? "", target: shortPath(path, place), cut: "start" };
+    return {
+      verb: PATH_VERBS[tool.name] ?? "",
+      target: shortPath(path, place.cwd, place.home),
+      cut: "start",
+    };
   }
 
   if (SHELLS.has(tool.name) && command) {
@@ -61,7 +56,7 @@ const toolActivity = (tool: RunningTool, place: Place): Activity => {
   }
 
   if (tool.name === "ls") {
-    return { verb: "Listing", target: shortPath(path ?? ".", place), cut: "start" };
+    return { verb: "Listing", target: shortPath(path ?? ".", place.cwd, place.home), cut: "start" };
   }
 
   if (tool.name === "codemode") {

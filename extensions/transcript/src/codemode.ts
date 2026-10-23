@@ -1,4 +1,5 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
+import { DOT } from "../../../core/manager/layout.ts";
 import { type Mark, row, TITLE_COLUMN } from "../../../core/manager/row.ts";
 import { bold, type Context, counted, failed, type Look, resultText, textArg } from "./look.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
@@ -68,7 +69,7 @@ const summary = (calls: Call[], lines: number, theme: ThemeLike) => {
     ...(lines > 0 ? [`${counted(lines, "line", theme)}${theme.fg("muted", " of output")}`] : []),
   ];
 
-  return parts.length > 0 ? parts.join(theme.fg("muted", " · ")) : undefined;
+  return parts.length > 0 ? parts.join(theme.fg("muted", DOT)) : undefined;
 };
 
 const sections = (parts: string[][]) =>
