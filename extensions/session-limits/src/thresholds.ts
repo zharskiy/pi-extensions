@@ -61,11 +61,11 @@ export const handoffStep = (input: HandoffInput) => {
 };
 
 const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
-  queued: "Handoff after this turn",
-  requested: "Handoff: writing the handoff document",
-  waiting: "Handoff waits for running work",
-  switching: "Switching session",
-  stuck: `Handoff failed, run /${command}`,
+  queued: "Handoff: after this turn",
+  requested: "Handoff: writing the document",
+  waiting: "Handoff: waiting for running work",
+  switching: "Handoff: switching session",
+  stuck: `Handoff failed · run /${command}`,
 });
 
 export const segmentFor = (
@@ -93,7 +93,7 @@ export const segmentFor = (
 
   const { hard } = thresholdsFor(context.window, limits);
 
-  return { token: "warning", text: `Warning: automatic handoff will happen at ${formatWindow(hard)}` };
+  return { token: "warning", text: `Warning: automatic handoff will happen at ${formatWindow(hard)} tokens` };
 };
 
 export const retryInstruction = (instruction: string, errors: string[]) =>

@@ -100,20 +100,20 @@ describe("segmentFor", () => {
   it("warns with the token figure of the hard threshold when the token cap wins", () => {
     expect(segmentFor(at(160_000, 1_000_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "Warning: automatic handoff will happen at 175k",
+      text: "Warning: automatic handoff will happen at 175k tokens",
     });
   });
 
   it("warns with the token figure of the hard threshold when the ratio wins", () => {
     expect(segmentFor(at(100_000, 200_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "Warning: automatic handoff will happen at 120k",
+      text: "Warning: automatic handoff will happen at 120k tokens",
     });
     expect(
       segmentFor(at(100_000, 200_000), "watching", { ...limits, hardTokens: 120_000 }, "session-handoff"),
     ).toEqual({
       token: "warning",
-      text: "Warning: automatic handoff will happen at 120k",
+      text: "Warning: automatic handoff will happen at 120k tokens",
     });
   });
 
@@ -121,31 +121,33 @@ describe("segmentFor", () => {
     expect(segmentFor(at(40_000), "watching", limits, "session-handoff")).toBeUndefined();
     expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "Warning: automatic handoff will happen at 60k",
+      text: "Warning: automatic handoff will happen at 60k tokens",
     });
   });
 
   it("is red in the pending phases, amber while waiting or queued, and names the command when stuck", () => {
     expect(segmentFor(at(78_000), "requested", limits, "session-handoff")).toEqual({
       token: "error",
-      text: "Handoff: writing the handoff document",
+      text: "Handoff: writing the document",
     });
     expect(segmentFor(at(78_000), "waiting", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "Handoff waits for running work",
+      text: "Handoff: waiting for running work",
     });
     expect(segmentFor(at(78_000), "queued", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "Handoff after this turn",
+      text: "Handoff: after this turn",
     });
-    expect(segmentFor(at(null), "switching", limits, "session-handoff")?.text).toBe("Switching session");
+    expect(segmentFor(at(null), "switching", limits, "session-handoff")?.text).toBe(
+      "Handoff: switching session",
+    );
     expect(segmentFor(undefined, "requested", limits, "session-handoff")).toEqual({
       token: "error",
-      text: "Handoff: writing the handoff document",
+      text: "Handoff: writing the document",
     });
     expect(segmentFor(undefined, "watching", limits, "session-handoff")).toBeUndefined();
     expect(segmentFor(at(78_000), "stuck", limits, "session-handoff")?.text).toBe(
-      "Handoff failed, run /session-handoff",
+      "Handoff failed · run /session-handoff",
     );
   });
 
