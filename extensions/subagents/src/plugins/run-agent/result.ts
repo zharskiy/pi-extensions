@@ -1,40 +1,30 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  cutChars,
-  elapsedOf,
-  errorText,
-  formatDuration,
-  formatTokens,
-  formatToolUses,
-  singleLine,
-} from "../../components/format.ts";
+import { plainReceipt, receipt } from "../../../../../core/manager/format.ts";
+import { cutChars, elapsedOf, errorText, singleLine } from "../../components/format.ts";
 import { isTerminal } from "../../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 
-const statsText = (record: AgentRecord) =>
-  [
-    formatToolUses(record.toolCalls),
-    `${formatTokens(record.tokens)} tokens`,
-    formatDuration(elapsedOf(record, record.endedAt ?? record.createdAt)),
-  ].join(" · ");
+const SUMMARY_WORDS: Partial<Record<AgentRecord["state"], string>> = {
+  done: "Done",
+  handoff: "Handed off",
+  stopped: "Stopped",
+};
 
 const finishSummary = (record: AgentRecord) => {
-  const stats = statsText(record);
+  const word = SUMMARY_WORDS[record.state];
 
-  if (record.state === "done") {
-    return `Done (${stats})`;
-  }
-
-  if (record.state === "handoff") {
-    return `Handoff (${stats})`;
-  }
-
-  if (record.state === "stopped") {
-    return `Stopped (${stats})`;
-  }
-
-  return `Failed: ${record.error ?? "unknown error"} (${stats})`;
+  return plainReceipt(
+    receipt({
+      word: word ?? "Failed",
+      reason: word ? undefined : (record.error ?? "unknown error"),
+      elapsedMs: elapsedOf(record, record.endedAt ?? record.createdAt),
+      running: false,
+      calls: record.toolCalls,
+      tokens: record.tokens,
+      cost: record.cost,
+    }),
+  );
 };
 
 type StoredResult = { resultText: string; resultPath?: string; error?: string };

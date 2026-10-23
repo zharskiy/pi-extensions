@@ -1,9 +1,11 @@
+import { formatCalls } from "../../../../../core/manager/format.ts";
 import {
   cutChars,
+  DOT,
   elapsedOf,
+  formatCtx,
   formatDuration,
   formatTokens,
-  formatToolUses,
   singleLine,
 } from "../../components/format.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
@@ -92,17 +94,14 @@ const chainText = (snapshot: AgentSnapshot) => {
 };
 
 export const snapshotLine = (snapshot: AgentSnapshot) => {
-  const percent =
-    snapshot.contextPercent === null ? "ctx n/a" : `ctx ${Math.round(snapshot.contextPercent)}%`;
-
   const name = snapshot.requestedId ? `${snapshot.requestedId} → ${snapshot.id}` : snapshot.id;
 
   const parts = [
     `${name} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
     formatDuration(snapshot.elapsedMs),
+    formatCalls(snapshot.toolCalls),
     `${formatTokens(snapshot.tokens)} tokens`,
-    formatToolUses(snapshot.toolCalls),
-    percent,
+    formatCtx(snapshot.contextPercent) ?? "context n/a",
   ];
 
   const extras = [
@@ -116,7 +115,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
 
   const lines = extras.map((extra) => `  ${extra}`);
 
-  lines.unshift(parts.join(" · "));
+  lines.unshift(parts.join(DOT));
 
   return lines.join("\n");
 };

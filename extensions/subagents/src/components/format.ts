@@ -1,13 +1,11 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { counted, type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
+import { type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
 import { PAD } from "../../../../core/manager/layout.ts";
 import type { AgentRecord } from "../model/types.ts";
 import { displayWord, isStarting } from "./state-text.ts";
 
 export { counted, errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
 export { DOT, PAD } from "../../../../core/manager/layout.ts";
-
-export const formatToolUses = (n: number): string => counted(n, "tool use");
 
 export const formatCtx = (percent: number | null | undefined): string | undefined =>
   percent === null || percent === undefined ? undefined : `${Math.round(percent)}% context`;

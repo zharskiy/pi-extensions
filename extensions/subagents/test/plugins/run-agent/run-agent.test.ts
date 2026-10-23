@@ -81,7 +81,9 @@ describe("run_agent batches", () => {
 
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("2 done, 1 failed");
-    expect(wakeTexts(host)[0]).toMatch(/scout-\w+ \(scout\) - failed\nTask: task 1\nFailed: rate limited/);
+    expect(wakeTexts(host)[0]).toMatch(
+      /scout-\w+ \(scout\) - failed\nTask: task 1\nFailed · rate limited · /,
+    );
   });
 
   it("treats an empty final answer and an aborted run as failures", async () => {
@@ -192,7 +194,7 @@ describe("run_agent batches", () => {
     expect(record.error).toBe("rate limited");
     expect(readFileSync(record.resultPath ?? "", "utf8")).toBe("half a report\n");
     expect(wakeTexts(host)[0]).toMatch(
-      /Failed: rate limited \([^\n]*\)\n\(unverified partial output: rate limited\)\n\nhalf a report$/,
+      /Failed · rate limited · [^\n]*\n\(unverified partial output: rate limited\)\n\nhalf a report$/,
     );
   });
 
