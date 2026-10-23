@@ -15,6 +15,7 @@ import { CODEMODE_WORKERS_SETTING } from "../../adapter/pi-codemode.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { discoverSkills } from "../../adapter/pi-skills.ts";
+import { composeLabel, OSC133_ZONE_PREFIX } from "../../adapter/pi-thinking-label.ts";
 import { BUILTIN_TOOLS, piShipped } from "../../adapter/pi-tool-rows.ts";
 import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
 import { capturePiRenderers } from "../../adapter/pi-transcript.ts";
@@ -1217,66 +1218,85 @@ describe("pi adapter conformance", () => {
     });
   });
 
-  describe("message rows", () => {
+  describe("messages and the thinking label", () => {
     const message = {
       role: "assistant",
       content: [
         { type: "thinking", thinking: "plan" },
         { type: "text", text: "answer" },
       ],
-      stopReason: "error",
-      errorMessage: "boom",
+      stopReason: "stop",
       timestamp: 0,
     } as never;
 
-    it("builds the assistant message from one content container of spacers, thinking regions, markdown and notices", () => {
+    const ESC = String.fromCharCode(27);
+
+    const SGR = new RegExp(`${ESC}\\[([0-9;]*)m`, "g");
+
+    const italicAt = (line: string, index: number) =>
+      Array.from(line.slice(0, index).matchAll(SGR)).reduce((italic, match) => {
+        const codes = (match[1] ?? "").split(";");
+
+        if (codes.includes("3")) {
+          return true;
+        }
+
+        return codes.includes("23") || codes.includes("0") || codes.includes("") ? false : italic;
+      }, false);
+
+    it("draws the user message between prompt marks the transcript pane takes off", () => {
       initRenderTheme();
 
-      const component = new pi.AssistantMessageComponent(message, false, pi.getMarkdownTheme());
-      const content = component.children[0] as tui.Container;
+      const lines = new pi.UserMessageComponent("hello", pi.getMarkdownTheme()).render(30);
 
-      expect(component.children).toHaveLength(1);
-      expect(content).toBeInstanceOf(tui.Container);
-      expect(content.children.map((child) => child.constructor.name)).toEqual([
-        tui.Spacer.name,
-        tui.MouseRegion.name,
-        tui.Spacer.name,
-        tui.Markdown.name,
-        tui.Spacer.name,
-        tui.Text.name,
-      ]);
-      expect(typeof Reflect.get(component, "outputPad")).toBe("number");
-    });
-
-    it("draws the user message as one padded markdown block between prompt marks", () => {
-      initRenderTheme();
-
-      const component = new pi.UserMessageComponent("hello", pi.getMarkdownTheme());
-      const lines = component.render(30);
-      const text = lines.map((line) => tui.stripTerminalSequences(line).trim());
-
-      expect(component.children).toHaveLength(1);
-      expect(component.children[0]).toBeInstanceOf(tui.Markdown);
-      expect(typeof Reflect.get(component, "outputPad")).toBe("number");
-      expect([text[0], text.at(-1)]).toEqual(["", ""]);
-      expect(text[1]).toBe("hello");
       expect(lines[0]?.startsWith("\x1b]133;A\x07")).toBe(true);
       expect(lines.at(-1)?.startsWith("\x1b]133;B\x07\x1b]133;C\x07")).toBe(true);
+      expect(
+        lines.map((line) => line.replace(OSC133_ZONE_PREFIX, "")).some((line) => line.includes(`${ESC}]`)),
+      ).toBe(false);
     });
 
-    it("routes clicks through the child layout of the last render and slices lines keeping earlier colours", () => {
+    it("routes clicks in a container by the child layout of the last render", () => {
       expect(typeof tui.Container.prototype.handleMouse).toBe("function");
-      expect(tui.sliceByColumn("\x1b[41mab", 1, 1)).toBe("\x1b[41mb");
     });
 
     it("takes the hidden thinking label as the fourth constructor argument", () => {
       initRenderTheme();
 
-      const component = new pi.AssistantMessageComponent(message, true, pi.getMarkdownTheme(), "∴ Thinking…");
+      const component = new pi.AssistantMessageComponent(message, true, pi.getMarkdownTheme(), "Thinking");
 
-      expect(
-        component.render(40).some((line) => tui.stripTerminalSequences(line).includes("∴ Thinking…")),
-      ).toBe(true);
+      expect(component.render(40).some((line) => tui.stripTerminalSequences(line).includes("Thinking"))).toBe(
+        true,
+      );
+    });
+
+    it("draws the composed hint dim and not italic after the italic label", async () => {
+      initRenderTheme();
+
+      const { default: chalk } = await import("chalk");
+      const level = chalk.level;
+      const { theme } = (await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      )) as { theme: pi.Theme };
+
+      chalk.level = 1;
+
+      try {
+        const label = composeLabel(theme, "Thinking", "(ctrl+t to expand)");
+        const line =
+          new pi.AssistantMessageComponent(message, true, pi.getMarkdownTheme(), label)
+            .render(60)
+            .find((text) => text.includes("(ctrl+t to expand)")) ?? "";
+        const hint = line.indexOf("(ctrl+t to expand)");
+
+        expect(tui.stripTerminalSequences(line).trim()).toBe("Thinking (ctrl+t to expand)");
+        expect(italicAt(line, line.indexOf("Thinking") + 1)).toBe(true);
+        expect(line.slice(0, hint).endsWith(`${ESC}[0m${theme.getFgAnsi("dim")}`)).toBe(true);
+        expect(italicAt(line, hint)).toBe(false);
+      } finally {
+        chalk.level = level;
+      }
     });
   });
 });

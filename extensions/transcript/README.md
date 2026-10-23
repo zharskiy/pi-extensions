@@ -1,11 +1,9 @@
 # transcript
 
-A pi extension that draws pi's transcript in the row style of Claude Code: one glyph per row, a two-column hanging indent, and tool results as short `⎿` summaries you expand with `Ctrl+O` (or a click, in pi's fullscreen mode).
+A pi extension that draws pi's tool calls as rows: one glyph per row, a hanging indent, and tool results as short `⎿` summaries you expand with `Ctrl+O` (or a click, in pi's fullscreen mode). User and assistant messages keep pi's own look.
 
 ```
- ❯ fix the failing stats test
-
- ∴ Thinking (ctrl+t expand)
+ Thinking (ctrl+t to expand)
 
  ● Read stats.py
    ⎿  Read 42 lines
@@ -19,14 +17,13 @@ A pi extension that draws pi's transcript in the row style of Claude Code: one g
       Ran 2 tests in 0.001s
       … +2 lines (ctrl+o expand)
 
- ● The mean skipped the first value; both tests pass now.
+ The mean skipped the first value; both tests pass now.
 ```
 
 ## What it does
 
-- User messages start with a muted `❯` on pi's user background, which spans the whole width; pi's blank background lines above and below the text are dropped.
-- Assistant text starts with `●` in the text colour, a thinking run with a dim `∴`, an error, abort or truncation notice with `●` in the error colour. Wrapped lines hang two columns in.
-- A hidden thinking run reads `∴ Thinking (ctrl+t expand)`, naming pi's own `app.thinking.toggle` key (`∴ Thinking` when it is unbound); the key still hides and shows thinking, and a click on a run toggles it.
+- User and assistant messages are pi's own: the user's text on pi's user background, the assistant's markdown at pi's text column, notices in pi's colours.
+- A hidden thinking run reads `Thinking (ctrl+t to expand)`: `Thinking` in pi's italic thinking colour, the hint dim and upright, naming pi's own `app.thinking.toggle` key (`Thinking` alone when it is unbound); the key still hides and shows thinking, and a click on a run toggles it. The label is composed with the theme at session start, so after a theme switch it keeps the old hint colour until the next session.
 - Every tool call is one `●` title: dim while it streams or runs, the success colour when it succeeded, the error colour when it failed. pi's built-in tools get their own titles and one-line summaries:
 
 | Tool | Title | Result |
@@ -55,14 +52,14 @@ Deliberate, not oversights:
 - The bullet of a running tool does not blink: a changing row above the screen would make pi's regular-mode renderer clear and redraw the scrollback.
 - Streaming text is not coalesced to 100 ms; pi's own 60 frames per second apply.
 - Consecutive tool calls are not folded into one group row (`Read 2 files, ran 1 shell command`); pi draws one row per call.
-- There is no `Thought for Ns` row; a hidden thinking run reads `∴ Thinking (ctrl+t expand)`.
+- There is no `Thought for Ns` row; a hidden thinking run reads `Thinking (ctrl+t to expand)`. Pi has one hidden-thinking label for every message, so a per-run duration cannot be shown.
 - Diff lines are not syntax highlighted, and their colours come from pi's theme (the word background mixes the line background with the theme's diff colour) rather than Claude Code's fixed palette.
 - An expanded write shows the new content only: pi does not report what the file held before.
 
 ## Limits
 
-- The user and assistant rows restyle pi's own message components, which have no extension hook. The adapter checks their shape on every render and falls back to pi's look when a pi update changes it.
+- Messages are pi's default, so they follow pi. With pi's system theme and no colour report from the terminal, pi's panels have no background, and a user message then reads like assistant text; that is pi's behaviour for every pi user and belongs upstream, so this package adds no prefix of its own.
 
 ## Layout
 
-`src/index.ts` is the pi entry. `src/transcript.ts` registers the tool rows and, at a tui session start, switches on the message rows and the thinking label. `src/tools.ts` builds each tool's title and summary over `core/manager/row.ts`, `src/output.ts` keeps the first or last lines of output and names the hidden ones, and `src/diff.ts` reads pi's edit diff, counts its added and removed lines and draws its rows, and `src/words.ts` finds the changed words of a line pair. The pi side (the tool renderer, the message component overrides) lives in `core/adapter/pi-tool-rows.ts` and `core/adapter/pi-message-rows.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry. `src/transcript.ts` registers the tool rows and, at a tui session start, sets the thinking label. `src/tools.ts` builds each tool's title and summary over `core/manager/row.ts`, `src/output.ts` keeps the first or last lines of output and names the hidden ones, and `src/diff.ts` reads pi's edit diff, counts its added and removed lines and draws its rows, and `src/words.ts` finds the changed words of a line pair. The pi side (the tool renderer, the thinking label) lives in `core/adapter/pi-tool-rows.ts` and `core/adapter/pi-thinking-label.ts`. Tests are under `test/`.

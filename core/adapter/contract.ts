@@ -202,7 +202,12 @@ export type EditorFrame = {
   chrome: number;
   left: number;
   minWidth: number;
-  decorate(lines: string[], layout: EditorLayout, paint: (text: string) => string): string[];
+  decorate(
+    lines: string[],
+    layout: EditorLayout,
+    paint: (text: string) => string,
+    theme: ThemeLike,
+  ): string[];
 };
 
 export type NotifyChannel = "auto" | "bell";
@@ -233,8 +238,8 @@ export type HostUi = {
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
-  enableMessageRows(): void;
-  setHiddenThinkingLabel(label: string | undefined): void;
+  setHiddenThinkingLabel(label: string | undefined, hint?: string): void;
+  terminalColumns(): number | undefined;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -267,7 +272,9 @@ export type CommandSpec = {
 
 export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "idle";
 
-export type PhaseDetail = { toolName?: string };
+export type RunningTool = { name: string; args: unknown; label?: string };
+
+export type PhaseDetail = { toolName?: string; tools?: RunningTool[] };
 
 export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { createTranscript, hiddenThinkingLabel } from "../src/transcript.ts";
+import { createTranscript } from "../src/transcript.ts";
 
 describe("transcript", () => {
   it("registers the tool rows at load, with the expand key the host names", () => {
@@ -25,30 +25,34 @@ describe("transcript", () => {
     expect(row?.result?.(60, plainTheme).at(-1)).toBe("     … +1 line (<app.tools.expand> expand)");
   });
 
-  it("switches on the message rows and the thinking label at a tui session start", () => {
+  it("sets the thinking label with the toggle hint at a tui session start", () => {
     const host = createFakeHost({ mode: "tui" });
 
     createTranscript(host);
 
-    expect(host.messageRowsEnabled).toBe(false);
+    expect(host.thinkingLabels).toEqual([]);
 
     host.start();
 
-    expect(host.messageRowsEnabled).toBe(true);
-    expect(host.thinkingLabels).toEqual(["∴ Thinking (<app.thinking.toggle> expand)"]);
+    expect(host.thinkingLabels).toEqual([{ label: "Thinking", hint: "(<app.thinking.toggle> to expand)" }]);
   });
 
-  it("names no key in the thinking label when the toggle is unbound", () => {
-    expect(hiddenThinkingLabel("")).toBe("∴ Thinking");
+  it("gives the thinking label no hint when the toggle is unbound", () => {
+    const host = createFakeHost({ mode: "tui" });
+
+    host.ui.keyText = () => "";
+    createTranscript(host);
+    host.start();
+
+    expect(host.thinkingLabels).toEqual([{ label: "Thinking" }]);
   });
 
-  it.each(["print", "rpc", "json"] as const)("leaves the messages alone in %s mode", (mode) => {
+  it.each(["print", "rpc", "json"] as const)("leaves the thinking label alone in %s mode", (mode) => {
     const host = createFakeHost({ mode });
 
     createTranscript(host);
     host.start();
 
-    expect(host.messageRowsEnabled).toBe(false);
     expect(host.thinkingLabels).toEqual([]);
   });
 });

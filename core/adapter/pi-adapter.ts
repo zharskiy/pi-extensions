@@ -32,9 +32,9 @@ import { recordPad } from "./pi-row-component.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
-import { toolRowsHost } from "./pi-tool-rows.ts";
+import { toolLabel, toolRowsHost } from "./pi-tool-rows.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createMessageRowsUi, createUi, type HostState, tuiContext } from "./pi-ui.ts";
+import { createThinkingLabelUi, createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -123,10 +123,16 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const notices = createNotices(state);
   const sections = createPromptSections();
   const toolRows = toolRowsHost(pi);
-  const messageRows = createMessageRowsUi(() => tuiContext(state));
+  const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
+  };
+
+  const labelled = (name: string) => {
+    const label = toolLabel(pi, name);
+
+    return label ? { label } : {};
   };
 
   const applyPhase = (event: PhaseEvent) => {
@@ -141,7 +147,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     phaseState = next;
 
-    if (previous.phase === next.phase && detailOf(previous).toolName === detail.toolName) {
+    if (previous.phase === next.phase && previous.running === next.running) {
       return;
     }
 
@@ -246,7 +252,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     notices.release();
     sections.release();
     toolRows.release();
-    messageRows.release();
+    thinkingLabel.release();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -315,7 +321,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    applyPhase({ type: "tool_start", id: event.toolCallId, name: event.toolName });
+    applyPhase({
+      type: "tool_start",
+      id: event.toolCallId,
+      tool: { name: event.toolName, args: event.args, ...labelled(event.toolName) },
+    });
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
@@ -404,7 +414,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       .map((entry) => entry.data as T);
 
   return {
-    ui: createUi(state, process.stdout, process.env, editor, notices, messageRows),
+    ui: createUi(state, process.stdout, process.env, editor, notices, thinkingLabel),
     registerTool,
     registerCommand,
     setMainPrompt: (text) => {

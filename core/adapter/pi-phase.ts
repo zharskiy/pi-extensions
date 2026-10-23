@@ -1,6 +1,6 @@
-import type { Phase, PhaseDetail } from "./contract.ts";
+import type { Phase, PhaseDetail, RunningTool } from "./contract.ts";
 
-export type PhaseState = { phase: Phase; running: Map<string, string> };
+export type PhaseState = { phase: Phase; running: Map<string, RunningTool> };
 
 type DeltaBlock = "text" | "thinking" | "toolcall";
 
@@ -12,7 +12,7 @@ export type PhaseEvent =
   | { type: ClearingType }
   | { type: "delta"; block: DeltaBlock; edge: DeltaEdge }
   | { type: "message_end" }
-  | { type: "tool_start"; id: string; name: string }
+  | { type: "tool_start"; id: string; tool: RunningTool }
   | { type: "tool_end"; id: string };
 
 export const ASSISTANT_DELTA_TYPES = [
@@ -65,7 +65,7 @@ export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState =>
   }
 
   if (event.type === "tool_start") {
-    return { phase: "tool", running: new Map(state.running).set(event.id, event.name) };
+    return { phase: "tool", running: new Map(state.running).set(event.id, event.tool) };
   }
 
   if (event.type === "tool_end") {
@@ -88,5 +88,7 @@ export const detailOf = (state: PhaseState): PhaseDetail => {
     return {};
   }
 
-  return { toolName: [...state.running.values()].at(-1) };
+  const tools = [...state.running.values()];
+
+  return { toolName: tools.at(-1)?.name, tools };
 };

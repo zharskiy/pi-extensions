@@ -137,8 +137,8 @@ export type FakeHost = Host & {
   pressKey(): void;
   entryRenderers: Map<string, EntryRender>;
   toolRows?: ToolRows;
-  messageRowsEnabled: boolean;
-  thinkingLabels: (string | undefined)[];
+  thinkingLabels: { label: string | undefined; hint?: string }[];
+  columns?: number;
   messageRenderers: Map<string, MessageRender>;
   renderMessage(
     customType: string,
@@ -432,12 +432,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           host.keyListeners.delete(entry);
         };
       },
-      enableMessageRows: () => {
-        host.messageRowsEnabled = true;
+      setHiddenThinkingLabel: (label, hint) => {
+        host.thinkingLabels.push(hint === undefined ? { label } : { label, hint });
       },
-      setHiddenThinkingLabel: (label) => {
-        host.thinkingLabels.push(label);
-      },
+      terminalColumns: () => host.columns,
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -672,7 +670,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     registerToolRows: (rows) => {
       host.toolRows = rows;
     },
-    messageRowsEnabled: false,
     thinkingLabels: [],
     messageRenderers: new Map(),
     registerMessageRenderer: (customType, render) => {

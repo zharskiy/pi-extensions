@@ -20,7 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
 import type { AnyToolSpec, TranscriptItem, TranscriptPane } from "./contract.ts";
-import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "./pi-message-rows.ts";
+import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "./pi-thinking-label.ts";
 import { applyToolRows } from "./pi-tool-rows.ts";
 import { toPiResult, toPiTool } from "./pi-tools.ts";
 

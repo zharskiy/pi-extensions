@@ -1,23 +1,17 @@
-import { stripVTControlCharacters } from "node:util";
-import {
-  type ExtensionContext,
-  getMarkdownTheme,
-  UserMessageComponent,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
-import { hiddenThinkingLabel, uninstallMessageRows } from "../../adapter/pi-message-rows.ts";
 import { createNotices } from "../../adapter/pi-notice.ts";
 import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
+import { hiddenThinkingLabel } from "../../adapter/pi-thinking-label.ts";
 import {
-  createMessageRowsUi,
+  createThinkingLabelUi,
   createUi,
   type HostState,
   notificationSequence,
   tuiContext,
 } from "../../adapter/pi-ui.ts";
-import { initRenderTheme } from "./render-theme.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
@@ -324,78 +318,105 @@ describe("showForm", () => {
   });
 });
 
-describe("message rows", () => {
-  const rowsContext = (mode: string) => {
+describe("thinking label", () => {
+  const labelContext = (mode: string) => {
     const labels: (string | undefined)[] = [];
     const state: HostState = {
       tools: new Map(),
       ctx: {
         mode,
         ui: {
-          theme: { fg: (_token: string, text: string) => text, bg: (_token: string, text: string) => text },
+          theme: { fg: (token: string, text: string) => `<${token}>${text}` },
           setHiddenThinkingLabel: (label?: string) => {
             labels.push(label);
           },
         },
       } as unknown as ExtensionContext,
     };
-    const rows = createMessageRowsUi(() => tuiContext(state));
 
-    return { rows, labels, state };
+    return { label: createThinkingLabelUi(() => tuiContext(state)), labels };
   };
 
-  const userLine = () =>
-    stripVTControlCharacters(new UserMessageComponent("hello", getMarkdownTheme()).render(30)[0] ?? "");
+  it("composes the label with a dim hint after a full reset and keeps it for transcripts", () => {
+    const { label, labels } = labelContext("tui");
 
-  afterEach(() => {
-    uninstallMessageRows();
+    label.setHiddenThinkingLabel("Thinking", "(ctrl+t to expand)");
+
+    expect(labels).toEqual([`Thinking ${ESC}[0m<dim>(ctrl+t to expand)`]);
+    expect(hiddenThinkingLabel()).toBe(labels[0]);
+
+    label.setHiddenThinkingLabel("Thinking");
+
+    expect(labels.at(-1)).toBe("Thinking");
+
+    label.release();
+
+    expect(hiddenThinkingLabel()).toBeUndefined();
   });
 
-  it("restyles pi's message rows in tui mode until the session that enabled them ends", () => {
-    initRenderTheme();
+  it("keeps the label another session stored when this one ends", () => {
+    const first = labelContext("tui");
+    const second = labelContext("tui");
 
-    const { rows, state } = rowsContext("tui");
-    const other = rowsContext("tui");
-    const piLook = userLine();
+    first.label.setHiddenThinkingLabel("Thinking");
+    second.label.setHiddenThinkingLabel("Thinking", "(k to expand)");
+    first.label.release();
 
-    rows.enableMessageRows();
+    expect(hiddenThinkingLabel()).toBe(`Thinking ${ESC}[0m<dim>(k to expand)`);
 
-    expect(userLine()).toContain("❯ hello");
+    second.label.release();
 
-    other.rows.release();
-
-    expect(userLine()).toContain("❯ hello");
-
-    rows.release();
-    state.ctx = undefined;
-
-    expect(userLine()).toBe(piLook);
+    expect(hiddenThinkingLabel()).toBeUndefined();
   });
 
   it("does nothing outside tui mode", () => {
-    initRenderTheme();
+    const { label, labels } = labelContext("rpc");
 
-    const { rows, labels } = rowsContext("rpc");
-    const piLook = userLine();
+    label.setHiddenThinkingLabel("Thinking", "(k to expand)");
 
-    rows.enableMessageRows();
-    rows.setHiddenThinkingLabel("∴ Thinking…");
-
-    expect(userLine()).toBe(piLook);
     expect(labels).toEqual([]);
     expect(hiddenThinkingLabel()).toBeUndefined();
   });
+});
 
-  it("sets pi's hidden thinking label and keeps it for transcripts until the session ends", () => {
-    const { rows, labels } = rowsContext("tui");
+describe("terminalColumns", () => {
+  const columnsUi = (mode: string) => {
+    const screen = { terminal: { columns: 97 }, requestRender: () => {} };
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode,
+        ui: {
+          setWidget: (_key: string, factory?: (tui: unknown) => unknown) => {
+            factory?.(screen);
+          },
+        },
+      } as unknown as ExtensionContext,
+    };
 
-    rows.setHiddenThinkingLabel("∴ Thinking…");
+    return {
+      screen,
+      ui: createUi(
+        state,
+        { write: () => {} },
+        {},
+        createEditorHooks(() => undefined),
+        createNotices(state),
+      ),
+    };
+  };
 
-    expect(labels).toEqual(["∴ Thinking…"]);
-    expect(hiddenThinkingLabel()).toBe("∴ Thinking…");
+  it("reads the columns of pi's terminal and follows a resize", () => {
+    const { ui, screen } = columnsUi("tui");
 
-    rows.release();
+    expect(ui.terminalColumns()).toBe(97);
 
-    expect(hiddenThinkingLabel()).toBeUndefined();
+    screen.terminal.columns = 40;
+
+    expect(ui.terminalColumns()).toBe(40);
+  });
+
+  it("knows no columns outside tui mode", () => {
+    expect(columnsUi("rpc").ui.terminalColumns()).toBeUndefined();
   });
 });

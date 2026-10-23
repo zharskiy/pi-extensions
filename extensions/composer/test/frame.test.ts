@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { CHEVRON, createFrame } from "../src/frame.ts";
 
 const ESC = String.fromCharCode(27);
@@ -24,6 +25,7 @@ describe("createFrame", () => {
       ["──────", "abcdef", "ghijkl", "──────"],
       { bottom: 3, scrolled: false },
       plain,
+      plainTheme,
     );
 
     expect(lines).toEqual(["─────────", ` ${bold(CHEVRON)} abcdef`, "   ghijkl", "─────────"]);
@@ -40,6 +42,7 @@ describe("createFrame", () => {
       ],
       layout,
       plain,
+      plainTheme,
     );
 
     expect(lines.map(visible)).toEqual([width, width, width]);
@@ -48,21 +51,21 @@ describe("createFrame", () => {
   it("extends a rule that carries a scroll hint and an ANSI colour to the full width", () => {
     const frame = createFrame();
     const rule = `${ESC}[31m─── ↑ 3 more ───${ESC}[39m`;
-    const lines = frame.decorate([rule, "ab", "──"], layout, plain);
+    const lines = frame.decorate([rule, "ab", "──"], layout, plain, plainTheme);
 
     expect(lines[0]).toBe(`───${rule}`);
     expect(visible(lines[0] ?? "")).toBe(visible(rule) + frame.chrome);
   });
 
   it("paints the extension and the chevron with the given colour", () => {
-    const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed);
+    const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed, plainTheme);
 
     expect(lines).toEqual(["[───]──", ` ${bold(`[${CHEVRON}]`)} ab`, "──[───]"]);
   });
 
   it("puts the extension in front of the top rule so pi's working status starts right of the gutter", () => {
     const frame = createFrame();
-    const lines = frame.decorate(["── ⠋ Working ──", "ab", "──────────────"], layout, plain);
+    const lines = frame.decorate(["── ⠋ Working ──", "ab", "──────────────"], layout, plain, plainTheme);
 
     expect(lines[0]).toBe("───── ⠋ Working ──");
     expect(lines[0]?.indexOf("⠋")).toBe(frame.chrome + 3);
@@ -73,19 +76,20 @@ describe("createFrame", () => {
       ["─ ↑ 2 more ─", "ab", "cd", "──"],
       { bottom: 3, scrolled: true },
       plain,
+      plainTheme,
     );
 
     expect(lines).toEqual(["──── ↑ 2 more ─", "   ab", "   cd", "─────"]);
   });
 
   it("indents lines below the bottom rule by the margin, so pi's list arrow sits under the chevron", () => {
-    const lines = createFrame().decorate(["──", "ab", "──", "/help", "──"], layout, plain);
+    const lines = createFrame().decorate(["──", "ab", "──", "/help", "──"], layout, plain, plainTheme);
 
     expect(lines.slice(2)).toEqual(["─────", " /help", " ──"]);
   });
 
   it("leaves the lines unframed without a bottom rule", () => {
-    expect(createFrame().decorate(["──", "ab"], { bottom: -1, scrolled: false }, plain)).toEqual([
+    expect(createFrame().decorate(["──", "ab"], { bottom: -1, scrolled: false }, plain, plainTheme)).toEqual([
       "──",
       "ab",
     ]);

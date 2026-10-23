@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../adapter/contract.ts";
-import { installMessageRows, uninstallMessageRows } from "../../adapter/pi-message-rows.ts";
+import { releaseLabel, storeLabel } from "../../adapter/pi-thinking-label.ts";
 import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
 import { initRenderTheme } from "./render-theme.ts";
@@ -426,30 +426,40 @@ describe("transcript pane tool views", () => {
   });
 });
 
-describe("transcript pane message rows", () => {
-  it("draws the agent view's user messages and built-in tools as rows once they are installed", async () => {
-    const themeModule = await import(
-      new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
-    );
-    const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+describe("transcript pane messages", () => {
+  it("draws user and assistant messages in pi's default look with the stored thinking label", () => {
+    const owner = {};
 
-    installMessageRows(() => themeModule.theme);
-    host.registerToolRows(() => ({ call: () => ["● Read a.ts"], result: () => ["  ⎿  Read 2 lines"] }));
+    storeLabel("Thinking", owner);
 
     const pane = createTranscriptPane(tui, "/repo");
 
     pane.sync([
       { kind: "user", text: "find the files" },
-      assistantCall("read", { path: "a.ts" }),
-      toolResult("read", "one\ntwo"),
+      {
+        kind: "assistant",
+        text: "Found them.",
+        toolCalls: [],
+        raw: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Looking around." },
+            { type: "text", text: "Found them." },
+          ],
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      },
     ]);
 
     const text = visibleText(pane.render(60));
 
-    host.release();
-    uninstallMessageRows();
+    releaseLabel(owner);
 
-    expect(text).toContain(" ❯ find the files");
-    expect(text).toContain(" ● Read a.ts\n   ⎿  Read 2 lines");
+    expect(text).toContain(" find the files");
+    expect(text).toContain(" Thinking");
+    expect(text).toContain(" Found them.");
+    expect(text).not.toContain("Looking around.");
+    expect(text).not.toMatch(/[❯●∴]/);
   });
 });

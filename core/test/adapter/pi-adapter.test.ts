@@ -5,6 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PhaseDetail } from "../../adapter/contract.ts";
 import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
 import { sharedPad } from "../../adapter/pi-row-component.ts";
 import { initRenderTheme } from "./render-theme.ts";
@@ -206,22 +207,31 @@ describe("pi adapter", () => {
     ]);
   });
 
-  it("emits a tool phase only when the named tool changes", async () => {
+  it("emits a tool phase whenever the running tools change, with each tool's arguments", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
+    const details: PhaseDetail[] = [];
     const ctx = fakeCtx("tui");
 
-    host.onPhase((phase, detail) => seen.push(detail.toolName ? `${phase} ${detail.toolName}` : phase));
+    host.onPhase((phase, detail) => {
+      seen.push(detail.toolName ? `${phase} ${detail.toolName}` : phase);
+      details.push(detail);
+    });
 
     await fire("session_start", ctx);
     await fire("agent_start", ctx);
-    await fire("tool_execution_start", ctx, { toolCallId: "a", toolName: "bash" });
-    await fire("tool_execution_start", ctx, { toolCallId: "b", toolName: "grep" });
+    await fire("tool_execution_start", ctx, { toolCallId: "a", toolName: "bash", args: { command: "ls" } });
+    await fire("tool_execution_start", ctx, { toolCallId: "b", toolName: "grep", args: { pattern: "TODO" } });
     await fire("tool_execution_end", ctx, { toolCallId: "a", toolName: "bash" });
     await fire("tool_execution_end", ctx, { toolCallId: "b", toolName: "grep" });
 
-    expect(seen).toEqual(["waiting", "tool bash", "tool grep", "waiting"]);
+    expect(seen).toEqual(["waiting", "tool bash", "tool grep", "tool grep", "waiting"]);
+    expect(details[2]?.tools).toEqual([
+      { name: "bash", args: { command: "ls" } },
+      { name: "grep", args: { pattern: "TODO" } },
+    ]);
+    expect(details[3]?.tools).toEqual([{ name: "grep", args: { pattern: "TODO" } }]);
   });
 
   it("resets the phase on shutdown without emitting", async () => {

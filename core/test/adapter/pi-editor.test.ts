@@ -1,4 +1,4 @@
-import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import {
   type EditorTheme,
   KeybindingsManager,
@@ -17,12 +17,18 @@ const userEntry = (content: string | { type: string; text?: string }[]) => ({
   message: { role: "user", content },
 });
 
+const frameTheme = {
+  fg: (token: string, text: string) => `<${token}:${text}>`,
+  bold: (text: string) => text,
+} as unknown as Theme;
+
 const fakeCtx = (existing?: Factory, entries: object[] = []) => {
   const ui = { factory: existing, sets: 0, idle: true };
   const ctx = {
     isIdle: () => ui.idle,
     sessionManager: { buildContextEntries: () => entries },
     ui: {
+      theme: frameTheme,
       getEditorComponent: () => ui.factory,
       setEditorComponent: (factory: Factory) => {
         ui.factory = factory;
@@ -122,6 +128,23 @@ describe("createEditorHooks", () => {
     expect(lines[0]).toBe(`<|>   <${"─".repeat(14)}> <|>`);
     expect(lines[1]?.startsWith("<|>>  ")).toBe(true);
     expect(lines.every((line) => line.startsWith("<|>") && line.endsWith("<|>"))).toBe(true);
+  });
+
+  it("hands the frame the session's theme", () => {
+    const { ctx, ui } = fakeCtx();
+    const painted: string[] = [];
+
+    createEditorFrame(() => ctx)({
+      ...frame,
+      decorate: (lines, layout, paint, theme) => {
+        painted.push(theme.fg("accent", "›"));
+
+        return frame.decorate(lines, layout, paint, theme);
+      },
+    });
+    render(ui.factory, 20);
+
+    expect(painted.at(-1)).toBe("<accent:›>");
   });
 
   it("builds pi's editor with the working status embedded", () => {

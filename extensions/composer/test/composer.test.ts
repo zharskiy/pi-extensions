@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createComposer } from "../src/composer.ts";
 import { CHEVRON } from "../src/frame.ts";
 
@@ -17,7 +17,7 @@ describe("composer", () => {
 
     host.start();
 
-    const prompt = host.editorFrame?.decorate(["──", "ab", "──"], layout, plain)[1] ?? "";
+    const prompt = host.editorFrame?.decorate(["──", "ab", "──"], layout, plain, plainTheme)[1] ?? "";
 
     expect(prompt.startsWith(` ${ESC}[1m`)).toBe(true);
     expect(prompt).toContain(CHEVRON);
