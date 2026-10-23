@@ -32,10 +32,12 @@ type Installed = {
   assistantMouse?: PropertyDescriptor;
 };
 
+type ThemeSource = () => Theme | undefined;
+
 type MessageRowsRecord = {
-  theme?: () => Theme | undefined;
+  theme?: ThemeSource;
   installed?: Installed;
-  owner?: object;
+  owners?: Map<object, ThemeSource>;
   label?: string;
   labelOwner?: object;
 };
@@ -171,6 +173,14 @@ const canInstall = () => {
   );
 };
 
+const attempt = (render: () => string[] | undefined) => {
+  try {
+    return render();
+  } catch {
+    return undefined;
+  }
+};
+
 const styled = (
   original: Render,
   rows: (component: Container, width: number, original: Render, theme: Theme) => string[] | undefined,
@@ -183,7 +193,7 @@ const styled = (
       return original.call(this, width);
     }
 
-    const lines = rows(this, width, original, theme);
+    const lines = attempt(() => rows(this, width, original, theme));
 
     if (!lines) {
       rowWidths.delete(this);
@@ -232,8 +242,10 @@ export const installMessageRows = (theme: () => Theme | undefined, owner: object
   const user = userPrototype() as Prototype;
   const assistant = assistantPrototype() as Prototype;
 
+  shared.owners ??= new Map();
+  shared.owners.delete(owner);
+  shared.owners.set(owner, theme);
   shared.theme = theme;
-  shared.owner = owner;
 
   if (shared.installed) {
     return true;
@@ -256,7 +268,18 @@ export const uninstallMessageRows = (owner?: object) => {
   const shared = record();
   const installed = shared.installed;
 
-  if (!installed || (owner && shared.owner !== owner)) {
+  if (!installed || (owner && !shared.owners?.has(owner))) {
+    return;
+  }
+
+  if (owner) {
+    shared.owners?.delete(owner);
+  }
+
+  const rest = owner ? Array.from(shared.owners?.values() ?? []) : [];
+
+  if (rest.length > 0) {
+    shared.theme = rest.at(-1);
     return;
   }
 
@@ -268,7 +291,7 @@ export const uninstallMessageRows = (owner?: object) => {
   restoreMouse(assistant, installed.assistantMouse);
   shared.installed = undefined;
   shared.theme = undefined;
-  shared.owner = undefined;
+  shared.owners = undefined;
 };
 
 export const hiddenThinkingLabel = () => record().label;

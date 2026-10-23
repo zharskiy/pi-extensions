@@ -138,6 +138,40 @@ describe("assistant rows", () => {
 
     expect([user(), reply()]).toEqual(piLook);
   });
+
+  it("draws pi's own lines when a row render throws", () => {
+    const user = () => new UserMessageComponent("fix the bug", getMarkdownTheme()).render(WIDTH);
+    const piLook = user();
+    const broken = Object.create(theme(), {
+      bg: {
+        value: () => {
+          throw new Error("broken theme");
+        },
+      },
+    }) as Theme;
+
+    installMessageRows(() => broken);
+
+    expect(user()).toEqual(piLook);
+  });
+
+  it("keeps the rows until every owner has uninstalled", () => {
+    const user = () => new UserMessageComponent("fix the bug", getMarkdownTheme()).render(WIDTH);
+    const piLook = user();
+    const first = {};
+    const second = {};
+
+    installMessageRows(theme, first);
+    installMessageRows(theme, second);
+    uninstallMessageRows(second);
+
+    expect(user()).not.toEqual(piLook);
+
+    uninstallMessageRows(second);
+    uninstallMessageRows(first);
+
+    expect(user()).toEqual(piLook);
+  });
 });
 
 describe("message rows fallbacks and widths", () => {

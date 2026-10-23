@@ -81,6 +81,14 @@ const piBody = (
   return slot.component;
 };
 
+const fallback = (render: () => Component | undefined) => () => {
+  try {
+    return render();
+  } catch {
+    return undefined;
+  }
+};
+
 const linesOf = (render: ((width: number, theme: ThemeLike) => string[]) | undefined, theme: ThemeLike) =>
   render ? (width: number) => render(width, theme) : () => [];
 
@@ -112,7 +120,7 @@ export const rowRenderers = (
 
   return {
     renderShell: "self",
-    renderCall: (_args, theme, context) => {
+    renderCall: (args, theme, context) => {
       recordPad(context.outputPad);
 
       const row = rows(callView(name, context));
@@ -120,6 +128,13 @@ export const rowRenderers = (
       return rowComponent(context.lastComponent, {
         lines: linesOf(row?.call, themeLike(theme)),
         pad: context.outputPad,
+        fallback: fallback(() =>
+          base?.renderCall?.(args, theme, {
+            ...context,
+            state: slotFor(context.state).state,
+            lastComponent: undefined,
+          }),
+        ),
       });
     },
     renderResult: (result, options, theme, context) => {
@@ -134,6 +149,13 @@ export const rowRenderers = (
         pad: context.outputPad,
         body,
         lead: `  ${theme.fg("dim", GLYPHS.child)}  `,
+        fallback: fallback(() =>
+          base?.renderResult?.(result, options, theme, {
+            ...context,
+            state: slotFor(context.state).state,
+            lastComponent: undefined,
+          }),
+        ),
       });
     },
   };
@@ -152,20 +174,21 @@ export const toolRowsHost = (pi: Pick<ExtensionAPI, "registerToolRenderer" | "ge
     registerToolRows: ((rows) => {
       const shared = toolRowsRecord();
 
+      shared.owners ??= new Map();
+      shared.owners.delete(owner);
+      shared.owners.set(owner, rows);
       shared.rows = rows;
-      shared.owner = owner;
 
       pi.registerToolRenderer((name, next) => rowRenderers(rows, name, next(), () => piShipped(pi, name)));
     }) satisfies Host["registerToolRows"],
     release: () => {
       const shared = toolRowsRecord();
 
-      if (shared.owner !== owner) {
+      if (!shared.owners?.delete(owner)) {
         return;
       }
 
-      shared.rows = undefined;
-      shared.owner = undefined;
+      shared.rows = Array.from(shared.owners.values()).at(-1);
     },
   };
 };

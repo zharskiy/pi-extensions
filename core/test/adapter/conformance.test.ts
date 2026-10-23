@@ -994,7 +994,7 @@ describe("pi adapter conformance", () => {
       expect(pi.generateDiffString("a\n", "b\n").diff).toBe("-1 a\n+1 b");
     });
 
-    it("has the theme colours, background style and colour mixing the diff backgrounds use", async () => {
+    it("has the theme colours, background style and colour mixing the diff and user row backgrounds use", async () => {
       const themes = await import(
         new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
           .href
@@ -1003,7 +1003,13 @@ describe("pi adapter conformance", () => {
       pi.initTheme("dark", false);
 
       const theme: pi.Theme = themes.theme;
-      const colors = ["toolSuccessBg", "toolErrorBg", "toolDiffAdded", "toolDiffRemoved"] as const;
+      const colors = [
+        "toolSuccessBg",
+        "toolErrorBg",
+        "toolDiffAdded",
+        "toolDiffRemoved",
+        "userMessageBg",
+      ] as const;
       const mixed = tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
 
       expect(colors.filter((name) => theme.colors[name] === undefined)).toEqual([]);

@@ -83,6 +83,7 @@ export type Notices = { setNotice: HostUi["setNotice"]; release(): void };
 
 export const createNotices = (state: HostState): Notices => {
   const own = new Map<string, string>();
+  const statuses = new Set<string>();
 
   return {
     setNotice: (key, text) => {
@@ -96,6 +97,13 @@ export const createNotices = (state: HostState): Notices => {
 
       if (!tui) {
         ctx.ui.setStatus(key, text);
+
+        if (text) {
+          statuses.add(key);
+        } else {
+          statuses.delete(key);
+        }
+
         return;
       }
 
@@ -119,6 +127,10 @@ export const createNotices = (state: HostState): Notices => {
     release: () => {
       const notices = board();
 
+      statuses.forEach((key) => {
+        state.ctx?.ui.setStatus(key, undefined);
+      });
+      statuses.clear();
       own.clear();
       notices.sources.delete(own);
       notices.footer?.refresh();

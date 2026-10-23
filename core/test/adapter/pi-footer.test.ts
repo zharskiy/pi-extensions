@@ -386,6 +386,24 @@ describe("setNotice with pi's interactive layout", () => {
     expect(statuses.has("pi-session-limits")).toBe(true);
   });
 
+  it("clears the status of the fallback when the adapter is released", () => {
+    const statuses = new Map<string, string | undefined>();
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "rpc",
+        ui: { setStatus: (key: string, text?: string) => statuses.set(key, text) },
+      } as unknown as ExtensionContext,
+    };
+    const notices = createNotices(state);
+
+    notices.setNotice("pi-session-limits", "Switching session");
+    notices.release();
+
+    expect(statuses.get("pi-session-limits")).toBeUndefined();
+    expect(statuses.has("pi-session-limits")).toBe(true);
+  });
+
   it("does nothing without a live session", () => {
     const { footer, below } = piLayout();
 

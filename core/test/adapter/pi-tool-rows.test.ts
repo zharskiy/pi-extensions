@@ -149,6 +149,29 @@ describe("rowRenderers", () => {
     expect(expanded.slice(1).every((line) => line.startsWith("      "))).toBe(true);
   });
 
+  it("draws pi's own call and result when the rows throw", () => {
+    const broken: ToolRows = () => ({
+      call: () => {
+        throw new Error("broken call");
+      },
+      result: () => {
+        throw new Error("broken result");
+      },
+    });
+    const base = createReadToolDefinition("/repo") as ToolRenderers;
+    const renderers = rowRenderers(broken, "read", base);
+    const result = { content: [{ type: "text", text: "line one" }] } as never;
+    const options = { expanded: false, isPartial: false };
+    const call = renderers?.renderCall?.({ path: "a.ts" }, theme(), context()).render(40) ?? [];
+    const shown = renderers?.renderResult?.(result, options, theme(), context()).render(40) ?? [];
+    const piCall = base.renderCall?.({ path: "a.ts" }, theme(), context()).render(40) ?? [];
+    const piResult = base.renderResult?.(result, options, theme(), context()).render(40) ?? [];
+
+    expect(call.length).toBeGreaterThan(0);
+    expect(plain(call)).toEqual(plain(piCall));
+    expect(plain(shown)).toEqual(plain(piResult));
+  });
+
   it("reuses the component pi hands back", () => {
     const renderers = rowRenderers(rows, "read", undefined);
     const first = renderers?.renderCall?.({}, theme(), context());
@@ -194,6 +217,26 @@ describe("toolRowsHost", () => {
     expect(applyToolRows("read", undefined)?.renderShell).toBe("self");
 
     second.release();
+  });
+
+  it("keeps the rows of the copy still registered when the later one is released", () => {
+    const api = { registerToolRenderer: () => {} } as unknown as Pick<
+      ExtensionAPI,
+      "registerToolRenderer" | "getAllTools"
+    >;
+    const first = toolRowsHost(api);
+    const second = toolRowsHost(api);
+    const later: ToolRows = () => undefined;
+
+    first.registerToolRows(rows);
+    second.registerToolRows(later);
+    second.release();
+
+    expect(applyToolRows("read", undefined)?.renderShell).toBe("self");
+
+    first.release();
+
+    expect(applyToolRows("read", undefined)).toBeUndefined();
   });
 });
 
