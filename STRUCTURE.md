@@ -8,7 +8,7 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 pi-extensions/
 ├── core/                        # shared code, no extension-specific logic
 │   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, width, truncate, wrap)
+│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, italic, inverse, panels, width, truncate, wrap)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery
@@ -41,7 +41,7 @@ pi-extensions/
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
 │   │   ├── pi-codemode.ts       # codemode worker cap (PI_CODEMODE_MAX_WORKERS), owned value shared by adapter copies
 │   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
-│   │   ├── pi-working.ts        # working indicator and message (HostUi)
+│   │   ├── pi-working.ts        # working message and visibility (HostUi)
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
 │   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
 │   │   └── usage.ts / messages.ts / route.ts # usage sums, text (finalRunTexts: a child's final run), routing
@@ -50,15 +50,17 @@ pi-extensions/
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # token, window, duration, error-text and ~/ path formatters
+│   │   ├── format.ts            # token, window, duration, error-text and ~/ path formatters, and the
+│   │   │                        #   receipt: formatCost, formatCalls, receipt, fitReceipt/receiptText
 │   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
-│   │   ├── layout.ts            # padding, dot separator, accent rule, wrapped and hint lines
+│   │   ├── layout.ts            # padding, dot separator, accent rule, wrapped and hint lines, keyHints
 │   │   ├── list.ts              # selectable list: lines, keys, shared hints
 │   │   ├── select.ts            # single-choice form over the list
 │   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
 │   │   ├── multi-select.ts      # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
-│   │   ├── row.ts               # transcript row language: GLYPHS, bullet colours, toolState, toolRow/childRow
-│   │   │                        #   (● title, ⎿ children, expand hint), CHILD_COLUMNS, EXPAND_BINDING
+│   │   ├── row.ts               # pi-native row language: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), markOf, the 0/2/4 grid,
+│   │   │                        #   row/rowChildren, titleLine, failureSuffix, expandHint, countLine,
+│   │   │                        #   appendHint, ELLIPSIS, EXPAND_BINDING
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
@@ -74,9 +76,9 @@ pi-extensions/
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
 │   │   │   │                    #   agent-schema, agent-override (override value checks),
 │   │   │   │                    #   model-resolution (resolutionProblem), context-limit
-│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters, padding and
-│   │   │   │                    #   wrapping over the theme, state-text.ts glyphs, spinner, words
-│   │   │   │                    #   and stop hint, agent-row, tree.ts (chain links, terminals,
+│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and agentReceipt, padding and
+│   │   │   │                    #   wrapping over the theme, state-text.ts marks, spinner, words
+│   │   │   │                    #   and stop words, agent-row, tree.ts (chain links, terminals,
 │   │   │   │                    #   tree order, connectors, selection carry), refresh.ts
 │   │   │   │                    #   throttle/ticker and tick cadence)
 │   │   │   └── plugins/         # one folder per feature, see below
@@ -101,7 +103,7 @@ pi-extensions/
 │   │   ├── src/                 # index, ledger, footer, spending
 │   │   ├── test/
 │   │   └── README.md
-│   ├── working-indicator/       # spinner, verb and prompt time in the working line
+│   ├── working-indicator/       # current activity and prompt time in the working line
 │   │   ├── src/                 # index, working-indicator
 │   │   ├── test/
 │   │   └── README.md
@@ -113,7 +115,7 @@ pi-extensions/
 │   │   ├── src/                 # index, command-aliases (ALIASES)
 │   │   ├── test/
 │   │   └── README.md
-│   ├── composer/                # framed input box with a chevron prompt
+│   ├── composer/                # input between two rules with pi's › message cursor as the prompt
 │   │   ├── src/                 # index, composer, frame
 │   │   ├── test/
 │   │   └── README.md
@@ -141,10 +143,12 @@ pi-extensions/
 │   │   ├── src/                 # index, footer (wiring), render (pure line builders)
 │   │   ├── test/
 │   │   └── README.md
-│   ├── transcript/              # transcript rows: tool rows, ⎿ summaries, thinking label
-│   │   ├── src/                 # index, transcript (wiring), tools (titles and summaries per tool), output
-│   │   │                        #   (head or tail lines, … +N lines), diff (parse, count and draw an edit's
-│   │   │                        #   diff), words (changed words of a line pair)
+│   ├── transcript/              # tool rows (state glyph, title, ↳ outcome) and the thinking label
+│   │   ├── src/                 # index, transcript (wiring), tools (the look per tool, titles, outcomes),
+│   │   │                        #   look (shared look types and helpers), shell (bash, powershell),
+│   │   │                        #   codemode (summary and nested call rows), generic (MCP and unknown
+│   │   │                        #   tools), output (clean lines, shell status, previews, count lines),
+│   │   │                        #   diff (parse, count and draw an edit's diff), words (changed words)
 │   │   ├── test/
 │   │   └── README.md
 │   └── mcp-import/              # /mcp-import: MCP servers from Claude Code or Cursor into pi's mcp.json
@@ -154,6 +158,7 @@ pi-extensions/
 │       │                        #   arguments), report (messages)
 │       ├── test/
 │       └── README.md
+├── docs/research/               # background notes: pi's rendering surface, another agent's transcript
 ├── test/architecture.test.ts    # import-boundary and layout rules
 ├── AGENTS.md                    # short guide for coding agents
 ├── ARCHITECTURE.md              # how it works
