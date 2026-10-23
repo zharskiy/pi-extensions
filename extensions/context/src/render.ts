@@ -112,15 +112,15 @@ const overflowLines = (theme: ThemeLike, model: UsageModel) =>
     : [];
 
 const toggleLines = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions) => {
-  if (snapshot.expandedByDefault) {
+  if (snapshot.expandedByDefault || options.expanded) {
     return [];
   }
 
-  return [`${PAD}${theme.fg("dim", `(${options.expandKey} ${options.expanded ? "collapse" : "expand"})`)}`];
+  return [`${PAD}${theme.fg("dim", `(${options.expandKey} expand)`)}`];
 };
 
 const titleLine = (theme: ThemeLike, stamp: string | undefined) =>
-  `${bullet("success", theme)} ${theme.bold("Context Usage")}${stamp ? theme.fg("dim", `${DOT}${stamp}`) : ""}`;
+  `${bullet("text", theme)} ${theme.bold("Context Usage")}${stamp ? theme.fg("dim", `${DOT}${stamp}`) : ""}`;
 
 const hung = (line: string) => (line ? ` ${line}` : line);
 

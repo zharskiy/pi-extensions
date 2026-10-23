@@ -129,10 +129,10 @@ describe("call titles", () => {
 });
 
 describe("results", () => {
-  it("counts the lines a read returned and offers the expansion", () => {
+  it("counts the lines a read returned without an expand hint", () => {
     const read = draw(view("read", { path: "a.ts" }, done("one\ntwo\nthree\n")));
 
-    expect(read.result).toEqual(["  ⎿  Read 3 lines (ctrl+o expand)"]);
+    expect(read.result).toEqual(["  ⎿  Read 3 lines"]);
     expect(read.bolded).toContain("3");
     expect(read.piBody).toBe(true);
     expect(draw(view("read", { path: "a.ts" }, { ...done("one"), expanded: true })).result).toEqual([
@@ -235,15 +235,15 @@ describe("results", () => {
 
   it("counts search and listing results", () => {
     expect(draw(view("grep", { pattern: "x" }, done("a.ts:1: x\nb.ts:2: x"))).result).toEqual([
-      "  ⎿  Found 2 lines (ctrl+o expand)",
+      "  ⎿  Found 2 lines",
     ]);
     expect(draw(view("grep", { pattern: "x" }, done("No matches found"))).result).toEqual([
       "  ⎿  No matches",
     ]);
     expect(draw(view("find", { pattern: "*.ts" }, done("a.ts\nb.ts\nc.ts"))).result).toEqual([
-      "  ⎿  Found 3 files (ctrl+o expand)",
+      "  ⎿  Found 3 files",
     ]);
-    expect(draw(view("ls", {}, done("a\nb/"))).result).toEqual(["  ⎿  Listed 2 entries (ctrl+o expand)"]);
+    expect(draw(view("ls", {}, done("a\nb/"))).result).toEqual(["  ⎿  Listed 2 entries"]);
     expect(draw(view("ls", {}, done("(empty directory)"))).result).toEqual(["  ⎿  Listed 0 entries"]);
   });
 
@@ -268,6 +268,20 @@ describe("results", () => {
     ]);
     expect(tokenOf(failed(false).painted, "out 1")).toBe("error");
     expect(failed(false).piBody).toBe(false);
+    expect(failed(true).result).toHaveLength(5);
+  });
+
+  it("keeps the last lines of a failed shell command, where the error is", () => {
+    const failed = (expanded: boolean) =>
+      draw(view("bash", { command: "make" }, { ...done(numbered(5), { isError: true }), expanded }));
+
+    expect(failed(false).result).toEqual([
+      "  ⎿  … +2 lines",
+      "     out 3",
+      "     out 4",
+      "     out 5 (ctrl+o expand)",
+    ]);
+    expect(tokenOf(failed(false).painted, "out 5")).toBe("error");
     expect(failed(true).result).toHaveLength(5);
   });
 });

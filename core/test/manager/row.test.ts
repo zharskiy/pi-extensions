@@ -67,11 +67,18 @@ describe("toolRow", () => {
     ]);
   });
 
-  it("keeps the hint visible when the line it follows is cut", () => {
-    const [line] = toolRow({ state: "success", title: "y".repeat(60), hint: "(k expand)" })(30, plainTheme);
+  it("drops the hint rather than cut the line it follows", () => {
+    const [line] = toolRow({ state: "success", title: "y".repeat(60), hint: "(k expand)" })(40, plainTheme);
 
-    expect(line?.endsWith("… (k expand)")).toBe(true);
-    expect(plainTheme.width(line ?? "")).toBe(30);
+    expect(line).toBe(`● ${"y".repeat(37)}…`);
+    expect(plainTheme.width(line ?? "")).toBe(40);
+  });
+
+  it("keeps the hint when the line and the hint fit exactly", () => {
+    const title = "y".repeat(27);
+    const [line] = toolRow({ state: "success", title, hint: "(k expand)" })(40, plainTheme);
+
+    expect(line).toBe(`● ${title} (k expand)`);
   });
 
   it.each([20, 80, 200])("draws no line wider than %i columns", (width) => {

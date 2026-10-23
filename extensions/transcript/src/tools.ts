@@ -25,6 +25,7 @@ type ToolLook = {
   title(context: Context, value: string): Styled;
   summary?(context: Context): Summary;
   handlesErrors?: boolean;
+  errorTail?: boolean;
   piBody?: boolean;
 };
 
@@ -81,7 +82,7 @@ const outputLines = (text: string, keep: "head" | "tail", token: "muted" | "erro
   const more = hidden > 0 ? [(theme: ThemeLike) => moreLine(hidden, theme)] : [];
 
   if (keep === "tail") {
-    return { children: [...more, ...shown], more: false };
+    return { children: [...more, ...shown], more: hidden > 0 };
   }
 
   return { children: [...shown, ...more], more: hidden > 0 };
@@ -102,7 +103,7 @@ const shellOutput = (context: Context): Summary => {
   if (context.view.isPartial) {
     return text.trim() === ""
       ? { children: [dim("Running…")], more: false }
-      : outputLines(text, "tail", "muted");
+      : { ...outputLines(text, "tail", "muted"), more: false };
   }
 
   if (text.trim() === "") {
@@ -201,7 +202,7 @@ const readSummary = (context: Context): Summary => {
 
   const count = lineCount(result?.text ?? "");
 
-  return { children: [(theme) => `Read ${counted(count, "line")(theme)}`], more: count > 0 };
+  return { children: [(theme) => `Read ${counted(count, "line")(theme)}`], more: false };
 };
 
 const editDiff = (context: Context) => {
@@ -257,14 +258,14 @@ const foundSummary =
       return { children: [none], more: false };
     }
 
-    return { children: [(theme) => `Found ${counted(count, word)(theme)}`], more: count > 0 };
+    return { children: [(theme) => `Found ${counted(count, word)(theme)}`], more: false };
   };
 
 const listSummary = (context: Context): Summary => {
   const text = context.view.result?.text ?? "";
   const count = text.trim() === "(empty directory)" ? 0 : listed(text).length;
 
-  return { children: [(theme) => `Listed ${counted(count, "entry", "entries")(theme)}`], more: count > 0 };
+  return { children: [(theme) => `Listed ${counted(count, "entry", "entries")(theme)}`], more: false };
 };
 
 const LOOKS: Record<string, ToolLook> = {
@@ -283,12 +284,20 @@ const LOOKS: Record<string, ToolLook> = {
     summary: editSummary,
   },
   write: { name: "Write", key: "path", title: pathTitle("Write"), summary: writeSummary },
-  bash: { name: "Bash", key: "command", title: shellTitle("$"), summary: shellBody, piBody: true },
+  bash: {
+    name: "Bash",
+    key: "command",
+    title: shellTitle("$"),
+    summary: shellBody,
+    errorTail: true,
+    piBody: true,
+  },
   powershell: {
     name: "PowerShell",
     key: "command",
     title: shellTitle("PS>"),
     summary: shellBody,
+    errorTail: true,
     piBody: true,
   },
   grep: {
@@ -341,10 +350,10 @@ const genericTitle = (context: Context) => (theme: ThemeLike) => {
   return summary ? `${theme.bold(context.view.name)} ${summary}` : theme.bold(context.view.name);
 };
 
-const errorSummary = (context: Context): Summary => {
+const errorSummary = (context: Context, keep: "head" | "tail"): Summary => {
   const text = context.view.result?.text || "Error";
 
-  return context.view.expanded ? allLines(text, "error") : outputLines(text, "head", "error");
+  return context.view.expanded ? allLines(text, "error") : outputLines(text, keep, "error");
 };
 
 const titleOf = (look: ToolLook | undefined, context: Context): Styled => {
@@ -367,7 +376,7 @@ const titleOf = (look: ToolLook | undefined, context: Context): Styled => {
 
 const summaryOf = (look: ToolLook | undefined, context: Context): Summary => {
   if (context.view.isError && !context.view.isPartial && !look?.handlesErrors) {
-    return errorSummary(context);
+    return errorSummary(context, look?.errorTail ? "tail" : "head");
   }
 
   return (look?.summary ?? shellOutput)(context);

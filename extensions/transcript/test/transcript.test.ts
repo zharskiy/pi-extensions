@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { createTranscript, HIDDEN_THINKING_LABEL } from "../src/transcript.ts";
+import { createTranscript, hiddenThinkingLabel } from "../src/transcript.ts";
 
 describe("transcript", () => {
   it("registers the tool rows at load, with the expand key the host names", () => {
@@ -34,7 +34,11 @@ describe("transcript", () => {
     host.start();
 
     expect(host.messageRowsEnabled).toBe(true);
-    expect(host.thinkingLabels).toEqual([HIDDEN_THINKING_LABEL]);
+    expect(host.thinkingLabels).toEqual(["∴ Thinking (<app.thinking.toggle> expand)"]);
+  });
+
+  it("names no key in the thinking label when the toggle is unbound", () => {
+    expect(hiddenThinkingLabel("")).toBe("∴ Thinking");
   });
 
   it.each(["print", "rpc", "json"] as const)("leaves the messages alone in %s mode", (mode) => {

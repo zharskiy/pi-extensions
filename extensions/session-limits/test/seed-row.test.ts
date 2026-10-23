@@ -14,10 +14,10 @@ describe("seedRow", () => {
     ]);
   });
 
-  it("paints the bullet in the success colour", () => {
+  it("paints the bullet in the text colour", () => {
     const theme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
 
-    expect(seedRow(seed, false, "ctrl+o")(200, theme)[0]).toBe("<success>● Handoff from previous session");
+    expect(seedRow(seed, false, "ctrl+o")(200, theme)[0]).toBe("<text>● Handoff from previous session");
   });
 
   it("shows the whole seed, wrapped under the child glyph, when expanded", () => {

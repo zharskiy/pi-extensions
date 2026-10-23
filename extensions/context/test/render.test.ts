@@ -47,10 +47,10 @@ describe("renderSnapshot", () => {
     ]);
   });
 
-  it("starts with a success bullet, the title and the dim time, and hangs the body two columns in", () => {
+  it("starts with a text bullet, the title and the dim time, and hangs the body two columns in", () => {
     const lines = render({}, {}, tokenTheme);
 
-    expect(lines[0]).toBe("<success>● Context Usage<dim> · 14:32");
+    expect(lines[0]).toBe("<text>● Context Usage<dim> · 14:32");
     expect(lines.slice(1).every((line) => line === "" || line.startsWith("  "))).toBe(true);
     expect(lines.at(-1)).toBe("  <dim>(ctrl+o expand)");
   });
@@ -79,7 +79,6 @@ describe("renderSnapshot", () => {
       "  └ assistant: 7.9k tokens",
       "  └ user: 2.1k tokens",
       "  └ thinking: 1.8k tokens",
-      "  (ctrl+o collapse)",
     ]);
   });
 

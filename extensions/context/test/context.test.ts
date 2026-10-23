@@ -64,7 +64,6 @@ describe("/context", () => {
       "  └ thinking: 1.8k tokens",
       "  └ tool calls: 900 tokens",
       "  └ other: 40 tokens",
-      "  (<app.tools.expand> collapse)",
     ]);
     expect(lines.some((line) => line.endsWith("⛁ System prompt: 1.0k tokens (0.5%)"))).toBe(true);
   });

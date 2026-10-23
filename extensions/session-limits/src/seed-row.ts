@@ -19,7 +19,7 @@ export const seedRow =
   (text: string, expanded: boolean, expandKey: string): RowRender =>
   (width, theme) =>
     toolRow({
-      state: "success",
+      state: "text",
       title: SEED_TITLE,
       children: expanded ? wrapped(text.trim(), width, theme) : [firstSentence(text)],
       hint: expanded ? undefined : (paint) => expandHint(expandKey, paint),

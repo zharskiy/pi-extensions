@@ -43,13 +43,11 @@ const hang = (first: string, rest: string, lines: string[]) =>
   lines.map((line, index) => `${index === 0 ? first : rest}${line}`);
 
 const fitLine = (line: string, hint: string | undefined, width: number, theme: ThemeLike) => {
-  const room = hint === undefined ? 0 : width - theme.width(hint) - 1;
-
-  if (hint === undefined || room < 1) {
+  if (hint === undefined || theme.width(line) + 1 + theme.width(hint) > width) {
     return theme.truncate(line, width);
   }
 
-  return `${theme.truncate(line, room)} ${hint}`;
+  return `${line} ${hint}`;
 };
 
 const withHint = (lines: string[], hint: Styled | undefined, width: number, theme: ThemeLike) => {
