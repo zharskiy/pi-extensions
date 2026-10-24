@@ -150,7 +150,7 @@ describe("renderFooter", () => {
     });
 
     expect(lines[1]).toBe(
-      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <accent>test-model <muted>(1M context)",
+      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <text>test-model <muted>(1M context)",
     );
     expect(lines[2]).toBe(" <muted>session total (agents included) <text>162.4k<muted> · <text>$4.42");
     expect(lines[3]).toBe(
@@ -181,6 +181,15 @@ describe("renderFooter", () => {
     expect(lines[4]).toMatch(/<dim>\(shift\+tab to cycle\)$/);
     expect(greys(lines[4])).toEqual(["dim"]);
     expect(unavailable).toBe(" <muted>thinking unavailable <dim>(shift+tab to cycle)");
+  });
+
+  it("sets the model name in bold text apart from the muted window and a missing model", () => {
+    const boldTheme: ThemeLike = { ...tokenTheme, bold: (text) => `<b>${text}</b>` };
+    const line = (patch: Partial<FooterState>) =>
+      renderFooter(boldTheme, state(patch), { branch: null, statuses: new Map() })[1];
+
+    expect(line({})).toMatch(/<b><text>test-model<\/b> <muted>\(1M context\)$/);
+    expect(line({ model: undefined })).toMatch(/<muted>no model$/);
   });
 
   it("paints both brackets around the branch in the same muted span", () => {

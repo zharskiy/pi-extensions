@@ -66,12 +66,12 @@ const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
 
 const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo | undefined) => {
   if (!model) {
-    return theme.fg("accent", "no model");
+    return theme.fg(META, "no model");
   }
 
   const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
 
-  return `${theme.fg("accent", model.name)} ${theme.fg(META, window)}`;
+  return `${theme.bold(theme.fg("text", model.name))} ${theme.fg(META, window)}`;
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
