@@ -103,8 +103,15 @@ const errorLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
     return [];
   }
 
-  const rows = wrapChild((record.error ?? "unknown error").trim(), inner, 0, theme);
-  const { shown, hidden } = preview(rows, { keep: "head", max: ERROR_ROWS });
+  const groups = (record.error ?? "unknown error")
+    .trim()
+    .split("\n")
+    .map((line) => wrapChild(line, inner, 0, theme));
+  const { shown } = preview(groups.flat(), { keep: "head", max: ERROR_ROWS });
+  const starts = groups.map((_, index) =>
+    groups.slice(0, index).reduce((total, rows) => total + rows.length, 0),
+  );
+  const hidden = starts.filter((start) => start >= ERROR_ROWS).length;
   const more = hidden > 0 ? [PAD + countLine({ hidden, end: "more", noun: "line" }, inner, theme)] : [];
 
   return [...shown.map((line) => PAD + theme.fg("error", line)), ...more];

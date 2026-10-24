@@ -12,7 +12,7 @@ const ALL = "all";
 
 export type ContextEnv = { home: string; now(): number };
 
-const shortPath = (path: string, home: string, cwd: string) => {
+const cwdOrHomeRelative = (path: string, home: string, cwd: string) => {
   if (cwd && path.startsWith(`${cwd}/`)) {
     return `./${path.slice(cwd.length + 1)}`;
   }
@@ -22,7 +22,10 @@ const shortPath = (path: string, home: string, cwd: string) => {
 
 const shortened = (breakdown: Breakdown, home: string, cwd: string): Breakdown => ({
   ...breakdown,
-  memoryFiles: breakdown.memoryFiles.map((part) => ({ ...part, name: shortPath(part.name, home, cwd) })),
+  memoryFiles: breakdown.memoryFiles.map((part) => ({
+    ...part,
+    name: cwdOrHomeRelative(part.name, home, cwd),
+  })),
 });
 
 export const createContext = (host: Host, env: ContextEnv) => {

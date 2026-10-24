@@ -493,6 +493,13 @@ describe("agent view header", () => {
     ]);
   });
 
+  it("counts hidden error lines, not wrapped rows", () => {
+    const error = `${"word ".repeat(40).trim()}\n${Array.from({ length: 8 }, (_, index) => `frame ${index + 1}`).join("\n")}`;
+    const lines = header(base({ state: "failed", endedAt: 0, error }), plainTheme, 20);
+
+    expect(lines.filter((line) => line.includes("more line"))).toEqual([" ... (8 more lines)"]);
+  });
+
   it("keeps the glyph colour and the bold name when line 1 is cut below 8 columns of description", () => {
     const record = base({ state: "done", endedAt: 0 });
 
