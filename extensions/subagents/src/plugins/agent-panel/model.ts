@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { keyHints } from "../../../../../core/manager/layout.ts";
+import { keyHints } from "../../../../../core/manager/hints.ts";
 import { POINTER_BLANK, renderRow, rowLayout } from "../../components/agent-row.ts";
 import { PAD } from "../../components/format.ts";
 import { stopWords } from "../../components/state-text.ts";

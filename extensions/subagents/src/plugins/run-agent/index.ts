@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
-import { EXPAND_BINDING } from "../../../../../core/manager/row.ts";
+import { EXPAND_BINDING } from "../../../../../core/manager/hints.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import {

@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import type { Host } from "../../../core/adapter/contract.ts";
-import { EXPAND_BINDING } from "../../../core/manager/row.ts";
+import { EXPAND_BINDING } from "../../../core/manager/hints.ts";
 import { transcriptRows } from "./tools.ts";
 
 const THINKING_BINDING = "app.thinking.toggle";

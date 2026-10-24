@@ -1,5 +1,6 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { hintLines, type KeyHint, PAD, padded, rule } from "../../../core/manager/layout.ts";
+import { hintLines, type KeyHint } from "../../../core/manager/hints.ts";
+import { PAD, padded, rule } from "../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
 import { TAB_SWITCH_HINT, tabBar } from "../../../core/manager/tabs.ts";
 import {

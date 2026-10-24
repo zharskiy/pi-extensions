@@ -1,5 +1,6 @@
 import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, type KeyHint, PAD, padded, prefixed, rule } from "./layout.ts";
+import { hintLines, type KeyHint } from "./hints.ts";
+import { PAD, padded, prefixed, rule } from "./layout.ts";
 import { CANCEL_HINT, clampIndex } from "./list.ts";
 
 export type MultiOption = { label: string; description?: string };

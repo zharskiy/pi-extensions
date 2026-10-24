@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
-import { countLine, preview } from "../../../core/manager/row.ts";
+import { countLine } from "../../../core/manager/hints.ts";
+import { preview } from "../../../core/manager/row.ts";
 
 const TAB = "   ";
 

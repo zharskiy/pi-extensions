@@ -1,5 +1,6 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { CHILD_COLUMN, expandHint, type RowRender, row, wrapChild } from "../../../core/manager/row.ts";
+import { expandHint } from "../../../core/manager/hints.ts";
+import { CHILD_COLUMN, type RowRender, row, wrapChild } from "../../../core/manager/row.ts";
 
 export const SEED_TITLE = "Handoff from the previous session";
 

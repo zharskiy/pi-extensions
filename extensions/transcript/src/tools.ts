@@ -1,10 +1,10 @@
 import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../core/adapter/contract.ts";
 import { formatDuration, shortPath } from "../../../core/manager/format.ts";
+import { expandHint } from "../../../core/manager/hints.ts";
+import { markOf } from "../../../core/manager/marks.ts";
 import {
   CHILD_COLUMN,
-  expandHint,
   failureSuffix,
-  markOf,
   type RowRender,
   row,
   rowChildren,

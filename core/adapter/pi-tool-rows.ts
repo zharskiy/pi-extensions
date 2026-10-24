@@ -1,7 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { CHILD_COLUMN, MARKS } from "../manager/row.ts";
+import { MARKS } from "../manager/marks.ts";
+import { CHILD_COLUMN } from "../manager/row.ts";
 import type { Host, ThemeLike, ToolCallView, ToolRow, ToolRows } from "./contract.ts";
 import {
   abortedText,

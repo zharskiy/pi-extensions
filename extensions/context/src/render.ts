@@ -1,8 +1,10 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { cachePercentText } from "../../../core/manager/cache.ts";
 import { formatTokens } from "../../../core/manager/format.ts";
+import { countLine } from "../../../core/manager/hints.ts";
 import { DOT } from "../../../core/manager/layout.ts";
-import { CHILD_COLUMN, countLine, markGlyph } from "../../../core/manager/row.ts";
+import { markGlyph } from "../../../core/manager/marks.ts";
+import { CHILD_COLUMN } from "../../../core/manager/row.ts";
 import {
   type CacheFigures,
   type Category,

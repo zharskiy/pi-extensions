@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeyPress, ThemeLike } from "../../adapter/contract.ts";
-import { keyHints } from "../../manager/layout.ts";
+import { keyHints } from "../../manager/hints.ts";
 import { TAB_SWITCH_HINT, tabBar, tabStep } from "../../manager/tabs.ts";
 import { plainTheme } from "../helpers/fakes.ts";
 

@@ -1,8 +1,7 @@
 import { homedir } from "node:os";
 import type { Host, Phase, PhaseDetail, RunningTool, ThemeLike } from "../../../core/adapter/contract.ts";
 import { formatDuration, shortPath } from "../../../core/manager/format.ts";
-import { DOT } from "../../../core/manager/layout.ts";
-import { cutStart, ELLIPSIS } from "../../../core/manager/row.ts";
+import { cutStart, DOT, ELLIPSIS } from "../../../core/manager/layout.ts";
 
 export const TICK_MS = 1000;
 

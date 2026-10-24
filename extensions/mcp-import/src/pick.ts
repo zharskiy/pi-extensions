@@ -1,7 +1,6 @@
 import type { Host } from "../../../core/adapter/contract.ts";
-import { DOT } from "../../../core/manager/layout.ts";
+import { DOT, ELLIPSIS } from "../../../core/manager/layout.ts";
 import { multiSelectForm } from "../../../core/manager/multi-select.ts";
-import { ELLIPSIS } from "../../../core/manager/row.ts";
 import { selectForm } from "../../../core/manager/select.ts";
 import type { Scope, Source } from "./args.ts";
 import { needsSignIn } from "./convert.ts";

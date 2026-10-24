@@ -1,5 +1,6 @@
 import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { type KeyHint, PAD, prefixed } from "./layout.ts";
+import type { KeyHint } from "./hints.ts";
+import { PAD, prefixed } from "./layout.ts";
 
 const DESCRIPTION_INDENT = "      ";
 

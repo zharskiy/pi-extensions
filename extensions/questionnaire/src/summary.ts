@@ -1,6 +1,7 @@
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../core/adapter/contract.ts";
 import { counted } from "../../../core/manager/format.ts";
-import { markOf, type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
+import { markOf } from "../../../core/manager/marks.ts";
+import { type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
 import {
   type Answer,
   labelOf,

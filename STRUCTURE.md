@@ -54,14 +54,16 @@ pi-extensions/
 │   │   │                        #   noun/counted, and the receipt: formatCost, formatCalls, receipt,
 │   │   │                        #   receiptText, plainReceipt
 │   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
-│   │   ├── layout.ts            # padding, dot separator, accent rule, wrapped and hint lines, keyHints
+│   │   ├── layout.ts            # padding, dot separator, ELLIPSIS and cutStart, accent rule, wrapped lines
 │   │   ├── list.ts              # selectable list: lines, keys, shared hints
 │   │   ├── select.ts            # single-choice form over the list
 │   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
 │   │   ├── multi-select.ts      # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
-│   │   ├── row.ts               # pi-native row language: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), markOf, the 0/2/4 grid,
-│   │   │                        #   row/rowChildren, titleLine, failureSuffix, expandHint, countLine,
-│   │   │                        #   appendHint, ELLIPSIS, EXPAND_BINDING
+│   │   ├── marks.ts             # state marks: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), Mark, markGlyph, markOf
+│   │   ├── hints.ts             # hint grammar: EXPAND_BINDING, expandHint, appendHint, countLine,
+│   │   │                        #   keyHints and hintLines (bottom strips)
+│   │   ├── row.ts               # pi-native row layout: the 0/2/4 grid, row/rowChildren, titleLine,
+│   │   │                        #   failureSuffix, wrapChild, preview
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,

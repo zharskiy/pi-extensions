@@ -1,9 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
-import { noun } from "./format.ts";
-import { DOT } from "./layout.ts";
-
-export const EXPAND_BINDING = "app.tools.expand";
+import { appendHint } from "./hints.ts";
+import { cutStart, DOT, ELLIPSIS } from "./layout.ts";
+import { MARKS, type Mark, markGlyph } from "./marks.ts";
 
 export type Styled = string | ((theme: ThemeLike) => string);
 
@@ -14,132 +13,20 @@ const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? 
 export const rowText = (render: RowRender, theme: ThemeLike) => (width: number) =>
   render(width, theme).join("\n");
 
-export const MARKS = {
-  pending: "◌",
-  success: "✓",
-  error: "✗",
-  stopped: "⊘",
-  info: "»",
-  child: "↳",
-  pointer: "›",
-} as const;
-
-export type Mark = "pending" | "success" | "error" | "stopped" | "info";
-
-const MARK_TOKENS: Record<Mark, ThemeToken> = {
-  pending: "dim",
-  success: "success",
-  error: "error",
-  stopped: "muted",
-  info: "accent",
-};
-
-export const markGlyph = (mark: Mark, theme: ThemeLike) => theme.fg(MARK_TOKENS[mark], MARKS[mark]);
-
-export const markOf = (view: {
-  started?: boolean;
-  isPartial: boolean;
-  isError: boolean;
-  aborted?: boolean;
-}): Mark => {
-  if (view.started === false || view.isPartial) {
-    return "pending";
-  }
-
-  if (view.aborted) {
-    return "stopped";
-  }
-
-  return view.isError ? "error" : "success";
-};
-
 export const TITLE_COLUMN = 2;
 
 export const CHILD_COLUMN = 4;
 
 export const NEST = 4;
 
-export const ELLIPSIS = "...";
-
 const MIN_TARGET = 8;
 
-const MIN_SUMMARY = 20;
-
 const MAX_REASON = 32;
-
-const graphemes = new Intl.Segmenter();
-
-export const cutStart = (text: string, cols: number, theme: Pick<ThemeLike, "width">) => {
-  if (theme.width(text) <= cols) {
-    return text;
-  }
-
-  if (cols <= ELLIPSIS.length) {
-    return ELLIPSIS.slice(0, Math.max(0, cols));
-  }
-
-  const room = cols - ELLIPSIS.length;
-  const parts = Array.from(graphemes.segment(text), ({ segment }) => segment).reverse();
-  const used = parts.map((part) => theme.width(part));
-  const ends = used.map((_, index) => used.slice(0, index + 1).reduce((sum, width) => sum + width, 0));
-  const count = ends.filter((end) => end <= room).length;
-
-  return `${ELLIPSIS}${parts.slice(0, count).reverse().join("")}`;
-};
 
 const isBlankLine = (line: string) => stripVTControlCharacters(line).trim() === "";
 
 const fitTo = (line: string, width: number, theme: ThemeLike) =>
   isBlankLine(line) ? "" : theme.truncate(line, Math.max(0, width));
-
-export const expandHint = (key: string): Styled | undefined =>
-  key === "" ? undefined : (theme) => theme.fg("dim", `(${key} to expand)`);
-
-export const appendHint = (
-  line: string,
-  hint: string | undefined,
-  width: number,
-  theme: ThemeLike,
-  options: { cuttable?: boolean } = {},
-) => {
-  if (hint === undefined) {
-    return theme.truncate(line, width);
-  }
-
-  const room = width - 1 - theme.width(hint);
-
-  if (theme.width(line) <= room) {
-    return `${line} ${hint}`;
-  }
-
-  if (options.cuttable && theme.width(line) > width && room >= MIN_SUMMARY) {
-    return `${theme.truncate(line, room)} ${hint}`;
-  }
-
-  return theme.truncate(line, width);
-};
-
-export type CountSpec = {
-  hidden: number;
-  end: "more" | "earlier";
-  noun: "line" | "item";
-  key?: string;
-};
-
-export const countLine = (spec: CountSpec, width: number, theme: ThemeLike) => {
-  const count = `${spec.hidden} ${spec.end} ${noun(spec.hidden, spec.noun)}`;
-  const keyed = spec.key ? `${ELLIPSIS} (${count}, ${spec.key} to expand)` : undefined;
-
-  if (spec.key && keyed !== undefined && theme.width(keyed) <= width) {
-    return [
-      theme.fg("muted", `${ELLIPSIS} (${count}, `),
-      theme.fg("dim", spec.key),
-      theme.fg("muted", " to expand)"),
-    ].join("");
-  }
-
-  return theme.truncate(theme.fg("muted", `${ELLIPSIS} (${count})`), width);
-};
 
 export const wrapChild = (text: string, width: number, column: number, theme: ThemeLike) =>
   text.split("\n").flatMap((line) => theme.wrap(line, Math.max(1, width - column)));

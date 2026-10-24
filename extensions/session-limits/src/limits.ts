@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import type { ContextSnapshot, Host, SessionControl } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
 import { errorText } from "../../../core/manager/format.ts";
-import { EXPAND_BINDING } from "../../../core/manager/row.ts";
+import { EXPAND_BINDING } from "../../../core/manager/hints.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
 import { seedRow } from "./seed-row.ts";
 import {

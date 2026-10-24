@@ -1,5 +1,5 @@
 import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
-import type { KeyHint } from "./layout.ts";
+import type { KeyHint } from "./hints.ts";
 
 export type Tab = { label: string; done: boolean };
 

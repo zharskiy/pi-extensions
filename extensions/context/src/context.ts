@@ -1,6 +1,6 @@
 import type { Host } from "../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../core/manager/format.ts";
-import { EXPAND_BINDING } from "../../../core/manager/row.ts";
+import { EXPAND_BINDING } from "../../../core/manager/hints.ts";
 import { type Breakdown, breakdownOf } from "./buckets.ts";
 import { renderSnapshot } from "./render.ts";
 import { parseSnapshot, type Snapshot } from "./snapshot.ts";

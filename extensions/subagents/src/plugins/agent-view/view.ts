@@ -1,7 +1,7 @@
 import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { type ReceiptSegment, receiptText } from "../../../../../core/manager/format.ts";
-import { keyHints } from "../../../../../core/manager/layout.ts";
-import { countLine, preview, wrapChild } from "../../../../../core/manager/row.ts";
+import { countLine, keyHints } from "../../../../../core/manager/hints.ts";
+import { preview, wrapChild } from "../../../../../core/manager/row.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
   agentReceipt,

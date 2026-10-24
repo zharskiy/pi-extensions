@@ -1,5 +1,6 @@
 import type { FormFactory, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, type KeyHint, padded, rule } from "./layout.ts";
+import { hintLines, type KeyHint } from "./hints.ts";
+import { padded, rule } from "./layout.ts";
 import { CANCEL_HINT, clampIndex, type ListOption, listKey, listLines, SELECT_HINTS } from "./list.ts";
 
 export type SelectOption<T> = ListOption & { value: T };

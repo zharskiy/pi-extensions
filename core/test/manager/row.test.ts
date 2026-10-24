@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ThemeToken } from "../../adapter/contract.ts";
+import { appendHint, countLine, expandHint } from "../../manager/hints.ts";
+import { cutStart } from "../../manager/layout.ts";
+import { MARKS, type Mark } from "../../manager/marks.ts";
 import {
-  appendHint,
   CHILD_COLUMN,
-  countLine,
-  cutStart,
-  expandHint,
   failureSuffix,
-  MARKS,
-  type Mark,
   type MarkedRow,
   preview,
   row,

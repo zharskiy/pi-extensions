@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../adapter/contract.ts";
-import { hintLines, keyHints, padded, prefixed, rule } from "../../manager/layout.ts";
+import { hintLines, keyHints } from "../../manager/hints.ts";
+import { padded, prefixed, rule } from "../../manager/layout.ts";
 import { plainTheme } from "../helpers/fakes.ts";
 
 const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };

@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { plainReceipt, type ReceiptSegment, receiptText } from "../../../../core/manager/format.ts";
-import { MARKS } from "../../../../core/manager/row.ts";
+import { MARKS } from "../../../../core/manager/marks.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 import { agentReceipt, PAD, padEndCols, singleLine } from "./format.ts";
 import { liveGlyph, scrollGlyph } from "./state-text.ts";
