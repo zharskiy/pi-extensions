@@ -17,7 +17,7 @@ const LEVEL_TOKENS: Record<string, ThemeToken> = {
   medium: "thinkingMedium",
   high: "thinkingHigh",
   xhigh: "thinkingXhigh",
-  max: "thinkingXhigh",
+  max: "thinkingMax",
 };
 
 export type FooterState = {

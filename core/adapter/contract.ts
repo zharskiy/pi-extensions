@@ -21,7 +21,8 @@ export type ThemeToken =
   | "thinkingLow"
   | "thinkingMedium"
   | "thinkingHigh"
-  | "thinkingXhigh";
+  | "thinkingXhigh"
+  | "thinkingMax";
 
 export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
 

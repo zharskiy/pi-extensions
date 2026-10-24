@@ -50,6 +50,7 @@ const PI_COLORS = {
   thinkingMedium: "thinkingMedium",
   thinkingHigh: "thinkingHigh",
   thinkingXhigh: "thinkingXhigh",
+  thinkingMax: "thinkingMax",
 } as const satisfies Record<ThemeToken, Parameters<Theme["fg"]>[0]>;
 
 export const piColor = (token: ThemeToken) => PI_COLORS[token];

@@ -312,7 +312,7 @@ describe("themeLike colours", () => {
   it("paints the thinking-level tokens with pi's thinking colours", () => {
     const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
     const like = themeLike(recording);
-    const levels = ["Off", "Minimal", "Low", "Medium", "High", "Xhigh"] as const;
+    const levels = ["Off", "Minimal", "Low", "Medium", "High", "Xhigh", "Max"] as const;
 
     expect(levels.map((level) => like.fg(`thinking${level}`, "x"))).toEqual(
       levels.map((level) => `<thinking${level}>x`),

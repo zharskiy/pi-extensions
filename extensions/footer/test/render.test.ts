@@ -139,7 +139,8 @@ describe("renderFooter", () => {
     expect(line("high")).toBe(" <b><thinkingHigh>thinking high</b> <dim>(shift+tab to cycle)");
     expect(line("")).toContain("<b><thinkingOff>thinking off</b>");
     expect(line("xhigh")).toContain("<thinkingXhigh>thinking xhigh");
-    expect(line("max")).toContain("<thinkingXhigh>thinking max");
+    expect(line("max")).toContain("<thinkingMax>thinking max");
+    expect(line("max")).not.toContain("thinkingXhigh");
   });
 
   it("tints each kind of value its own way, with muted separators and dim labels", () => {
