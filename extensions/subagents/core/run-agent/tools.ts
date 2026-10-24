@@ -1,6 +1,12 @@
 import type { ToolSpec } from "../../../../pi-adapter/index.ts";
-import { type AgentFrontmatter, ALL } from "../model/agent-schema.ts";
-import { type AgentInternals, type AgentRegistry, grantText, isNone, MAIN_CALLER } from "../model/types.ts";
+import {
+  type AgentInternals,
+  type AgentRegistry,
+  grantText,
+  isNone,
+  MAIN_CALLER,
+} from "../model/agent-record.ts";
+import { AGENT_SCOPE_ALL, type AgentFrontmatter } from "../model/agent-schema.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
 export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
@@ -75,7 +81,9 @@ const modelText = (agent: DelegateAgent) => {
 const agentLine = (agent: DelegateAgent, limits: RunAgentLimits) => {
   const nested = agent.subagents ?? [];
   const canNest = !isNone(nested) && limits.callerDepth + 1 < limits.maxDepth;
-  const spawns = canNest ? `, may start ${nested === ALL ? "any other agent" : grantText(nested)}` : "";
+  const spawns = canNest
+    ? `, may start ${nested === AGENT_SCOPE_ALL ? "any other agent" : grantText(nested)}`
+    : "";
 
   return `- ${agent.name}: ${agent.description} (${modelText(agent)}, context limit ${agent.limit} tokens${spawns})`;
 };

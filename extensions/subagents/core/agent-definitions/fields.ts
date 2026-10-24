@@ -1,7 +1,7 @@
 import { splitModelRequest } from "../../../../pi-adapter/index.ts";
 import {
+  AGENT_SCOPE_ALL,
   type AgentFrontmatter,
-  ALL,
   INHERIT_MODEL,
   PLAIN_NAME,
   PLAIN_NAME_TEXT,
@@ -141,16 +141,18 @@ const listField: FieldParser = (spec, value) => {
     return { error: `${spec.key} must be a list or a comma-separated string` };
   }
 
-  const misspelled = names.filter((name) => name !== ALL && name.toLowerCase() === ALL);
+  const misspelled = names.filter(
+    (name) => name !== AGENT_SCOPE_ALL && name.toLowerCase() === AGENT_SCOPE_ALL,
+  );
 
   if (misspelled.length > 0) {
     return { error: `${spec.key} takes all in lowercase, got: ${misspelled.join(", ")}` };
   }
 
-  if (names.includes(ALL)) {
+  if (names.includes(AGENT_SCOPE_ALL)) {
     return names.length > 1
       ? { error: `${spec.key} must be all on its own or a list of names, got: ${names.join(", ")}` }
-      : { value: ALL };
+      : { value: AGENT_SCOPE_ALL };
   }
 
   const invalid = names.filter((name) => !PLAIN_NAME.test(name));

@@ -1,6 +1,5 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
@@ -9,6 +8,7 @@ import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useTempDirs } from "../../test-framework/index.ts";
 import { initPiRenderTheme, piRenderContext } from "../../test-framework/pi/index.ts";
 import { createChildExtension } from "../child/child-extension.ts";
 import { childSettings, childToolNames } from "../child/child-runtime.ts";
@@ -26,6 +26,8 @@ import { capturePiRenderers } from "../tools/transcript.ts";
 import { composeLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 
 const ADAPTER_PI_MAJOR = 1;
+
+const temp = useTempDirs();
 
 const PI_PACKAGES = ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"];
 
@@ -203,7 +205,7 @@ describe("pi adapter conformance", () => {
   });
 
   it("gives extensions the API and UI methods the adapter calls, and tools their source path and exposure", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+    const dir = temp.make("pi-conformance-");
     const seen: { api?: pi.ExtensionAPI; ui?: pi.ExtensionUIContext } = {};
 
     try {
@@ -302,7 +304,7 @@ describe("pi adapter conformance", () => {
   });
 
   it("emits ui_prompt events around every blocking dialog", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+    const dir = temp.make("pi-conformance-");
     const seen: unknown[] = [];
     let answer: boolean | undefined;
 
@@ -440,7 +442,7 @@ describe("pi adapter conformance", () => {
   });
 
   it("reads the assistant texts of a child's final run from pi's session entries", () => {
-    const session = pi.SessionManager.inMemory(mkdtempSync(join(tmpdir(), "pi-run-texts-")));
+    const session = pi.SessionManager.inMemory(temp.make("pi-run-texts-"));
     const text = (value: string) => ({ type: "text" as const, text: value });
     const toolCall = { type: "toolCall" as const, id: "t1", name: "read", arguments: {} };
     const user = (value: string) => ({ role: "user" as const, content: value, timestamp: 0 });
@@ -501,7 +503,7 @@ describe("pi adapter conformance", () => {
     });
 
     const sessionTools = async (tools: string[]) => {
-      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const dir = temp.make("pi-conformance-");
 
       vi.stubEnv("PI_CODING_AGENT_DIR", dir);
 
@@ -593,7 +595,7 @@ describe("pi adapter conformance", () => {
     });
 
     const mainSession = async (options: { disabled?: string[]; extensions?: string[] }) => {
-      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const dir = temp.make("pi-conformance-");
       const seen: pi.ExtensionAPI[] = [];
 
       vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -662,7 +664,7 @@ describe("pi adapter conformance", () => {
     };
 
     it("reads each skill command's name without the skill: prefix, its description and its file", async () => {
-      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const dir = temp.make("pi-conformance-");
       const seen: pi.ExtensionAPI[] = [];
       const review = skillFile(dir, "review", "Reviews diffs for bugs");
       const docs = skillFile(dir, "docs", "Writes and fixes docs");
@@ -712,13 +714,8 @@ describe("pi adapter conformance", () => {
   });
 
   describe("skill inventory", () => {
-    const made: string[] = [];
-
     afterEach(() => {
       vi.unstubAllEnvs();
-      made.splice(0).forEach((dir) => {
-        rmSync(dir, { recursive: true, force: true });
-      });
     });
 
     const skillAt = (dir: string, name: string) => {
@@ -731,11 +728,9 @@ describe("pi adapter conformance", () => {
     };
 
     const layout = () => {
-      const home = mkdtempSync(join(tmpdir(), "pi-conformance-home-"));
+      const home = temp.make("pi-conformance-home-");
       const agentDir = join(home, "agent");
-      const cwd = mkdtempSync(join(tmpdir(), "pi-conformance-project-"));
-
-      made.push(home, cwd);
+      const cwd = temp.make("pi-conformance-project-");
 
       vi.stubEnv("HOME", home);
       vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
@@ -997,7 +992,7 @@ describe("pi adapter conformance", () => {
     });
 
     it("returns an edit diff of numbered added, removed and context lines the rows parse", async () => {
-      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const dir = temp.make("pi-conformance-");
       const lines = Array.from({ length: 20 }, (_value, index) => `line ${index + 1}`);
 
       writeFileSync(join(dir, "a.txt"), `${lines.join("\n")}\n`);
@@ -1017,8 +1012,6 @@ describe("pi adapter conformance", () => {
         undefined as never,
       );
       const diff = (result.details as { diff: string }).diff;
-
-      rmSync(dir, { recursive: true, force: true });
 
       expect(diff.split("\n")).toEqual(
         expect.arrayContaining(["- 2 line 2", "+ 2 line 2 changed", "    ..."]),
@@ -1085,7 +1078,7 @@ describe("pi adapter conformance", () => {
           "utf8",
         ),
       );
-      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const dir = temp.make("pi-conformance-");
       const path = join(dir, "blank.json");
 
       writeFileSync(
@@ -1098,8 +1091,6 @@ describe("pi adapter conformance", () => {
       );
 
       const theme: pi.Theme = themes.loadThemeFromPath(path, "truecolor");
-
-      rmSync(dir, { recursive: true, force: true });
 
       expect(theme.colors.toolSuccessBg).toBeDefined();
       expect(theme.colors.toolDiffAdded).toBeDefined();
@@ -1129,9 +1120,9 @@ describe("pi adapter conformance", () => {
     });
 
     it("marks pi's own tools, codemode among them, with the builtin source and a third-party tool without it", async () => {
-      vi.stubEnv("PI_CODING_AGENT_DIR", mkdtempSync(join(tmpdir(), "pi-conformance-")));
+      vi.stubEnv("PI_CODING_AGENT_DIR", temp.make("pi-conformance-"));
 
-      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const dir = temp.make("pi-conformance-");
       const seen: { api?: pi.ExtensionAPI } = {};
       const settingsManager = pi.SettingsManager.inMemory({});
       const loader = new pi.DefaultResourceLoader({

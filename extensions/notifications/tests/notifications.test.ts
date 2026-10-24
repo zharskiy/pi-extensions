@@ -1,23 +1,26 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../pi-adapter/index.ts";
 import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL } from "../../../shared/index.ts";
-import { createFakeAgentRuntime, createFakeHost, type FakeHost } from "../../../test-framework/index.ts";
+import {
+  createFakeAgentRuntime,
+  createFakeHost,
+  type FakeHost,
+  useTempDirs,
+} from "../../../test-framework/index.ts";
 import notifications from "../api/extension.ts";
 import { SETTINGS_FILE } from "../core/settings.ts";
 
 const IDLE = { message: "pi is waiting for your input", channel: "auto" };
 
-const roots: string[] = [];
+const temp = useTempDirs();
 
 const prepare = (mode: RunMode = "tui", file?: unknown) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-notifications-"));
+  const root = temp.make("pi-notifications-");
   const agentDir = join(root, "agent");
   const cwd = join(root, "project");
 
-  roots.push(root);
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
 
@@ -58,9 +61,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
 });
 
 describe("idle notification", () => {

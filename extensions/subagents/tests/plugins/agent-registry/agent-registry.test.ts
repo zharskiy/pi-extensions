@@ -9,7 +9,7 @@ import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { AgentStatusDetails, AgentStatusParams } from "../../../core/agent-status/snapshot.ts";
-import { type AgentRecord, MAIN_CALLER } from "../../../core/model/types.ts";
+import { type AgentRecord, MAIN_CALLER } from "../../../core/model/agent-record.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createHarness, startPlugins } from "../../support/subagents-harness.ts";

@@ -2,18 +2,18 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { unknownSkillsProblem } from "../model/agent-override.ts";
 import {
-  type AgentFrontmatter,
-  type AgentOverride,
-  type AgentOverrides,
-  ALL,
-  INHERIT_MODEL,
-} from "../model/agent-schema.ts";
-import {
   type AgentDefinition,
   type AgentSource,
   type DefinitionError,
   subagentNames,
-} from "../model/types.ts";
+} from "../model/agent-record.ts";
+import {
+  AGENT_SCOPE_ALL,
+  type AgentFrontmatter,
+  type AgentOverride,
+  type AgentOverrides,
+  INHERIT_MODEL,
+} from "../model/agent-schema.ts";
 import { FRONTMATTER_FIELDS, readField } from "./fields.ts";
 import { parseFrontmatter } from "./yaml-lite.ts";
 
@@ -72,7 +72,7 @@ const referenceErrors = (definitions: Map<string, AgentDefinition>): DefinitionE
   const errors: DefinitionError[] = [];
 
   definitions.forEach((definition) => {
-    const listed = definition.subagents === ALL ? [] : definition.subagents;
+    const listed = definition.subagents === AGENT_SCOPE_ALL ? [] : definition.subagents;
     const unknownAgents = listed.filter((name) => name !== definition.name && !definitions.has(name));
 
     if (listed.includes(definition.name)) {
@@ -101,7 +101,7 @@ const ALL_IN_CYCLE =
 
 const cycleMessage = (definitions: Map<string, AgentDefinition>, cycle: string[]) => {
   const text = `subagents form a cycle: ${cycle.join(" -> ")}`;
-  const viaAll = cycle.some((name) => definitions.get(name)?.subagents === ALL);
+  const viaAll = cycle.some((name) => definitions.get(name)?.subagents === AGENT_SCOPE_ALL);
 
   return viaAll ? `${text}; ${ALL_IN_CYCLE}` : text;
 };

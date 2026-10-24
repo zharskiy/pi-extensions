@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRuntime, Host, SkillInfo } from "../../../../pi-adapter/index.ts";
+import type { AgentDefinitions } from "../model/agent-record.ts";
 import { PLAIN_NAME, PLAIN_NAME_TEXT } from "../model/agent-schema.ts";
 import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../model/paths.ts";
-import type { AgentDefinitions } from "../model/types.ts";
 import { type AgentKind, agentTemplate } from "./agent-template.ts";
 
 const CREATE_TYPE = "pi-subagents-create";

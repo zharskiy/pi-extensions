@@ -1,6 +1,6 @@
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../components/tree.ts";
+import { type AgentRecord, isClosed } from "../model/agent-record.ts";
 import type { Settings } from "../model/settings.ts";
-import { type AgentRecord, isClosed } from "../model/types.ts";
 
 const WINDOW = 5;
 

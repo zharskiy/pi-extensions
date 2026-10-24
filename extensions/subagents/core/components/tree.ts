@@ -1,4 +1,4 @@
-import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../model/types.ts";
+import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../model/agent-record.ts";
 
 export type TreeRow = {
   record: AgentRecord;

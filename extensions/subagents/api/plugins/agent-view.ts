@@ -4,9 +4,9 @@ import { countsText, listCounts, listedTerminals, visibleRecords } from "../../c
 import { createAgentSource } from "../../core/agent-view/source.ts";
 import { cutChars } from "../../core/components/receipt.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
+import { type AgentRecord, chainLinks } from "../../core/model/agent-record.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
-import { type AgentRecord, chainLinks } from "../../core/model/types.ts";
 import { createAgentList } from "../../ui/agent-view/list.ts";
 import {
   type AgentsOverlay,

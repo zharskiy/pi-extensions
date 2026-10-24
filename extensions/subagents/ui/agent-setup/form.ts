@@ -13,7 +13,12 @@ import {
   tabStep,
 } from "../../../../ui-kit/index.ts";
 import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
-import { type AgentOverride, ALL, type Grant, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
+import {
+  AGENT_SCOPE_ALL,
+  type AgentOverride,
+  type Grant,
+  INHERIT_MODEL,
+} from "../../core/model/agent-schema.ts";
 
 type Draft = { model: string; thinking?: string; skills: Grant };
 
@@ -59,7 +64,7 @@ export const initialSetup = (context: SetupContext): SetupState => ({
 export const onSubmitTab = (context: SetupContext, state: SetupState) => state.tab === context.agents.length;
 
 const sameGrant = (left: Grant, right: Grant) =>
-  left === ALL || right === ALL
+  left === AGENT_SCOPE_ALL || right === AGENT_SCOPE_ALL
     ? left === right
     : left.length === right.length && left.every((name) => right.includes(name));
 
@@ -104,8 +109,8 @@ const pickerOptions = (context: SetupContext, state: SetupState, field: "model" 
   field === "model" ? modelOptions(context, state.tab) : thinkingOptions(context, state.drafts[state.tab]);
 
 export const grantText = (grant: Grant) => {
-  if (grant === ALL) {
-    return ALL;
+  if (grant === AGENT_SCOPE_ALL) {
+    return AGENT_SCOPE_ALL;
   }
 
   return grant.length === 0 ? "none" : grant.join(", ");
@@ -116,7 +121,7 @@ const openPicker = (context: SetupContext, state: SetupState): SetupState => {
   const draft = state.drafts[state.tab];
 
   if (field === "skills") {
-    const named = draft?.skills === ALL ? [] : (draft?.skills ?? []);
+    const named = draft?.skills === AGENT_SCOPE_ALL ? [] : (draft?.skills ?? []);
     const checked = context.skills.map((skill) => named.includes(skill.name));
 
     return { ...state, picker: { field, multi: initialMulti(context.skills.length, checked) } };
@@ -204,9 +209,9 @@ const chooseSkills = (
 
   const names = checkedIndexes(picker.multi).flatMap((index) => context.skills[index]?.name ?? []);
 
-  const keptAll = state.drafts[state.tab]?.skills === ALL && !picker.touched;
+  const keptAll = state.drafts[state.tab]?.skills === AGENT_SCOPE_ALL && !picker.touched;
 
-  return setDraft(state, { skills: keptAll ? ALL : names });
+  return setDraft(state, { skills: keptAll ? AGENT_SCOPE_ALL : names });
 };
 
 const pickerKey = (context: SetupContext, state: SetupState, picker: Picker, key: KeyPress): SetupState => {

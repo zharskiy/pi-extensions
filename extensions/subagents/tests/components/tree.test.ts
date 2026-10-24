@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { carrySelection, isTerminal, treeOrder, withLinks } from "../../core/components/tree.ts";
-import type { AgentRecord } from "../../core/model/types.ts";
+import type { AgentRecord } from "../../core/model/agent-record.ts";
 import { nestPrefix } from "../../ui/components/tree-glyphs.ts";
 import { agentRecord } from "../support/agent-records.ts";
 

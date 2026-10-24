@@ -10,8 +10,8 @@ import { countLine, type KeyHint, keyHints, preview, wrapChild } from "../../../
 import type { ViewData } from "../../core/agent-view/source.ts";
 import { agentReceipt, formatCtx, type ReceiptSegment, singleLine } from "../../core/components/receipt.ts";
 import { tickFor } from "../../core/components/refresh.ts";
+import { type AgentRecord, isClosed, type Worktree } from "../../core/model/agent-record.ts";
 import { effectiveContextLimit } from "../../core/model/context-limit.ts";
-import { type AgentRecord, isClosed, type Worktree } from "../../core/model/types.ts";
 import { agentName } from "../components/agent-row.ts";
 import { alignRight, innerWidth, padLine, receiptText, truncatePainted } from "../components/format.ts";
 import { stateGlyph, stateToken, stopWords } from "../components/state-text.ts";

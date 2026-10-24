@@ -1,13 +1,6 @@
 import type { Host } from "../../../pi-adapter/index.ts";
 import type { Plugin } from "../../../shared/index.ts";
-
-const ALIASES = new Map([
-  ["/continue", "/resume"],
-  ["/clear", "/new"],
-  ["/exit", "/quit"],
-]);
-
-const targetOf = (text: string) => ALIASES.get(text.trim());
+import { ALIASES, targetOf } from "../core/aliases.ts";
 
 export const createCommandAliases = (host: Host) => {
   host.onSessionStart(() => {

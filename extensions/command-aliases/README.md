@@ -13,7 +13,7 @@ A pi extension that gives friendlier names to built-in commands: `/continue` run
 
 ## Configuration
 
-`ALIASES` at the top of `api/plugin.ts` maps each alias to its target, both with the leading `/`.
+`ALIASES` in `core/aliases.ts` maps each alias to its target, both with the leading `/`.
 
 ## Layout
 

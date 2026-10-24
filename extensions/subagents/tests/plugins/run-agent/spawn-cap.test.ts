@@ -6,7 +6,7 @@ import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.t
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
-import type { AgentRecord } from "../../../core/model/types.ts";
+import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import type { BatchItem, Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createHarness } from "../../support/subagents-harness.ts";

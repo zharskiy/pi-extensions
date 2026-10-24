@@ -1,12 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { KeyPress } from "../../../pi-adapter/index.ts";
-import { createFakeHost } from "../../../test-framework/index.ts";
+import { createFakeHost, useTempDirs } from "../../../test-framework/index.ts";
 import { createMcpImport } from "../api/plugin.ts";
 
-const roots: string[] = [];
+const temp = useTempDirs();
 
 type Setup = {
   claude?: unknown;
@@ -27,12 +26,11 @@ const setup = ({
   projectTrusted = true,
   mode = "tui",
 }: Setup = {}) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-mcp-import-"));
+  const root = temp.make("pi-mcp-import-");
   const home = join(root, "home");
   const agentDir = join(home, ".pi", "agent");
   const cwd = join(root, "project");
 
-  roots.push(root);
   mkdirSync(home, { recursive: true });
   mkdirSync(join(cwd, ".cursor"), { recursive: true });
 
@@ -67,12 +65,6 @@ const setup = ({
 };
 
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
-
-afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
-});
 
 describe("/mcp-import", () => {
   it("prints what it would write and writes nothing without apply", async () => {

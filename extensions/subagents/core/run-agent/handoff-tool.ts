@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ToolSpec } from "../../../../pi-adapter/index.ts";
 import { errorText } from "../../../../shared/index.ts";
-import type { AgentRegistry, HandoffService } from "../model/types.ts";
+import type { AgentRegistry, HandoffService } from "../model/agent-record.ts";
 
 type HandoffParams = { content: string };
 

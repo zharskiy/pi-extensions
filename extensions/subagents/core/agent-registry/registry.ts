@@ -2,9 +2,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { errorText } from "../../../../shared/index.ts";
+import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../model/agent-record.ts";
 import type { Bus } from "../model/events.ts";
 import { MANIFEST_FILE } from "../model/paths.ts";
-import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../model/types.ts";
 
 type RegistryOptions = {
   bus: Bus;

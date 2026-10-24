@@ -1,24 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { watchSettings } from "../../../extension-manager/index.ts";
 import { userSettingsPath } from "../../../shared/index.ts";
-import { createFakeHost } from "../../../test-framework/index.ts";
+import { createFakeHost, useTempDirs } from "../../../test-framework/index.ts";
 import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../core/settings.ts";
 
-const roots: string[] = [];
-
-afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
-});
+const temp = useTempDirs();
 
 const load = (settings: object) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-session-limits-settings-"));
-
-  roots.push(root);
+  const root = temp.make("pi-session-limits-settings-");
 
   const agentDir = join(root, "agent");
   const file = userSettingsPath(agentDir, SETTINGS_FILE);

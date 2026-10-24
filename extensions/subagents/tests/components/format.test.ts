@@ -10,7 +10,7 @@ import {
   receipt,
   singleLine,
 } from "../../core/components/receipt.ts";
-import type { AgentRecord } from "../../core/model/types.ts";
+import type { AgentRecord } from "../../core/model/agent-record.ts";
 import { alignRight, receiptText, truncatePainted, wrapCols } from "../../ui/components/format.ts";
 import { agentRecord } from "../support/agent-records.ts";
 

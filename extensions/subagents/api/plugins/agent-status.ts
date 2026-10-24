@@ -7,8 +7,8 @@ import {
   snapshotOf,
   unknownText,
 } from "../../core/agent-status/snapshot.ts";
+import { type AgentRegistry, chainTerminal } from "../../core/model/agent-record.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
-import { type AgentRegistry, chainTerminal } from "../../core/model/types.ts";
 import { statusCall, statusResult } from "../../ui/agent-status/status-text.ts";
 
 type StatusScope = {

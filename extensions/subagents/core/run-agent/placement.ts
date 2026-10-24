@@ -5,7 +5,7 @@ import {
   chainLinks,
   isClosed,
   type Worktree,
-} from "../model/types.ts";
+} from "../model/agent-record.ts";
 import { createWorktree, removeWorktree } from "./worktree.ts";
 
 type Placement = { cwd: string } | { error: string };

@@ -6,7 +6,7 @@ import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.t
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
-import type { AgentRecord, AgentRegistry, AgentState } from "../../../core/model/types.ts";
+import type { AgentRecord, AgentRegistry, AgentState } from "../../../core/model/agent-record.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import {
   createPendingCalls,

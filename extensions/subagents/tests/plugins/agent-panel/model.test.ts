@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { panelRows } from "../../../core/agent-panel/panel-state.ts";
-import type { AgentRecord } from "../../../core/model/types.ts";
+import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import { agentRecord } from "../../support/agent-records.ts";
 
 const settings = { doneLingerMs: 10_000, failedLingerMs: 30_000 };

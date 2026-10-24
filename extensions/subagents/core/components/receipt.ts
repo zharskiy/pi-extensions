@@ -1,6 +1,6 @@
 import type { ThemeToken } from "../../../../pi-adapter/index.ts";
 import { counted, DOT, formatCost, formatDuration, formatTokens } from "../../../../shared/index.ts";
-import type { AgentRecord, AgentState } from "../model/types.ts";
+import type { AgentRecord, AgentState } from "../model/agent-record.ts";
 
 export const formatCalls = (count: number): string => counted(count, "call");
 

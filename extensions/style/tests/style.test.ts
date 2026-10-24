@@ -1,8 +1,7 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createFakeHost } from "../../../test-framework/index.ts";
+import { describe, expect, it } from "vitest";
+import { createFakeHost, useTempDirs } from "../../../test-framework/index.ts";
 import { createStyle } from "../api/plugin.ts";
 import { SETTINGS_FILE } from "../core/settings.ts";
 import { SECTION } from "../core/style.ts";
@@ -14,15 +13,9 @@ const STYLES: ReadonlyMap<string, Style> = new Map([
   ["concise", { prompt: TERSE, description: "short, result-first replies" }],
 ]);
 
-const roots: string[] = [];
+const tempDirs = useTempDirs();
 
-const temp = () => {
-  const root = mkdtempSync(join(tmpdir(), "pi-style-"));
-
-  roots.push(root);
-
-  return root;
-};
+const temp = () => tempDirs.make("pi-style-");
 
 type Files = {
   user?: unknown;
@@ -62,12 +55,6 @@ const setup = ({ user, project, projectTrusted = true, mode = "tui", blocked = f
 };
 
 const readUser = (path: string) => JSON.parse(readFileSync(path, "utf8"));
-
-afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
-});
 
 describe("style files", () => {
   it("loads every markdown file of a folder as a style except normal, its description taken from the front matter", () => {

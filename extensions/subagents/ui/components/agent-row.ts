@@ -6,7 +6,7 @@ import {
   type ReceiptSegment,
   singleLine,
 } from "../../core/components/receipt.ts";
-import { type AgentRecord, isClosed } from "../../core/model/types.ts";
+import { type AgentRecord, isClosed } from "../../core/model/agent-record.ts";
 import { padEndCols, receiptText } from "./format.ts";
 import { liveGlyph, scrollGlyph } from "./state-text.ts";
 import { nestPrefix } from "./tree-glyphs.ts";

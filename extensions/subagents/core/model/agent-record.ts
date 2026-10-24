@@ -1,6 +1,6 @@
 import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../pi-adapter/index.ts";
 import type { HandoffValidation } from "../../../../shared/index.ts";
-import { type AgentFrontmatter, ALL, type Grant } from "./agent-schema.ts";
+import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
 
@@ -79,14 +79,17 @@ export type AgentRecord = {
 
 export type AgentSource = "builtin" | "user" | "project";
 
-export const allowlist = (grant: Grant): string[] | undefined => (grant === ALL ? undefined : grant);
+export const allowlist = (grant: Grant): string[] | undefined =>
+  grant === AGENT_SCOPE_ALL ? undefined : grant;
 
-export const isNone = (grant: Grant) => grant !== ALL && grant.length === 0;
+export const isNone = (grant: Grant) => grant !== AGENT_SCOPE_ALL && grant.length === 0;
 
-export const grantText = (grant: Grant) => (grant === ALL ? ALL : grant.join(", "));
+export const grantText = (grant: Grant) => (grant === AGENT_SCOPE_ALL ? AGENT_SCOPE_ALL : grant.join(", "));
 
 export const subagentNames = (definition: Pick<AgentDefinition, "name" | "subagents">, names: string[]) =>
-  definition.subagents === ALL ? names.filter((name) => name !== definition.name) : definition.subagents;
+  definition.subagents === AGENT_SCOPE_ALL
+    ? names.filter((name) => name !== definition.name)
+    : definition.subagents;
 
 export type AgentInternals = {
   thinking?: string;

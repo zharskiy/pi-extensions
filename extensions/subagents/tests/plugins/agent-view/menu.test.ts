@@ -7,7 +7,7 @@ import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentSetupPlugin } from "../../../api/plugins/agent-setup.ts";
 import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
 import { plugins } from "../../../api/plugins.ts";
-import type { AgentRecord } from "../../../core/model/types.ts";
+import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 

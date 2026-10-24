@@ -9,9 +9,9 @@ import {
 } from "../../../../../test-framework/index.ts";
 import { agentPanelPlugin } from "../../../api/plugins/agent-panel.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../core/model/agent-record.ts";
 import type { Plugin } from "../../../core/model/plugin.ts";
 import type { Settings } from "../../../core/model/settings.ts";
-import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../core/model/types.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { selectedRow } from "../../support/overlay-rows.ts";
 import { createHarness, startPlugins, tempDir } from "../../support/subagents-harness.ts";

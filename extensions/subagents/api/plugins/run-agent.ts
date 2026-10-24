@@ -3,14 +3,14 @@ import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../pi-adapter/index.ts";
 import { EXPAND_BINDING } from "../../../../ui-kit/index.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
-import type { Plugin } from "../../core/model/plugin.ts";
 import {
   type AgentDefinition,
   type AgentRecord,
   allowlist,
   isClosed,
   subagentNames,
-} from "../../core/model/types.ts";
+} from "../../core/model/agent-record.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
 import { createHandoff } from "../../core/run-agent/handoff.ts";
 import { handoffTool } from "../../core/run-agent/handoff-tool.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";

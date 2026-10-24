@@ -6,7 +6,7 @@ import {
   panelWindow,
 } from "../../core/agent-panel/panel-state.ts";
 import type { TreeRow } from "../../core/components/tree.ts";
-import { type AgentRecord, isClosed } from "../../core/model/types.ts";
+import { type AgentRecord, isClosed } from "../../core/model/agent-record.ts";
 import { POINTER_BLANK, renderRow, rowLayout } from "../components/agent-row.ts";
 import { stopWords } from "../components/state-text.ts";
 

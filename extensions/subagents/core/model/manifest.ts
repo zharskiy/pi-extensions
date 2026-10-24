@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionHost } from "../../../../pi-adapter/index.ts";
+import { type AgentRecord, isClosed } from "./agent-record.ts";
 import { MANIFEST_FILE } from "./paths.ts";
-import { type AgentRecord, isClosed } from "./types.ts";
 
 type ManifestDefaults = Pick<AgentRecord, "dir" | "handoffPath" | "contextLimit">;
 

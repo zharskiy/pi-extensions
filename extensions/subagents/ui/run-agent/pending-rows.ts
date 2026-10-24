@@ -1,5 +1,5 @@
 import { failureSuffix, row, type TitleParts } from "../../../../ui-kit/index.ts";
-import type { AgentRegistry } from "../../core/model/types.ts";
+import type { AgentRegistry } from "../../core/model/agent-record.ts";
 import type { MessageAgentParams, RunAgentParams, ToolRows } from "../../core/run-agent/tools.ts";
 import { type BlockHints, renderBlock } from "./render.ts";
 

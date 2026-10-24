@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -62,15 +62,23 @@ const allFiles = () => CODE_ROOTS.flatMap(sourceFiles);
 
 const isInside = (dir: string) => (path: string) => path.startsWith(`${dir}${sep}`);
 
-const importsOf = (file: string) =>
+const specifiersOf = (file: string) =>
   [
     ...readFileSync(file, "utf8").matchAll(
       /(?:import|export)[^"']*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|import\s+["']([^"']+)["']/g,
     ),
   ]
     .map((match) => match[1] ?? match[2] ?? match[3] ?? "")
-    .filter((specifier) => specifier.startsWith("."))
-    .map((specifier) => resolve(dirname(file), specifier));
+    .filter((specifier) => specifier.startsWith("."));
+
+const importsOf = (file: string) => specifiersOf(file).map((specifier) => resolve(dirname(file), specifier));
+
+const isNormalised = (specifier: string) => {
+  const dotted = specifier.startsWith("./");
+  const body = dotted ? specifier.slice(2) : specifier;
+
+  return posix.normalize(body) === body && !(dotted && body.startsWith(".."));
+};
 
 const pluginOwner = (extension: string, plugins: string[]) => (path: string) => {
   const [area, folder, ...rest] = relative(extension, path).split(sep);
@@ -167,6 +175,16 @@ describe("architecture", () => {
     const offenders = extensionDirs()
       .filter((extension) => exists(join(extension, "api", "plugins")))
       .flatMap(crossPluginImports);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("relative imports are written in normalised form so the biome path rules cannot be bypassed", () => {
+    const offenders = allFiles().flatMap((file) =>
+      specifiersOf(file)
+        .filter((specifier) => !isNormalised(specifier))
+        .map((specifier) => `${relative(ROOT, file)} imports ${specifier}`),
+    );
 
     expect(offenders).toEqual([]);
   });

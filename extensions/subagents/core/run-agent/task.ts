@@ -1,4 +1,4 @@
-import type { AgentRecord } from "../model/types.ts";
+import type { AgentRecord } from "../model/agent-record.ts";
 
 type TaskInput = { task: string; files?: string[] };
 

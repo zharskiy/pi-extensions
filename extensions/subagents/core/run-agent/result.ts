@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { errorText } from "../../../../shared/index.ts";
 import { cutChars, elapsedOf, plainReceipt, receipt, singleLine } from "../components/receipt.ts";
 import { isTerminal } from "../components/tree.ts";
-import { type AgentRecord, chainLinks, worktreeText } from "../model/types.ts";
+import { type AgentRecord, chainLinks, worktreeText } from "../model/agent-record.ts";
 
 const SUMMARY_WORDS: Partial<Record<AgentRecord["state"], string>> = {
   done: "Done",

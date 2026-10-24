@@ -1,29 +1,23 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../pi-adapter/index.ts";
 import { BUSY_CHANNEL } from "../../../shared/index.ts";
-import { createFakeHost, flushTimers as flush } from "../../../test-framework/index.ts";
+import { createFakeHost, flushTimers as flush, useTempDirs } from "../../../test-framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
 import { DEFAULT_LIMITS } from "../core/settings.ts";
 
-const created: string[] = [];
+const temp = useTempDirs();
 
 const tempRoot = () => {
-  const root = mkdtempSync(join(tmpdir(), "pi-session-limits-"));
+  const root = temp.make("pi-session-limits-");
 
-  created.push(root, join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`));
+  temp.track(join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`));
 
   return root;
 };
-
-afterAll(() => {
-  created.forEach((path) => {
-    rmSync(path, { recursive: true, force: true });
-  });
-});
 
 const LIMITS = DEFAULT_LIMITS;
 

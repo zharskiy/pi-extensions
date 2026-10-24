@@ -27,7 +27,7 @@ import {
   isClosed,
   MAIN_CALLER,
   type WorktreeCleanup,
-} from "../../core/model/types.ts";
+} from "../../core/model/agent-record.ts";
 import { chainTotals } from "../../core/run-agent/result.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../core/run-agent/tools.ts";
 import { chainSuffix, modelId } from "../components/agent-row.ts";

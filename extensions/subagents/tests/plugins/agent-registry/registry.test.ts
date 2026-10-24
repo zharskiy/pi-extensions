@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../extension-manager/index.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
+import { MAIN_CALLER } from "../../../core/model/agent-record.ts";
 import type { BusEvents } from "../../../core/model/events.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
-import { MAIN_CALLER } from "../../../core/model/types.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
 const newAgent = (dir: string) => ({

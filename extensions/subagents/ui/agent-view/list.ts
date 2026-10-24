@@ -4,7 +4,7 @@ import { keyHints } from "../../../../ui-kit/index.ts";
 import { clearTargets, listSections, subtitle, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { tickFor } from "../../core/components/refresh.ts";
 import { carrySelection, stoppableAgents, type TreeRow } from "../../core/components/tree.ts";
-import { type AgentRecord, isClosed } from "../../core/model/types.ts";
+import { type AgentRecord, isClosed } from "../../core/model/agent-record.ts";
 import { type RowLayout, renderRow, rowLayout } from "../components/agent-row.ts";
 import { innerWidth, padLine, truncatePainted } from "../components/format.ts";
 import { listHint } from "./list-hints.ts";

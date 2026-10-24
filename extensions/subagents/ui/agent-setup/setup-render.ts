@@ -15,7 +15,7 @@ import {
   tabBar,
 } from "../../../../ui-kit/index.ts";
 import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
-import { ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
+import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {
   FIELDS,
   type Field,
@@ -62,8 +62,8 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
     return draft.thinking ?? "default";
   }
 
-  if (draft.skills === ALL) {
-    return `${ALL} (every skill of the agent's caller)`;
+  if (draft.skills === AGENT_SCOPE_ALL) {
+    return `${AGENT_SCOPE_ALL} (every skill of the agent's caller)`;
   }
 
   return context.skills.length === 0 ? "none (no skills available)" : grantText(draft.skills);

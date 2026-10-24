@@ -1,5 +1,5 @@
 import { isThinkingLevel, splitModelRequest, THINKING_LEVELS } from "../../../../pi-adapter/index.ts";
-import { type AgentOverride, ALL, INHERIT_MODEL } from "./agent-schema.ts";
+import { AGENT_SCOPE_ALL, type AgentOverride, INHERIT_MODEL } from "./agent-schema.ts";
 
 export type OverrideField = { patch: AgentOverride; error?: string };
 
@@ -31,15 +31,15 @@ export const overrideThinking = (value: unknown): OverrideField =>
     : { patch: {}, error: `thinking must be one of ${THINKING_LEVELS.join(", ")}` };
 
 export const overrideSkills = (value: unknown): OverrideField => {
-  if (value === ALL) {
-    return { patch: { skills: ALL } };
+  if (value === AGENT_SCOPE_ALL) {
+    return { patch: { skills: AGENT_SCOPE_ALL } };
   }
 
   if (Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry.trim().length > 0)) {
     return { patch: { skills: Array.from(new Set(value.map((entry: string) => entry.trim()))) } };
   }
 
-  return { patch: {}, error: `skills must be "${ALL}" or a list of skill names` };
+  return { patch: {}, error: `skills must be "${AGENT_SCOPE_ALL}" or a list of skill names` };
 };
 
 export const unknownSkillsProblem = (skills: string[], loaded: string[]) => {

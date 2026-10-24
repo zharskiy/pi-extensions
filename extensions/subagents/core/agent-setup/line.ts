@@ -5,7 +5,7 @@ import {
   overrideThinking,
   unknownSkillsProblem,
 } from "../model/agent-override.ts";
-import { type AgentOverride, ALL, INHERIT_MODEL } from "../model/agent-schema.ts";
+import { AGENT_SCOPE_ALL, type AgentOverride, INHERIT_MODEL } from "../model/agent-schema.ts";
 import { SCOPES, type Scope, type SetupChange } from "./scope.ts";
 
 export const SETUP_USAGE = [
@@ -40,8 +40,8 @@ const parseModel = (value: string, check: LineCheck): Parsed => {
 };
 
 const skillsValue = (value: string) => {
-  if (value === ALL) {
-    return ALL;
+  if (value === AGENT_SCOPE_ALL) {
+    return AGENT_SCOPE_ALL;
   }
 
   if (value === "none") {

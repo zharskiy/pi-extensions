@@ -1,7 +1,7 @@
 import type { EditorKeyHandler, KeyPress } from "../../../../pi-adapter/index.ts";
 import { type PanelState, selectedIndex } from "../../core/agent-panel/panel-state.ts";
 import { carrySelection, type TreeRow } from "../../core/components/tree.ts";
-import { isClosed } from "../../core/model/types.ts";
+import { isClosed } from "../../core/model/agent-record.ts";
 
 export type PanelActions = {
   rows(): TreeRow[];

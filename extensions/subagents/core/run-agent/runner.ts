@@ -14,10 +14,6 @@ import {
   type UsageTotals,
 } from "../../../../pi-adapter/index.ts";
 import { errorText, readText } from "../../../../shared/index.ts";
-import { ALL } from "../model/agent-schema.ts";
-import type { Bus } from "../model/events.ts";
-import { agentsDirFor } from "../model/paths.ts";
-import type { Settings } from "../model/settings.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,
@@ -32,7 +28,11 @@ import {
   MAIN_CALLER,
   type RouteResult,
   subagentNames,
-} from "../model/types.ts";
+} from "../model/agent-record.ts";
+import { AGENT_SCOPE_ALL } from "../model/agent-schema.ts";
+import type { Bus } from "../model/events.ts";
+import { agentsDirFor } from "../model/paths.ts";
+import type { Settings } from "../model/settings.ts";
 import { resolutionError } from "./model-text.ts";
 import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
@@ -735,7 +735,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     callerId === MAIN_CALLER ? deps.runtime.sessionSkillNames() : (deps.registry.get(callerId)?.skills ?? []);
 
   const skillNamesFor = (definition: AgentDefinition, item: BatchItem, callerId: string) => {
-    const own = definition.skills === ALL ? callerSkills(callerId) : definition.skills;
+    const own = definition.skills === AGENT_SCOPE_ALL ? callerSkills(callerId) : definition.skills;
 
     return unique(own.concat(item.skills ?? []));
   };
@@ -754,7 +754,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return `${item.agent}: skill(s) ${listed} not in this caller's skills. ${valid}`;
     }
 
-    if (item.skills?.length && tools !== ALL && !tools.includes("read")) {
+    if (item.skills?.length && tools !== AGENT_SCOPE_ALL && !tools.includes("read")) {
       return `${item.agent}: cannot use skills, its tools do not include read.`;
     }
 

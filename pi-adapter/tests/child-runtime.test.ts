@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { flushMicrotasks } from "../../test-framework/index.ts";
 import type { ParentSource } from "../child/child-extension.ts";
 import { childToolNames, createPiRuntime } from "../child/child-runtime.ts";
 import type { SpawnSpec } from "../index.ts";
@@ -357,8 +358,6 @@ const scriptedSession = () => {
   };
 };
 
-const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
-
 describe("child prompting", () => {
   beforeEach(() => {
     captured.session = undefined;
@@ -401,7 +400,7 @@ describe("child prompting", () => {
     settle();
     failNextPrompt(new Error("auth expired"));
     await child.wake("go on");
-    await flushMicrotasks();
+    await flushMicrotasks(1);
 
     expect(events).toEqual(["settled", "error Error: auth expired", "settled"]);
   });

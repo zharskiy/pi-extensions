@@ -1,5 +1,5 @@
+import type { AgentRecord } from "../model/agent-record.ts";
 import type { Bus } from "../model/events.ts";
-import type { AgentRecord } from "../model/types.ts";
 
 const TICK_RUNNING_MS = 100;
 

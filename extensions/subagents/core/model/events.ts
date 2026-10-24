@@ -1,6 +1,6 @@
 import type { ContextSnapshot, UsageTotals } from "../../../../pi-adapter/index.ts";
 import type { Bus as CoreBus } from "../../../../shared/index.ts";
-import type { AgentRecord } from "./types.ts";
+import type { AgentRecord } from "./agent-record.ts";
 
 export type BusEvents = {
   "agent:changed": AgentRecord;
