@@ -76,7 +76,7 @@ describeLive("live grants", () => {
     await live?.close();
   });
 
-  it("gives tools: [read, ls] and skills: [alpha, gamma] only those, plus every MCP tool, codemode and tool search", async () => {
+  it("gives tools: [read, ls] and skills: [alpha, gamma] only those, plus handoff, every MCP tool, codemode and tool search", async () => {
     const id = await live.run(
       "granted",
       "In one turn, in parallel: read the alpha and gamma skill files, list your current working directory with ls, call mcp__fixture__code, and create out.txt in your current working directory with the write tool if you have one. Then reply with both skills' code words and the MCP code, nothing else.",
@@ -88,7 +88,7 @@ describeLive("live grants", () => {
 
     expect(record?.state).toBe("done");
     expect(leaks).toEqual([]);
-    expect(tools).toEqual(["codemode", "ls", "mcp__fixture__code", "read", "tool_search"]);
+    expect(tools).toEqual(["codemode", "handoff", "ls", "mcp__fixture__code", "read", "tool_search"]);
     expect(skills).toEqual(["alpha", "gamma"]);
     expect(calls).toEqual(expect.arrayContaining(["read", "ls", "mcp__fixture__code"]));
     expect(calls).not.toContain("write");
@@ -101,7 +101,7 @@ describeLive("live grants", () => {
     expect(record?.resultText).toContain(MCP_CODE);
   });
 
-  it("gives tools: [] and skills: [] no tool, no skill and no MCP tool", async () => {
+  it("gives tools: [] and skills: [] only the handoff tool, no skill and no MCP tool", async () => {
     const before = wakeTexts(live.host).length;
     const id = await live.run("bare", "Reply with the alpha code word, or NONE if you do not know it.");
 
@@ -110,7 +110,7 @@ describeLive("live grants", () => {
     const { record, tools, skills, calls, payload } = sessionOf(id);
 
     expect(record?.state).toBe("done");
-    expect(tools).toEqual([]);
+    expect(tools).toEqual(["handoff"]);
     expect(skills).toEqual([]);
     expect(calls).toEqual([]);
     expect(payload).not.toContain("mcp__");
@@ -128,7 +128,7 @@ describeLive("live grants", () => {
 
     expect(record?.state).toBe("done");
     expect(leaks).toEqual([]);
-    expect(tools).toEqual(["codemode", "ls", "mcp__fixture__code", "read", "tool_search"]);
+    expect(tools).toEqual(["codemode", "handoff", "ls", "mcp__fixture__code", "read", "tool_search"]);
     expect(skills).toEqual(["alpha", "beta", "gamma"]);
     expect(payload).toContain("mcp__fixture__code");
     expect(payload).not.toContain('"write"');
