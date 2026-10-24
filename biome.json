@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
-    "includes": ["**", "!node_modules", "!future-plans", "!**/*.md", "!.claude"]
+    "includes": ["**", "!node_modules", "!docs", "!future-plans", "!**/*.md", "!.claude", "!.pi"]
   },
   "formatter": {
     "indentStyle": "space",
@@ -22,10 +22,8 @@
         "noSelfImport": "error"
       },
       "performance": {
+        "noBarrelFile": "off",
         "noReExportAll": "error"
-      },
-      "style": {
-        "noRestrictedImports": "off"
       },
       "suspicious": {
         "noImportCycles": "error"
@@ -166,7 +164,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -206,7 +204,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -246,7 +244,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -286,7 +284,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -326,7 +324,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -366,7 +364,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
