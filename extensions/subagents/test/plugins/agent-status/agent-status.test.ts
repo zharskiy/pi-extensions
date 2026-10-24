@@ -99,7 +99,6 @@ describe("agent_status", () => {
         "requestedId",
         "resultPath",
         "state",
-        "successorId",
         "tokens",
         "toolCalls",
         "worktree",

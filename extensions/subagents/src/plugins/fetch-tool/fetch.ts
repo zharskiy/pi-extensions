@@ -1,6 +1,6 @@
 import { assertSupported, pageText, supported } from "./text.ts";
 
-export type FetchLimits = { timeoutSeconds: number; maxBytes: number; maxChars: number };
+type FetchLimits = { timeoutSeconds: number; maxBytes: number; maxChars: number };
 
 export type FetchedPage = {
   url: string;

@@ -96,7 +96,6 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       lastText: "",
       handoffPath: options.handoffPath(id),
       handoffRequested: false,
-      version: 0,
     };
 
     records.set(id, record);
@@ -111,7 +110,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     const stateChanged = patch.state !== undefined && patch.state !== record.state;
     const manifestChanged = stateChanged || "worktree" in patch;
 
-    Object.assign(record, patch, { version: record.version + 1 });
+    Object.assign(record, patch);
 
     if (manifestChanged) {
       persist(record);
@@ -129,7 +128,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       return record;
     }
 
-    Object.assign(record, patch, { endedAt: Date.now(), version: record.version + 1 });
+    Object.assign(record, patch, { endedAt: Date.now() });
     persist(record);
     options.bus.emit("agent:changed", record);
     options.bus.emit("agent:closed", record);

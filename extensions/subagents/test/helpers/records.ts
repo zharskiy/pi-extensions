@@ -19,7 +19,6 @@ export const agentRecord = (patch: Partial<AgentRecord> & { id: string }): Agent
   dir: "/x",
   contextLimit: 100_000,
   handoffRequested: false,
-  version: 0,
   ...patch,
 });
 

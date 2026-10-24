@@ -36,7 +36,6 @@ export type AgentSnapshot = {
   graceSecondsLeft?: number;
   chainIndex: number;
   predecessorId?: string;
-  successorId?: string;
   requestedId?: string;
   worktree?: Worktree;
 };
@@ -80,7 +79,6 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   graceSecondsLeft: graceSecondsLeft(record, now),
   chainIndex: record.chainIndex,
   predecessorId: record.predecessorId,
-  successorId: record.successorId,
   requestedId: requestedId === record.id ? undefined : requestedId,
   worktree: record.worktree,
 });

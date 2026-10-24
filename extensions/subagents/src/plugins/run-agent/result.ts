@@ -67,7 +67,7 @@ const statusWithin = (text: string, start: number, left: number): boolean => {
   return STATUS_LINE.test(line) || statusWithin(text, next, left - 1);
 };
 
-export const hasStatusLine = (text: string) => statusWithin(text, 0, STATUS_SCAN_LINES);
+const hasStatusLine = (text: string) => statusWithin(text, 0, STATUS_SCAN_LINES);
 
 export const pickResult = (texts: string[]) => {
   const withStatus = texts.findLast(hasStatusLine);

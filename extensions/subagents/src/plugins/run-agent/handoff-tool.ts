@@ -8,7 +8,7 @@ import { row, rowChildren, rowText } from "../../../../../core/manager/row.ts";
 import { errorText } from "../../components/format.ts";
 import type { AgentRegistry, HandoffService } from "../../model/types.ts";
 
-export type HandoffParams = { content: string };
+type HandoffParams = { content: string };
 
 type HandoffToolDeps = {
   registry: AgentRegistry;

@@ -22,7 +22,7 @@ const GLYPH_COLS = 2;
 
 export const POINTER_BLANK = " ".repeat(POINTER_COLS);
 
-export type RowRecord = Pick<
+type RowRecord = Pick<
   AgentRecord,
   | "agent"
   | "chainIndex"
@@ -57,7 +57,7 @@ export type RowLayout = {
   bare: boolean;
 };
 
-export type RowOptions = { spinner?: boolean; bare?: boolean };
+type RowOptions = { spinner?: boolean; bare?: boolean };
 
 export const agentName = (record: Pick<AgentRecord, "agent" | "chainIndex">): string =>
   record.chainIndex > 1 ? `${record.agent} #${record.chainIndex}` : record.agent;

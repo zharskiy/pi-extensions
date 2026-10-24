@@ -10,9 +10,9 @@ const CREATE_TYPE = "pi-subagents-create";
 
 export const CREATE_USAGE = "/agents create [<name> [project] | <what the agent is for>]";
 
-export type CreateRequest = { name?: string; project: boolean; purpose?: string };
+type CreateRequest = { name?: string; project: boolean; purpose?: string };
 
-export type BriefInput = {
+type BriefInput = {
   template: string;
   args: string;
   request: CreateRequest;
@@ -30,7 +30,7 @@ type CreateDeps = {
   runtime: AgentRuntime;
 };
 
-export const parseCreateArgs = (args: string): CreateRequest | { error: string } => {
+const parseCreateArgs = (args: string): CreateRequest | { error: string } => {
   const text = args.trim();
   const [first, ...rest] = text.split(/\s+/).filter(Boolean);
 
@@ -82,7 +82,7 @@ const skillsText = (skills: SkillInfo[]) =>
 const skeleton = (kind: AgentKind) =>
   agentTemplate({ name: "<name>", description: "", kind, model: "" }).trimEnd();
 
-export const createBrief = (input: BriefInput): string => {
+const createBrief = (input: BriefInput): string => {
   const command = ["/agents create", input.args.trim().replace(/\s+/g, " ")].filter(Boolean).join(" ");
   const values: Record<string, string> = {
     command,

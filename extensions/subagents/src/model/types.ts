@@ -75,7 +75,6 @@ export type AgentRecord = {
   contextLimit: number;
   handoffRequested: boolean;
   graceEndsAt?: number;
-  version: number;
 };
 
 export type AgentSource = "builtin" | "user" | "project";

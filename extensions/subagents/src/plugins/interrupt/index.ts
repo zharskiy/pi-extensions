@@ -5,7 +5,7 @@ import type { Plugin } from "../../model/plugin.ts";
 
 const SHOWN_IDS = 3;
 
-export const stillRunningText = (ids: string[]) => {
+const stillRunningText = (ids: string[]) => {
   const shown = ids.slice(0, SHOWN_IDS);
   const more = ids.length - shown.length;
   const names = more > 0 ? `${shown.join(", ")} and ${more} more` : shown.join(", ");

@@ -51,7 +51,7 @@ type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
   Partial<Pick<AgentFrontmatter, "model" | "subagents">> &
   Pick<AgentInternals, "thinking">;
 
-export type RunAgentLimits = {
+type RunAgentLimits = {
   callerDepth: number;
   maxDepth: number;
   maxConcurrent: number;

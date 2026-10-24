@@ -4,7 +4,7 @@ import type { Host } from "../../../../core/adapter/contract.ts";
 import { MANIFEST_FILE } from "./paths.ts";
 import { type AgentRecord, isClosed } from "./types.ts";
 
-export type ManifestDefaults = Pick<AgentRecord, "dir" | "handoffPath" | "contextLimit">;
+type ManifestDefaults = Pick<AgentRecord, "dir" | "handoffPath" | "contextLimit">;
 
 const sessionCost = (host: Pick<Host, "sessionUsage">, file: string | undefined) => {
   if (!file) {
@@ -33,7 +33,6 @@ const manifestRecord = (
     lastText: "",
     handoffRequested: false,
     chainIndex: 1,
-    version: 0,
     ...defaults,
     ...manifest,
     cost: manifest.cost ?? sessionCost(host, manifest.sessionFile),

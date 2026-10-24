@@ -28,7 +28,7 @@ type ReceiptRecord = Pick<
   "state" | "turns" | "toolCalls" | "tokens" | "cost" | "activity" | "createdAt" | "startedAt" | "endedAt"
 >;
 
-export type ReceiptOptions = { live: boolean; reason?: string };
+type ReceiptOptions = { live: boolean; reason?: string };
 
 const figures = (record: ReceiptRecord, now: number) => ({
   elapsedMs: elapsedOf(record, now),
