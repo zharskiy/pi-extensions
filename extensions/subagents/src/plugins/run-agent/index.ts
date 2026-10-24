@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../pi-adapter/index.ts";
 import { EXPAND_BINDING } from "../../../../../ui-kit/index.ts";
-import { watchAgents } from "../../components/refresh.ts";
-import type { Plugin } from "../../model/plugin.ts";
+import { watchAgents } from "../../../core/components/refresh.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
 import {
   type AgentDefinition,
   type AgentRecord,
   allowlist,
   isClosed,
   subagentNames,
-} from "../../model/types.ts";
+} from "../../../core/model/types.ts";
 import { createHandoff } from "./handoff.ts";
 import { handoffTool } from "./handoff-tool.ts";
 import { joinTexts } from "./outbox.ts";

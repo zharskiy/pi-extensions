@@ -1,15 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  cutChars,
-  elapsedOf,
-  errorText,
-  plainReceipt,
-  receipt,
-  singleLine,
-} from "../../components/format.ts";
-import { isTerminal } from "../../components/tree.ts";
-import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
+import { errorText } from "../../../../../shared/index.ts";
+import { cutChars, elapsedOf, plainReceipt, receipt, singleLine } from "../../../core/components/receipt.ts";
+import { isTerminal } from "../../../core/components/tree.ts";
+import { type AgentRecord, chainLinks, worktreeText } from "../../../core/model/types.ts";
 
 const SUMMARY_WORDS: Partial<Record<AgentRecord["state"], string>> = {
   done: "Done",

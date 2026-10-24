@@ -7,9 +7,9 @@ import {
   FAKE_FOOTER_KEY,
   plainTheme,
 } from "../../../../../test-framework/index.ts";
-import type { Plugin } from "../../../src/model/plugin.ts";
-import type { Settings } from "../../../src/model/settings.ts";
-import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../src/model/types.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
+import type { Settings } from "../../../core/model/settings.ts";
+import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../core/model/types.ts";
 import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { newAgentInput } from "../../support/agent-records.ts";

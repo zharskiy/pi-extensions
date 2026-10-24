@@ -5,7 +5,7 @@ import {
   INHERIT_MODEL,
   PLAIN_NAME,
   PLAIN_NAME_TEXT,
-} from "../../model/agent-schema.ts";
+} from "../../../core/model/agent-schema.ts";
 import type { FrontmatterValue } from "./yaml-lite.ts";
 
 type FieldKey = keyof AgentFrontmatter;

@@ -1,4 +1,4 @@
-import { INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { INHERIT_MODEL } from "../../../core/model/agent-schema.ts";
 
 export type AgentKind = "lead" | "chore";
 

@@ -1,7 +1,12 @@
 import { statSync } from "node:fs";
 import type { AgentRuntime, SessionRecord } from "../../../../../pi-adapter/index.ts";
-import { errorText } from "../../components/format.ts";
-import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../../model/types.ts";
+import { errorText } from "../../../../../shared/index.ts";
+import {
+  type AgentRecord,
+  type AgentRegistry,
+  chainLinks,
+  chainTerminal,
+} from "../../../core/model/types.ts";
 
 export type ViewData = {
   record: AgentRecord;

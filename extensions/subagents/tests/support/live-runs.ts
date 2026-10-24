@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { bashCommands, commandsLine, totalCost, waitUntil } from "../../../../test-framework/index.ts";
-import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../src/model/types.ts";
+import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../core/model/types.ts";
 import type { LiveHarness } from "./live-harness.ts";
 
 const RUNS_ENV = "PI_LIVE_PLAN_RUNS";

@@ -2,9 +2,9 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../extension-manager/index.ts";
-import type { BusEvents } from "../../../src/model/events.ts";
-import { MANIFEST_FILE } from "../../../src/model/paths.ts";
-import { MAIN_CALLER } from "../../../src/model/types.ts";
+import type { BusEvents } from "../../../core/model/events.ts";
+import { MANIFEST_FILE } from "../../../core/model/paths.ts";
+import { MAIN_CALLER } from "../../../core/model/types.ts";
 import { createRegistry } from "../../../src/plugins/agent-registry/registry.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 

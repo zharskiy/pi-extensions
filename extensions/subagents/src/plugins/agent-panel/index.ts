@@ -1,9 +1,9 @@
 import type { ThemeLike, WidgetHandle } from "../../../../../pi-adapter/index.ts";
-import { errorText } from "../../components/format.ts";
-import { tickFor, watchAgents } from "../../components/refresh.ts";
-import type { TreeRow } from "../../components/tree.ts";
-import { NAMESPACE } from "../../model/paths.ts";
-import type { Plugin } from "../../model/plugin.ts";
+import { errorText } from "../../../../../shared/index.ts";
+import { tickFor, watchAgents } from "../../../core/components/refresh.ts";
+import type { TreeRow } from "../../../core/components/tree.ts";
+import { NAMESPACE } from "../../../core/model/paths.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
 import { type PanelActions, panelKeyHandler, selectFirst } from "./keys.ts";
 import { createPanelState, type PanelActionsAvailable, panelLines, panelRows, reconcile } from "./model.ts";
 

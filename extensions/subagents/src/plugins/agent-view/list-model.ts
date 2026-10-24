@@ -1,8 +1,8 @@
+import { DOT } from "../../../../../shared/index.ts";
 import type { KeyHint } from "../../../../../ui-kit/index.ts";
-import { DOT } from "../../components/format.ts";
-import { stopWords } from "../../components/state-text.ts";
-import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
-import { type AgentRecord, isClosed, MAIN_CALLER } from "../../model/types.ts";
+import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../../core/components/tree.ts";
+import { type AgentRecord, isClosed, MAIN_CALLER } from "../../../core/model/types.ts";
+import { stopWords } from "../../../ui/components/state-text.ts";
 
 type ById = ReadonlyMap<string, AgentRecord>;
 

@@ -1,4 +1,4 @@
-import type { AgentDefinition } from "../../model/types.ts";
+import type { AgentDefinition } from "../../../core/model/types.ts";
 
 export const assemblePromptAppend = (basePrompt: string, definition: AgentDefinition): string[] => {
   const agentSection = [`# Agent: ${definition.name}`, definition.prompt]

@@ -16,9 +16,9 @@ import {
   liveChoreModel,
   startLiveExtension,
 } from "../../../../test-framework/pi/live/index.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
+import type { Settings } from "../../core/model/settings.ts";
 import extension from "../../src/index.ts";
-import { NAMESPACE } from "../../src/model/paths.ts";
-import type { Settings } from "../../src/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 import {
   type AgentGroup,

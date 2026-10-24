@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { carrySelection, isTerminal, nestPrefix, treeOrder, withLinks } from "../../src/components/tree.ts";
-import type { AgentRecord } from "../../src/model/types.ts";
+import { carrySelection, isTerminal, treeOrder, withLinks } from "../../core/components/tree.ts";
+import type { AgentRecord } from "../../core/model/types.ts";
+import { nestPrefix } from "../../ui/components/tree-glyphs.ts";
 import { agentRecord } from "../support/agent-records.ts";
 
 const byId = (rows: ReturnType<typeof treeOrder>, id: string) => rows.find((row) => row.record.id === id);

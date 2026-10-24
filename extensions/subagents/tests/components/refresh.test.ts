@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBus } from "../../../../extension-manager/index.ts";
-import { tickFor, watchAgents } from "../../src/components/refresh.ts";
-import type { BusEvents } from "../../src/model/events.ts";
-import type { AgentRecord, AgentState } from "../../src/model/types.ts";
+import { tickFor, watchAgents } from "../../core/components/refresh.ts";
+import type { BusEvents } from "../../core/model/events.ts";
+import type { AgentRecord, AgentState } from "../../core/model/types.ts";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });

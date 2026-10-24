@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
-import { MANIFEST_FILE } from "../../../src/model/paths.ts";
-import type { Settings } from "../../../src/model/settings.ts";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import { MANIFEST_FILE } from "../../../core/model/paths.ts";
+import type { Settings } from "../../../core/model/settings.ts";
+import type { AgentRecord } from "../../../core/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";

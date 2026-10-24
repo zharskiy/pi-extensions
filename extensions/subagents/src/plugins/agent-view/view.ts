@@ -1,24 +1,30 @@
-import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../pi-adapter/index.ts";
+import {
+  type KeyPress,
+  type OverlayApi,
+  PAD,
+  type ThemeLike,
+  type ViewComponent,
+} from "../../../../../pi-adapter/index.ts";
+import { DOT, errorText } from "../../../../../shared/index.ts";
 import { countLine, type KeyHint, keyHints, preview, wrapChild } from "../../../../../ui-kit/index.ts";
-import { agentName } from "../../components/agent-row.ts";
 import {
   agentReceipt,
-  alignRight,
-  DOT,
-  errorText,
   formatCtx,
-  innerWidth,
-  PAD,
-  padLine,
   type ReceiptSegment,
-  receiptText,
   singleLine,
+} from "../../../core/components/receipt.ts";
+import { tickFor } from "../../../core/components/refresh.ts";
+import { effectiveContextLimit } from "../../../core/model/context-limit.ts";
+import { type AgentRecord, isClosed, type Worktree } from "../../../core/model/types.ts";
+import { agentName } from "../../../ui/components/agent-row.ts";
+import {
+  alignRight,
+  innerWidth,
+  padLine,
+  receiptText,
   truncatePainted,
-} from "../../components/format.ts";
-import { tickFor } from "../../components/refresh.ts";
-import { stateGlyph, stateToken, stopWords } from "../../components/state-text.ts";
-import { effectiveContextLimit } from "../../model/context-limit.ts";
-import { type AgentRecord, isClosed, type Worktree } from "../../model/types.ts";
+} from "../../../ui/components/format.ts";
+import { stateGlyph, stateToken, stopWords } from "../../../ui/components/state-text.ts";
 import type { ViewData } from "./loader.ts";
 import { requestLineCount, requestLines } from "./request-block.ts";
 

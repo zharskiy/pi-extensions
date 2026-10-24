@@ -1,6 +1,6 @@
 import type { EditorKeyHandler, KeyPress } from "../../../../../pi-adapter/index.ts";
-import { carrySelection, type TreeRow } from "../../components/tree.ts";
-import { isClosed } from "../../model/types.ts";
+import { carrySelection, type TreeRow } from "../../../core/components/tree.ts";
+import { isClosed } from "../../../core/model/types.ts";
 import { type PanelState, selectedIndex } from "./model.ts";
 
 export type PanelActions = {

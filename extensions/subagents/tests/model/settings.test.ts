@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakeAgentRuntime } from "../../../../test-framework/index.ts";
-import { defaultSettings, disabledPlugins, loadSettings, reloadSettings } from "../../src/model/settings.ts";
+import { defaultSettings, disabledPlugins, loadSettings, reloadSettings } from "../../core/model/settings.ts";
 import { tempDir } from "../support/subagents-harness.ts";
 
 const writeJson = (path: string, value: unknown) => {

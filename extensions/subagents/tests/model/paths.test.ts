@@ -2,7 +2,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakeHost } from "../../../../test-framework/index.ts";
-import { agentsDirFor, handoffPathFor } from "../../src/model/paths.ts";
+import { agentsDirFor, handoffPathFor } from "../../core/model/paths.ts";
 
 describe("agentsDirFor", () => {
   it("keeps agents under the session's data dir, or under pi's agent dir without a session file", () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KeyPress } from "../../../../../pi-adapter/index.ts";
 import { flushMicrotasks } from "../../../../../test-framework/index.ts";
 import { openLastOverlay } from "../../../../../test-framework/pi/index.ts";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import type { AgentRecord } from "../../../core/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";

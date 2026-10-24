@@ -1,22 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FormFactory, SessionInfo } from "../../../../../pi-adapter/index.ts";
-import { INHERIT_MODEL } from "../../model/agent-schema.ts";
-import { resolutionProblem } from "../../model/model-resolution.ts";
-import { NAMESPACE } from "../../model/paths.ts";
-import type { Plugin } from "../../model/plugin.ts";
-import { settingsPaths } from "../../model/settings.ts";
-import type { AgentDefinition } from "../../model/types.ts";
+import { SCOPES, type Scope, type SetupChange } from "../../../core/agent-setup/scope.ts";
+import { INHERIT_MODEL } from "../../../core/model/agent-schema.ts";
+import { resolutionProblem } from "../../../core/model/model-resolution.ts";
+import { NAMESPACE } from "../../../core/model/paths.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
+import { settingsPaths } from "../../../core/model/settings.ts";
+import type { AgentDefinition } from "../../../core/model/types.ts";
 import { CREATE_USAGE, createAgentCommand } from "./create.ts";
-import {
-  initialSetup,
-  pressSetupKey,
-  SCOPES,
-  type Scope,
-  type SetupChange,
-  type SetupContext,
-  setupChanges,
-} from "./form.ts";
+import { initialSetup, pressSetupKey, type SetupContext, setupChanges } from "./form.ts";
 import { parseSetupLine, SETUP_USAGE } from "./line.ts";
 import { renderSetup, type SetupPaths } from "./render.ts";
 import { overriddenFields, writeChanges } from "./write.ts";

@@ -14,7 +14,8 @@ import {
   TAB_SWITCH_HINT,
   tabBar,
 } from "../../../../../ui-kit/index.ts";
-import { ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { SCOPES, type SetupChange } from "../../../core/agent-setup/scope.ts";
+import { ALL, INHERIT_MODEL } from "../../../core/model/agent-schema.ts";
 import {
   FIELDS,
   type Field,
@@ -24,8 +25,6 @@ import {
   modelOptions,
   onSubmitTab,
   type Picker,
-  SCOPES,
-  type SetupChange,
   type SetupContext,
   type SetupState,
   setupChanges,

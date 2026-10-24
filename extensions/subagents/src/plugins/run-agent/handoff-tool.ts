@@ -2,10 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
-import { homeRelative } from "../../../../../shared/index.ts";
+import { errorText, homeRelative } from "../../../../../shared/index.ts";
 import { markOf, row, rowChildren, rowText } from "../../../../../ui-kit/index.ts";
-import { errorText } from "../../components/format.ts";
-import type { AgentRegistry, HandoffService } from "../../model/types.ts";
+import type { AgentRegistry, HandoffService } from "../../../core/model/types.ts";
 
 type HandoffParams = { content: string };
 

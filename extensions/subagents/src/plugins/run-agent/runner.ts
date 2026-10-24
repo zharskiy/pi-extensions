@@ -13,12 +13,11 @@ import {
   splitModelRequest,
   type UsageTotals,
 } from "../../../../../pi-adapter/index.ts";
-import { readText } from "../../../../../shared/index.ts";
-import { errorText } from "../../components/format.ts";
-import { ALL } from "../../model/agent-schema.ts";
-import type { Bus } from "../../model/events.ts";
-import { agentsDirFor } from "../../model/paths.ts";
-import type { Settings } from "../../model/settings.ts";
+import { errorText, readText } from "../../../../../shared/index.ts";
+import { ALL } from "../../../core/model/agent-schema.ts";
+import type { Bus } from "../../../core/model/events.ts";
+import { agentsDirFor } from "../../../core/model/paths.ts";
+import type { Settings } from "../../../core/model/settings.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,
@@ -33,8 +32,8 @@ import {
   MAIN_CALLER,
   type RouteResult,
   subagentNames,
-} from "../../model/types.ts";
-import { resolutionError } from "./model-text.ts";
+} from "../../../core/model/types.ts";
+import { resolutionError } from "../../../core/run-agent/model-text.ts";
 import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
 import { batchMessage, pickResult, storeResult } from "./result.ts";

@@ -3,18 +3,15 @@ import type { ThemeLike } from "../../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../../test-framework/index.ts";
 import {
   agentReceipt,
-  alignRight,
   cutChars,
   firstLine,
   formatCalls,
   formatCtx,
   receipt,
-  receiptText,
   singleLine,
-  truncatePainted,
-  wrapCols,
-} from "../../src/components/format.ts";
-import type { AgentRecord } from "../../src/model/types.ts";
+} from "../../core/components/receipt.ts";
+import type { AgentRecord } from "../../core/model/types.ts";
+import { alignRight, receiptText, truncatePainted, wrapCols } from "../../ui/components/format.ts";
 import { agentRecord } from "../support/agent-records.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();

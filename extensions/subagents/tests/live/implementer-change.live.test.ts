@@ -8,7 +8,7 @@ import { repeatRuns } from "../../../../test-framework/eval-runs/index.ts";
 import { largestToolOutput, repoGit } from "../../../../test-framework/index.ts";
 import { sessionFacts } from "../../../../test-framework/pi/index.ts";
 import { describeLive } from "../../../../test-framework/pi/live/index.ts";
-import type { AgentRecord } from "../../src/model/types.ts";
+import type { AgentRecord } from "../../core/model/types.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
 import { failureSuffix, handoverLines, helperCounts, liveRuns, runChain } from "../support/live-runs.ts";
 

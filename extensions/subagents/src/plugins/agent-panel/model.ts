@@ -1,11 +1,10 @@
-import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
+import { PAD, type ThemeLike } from "../../../../../pi-adapter/index.ts";
 import { type KeyHint, keyHints } from "../../../../../ui-kit/index.ts";
-import { POINTER_BLANK, renderRow, rowLayout } from "../../components/agent-row.ts";
-import { PAD } from "../../components/format.ts";
-import { stopWords } from "../../components/state-text.ts";
-import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
-import type { Settings } from "../../model/settings.ts";
-import { type AgentRecord, isClosed } from "../../model/types.ts";
+import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../../core/components/tree.ts";
+import type { Settings } from "../../../core/model/settings.ts";
+import { type AgentRecord, isClosed } from "../../../core/model/types.ts";
+import { POINTER_BLANK, renderRow, rowLayout } from "../../../ui/components/agent-row.ts";
+import { stopWords } from "../../../ui/components/state-text.ts";
 
 const WINDOW = 5;
 

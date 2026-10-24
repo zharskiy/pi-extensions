@@ -1,6 +1,6 @@
-import { effectiveContextLimit } from "../../model/context-limit.ts";
-import type { Plugin } from "../../model/plugin.ts";
-import { isClosed } from "../../model/types.ts";
+import { effectiveContextLimit } from "../../../core/model/context-limit.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
+import { isClosed } from "../../../core/model/types.ts";
 import { contextStep, softWarning } from "./context-step.ts";
 
 const LIMITS_SENDER = "pi-subagents";

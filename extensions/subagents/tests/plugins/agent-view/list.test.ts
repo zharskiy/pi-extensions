@@ -13,7 +13,7 @@ import {
   initPiRenderTheme,
   openLastOverlay,
 } from "../../../../../test-framework/pi/index.ts";
-import type { AgentRecord, NewAgent } from "../../../src/model/types.ts";
+import type { AgentRecord, NewAgent } from "../../../core/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";

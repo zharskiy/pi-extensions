@@ -9,7 +9,7 @@ import {
   initPiRenderTheme,
   openLastOverlay,
 } from "../../../../../test-framework/pi/index.ts";
-import { agentsDirFor, MANIFEST_FILE } from "../../../src/model/paths.ts";
+import { agentsDirFor, MANIFEST_FILE } from "../../../core/model/paths.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";

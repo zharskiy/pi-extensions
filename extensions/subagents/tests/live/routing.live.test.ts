@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import type { AnyToolSpec } from "../../../../pi-adapter/index.ts";
 import { describeLive, openPiSession, PI_DEFAULT_TOOLS } from "../../../../test-framework/pi/live/index.ts";
-import { defaultSettings } from "../../src/model/settings.ts";
+import { defaultSettings } from "../../core/model/settings.ts";
 import { loadDefinitions } from "../../src/plugins/agent-definitions/loader.ts";
 import type { RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 import { describeRunAgent, messageAgentTool, runAgentTool } from "../../src/plugins/run-agent/tools.ts";

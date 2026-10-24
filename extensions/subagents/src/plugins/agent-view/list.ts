@@ -1,10 +1,11 @@
-import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../pi-adapter/index.ts";
+import { type KeyPress, type OverlayApi, PAD, type ThemeToken } from "../../../../../pi-adapter/index.ts";
+import { errorText } from "../../../../../shared/index.ts";
 import { keyHints } from "../../../../../ui-kit/index.ts";
-import { type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
-import { errorText, innerWidth, PAD, padLine, truncatePainted } from "../../components/format.ts";
-import { tickFor } from "../../components/refresh.ts";
-import { carrySelection, stoppableAgents, type TreeRow } from "../../components/tree.ts";
-import { type AgentRecord, isClosed } from "../../model/types.ts";
+import { tickFor } from "../../../core/components/refresh.ts";
+import { carrySelection, stoppableAgents, type TreeRow } from "../../../core/components/tree.ts";
+import { type AgentRecord, isClosed } from "../../../core/model/types.ts";
+import { type RowLayout, renderRow, rowLayout } from "../../../ui/components/agent-row.ts";
+import { innerWidth, padLine, truncatePainted } from "../../../ui/components/format.ts";
 import { clearTargets, listHint, listSections, subtitle, visibleRecords } from "./list-model.ts";
 import type { ListComponent } from "./overlay.ts";
 

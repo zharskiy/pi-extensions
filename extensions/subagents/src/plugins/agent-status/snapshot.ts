@@ -1,14 +1,6 @@
-import {
-  cutChars,
-  DOT,
-  elapsedOf,
-  formatCalls,
-  formatCtx,
-  formatDuration,
-  formatTokens,
-  singleLine,
-} from "../../components/format.ts";
-import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
+import { DOT, formatDuration, formatTokens } from "../../../../../shared/index.ts";
+import { cutChars, elapsedOf, formatCalls, formatCtx, singleLine } from "../../../core/components/receipt.ts";
+import { type AgentRecord, type Worktree, worktreeText } from "../../../core/model/types.ts";
 
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
   if (record.state !== "grace" || record.graceEndsAt === undefined) {

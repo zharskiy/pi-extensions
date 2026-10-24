@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import type { AgentRecord } from "../../../core/model/types.ts";
 import { panelRows } from "../../../src/plugins/agent-panel/model.ts";
 import { agentRecord } from "../../support/agent-records.ts";
 

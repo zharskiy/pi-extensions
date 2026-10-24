@@ -1,12 +1,12 @@
+import { SCOPES, type Scope, type SetupChange } from "../../../core/agent-setup/scope.ts";
 import {
   type OverrideField,
   overrideModel,
   overrideSkills,
   overrideThinking,
   unknownSkillsProblem,
-} from "../../model/agent-override.ts";
-import { type AgentOverride, ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
-import { SCOPES, type Scope, type SetupChange } from "./form.ts";
+} from "../../../core/model/agent-override.ts";
+import { type AgentOverride, ALL, INHERIT_MODEL } from "../../../core/model/agent-schema.ts";
 
 export const SETUP_USAGE = [
   "/agents setup [<agent> model=<provider/id[:thinking]|inherit> thinking=<level>",

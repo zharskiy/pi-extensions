@@ -1,4 +1,4 @@
-import type { AgentRecord, NewAgent } from "../../src/model/types.ts";
+import type { AgentRecord, NewAgent } from "../../core/model/types.ts";
 
 export const agentRecord = (patch: Partial<AgentRecord> & { id: string }): AgentRecord => ({
   agent: "explorer",

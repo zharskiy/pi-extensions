@@ -1,5 +1,6 @@
-import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
-import { counted, innerWidth, PAD, padLine, wrapCols } from "../../components/format.ts";
+import { PAD, type ThemeLike } from "../../../../../pi-adapter/index.ts";
+import { counted } from "../../../../../shared/index.ts";
+import { innerWidth, padLine, wrapCols } from "../../../ui/components/format.ts";
 
 const INDENT = `${PAD}  `;
 

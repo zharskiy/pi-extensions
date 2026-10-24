@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../../test-framework/index.ts";
-import { modelLabel, type RowInput, renderRows } from "../../src/components/agent-row.ts";
-import type { AgentRecord } from "../../src/model/types.ts";
+import type { AgentRecord } from "../../core/model/types.ts";
+import { modelLabel, type RowInput, renderRows } from "../../ui/components/agent-row.ts";
 import { agentRecord } from "../support/agent-records.ts";
 
 const NOW = 1_000_200;

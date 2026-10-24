@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../../../test-framework/index.ts";
-import type { AgentRegistry, HandoffService } from "../../../src/model/types.ts";
+import type { AgentRegistry, HandoffService } from "../../../core/model/types.ts";
 import { handoffTool } from "../../../src/plugins/run-agent/handoff-tool.ts";
 
 const tool = handoffTool(

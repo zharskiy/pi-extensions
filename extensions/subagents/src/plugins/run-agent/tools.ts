@@ -1,13 +1,13 @@
 import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { failureSuffix, row, type TitleParts } from "../../../../../ui-kit/index.ts";
-import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
+import { type AgentFrontmatter, ALL } from "../../../core/model/agent-schema.ts";
 import {
   type AgentInternals,
   type AgentRegistry,
   grantText,
   isNone,
   MAIN_CALLER,
-} from "../../model/types.ts";
+} from "../../../core/model/types.ts";
 import { type BlockHints, type RunAgentDetails, type RunAgentParams, renderBlock } from "./render.ts";
 import type { Runner } from "./runner.ts";
 

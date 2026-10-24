@@ -1,6 +1,6 @@
 import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
-import type { Plugin } from "../../model/plugin.ts";
-import type { Settings } from "../../model/settings.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
+import type { Settings } from "../../../core/model/settings.ts";
 import { type FetchedPage, fetchPage } from "./fetch.ts";
 
 type FetchParams = { url: string };

@@ -1,8 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isPlainObject, readText } from "../../../../../shared/index.ts";
-import { errorText } from "../../components/format.ts";
-import type { SetupChange } from "./form.ts";
+import { errorText, isPlainObject, readText } from "../../../../../shared/index.ts";
+import type { SetupChange } from "../../../core/agent-setup/scope.ts";
 
 const readObject = (path: string): Record<string, unknown> => {
   const text = readText(path) ?? "";

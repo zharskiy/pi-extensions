@@ -12,15 +12,12 @@ import {
   multiKey,
   tabStep,
 } from "../../../../../ui-kit/index.ts";
-import { type AgentOverride, ALL, type Grant, INHERIT_MODEL } from "../../model/agent-schema.ts";
+import { SCOPES, type SetupChange } from "../../../core/agent-setup/scope.ts";
+import { type AgentOverride, ALL, type Grant, INHERIT_MODEL } from "../../../core/model/agent-schema.ts";
 
 type Draft = { model: string; thinking?: string; skills: Grant };
 
 type SetupAgent = { name: string; description: string; tools: Grant; mcp: boolean; initial: Draft };
-
-export type Scope = "project" | "user";
-
-export const SCOPES: readonly Scope[] = ["project", "user"];
 
 export type SetupContext = {
   agents: SetupAgent[];
@@ -47,8 +44,6 @@ export type SetupState = {
 };
 
 type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
-
-export type SetupChange = { name: string; patch: AgentOverride };
 
 export const LIST_HEIGHT = 8;
 

@@ -1,6 +1,6 @@
-import type { ModelChoice } from "../../../../../pi-adapter/index.ts";
-import { formatTokens } from "../../components/format.ts";
-import { resolutionProblem, type UnresolvedModel } from "../../model/model-resolution.ts";
+import type { ModelChoice } from "../../../../pi-adapter/index.ts";
+import { formatTokens } from "../../../../shared/index.ts";
+import { resolutionProblem, type UnresolvedModel } from "../model/model-resolution.ts";
 
 const choiceLine = (choice: ModelChoice) =>
   `- ${choice.ref} (context ${formatTokens(choice.contextWindow)}, $${choice.cost.input}/$${choice.cost.output} per Mtok in/out)`;

@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { createManagedExtension } from "../../../extension-manager/index.ts";
-import { errorText } from "./components/format.ts";
-import { NAMESPACE } from "./model/paths.ts";
-import { defaultSettings, disabledPlugins, reloadSettings } from "./model/settings.ts";
+import { errorText } from "../../../shared/index.ts";
+import { NAMESPACE } from "../core/model/paths.ts";
+import { defaultSettings, disabledPlugins, reloadSettings } from "../core/model/settings.ts";
 import { plugins } from "./plugins.ts";
 
 const root = resolve(import.meta.dirname, "..");

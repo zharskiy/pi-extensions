@@ -1,19 +1,19 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { unknownSkillsProblem } from "../../model/agent-override.ts";
+import { unknownSkillsProblem } from "../../../core/model/agent-override.ts";
 import {
   type AgentFrontmatter,
   type AgentOverride,
   type AgentOverrides,
   ALL,
   INHERIT_MODEL,
-} from "../../model/agent-schema.ts";
+} from "../../../core/model/agent-schema.ts";
 import {
   type AgentDefinition,
   type AgentSource,
   type DefinitionError,
   subagentNames,
-} from "../../model/types.ts";
+} from "../../../core/model/types.ts";
 import { FRONTMATTER_FIELDS, readField } from "./fields.ts";
 import { parseFrontmatter } from "./yaml-lite.ts";
 

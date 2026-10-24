@@ -1,4 +1,4 @@
-import type { Plugin } from "./model/plugin.ts";
+import type { Plugin } from "../core/model/plugin.ts";
 import { agentDefinitionsPlugin } from "./plugins/agent-definitions/index.ts";
 import { agentPanelPlugin } from "./plugins/agent-panel/index.ts";
 import { agentRegistryPlugin } from "./plugins/agent-registry/index.ts";

@@ -1,4 +1,3 @@
-import { MARKS } from "../../../../ui-kit/index.ts";
 import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../model/types.ts";
 
 export type TreeRow = {
@@ -9,9 +8,6 @@ export type TreeRow = {
 };
 
 type ById = ReadonlyMap<string, AgentRecord>;
-
-export const nestPrefix = (row: Pick<TreeRow, "depth" | "first">): string =>
-  row.depth === 0 ? "" : `${"  ".repeat(row.depth - 1)}${row.first ? `${MARKS.child} ` : "  "}`;
 
 export const isTerminal = (record: AgentRecord, byId: ById): boolean =>
   !record.successorId || !byId.has(record.successorId);

@@ -1,11 +1,12 @@
 import type { OverlayApi } from "../../../../../pi-adapter/index.ts";
+import { DOT, errorText } from "../../../../../shared/index.ts";
 import { type SelectOption, selectForm } from "../../../../../ui-kit/index.ts";
-import { cutChars, DOT, errorText } from "../../components/format.ts";
-import { watchAgents } from "../../components/refresh.ts";
-import { stateWord } from "../../components/state-text.ts";
-import { NAMESPACE } from "../../model/paths.ts";
-import type { Plugin } from "../../model/plugin.ts";
-import { type AgentRecord, chainLinks } from "../../model/types.ts";
+import { cutChars } from "../../../core/components/receipt.ts";
+import { watchAgents } from "../../../core/components/refresh.ts";
+import { NAMESPACE } from "../../../core/model/paths.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
+import { type AgentRecord, chainLinks } from "../../../core/model/types.ts";
+import { stateWord } from "../../../ui/components/state-text.ts";
 import { createAgentList } from "./list.ts";
 import { countsText, listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";

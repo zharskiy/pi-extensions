@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveContextLimit } from "../../src/model/context-limit.ts";
+import { effectiveContextLimit } from "../../core/model/context-limit.ts";
 
 describe("effective context limit", () => {
   it("uses the declared limit unless the model window minus the reserve is smaller", () => {

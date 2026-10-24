@@ -3,8 +3,8 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AnyToolSpec } from "../../../../../pi-adapter/index.ts";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
-import { MANIFEST_FILE } from "../../../src/model/paths.ts";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import { MANIFEST_FILE } from "../../../core/model/paths.ts";
+import type { AgentRecord } from "../../../core/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import {

@@ -8,9 +8,9 @@ import {
   rowChildren,
   rowText,
 } from "../../../../../ui-kit/index.ts";
-import { type RowInput, renderRows } from "../../components/agent-row.ts";
-import type { Plugin } from "../../model/plugin.ts";
-import { type AgentRegistry, chainTerminal } from "../../model/types.ts";
+import type { Plugin } from "../../../core/model/plugin.ts";
+import { type AgentRegistry, chainTerminal } from "../../../core/model/types.ts";
+import { type RowInput, renderRows } from "../../../ui/components/agent-row.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "./snapshot.ts";
 
 export type AgentStatusParams = { ids?: string[] };

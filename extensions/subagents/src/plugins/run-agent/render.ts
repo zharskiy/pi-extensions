@@ -1,5 +1,5 @@
 import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../pi-adapter/index.ts";
-import { noun } from "../../../../../shared/index.ts";
+import { DOT, noun } from "../../../../../shared/index.ts";
 import {
   countLine,
   expandHint,
@@ -11,18 +11,14 @@ import {
   row,
   TITLE_COLUMN,
 } from "../../../../../ui-kit/index.ts";
-import { chainSuffix, modelId } from "../../components/agent-row.ts";
 import {
   agentReceipt,
-  DOT,
   firstLine,
   plainReceipt,
   type ReceiptSegment,
   receipt,
-  receiptText,
   singleLine,
-} from "../../components/format.ts";
-import { stateMark } from "../../components/state-text.ts";
+} from "../../../core/components/receipt.ts";
 import {
   type AgentRecord,
   type AgentRegistry,
@@ -31,7 +27,10 @@ import {
   isClosed,
   MAIN_CALLER,
   type WorktreeCleanup,
-} from "../../model/types.ts";
+} from "../../../core/model/types.ts";
+import { chainSuffix, modelId } from "../../../ui/components/agent-row.ts";
+import { receiptText } from "../../../ui/components/format.ts";
+import { stateMark } from "../../../ui/components/state-text.ts";
 import { chainTotals } from "./result.ts";
 import type { BatchItem } from "./runner.ts";
 

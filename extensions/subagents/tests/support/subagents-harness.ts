@@ -12,9 +12,9 @@ import {
   startExtension,
   useTempDirs,
 } from "../../../../test-framework/index.ts";
-import { NAMESPACE } from "../../src/model/paths.ts";
-import type { Plugin } from "../../src/model/plugin.ts";
-import { defaultSettings, type Settings } from "../../src/model/settings.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
+import { defaultSettings, type Settings } from "../../core/model/settings.ts";
 import type { RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");

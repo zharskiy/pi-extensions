@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import type { AgentRecord } from "../../../core/model/types.ts";
 import {
   listSections,
   MAX_CLOSED_ROOTS,

@@ -22,8 +22,8 @@ import {
   promptRecordEntry,
   readSessionFile,
 } from "../../../../../test-framework/pi/index.ts";
-import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
-import type { AgentRecord } from "../../../src/model/types.ts";
+import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../core/model/paths.ts";
+import type { AgentRecord } from "../../../core/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
