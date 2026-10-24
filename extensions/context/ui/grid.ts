@@ -1,5 +1,5 @@
 import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
-import { apportion, type CategoryKey, type UsageModel } from "./breakdown.ts";
+import { apportion, type CategoryKey, type UsageModel } from "../core/breakdown.ts";
 
 type Grid = { rows: string[]; columns: number; beside: boolean };
 

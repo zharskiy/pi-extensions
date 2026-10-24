@@ -1,7 +1,7 @@
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { counted, DOT, formatTokens } from "../../../shared/index.ts";
 import { MARKS, TITLE_COLUMN } from "../../../ui-kit/index.ts";
-import { type Breakdown, type MessageKey, type Part, sumParts } from "./buckets.ts";
+import { type Breakdown, type MessageKey, type Part, sumParts } from "../core/buckets.ts";
 
 type Section = {
   name: string;

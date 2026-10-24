@@ -1,10 +1,11 @@
+import { homedir } from "node:os";
 import type { Host } from "../../../pi-adapter/index.ts";
-import { homeRelative } from "../../../shared/index.ts";
+import { homeRelative, type Plugin } from "../../../shared/index.ts";
 import { EXPAND_BINDING } from "../../../ui-kit/index.ts";
-import { type Breakdown, breakdownOf } from "./buckets.ts";
-import { renderSnapshot } from "./render.ts";
-import { parseSnapshot, type Snapshot } from "./snapshot.ts";
-import { summaryLine } from "./summary.ts";
+import { type Breakdown, breakdownOf } from "../core/buckets.ts";
+import { parseSnapshot, type Snapshot } from "../core/snapshot.ts";
+import { renderSnapshot } from "../ui/render.ts";
+import { summaryLine } from "../ui/summary.ts";
 
 export const SNAPSHOT_ENTRY = "pi-context:snapshot";
 
@@ -67,4 +68,12 @@ export const createContext = (host: Host, env: ContextEnv) => {
       host.appendEntry(SNAPSHOT_ENTRY, snapshot);
     },
   });
+};
+
+export const contextPlugin: Plugin<never, never, undefined> = {
+  id: "context",
+  enable({ host }) {
+    createContext(host, { home: homedir(), now: Date.now });
+    return undefined;
+  },
 };

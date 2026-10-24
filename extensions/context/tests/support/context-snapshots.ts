@@ -1,7 +1,7 @@
 import type { ContextFacts, PromptTokens } from "../../../../pi-adapter/index.ts";
 import { promptTokens } from "../../../../test-framework/index.ts";
-import type { Breakdown } from "../../src/buckets.ts";
-import type { Snapshot } from "../../src/snapshot.ts";
+import type { Breakdown } from "../../core/buckets.ts";
+import type { Snapshot } from "../../core/snapshot.ts";
 
 export const breakdown = (patch: Partial<Breakdown> = {}): Breakdown => ({
   model: "Test Model",

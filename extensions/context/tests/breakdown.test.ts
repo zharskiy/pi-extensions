@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme } from "../../../test-framework/index.ts";
-import { apportion } from "../src/breakdown.ts";
-import { renderSnapshot } from "../src/render.ts";
+import { apportion } from "../core/breakdown.ts";
+import { renderSnapshot } from "../ui/render.ts";
 import { breakdown, snapshot, usage } from "./support/context-snapshots.ts";
 
 const render = (patch = {}) =>

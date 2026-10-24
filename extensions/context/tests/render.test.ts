@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../test-framework/index.ts";
-import { renderSnapshot } from "../src/render.ts";
-import { summaryLine } from "../src/summary.ts";
+import { renderSnapshot } from "../ui/render.ts";
+import { summaryLine } from "../ui/summary.ts";
 import { breakdown, snapshot, usage } from "./support/context-snapshots.ts";
 
 const tokenTheme: ThemeLike = tokenTaggingTheme({ close: () => "" });

@@ -7,10 +7,10 @@ import {
   type CategoryKey,
   type UsageModel,
   usageModel,
-} from "./breakdown.ts";
+} from "../core/breakdown.ts";
+import type { Snapshot } from "../core/snapshot.ts";
 import { detailLines, itemCount } from "./details.ts";
 import { GAP, gridOf, legendGlyph } from "./grid.ts";
-import type { Snapshot } from "./snapshot.ts";
 import { figuresText, modelName } from "./summary.ts";
 
 type RenderOptions = { width: number; expanded: boolean; expandKey: string };

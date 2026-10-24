@@ -1,6 +1,6 @@
 import { DOT, formatTokens, formatWindow } from "../../../shared/index.ts";
-import { type UsageModel, usageModel } from "./breakdown.ts";
-import type { Snapshot } from "./snapshot.ts";
+import { type UsageModel, usageModel } from "../core/breakdown.ts";
+import type { Snapshot } from "../core/snapshot.ts";
 
 export const modelName = (model: UsageModel) => model.model ?? "no model";
 
