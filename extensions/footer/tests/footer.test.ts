@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { TOTALS_CHANNEL } from "../../../shared/index.ts";
-import { createFakeHost, FAKE_FOOTER_KEY, plainTheme } from "../../../test-framework/index.ts";
-import { createFooter } from "../src/footer.ts";
+import {
+  createFakeAgentRuntime,
+  createFakeHost,
+  FAKE_FOOTER_KEY,
+  plainTheme,
+  startExtension,
+} from "../../../test-framework/index.ts";
+import footer from "../api/extension.ts";
 
 const setup = () => {
   const host = createFakeHost({ cwd: "/work/my-project" });
@@ -9,8 +15,7 @@ const setup = () => {
   host.activeModel = { name: "test-model", contextWindow: 200_000, reasoning: true };
   host.thinking = "medium";
   host.contextUsage = { tokens: 50_000, window: 200_000, percent: 25 };
-  createFooter(host);
-  host.start();
+  startExtension({ extension: footer, runtime: createFakeAgentRuntime(), host });
 
   const lines = () => host.footer?.(80, plainTheme, { branch: "main", statuses: new Map() }) ?? [];
 

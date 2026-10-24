@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../shared/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../test-framework/index.ts";
-import { type FooterState, renderFooter } from "../src/render.ts";
+import type { FooterState } from "../core/segments.ts";
+import { renderFooter } from "../ui/render.ts";
 
 const tokenTheme: ThemeLike = tokenTaggingTheme({ close: () => "" });
 

@@ -6,15 +6,9 @@ import {
   type ThemeLike,
   type ThemeToken,
 } from "../../../pi-adapter/index.ts";
-import {
-  DOT,
-  formatMoney,
-  formatTokens,
-  formatWindow,
-  SPENDING_STATUS_KEY,
-  type SpendingTotals,
-} from "../../../shared/index.ts";
+import { DOT, formatMoney, formatTokens, formatWindow, type SpendingTotals } from "../../../shared/index.ts";
 import { cachePercentText } from "../../../ui-kit/index.ts";
+import { type FooterState, folderName, sessionSpend, statusLines } from "../core/segments.ts";
 
 const LEVEL_TOKENS: Record<string, ThemeToken> = {
   off: "thinkingOff",
@@ -24,17 +18,6 @@ const LEVEL_TOKENS: Record<string, ThemeToken> = {
   high: "thinkingHigh",
   xhigh: "thinkingXhigh",
   max: "thinkingMax",
-};
-
-export type FooterState = {
-  context: ContextSnapshot;
-  model: ModelInfo | undefined;
-  thinking: string;
-  cycleKey: string;
-  cwd: string;
-  sessionName: string | undefined;
-  totals: SpendingTotals | undefined;
-  cache: number | undefined;
 };
 
 const looksLikeGauge = (theme: ThemeLike, token: ThemeToken) =>
@@ -52,8 +35,6 @@ const MODEL: ThemeToken = "borderAccent";
 const META: ThemeToken = "muted";
 
 const HINT: ThemeToken = "dim";
-
-const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
   if (context.tokens === null) {
@@ -101,9 +82,7 @@ const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
 };
 
 const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
-  const all = [totals.main, ...totals.sources];
-  const tokens = all.reduce((sum, spend) => sum + spend.tokens, 0);
-  const cost = all.reduce((sum, spend) => sum + spend.cost, 0);
+  const { tokens, cost } = sessionSpend(totals);
 
   return [
     theme.fg(META, "session total (agents included) "),
@@ -132,13 +111,6 @@ const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: stri
 
   return `${level} ${theme.fg(HINT, `(${cycleKey} to cycle)`)}`;
 };
-
-const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
-  Array.from(statuses)
-    .filter(([key]) => key !== SPENDING_STATUS_KEY)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, text]) => text.replace(/\s+/g, " ").trim())
-    .filter((text) => text.length > 0);
 
 export const renderFooter = (
   theme: ThemeLike,
