@@ -33,6 +33,10 @@ export type FooterState = {
 
 const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
 
+const SPEND: ThemeToken = "text";
+
+const PLACE: ThemeToken = "border";
+
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
@@ -51,7 +55,7 @@ const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
     return theme.fg("warning", text);
   }
 
-  return theme.fg("text", text);
+  return theme.fg("success", text);
 };
 
 const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo | undefined) => {
@@ -72,7 +76,7 @@ const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
     [
       contextTokens(theme, state.context),
       ...(cache === undefined ? [] : [cacheSegment(theme, cache)]),
-      ...(state.totals === undefined ? [] : [theme.fg("text", money(state.totals.main.cost))]),
+      ...(state.totals === undefined ? [] : [theme.fg(SPEND, money(state.totals.main.cost))]),
       modelText(theme, state.context, state.model),
     ].join(theme.fg("muted", DOT));
   const full = join(state.cache);
@@ -87,20 +91,20 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
 
   return [
     theme.fg("dim", "session total (agents included) "),
-    theme.fg("text", formatTokens(tokens)),
+    theme.fg(SPEND, formatTokens(tokens)),
     theme.fg("muted", DOT),
-    theme.fg("text", money(cost)),
+    theme.fg(SPEND, money(cost)),
     ...(totals.subscription ? [theme.fg("dim", " (sub)")] : []),
   ].join("");
 };
 
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
-  const folder = theme.fg("accent", folderName(cwd));
+  const folder = theme.fg(PLACE, folderName(cwd));
   const place = branch
-    ? `${folder}${theme.fg("muted", " git:(")}${theme.fg("text", branch)}${theme.fg("muted", ")")}`
+    ? `${folder}${theme.fg("muted", " git:(")}${theme.fg(PLACE, branch)}${theme.fg("muted", ")")}`
     : folder;
 
-  return sessionName ? `${place}${theme.fg("dim", ` • ${sessionName}`)}` : place;
+  return sessionName ? `${place}${theme.fg("dim", " • ")}${theme.fg("muted", sessionName)}` : place;
 };
 
 const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {

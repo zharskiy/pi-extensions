@@ -105,9 +105,13 @@ describe("renderFooter", () => {
         statuses: new Map(),
       })[1];
 
-    expect(at(95)).toContain("<error>1.0k");
-    expect(at(80)).toContain("<warning>1.0k");
-    expect(at(50)).not.toMatch(/<(error|warning)>/);
+    expect([50, 70, 71, 90, 91].map((percent) => at(percent).split("<muted>")[0])).toEqual([
+      " <success>1.0k",
+      " <success>1.0k",
+      " <warning>1.0k",
+      " <warning>1.0k",
+      " <error>1.0k",
+    ]);
   });
 
   it("shows the session cache hit after the context tokens, coloured by rate", () => {
@@ -138,17 +142,26 @@ describe("renderFooter", () => {
     expect(line("max")).toContain("<thinkingXhigh>thinking max");
   });
 
-  it("paints every segment through theme tokens, with muted separators", () => {
-    const lines = renderFooter(tokenTheme, state({ sessionName: "refactor" }), {
+  it("tints each kind of value its own way, with muted separators and dim labels", () => {
+    const lines = renderFooter(tokenTheme, state({ sessionName: "refactor", cache: 91 }), {
       branch: "feature-branch",
       statuses: new Map(),
     });
 
     expect(lines[1]).toBe(
-      " <text>150.1k<muted> · <text>$4.00<muted> · <accent>test-model <muted>(1M context)",
+      " <success>150.1k<muted> · <dim>cache <success>91%<muted> · <text>$4.00<muted> · <accent>test-model <muted>(1M context)",
     );
-    expect(lines[3]).toBe(" <accent>my-project<muted> git:(<text>feature-branch<muted>)<dim> • refactor");
+    expect(lines[2]).toBe(" <dim>session total (agents included) <text>162.4k<muted> · <text>$4.42");
+    expect(lines[3]).toBe(
+      " <border>my-project<muted> git:(<border>feature-branch<muted>)<dim> • <muted>refactor",
+    );
     expect(lines.join("")).not.toContain(`${String.fromCharCode(27)}[38;5;`);
+  });
+
+  it("tints the folder alone when there is no branch or session name", () => {
+    expect(renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[3]).toBe(
+      " <border>my-project",
+    );
   });
 
   it("drops the cache segment first when the line is too narrow", () => {
@@ -162,6 +175,12 @@ describe("renderFooter", () => {
   it("marks unknown context and a missing model", () => {
     expect(statsOf({ context: { tokens: null, window: 0, percent: null }, model: undefined })).toBe(
       " ? · $4.00 · no model",
+    );
+
+    const unknown = state({ context: { tokens: null, window: 0, percent: null } });
+
+    expect(renderFooter(tokenTheme, unknown, { branch: null, statuses: new Map() })[1]).toMatch(
+      /^ <dim>\?<muted>/,
     );
   });
 

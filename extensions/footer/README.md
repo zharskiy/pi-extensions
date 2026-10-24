@@ -15,7 +15,11 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 
 ## What it does
 
-- Every colour is a pi theme token, so the block follows the active theme: values in `text`, field labels (`cache`, `session total (agents included)`) dim, ` · ` separators muted, the model name and folder in `accent`, `(1M context)` and ` git:(`…`)` muted, the branch in `text`, ` • session-name` dim. `thinking high` is bold in pi's colour for that thinking level (the colour of the editor border; `xhigh` and above share the `xhigh` colour), and `(shift+tab to cycle)` is dim.
+- Every colour is a pi theme token, so the block follows the active theme, including `system` (foreground only, no backgrounds). Each kind of value has its own tint; labels (`cache`, `session total (agents included)`, `git:(`…`)`, `(1M context)`) and separators stay dim or muted:
+  - gauges use the state scale: the context tokens in `success`, `warning` above 70 percent, `error` above 90 (`?` dim while unknown), and the cache rate on its own scale (below);
+  - money and session tokens (`$4.00`, `162.4k · $4.42`) in `text`;
+  - the model name in `accent`, and `thinking high` bold in pi's colour for that thinking level (the colour of the editor border; `xhigh` and above share the `xhigh` colour), with `(shift+tab to cycle)` dim;
+  - the place, folder and branch, in pi's `border` blue, with ` • ` dim and the session name muted.
 - Money uses the shared `formatCost` from `core/manager/format.ts`, the same as the spending status: two decimals (`$4.00`), `<$0.01` under a cent, `$0.00` for nothing.
 - Line 1: the main session's context-window occupancy (warning colour above 70 percent, error above 90, `?` while pi does not know it, for example right after a compaction), the session's cache hit rate, the main session's cost, and the model name pi reports with its context window.
 - `cache 91%` is the share of the main session's prompt tokens read from the provider's cache, `cacheRead / (input + cacheRead + cacheWrite)` summed over every main-session request (agents, cache warming and compaction summaries left out), as an integer: success colour from 70 percent, warning from 30, error below. It stays hidden until the session reported any cache read or write (some providers never do), and it is the first segment dropped when the line does not fit the terminal. `/context` shows the same figure next to the last turn's: both compute and paint it with `sessionCacheHit` and `cachePercentText` from `core/manager/cache.ts`.
