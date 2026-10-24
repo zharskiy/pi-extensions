@@ -139,18 +139,14 @@ extensions/subagents/
     │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, handoff-tool, nesting, skills, models,
     │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant tests
     │   └── usage-report/                  # usage-report.test.ts
-    ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree,
-    │                                      #   routing, planner-plan, reviewer-review, implementer-change
-    └── support/
+    ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
+    └── support/                           # the one support folder evals/subagents/ may import
         ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test-framework
         ├── live-harness.ts                # createLiveHarness over the default export: seed, agents, wakes, chains
-        ├── live-runs.ts                   # liveRuns, runChain: a lead's chain to its close, its outcome and helper lines
-        ├── live-helpers.test.ts           # the live helpers' parsers
-        ├── agent-records.ts               # agentRecord, newAgentInput fixtures
+        ├── routing-session.ts             # mainSessionPrompt, recordingTools: the routing eval's main prompt and run_agent stubs
+        ├── agent-records.ts               # agentRecord, newAgentInput fixtures; AgentRecord and chain helpers for evals
         ├── agent-patch.ts                 # patchAgentFile, shippedGroup, modelForGroup: agent files for live tests
-        ├── findings.ts                    # parseFindings, findingRefs, citesFile, hitsLine for reviewer results
-        ├── findings.test.ts               # the findings parser
-        ├── plan-rows.ts                   # planStatus, planFiles, relativeTo: planner plan rows
+        ├── agent-patch.test.ts            # the agent file patcher
         ├── overlay-rows.ts                # selectedRow: the selected overlay row
         ├── recorded-grep-session.ts       # grepSession: a recorded grep agent session
         └── setup-context.ts               # context, PATHS, press, render: the /agents setup form fixture

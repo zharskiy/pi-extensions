@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type Check,
@@ -14,7 +16,10 @@ import {
   type RunRecord,
   repeatRuns,
   reportEval,
+  reportRun,
+  snapshotSessions,
 } from "../eval-runs/index.ts";
+import { useTempDirs } from "../temp-dirs.ts";
 
 type Outcome = { done: boolean; found: boolean; record: RunRecord };
 
@@ -40,6 +45,8 @@ const outcome = (done: boolean, isFound: boolean, run = record()): Outcome => ({
 
 const graded = (outcomes: Outcome[]): EvalResult<Outcome> =>
   gradeRuns("reviewer/planted", outcomes, rubric, (entry) => entry.record);
+
+const tempDirs = useTempDirs();
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -127,23 +134,78 @@ describe("expectPassRate", () => {
     expect(() => expectPassRate(split, atLeastHalf)).not.toThrow();
     expect(() => expectPassRate(split, MAJORITY, "done")).not.toThrow();
   });
+
+  it("names the failed checks of the failing runs", () => {
+    const split = graded([outcome(true, true), outcome(false, false)]);
+
+    expect(() => expectPassRate(split, MAJORITY)).toThrow("run 2: done, found: missed");
+    expect(() => expectPassRate(split, { atLeast: 1 }, "found")).toThrow(
+      "(needs ≥ 100%); run 2: found: missed:",
+    );
+  });
 });
 
 describe("reportEval", () => {
-  it("prints one line per run and a summary", () => {
+  it("prints each run with its details as it finishes and a summary with notes", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = graded([outcome(true, true), outcome(false, true, record({ costUsd: undefined }))]);
+
+    result.runs.forEach((run: GradedRun<Outcome>) => {
+      reportRun(result.name, 2, run, [`    detail ${run.index}`]);
+    });
+    reportEval(result, ["mean findings 1.5"]);
+
+    expect(log.mock.calls.map((call) => String(call[0]))).toEqual([
+      "[eval] reviewer/planted run 1/2: passed, calls 2, cost $0.50, 1s\n    detail 0",
+      "[eval] reviewer/planted run 2/2: failed (done), calls 2, cost unavailable, 1s\n    detail 1",
+      "[eval] reviewer/planted: 1/2 passed, done 1/2, found 2/2, mean findings 1.5, mean cost unavailable, mean 1s",
+    ]);
+  });
+
+  it("appends one observation per eval to the results dir and keeps only failed runs' snapshots", () => {
+    const results = tempDirs.make("pi-eval-results-");
+    const session = join(tempDirs.make("pi-eval-session-"), "session.jsonl");
+
+    writeFileSync(session, "{}\n");
+    vi.stubEnv("PI_EVAL_RESULTS", results);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const earlier = snapshotSessions("reviewer/planted run 1", [session]) ?? "";
+    const kept = snapshotSessions("reviewer/planted run 2", [session, join(results, "absent.jsonl")]) ?? "";
+    const dropped = snapshotSessions("reviewer/planted run 1", [session]) ?? "";
+    const outside = tempDirs.make("pi-eval-outside-");
 
     reportEval(
-      graded([outcome(true, true), outcome(false, true, record({ costUsd: undefined }))]),
-      (run: GradedRun<Outcome>) => [`    detail ${run.index}`],
+      graded([
+        outcome(true, true, { ...record(), snapshot: dropped }),
+        outcome(false, true, { ...record(), snapshot: kept }),
+        outcome(true, true, { ...record(), snapshot: outside }),
+      ]),
     );
 
-    expect(String(log.mock.calls[0]?.[0]).split("\n")).toEqual([
-      "[eval] reviewer/planted run 1/2: passed, calls 2, cost $0.50, 1s",
-      "    detail 0",
-      "[eval] reviewer/planted run 2/2: failed (done), calls 2, cost unavailable, 1s",
-      "    detail 1",
-      "[eval] reviewer/planted: 1/2 passed, done 1/2, found 2/2, mean cost unavailable, mean 1s",
-    ]);
+    const lines = readFileSync(join(results, "observations.jsonl"), "utf8").trim().split("\n");
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({ name: "reviewer/planted", runs: 3 });
+    expect(dropped).not.toBe(earlier);
+    expect(existsSync(dropped)).toBe(false);
+    expect(existsSync(earlier)).toBe(true);
+    expect(existsSync(outside)).toBe(true);
+    expect(readFileSync(join(kept, "1-session.jsonl"), "utf8")).toBe("{}\n");
+  });
+
+  it("writes nothing and snapshots nothing without a results dir", () => {
+    const cwd = tempDirs.make("pi-eval-cwd-");
+
+    vi.stubEnv("PI_EVAL_RESULTS", "");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(process, "cwd").mockReturnValue(cwd);
+
+    expect(snapshotSessions("reviewer/planted run 1", [])).toBeUndefined();
+
+    reportEval(graded([outcome(true, true)]));
+
+    expect(existsSync(join(cwd, "observations.jsonl"))).toBe(false);
+    expect(existsSync(join(process.cwd(), "observations.jsonl"))).toBe(false);
   });
 });

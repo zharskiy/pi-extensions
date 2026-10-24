@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["extensions/*/index.ts", "test-framework/live/fixture-mcp-server.ts"],
+  "entry": ["extensions/*/index.ts", "evals/**/*.eval.ts", "test-framework/live/fixture-mcp-server.ts"],
   "project": [
     "pi-adapter/**/*.ts",
     "extension-manager/**/*.ts",
@@ -8,9 +8,10 @@
     "shared/**/*.ts",
     "extensions/**/*.ts",
     "test-framework/**/*.ts",
+    "evals/**/*.ts",
     "test/**/*.ts",
     "*.ts"
   ],
   "includeEntryExports": true,
-  "vitest": { "config": ["vitest.config.ts", "vitest.live.config.ts"] }
+  "vitest": { "config": ["vitest.config.ts", "vitest.live.config.ts", "vitest.evals.config.ts"] }
 }

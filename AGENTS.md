@@ -8,6 +8,7 @@ Checks:
 - `npm run check`: typecheck, biome and unit tests. Run before finishing.
 - `npm run test`: unit tests only.
 - `npm run test:live`: real agents, local only, needs pi credentials and `PI_LIVE_MODEL`. Never run in CI.
+- `npm run evals`: prompt-quality evals in `evals/`, real agents, local only, needs pi credentials and `PI_LIVE_MODEL`; `PI_EVAL_RUNS` repeats each case. Never run in CI.
 
 Rules:
 

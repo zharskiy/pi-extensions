@@ -448,7 +448,7 @@ Stays extension-local in `tests/support/`: subagents `agent-records.ts`, `agent-
 
 ### 8.3 `evals/`
 
-Layout per plan 03 §4: one folder per judged subject with a `*-cases.ts` data file and one `*.eval.ts`, plus `evals/subagents/support/`. `vitest.evals.config.ts` includes `evals/**/*.eval.ts`, serial, `testTimeout: 1_800_000`; `npm run evals` (needs `PI_LIVE_MODEL`, never in CI); `PI_EVAL_RUNS` replaces `PI_LIVE_PLAN_RUNS` and `PI_LIVE_ROUTING_RUNS`. `vitest.live.config.ts` keeps `extensions/*/tests/live/**/*.live.test.ts` and `pi-adapter/tests/live/**/*.live.test.ts` at 600 s. Unit `vitest.config.ts` uses the explicit include list of plan 03 §5 (no repo-wide glob).
+Layout per plan 03 §4: one folder per judged subject with a `*-cases.ts` data file and one `*.eval.ts`, plus `evals/subagents/support/`. `vitest.evals.config.ts` includes `evals/**/*.eval.ts`, serial, `testTimeout: 1_800_000`; `npm run evals` (needs `PI_LIVE_MODEL`, never in CI); `PI_EVAL_RUNS` replaces the old plan-runs variable and the old routing-runs variable. `vitest.live.config.ts` keeps `extensions/*/tests/live/**/*.live.test.ts` and `pi-adapter/tests/live/**/*.live.test.ts` at 600 s. Unit `vitest.config.ts` uses the explicit include list of plan 03 §5 (no repo-wide glob).
 
 ## 9. Renames
 

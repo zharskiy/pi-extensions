@@ -1,11 +1,13 @@
 import { existsSync } from "node:fs";
-import { bashCommands, commandsLine, totalCost, waitUntil } from "../../../../test-framework/index.ts";
-import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../core/model/types.ts";
-import type { LiveHarness } from "./live-harness.ts";
-
-const RUNS_ENV = "PI_LIVE_PLAN_RUNS";
-
-export const liveRuns = () => Math.max(1, Math.floor(Number(process.env[RUNS_ENV] ?? "1")) || 1);
+import {
+  type AgentRecord,
+  chainLinks,
+  chainTerminal,
+  isClosed,
+} from "../../../extensions/subagents/tests/support/agent-records.ts";
+import type { LiveHarness } from "../../../extensions/subagents/tests/support/live-harness.ts";
+import { type RunRecord, snapshotSessions } from "../../../test-framework/eval-runs/index.ts";
+import { bashCommands, commandsLine, totalCost, waitUntil } from "../../../test-framework/index.ts";
 
 const subtree = (records: AgentRecord[], rootId: string): AgentRecord[] => {
   const children = records.filter((record) => record.callerId === rootId);
@@ -21,8 +23,11 @@ export type ChainOutcome = {
   helperRecords: AgentRecord[];
   calls: number;
   cost: number;
+  inputTokens: number;
+  outputTokens: number;
   durationMs: number;
   failure: string | undefined;
+  sessionFiles: string[];
 };
 
 const REASON_MAX = 160;
@@ -75,6 +80,7 @@ export const runChain = async (
   const helperRecords = records
     .filter((record) => linkIds.includes(record.callerId))
     .sort((left, right) => left.createdAt - right.createdAt);
+  const usages = tree.flatMap((id) => live.usage.get(id) ?? []);
 
   return {
     terminal: last,
@@ -83,11 +89,30 @@ export const runChain = async (
     helpers: helperRecords.map((record) => record.agent),
     helperRecords,
     calls: links.reduce((sum, link) => sum + link.toolCalls, 0),
-    cost: totalCost(tree.flatMap((id) => live.usage.get(id) ?? [])),
+    cost: totalCost(usages),
+    inputTokens: usages.reduce((sum, usage) => sum + usage.input, 0),
+    outputTokens: usages.reduce((sum, usage) => sum + usage.output, 0),
     durationMs,
     failure: failureReason(last),
+    sessionFiles: records.flatMap((record) =>
+      tree.includes(record.id) && record.sessionFile ? [record.sessionFile] : [],
+    ),
   };
 };
+
+export const chainRecord = (label: string, chain: ChainOutcome): RunRecord => ({
+  output: chain.terminal?.resultText ?? "",
+  events: [],
+  usage: {
+    inputTokens: chain.inputTokens,
+    outputTokens: chain.outputTokens,
+    toolCalls: chain.calls,
+    costUsd: chain.cost,
+  },
+  timings: { totalMs: chain.durationMs },
+  errors: chain.failure ? [chain.failure] : [],
+  snapshot: snapshotSessions(label, chain.sessionFiles),
+});
 
 export const helperCounts = (helpers: string[]) => {
   const kinds = [...new Set(helpers)].sort();

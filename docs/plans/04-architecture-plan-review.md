@@ -67,7 +67,7 @@ Severity: **blocker** = breaks behaviour, the package or `npm run check`; **majo
 | Fake names | – | `createFakeRuntime`, `taggedTheme`, `flush`, `openMainLikeSession` | `createFakeAgentRuntime`, `tokenTaggingTheme`, `paintRecordingTheme`, `flushMicrotasks`, `pause`, `openPiSession` | Plan 03. |
 | Evals layout | – | `evals/subagents/*.eval.ts` + `evals/helpers/outcomes.ts` | `evals/subagents/{support,routing,planner,reviewer,implementer}/` | Plan 03 (one folder per eval with its cases file). |
 | Evals harness source | – | import `extensions/subagents/tests/helpers/live*.ts` | import `extensions/subagents/tests/support/live-harness.ts` | Orchestrator: pi-facing mechanics in `test-framework/pi/live/live-extension.ts`; subagents record types in `extensions/subagents/tests/support/live-harness.ts`; evals import both (finding 10). |
-| Eval repeat env var | – | `liveRuns` / `PI_LIVE_PLAN_RUNS` | `evalRunCount` / `PI_EVAL_RUNS` | Plan 03 (`PI_LIVE_PLAN_RUNS` is a misnomer today; README already apologises for it). |
+| Eval repeat env var | – | `liveRuns` / the old plan-runs variable | `evalRunCount` / `PI_EVAL_RUNS` | Plan 03 (the old plan-runs variable is a misnomer today; README already apologises for it). |
 | Eval timeout | – | 600 s | 1_800_000 ms | Plan 03 (planner/implementer runs with helpers exceed 10 min). Live config keeps 600 s. |
 | Local test helpers folder | – | `tests/helpers/` | `tests/support/` | `tests/support/` (distinguishes from the framework's helpers). |
 | `VALID_HANDOFF` | – | shared fixture | local | Plan 02 (finding 20). |

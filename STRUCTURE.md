@@ -142,11 +142,9 @@ pi-extensions/
 │   │   │                        #   image, verifier)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
 │   │   │                        #   base-system-prompt.md, handoff.md, create-agent.md (the /agents create brief)
-│   │   ├── tests/               # mirrors src, plus support/ and live/ (routing.live.test.ts
-│   │   │                        #   checks the main session's routing, planner-plan.live.test.ts
-│   │   │                        #   the planner's plan on past commits, reviewer-review and
-│   │   │                        #   implementer-change score the reviewer and implementer
-│   │   │                        #   on past commits too)
+│   │   ├── tests/               # mirrors src, plus support/ and live/ (run-agent, nesting, grants,
+│   │   │                        #   handoff, worktree); the routing, planner, reviewer and
+│   │   │                        #   implementer quality checks are evals in evals/subagents/
 │   │   └── README.md
 │   ├── session-limits/          # main session hands over before it fills
 │   │   ├── src/                 # index, conversation, limits, thresholds,
@@ -257,7 +255,7 @@ usage-report/       # reports agent usage to the spending channel
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `extension-manager/`, `ui-kit/` and `shared/`. Cross-extension formats and channel names live in `shared/handoff-document.ts` and `shared/host-channels.ts`.
 - Tests live outside `src/` in `tests/` and mirror the source path (`src/plugins/x` -> `tests/plugins/x`); extension-local helpers live in `tests/support/`, shared ones in `test-framework/`.
-- `*.live.test.ts` (in `extensions/subagents/tests/live/`, plus the adapter's `pi-adapter/tests/live/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API is `test-framework/pi/live/`: `describeLive` creates the temporary agent dir in `beforeAll` (a link to the real `auth.json`, a copy of `models.json`, `PI_CODING_AGENT_DIR` pointed at it) and removes it and restores the variable in `afterAll`; it fails, never skips, when setup is impossible. `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same), `startLiveExtension` boots a plugin list or a managed extension (`{ extension }`, its namespace and resolved `childExclude` used for the child runtime) on the real runtime over the fake host, and `openPiSession` opens a real pi session. `extensions/subagents/tests/support/live-harness.ts` builds the subagents live harness on top of the subagents default export (`seed(sha)` fills the project through `seedProjectFromCommit`), with the pure `agent-patch.ts`, `plan-rows.ts` and `findings.ts` beside it and `live-runs.ts` to run a lead's chain to its close.
+- `*.live.test.ts` (in `extensions/subagents/tests/live/`, plus the adapter's `pi-adapter/tests/live/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API is `test-framework/pi/live/`: `describeLive` creates the temporary agent dir in `beforeAll` (a link to the real `auth.json`, a copy of `models.json`, `PI_CODING_AGENT_DIR` pointed at it) and removes it and restores the variable in `afterAll`; it fails, never skips, when setup is impossible. `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same), `startLiveExtension` boots a plugin list or a managed extension (`{ extension }`, its namespace and resolved `childExclude` used for the child runtime) on the real runtime over the fake host, and `openPiSession` opens a real pi session. `extensions/subagents/tests/support/live-harness.ts` builds the subagents live harness on top of the subagents default export (`seed(sha)` fills the project through `seedProjectFromCommit`), with the pure `agent-patch.ts` beside it; the evals' `agent-chains.ts` (a lead's chain to its close), `plan-rows.ts` and `reviewer-findings.ts` live in `evals/subagents/support/`.
 - Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. The files the extensions write are listed in ARCHITECTURE.md (Persistence summary).
 - Custom entries in the main session file are named `<namespace>:<kind>`, for example `pi-spending:usage` and `pi-context:snapshot` (one per `/context` in tui mode).
 - Prompts (`prompts/*.md`) and agent definitions (`agents/**/*.md`) are markdown read at runtime.
@@ -271,10 +269,11 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Config files
 
-- `package.json`: version, pi entry points, `files`, scripts (`check`, `test`, `test:live`).
-- `tsconfig.json`: strict NodeNext, no emit, includes `pi-adapter`, `extension-manager`, `ui-kit`, `shared`, `extensions`, `test-framework`, `test`.
-- `vitest.config.ts`: unit tests (`pi-adapter/tests`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/tests`, `test-framework/tests`, `test`), excludes `*.live.test.ts` and `*.eval.ts`.
+- `package.json`: version, pi entry points, `files`, scripts (`check`, `test`, `test:live`, `evals`).
+- `tsconfig.json`: strict NodeNext, no emit, includes `pi-adapter`, `extension-manager`, `ui-kit`, `shared`, `extensions`, `test-framework`, `evals`, `test`.
+- `vitest.config.ts`: unit tests (`pi-adapter/tests`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/tests`, `test-framework/tests`, `evals/*/tests`, `test`), excludes `*.live.test.ts` and `*.eval.ts`.
 - `vitest.live.config.ts`: only live tests (`extensions/*/tests/live`, `pi-adapter/tests/live`), serial, long timeouts.
+- `vitest.evals.config.ts`: only evals (`evals/**/*.eval.ts`), one forked worker, serial, 30 min per test; `PI_EVAL_RESULTS` points at `evals/.results/<timestamp>/`.
 - `biome.json`: format/lint, plus the pi-import restriction outside the adapter and `test-framework/pi`, and the layer rules for `pi-adapter`, `shared`, `ui-kit`, `extension-manager`, `test-framework`, `evals` and `test`.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests.
-- `.gitignore`: node_modules, .DS_Store, .claude.
+- `.gitignore`: node_modules, .DS_Store, .claude, evals/.results.

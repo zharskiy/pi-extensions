@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { citesFile, findingRefs, hitsLine, parseFindings } from "./findings.ts";
+import { citesFile, findingRefs, hitsLine, parseFindings } from "../support/reviewer-findings.ts";
 
 const REVIEW = [
   "Status: done",

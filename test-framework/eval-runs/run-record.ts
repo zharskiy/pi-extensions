@@ -9,4 +9,5 @@ export type RunRecord = {
   usage: { inputTokens: number; outputTokens: number; toolCalls: number; costUsd?: number };
   timings: { totalMs: number };
   errors: string[];
+  snapshot?: string;
 };

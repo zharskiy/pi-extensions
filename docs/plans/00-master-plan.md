@@ -127,7 +127,7 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 ### Phase 8 · `evals/`
 - Goal: the four prompt-quality suites run as evals, not live tests.
 - Moves: `planner-plan`, `reviewer-review`, `implementer-change`, `routing` live tests → `evals/subagents/<subject>/*.eval.ts` + `*-cases.ts` on `test-framework/eval-runs` (`repeatRuns`, `expectPassRate(MAJORITY)`, `reportEval`); eval-only helpers → `evals/subagents/support/`; `evals/README.md`.
-- Config: `vitest.evals.config.ts` (`evals/**/*.eval.ts`, `pool: "forks"`, `maxWorkers: 1`, serial, 1_800_000 ms); gitignored `evals/.results/<timestamp>/` (`observations.jsonl`, session snapshots of failed runs) with an `evals/.results/` entry in `.gitignore`; `npm run evals`; `PI_EVAL_RUNS` replaces `PI_LIVE_PLAN_RUNS`/`PI_LIVE_ROUTING_RUNS`; knip `entry` adds `evals/**/*.eval.ts`; AGENTS.md documents `npm run evals`.
+- Config: `vitest.evals.config.ts` (`evals/**/*.eval.ts`, `pool: "forks"`, `maxWorkers: 1`, serial, 1_800_000 ms); gitignored `evals/.results/<timestamp>/` (`observations.jsonl`, session snapshots of failed runs) with an `evals/.results/` entry in `.gitignore`; `npm run evals`; `PI_EVAL_RUNS` replaces the old plan-runs variable/the old routing-runs variable; knip `entry` adds `evals/**/*.eval.ts`; AGENTS.md documents `npm run evals`.
 - Acceptance: `npm run check` green; `npm run test:live` no longer runs the four suites; `npm run evals` runs locally with `PI_LIVE_MODEL`.
 - Risk: low. Parallelism: none (depends on 7m(iii)).
 
