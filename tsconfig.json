@@ -21,8 +21,6 @@
     "test-framework",
     "evals",
     "test",
-    "vitest.config.ts",
-    "vitest.live.config.ts",
-    "vitest.evals.config.ts"
+    "vitest.config.ts"
   ]
 }

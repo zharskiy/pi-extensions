@@ -15,7 +15,7 @@ pi-extensions/
 ├── future-plans/        research and specs for work not started
 ├── .github/workflows/   ci.yml
 ├── README.md  AGENTS.md  ARCHITECTURE.md  STRUCTURE.md  LICENSE
-└── package.json  tsconfig.json  biome.json  knip.json  vitest.config.ts  vitest.live.config.ts  vitest.evals.config.ts
+└── package.json  tsconfig.json  biome.json  knip.json  vitest.config.ts
 ```
 
 ## Folders
@@ -33,9 +33,10 @@ pi-extensions/
 
 - `package.json`: version, `pi.extensions` (the 13 `extensions/<name>/index.ts` entries), the published `files`, and the scripts: `check` (typecheck, lint, knip, test), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
 - `tsconfig.json`: strict NodeNext, no emit, over every code folder.
-- `vitest.config.ts`: unit tests (every `tests/` folder and `test/`), without `*.live.test.ts` and `*.eval.ts`.
-- `vitest.live.config.ts`: only live tests (`extensions/*/tests/live/`, `pi-adapter/tests/live/`), serial, long timeouts.
-- `vitest.evals.config.ts`: only evals (`evals/**/*.eval.ts`), one forked worker, serial, 30 minutes per test, results under `evals/.results/<timestamp>/`.
+- `vitest.config.ts`: three projects, picked with `--project`:
+  - `unit` (`npm run test`): every `tests/` folder and `test/`, without `*.live.test.ts` and `*.eval.ts`.
+  - `live` (`npm run test:live`): only live tests (`extensions/*/tests/live/`, `pi-adapter/tests/live/`), serial, long timeouts.
+  - `evals` (`npm run evals`): only evals (`evals/**/*.eval.ts`), one forked worker, serial, 30 minutes per test, results under `evals/.results/<timestamp>/`.
 - `biome.json`: format and lint, the import-cycle and unused-code rules, and the per-folder `noRestrictedImports` overrides that hold each layer to its imports.
 - `knip.json`: unused exports, types, files and dependencies; entries are the 13 extension `index.ts` files, the evals and the MCP fixture server.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests, no evals.
