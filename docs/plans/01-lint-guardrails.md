@@ -54,8 +54,11 @@ Rule numbers R1–R16 refer to [02-target-architecture.md](02-target-architectur
 | 22 | Module imports itself | R1 | Biome | `nursery.noSelfImport: "error"` (nursery: may change) | schema only |
 | 23 | Package-private symbols | — | Biome | `noPrivateImports: "error"`, opt-in `/** @package */` = own dir + subdirs, `@private` = own file | yes |
 | 24 | `pi.extensions` lists exactly the 13 `extensions/*/index.ts`; `npm pack` ships them and no test code | — | vitest + CI | `test/architecture.test.ts` compares `package.json#pi.extensions` with the folder list; CI `npm pack --dry-run` grep (plan 03 §5) | n/a |
+| 25 | Unique basenames among the layer folders `pi-adapter`, `shared`, `ui-kit`, `extension-manager` | R14 | vitest | `test/architecture.test.ts` | n/a |
+| 26 | `subagents` cross-plugin isolation across `api/plugins/<p>.ts`, `core/<p>/**`, `ui/<p>/**` | R14 | vitest | `test/architecture.test.ts` | n/a |
+| 27 | Relative imports normalised (no `./../`) so the Biome path rules cannot be bypassed | R14 | vitest | `test/architecture.test.ts` | n/a |
 
-What stays in `test/architecture.test.ts` after Biome and knip are on: R10, R14, the `pi.extensions` ↔ folder count, the `test-framework` root → `pi/**` check (row 11, until the Biome pattern is verified), and the existing provider-name and write-location rules (R16). Everything else in today's import scan is deleted.
+What stays in `test/architecture.test.ts` after Biome and knip are on: R10, R14, the `pi.extensions` ↔ folder count, and rows 25 to 27 (unique layer basenames, `subagents` cross-plugin isolation, normalised relative imports). The `test-framework` root → `pi/**` check (row 11) is a Biome override. The provider-name and write-location rules (R16) are kept by review, not by the test. Everything else in the old import scan is deleted.
 
 ## Proposed `biome.json`
 

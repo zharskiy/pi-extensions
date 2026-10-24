@@ -33,7 +33,7 @@ pi-extensions/
 ├── biome.json  knip.json  package.json  tsconfig.json
 ```
 
-Every code folder carries `index.ts`, `ARCHITECTURE.md`, `STRUCTURE.md` and `tests/`. `core/` disappears.
+Every code folder carries `index.ts`, `ARCHITECTURE.md`, `STRUCTURE.md` and `tests/`, except `evals/`, which has only `README.md` because it is a test tree and not a shipped layer. `core/` disappears.
 
 ## 2. Layer rules
 
@@ -134,7 +134,7 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 - Risk: low. Parallelism: none (depends on 7m(iii)).
 
 ### Phase 9 · Docs and lock-down
-- Status: in progress.
+- Status: done, commits 97d06cd..6522fc6; follow-up audit fixes in 1739aa7 and the docs commit that follows it.
 - Goal: documentation matches the tree; the last exceptions close.
 - Changes: root `ARCHITECTURE.md`/`STRUCTURE.md` shortened to rules + links; `ARCHITECTURE.md`/`STRUCTURE.md` for pi-adapter, extension-manager, ui-kit, shared (admission rule), test-framework; AGENTS.md rule sentence ("extensions import each other only through `index.ts`"); README paths; `test/architecture.test.ts` R14 rejects `src/`; knip `includeEntryExports` enforced on the 13 `index.ts`; revisit `vitest-evals` once a release supports vitest 5 (plan 05 §4.4).
 - Acceptance: `npm run check` green with the final `biome.json` and `knip.json` from 01; no `src/` folder; `test/architecture.test.ts` is ≤ the rows marked vitest in 01's matrix.

@@ -8,7 +8,7 @@ Thirteen pi extensions in one package, on a small set of shared layers. This fil
 pi-adapter ← shared ← ui-kit ← extension-manager ← extensions (core ← ui ← api ← index.ts) ← test-framework ← evals
 ```
 
-An arrow points at what a layer may import. Each folder reaches the folders to its left only through their `index.ts`, never through an inner file.
+An arrow points at what a layer may import. `extension-manager` sits after `ui-kit` in the chain but imports only `pi-adapter` and `shared`. Each folder reaches the folders to its left only through their `index.ts`, never through an inner file.
 
 - `pi-adapter/` imports nothing from the repo. Its `types/` imports only other `types/` files.
 - `shared/` imports only `pi-adapter/index.ts`. What may enter it is narrow: no host, no theme painting (the admission rule in [shared/STRUCTURE.md](shared/STRUCTURE.md)).
@@ -32,8 +32,8 @@ An arrow points at what a layer may import. Each folder reaches the folders to i
 
 ## Who enforces what
 
-- Biome (`biome.json`, part of `npm run check`) enforces the import rules: one `noRestrictedImports` override per folder and per folder depth bans the pi packages outside the two allowed folders, inner files of another layer, the layers an extension's `core/` and `ui/` may not see, other extensions except their `index.ts`, and test code from shipped code. It also rejects import cycles, `export *`, self-imports and unused locals, imports, parameters and private members.
-- `test/architecture.test.ts` checks what an import pattern cannot express: the shape of each extension's `index.ts`, the folder shape and depth, where `*.test.ts` and `*.eval.ts` may live, unique basenames, that `package.json` `pi.extensions` lists exactly the 13 `extensions/<name>/index.ts` files, and that the pi-free `test-framework/` modules never import `test-framework/pi/`.
+- Biome (`biome.json`, part of `npm run check`) enforces the import rules: one `noRestrictedImports` override per folder and per folder depth bans the pi packages outside the two allowed folders, inner files of another layer, the layers an extension's `core/` and `ui/` may not see, other extensions except their `index.ts`, and test code from shipped code. The `test-framework/**` override also keeps its pi-free modules from importing `test-framework/pi/`. It also rejects import cycles, `export *`, self-imports and unused locals, imports, parameters and private members.
+- `test/architecture.test.ts` checks what an import pattern cannot express: the shape of each extension's `index.ts`, the folder shape and depth, where `*.test.ts` and `*.eval.ts` may live, unique basenames, that `package.json` `pi.extensions` lists exactly the 13 `extensions/<name>/index.ts` files, that in `subagents` no plugin (`api/plugins/<p>.ts`, `core/<p>/**`, `ui/<p>/**`) imports a sibling plugin, and that relative imports are written in normalised form with no `./../`, so the Biome path rules cannot be bypassed.
 - knip (`knip.json`, part of `npm run check`) finds unused exports, types, enum members, files and dependencies, the entry exports of the 13 `index.ts` files included.
 - `tsc` checks types only. CI runs `npm run check` and checks that `npm pack` ships the 13 entry files and no tests, fixtures, `test-framework/` or `evals/`.
 - Provider names and the write locations below are kept by review.
