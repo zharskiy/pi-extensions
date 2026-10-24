@@ -37,11 +37,15 @@ const SPEND: ThemeToken = "text";
 
 const PLACE: ThemeToken = "border";
 
+const META: ThemeToken = "muted";
+
+const HINT: ThemeToken = "dim";
+
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
   if (context.tokens === null) {
-    return theme.fg("dim", "?");
+    return theme.fg(META, "?");
   }
 
   const text = formatTokens(context.tokens);
@@ -65,11 +69,11 @@ const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo 
 
   const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
 
-  return `${theme.fg("accent", model.name)} ${theme.fg("muted", window)}`;
+  return `${theme.fg("accent", model.name)} ${theme.fg(META, window)}`;
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
-  `${theme.fg("dim", "cache ")}${cachePercentText(theme, percent)}`;
+  `${theme.fg(META, "cache ")}${cachePercentText(theme, percent)}`;
 
 const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
   const join = (cache: number | undefined) =>
@@ -78,7 +82,7 @@ const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
       ...(cache === undefined ? [] : [cacheSegment(theme, cache)]),
       ...(state.totals === undefined ? [] : [theme.fg(SPEND, money(state.totals.main.cost))]),
       modelText(theme, state.context, state.model),
-    ].join(theme.fg("muted", DOT));
+    ].join(theme.fg(META, DOT));
   const full = join(state.cache);
 
   return theme.width(`${PAD}${full}`) > width ? join(undefined) : full;
@@ -90,31 +94,31 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
   const cost = all.reduce((sum, spend) => sum + spend.cost, 0);
 
   return [
-    theme.fg("dim", "session total (agents included) "),
+    theme.fg(META, "session total (agents included) "),
     theme.fg(SPEND, formatTokens(tokens)),
-    theme.fg("muted", DOT),
+    theme.fg(META, DOT),
     theme.fg(SPEND, money(cost)),
-    ...(totals.subscription ? [theme.fg("dim", " (sub)")] : []),
+    ...(totals.subscription ? [theme.fg(META, " (sub)")] : []),
   ].join("");
 };
 
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
   const folder = theme.fg(PLACE, folderName(cwd));
   const place = branch
-    ? `${folder}${theme.fg("muted", " git:(")}${theme.fg("text", branch)}${theme.fg("muted", ")")}`
+    ? `${folder}${theme.fg(META, " git:(")}${theme.fg("text", branch)}${theme.fg(META, ")")}`
     : folder;
 
-  return sessionName ? `${place}${theme.fg("dim", " • ")}${theme.fg("muted", sessionName)}` : place;
+  return sessionName ? `${place}${theme.fg(META, ` • ${sessionName}`)}` : place;
 };
 
 const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {
   const name = thinking || "off";
   const level =
     model?.reasoning === false
-      ? theme.fg("dim", "thinking unavailable")
+      ? theme.fg(META, "thinking unavailable")
       : theme.bold(theme.fg(LEVEL_TOKENS[name] ?? "thinkingOff", `thinking ${name}`));
 
-  return `${level} ${theme.fg("dim", `(${cycleKey} to cycle)`)}`;
+  return `${level} ${theme.fg(HINT, `(${cycleKey} to cycle)`)}`;
 };
 
 const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>

@@ -120,7 +120,7 @@ describe("renderFooter", () => {
     const painted = (cache: number) =>
       renderFooter(tokenTheme, state({ cache }), { branch: null, statuses: new Map() })[1];
 
-    expect(painted(91)).toContain("<dim>cache <success>91%");
+    expect(painted(91)).toContain("<muted>cache <success>91%");
     expect(painted(50)).toContain("<warning>50%");
     expect(painted(12)).toContain("<error>12%");
   });
@@ -128,7 +128,7 @@ describe("renderFooter", () => {
   it("renders the session total label dim before its values", () => {
     const line = renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[2];
 
-    expect(plain(line)).toBe(" <dim>session total (agents included) <text>162.4k<muted> · <text>$4.42");
+    expect(plain(line)).toBe(" <muted>session total (agents included) <text>162.4k<muted> · <text>$4.42");
   });
 
   it("paints the thinking label bold in the colour of its level, without a mode mark", () => {
@@ -150,12 +150,10 @@ describe("renderFooter", () => {
     });
 
     expect(lines[1]).toBe(
-      " <success>150.1k<muted> · <dim>cache <success>91%<muted> · <text>$4.00<muted> · <accent>test-model <muted>(1M context)",
+      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <accent>test-model <muted>(1M context)",
     );
-    expect(lines[2]).toBe(" <dim>session total (agents included) <text>162.4k<muted> · <text>$4.42");
-    expect(lines[3]).toBe(
-      " <border>my-project<muted> git:(<text>feature-branch<muted>)<dim> • <muted>refactor",
-    );
+    expect(lines[2]).toBe(" <muted>session total (agents included) <text>162.4k<muted> · <text>$4.42");
+    expect(lines[3]).toBe(" <border>my-project<muted> git:(<text>feature-branch<muted>)<muted> • refactor");
     expect(lines.join("")).not.toContain(`${String.fromCharCode(27)}[38;5;`);
   });
 
@@ -163,6 +161,31 @@ describe("renderFooter", () => {
     expect(renderFooter(tokenTheme, state({}), { branch: null, statuses: new Map() })[3]).toBe(
       " <border>my-project",
     );
+  });
+
+  it("paints key hints dim and every other label or separator muted", () => {
+    const tokensOf = (line: string) => Array.from(line.matchAll(/<(\w+)>/g), (match) => match[1]);
+    const greys = (line: string) => tokensOf(line).filter((token) => token === "dim" || token === "muted");
+    const lines = renderFooter(tokenTheme, state({ sessionName: "refactor", cache: 91 }), {
+      branch: "feature-branch",
+      statuses: new Map(),
+    });
+    const unavailable = renderFooter(tokenTheme, state({ model: { ...model, reasoning: false } }), {
+      branch: null,
+      statuses: new Map(),
+    })[4];
+
+    expect([1, 2, 3].flatMap((index) => greys(lines[index])).every((token) => token === "muted")).toBe(true);
+    expect(lines[4]).toMatch(/<dim>\(shift\+tab to cycle\)$/);
+    expect(greys(lines[4])).toEqual(["dim"]);
+    expect(unavailable).toBe(" <muted>thinking unavailable <dim>(shift+tab to cycle)");
+  });
+
+  it("paints both brackets around the branch in the same muted span", () => {
+    const line = renderFooter(tokenTheme, state({}), { branch: "main", statuses: new Map() })[3];
+    const [, open, close] = line.match(/<(\w+)> git:\(.*<(\w+)>\)$/) ?? [];
+
+    expect([open, close]).toEqual(["muted", "muted"]);
   });
 
   it("drops the cache segment first when the line is too narrow", () => {
@@ -181,7 +204,7 @@ describe("renderFooter", () => {
     const unknown = state({ context: { tokens: null, window: 0, percent: null } });
 
     expect(renderFooter(tokenTheme, unknown, { branch: null, statuses: new Map() })[1]).toMatch(
-      /^ <dim>\?<muted>/,
+      /^ <muted>\?<muted>/,
     );
   });
 
@@ -191,7 +214,7 @@ describe("renderFooter", () => {
     expect(render({ totals: sub })[2]).toBe(" session total (agents included) 162.4k · $4.42 (sub)");
     expect(
       renderFooter(tokenTheme, state({ totals: sub }), { branch: null, statuses: new Map() })[2],
-    ).toContain("<dim> (sub)");
+    ).toContain("<muted> (sub)");
   });
 
   it("names the last folder of the path", () => {
