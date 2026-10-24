@@ -156,7 +156,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   let layout = { width: 0, headerRows: 0, requestRows: 0, bodyRows: 0 };
   let disposed = false;
 
-  const payload = () => data.session?.prompt.providerPayload;
+  const payload = () => data.session?.providerPayload;
 
   const hasRequest = () => data.error === undefined && requestLineCount(payload()) > 0;
 

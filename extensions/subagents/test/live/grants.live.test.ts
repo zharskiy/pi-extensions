@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import type { TranscriptItem } from "../../../../core/adapter/contract.ts";
 import { describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
+import { sessionFacts } from "../../../../core/test/adapter/offline.ts";
 import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
@@ -20,12 +20,10 @@ const skill = (name: string, body: string) =>
 
 type CodemodeResult = { details?: { calls?: { name?: string; status?: string }[] } };
 
-const codemodeCalls = (items: readonly TranscriptItem[]) =>
-  items
-    .flatMap((item) =>
-      item.kind === "tool" && item.toolName === "codemode" ? [item.raw as CodemodeResult] : [],
-    )
-    .flatMap((raw) => raw.details?.calls ?? [])
+const codemodeCalls = (results: ReturnType<typeof sessionFacts>["results"]) =>
+  results
+    .filter((result) => result.toolName === "codemode")
+    .flatMap((result) => (result.details as CodemodeResult["details"])?.calls ?? [])
     .filter((call) => call.status === "ok")
     .map((call) => call.name ?? "tool");
 
@@ -34,16 +32,17 @@ describeLive("live grants", () => {
 
   const sessionOf = (id: string) => {
     const record = live.registry.get(id);
-    const session = live.runtime.readSession(record?.sessionFile ?? "");
-    const calls = session.items.flatMap((item) => (item.kind === "assistant" ? item.toolCalls : []));
+    const file = record?.sessionFile ?? "";
+    const facts = sessionFacts(file);
+    const payload = JSON.stringify(live.runtime.readSession(file).providerPayload);
 
     return {
       record,
-      tools: session.prompt.tools.map((tool) => tool.name).toSorted(),
-      skills: session.prompt.skills.map((entry) => entry.name).toSorted(),
-      calls: [...calls.map((call) => call.name), ...codemodeCalls(session.items)],
-      payload: JSON.stringify(session.prompt.providerPayload),
-      leaks: realContextMarkers().filter((marker) => JSON.stringify(session.prompt).includes(marker)),
+      tools: facts.tools.toSorted(),
+      skills: Object.keys(SKILL_CODES).filter((name) => payload.includes(`${name}/SKILL.md`)),
+      calls: [...facts.calls, ...codemodeCalls(facts.results)],
+      payload,
+      leaks: realContextMarkers().filter((marker) => payload.includes(marker)),
     };
   };
 

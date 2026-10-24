@@ -132,15 +132,9 @@ export type ViewComponent = {
 
 export type TranscriptItem =
   | { kind: "user"; text: string }
-  | {
-      kind: "assistant";
-      text: string;
-      thinking?: string;
-      toolCalls: { name: string; args: unknown }[];
-      raw: unknown;
-    }
-  | { kind: "tool"; toolName: string; toolCallId: string; text: string; isError: boolean; raw: unknown }
-  | { kind: "custom"; customType: string; text: string; raw: unknown };
+  | { kind: "assistant"; raw: unknown }
+  | { kind: "tool"; toolCallId: string; raw: unknown }
+  | { kind: "custom"; raw: unknown };
 
 export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;
@@ -384,23 +378,12 @@ export type SpawnSpec = {
   customTools: AnyToolSpec[];
 };
 
-export type PromptSection = { name: string; text: string };
-
 export type PromptTool = { name: string; description: string; parameters: unknown };
 
 export type SkillInfo = { name: string; description: string };
 
-export type PromptRecord = {
-  sections: PromptSection[];
-  tools: PromptTool[];
-  skills: SkillInfo[];
-  guidelines: string[];
-  providerPayload?: unknown;
-  model?: string;
-};
-
 export type SessionRecord = {
-  prompt: PromptRecord;
+  providerPayload?: unknown;
   items: TranscriptItem[];
   contextTokens?: number;
 };

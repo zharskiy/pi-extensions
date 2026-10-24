@@ -581,7 +581,7 @@ describe("agent view hint", () => {
     const open = agentRecord({ id: "explorer-1" });
     const grace = agentRecord({ id: "explorer-1", state: "grace" });
     const closed = agentRecord({ id: "explorer-1", state: "done", endedAt: 0 });
-    const noRequest = { ...fixture(), prompt: { ...fixture().prompt, providerPayload: undefined } };
+    const noRequest = { ...fixture(), providerPayload: undefined };
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
     expect(hint(hintOf(open))).toBe(

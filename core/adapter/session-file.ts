@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { calculateContextTokens } from "@earendil-works/pi-coding-agent";
-import type { PromptRecord, PromptSection, PromptTool, SessionRecord, TranscriptItem } from "./contract.ts";
-import { contentParts, messageText } from "./messages.ts";
+import type { PromptTool, SessionRecord, TranscriptItem } from "./contract.ts";
+import { messageText } from "./messages.ts";
 
 export const promptRecordEntry = (namespace: string) => `${namespace}:prompt-record`;
 
-type ContentPart = { type?: string; text?: string; thinking?: string; name?: string; arguments?: unknown };
+type ContentPart = { type?: string; text?: string };
 
 type RawMessage = {
   role?: string;
@@ -14,9 +14,6 @@ type RawMessage = {
   sections?: Record<string, string | null>;
   toolsAdded?: PromptTool[];
   toolsRemoved?: { name: string }[];
-  toolName?: string;
-  isError?: boolean;
-  customType?: string;
   stopReason?: string;
   usage?: Parameters<typeof calculateContextTokens>[0];
 };
@@ -32,12 +29,7 @@ type RawEntry = {
   message?: RawMessage;
 };
 
-type PromptRecordData = {
-  skills?: { name: string; description: string }[];
-  guidelines?: string[];
-  providerPayload?: unknown;
-  model?: string;
-};
+type PromptRecordData = { providerPayload?: unknown };
 
 export type Replay = { sections: Map<string, string>; tools: Map<string, PromptTool> };
 
@@ -80,8 +72,6 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
   if (entry.type === "custom_message") {
     return {
       kind: "custom",
-      customType: entry.customType ?? "custom",
-      text: messageText(entry.content),
       raw: {
         role: "custom",
         customType: entry.customType ?? "custom",
@@ -104,38 +94,14 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
   }
 
   if (message.role === "toolResult") {
-    return {
-      kind: "tool",
-      toolName: message.toolName ?? "tool",
-      toolCallId: message.toolCallId ?? "",
-      text: messageText(message.content),
-      isError: message.isError === true,
-      raw: message,
-    };
+    return { kind: "tool", toolCallId: message.toolCallId ?? "", raw: message };
   }
 
   if (message.role !== "assistant") {
     return undefined;
   }
 
-  const parts: ContentPart[] = contentParts(message.content);
-
-  const thinking = parts
-    .filter((part) => part.type === "thinking")
-    .map((part) => part.thinking ?? "")
-    .join("\n");
-
-  const toolCalls = parts
-    .filter((part) => part.type === "toolCall")
-    .map((part) => ({ name: part.name ?? "tool", args: part.arguments }));
-
-  return {
-    kind: "assistant",
-    text: messageText(message.content),
-    thinking: thinking || undefined,
-    toolCalls,
-    raw: message,
-  };
+  return { kind: "assistant", raw: message };
 };
 
 const measuredContext = (message: RawMessage | undefined) => {
@@ -170,25 +136,10 @@ export const readSessionEntries = (file: string): unknown[] => parseEntries(read
 export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord => {
   const entries = parseEntries(lines);
 
-  const replay = replaySystemMessages(
-    entries.filter((entry) => entry.type === "message").map((entry) => entry.message ?? {}),
-  );
-
   const recordData = entries
     .filter((entry) => entry.type === "custom" && entry.customType === recordEntry)
     .map((entry) => entry.data as PromptRecordData)
     .at(-1);
-
-  const sections: PromptSection[] = Array.from(replay.sections, ([name, text]) => ({ name, text }));
-
-  const prompt: PromptRecord = {
-    sections,
-    tools: Array.from(replay.tools.values()),
-    skills: recordData?.skills ?? [],
-    guidelines: recordData?.guidelines ?? [],
-    providerPayload: recordData?.providerPayload,
-    model: recordData?.model,
-  };
 
   const items = entries.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
 
@@ -198,7 +149,7 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
     .filter((tokens) => tokens !== undefined)
     .at(-1);
 
-  return { prompt, items, contextTokens };
+  return { providerPayload: recordData?.providerPayload, items, contextTokens };
 };
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>

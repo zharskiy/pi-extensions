@@ -68,7 +68,7 @@ pi-extensions/
 │   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch, readText), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
-│       │                        #   offline.ts (pi loaded offline for extension tests), tool-rows.ts
+│       │                        #   offline.ts (pi loaded offline for extension tests; `sessionFacts` for the live tests), tool-rows.ts
 │       │                        #   (tool rows rendered through pi for extension tests)
 │       ├── manager/
 │       └── helpers/             # fakes.ts (fake host, runtime and child session, plainTheme, taggedTheme),

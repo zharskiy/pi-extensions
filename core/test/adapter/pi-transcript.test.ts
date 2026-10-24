@@ -19,8 +19,6 @@ const tui = { requestRender: () => {} } as never;
 
 const assistantCall = (name: string, args: unknown, id = "call-1"): TranscriptItem => ({
   kind: "assistant",
-  text: "",
-  toolCalls: [{ name, args }],
   raw: {
     role: "assistant",
     content: [{ type: "toolCall", id, name, arguments: args }],
@@ -31,10 +29,7 @@ const assistantCall = (name: string, args: unknown, id = "call-1"): TranscriptIt
 
 const toolResult = (name: string, text: string, details?: unknown, id = "call-1"): TranscriptItem => ({
   kind: "tool",
-  toolName: name,
   toolCallId: id,
-  text,
-  isError: false,
   raw: {
     role: "toolResult",
     toolCallId: id,
@@ -86,8 +81,6 @@ describe("transcript pane terminal marks", () => {
       { kind: "user", text: "find the files" },
       {
         kind: "assistant",
-        text: "Three files",
-        toolCalls: [],
         raw: {
           role: "assistant",
           content: [{ type: "text", text: "Three files" }],
@@ -440,8 +433,6 @@ describe("transcript pane messages", () => {
       { kind: "user", text: "find the files" },
       {
         kind: "assistant",
-        text: "Found them.",
-        toolCalls: [],
         raw: {
           role: "assistant",
           content: [

@@ -786,8 +786,6 @@ describe("pi adapter", () => {
       pane.sync([
         {
           kind: "assistant",
-          text: "",
-          toolCalls: [{ name: "probe", args: {} }],
           raw: {
             role: "assistant",
             content: [{ type: "toolCall", id: "call-1", name: "probe", arguments: {} }],

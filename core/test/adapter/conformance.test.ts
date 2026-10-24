@@ -433,7 +433,7 @@ describe("pi adapter conformance", () => {
   it("cancels every compaction attempt inside a child", () => {
     const { api, fire } = fakeExtensionApi();
 
-    createChildExtension("a1", "acme/x", promptRecordEntry("test-ext"))(api as never);
+    createChildExtension(promptRecordEntry("test-ext"))(api as never);
 
     expect(fire("session_before_compact", { reason: "threshold" })).toEqual([{ cancel: true }]);
     expect(fire("session_before_compact", { reason: "overflow" })).toEqual([{ cancel: true }]);
@@ -475,7 +475,7 @@ describe("pi adapter conformance", () => {
   it("records the first provider request once as the prompt record", () => {
     const { api, entries, fire } = fakeExtensionApi();
 
-    createChildExtension("a1", "acme/x", promptRecordEntry("test-ext"))(api as never);
+    createChildExtension(promptRecordEntry("test-ext"))(api as never);
 
     fire("before_agent_start", {
       systemPromptOptions: {
@@ -490,13 +490,7 @@ describe("pi adapter conformance", () => {
     expect(entries).toEqual([
       {
         customType: "test-ext:prompt-record",
-        data: {
-          agentId: "a1",
-          model: "acme/x",
-          skills: [{ name: "s", description: "d" }],
-          guidelines: ["g1", "g2"],
-          providerPayload: { model: "x", n: 1 },
-        },
+        data: { providerPayload: { model: "x", n: 1 } },
       },
     ]);
   });
