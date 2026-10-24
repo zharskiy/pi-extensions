@@ -8,8 +8,6 @@ Thirteen extensions in one pi package (`pi-extensions-mz`), built on one small s
 
 [![CI](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![pi](https://img.shields.io/badge/pi-%E2%89%A51.2.0-8a63d2.svg)](https://pi.dev)
-[![Node](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](package.json)
 
 [Quick start](#quick-start) · [Development](#development) · [Contributing and licence](#contributing-and-licence)
 
@@ -41,8 +39,6 @@ Pi is a lean, extensible coding agent. This package adds what a long working day
 Tool rows from [transcript](extensions/transcript/README.md), an agent batch from [subagents](extensions/subagents/README.md), the working line from [working-indicator](extensions/working-indicator/README.md) and the status block from [footer](extensions/footer/README.md).
 
 ## Quick start
-
-Version 0.4.0, for pi 1.2.0 or later within pi 1 (developed and tested against pi 1.3.0).
 
 ```bash
 pi install git:github.com/zharskiy/pi-extensions   # the whole package
