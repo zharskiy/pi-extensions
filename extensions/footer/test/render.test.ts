@@ -154,7 +154,7 @@ describe("renderFooter", () => {
     );
     expect(lines[2]).toBe(" <dim>session total (agents included) <text>162.4k<muted> · <text>$4.42");
     expect(lines[3]).toBe(
-      " <border>my-project<muted> git:(<border>feature-branch<muted>)<dim> • <muted>refactor",
+      " <border>my-project<muted> git:(<text>feature-branch<muted>)<dim> • <muted>refactor",
     );
     expect(lines.join("")).not.toContain(`${String.fromCharCode(27)}[38;5;`);
   });

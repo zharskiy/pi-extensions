@@ -101,7 +101,7 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
   const folder = theme.fg(PLACE, folderName(cwd));
   const place = branch
-    ? `${folder}${theme.fg("muted", " git:(")}${theme.fg(PLACE, branch)}${theme.fg("muted", ")")}`
+    ? `${folder}${theme.fg("muted", " git:(")}${theme.fg("text", branch)}${theme.fg("muted", ")")}`
     : folder;
 
   return sessionName ? `${place}${theme.fg("dim", " • ")}${theme.fg("muted", sessionName)}` : place;
