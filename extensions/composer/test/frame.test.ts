@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../../core/adapter/contract.ts";
+import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { CHEVRON, createFrame } from "../src/frame.ts";
 
@@ -66,10 +66,20 @@ describe("createFrame", () => {
     expect(CHEVRON).toBe("›");
   });
 
-  it("paints the extension with the border colour and the prompt bold in accent", () => {
+  it("paints the extension and the bold prompt with the border colour", () => {
     const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed, recording);
 
-    expect(lines).toEqual(["[───]──", " <b><accent>›</accent></b> ab", "──[───]"]);
+    expect(lines).toEqual(["[───]──", " <b>[›]</b> ab", "──[───]"]);
+  });
+
+  it("paints the prompt in the thinking level's colour the border is given", () => {
+    const frame = createFrame();
+    const prompt = (token: ThemeToken) =>
+      frame.decorate(["──", "ab", "──"], layout, (text) => recording.fg(token, text), recording)[1];
+
+    expect(prompt("thinkingOff")).toBe(" <b><thinkingOff>›</thinkingOff></b> ab");
+    expect(prompt("thinkingMedium")).toBe(" <b><thinkingMedium>›</thinkingMedium></b> ab");
+    expect(prompt("thinkingMax")).toBe(" <b><thinkingMax>›</thinkingMax></b> ab");
   });
 
   it("puts the extension in front of the top rule so pi's working status starts right of the gutter", () => {

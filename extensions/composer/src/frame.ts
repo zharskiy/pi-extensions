@@ -24,7 +24,7 @@ export const createFrame = (): EditorFrame => {
     }
 
     const extension = paint(tail);
-    const lead = scrolled ? gutterSpace : `${margin}${theme.bold(theme.fg("accent", CHEVRON))} `;
+    const lead = scrolled ? gutterSpace : `${margin}${theme.bold(paint(CHEVRON))} `;
 
     return lines.map((line, index) => {
       if (index === 0) {

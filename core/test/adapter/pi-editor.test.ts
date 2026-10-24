@@ -7,7 +7,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EditorFrame, KeyPress } from "../../adapter/contract.ts";
+import type { EditorFrame, KeyPress, ThemeToken } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
 
 type Factory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
@@ -145,6 +145,23 @@ describe("createEditorHooks", () => {
     render(ui.factory, 20);
 
     expect(painted.at(-1)).toBe("<accent:›>");
+  });
+
+  it("decorates with the border colour pi sets when the thinking level changes", () => {
+    const { ctx, ui } = fakeCtx();
+
+    createEditorFrame(() => ctx)(frame);
+
+    const framed = editor(ui.factory);
+    const prompt = (token: ThemeToken) => {
+      framed.borderColor = (text) => frameTheme.fg(token, text);
+
+      return framed.render(20)[1];
+    };
+
+    expect(prompt("thinkingOff")?.startsWith("<thinkingOff:|>>")).toBe(true);
+    expect(prompt("thinkingMedium")?.startsWith("<thinkingMedium:|>>")).toBe(true);
+    expect(prompt("thinkingMax")?.startsWith("<thinkingMax:|>>")).toBe(true);
   });
 
   it("builds pi's editor with the working status embedded", () => {

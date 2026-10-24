@@ -11,7 +11,7 @@ A pi extension that draws the input as two horizontal lines, edge to edge, with 
 
 ## What it does
 
-- The lines reuse the editor's own border colour, so it follows pi's mode colours (thinking level, bash mode). The `›` prompt is bold in the theme's accent colour.
+- The lines reuse the editor's own border colour, so it follows pi's mode colours (thinking level, bash mode). The `›` prompt is bold in the same colour, so it changes with the thinking level as the lines do.
 - The content sits one column in from the left edge (`MARGIN` at the top of `src/frame.ts`). The prompt sits on the first content line only; wrapped and further lines are indented under it. Scroll hints (`↑ 3 more`) stay in the top and bottom lines, which are extended to the full width, and the prompt is hidden while the editor is scrolled.
 - Autocomplete lists below the editor start one column in, so pi's `→` sits under the prompt and the entries under the text.
 - Pi's working status (spinner, activity, elapsed time) is drawn inside the top line, as in pi's own editor, so there is no gap between it and the input.
