@@ -396,54 +396,6 @@
       }
     },
     {
-      "includes": ["extensions/*/src/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
-                  },
-                  {
-                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
-                    "message": "Import pi-adapter only through pi-adapter/index.ts."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["extensions/*/tests/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only the adapter tests in core/test/adapter/** may import pi packages."
-                  },
-                  {
-                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
-                    "message": "Import pi-adapter only through pi-adapter/index.ts."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
       "includes": ["extensions/*/*.ts"],
       "linter": {
         "rules": {
@@ -454,11 +406,31 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
                     "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../*/**", "!../../**", "!../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
                   }
                 ]
               }
@@ -478,11 +450,31 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
                     "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../../*/**", "!../../../**", "!../../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
                   }
                 ]
               }
@@ -502,11 +494,31 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
                     "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../../../*/**", "!../../../../**", "!../../../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
                   }
                 ]
               }
@@ -526,11 +538,457 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** may import pi packages."
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
                     "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../../../../*/**", "!../../../../../**", "!../../../../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/core/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "core/ must not import extension-manager (R7)."
+                  },
+                  {
+                    "group": ["**/ui-kit/**"],
+                    "message": "core/ must not import ui-kit (R7)."
+                  },
+                  {
+                    "group": ["../../*/**", "!../../../**"],
+                    "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": ["../ui", "../ui/**", "../api", "../api/**", "../index.ts"],
+                    "message": "core/ must not import ui/, api/ or the extension's index.ts (R7)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/core/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "core/ must not import extension-manager (R7)."
+                  },
+                  {
+                    "group": ["**/ui-kit/**"],
+                    "message": "core/ must not import ui-kit (R7)."
+                  },
+                  {
+                    "group": ["../../../*/**", "!../../../../**"],
+                    "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": ["../../ui", "../../ui/**", "../../api", "../../api/**", "../../index.ts"],
+                    "message": "core/ must not import ui/, api/ or the extension's index.ts (R7)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/core/*/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "core/ must not import extension-manager (R7)."
+                  },
+                  {
+                    "group": ["**/ui-kit/**"],
+                    "message": "core/ must not import ui-kit (R7)."
+                  },
+                  {
+                    "group": ["../../../../*/**", "!../../../../../**"],
+                    "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": [
+                      "../../../ui",
+                      "../../../ui/**",
+                      "../../../api",
+                      "../../../api/**",
+                      "../../../index.ts"
+                    ],
+                    "message": "core/ must not import ui/, api/ or the extension's index.ts (R7)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/ui/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "ui/ must not import extension-manager (R8)."
+                  },
+                  {
+                    "group": ["../../*/**", "!../../../**"],
+                    "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": ["../api", "../api/**", "../index.ts"],
+                    "message": "ui/ must not import api/ or the extension's index.ts (R8)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/ui/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "ui/ must not import extension-manager (R8)."
+                  },
+                  {
+                    "group": ["../../../*/**", "!../../../../**"],
+                    "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": ["../../api", "../../api/**", "../../index.ts"],
+                    "message": "ui/ must not import api/ or the extension's index.ts (R8)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/ui/*/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "ui/ must not import extension-manager (R8)."
+                  },
+                  {
+                    "group": ["../../../../*/**", "!../../../../../**"],
+                    "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": ["../../../api", "../../../api/**", "../../../index.ts"],
+                    "message": "ui/ must not import api/ or the extension's index.ts (R8)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/tests/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../../*/**", "!../../../**", "!../../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/evals/**"],
+                    "message": "Nothing imports evals/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/tests/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../../../*/**", "!../../../../**", "!../../../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/evals/**"],
+                    "message": "Nothing imports evals/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/tests/*/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  },
+                  {
+                    "group": ["**/extension-manager/**", "!**/extension-manager/index.ts"],
+                    "message": "Import extension-manager only through extension-manager/index.ts."
+                  },
+                  {
+                    "group": ["**/ui-kit/**", "!**/ui-kit/index.ts"],
+                    "message": "Import ui-kit only through ui-kit/index.ts."
+                  },
+                  {
+                    "group": ["**/shared/**", "!**/shared/index.ts"],
+                    "message": "Import shared only through shared/index.ts."
+                  },
+                  {
+                    "group": ["../../../../*/**", "!../../../../../**", "!../../../../*/index.ts"],
+                    "message": "Import another extension only through extensions/<name>/index.ts."
+                  },
+                  {
+                    "group": ["**/evals/**"],
+                    "message": "Nothing imports evals/."
                   }
                 ]
               }

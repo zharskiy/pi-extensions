@@ -165,6 +165,22 @@ describe("child session MCP", () => {
     expect(captured.sessionOptions[0].tools).toEqual(["read", "grep", "web_fetch", ...EVERY_MCP]);
   });
 
+  it("ignores relative exclude entries instead of resolving them against the working directory", async () => {
+    const withRelative = runtimeWith(
+      {
+        activeTools: () => [
+          { name: "read", path: "builtin:read" },
+          { name: "run_agent", path: join(process.cwd(), "own", "src", "index.ts") },
+        ],
+      },
+      [join("own", "src")],
+    );
+
+    await withRelative.spawn(spec({}));
+
+    expect(captured.sessionOptions[0].tools).toEqual(["read", "run_agent", ...EVERY_MCP]);
+  });
+
   it("keeps codemode and tool search but no MCP built-in or MCP tool names for mcp: false", async () => {
     await runtime.spawn(spec({ tools: ["read"], mcp: false }));
     await runtime.spawn(spec({ id: "a2", tools: [], mcp: false }));

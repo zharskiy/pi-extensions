@@ -26,7 +26,7 @@ export {
   type UsageReport,
 } from "./host-channels.ts";
 export { isPlainObject } from "./plain-object.ts";
-export type { Bus, Disable, EventMap, Plugin, Services } from "./plugin-contract.ts";
+export type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "./plugin-contract.ts";
 export {
   loadSettingsFiles,
   type ObjectParse,

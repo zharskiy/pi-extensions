@@ -15,6 +15,8 @@ export type Services<S> = {
   has(key: keyof S): boolean;
 };
 
+export type ExtensionPaths = { root: string; agentDir: string };
+
 type PluginContext<E extends EventMap, S, C> = {
   host: Host;
   runtime: AgentRuntime;
@@ -22,6 +24,7 @@ type PluginContext<E extends EventMap, S, C> = {
   settings: C;
   services: Services<S>;
   root: string;
+  paths: ExtensionPaths;
 };
 
 export type Disable = () => void | Promise<void>;

@@ -16,10 +16,10 @@ import {
   liveChoreModel,
   startLiveExtension,
 } from "../../../../test-framework/pi/live/index.ts";
+import extension from "../../src/index.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Settings } from "../../src/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";
-import { plugins } from "../../src/plugins.ts";
 import {
   type AgentGroup,
   type AgentPatch,
@@ -78,8 +78,6 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     }),
   );
 
-  const settings = pluginSettings(options.settings);
-
   const {
     host,
     runtime,
@@ -88,15 +86,11 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     turn,
     close: shutdown,
   } = startLiveExtension({
-    plugins,
-    settings,
-    root: PACKAGE_ROOT,
-    namespace: NAMESPACE,
-    exclude: [join(PACKAGE_ROOT, "src")],
+    extension,
+    settings: pluginSettings(options.settings),
     workDir: root,
     trusted: options.trusted,
     skillFiles: options.skills ? skillFiles : undefined,
-    disabled: settings.disabledPlugins,
   });
   const registry = manager.services.require("registry");
   const usage = new Map<string, UsageTotals>();

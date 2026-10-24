@@ -31,7 +31,7 @@ const managerOf = (plugins: TestPlugin[], disabled: string[] = []) => {
     runtime: createFakeAgentRuntime(),
     settings: { label: "test" },
     plugins,
-    root: "/ext",
+    paths: { root: "/ext", agentDir: "/agent" },
     disabled,
     onError: (error) => errors.push(error),
   });
@@ -71,16 +71,16 @@ describe("extension manager", () => {
     expect(() => managerOf([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
   });
 
-  it("hands each plugin the host, typed bus, services, settings and root", () => {
+  it("hands each plugin the host, typed bus, services, settings, root and paths", () => {
     const seen: string[] = [];
 
     const provider: TestPlugin = {
       id: "provider",
-      enable: ({ services, settings, root }) => {
+      enable: ({ services, settings, root, paths }) => {
         let count = 0;
 
         services.provide("counter", { next: () => ++count });
-        seen.push(`${settings.label} ${root}`);
+        seen.push(`${settings.label} ${root} ${paths.root} ${paths.agentDir}`);
 
         return undefined;
       },
@@ -108,7 +108,7 @@ describe("extension manager", () => {
 
     manager.bus.emit("ping", { from: "test" });
 
-    expect(seen).toEqual(["test /ext", "ping from test #1"]);
+    expect(seen).toEqual(["test /ext /ext /agent", "ping from test #1"]);
     expect([...host.commands.keys()]).toEqual(["hello"]);
     expect([...host.tools.keys()]).toEqual(["greet"]);
     expect(manager.services.has("counter")).toBe(true);

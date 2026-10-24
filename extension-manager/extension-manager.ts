@@ -1,8 +1,8 @@
 import type { AgentRuntime, Host } from "../pi-adapter/index.ts";
-import type { Bus, Disable, EventMap, Plugin, Services } from "../shared/index.ts";
+import type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "../shared/index.ts";
 import { createBus } from "./bus.ts";
 
-type ExtensionManager<E extends EventMap, S> = {
+export type ExtensionManager<E extends EventMap, S> = {
   bus: Bus<E>;
   services: Services<S>;
   disableAll(): Promise<void>;
@@ -13,7 +13,7 @@ type ManagerOptions<E extends EventMap, S, C> = {
   runtime: AgentRuntime;
   settings: C;
   plugins: Plugin<E, S, C>[];
-  root: string;
+  paths: ExtensionPaths;
   disabled: Iterable<string>;
   onError: (error: unknown) => void;
 };
@@ -96,7 +96,8 @@ export const createExtensionManager = <E extends EventMap, S, C>(
       bus,
       settings: options.settings,
       services,
-      root: options.root,
+      root: options.paths.root,
+      paths: options.paths,
     });
 
     enabled.push(plugin.id);

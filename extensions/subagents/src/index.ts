@@ -1,38 +1,23 @@
-import { join, resolve } from "node:path";
-import { createExtensionManager } from "../../../extension-manager/index.ts";
-import { createPiExtension } from "../../../pi-adapter/index.ts";
+import { resolve } from "node:path";
+import { createManagedExtension } from "../../../extension-manager/index.ts";
 import { errorText } from "./components/format.ts";
 import { NAMESPACE } from "./model/paths.ts";
-import { defaultSettings, disabledPlugins, reloadSettings, settingsWarning } from "./model/settings.ts";
+import { defaultSettings, disabledPlugins, reloadSettings } from "./model/settings.ts";
 import { plugins } from "./plugins.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
 /** @public */
-export default createPiExtension(
-  (host, runtime, paths) => {
-    const disabled = disabledPlugins(paths.agentDir);
-    const settings = { ...defaultSettings(), disabledPlugins: disabled };
-
-    host.onSessionStart((info) => {
-      reloadSettings(settings, info, runtime, (message) =>
-        host.ui.notify(settingsWarning(message), "warning"),
-      );
-    });
-
-    const manager = createExtensionManager({
-      host,
-      runtime,
-      settings,
-      plugins,
-      root: paths.root,
-      disabled,
-      onError: (error) => host.ui.notify(`${NAMESPACE}: ${errorText(error)}`, "error"),
-    });
-
-    host.onSessionShutdown(async () => {
-      await manager.disableAll();
-    });
+export default createManagedExtension({
+  namespace: NAMESPACE,
+  root,
+  plugins,
+  settings: {
+    defaults: ({ agentDir }) => ({ ...defaultSettings(), disabledPlugins: disabledPlugins(agentDir) }),
+    reload: reloadSettings,
   },
-  { root, namespace: NAMESPACE, childExclude: [join(root, "src")], skillInventory: true },
-);
+  childExclude: [root],
+  skillInventory: true,
+  disabled: (settings) => settings.disabledPlugins,
+  onError: (error, host) => host.ui.notify(`${NAMESPACE}: ${errorText(error)}`, "error"),
+});

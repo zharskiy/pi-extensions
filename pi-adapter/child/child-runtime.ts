@@ -86,7 +86,8 @@ const mcpExtensions = (
 };
 
 const isExcluded = (exclude: readonly string[], path: string) =>
-  isAbsolute(path) && exclude.some((dir) => resolve(path).startsWith(`${resolve(dir)}${sep}`));
+  isAbsolute(path) &&
+  exclude.some((dir) => isAbsolute(dir) && resolve(path).startsWith(`${resolve(dir)}${sep}`));
 
 const pickSkillFiles = (available: SkillFile[], wanted: readonly string[]) =>
   available.filter((skill) => wanted.includes(skill.name)).map((skill) => skill.path);

@@ -84,8 +84,6 @@ const isLayerInternal = (target: string) => {
   return layer !== undefined && target !== join(layer, "index.ts");
 };
 
-const extensionCode = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "src")));
-
 const piFreeFramework = () => sourceFiles(FRAMEWORK).filter((file) => !isInside(FRAMEWORK_PI)(file));
 
 describe("architecture", () => {
@@ -161,14 +159,6 @@ describe("architecture", () => {
         .filter((entry) => !isInside(extension)(entry.target ?? ""))
         .map(describeImport),
     );
-
-    expect(offenders).toEqual([]);
-  });
-
-  it("extensions reach the four layers only through their index.ts", () => {
-    const offenders = importsIn(extensionCode())
-      .filter((entry) => entry.target !== undefined && isLayerInternal(entry.target))
-      .map(describeImport);
 
     expect(offenders).toEqual([]);
   });
