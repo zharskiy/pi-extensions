@@ -3,13 +3,13 @@
 A pi extension that replaces pi's plain `Working...` line with a rotating verb and the elapsed time of the current prompt, next to pi's own spinner:
 
 ```
-── ⠹ Pondering... · 12s (esc to interrupt) ──────────────────────────────────
+── ⠹ Pondering · 12s (esc to interrupt) ──────────────────────────────────
 ```
 
 ## What it does
 
 - The spinner is pi's own braille spinner, drawn inside the input's top line in the input's rule colour (it follows the thinking level and bash mode). The extension never replaces it.
-- While a prompt runs (from agent start until the run settles, across all its model calls and tool runs), the working line shows a verb and `...` (`Pondering...`), the time since the prompt started from 1 s on (`12s`, `1m 5s`), and the interrupt hint from pi's `app.interrupt` keybinding, in dim. The time advances every second.
+- While a prompt runs (from agent start until the run settles, across all its model calls and tool runs), the working line shows a verb (`Pondering`), the time since the prompt started from 1 s on (`12s`, `1m 5s`), and the interrupt hint from pi's `app.interrupt` keybinding, in dim. The time advances every second.
 - The verb is picked at random when a prompt starts and changes every 8 s; it stays put in between, whatever the agent is doing. The tool rows in the transcript show what runs.
 - The line hides while the assistant's answer text streams in, and comes back as soon as the text stops. When the run settles the line disappears and the message goes back to pi's default.
 - On a narrow terminal pi cuts the line.

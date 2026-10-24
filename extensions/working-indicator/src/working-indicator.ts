@@ -1,6 +1,6 @@
 import type { Host, Phase } from "../../../core/adapter/contract.ts";
 import { formatDuration } from "../../../core/manager/format.ts";
-import { DOT, ELLIPSIS } from "../../../core/manager/layout.ts";
+import { DOT } from "../../../core/manager/layout.ts";
 
 export const TICK_MS = 1000;
 
@@ -74,7 +74,7 @@ const INTERRUPT_BINDING = "app.interrupt";
 const workingText = (verb: string, elapsedMs: number, hint: string) => {
   const elapsed = elapsedMs >= TICK_MS ? `${DOT}${formatDuration(elapsedMs)}` : "";
 
-  return `${verb}${ELLIPSIS}${elapsed}${hint}`;
+  return `${verb}${elapsed}${hint}`;
 };
 
 type Run = {

@@ -20,7 +20,7 @@ const pickIndex = (index: number) => {
   vi.spyOn(Math, "random").mockReturnValue(index / VERBS.length);
 };
 
-const WAITING = `${VERBS[0]}...`;
+const WAITING = `${VERBS[0]}`;
 
 describe("working indicator", () => {
   beforeEach(() => {
@@ -33,14 +33,14 @@ describe("working indicator", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows a verb from the list and an ellipsis while waiting for the model", () => {
+  it("shows a verb from the list and no ellipsis while waiting for the model", () => {
     pickIndex(7);
 
     const host = setup();
 
     host.agentStart();
 
-    expect(host.workingMessages).toEqual([message(`${VERBS[7]}...`)]);
+    expect(host.workingMessages).toEqual([message(`${VERBS[7]}`)]);
   });
 
   it("keeps the verb between rotations and picks a new one every VERB_MS", () => {
@@ -59,16 +59,16 @@ describe("working indicator", () => {
 
     vi.advanceTimersByTime(TICK_MS);
 
-    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}...`, "8s"));
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}`, "8s"));
 
     pickIndex(2);
     vi.advanceTimersByTime(VERB_MS - TICK_MS);
 
-    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}...`, "15s"));
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}`, "15s"));
 
     vi.advanceTimersByTime(TICK_MS);
 
-    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[2]}...`, "16s"));
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[2]}`, "16s"));
   });
 
   it("picks a fresh verb on the next run", () => {
@@ -79,7 +79,7 @@ describe("working indicator", () => {
     pickIndex(3);
     host.agentStart();
 
-    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[3]}...`));
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[3]}`));
   });
 
   it("keeps the verb while the model thinks and tools run", () => {
@@ -92,14 +92,6 @@ describe("working indicator", () => {
     vi.advanceTimersByTime(TICK_MS);
 
     expect(host.workingMessages).toEqual([message(WAITING), message(WAITING, "1s")]);
-  });
-
-  it("writes pi's ASCII ellipsis, not the ellipsis character", () => {
-    const host = setup();
-
-    host.agentStart();
-
-    expect(host.workingMessages.at(-1)).not.toMatch(/…/);
   });
 
   it("leaves pi's own spinner in place and shows a verb on agent start", () => {
