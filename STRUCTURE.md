@@ -52,8 +52,7 @@ pi-extensions/
 │   │   ├── handoff.ts           # handoff sections and validator (shared format)
 │   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
 │   │   ├── format.ts            # token, window, duration, error-text, ~/ and short path formatters,
-│   │   │                        #   noun/counted, and the receipt: formatCost, formatCalls, receipt,
-│   │   │                        #   receiptText, plainReceipt
+│   │   │                        #   noun/counted, formatCost and formatMoney
 │   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
 │   │   ├── layout.ts            # padding, dot separator, ELLIPSIS and cutStart, accent rule, wrapped lines
 │   │   ├── list.ts              # selectable list: lines, keys, shared hints
@@ -82,7 +81,8 @@ pi-extensions/
 │   │   │   │                    #   agent-schema, agent-override (override value checks),
 │   │   │   │                    #   model-resolution (resolutionProblem), context-limit,
 │   │   │   │                    #   manifest (manifest.json read and restore)
-│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and agentReceipt, padding and
+│   │   │   ├── components/      # pure TUI render helpers (format.ts formatters, the receipt (receipt,
+│   │   │   │                    #   receiptText, plainReceipt, formatCalls) and agentReceipt, padding and
 │   │   │   │                    #   wrapping over the theme, state-text.ts marks, spinner, words
 │   │   │   │                    #   and stop words, agent-row, tree.ts (chain links, terminals,
 │   │   │   │                    #   tree order, connectors, selection carry), refresh.ts

@@ -1,5 +1,4 @@
 import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
-import { type ReceiptSegment, receiptText } from "../../../../../core/manager/format.ts";
 import { countLine, type KeyHint, keyHints } from "../../../../../core/manager/hints.ts";
 import { preview, wrapChild } from "../../../../../core/manager/row.ts";
 import { agentName } from "../../components/agent-row.ts";
@@ -12,6 +11,8 @@ import {
   innerWidth,
   PAD,
   padLine,
+  type ReceiptSegment,
+  receiptText,
   singleLine,
   truncatePainted,
 } from "../../components/format.ts";

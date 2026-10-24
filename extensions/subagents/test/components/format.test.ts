@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { receiptText } from "../../../../core/manager/format.ts";
+import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   agentReceipt,
   alignRight,
   cutChars,
   firstLine,
+  formatCalls,
   formatCtx,
+  receipt,
+  receiptText,
   singleLine,
   truncatePainted,
   wrapCols,
 } from "../../src/components/format.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
+
+const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
 
 const worked = { startedAt: 0, toolCalls: 4, tokens: 12_300, cost: 0.04, turns: 2 };
 
@@ -95,6 +100,63 @@ describe("format helpers", () => {
     expect(shown({ ...worked, activity: "grep" }, true, undefined, 20)).toBe("Elapsed 1m 5s");
     expect(shown({ ...worked, state: "handoff", endedAt: 3_720_000 }, true, undefined, 5)).toBe(
       "Handed off · 1h 2m",
+    );
+  });
+});
+
+describe("calls", () => {
+  it("counts calls in the singular and plural", () => {
+    expect([0, 1, 4].map(formatCalls)).toEqual(["0 calls", "1 call", "4 calls"]);
+  });
+});
+
+describe("receipt", () => {
+  const facts = { elapsedMs: 65_000, calls: 4, tokens: 12_300, cost: 0.04, activity: "grep TODO" };
+  const plain = (segments: ReturnType<typeof receipt>, room = 200) => receiptText(segments, room, plainTheme);
+
+  it("writes Elapsed only while running and puts the activity last", () => {
+    expect(plain(receipt({ ...facts, running: true }))).toBe(
+      "Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04 · grep TODO",
+    );
+    expect(plain(receipt({ ...facts, activity: undefined, running: false }))).toBe(
+      "1m 5s · 4 calls · 12.3k tokens · $0.04",
+    );
+  });
+
+  it("puts the state word or the failure reason first", () => {
+    expect(plain(receipt({ word: "Stopped", elapsedMs: 3_000, calls: 0, running: false }))).toBe(
+      "Stopped · 3s · 0 calls",
+    );
+    expect(plain(receipt({ word: "Stopping", elapsedMs: 123_000, running: true }))).toBe(
+      "Stopping · Elapsed 2m 3s",
+    );
+    expect(plain(receipt({ word: "Queued", running: false }))).toBe("Queued");
+    expect(
+      plain(receipt({ reason: "tests failed twice", elapsedMs: 130_000, calls: 31, running: false })),
+    ).toBe("tests failed twice · 2m 10s · 31 calls");
+  });
+
+  it("omits segments without data, except 0 calls on a stopped agent", () => {
+    expect(plain(receipt({ elapsedMs: 1_000, calls: 0, tokens: 0, cost: 0, running: false }))).toBe("1s");
+  });
+
+  it("drops the activity, then the cost, then the calls, then the tokens, never the word or the time", () => {
+    const segments = receipt({ ...facts, word: "Stopping", running: true });
+    const full = "Stopping · Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04 · grep TODO";
+
+    expect([80, 60, 50, 40, 30, 10].map((room) => plain(segments, room))).toEqual([
+      full,
+      "Stopping · Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04",
+      "Stopping · Elapsed 1m 5s · 4 calls · 12.3k tokens",
+      "Stopping · Elapsed 1m 5s · 12.3k tokens",
+      "Stopping · Elapsed 1m 5s",
+      "Stopping · Elapsed 1m 5s",
+    ]);
+  });
+
+  it("paints the reason in error and the rest muted, joined by a muted dot", () => {
+    expect(receiptText(receipt({ reason: "boom", elapsedMs: 2_000, running: false }), 80, tagged)).toBe(
+      "<error>boom</><muted> · </><muted>2s</>",
     );
   });
 });

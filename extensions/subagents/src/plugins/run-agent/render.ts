@@ -1,16 +1,19 @@
 import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
-import {
-  noun,
-  plainReceipt,
-  type ReceiptSegment,
-  receipt,
-  receiptText,
-} from "../../../../../core/manager/format.ts";
+import { noun } from "../../../../../core/manager/format.ts";
 import { countLine, expandHint } from "../../../../../core/manager/hints.ts";
 import { type Mark, markOf } from "../../../../../core/manager/marks.ts";
 import { failureSuffix, type MarkedRow, NEST, row, TITLE_COLUMN } from "../../../../../core/manager/row.ts";
 import { chainSuffix, modelId } from "../../components/agent-row.ts";
-import { agentReceipt, DOT, firstLine, singleLine } from "../../components/format.ts";
+import {
+  agentReceipt,
+  DOT,
+  firstLine,
+  plainReceipt,
+  type ReceiptSegment,
+  receipt,
+  receiptText,
+  singleLine,
+} from "../../components/format.ts";
 import { stateMark } from "../../components/state-text.ts";
 import {
   type AgentRecord,

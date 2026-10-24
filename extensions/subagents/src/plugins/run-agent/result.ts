@@ -1,7 +1,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { plainReceipt, receipt } from "../../../../../core/manager/format.ts";
-import { cutChars, elapsedOf, errorText, singleLine } from "../../components/format.ts";
+import {
+  cutChars,
+  elapsedOf,
+  errorText,
+  plainReceipt,
+  receipt,
+  singleLine,
+} from "../../components/format.ts";
 import { isTerminal } from "../../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../../model/types.ts";
 

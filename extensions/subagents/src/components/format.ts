@@ -1,11 +1,81 @@
 import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
-import { type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
-import { PAD } from "../../../../core/manager/layout.ts";
+import { counted, formatCost, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
+import { DOT, PAD } from "../../../../core/manager/layout.ts";
 import type { AgentRecord } from "../model/types.ts";
 import { displayWord, isStarting } from "./state-text.ts";
 
 export { counted, errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
 export { DOT, PAD } from "../../../../core/manager/layout.ts";
+
+export const formatCalls = (count: number): string => counted(count, "call");
+
+export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity";
+
+export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken };
+
+export type ReceiptFacts = {
+  word?: string;
+  reason?: string;
+  elapsedMs?: number;
+  running: boolean;
+  calls?: number;
+  tokens?: number;
+  cost?: number;
+  activity?: string;
+};
+
+const STOPPED_WORD = "Stopped";
+
+const DROP_ORDER: readonly ReceiptKind[] = ["activity", "cost", "calls", "tokens"];
+
+const callsText = (facts: ReceiptFacts) => {
+  if (facts.calls === undefined || (facts.calls === 0 && facts.word !== STOPPED_WORD)) {
+    return undefined;
+  }
+
+  return formatCalls(facts.calls);
+};
+
+const timeText = (facts: ReceiptFacts) => {
+  if (facts.elapsedMs === undefined) {
+    return undefined;
+  }
+
+  const duration = formatDuration(facts.elapsedMs);
+
+  return facts.running ? `Elapsed ${duration}` : duration;
+};
+
+export const receipt = (facts: ReceiptFacts): ReceiptSegment[] => {
+  const segments: [ReceiptKind, string | undefined, ThemeToken][] = [
+    ["word", facts.word, "muted"],
+    ["reason", facts.reason, "error"],
+    ["time", timeText(facts), "muted"],
+    ["calls", callsText(facts), "muted"],
+    ["tokens", facts.tokens ? `${formatTokens(facts.tokens)} tokens` : undefined, "muted"],
+    ["cost", facts.cost === undefined ? undefined : formatCost(facts.cost), "muted"],
+    ["activity", facts.activity || undefined, "muted"],
+  ];
+
+  return segments
+    .filter((entry): entry is [ReceiptKind, string, ThemeToken] => entry[1] !== undefined && entry[1] !== "")
+    .map(([kind, text, token]) => ({ kind, text, token }));
+};
+
+export const plainReceipt = (segments: readonly ReceiptSegment[]) =>
+  segments.map((part) => part.text).join(DOT);
+
+const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
+  DROP_ORDER.reduce<readonly ReceiptSegment[]>(
+    (kept, kind) =>
+      theme.width(plainReceipt(kept)) <= room ? kept : kept.filter((part) => part.kind !== kind),
+    segments,
+  );
+
+export const receiptText = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
+  fitReceipt(segments, room, theme)
+    .map((part) => theme.fg(part.token, part.text))
+    .join(theme.fg("muted", DOT));
 
 export const formatCtx = (percent: number | null | undefined): string | undefined =>
   percent === null || percent === undefined ? undefined : `${Math.round(percent)}% context`;

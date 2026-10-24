@@ -1,8 +1,8 @@
-import { formatCalls } from "../../../../../core/manager/format.ts";
 import {
   cutChars,
   DOT,
   elapsedOf,
+  formatCalls,
   formatCtx,
   formatDuration,
   formatTokens,
