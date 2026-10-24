@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { errorRows, outputLines, previewRows, shellResult } from "../src/output.ts";
-
-const numbered = (count: number) =>
-  Array.from({ length: count }, (_value, index) => `line ${index + 1}`).join("\n");
+import { numbered } from "./helpers.ts";
 
 describe("outputLines", () => {
   it("drops trailing blank lines, expands tabs and removes control characters", () => {
@@ -32,7 +30,7 @@ describe("previewRows", () => {
   const spec = { token: "muted", room: 60, key: "ctrl+o" } as const;
 
   it("keeps the head with pi's more-lines count line after it", () => {
-    expect(previewRows(outputLines(numbered(10)), { ...spec, keep: "head" }, plainTheme)).toEqual([
+    expect(previewRows(outputLines(numbered(10, "line")), { ...spec, keep: "head" }, plainTheme)).toEqual([
       "line 1",
       "line 2",
       "line 3",
@@ -41,7 +39,7 @@ describe("previewRows", () => {
   });
 
   it("keeps the tail with pi's earlier-lines count line before it, in the singular for one", () => {
-    expect(previewRows(outputLines(numbered(4)), { ...spec, keep: "tail" }, plainTheme)).toEqual([
+    expect(previewRows(outputLines(numbered(4, "line")), { ...spec, keep: "tail" }, plainTheme)).toEqual([
       "... (1 earlier line, ctrl+o to expand)",
       "line 2",
       "line 3",
@@ -51,7 +49,7 @@ describe("previewRows", () => {
 
   it("drops only the key when the count line has no room", () => {
     expect(
-      previewRows(outputLines(numbered(10)), { ...spec, keep: "head", room: 24 }, plainTheme).at(-1),
+      previewRows(outputLines(numbered(10, "line")), { ...spec, keep: "head", room: 24 }, plainTheme).at(-1),
     ).toBe("... (7 more lines)");
   });
 });

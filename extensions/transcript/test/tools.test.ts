@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ThemeLike, ThemeToken, ToolCallView } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { diffCounts, parseDiff } from "../src/diff.ts";
-import { transcriptRows } from "../src/tools.ts";
+import { numbered, rows } from "./helpers.ts";
 
 const recording = () => {
   const painted: { token: ThemeToken; text: string }[] = [];
@@ -21,8 +21,6 @@ const recording = () => {
 
   return { theme, painted, bolded };
 };
-
-const rows = transcriptRows(() => "ctrl+o", "/home/me");
 
 const view = (name: string, args: unknown, patch: Partial<ToolCallView> = {}): ToolCallView => ({
   name,
@@ -59,9 +57,6 @@ const draw = (input: ToolCallView, columns = 80) => {
 
 const tokenOf = (painted: { token: ThemeToken; text: string }[], text: string) =>
   painted.find((entry) => entry.text === text)?.token;
-
-const numbered = (count: number, word = "out") =>
-  Array.from({ length: count }, (_value, index) => `${word} ${index + 1}`).join("\n");
 
 const enoent = "ENOENT: no such file or directory, access '/Users/me/proj/src/auth/sesion.ts'";
 
@@ -577,7 +572,6 @@ describe("S10 unknown tools", () => {
 
 describe("diffCounts", () => {
   it("counts numbered added and removed lines only", () => {
-    expect(diffCounts(parseDiff("-1 a\n+1 b\n+2 c\n 3 d\n   ..."))).toEqual({ added: 2, removed: 1 });
-    expect(diffCounts(undefined)).toEqual({ added: 0, removed: 0 });
+    expect(diffCounts(parseDiff("-1 a\n+1 b\n+2 c\n 3 d\n   ...") ?? [])).toEqual({ added: 2, removed: 1 });
   });
 });

@@ -1,7 +1,10 @@
 import type { ThemeLike, ToolCallView } from "../../../core/adapter/contract.ts";
 import { noun } from "../../../core/manager/format.ts";
+import { ELLIPSIS } from "../../../core/manager/layout.ts";
 import type { RowRender, Styled, TitleParts } from "../../../core/manager/row.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
+
+export const MORE = ` ${ELLIPSIS}`;
 
 export type Args = Record<string, unknown>;
 

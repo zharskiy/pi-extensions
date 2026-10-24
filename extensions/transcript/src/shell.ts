@@ -5,13 +5,12 @@ import {
   failed,
   firstLineFailure,
   type Look,
+  MORE,
   muted,
   resultText,
   textArg,
 } from "./look.ts";
 import { outputLines, previewRows, shellResult } from "./output.ts";
-
-const MORE = " ...";
 
 const title = (context: Context) => {
   const command = textArg(context.args, "command");

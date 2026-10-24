@@ -1,4 +1,5 @@
 import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
+import { ELLIPSIS } from "../../../core/manager/layout.ts";
 import { cleanLine } from "./output.ts";
 import { merged, type Span, wordSpans } from "./words.ts";
 
@@ -6,7 +7,7 @@ type Kind = "added" | "removed" | "context" | "gap";
 
 export type DiffLine = { kind: Kind; num: string; text: string };
 
-export type DiffCounts = { added: number; removed: number };
+type DiffCounts = { added: number; removed: number };
 
 type Line = DiffLine & { spans?: Span[] };
 
@@ -18,11 +19,9 @@ const MARKS: Record<Kind, string> = { added: "+", removed: "-", context: " ", ga
 
 const TOKENS: Record<Changed, ThemeToken> = { added: "success", removed: "error" };
 
-const GAP = "...";
-
 const parseLine = (line: string): DiffLine | undefined => {
   if (/^ +\.\.\.$/.test(line)) {
-    return { kind: "gap", num: "", text: GAP };
+    return { kind: "gap", num: "", text: ELLIPSIS };
   }
 
   const match = /^([+\- ]) *(\d+)(?: (.*))?$/s.exec(line);
@@ -42,9 +41,9 @@ export const parseDiff = (diff: string): DiffLine[] | undefined => {
   return lines as DiffLine[];
 };
 
-export const diffCounts = (lines: DiffLine[] | undefined): DiffCounts => ({
-  added: lines?.filter((line) => line.kind === "added").length ?? 0,
-  removed: lines?.filter((line) => line.kind === "removed").length ?? 0,
+export const diffCounts = (lines: DiffLine[]): DiffCounts => ({
+  added: lines.filter((line) => line.kind === "added").length,
+  removed: lines.filter((line) => line.kind === "removed").length,
 });
 
 const runsOf = (lines: DiffLine[]) =>
@@ -159,7 +158,7 @@ const context = (line: Line, gutter: string, room: number, theme: ThemeLike) => 
 
 const diffLine = (line: Line, digits: number, width: number, theme: ThemeLike) => {
   if (line.kind === "gap") {
-    return [theme.fg("muted", GAP)];
+    return [theme.fg("muted", ELLIPSIS)];
   }
 
   const gutter = `${MARKS[line.kind]}${line.num.padStart(digits)} `;

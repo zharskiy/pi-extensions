@@ -9,16 +9,11 @@ import {
 } from "../../../core/test/adapter/tool-rows.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { parseDiff } from "../src/diff.ts";
-import { transcriptRows } from "../src/tools.ts";
-
-const rows = transcriptRows(() => "ctrl+o", "/home/me");
+import { numbered, rows } from "./helpers.ts";
 
 const diff = "  1 keep\n- 2 let total = 1;\n+ 2 let total = 2;\n+ 3 log(total);\n    ...\n 30 tail";
 
 const ESC = String.fromCharCode(27);
-
-const numbered = (count: number) =>
-  Array.from({ length: count }, (_value, index) => `out ${index + 1}`).join("\n");
 
 describe("diff rows through pi", () => {
   it("parses the diff pi's edit tool returns", async () => {

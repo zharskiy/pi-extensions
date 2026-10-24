@@ -2,7 +2,7 @@ import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { DOT } from "../../../core/manager/layout.ts";
 import type { Mark } from "../../../core/manager/marks.ts";
 import { row, TITLE_COLUMN } from "../../../core/manager/row.ts";
-import { bold, type Context, counted, failed, type Look, resultText, textArg } from "./look.ts";
+import { bold, type Context, counted, failed, type Look, MORE, resultText, textArg } from "./look.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 
 type Call = {
@@ -17,8 +17,6 @@ type Call = {
 const SCRIPT_HEADER = /^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n+/;
 
 const OPTIONS_LINE = /^\/\/\s*@options:/;
-
-const MORE = " ...";
 
 const STATUS_MARKS: Record<string, Mark> = {
   running: "pending",

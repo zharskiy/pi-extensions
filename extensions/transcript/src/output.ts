@@ -30,7 +30,7 @@ const STATUSES: Status[] = [
   { pattern: /^Command aborted$/, reason: () => "stopped" },
 ];
 
-export type ShellResult = { output: string; reason?: string; timedOut: boolean };
+type ShellResult = { output: string; reason?: string; timedOut: boolean };
 
 export const shellResult = (text: string): ShellResult => {
   const trimmed = text.replace(/\s+$/, "");
@@ -51,7 +51,7 @@ export const shellResult = (text: string): ShellResult => {
   };
 };
 
-export type PreviewSpec = {
+type PreviewSpec = {
   keep: "head" | "tail";
   token: ThemeToken;
   room: number;
