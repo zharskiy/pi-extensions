@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, sep } from "node:path";
 import type { Host } from "../../../core/adapter/contract.ts";
 import { errorText, homeRelative } from "../../../core/manager/format.ts";
-import { projectSettingsPath, userSettingsPath } from "../../../core/manager/settings.ts";
+import { projectSettingsPath, readText, userSettingsPath } from "../../../core/manager/settings.ts";
 import {
   completeArgs,
   type ImportArgs,
@@ -28,8 +28,6 @@ import {
 import { type Found, findServers } from "./sources.ts";
 
 const MCP_FILE = "mcp.json";
-
-const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 const hasServers = (found: Found) => found.origins.some((origin) => Object.keys(origin.servers).length > 0);
 

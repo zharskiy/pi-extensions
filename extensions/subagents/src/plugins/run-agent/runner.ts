@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   type AgentRuntime,
@@ -12,6 +12,7 @@ import {
   splitModelRequest,
   type UsageTotals,
 } from "../../../../../core/adapter/contract.ts";
+import { readText } from "../../../../../core/manager/settings.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
 import { errorText } from "../../components/format.ts";
 import { ALL } from "../../model/agent-schema.ts";
@@ -109,8 +110,6 @@ const ABORT_WAIT_MS = 5_000;
 const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
 const unique = (names: string[]) => [...new Set(names)];
-
-const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
   const { place, release } = createPlacer(deps.registry);

@@ -1,5 +1,5 @@
 import { errorText } from "../../../core/manager/format.ts";
-import { isPlainObject } from "../../../core/manager/settings.ts";
+import { isPlainObject } from "../../../core/manager/guards.ts";
 import type { Source } from "./args.ts";
 import { type ConvertContext, convertServer, type PiServer, validName } from "./convert.ts";
 import type { Origin } from "./sources.ts";

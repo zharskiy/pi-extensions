@@ -5,6 +5,7 @@ import {
   formatCalls,
   formatCost,
   formatDuration,
+  formatMoney,
   formatTokens,
   formatWindow,
   homeRelative,
@@ -70,7 +71,8 @@ describe("costs and calls", () => {
       "$4.42",
     ]);
     expect(formatCost(0)).toBeUndefined();
-    expect(formatCost(0, { zero: "show" })).toBe("$0.00");
+    expect(formatMoney(0)).toBe("$0.00");
+    expect(formatMoney(12.3)).toBe("$12.30");
   });
 
   it("counts calls in the singular and plural", () => {

@@ -7,7 +7,7 @@ import type {
 } from "../../../core/adapter/contract.ts";
 import { cachePercentText } from "../../../core/manager/cache.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
-import { formatCost, formatTokens, formatWindow } from "../../../core/manager/format.ts";
+import { formatMoney, formatTokens, formatWindow } from "../../../core/manager/format.ts";
 import { DOT, PAD } from "../../../core/manager/layout.ts";
 
 const LEVEL_TOKENS: Record<string, ThemeToken> = {
@@ -36,8 +36,6 @@ const looksLikeGauge = (theme: ThemeLike, token: ThemeToken) =>
 
 const branchToken = (theme: ThemeLike): ThemeToken =>
   looksLikeGauge(theme, "syntaxString") ? "syntaxVariable" : "syntaxString";
-
-const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
 
 const SPEND: ThemeToken = "text";
 
@@ -88,7 +86,7 @@ const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
     [
       contextTokens(theme, state.context),
       ...(cache === undefined ? [] : [cacheSegment(theme, cache)]),
-      ...(state.totals === undefined ? [] : [theme.fg(SPEND, money(state.totals.main.cost))]),
+      ...(state.totals === undefined ? [] : [theme.fg(SPEND, formatMoney(state.totals.main.cost))]),
       modelText(theme, state.context, state.model),
     ].join(theme.fg(META, DOT));
   const full = join(state.cache);
@@ -105,7 +103,7 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
     theme.fg(META, "session total (agents included) "),
     theme.fg(SPEND, formatTokens(tokens)),
     theme.fg(META, DOT),
-    theme.fg(SPEND, money(cost)),
+    theme.fg(SPEND, formatMoney(cost)),
     ...(totals.subscription ? [theme.fg(META, " (sub)")] : []),
   ].join("");
 };

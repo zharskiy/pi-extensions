@@ -55,13 +55,15 @@ export const shortPath = (path: string, cwd: string, home: string): string => {
   return homeRelative(path, home);
 };
 
-export const formatCost = (usd: number, options: { zero?: "omit" | "show" } = {}): string | undefined => {
+export const formatCost = (usd: number): string | undefined => {
   if (usd <= 0) {
-    return options.zero === "show" ? "$0.00" : undefined;
+    return undefined;
   }
 
   return usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
 };
+
+export const formatMoney = (usd: number) => formatCost(usd) ?? "$0.00";
 
 export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 

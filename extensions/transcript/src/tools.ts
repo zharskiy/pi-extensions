@@ -1,5 +1,6 @@
 import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../core/adapter/contract.ts";
 import { formatDuration, shortPath } from "../../../core/manager/format.ts";
+import { isPlainObject } from "../../../core/manager/guards.ts";
 import { expandHint } from "../../../core/manager/hints.ts";
 import { markOf } from "../../../core/manager/marks.ts";
 import {
@@ -34,8 +35,7 @@ import { shellLook } from "./shell.ts";
 
 const SLOW_MS = 5000;
 
-const argsOf = (view: ToolCallView): Args =>
-  typeof view.args === "object" && view.args !== null ? (view.args as Args) : {};
+const argsOf = (view: ToolCallView): Args => (isPlainObject(view.args) ? view.args : {});
 
 const listed = (text: string) =>
   text

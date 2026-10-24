@@ -1,6 +1,7 @@
 import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
 import type { KeyHint } from "./hints.ts";
 import { PAD, prefixed } from "./layout.ts";
+import { pointerMark } from "./marks.ts";
 
 const DESCRIPTION_INDENT = "      ";
 
@@ -29,7 +30,7 @@ export const listLines = (
 ) =>
   options.flatMap((option, index) => {
     const chosen = index === selected;
-    const pointer = chosen ? theme.fg("accent", theme.bold("›")) : " ";
+    const pointer = pointerMark(theme, chosen);
     const mark = option.mark ? ` ${option.mark}` : "";
 
     const label = theme.fg(

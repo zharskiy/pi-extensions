@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../adapter/contract.ts";
 import { noun } from "./format.ts";
-import { DOT, ELLIPSIS, PAD } from "./layout.ts";
+import { DOT, ELLIPSIS, PAD, rule } from "./layout.ts";
 import type { Styled } from "./row.ts";
 
 export const EXPAND_BINDING = "app.tools.expand";
@@ -82,3 +82,11 @@ export const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: nu
 
   return groups.map((pairs) => `${PAD}${theme.truncate(keyHints(pairs, theme), room)}`);
 };
+
+export const framed = (theme: ThemeLike, width: number, lines: string[], hints: readonly KeyHint[]) => [
+  rule(theme, width),
+  ...lines,
+  "",
+  ...hintLines(theme, hints, width),
+  rule(theme, width),
+];

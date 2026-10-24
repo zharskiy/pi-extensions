@@ -1,7 +1,8 @@
 import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, type KeyHint } from "./hints.ts";
-import { PAD, padded, prefixed, rule } from "./layout.ts";
+import { framed, type KeyHint } from "./hints.ts";
+import { PAD, padded, prefixed } from "./layout.ts";
 import { CANCEL_HINT, clampIndex } from "./list.ts";
+import { pointerMark } from "./marks.ts";
 
 export type MultiOption = { label: string; description?: string };
 
@@ -27,9 +28,6 @@ export const scrollWindow = (count: number, cursor: number, height: number) => {
 
   return { start, end: Math.min(count, start + size) };
 };
-
-export const pointerMark = (theme: ThemeLike, chosen: boolean) =>
-  chosen ? theme.fg("accent", theme.bold("›")) : " ";
 
 export const scrolledLines = (
   theme: ThemeLike,
@@ -142,15 +140,17 @@ export const multiSelectForm =
     let state = initialMulti(spec.options.length, spec.checked);
 
     return {
-      render: (width) => [
-        rule(api.theme, width),
-        ...padded(api.theme, api.theme.fg("text", spec.title), width),
-        "",
-        ...multiLines(api.theme, spec.options, state, width),
-        "",
-        ...hintLines(api.theme, hints, width),
-        rule(api.theme, width),
-      ],
+      render: (width) =>
+        framed(
+          api.theme,
+          width,
+          [
+            ...padded(api.theme, api.theme.fg("text", spec.title), width),
+            "",
+            ...multiLines(api.theme, spec.options, state, width),
+          ],
+          hints,
+        ),
       handleKey: (key) => {
         if (key.name === "escape") {
           api.done(undefined);

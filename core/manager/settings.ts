@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Host } from "../adapter/contract.ts";
 import { errorText } from "./format.ts";
+import { isPlainObject } from "./guards.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
@@ -29,9 +30,6 @@ const validNumber = (rule: NumberRule, value: unknown) =>
 
 const validList = (value: unknown) =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string");
-
-export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isValid = (rule: SettingsRule, value: unknown) => {
   if (rule.type === "boolean") {
@@ -106,6 +104,8 @@ export const parseSettings = <T>(
 
   return { patch, errors };
 };
+
+export const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): SettingsParse<T> => {
   if (!existsSync(path)) {

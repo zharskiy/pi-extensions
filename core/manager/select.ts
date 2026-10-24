@@ -1,6 +1,6 @@
 import type { FormFactory, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, type KeyHint } from "./hints.ts";
-import { padded, rule } from "./layout.ts";
+import { framed, type KeyHint } from "./hints.ts";
+import { padded } from "./layout.ts";
 import { CANCEL_HINT, clampIndex, type ListOption, listKey, listLines, SELECT_HINTS } from "./list.ts";
 
 export type SelectOption<T> = ListOption & { value: T };
@@ -13,15 +13,17 @@ export type SelectSpec<T> = {
 
 const HINTS: readonly KeyHint[] = [...SELECT_HINTS, ["enter", "to choose"], CANCEL_HINT];
 
-const renderSelect = <T>(spec: SelectSpec<T>, selected: number, theme: ThemeLike, width: number) => [
-  rule(theme, width),
-  ...padded(theme, theme.fg("text", spec.title), width),
-  "",
-  ...listLines(theme, spec.options, selected, width, { layout: "beside" }),
-  "",
-  ...hintLines(theme, HINTS, width),
-  rule(theme, width),
-];
+const renderSelect = <T>(spec: SelectSpec<T>, selected: number, theme: ThemeLike, width: number) =>
+  framed(
+    theme,
+    width,
+    [
+      ...padded(theme, theme.fg("text", spec.title), width),
+      "",
+      ...listLines(theme, spec.options, selected, width, { layout: "beside" }),
+    ],
+    HINTS,
+  );
 
 export const selectForm =
   <T>(spec: SelectSpec<T>): FormFactory<T | undefined> =>

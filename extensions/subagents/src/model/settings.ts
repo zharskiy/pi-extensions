@@ -1,6 +1,6 @@
 import type { AgentRuntime, CodemodeShortfall } from "../../../../core/adapter/contract.ts";
+import { isPlainObject } from "../../../../core/manager/guards.ts";
 import {
-  isPlainObject,
   type ObjectParse,
   projectSettingsPath,
   readSettingsFile,

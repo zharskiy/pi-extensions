@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
 import { plainReceipt, type ReceiptSegment, receiptText } from "../../../../core/manager/format.ts";
-import { MARKS } from "../../../../core/manager/marks.ts";
+import { pointerMark } from "../../../../core/manager/marks.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 import { agentReceipt, PAD, padEndCols, singleLine } from "./format.ts";
 import { liveGlyph, scrollGlyph } from "./state-text.ts";
@@ -151,7 +151,7 @@ const cell = (theme: ThemeLike, text: string, cols: number, paint: (text: string
 
 export const renderRow = (input: RowInput, width: number, theme: ThemeLike, layout: RowLayout): string => {
   const { record } = input;
-  const pointer = input.selected ? `${theme.fg("accent", theme.bold(MARKS.pointer))} ` : POINTER_BLANK;
+  const pointer = input.selected ? `${pointerMark(theme, true)} ` : POINTER_BLANK;
   const lead = layout.bare ? "" : `${PAD}${pointer}`;
   const prefix = nestPrefix(input);
   const glyph = layout.spinner

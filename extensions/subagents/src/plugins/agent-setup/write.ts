@@ -1,11 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isPlainObject } from "../../../../../core/manager/settings.ts";
+import { isPlainObject } from "../../../../../core/manager/guards.ts";
+import { readText } from "../../../../../core/manager/settings.ts";
 import { errorText } from "../../components/format.ts";
 import type { SetupChange } from "./form.ts";
 
 const readObject = (path: string): Record<string, unknown> => {
-  const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const text = readText(path) ?? "";
   const parsed: unknown = text.trim() ? JSON.parse(text) : {};
 
   if (!isPlainObject(parsed)) {

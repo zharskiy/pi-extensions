@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { hintLines, type KeyHint } from "../../../core/manager/hints.ts";
-import { PAD, padded, rule } from "../../../core/manager/layout.ts";
+import { framed, type KeyHint } from "../../../core/manager/hints.ts";
+import { PAD, padded } from "../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
 import { TAB_SWITCH_HINT, tabBar } from "../../../core/manager/tabs.ts";
 import {
@@ -114,12 +114,5 @@ export const renderForm = (state: FormState, theme: ThemeLike, width: number, in
     ? submitLines(state, theme, width)
     : questionLines(state, theme, width, input);
 
-  return [
-    rule(theme, width),
-    ...bar,
-    ...body,
-    "",
-    ...hintLines(theme, hints(state), width),
-    rule(theme, width),
-  ];
+  return framed(theme, width, [...bar, ...body], hints(state));
 };

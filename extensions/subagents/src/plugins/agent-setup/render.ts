@@ -1,12 +1,12 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { hintLines, type KeyHint } from "../../../../../core/manager/hints.ts";
-import { PAD, padded, prefixed, rule } from "../../../../../core/manager/layout.ts";
+import { framed, type KeyHint } from "../../../../../core/manager/hints.ts";
+import { PAD, padded, prefixed } from "../../../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../../../core/manager/list.ts";
+import { pointerMark } from "../../../../../core/manager/marks.ts";
 import {
   descriptionFits,
   MULTI_SELECT_HINTS,
   multiLines,
-  pointerMark,
   scrolledLines,
 } from "../../../../../core/manager/multi-select.ts";
 import { TAB_SWITCH_HINT, tabBar } from "../../../../../core/manager/tabs.ts";
@@ -239,13 +239,10 @@ export const renderSetup = (
     ? submitLines(context, state, changes, paths, theme, width)
     : agentLines(context, state, theme, width);
 
-  return [
-    rule(theme, width),
-    ...padded(theme, tabBar(theme, tabs, state.tab, ready), width),
-    "",
-    ...body,
-    "",
-    ...hintLines(theme, hints(context, state, ready), width),
-    rule(theme, width),
-  ];
+  return framed(
+    theme,
+    width,
+    [...padded(theme, tabBar(theme, tabs, state.tab, ready), width), "", ...body],
+    hints(context, state, ready),
+  );
 };

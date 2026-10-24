@@ -20,6 +20,9 @@ const MARK_TOKENS: Record<Mark, ThemeToken> = {
   info: "accent",
 };
 
+export const pointerMark = (theme: ThemeLike, chosen: boolean) =>
+  chosen ? theme.fg("accent", theme.bold(MARKS.pointer)) : " ";
+
 export const markGlyph = (mark: Mark, theme: ThemeLike) => theme.fg(MARK_TOKENS[mark], MARKS[mark]);
 
 export const markOf = (view: {

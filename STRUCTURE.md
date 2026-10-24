@@ -60,12 +60,13 @@ pi-extensions/
 │   │   ├── select.ts            # single-choice form over the list
 │   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
 │   │   ├── multi-select.ts      # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
-│   │   ├── marks.ts             # state marks: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), Mark, markGlyph, markOf
+│   │   ├── marks.ts             # state marks: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), Mark, markGlyph, markOf, pointerMark
 │   │   ├── hints.ts             # hint grammar: EXPAND_BINDING, expandHint, appendHint, countLine,
-│   │   │                        #   keyHints and hintLines (bottom strips)
+│   │   │                        #   keyHints and hintLines (bottom strips), framed (rule, lines, hints, rule)
 │   │   ├── row.ts               # pi-native row layout: the 0/2/4 grid, row/rowChildren, titleLine,
 │   │   │                        #   failureSuffix, wrapChild, preview
-│   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch), timeouts
+│   │   ├── guards.ts            # isPlainObject
+│   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch, readText), timeouts
 │   └── test/                    # mirrors core/adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
 │       │                        #   offline.ts (pi loaded offline for extension tests), tool-rows.ts
