@@ -3,7 +3,6 @@ import { type SelectOption, selectForm } from "../../../../../core/manager/selec
 import { cutChars, DOT, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
-import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
 import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
@@ -43,14 +42,7 @@ export const agentViewPlugin: Plugin = {
     const registry = services.require("registry");
     const cleared = new Set<string>();
 
-    const limitOf = (agent: string | undefined) => {
-      const definition =
-        agent && services.has("definitions") ? services.require("definitions").get(agent) : undefined;
-
-      return definition?.limit ?? UNKNOWN_LIMIT;
-    };
-
-    const source = createAgentSource({ host, runtime, registry, limitOf });
+    const source = createAgentSource({ runtime, registry });
 
     const stop = (id: string) => (services.has("runner") ? services.require("runner").stop(id) : undefined);
 
@@ -120,19 +112,13 @@ export const agentViewPlugin: Plugin = {
       });
 
     const terminalOrNotice = (id: string) => {
-      try {
-        const terminal = source.find(id);
+      const terminal = source.find(id);
 
-        if (!terminal) {
-          host.ui.notify(`${NAMESPACE}: unknown agent "${id}"`, "warning");
-        }
-
-        return terminal;
-      } catch (error) {
-        host.ui.notify(`${NAMESPACE}: cannot read ${errorText(error)}`, "warning");
-
-        return undefined;
+      if (!terminal) {
+        host.ui.notify(`${NAMESPACE}: unknown agent "${id}"`, "warning");
       }
+
+      return terminal;
     };
 
     const open = async (id: string) => {

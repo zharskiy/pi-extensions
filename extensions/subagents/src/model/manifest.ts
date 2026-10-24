@@ -4,9 +4,9 @@ import type { Host } from "../../../../core/adapter/contract.ts";
 import { MANIFEST_FILE } from "./paths.ts";
 import { type AgentRecord, isClosed } from "./types.ts";
 
-export type ManifestDefaults = Pick<AgentRecord, "dir" | "handoffPath" | "contextLimit" | "cost">;
+export type ManifestDefaults = Pick<AgentRecord, "dir" | "handoffPath" | "contextLimit">;
 
-export const sessionCost = (host: Pick<Host, "sessionUsage">, file: string | undefined) => {
+const sessionCost = (host: Pick<Host, "sessionUsage">, file: string | undefined) => {
   if (!file) {
     return 0;
   }
@@ -18,10 +18,14 @@ export const sessionCost = (host: Pick<Host, "sessionUsage">, file: string | und
   }
 };
 
-export const readManifest = (dir: string): Partial<AgentRecord> =>
+const readManifest = (dir: string): Partial<AgentRecord> =>
   JSON.parse(readFileSync(join(dir, MANIFEST_FILE), "utf8")) as Partial<AgentRecord>;
 
-export const manifestRecord = (manifest: Partial<AgentRecord>, defaults: ManifestDefaults): AgentRecord =>
+const manifestRecord = (
+  host: Pick<Host, "sessionUsage">,
+  manifest: Partial<AgentRecord>,
+  defaults: ManifestDefaults,
+): AgentRecord =>
   ({
     turns: 0,
     toolCalls: 0,
@@ -32,6 +36,7 @@ export const manifestRecord = (manifest: Partial<AgentRecord>, defaults: Manifes
     version: 0,
     ...defaults,
     ...manifest,
+    cost: manifest.cost ?? sessionCost(host, manifest.sessionFile),
   }) as AgentRecord;
 
 const settled = (record: AgentRecord): AgentRecord =>
@@ -45,6 +50,7 @@ const settled = (record: AgentRecord): AgentRecord =>
       };
 
 export const pastRecords = (
+  host: Pick<Host, "sessionUsage">,
   agentsDir: string,
   defaults: (dir: string, manifest: Partial<AgentRecord>) => ManifestDefaults,
 ): AgentRecord[] => {
@@ -61,7 +67,7 @@ export const pastRecords = (
         const manifest = readManifest(dir);
 
         return typeof manifest.id === "string"
-          ? [settled(manifestRecord(manifest, defaults(dir, manifest)))]
+          ? [settled(manifestRecord(host, manifest, defaults(dir, manifest)))]
           : [];
       } catch {
         return [];

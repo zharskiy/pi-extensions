@@ -256,16 +256,20 @@ describe("agents overlay", () => {
     expect(harness.host.notices[0]?.message).toContain('unknown agent "ghost-0000"');
   });
 
-  it("reports a corrupt manifest instead of throwing", async () => {
-    const harness = setup();
-    const dir = join(agentsDirFor(harness.host.info), "explorer-bad");
+  it("treats an agent with a corrupt manifest as unknown", async () => {
+    const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+      beforeStart: ({ host }) => {
+        const dir = join(agentsDirFor(host.info), "explorer-bad");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, MANIFEST_FILE), "{ broken");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, MANIFEST_FILE), "{ broken");
+      },
+    });
+
     await harness.host.runCommand("agents", "explorer-bad");
 
     expect(harness.host.overlays).toEqual([]);
-    expect(harness.host.notices.at(-1)?.message).toContain('cannot read manifest of "explorer-bad"');
+    expect(harness.host.notices.at(-1)?.message).toContain('unknown agent "explorer-bad"');
   });
 
   it("closes and disposes an open overlay when the session shuts down", async () => {

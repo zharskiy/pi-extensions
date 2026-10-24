@@ -13,7 +13,7 @@ import {
   readSessionFile,
 } from "../../../../../core/test/adapter/offline.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
-import { flush, plainTheme, usageOf } from "../../../../../core/test/helpers/fakes.ts";
+import { type FakeHost, flush, plainTheme, usageOf } from "../../../../../core/test/helpers/fakes.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
@@ -73,8 +73,11 @@ afterEach(() => {
 
 const fixture = () => readSessionFile(FIXTURE, RECORD_ENTRY);
 
-const setup = (plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentViewPlugin]) => {
-  const harness = createHarness(plugins);
+const setup = (
+  plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentViewPlugin],
+  options: Parameters<typeof createHarness>[1] = {},
+) => {
+  const harness = createHarness(plugins, options);
   const registry = harness.services.require("registry");
 
   const openView = async (args: string, rows = 200) => {
@@ -878,55 +881,55 @@ describe("agent view with live agents", () => {
 });
 
 describe("agent view past sessions", () => {
-  const writeManifest = (harness: Harness, manifest: Record<string, unknown>) => {
-    const dir = join(agentsDirFor(harness.host.info), String(manifest.id));
+  type Past = { manifests: Record<string, unknown>[]; cost?: number };
+
+  const writeManifest = (host: FakeHost, manifest: Record<string, unknown>) => {
+    const dir = join(agentsDirFor(host.info), String(manifest.id));
 
     mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, MANIFEST_FILE),
-      typeof manifest.raw === "string" ? manifest.raw : JSON.stringify(manifest),
-    );
-
-    return dir;
+    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest));
   };
 
-  const openFromManifest = async (
-    manifest: Record<string, unknown>,
-    session: SessionRecord = fixture(),
-    cost?: number,
-  ) => {
-    const harness = setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
-    const dir = writeManifest(harness, { description: "old", state: "done", ...manifest });
-    const file = join(dir, "session.jsonl");
+  const restarted = ({ manifests, cost }: Past) =>
+    setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+      beforeStart: ({ root, host, runtime }) => {
+        manifests.forEach((manifest) => {
+          const name = manifest.sessionFile as string | undefined;
+          const file = name && join(root, name);
 
-    writeFileSync(file, "");
-    writeManifest(harness, { description: "old", state: "done", sessionFile: file, ...manifest });
-    harness.runtime.sessions.set(file, session);
+          if (file) {
+            writeFileSync(file, "");
+            runtime.sessions.set(file, fixture());
+          }
 
-    if (cost !== undefined) {
-      harness.host.files.set(file, { entries: [], usage: usageOf(cost) });
-    }
+          if (file && cost !== undefined) {
+            host.files.set(file, { entries: [], usage: usageOf(cost) });
+          }
 
+          writeManifest(host, file ? { ...manifest, sessionFile: file } : manifest);
+        });
+      },
+    });
+
+  const openFromManifest = async (manifest: Record<string, unknown>, cost?: number) => {
+    const harness = restarted({
+      manifests: [{ description: "old", state: "done", sessionFile: "old.jsonl", ...manifest }],
+      cost,
+    });
     const { view } = await harness.openView(String(manifest.id));
 
     return plain(view.render(100));
   };
 
-  it("opens from the manifest with the definition's limit", async () => {
-    const lines = await openFromManifest({ id: "explorer-dead", agent: "scout" });
-
-    expect(lines[2]).toMatch(/ · 2% context$/);
-  });
-
-  it("prefers the limit stored in the manifest, and shows no ctx without a known limit", async () => {
+  it("shows the context limit stored in the manifest, and no context without one", async () => {
     const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
-    const gone = await openFromManifest({ id: "removed-old", agent: "removed" });
+    const unknown = await openFromManifest({ id: "explorer-dead", agent: "scout" });
 
     expect(stored[2]).toMatch(/ · 3% context$/);
-    expect(gone[2]).not.toContain("context");
+    expect(unknown[2]).not.toContain("context");
   });
 
-  it("shows persisted counters for agents known only from their manifest", async () => {
+  it("shows persisted counters for agents of an earlier session", async () => {
     const lines = await openFromManifest({
       id: "explorer-past",
       agent: "scout",
@@ -937,14 +940,28 @@ describe("agent view past sessions", () => {
       endedAt: 65_000,
     });
 
-    expect(lines[2]).toBe(" 1m 5s · 4 calls · 12.3k tokens · 2% context");
+    expect(lines[2]).toBe(" 1m 5s · 4 calls · 12.3k tokens");
   });
 
   it("reads the cost of an agent known only from its manifest from its session file", async () => {
     const manifest = { id: "explorer-paid", agent: "scout", toolCalls: 4, startedAt: 0, endedAt: 65_000 };
-    const lines = await openFromManifest(manifest, fixture(), 0.04);
+    const lines = await openFromManifest(manifest, 0.04);
 
-    expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.04 · 2% context");
+    expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.04");
+  });
+
+  it("prefers the cost stored in the manifest", async () => {
+    const manifest = {
+      id: "explorer-kept",
+      agent: "scout",
+      toolCalls: 4,
+      cost: 0.5,
+      startedAt: 0,
+      endedAt: 65_000,
+    };
+    const lines = await openFromManifest(manifest, 0.04);
+
+    expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.50");
   });
 
   it("shows only the time for a manifest written before counters were stored", async () => {
@@ -955,30 +972,29 @@ describe("agent view past sessions", () => {
       endedAt: 3_000,
     });
 
-    expect(lines[2]).toBe(" 3s · 2% context");
+    expect(lines[2]).toBe(" 3s");
   });
 
   it("follows a chain of an earlier session to its last link", async () => {
-    const harness = setup();
-    const file = join(harness.root, "old-2.jsonl");
-
-    writeFileSync(file, "");
-    harness.runtime.sessions.set(file, fixture());
-    writeManifest(harness, {
-      id: "explorer-old1",
-      agent: "scout",
-      description: "old",
-      state: "handoff",
-      successorId: "explorer-old2",
-    });
-    writeManifest(harness, {
-      id: "explorer-old2",
-      agent: "scout",
-      description: "old",
-      state: "done",
-      chainIndex: 2,
-      predecessorId: "explorer-old1",
-      sessionFile: file,
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          sessionFile: "old-2.jsonl",
+        },
+      ],
     });
 
     const { view } = await harness.openView("explorer-old1");
@@ -1413,23 +1429,26 @@ describe("agent view request block", () => {
   });
 
   it("says not recorded for a closed agent without a request", async () => {
-    const harness = setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
-    const dir = join(agentsDirFor(harness.host.info), "explorer-past");
-    const file = join(dir, "session.jsonl");
+    const harness = setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+      beforeStart: ({ host, runtime }) => {
+        const dir = join(agentsDirFor(host.info), "explorer-past");
+        const file = join(dir, "session.jsonl");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(file, "");
-    writeFileSync(
-      join(dir, MANIFEST_FILE),
-      JSON.stringify({
-        id: "explorer-past",
-        agent: "scout",
-        description: "old",
-        state: "done",
-        sessionFile: file,
-      }),
-    );
-    harness.runtime.sessions.set(file, requestSession(1, false));
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(file, "");
+        writeFileSync(
+          join(dir, MANIFEST_FILE),
+          JSON.stringify({
+            id: "explorer-past",
+            agent: "scout",
+            description: "old",
+            state: "done",
+            sessionFile: file,
+          }),
+        );
+        runtime.sessions.set(file, requestSession(1, false));
+      },
+    });
 
     const { view } = await harness.openView("explorer-past");
     const before = plain(view.render(100));

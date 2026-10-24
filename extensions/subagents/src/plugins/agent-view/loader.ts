@@ -1,14 +1,10 @@
 import { statSync } from "node:fs";
-import { join } from "node:path";
-import type { AgentRuntime, Host, SessionRecord } from "../../../../../core/adapter/contract.ts";
+import type { AgentRuntime, SessionRecord } from "../../../../../core/adapter/contract.ts";
 import { errorText } from "../../components/format.ts";
-import { manifestRecord, readManifest, sessionCost } from "../../model/manifest.ts";
-import { agentsDirFor, handoffPathFor } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../../model/types.ts";
 
 export type ViewData = {
   record: AgentRecord;
-  openedId?: string;
   chain: string[];
   session?: SessionRecord;
   error?: string;
@@ -17,60 +13,15 @@ export type ViewData = {
 type CachedSession = { file: string; size: number; mtimeMs: number; session: SessionRecord };
 
 type AgentSourceDeps = {
-  host: Host;
   runtime: AgentRuntime;
   registry: AgentRegistry;
-  limitOf(agent?: string): number;
 };
 
-export const createAgentSource = (deps: AgentSourceDeps) => {
-  const { host, runtime, registry } = deps;
-
-  const fromManifest = (id: string): AgentRecord | undefined => {
-    const session = host.session();
-    const dir = join(agentsDirFor(session), id);
-    let manifest: Partial<AgentRecord>;
-
-    try {
-      manifest = readManifest(dir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return undefined;
-      }
-
-      throw new Error(`manifest of "${id}": ${errorText(error)}`);
-    }
-
-    return manifestRecord(manifest, {
-      cost: sessionCost(host, manifest.sessionFile),
-      contextLimit: deps.limitOf(manifest.agent),
-      handoffPath: handoffPathFor(session, id),
-      dir,
-    });
-  };
-
-  const readable = {
-    get: (id: string) => {
-      try {
-        return fromManifest(id);
-      } catch {
-        return undefined;
-      }
-    },
-  };
-
-  const pastChain = (record: AgentRecord): string[] => chainLinks(readable, record).map((link) => link.id);
-
+export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
   const find = (id: string): AgentRecord | undefined => {
     const live = registry.get(id);
 
-    if (live) {
-      return chainTerminal(registry, live);
-    }
-
-    const past = fromManifest(id);
-
-    return past ? chainTerminal(readable, past) : undefined;
+    return live && chainTerminal(registry, live);
   };
 
   const loader = (id: string, found: AgentRecord) => {
@@ -97,17 +48,16 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
     return (): ViewData => {
       const live = registry.get(id);
       const record = live ? chainTerminal(registry, live) : found;
-      const openedId = record.id === id ? undefined : id;
-      const chain = live ? chainLinks(registry, record).map((link) => link.id) : pastChain(record);
+      const chain = chainLinks(registry, record).map((link) => link.id);
 
       try {
         const session = record.sessionFile ? readSession(record.sessionFile) : undefined;
 
         return session
-          ? { record, openedId, chain, session }
-          : { record, openedId, chain, error: "session file not written yet" };
+          ? { record, chain, session }
+          : { record, chain, error: "session file not written yet" };
       } catch (error) {
-        return { record, openedId, chain, error: `cannot read session: ${errorText(error)}` };
+        return { record, chain, error: `cannot read session: ${errorText(error)}` };
       }
     };
   };
