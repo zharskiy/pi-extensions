@@ -8,6 +8,7 @@ import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { plugins } from "../../../src/plugins.ts";
 import { createHarness } from "../../helpers/harness.ts";
+import { openLastOverlay } from "../../helpers/overlay.ts";
 import { newAgentInput } from "../../helpers/records.ts";
 
 const digit = (char: string): KeyPress => ({ name: "other", char });
@@ -33,7 +34,7 @@ const setup = () => {
     return record;
   };
 
-  return { ...harness, create };
+  return { ...harness, registry, create };
 };
 
 describe("/agents menu", () => {
@@ -61,10 +62,32 @@ describe("/agents menu", () => {
 
     const running = host.runCommand("agents");
 
-    expect(host.form().render(120).join("\n")).toContain("agents list · 2 running, 1 finished");
+    expect(host.form().render(120).join("\n")).toContain("agents list · 2 running · 1 finished");
 
     host.form().press({ name: "escape" });
     await running;
+  });
+
+  it("counts the same finished agents as the list subtitle", async () => {
+    const { host, registry, root } = setup();
+    const lead = registry.create(newAgentInput(root, {}));
+    const child = registry.create(newAgentInput(root, { callerId: lead.id }));
+    const first = registry.create(newAgentInput(root, {}));
+    const second = registry.create(newAgentInput(root, { chainIndex: 2, predecessorId: first.id }));
+
+    registry.update(lead.id, { state: "running" });
+    registry.close(child.id, { state: "done" });
+    registry.close(first.id, { state: "handoff", successorId: second.id });
+    registry.close(second.id, { state: "done" });
+
+    const menu = host.runCommand("agents");
+
+    expect(host.form().render(120).join("\n")).toContain("agents list · 1 running · 1 finished");
+
+    host.form().press({ name: "enter" });
+    await menu;
+
+    expect(openLastOverlay(host).lines()[1]).toBe(" Agents · 1 running · 1 finished");
   });
 
   it("opens the list on view, with Enter or 1", async () => {

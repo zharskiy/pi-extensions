@@ -453,7 +453,7 @@ describe("agent view header", () => {
     const painted = header(base({ state: "failed", endedAt: 0, error: "boom" }), recordingTheme);
 
     expect(painted.slice(0, 4)).toEqual([
-      " <error>✗</> <b>explorer</b>  <muted>Map the auth module</>",
+      " <error>✗</> <b>explorer</b><muted>  Map the auth module</>",
       " <muted>0s</>",
       " <dim>provider/model · id explorer-1</>",
       " <error>boom</>",

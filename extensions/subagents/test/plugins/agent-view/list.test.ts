@@ -111,7 +111,7 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
     const body = lines().slice(0, 12);
 
-    expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 3 finished", "", " Running"]);
+    expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 1 finished", "", " Running"]);
     expect(body[4]).toMatch(/^ › ⠋ explorer \(\+1\) +map the auth module/);
     expect(body[5]).toMatch(/^ {3}↳ ⠋ explorer +find callers/);
     expect(body[6]).toMatch(/^ {5}✓ explorer +find parseDate +\d+m? ?\d+s$/);
@@ -567,7 +567,7 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
     const text = lines().join("\n");
 
-    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running · 3 finished", "", " Running"]);
+    expect(lines().slice(1, 4)).toEqual([" Agents · 1 running", "", " Running"]);
     expect(lines()[4]).toMatch(/^ › ⠋ explorer +open root/);
     expect(lines()[5]).toMatch(/^ {3}↳ ✓ explorer +old child/);
     expect(lines()[6]).toMatch(/^ {5}↳ ✓ explorer +stale grandchild/);

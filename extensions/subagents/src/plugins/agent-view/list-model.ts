@@ -126,17 +126,19 @@ export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] => {
   return visible.filter((record) => isTerminal(record, byId));
 };
 
-export const listCounts = (
-  records: AgentRecord[],
-  cleared: ReadonlySet<string>,
-): { running: number; completed: number } => {
-  const { terminals, isListRoot } = forestOf(visibleRecords(records, cleared));
+export const listCounts = (visible: AgentRecord[]): { running: number; finished: number } => {
+  const { terminals, isListRoot } = forestOf(visible);
 
   return {
     running: terminals.filter((record) => !isClosed(record.state)).length,
-    completed: terminals.filter((record) => isListRoot(record) && isClosed(record.state)).length,
+    finished: terminals.filter((record) => isListRoot(record) && isClosed(record.state)).length,
   };
 };
+
+export const countsText = (running: number, finished: number): string =>
+  [running > 0 ? `${running} running` : undefined, finished > 0 ? `${finished} finished` : undefined]
+    .filter((part) => part !== undefined)
+    .join(DOT);
 
 export const listSections = (visible: AgentRecord[]): ListSection[] => {
   const { byId, terminals, isListRoot, rootOf } = forestOf(visible);
@@ -174,15 +176,10 @@ export const listSections = (visible: AgentRecord[]): ListSection[] => {
 };
 
 export const subtitle = (visible: AgentRecord[]): string => {
-  const terminals = listedTerminals(visible);
-  const open = terminals.filter((record) => !isClosed(record.state)).length;
-  const done = terminals.length - open;
+  const { running, finished } = listCounts(visible);
+  const text = countsText(running, finished);
 
-  const parts = [open > 0 ? `${open} running` : undefined, done > 0 ? `${done} finished` : undefined].filter(
-    (part) => part !== undefined,
-  );
-
-  return parts.length === 0 ? "" : DOT + parts.join(DOT);
+  return text && DOT + text;
 };
 
 export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {

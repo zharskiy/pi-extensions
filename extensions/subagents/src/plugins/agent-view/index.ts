@@ -7,7 +7,7 @@ import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
 import { createAgentList } from "./list.ts";
-import { listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
+import { countsText, listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
 import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
 import { createAgentView } from "./view.ts";
@@ -181,13 +181,10 @@ export const agentViewPlugin: Plugin = {
       word === "view" ? openList() : runSetupWord(word, args);
 
     const viewText = () => {
-      const counts = listCounts(registry.list(), cleared);
-      const parts = [
-        counts.running > 0 ? `${counts.running} running` : undefined,
-        counts.completed > 0 ? `${counts.completed} finished` : undefined,
-      ].filter((part) => part !== undefined);
+      const { running, finished } = listCounts(visibleRecords(registry.list(), cleared));
+      const counts = countsText(running, finished);
 
-      return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(DOT);
+      return counts ? SUBCOMMAND_TEXT.view + DOT + counts : SUBCOMMAND_TEXT.view;
     };
 
     const menu = async () => {

@@ -16,7 +16,7 @@ import {
   truncatePainted,
 } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";
-import { liveGlyph, stateGlyph, stateToken, stopWords } from "../../components/state-text.ts";
+import { stateGlyph, stateToken, stopWords } from "../../components/state-text.ts";
 import { effectiveContextLimit } from "../../model/context-limit.ts";
 import { type AgentRecord, isClosed, type Worktree } from "../../model/types.ts";
 import type { ViewData } from "./loader.ts";
@@ -31,8 +31,6 @@ type ViewDeps = {
   leave(): void;
 };
 
-const MIN_DESCRIPTION = 8;
-
 const RELOAD_TICK_MS = 1_000;
 
 const GAP = "  ";
@@ -45,30 +43,18 @@ const ctxPercent = (data: ViewData, reserveTokens: number) => {
   return tokens === null || tokens === undefined || limit <= 0 ? undefined : (tokens / limit) * 100;
 };
 
-const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) => {
-  const glyph = stateGlyph(record.state, now);
-  const name = agentName(record);
-  const description = singleLine(record.description);
-  const room = inner - theme.width(`${glyph} ${name}${GAP}`);
-
-  if (room < MIN_DESCRIPTION) {
-    return (
-      PAD +
-      truncatePainted(
-        theme,
-        [
-          [glyph, (text) => theme.fg(stateToken(record.state), text)],
-          [" ", (text) => text],
-          [name, (text) => theme.bold(text)],
-          [`${GAP}${description}`, (text) => theme.fg("muted", text)],
-        ],
-        inner,
-      )
-    );
-  }
-
-  return `${PAD}${liveGlyph(record.state, now, theme)} ${theme.bold(name)}${GAP}${theme.fg("muted", theme.truncate(description, room))}`;
-};
+const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) =>
+  PAD +
+  truncatePainted(
+    theme,
+    [
+      [stateGlyph(record.state, now), (text) => theme.fg(stateToken(record.state), text)],
+      [" ", (text) => text],
+      [agentName(record), (text) => theme.bold(text)],
+      [`${GAP}${singleLine(record.description)}`, (text) => theme.fg("muted", text)],
+    ],
+    inner,
+  );
 
 const receiptLine = (data: ViewData, theme: ThemeLike, inner: number, now: number, reserveTokens: number) => {
   const context = formatCtx(ctxPercent(data, reserveTokens));
