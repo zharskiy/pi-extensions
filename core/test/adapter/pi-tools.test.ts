@@ -303,14 +303,23 @@ describe("themeLike colours", () => {
     const like = themeLike(recording);
 
     expect(
-      (["warning", "accent", "border", "borderAccent", "thinkingOff", "thinkingXhigh"] as const).map(
-        (token) => like.fg(token, "x"),
-      ),
+      (
+        [
+          "warning",
+          "accent",
+          "border",
+          "borderAccent",
+          "syntaxVariable",
+          "thinkingOff",
+          "thinkingXhigh",
+        ] as const
+      ).map((token) => like.fg(token, "x")),
     ).toEqual([
       "<warning>x",
       "<accent>x",
       "<border>x",
       "<borderAccent>x",
+      "<syntaxVariable>x",
       "<thinkingOff>x",
       "<thinkingXhigh>x",
     ]);

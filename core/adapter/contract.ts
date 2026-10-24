@@ -11,6 +11,7 @@ export type ThemeToken =
   | "accent"
   | "border"
   | "borderAccent"
+  | "syntaxVariable"
   | "muted"
   | "dim"
   | "success"

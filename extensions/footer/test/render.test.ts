@@ -150,7 +150,7 @@ describe("renderFooter", () => {
     });
 
     expect(lines[1]).toBe(
-      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <border>test-model <muted>(1M context)",
+      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <syntaxVariable>test-model <muted>(1M context)",
     );
     expect(lines[2]).toBe(" <muted>session total (agents included) <text>162.4k<muted> · <text>$4.42");
     expect(lines[3]).toBe(
@@ -183,12 +183,12 @@ describe("renderFooter", () => {
     expect(unavailable).toBe(" <muted>thinking unavailable <dim>(shift+tab to cycle)");
   });
 
-  it("tints the model name like the folder, leaves spend plain and nothing on the line bold", () => {
+  it("tints the model name its own cyan, leaves spend plain and nothing on the line bold", () => {
     const boldTheme: ThemeLike = { ...tokenTheme, bold: (text) => `<b>${text}</b>` };
     const line = (patch: Partial<FooterState>) =>
       renderFooter(boldTheme, state(patch), { branch: null, statuses: new Map() })[1];
 
-    expect(line({})).toMatch(/<text>\$4\.00<muted> · <border>test-model <muted>\(1M context\)$/);
+    expect(line({})).toMatch(/<text>\$4\.00<muted> · <syntaxVariable>test-model <muted>\(1M context\)$/);
     expect(line({})).not.toContain("<b>");
     expect(renderFooter(boldTheme, state({}), { branch: null, statuses: new Map() })[2]).not.toContain("<b>");
     expect(line({ model: undefined })).toMatch(/<muted>no model$/);
