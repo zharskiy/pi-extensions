@@ -10,12 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run check
+        env:
+          DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha }}
       - name: Package contains no tests
         run: |
           npm pack --dry-run 2>&1 | tee pack.txt

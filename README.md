@@ -164,7 +164,7 @@ A team can commit `.pi/mcp.json`, `.pi/agents/`, `.pi/pi-subagents.json` and `.a
 - `platform/shared/`, `platform/ui-kit/` and `platform/extension-manager/` hold pi-free helpers, themed components and the plugin and settings runtime.
 - Each `extensions/<name>/` splits into `core/` (logic), `ui/` (rendering) and `api/` (wiring), with `index.ts` as the entry.
 - Layers point one way, `pi-adapter ← shared ← ui-kit ← extension-manager ← extensions`. Extensions talk over pi's event bus.
-- Biome, knip and `test/architecture.test.ts` enforce the rules in `npm run check`.
+- Biome, knip and `test/architecture.test.ts` enforce the rules in `npm run check`, and `test/docs-sync.test.ts` makes extension code changes come with doc changes.
 
 How it works: [ARCHITECTURE.md](ARCHITECTURE.md). Where things are: [STRUCTURE.md](STRUCTURE.md).
 

@@ -24,7 +24,7 @@ An arrow points at what a layer may import. `extension-manager` sits after `ui-k
 ## Repo rules
 
 - Only `platform/pi-adapter/` (with its `tests/`) and `test/framework/pi/` import pi packages (`@earendil-works/*`, `typebox`). Everything else sees pi through `platform/pi-adapter/index.ts`.
-- Shipped code never imports `test/` (`test/framework/`, `test/evals/`, `test/architecture.test.ts`) or any `tests/` folder.
+- Shipped code never imports `test/` (`test/framework/`, `test/evals/`, `test/architecture.test.ts`, `test/docs-sync.test.ts`) or any `tests/` folder.
 - No provider knowledge: no code or prompt names a model provider or a model id. Pi resolves providers, credentials and models; the harness passes `provider/id[:thinking]` strings through, and cost is pi's own usage figure. The only exceptions are configuration: the shipped agent files name their `model`, and the subagents README lists those models. Unit-test fixtures use invented names.
 - Folder shape: an extension folder holds only `index.ts`, `api/`, `core/`, `ui/`, `tests/`, `README.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, `prompts/` and `agents/`; source sits at most three folders below it, in `api/`, `core/` and `ui/` only. `*.test.ts` live only in `tests/` (or directly in `test/`), `*.eval.ts` only in `test/evals/`. Non-index, non-test files have unique basenames.
 - No dead code: no unused exports, types, enum members, files or dependencies, and no unused locals, imports, parameters or private members. Class members outside the API are `private` or `#` by convention, since no tool checks them.
@@ -34,6 +34,7 @@ An arrow points at what a layer may import. `extension-manager` sits after `ui-k
 
 - Biome (`biome.json`, part of `npm run check`) enforces the import rules: one `noRestrictedImports` override per folder and per folder depth bans the pi packages outside the two allowed folders, inner files of another layer, the layers an extension's `core/` and `ui/` may not see, other extensions except their `index.ts`, and test code from shipped code. The `test/framework/**` override also keeps its pi-free modules from importing `test/framework/pi/`. It also rejects import cycles, `export *`, self-imports and unused locals, imports, parameters and private members.
 - `test/architecture.test.ts` checks what an import pattern cannot express: the shape of each extension's `index.ts`, the folder shape and depth, where `*.test.ts` and `*.eval.ts` may live, unique basenames, that `package.json` `pi.extensions` lists exactly the 13 `extensions/<name>/index.ts` files, that in `subagents` no plugin (`api/plugins/<p>.ts`, `core/<p>/**`, `ui/<p>/**`) imports a sibling plugin, and that relative imports are written in normalised form with no `./../`, so the Biome path rules cannot be bypassed.
+- `test/docs-sync.test.ts` checks that every extension whose code changed since the base commit also changed its `README.md`, `ARCHITECTURE.md` and `STRUCTURE.md` and the root `ARCHITECTURE.md` and `STRUCTURE.md`. It checks only that they changed, not how. The base is the merge base of `HEAD` with `origin/main`, or `main` when there is no `origin/main`; `DOCS_SYNC_BASE` overrides it, and CI sets it to the pull request's base commit.
 - knip (`knip.json`, part of `npm run check`) finds unused exports, types, enum members, files and dependencies, the entry exports of the 13 `index.ts` files included.
 - `tsc` checks types only. CI runs `npm run check` and checks that `npm pack` ships the 13 entry files and no tests, fixtures, `test/framework/` or `test/evals/`.
 - Provider names and the write locations below are kept by review.
@@ -58,3 +59,4 @@ Everything lives under pi's agent dir or session dir (`~/.pi/agent` by default; 
 - [test/framework](test/framework/ARCHITECTURE.md): fakes, harnesses, real-pi helpers, live and eval mechanics.
 - [test/evals](test/evals/README.md): prompt-quality runs with real agents, local only.
 - `test/architecture.test.ts`: the repo-wide structure test above.
+- `test/docs-sync.test.ts`: the docs sync test above.

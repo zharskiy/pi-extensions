@@ -12,6 +12,7 @@ pi-extensions/
 ├── extensions/<name>/   13 extensions: index.ts api/ core/ ui/ tests/ (prompts/ agents/)
 ├── test/
 │   ├── architecture.test.ts
+│   ├── docs-sync.test.ts
 │   ├── framework/           fakes, harnesses, pi/ (real pi), live/, eval-runs/
 │   └── evals/               prompt-quality evals, local only
 ├── future-plans/        research and specs for work not started
@@ -30,6 +31,7 @@ pi-extensions/
 - [test/framework/](test/framework/STRUCTURE.md): root fakes, `live/`, `eval-runs/`, `pi/`, `pi/live/`, `tests/`.
 - [test/evals/](test/evals/README.md): `subagents/<subject>/` with `*-cases.ts` and `*.eval.ts`, shared helpers in `subagents/support/` and their tests in `subagents/tests/`; results go to the gitignored `test/evals/.results/`.
 - `test/architecture.test.ts`: the structure rules Biome cannot express.
+- `test/docs-sync.test.ts`: the rule that extension code changes come with doc changes.
 
 ## Config files
 
