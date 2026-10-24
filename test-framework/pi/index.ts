@@ -1,4 +1,4 @@
-export { createOverlayApi, disposeOverlays, openLastOverlay } from "./overlay.ts";
+export { createOverlayApi, disposeOverlays, openLastOverlay } from "./overlay-api.ts";
 export { initPiKeybindings, initPiRenderTheme, plainPiTheme } from "./render-theme.ts";
 export {
   parseSessionLines,
@@ -16,4 +16,4 @@ export {
   renderPaneToolRows,
   renderToolRows,
   visible,
-} from "./tool-rows.ts";
+} from "./tool-row-rendering.ts";

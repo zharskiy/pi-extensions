@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { contentParts, messageText } from "../../../pi-adapter/runtime/messages.ts";
+import { contentParts, messageText } from "../../../pi-adapter/runtime/message-text.ts";
 import type { RunEvent, RunRecord } from "../../eval-runs/run-record.ts";
 
 type SessionMessage = { role?: string; content?: unknown; toolName?: string; isError?: boolean };

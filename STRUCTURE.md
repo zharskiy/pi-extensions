@@ -11,53 +11,56 @@ pi-extensions/
 │   ├── types/                   # contract types
 │   │   └── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
 │   ├── runtime/                 # pi session wiring
-│   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
-│   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
-│   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
-│   │   ├── pi-shared.ts         # shared(name, init): one record per name on globalThis, shared by adapter copies
+│   │   ├── extension.ts         # createPiExtension: boots the contract on pi, the child runtime's parent source
+│   │   ├── host.ts              # createPiHost: Host over the pi API, phase events, held hidden messages
+│   │   ├── phase.ts             # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
+│   │   ├── child-scope.ts       # child scope (no extension boots in an agent)
+│   │   ├── global-record.ts     # globalRecord(name, init): one record per name on globalThis, shared by adapter copies
 │   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
-│   │   ├── messages.ts / route.ts # text (finalRunTexts: a child's final run), routing
+│   │   ├── message-text.ts      # message text (finalRunTexts: a child's final run), formatRoutedMessage
 │   │   └── settle-within.ts     # settleWithin: wait for a promise at most ms
 │   ├── child/                   # child sessions, models, skills
-│   │   ├── pi-child.ts          # runtime that starts child agent sessions
-│   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery
-│   │   ├── pi-models.ts / model-resolver.ts  # model catalog (availableModels: credentialed models with
+│   │   ├── child-runtime.ts     # runtime that starts child agent sessions
+│   │   ├── child-extension.ts   # the hidden child extension (no compaction, prompt sections, prompt record), ParentSource
+│   │   ├── skills.ts            # skill inventory: loaded skill commands plus pi's default discovery
+│   │   ├── model-catalog.ts / model-resolver.ts  # model catalog (availableModels: credentialed models with
 │   │   │                        #   their thinking levels), matching
-│   │   └── pi-codemode.ts       # codemode worker cap (PI_CODEMODE_MAX_WORKERS), owned value shared by adapter copies
+│   │   └── codemode.ts          # codemode worker cap (PI_CODEMODE_MAX_WORKERS), owned value shared by adapter copies
 │   ├── ui/                      # HostUi on pi-tui
-│   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation, thinking label, columns
-│   │   ├── pi-tui-context.ts    # HostState (current ctx and tools) and tuiContext (the ctx when in tui mode)
-│   │   ├── pi-form.ts           # HostUi.showForm: the inline form shell
-│   │   ├── pi-overlay.ts        # overlaysCleared: waits until no overlay is visible
-│   │   ├── pi-text-input.ts     # form TextInput over pi-tui's Editor, its theme and focus
-│   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
-│   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
-│   │   ├── pi-notice.ts         # HostUi.setNotice: one-line notices between the editor and the footer
-│   │   ├── pi-thinking-label.ts # hidden thinking label: composed hint, record on globalThis, OSC 133 prefix
-│   │   ├── pi-working.ts        # working message and visibility (HostUi)
+│   │   ├── create-ui.ts         # HostUi: widgets, overlay, notify, key observation, thinking label, columns
+│   │   ├── tui-context.ts       # HostState (current ctx and tools) and tuiContext (the ctx when in tui mode)
+│   │   ├── form.ts              # HostUi.showForm: the inline form shell
+│   │   ├── overlay.ts           # overlaysCleared: waits until no overlay is visible
+│   │   ├── text-input.ts        # form TextInput over pi-tui's Editor, its theme and focus
+│   │   ├── key-events.ts        # KeyPress naming through pi keybinding ids
+│   │   ├── footer.ts            # custom footer, live context/model/thinking getters
+│   │   ├── notices.ts           # HostUi.setNotice: one-line notices between the editor and the footer
+│   │   ├── thinking-label.ts    # hidden thinking label: composed hint, record on globalThis, OSC 133 prefix
+│   │   ├── working-message.ts   # working message and visibility (HostUi)
+│   │   ├── theme-bridge.ts      # themeLike (role tokens -> pi colours), textMetrics (width, truncate, wrap),
+│   │   │                        #   fitLines (cut lines to a width)
 │   │   └── row-layout.ts        # PAD, CHILD_COLUMN, CHILD_MARK, isBlankLine, childLead: row geometry
 │   ├── editor/
-│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓/Esc hooks, key capture
-│   │   ├── pi-editor-history.ts # ↑ input history shared by every editor, seeded on resume and fork
-│   │   └── pi-editor-input.ts   # editor submit key, command completion, re-submit
+│   │   ├── editor.ts            # editor subclass: optional EditorFrame, empty-←/↓/Esc hooks, key capture
+│   │   ├── history.ts           # ↑ input history shared by every editor, seeded on resume and fork
+│   │   └── input.ts             # editor submit key, command completion, re-submit
 │   ├── tools/                   # tool registration and rendering
-│   │   ├── pi-tools.ts          # tool wrapping, themeLike (role tokens -> pi colours) and textMetrics
-│   │   │                        #   (width, truncate, wrap), fitLines (cut lines to a width)
-│   │   ├── pi-tool-rows.ts      # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins
+│   │   ├── tool-bridge.ts       # tool wrapping: toPiTool, toPiResult, fromPiResult
+│   │   ├── tool-rows.ts         # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins
 │   │   │                        #   included) in the self shell, shared with transcript panes
-│   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ↳), the
+│   │   ├── row-component.ts     # RowComponent (padded row lines plus an indented pi body under ↳), the
 │   │   │                        #   tool-rows record on globalThis and the shared output pad
-│   │   ├── pi-entries.ts        # Host.registerEntryRenderer and registerMessageRenderer over pi's renderers
-│   │   └── pi-transcript.ts     # transcript pane, pi renderer capture
+│   │   ├── entry-renderers.ts   # Host.registerEntryRenderer and registerMessageRenderer over pi's renderers
+│   │   └── transcript.ts        # transcript pane, pi renderer capture
 │   ├── context/
-│   │   ├── pi-context.ts        # Host.contextFacts and request usage, composed
-│   │   ├── pi-context-prompt.ts # prompt sections (replay or system prompt) and tools with source and exposure
-│   │   ├── pi-context-messages.ts # per-message and per-block token estimates
-│   │   ├── usage.ts             # usage sums
-│   │   └── pi-usage.ts          # last and main request usage, main memoised on session and leaf
+│   │   ├── context-facts.ts     # Host.contextFacts and request usage, composed
+│   │   ├── context-prompt.ts    # prompt sections (replay or system prompt) and tools with source and exposure
+│   │   ├── context-messages.ts  # per-message and per-block token estimates
+│   │   ├── usage-math.ts        # usage sums
+│   │   └── usage-events.ts      # last and main request usage, main memoised on session and leaf
 │   ├── prompt/
 │   │   ├── main-prompt.ts       # rebuilds the main session system prompt
-│   │   └── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
+│   │   └── sections.ts          # prompt sections shared by every adapter copy (main and agents), each with its owner
 │   └── tests/                   # adapter tests (may import adapter files and pi directly), live/wake.live.test.ts
 ├── extension-manager/           # plugin runtime; imports pi-adapter/index.ts and shared/index.ts only
 │   ├── index.ts                 # public surface
@@ -102,7 +105,7 @@ pi-extensions/
 │   ├── valid-handoff.ts         # VALID_HANDOFF
 │   ├── live/                    # pi-free live helpers: seed-project, session-reading, cost, the MCP fixture server
 │   ├── eval-runs/               # pi-free eval runner: run-record, repeatRuns, rubric, pass-threshold, reportEval
-│   ├── pi/                      # the only test helpers that import pi: render-theme, tool-rows, overlay, session-files
+│   ├── pi/                      # the only test helpers that import pi: render-theme, tool-row-rendering, overlay-api, session-files
 │   │   └── live/                # describeLive, isolated agent dir, live runtime, openPiSession,
 │   │                            #   startLiveExtension, session-events (RunRecord from a live session)
 │   └── tests/                   # unit tests of the framework

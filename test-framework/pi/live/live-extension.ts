@@ -1,5 +1,5 @@
 import { basename, join } from "node:path";
-import type { SkillFile } from "../../../pi-adapter/child/pi-child.ts";
+import type { SkillFile } from "../../../pi-adapter/child/skills.ts";
 import type { EventMap, Plugin } from "../../../shared/index.ts";
 import { startExtension } from "../../extension-harness.ts";
 import { createFakeHost, createTurnScope } from "../../fake-host.ts";

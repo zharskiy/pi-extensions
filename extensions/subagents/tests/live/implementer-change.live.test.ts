@@ -34,7 +34,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const fixtures: Fixture[] = [
   {
     sha: "1622d24",
-    task: 'In pi-adapter/editor/pi-editor.ts our editor keeps its shared state on globalThis under Symbol.for("pi-extensions.editor-hooks"), so every copy of the package uses one record. A record left there by an older copy of the package has only `emptyLeft` and `emptyDown`, no `history`, and then ↑ prompt recall in our editor breaks. Make the editor fill in whatever fields are missing on an existing record instead of assuming it is complete.',
+    task: 'In core/adapter/pi-editor.ts our editor keeps its shared state on globalThis under Symbol.for("pi-extensions.editor-hooks"), so every copy of the package uses one record. A record left there by an older copy of the package has only `emptyLeft` and `emptyDown`, no `history`, and then ↑ prompt recall in our editor breaks. Make the editor fill in whatever fields are missing on an existing record instead of assuming it is complete.',
     tests: ["core/test/adapter/pi-editor.test.ts"],
   },
   {

@@ -80,6 +80,46 @@
       }
     },
     {
+      "includes": ["pi-adapter/types/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/extensions/**"],
+                    "message": "This layer must not import extensions."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/ui-kit/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/shared/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  },
+                  {
+                    "group": ["../**"],
+                    "message": "pi-adapter/types imports only other types/ files."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["pi-adapter/tests/**"],
       "linter": {
         "rules": {

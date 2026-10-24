@@ -1,8 +1,7 @@
 export { type CatalogModel, type ModelPreferences, resolveModel } from "./child/model-resolver.ts";
-export { createPiExtension } from "./runtime/pi-adapter.ts";
-export { formatRoutedMessage } from "./runtime/route.ts";
+export { createPiExtension } from "./runtime/extension.ts";
+export { formatRoutedMessage } from "./runtime/message-text.ts";
 export { settleWithin } from "./runtime/settle-within.ts";
-export { textMetrics } from "./tools/pi-tools.ts";
 export {
   type AgentRuntime,
   type AnyToolSpec,
@@ -73,3 +72,4 @@ export {
   type WidgetHandle,
 } from "./types/contract.ts";
 export { CHILD_COLUMN, CHILD_MARK, childLead, isBlankLine, PAD } from "./ui/row-layout.ts";
+export { textMetrics } from "./ui/theme-bridge.ts";

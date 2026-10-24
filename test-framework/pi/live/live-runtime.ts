@@ -1,4 +1,5 @@
-import { createPiRuntime, type SkillFile } from "../../../pi-adapter/child/pi-child.ts";
+import { createPiRuntime } from "../../../pi-adapter/child/child-runtime.ts";
+import type { SkillFile } from "../../../pi-adapter/child/skills.ts";
 import type { AgentRuntime } from "../../../pi-adapter/index.ts";
 import { liveModel } from "./live-model.ts";
 

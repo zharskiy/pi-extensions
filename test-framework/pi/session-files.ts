@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { contentParts, messageText } from "../../pi-adapter/runtime/messages.ts";
+import { contentParts, messageText } from "../../pi-adapter/runtime/message-text.ts";
 import { readSessionEntries, replaySystemMessages } from "../../pi-adapter/runtime/session-file.ts";
 
 export {

@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AnyToolSpec } from "../../../pi-adapter/index.ts";
 import { replaceMainPrompt } from "../../../pi-adapter/prompt/main-prompt.ts";
-import { toPiTool } from "../../../pi-adapter/tools/pi-tools.ts";
+import { toPiTool } from "../../../pi-adapter/tools/tool-bridge.ts";
 import { waitUntil } from "../../waiting.ts";
 import { LIVE_TIMEOUT_MS, liveModel } from "./live-model.ts";
 
