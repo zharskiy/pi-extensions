@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { keyHints } from "../../../../../core/manager/hints.ts";
+import { type KeyHint, keyHints } from "../../../../../core/manager/hints.ts";
 import { POINTER_BLANK, renderRow, rowLayout } from "../../components/agent-row.ts";
 import { PAD } from "../../components/format.ts";
 import { stopWords } from "../../components/state-text.ts";
@@ -83,12 +83,15 @@ const windowOf = (rows: TreeRow[], state: PanelState) => {
   return { start, end, below: rows.length - end };
 };
 
-const hintPairs = (record: AgentRecord, actions: PanelActionsAvailable) =>
-  [
-    actions.view ? (["enter", "to view"] as const) : undefined,
-    actions.stop || isClosed(record.state) ? (["x", stopWords(record.state)] as const) : undefined,
-    ["esc", "to deselect"] as const,
-  ].filter((pair) => pair !== undefined);
+const hintPairs = (record: AgentRecord, actions: PanelActionsAvailable): KeyHint[] => {
+  const pairs: (KeyHint | undefined)[] = [
+    actions.view ? ["enter", "to view"] : undefined,
+    actions.stop || isClosed(record.state) ? ["x", stopWords(record.state)] : undefined,
+    ["esc", "to deselect"],
+  ];
+
+  return pairs.filter((pair) => pair !== undefined);
+};
 
 export const panelLines = (
   rows: TreeRow[],

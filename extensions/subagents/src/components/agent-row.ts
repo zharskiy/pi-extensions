@@ -59,8 +59,10 @@ export type RowLayout = {
 
 type RowOptions = { spinner?: boolean; bare?: boolean };
 
+export const chainSuffix = (chainIndex: number) => (chainIndex > 1 ? ` #${chainIndex}` : "");
+
 export const agentName = (record: Pick<AgentRecord, "agent" | "chainIndex">): string =>
-  record.chainIndex > 1 ? `${record.agent} #${record.chainIndex}` : record.agent;
+  record.agent + chainSuffix(record.chainIndex);
 
 const countSuffix = (openDescendants: number) => (openDescendants > 0 ? ` (+${openDescendants})` : "");
 
@@ -131,7 +133,7 @@ export const rowLayout = (
 
 const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
   const base = input.record.agent;
-  const tail = `${input.record.chainIndex > 1 ? ` #${input.record.chainIndex}` : ""}${countSuffix(input.openDescendants)}`;
+  const tail = chainSuffix(input.record.chainIndex) + countSuffix(input.openDescendants);
   const token = isClosed(input.record.state) ? "muted" : "text";
   const whole = `${base}${tail}`;
   const cut = theme.truncate(whole, Math.max(0, cols));

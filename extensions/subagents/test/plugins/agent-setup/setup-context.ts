@@ -3,9 +3,7 @@ import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
 import { pressSetupKey, type SetupContext, type SetupState } from "../../../src/plugins/agent-setup/form.ts";
 import { renderSetup } from "../../../src/plugins/agent-setup/render.ts";
 
-export const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-export const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+export { char, key } from "../../helpers/overlay.ts";
 
 const model = (ref: string, thinking: string[]) => ({
   ref,

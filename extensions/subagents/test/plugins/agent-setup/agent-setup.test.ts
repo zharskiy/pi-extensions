@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { KeyPress } from "../../../../../core/adapter/contract.ts";
 import type { FakeForm } from "../../../../../core/test/helpers/fake-form.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
@@ -9,10 +8,7 @@ import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.t
 import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { createHarness } from "../../helpers/harness.ts";
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+import { char, key } from "./setup-context.ts";
 
 const APPLIES = "agents started from now on use it";
 

@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
-import { innerWidth, PAD, wrapCols } from "../../components/format.ts";
+import { counted, innerWidth, PAD, padLine, wrapCols } from "../../components/format.ts";
 
 const INDENT = `${PAD}  `;
 
@@ -66,7 +66,7 @@ export const requestLines = (
     const full = hint ? `${text} ${hint}` : text;
 
     if (!hint || theme.width(full) > inner) {
-      return PAD + theme.fg("muted", theme.truncate(text, inner));
+      return padLine(theme, "muted", text, inner);
     }
 
     return `${PAD}${theme.fg("muted", text)} ${theme.fg("dim", hint)}`;
@@ -76,7 +76,7 @@ export const requestLines = (
     return [line(open ? "Request · not sent yet" : "Request · not recorded")];
   }
 
-  const title = `Request · ${count} ${count === 1 ? "line" : "lines"}`;
+  const title = `Request · ${counted(count, "line")}`;
 
   if (!expanded) {
     return [line(title, "(r to expand)")];

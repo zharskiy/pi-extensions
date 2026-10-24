@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../../../../core/adapter/contract.ts";
+import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
 import { type ReceiptFacts, type ReceiptSegment, receipt } from "../../../../core/manager/format.ts";
 import { PAD } from "../../../../core/manager/layout.ts";
 import type { AgentRecord } from "../model/types.ts";
@@ -91,6 +91,9 @@ export const padEndCols = (theme: ThemeLike, text: string, cols: number): string
   text + " ".repeat(Math.max(0, cols - theme.width(text)));
 
 export const innerWidth = (width: number): number => Math.max(1, width - 2 * PAD.length);
+
+export const padLine = (theme: ThemeLike, token: ThemeToken, text: string, inner: number): string =>
+  PAD + theme.fg(token, theme.truncate(text, inner));
 
 export const alignRight = (
   theme: ThemeLike,

@@ -1,7 +1,7 @@
 import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../core/adapter/contract.ts";
 import { keyHints } from "../../../../../core/manager/hints.ts";
 import { type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
-import { errorText, innerWidth, PAD, truncatePainted } from "../../components/format.ts";
+import { errorText, innerWidth, PAD, padLine, truncatePainted } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";
 import { carrySelection, stoppableAgents, type TreeRow } from "../../components/tree.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
@@ -139,7 +139,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     const slot = slots[index];
 
     if (!slot || !layout) {
-      return PAD + theme.fg("muted", theme.truncate("No running agents", inner));
+      return padLine(theme, "muted", "No running agents", inner);
     }
 
     if (slot.kind === "gap") {
@@ -162,7 +162,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     const theme = api.theme;
     const hint = theme.truncate(PAD + keyHints(listHint(selected()), theme), inner + PAD.length);
 
-    return feedback ? [PAD + theme.fg(feedback.token, theme.truncate(feedback.text, inner)), hint] : [hint];
+    return feedback ? [padLine(theme, feedback.token, feedback.text, inner), hint] : [hint];
   };
 
   const bodyHeight = (footerLength: number) => Math.max(1, api.rows() - 5 - footerLength);
@@ -271,17 +271,16 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     action?.();
   };
 
-  const dispose = () => {
-    disposed = true;
-    clearTimeout(feedbackTimer);
-    feedbackTimer = undefined;
+  const suspend = () => {
     unwatch?.();
     unwatch = undefined;
   };
 
-  const suspend = () => {
-    unwatch?.();
-    unwatch = undefined;
+  const dispose = () => {
+    disposed = true;
+    clearTimeout(feedbackTimer);
+    feedbackTimer = undefined;
+    suspend();
   };
 
   const resume = () => {

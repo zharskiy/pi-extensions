@@ -1,6 +1,6 @@
 import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { type ReceiptSegment, receiptText } from "../../../../../core/manager/format.ts";
-import { countLine, keyHints } from "../../../../../core/manager/hints.ts";
+import { countLine, type KeyHint, keyHints } from "../../../../../core/manager/hints.ts";
 import { preview, wrapChild } from "../../../../../core/manager/row.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
@@ -11,6 +11,7 @@ import {
   formatCtx,
   innerWidth,
   PAD,
+  padLine,
   singleLine,
   truncatePainted,
 } from "../../components/format.ts";
@@ -124,7 +125,7 @@ const handoffLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
 
   const invalid = record.error ? ` (invalid: ${record.error})` : "";
 
-  return [PAD + theme.fg("warning", theme.truncate(`Handoff file ${record.handoffPath}${invalid}`, inner))];
+  return [padLine(theme, "warning", `Handoff file ${record.handoffPath}${invalid}`, inner)];
 };
 
 export const headerLines = (
@@ -136,7 +137,7 @@ export const headerLines = (
 ): string[] => {
   const { record, chain } = data;
   const inner = innerWidth(width);
-  const dim = (text: string) => PAD + theme.fg("dim", theme.truncate(text, inner));
+  const dim = (text: string) => padLine(theme, "dim", text, inner);
   const names = chain.map((_, index) => chainName(record, index));
   const chainText = `Chain ${names.join(" → ")} (${chain.length} sessions)${DOT}viewing ${agentName(record)}`;
 
@@ -211,7 +212,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     if (data.error !== undefined) {
       return {
         request: [],
-        lines: [PAD + theme.fg("warning", theme.truncate(data.error, inner))],
+        lines: [padLine(theme, "warning", data.error, inner)],
         clickable: 0,
       };
     }
@@ -226,14 +227,14 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     return { request, lines, clickable: lines.length };
   };
 
-  const hintPairs = (): (readonly [string, string])[] => {
+  const hintPairs = (): KeyHint[] => {
     const record = data.record;
-    const exit = ["esc", deps.back ? "to go back" : "to close"] as const;
-    const stop = isOpen() ? [["x", stopWords(record.state)] as const] : [];
-    const request = hasRequest()
-      ? [["r", requestExpanded ? "to hide the request" : "to show the request"] as const]
+    const exit: KeyHint = ["esc", deps.back ? "to go back" : "to close"];
+    const stop: KeyHint[] = isOpen() ? [["x", stopWords(record.state)]] : [];
+    const request: KeyHint[] = hasRequest()
+      ? [["r", requestExpanded ? "to hide the request" : "to show the request"]]
       : [];
-    const tools = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"] as const;
+    const tools: KeyHint = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"];
 
     return [exit, ...stop, ...request, tools];
   };
@@ -270,7 +271,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const inner = innerWidth(width);
     const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
-    const footer = notice ? [PAD + theme.fg("warning", theme.truncate(notice, inner))] : [];
+    const footer = notice ? [padLine(theme, "warning", notice, inner)] : [];
     const height = Math.max(3, api.rows() - header.length - 3 - (footer.length + 1));
     const { request, lines, clickable } = bodyLines(width);
     const body = request.concat(lines);

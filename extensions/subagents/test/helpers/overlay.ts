@@ -18,7 +18,7 @@ export const plain = (lines: string[]) => lines.map((line) => stripVTControlChar
 
 export const key = (name: KeyPress["name"], char?: string): KeyPress => ({ name, char });
 
-export const char = (value: string): KeyPress => ({ name: "other", char: value });
+export const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
 
 export const fakeOverlayApi = (
   rows = 200,

@@ -9,7 +9,7 @@ import {
 import { countLine, expandHint } from "../../../../../core/manager/hints.ts";
 import { type Mark, markOf } from "../../../../../core/manager/marks.ts";
 import { failureSuffix, type MarkedRow, NEST, row, TITLE_COLUMN } from "../../../../../core/manager/row.ts";
-import { modelId } from "../../components/agent-row.ts";
+import { chainSuffix, modelId } from "../../components/agent-row.ts";
 import { agentReceipt, DOT, firstLine, singleLine } from "../../components/format.ts";
 import { stateMark } from "../../components/state-text.ts";
 import {
@@ -91,7 +91,7 @@ const agentLine = (
   cols: number,
   parts: { name: string; chainIndex: number; description: string; model?: string },
 ) => {
-  const suffix = parts.chainIndex > 1 ? ` #${parts.chainIndex}` : "";
+  const suffix = chainSuffix(parts.chainIndex);
   const head = `${parts.name}${suffix}  `;
   const description = singleLine(parts.description);
   const tail = parts.model ? `${DOT}${modelId(parts.model)}` : "";
@@ -273,6 +273,9 @@ const batchReceipt = (input: BlockInput, ids: string[]): ReceiptSegment[] => {
   });
 };
 
+const countTitle = (theme: ThemeLike, count: number, words: string) =>
+  `${theme.bold(theme.fg("text", String(count)))} ${theme.fg("text", words)}`;
+
 const outcomeCounts = (terminals: AgentRecord[]) =>
   [
     ["stopped", terminals.filter((record) => record.state === "stopped").length],
@@ -283,7 +286,7 @@ const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, widt
   const { theme, registry, hints } = input;
   const count = details.agents.length;
   const words = nounPhrase(details.agents, !wait);
-  const title = `${theme.bold(theme.fg("text", String(count)))} ${theme.fg("text", words)}`;
+  const title = countTitle(theme, count, words);
   const room = width - TITLE_COLUMN - theme.width(`${count} ${words}`);
   const terminals = terminalsOf(input, details.ids);
   const records = details.batchId ? registry.batch(details.batchId) : [];
@@ -342,7 +345,7 @@ const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, widt
 const stoppedBlock = (input: BlockInput, params: RunAgentParams, width: number) => {
   const { theme } = input;
   const words = nounPhrase(params.agents, params.wait !== true);
-  const title = `${theme.bold(theme.fg("text", String(params.agents.length)))} ${theme.fg("text", words)}${theme.fg("muted", `${DOT}stopped`)}`;
+  const title = `${countTitle(theme, params.agents.length, words)}${theme.fg("muted", `${DOT}stopped`)}`;
 
   return row({ mark: "stopped", title })(width, theme);
 };

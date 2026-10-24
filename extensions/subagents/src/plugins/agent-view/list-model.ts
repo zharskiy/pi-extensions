@@ -1,3 +1,4 @@
+import type { KeyHint } from "../../../../../core/manager/hints.ts";
 import { DOT } from "../../components/format.ts";
 import { stopWords } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
@@ -217,14 +218,14 @@ export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
   ];
 };
 
-export type HintPair = readonly [key: string, words: string];
+const EXITS: KeyHint[] = [
+  ["esc", "to close"],
+  ["→", "to main session"],
+];
 
-export const listHint = (selected: AgentRecord | undefined): HintPair[] => {
+export const listHint = (selected: AgentRecord | undefined): KeyHint[] => {
   if (!selected) {
-    return [
-      ["esc", "to close"],
-      ["→", "to main session"],
-    ];
+    return [...EXITS];
   }
 
   return [
@@ -232,7 +233,6 @@ export const listHint = (selected: AgentRecord | undefined): HintPair[] => {
     ["enter", "to view"],
     ["x", stopWords(selected.state)],
     ["shift+x", "to stop all"],
-    ["esc", "to close"],
-    ["→", "to main session"],
+    ...EXITS,
   ];
 };

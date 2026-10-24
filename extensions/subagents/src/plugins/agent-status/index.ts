@@ -50,11 +50,13 @@ const rowOf = (snapshot: AgentSnapshot): RowInput => ({
   openDescendants: 0,
 });
 
+const unknownText = (id: string) => `${id}: unknown agent`;
+
 const expandedBody = (details: AgentStatusDetails | undefined) =>
   rowChildren({
     body: (width, theme) => [
       ...renderRows((details?.agents ?? []).map(rowOf), 0, width, theme, { spinner: false, bare: true }),
-      ...(details?.unknown ?? []).map((id) => theme.fg("muted", `${id}: unknown agent`)),
+      ...(details?.unknown ?? []).map((id) => theme.fg("muted", unknownText(id))),
     ],
   });
 
@@ -76,17 +78,14 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
     const unknownIds = wanted.filter((id) => !scope.registry.get(id));
 
     const agents = wanted
-      .map((id) => ({ id, record: scope.registry.get(id) }))
-      .flatMap(({ id, record }) =>
-        record ? [snapshotOf(chainTerminal(scope.registry, record), now, id)] : [],
-      )
+      .flatMap((id) => {
+        const record = scope.registry.get(id);
+
+        return record ? [snapshotOf(chainTerminal(scope.registry, record), now, id)] : [];
+      })
       .filter((snapshot, index, all) => all.findIndex((other) => other.id === snapshot.id) === index);
 
-    const lines = agents.map(snapshotLine);
-
-    unknownIds.forEach((id) => {
-      lines.push(`${id}: unknown agent`);
-    });
+    const lines = [...agents.map(snapshotLine), ...unknownIds.map(unknownText)];
 
     const text = lines.length > 0 ? lines.join("\n") : "No agents in this session.";
     return { text, details: { agents, unknown: unknownIds } };
