@@ -6,6 +6,7 @@ Restructure `pi-extensions` into enforced layers without changing behaviour. Thi
 - [02-target-architecture.md](02-target-architecture.md): current facts, target trees, rules R1–R16, extension-manager changes, per-extension file tables, pi-adapter surface and type revision, renames, phases.
 - [03-test-framework-and-evals.md](03-test-framework-and-evals.md): `test-framework/` layout and API, `evals/` runner, CI and packaging changes.
 - [04-architecture-plan-review.md](04-architecture-plan-review.md): the review whose findings and reconciled decisions are folded into 01–03.
+- [05-pi-evals-research.md](05-pi-evals-research.md): research on pi's evals package; its recommendations are folded into 03, Phases 3, 8 and 9.
 
 ## 1. Final root tree
 
@@ -82,7 +83,7 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 
 ### Phase 3 · `test-framework/`, tests → `tests/`
 - Goal: one test framework, extension tests in `tests/`, adapter tests in `pi-adapter/tests/`, CI pack check updated.
-- Moves: 03 §3 layout (`fake-host.ts`, `fake-agent-runtime.ts`, `themes.ts`, `waiting.ts`, `extension-harness.ts` with `startExtension({ plugins, … })` only (today's `startPlugins`), `valid-handoff.ts` (`VALID_HANDOFF`; subagents keeps its cases in `tests/support/handoff-cases.ts`), `live/`, `eval-runs/`, `pi/`, `pi/live/`); `core/test/adapter/*.test.ts` → `pi-adapter/tests/` (+ `tests/support/fake-pi.ts`, `tests/live/wake.live.test.ts`); each `extensions/<x>/test/` → `tests/`, helpers → `tests/support/`; duplicate theme/key/ANSI helpers deleted; `pi-adapter/index.ts` adds `textMetrics`, `resolveModel`, `CatalogModel`, `ModelPreferences`; names per 02 §9 last rows.
+- Moves: 03 §3 layout (`fake-host.ts`, `fake-agent-runtime.ts`, `themes.ts`, `waiting.ts`, `extension-harness.ts` with `startExtension({ plugins, … })` only (today's `startPlugins`), `valid-handoff.ts` (`VALID_HANDOFF`; subagents keeps its cases in `tests/support/handoff-cases.ts`), `live/`, `eval-runs/`, `pi/`, `pi/live/`); pi-free `eval-runs/run-record.ts` (`RunRecord`, replaces `RunCost`) and `pi/live/session-events.ts` filling it from the live session; `startLiveExtension` and `prepareAgentDir` isolate with `HOME` and `PI_CODING_AGENT_DIR` overrides and copy the credential via `readStoredCredential` (03 §3.1, plan 05); `core/test/adapter/*.test.ts` → `pi-adapter/tests/` (+ `tests/support/fake-pi.ts`, `tests/live/wake.live.test.ts`); each `extensions/<x>/test/` → `tests/`, helpers → `tests/support/`; duplicate theme/key/ANSI helpers deleted; `pi-adapter/index.ts` adds `textMetrics`, `resolveModel`, `CatalogModel`, `ModelPreferences`; names per 02 §9 last rows.
 - Config: vitest unit include = explicit list (03 §5); live config `extensions/*/tests/live/**`, `pi-adapter/tests/live/**`; CI grep `'/tests\?/\|test-framework/\|evals/\|\.snap\|fixtures\|\.eval\.ts'` plus positive count of 13 `index.ts` (03 §5); `files` adds `!**/tests/**`; Biome overrides `test-framework/**`, `test-framework/*.ts`+`live/**`+`eval-runs/**`, `test-framework/pi/**`, `evals/**`, `test/**`, `pi-adapter/tests/**` on; `test/architecture.test.ts` reduced to R10/R14/placement/`pi.extensions` rows; knip vitest config list.
 - Acceptance: `npm run check` green; `npm run test:live` passes locally for `wake` and the five subagents live tests; `npm pack --dry-run` grep clean.
 - Risk: medium (theme helpers differ subtly: close tag, bold marker; keep old semantics behind options). Parallelism: none.
@@ -126,13 +127,13 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 ### Phase 8 · `evals/`
 - Goal: the four prompt-quality suites run as evals, not live tests.
 - Moves: `planner-plan`, `reviewer-review`, `implementer-change`, `routing` live tests → `evals/subagents/<subject>/*.eval.ts` + `*-cases.ts` on `test-framework/eval-runs` (`repeatRuns`, `expectPassRate(MAJORITY)`, `reportEval`); eval-only helpers → `evals/subagents/support/`; `evals/README.md`.
-- Config: `vitest.evals.config.ts` (`evals/**/*.eval.ts`, serial, 1_800_000 ms); `npm run evals`; `PI_EVAL_RUNS` replaces `PI_LIVE_PLAN_RUNS`/`PI_LIVE_ROUTING_RUNS`; knip `entry` adds `evals/**/*.eval.ts`; AGENTS.md documents `npm run evals`.
+- Config: `vitest.evals.config.ts` (`evals/**/*.eval.ts`, `pool: "forks"`, `maxWorkers: 1`, serial, 1_800_000 ms); gitignored `evals/.results/<timestamp>/` (`observations.jsonl`, session snapshots of failed runs) with an `evals/.results/` entry in `.gitignore`; `npm run evals`; `PI_EVAL_RUNS` replaces `PI_LIVE_PLAN_RUNS`/`PI_LIVE_ROUTING_RUNS`; knip `entry` adds `evals/**/*.eval.ts`; AGENTS.md documents `npm run evals`.
 - Acceptance: `npm run check` green; `npm run test:live` no longer runs the four suites; `npm run evals` runs locally with `PI_LIVE_MODEL`.
 - Risk: low. Parallelism: none (depends on 7m(iii)).
 
 ### Phase 9 · Docs and lock-down
 - Goal: documentation matches the tree; the last exceptions close.
-- Changes: root `ARCHITECTURE.md`/`STRUCTURE.md` shortened to rules + links; `ARCHITECTURE.md`/`STRUCTURE.md` for pi-adapter, extension-manager, ui-kit, shared (admission rule), test-framework; AGENTS.md rule sentence ("extensions import each other only through `index.ts`"); README paths; `test/architecture.test.ts` R14 rejects `src/`; knip `includeEntryExports` enforced on the 13 `index.ts`.
+- Changes: root `ARCHITECTURE.md`/`STRUCTURE.md` shortened to rules + links; `ARCHITECTURE.md`/`STRUCTURE.md` for pi-adapter, extension-manager, ui-kit, shared (admission rule), test-framework; AGENTS.md rule sentence ("extensions import each other only through `index.ts`"); README paths; `test/architecture.test.ts` R14 rejects `src/`; knip `includeEntryExports` enforced on the 13 `index.ts`; revisit `vitest-evals` once a release supports vitest 5 (plan 05 §4.4).
 - Acceptance: `npm run check` green with the final `biome.json` and `knip.json` from 01; no `src/` folder; `test/architecture.test.ts` is ≤ the rows marked vitest in 01's matrix.
 - Risk: low. Parallelism: none.
 

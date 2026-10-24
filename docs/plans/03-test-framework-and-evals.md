@@ -93,7 +93,7 @@ Note: eval fixtures are pinned to historical SHAs and `seed(sha)` checks out *th
 - `test-framework/pi/` is the only part that imports pi-adapter internals; it imports pi packages directly only where pi-adapter has no function for it (global theme and keybindings init, `createAgentSession` and loader for real sessions, pi's theme module for tool rows). Biome enforces it: the `test-framework/pi/**` override (listed after `test-framework/**`, because Biome overrides do not merge) lifts the pi-package ban; the architecture test only checks that no file outside `pi-adapter/**` and `test-framework/pi/**` imports a pi package.
 - No provider or model names: the fake catalog keeps invented refs (`fake/model`, `acme/...`, `beta/...`); live and eval models come from env only.
 - Extension tests import `test-framework` (and `test-framework/pi` when they render through pi); never `pi-adapter` internals. Extension-local helpers live in `extensions/<name>/tests/support/` (not `helpers/`, to keep them apart from the framework).
-- Live mechanics shared by live tests and evals are generic: `test-framework/pi/live/live-extension.ts` exports `startLiveExtension({ extension, agentDir, settings })`, which boots any `createManagedExtension` result (its `.boot`) on a real agent runtime and a fake host. Subagents record types and chain helpers stay in `extensions/subagents/tests/support/live-harness.ts` as a thin layer over it (review finding 10).
+- Live mechanics shared by live tests and evals are generic: `test-framework/pi/live/live-extension.ts` exports `startLiveExtension({ extension, agentDir, settings })`, which boots any `createManagedExtension` result (its `.boot`) on a real agent runtime and a fake host. It isolates the run as pi's own evals harness does (plan 05 §4.2): `HOME` and `PI_CODING_AGENT_DIR` point into the temp agent dir for the run and are restored in `teardownLive`, and the selected credential is copied through `readStoredCredential` instead of linking `auth.json`. Note, not scheduled: pi-ai's `fauxProvider` could later run parts of the mechanics tests (wake, grants, nesting) as CI-safe unit tests with scripted tool calls (plan 05 §4.3). Subagents record types and chain helpers stay in `extensions/subagents/tests/support/live-harness.ts` as a thin layer over it (review finding 10).
 
 ### 3.2 Layout
 
@@ -121,6 +121,7 @@ test-framework/
 │   ├── eval-runs.ts               # evalRunCount (PI_EVAL_RUNS), repeatRuns
 │   ├── rubric.ts                  # Check, Rubric, gradeRun, gradeRuns
 │   ├── pass-threshold.ts          # expectPassRate, MAJORITY
+│   ├── run-record.ts              # RunRecord, RunEvent (pi-free; output, events, usage incl. cost, timings, errors)
 │   └── eval-report.ts             # reportEval (console + optional JSON file)
 ├── valid-handoff.ts               # VALID_HANDOFF (shared by session-limits and subagents tests); not handoff-document.ts, which is shared/'s basename
 ├── pi/                            # the pi-facing module
@@ -132,7 +133,8 @@ test-framework/
 │   └── live/
 │       ├── index.ts
 │       ├── live-model.ts          # PI_LIVE_MODEL / PI_LIVE_CHORE_MODEL, setupLive, teardownLive, describeLive, liveAgentModel, liveChoreModel
-│       ├── live-agent-dir.ts      # prepareAgentDir (auth link, models copy), realContextMarkers
+│       ├── live-agent-dir.ts      # prepareAgentDir (credential copy via readStoredCredential, HOME and PI_CODING_AGENT_DIR override, models copy), realContextMarkers
+│       ├── session-events.ts      # sessionEvents(messages), runUsage(session): fills RunRecord from the live session
 │       ├── live-runtime.ts        # createLiveAgentRuntime
 │       ├── pi-session.ts          # openPiSession (merges openMainLikeSession and wake's openSession)
 │       └── live-extension.ts      # startLiveExtension: any managed extension on a real runtime + fake host
@@ -226,11 +228,15 @@ export function evalRunCount(): number;                                        /
 export function repeatRuns<T>(count: number, run: (index: number) => Promise<T>, options?: { parallel?: boolean }): Promise<T[]>;
 export type Check<O> = { name: string; passes(outcome: O): boolean; explain?(outcome: O): string };
 export type Rubric<O> = Check<O>[];
-export type RunCost = { cost: number; durationMs: number };
-export type GradedRun<O> = { index: number; outcome: O; failedChecks: string[]; passed: boolean } & RunCost;
+export type RunEvent = { type: "message"; role: string; text: string } | { type: "tool_call"; name: string; arguments: unknown } | { type: "tool_result"; name: string; text: string; isError: boolean };
+export type RunRecord = { output: string; events: RunEvent[];     // run-record.ts, pi-free
+  usage: { inputTokens: number; outputTokens: number; toolCalls: number; costUsd?: number };   // costUsd absent when the model has no pricing: reported "unavailable", never $0
+  timings: { totalMs: number }; errors: string[] };
+export type RunCost = RunRecord["usage"];                                      // replaces { cost, durationMs }; duration is RunRecord["timings"].totalMs
+export type GradedRun<O> = { index: number; outcome: O; failedChecks: string[]; passed: boolean; record: RunRecord };
 export type EvalResult<O> = { name: string; runs: GradedRun<O>[]; passRate: number;
   checkPassRates: Record<string, number>; meanCost: number; meanDurationMs: number };
-export function gradeRuns<O>(name: string, outcomes: O[], rubric: Rubric<O>, costOf: (o: O) => RunCost): EvalResult<O>;
+export function gradeRuns<O>(name: string, outcomes: O[], rubric: Rubric<O>, recordOf: (o: O) => RunRecord): EvalResult<O>;
 export type PassThreshold = { moreThan: number } | { atLeast: number };          // fractions of runs
 export const MAJORITY: PassThreshold;                                            // { moreThan: 0.5 }, today's rule
 export function expectPassRate<O>(result: EvalResult<O>, threshold: PassThreshold, check?: string): void;
@@ -268,6 +274,8 @@ export type LiveExtension = { host: FakeHost; runtime: AgentRuntime; settings: u
   run(text: string, timeoutMs: number): Promise<void>; close(): Promise<void> };
 export function startLiveExtension<S>(options: { extension: ManagedExtension<S>; agentDir: string; settings?: Partial<S>;
   trusted?: boolean; skillFiles?: SkillFile[] }): LiveExtension;   // extension.boot from createManagedExtension
+export function sessionEvents(messages: unknown[]): RunEvent[];                  // session-events.ts
+export function runUsage(session: unknown): RunRecord["usage"];                  // from getSessionStats()
 ```
 
 Extension-specific support that stays local (examples): `extensions/subagents/tests/support/{subagents-harness.ts, live-harness.ts, agent-patch.ts, agent-records.ts, handoff-cases.ts, recorded-grep-session.ts, routing-session.ts}`; `extensions/questionnaire/tests/support/questions.ts`; `extensions/context/tests/support/context-snapshots.ts`; `extensions/transcript/tests/support/transcript-rows.ts`; `pi-adapter/tests/support/fake-pi.ts`. `subagents/tests/support/` is the one support folder evals may import (`live-harness.ts`, `routing-session.ts`); `live-harness.ts` wraps `startLiveExtension` with subagents' agent-file patching, `AgentRecord` chain helpers (`runChain`, `chainLinks`, `wakeTexts`) and `spawnAgents`.
@@ -310,7 +318,8 @@ evals/
 
 - Model only from env, same as live: `PI_LIVE_MODEL=provider/id[:thinking]` (leads), optional `PI_LIVE_CHORE_MODEL` (chores). One credential setup for both suites; no model names in eval code or cases.
 - `PI_EVAL_RUNS` (default 1) replaces `PI_LIVE_PLAN_RUNS` and `PI_LIVE_ROUTING_RUNS`.
-- `PI_EVAL_REPORT=<file>` (optional) appends one JSON line per eval result.
+- `PI_EVAL_REPORT=<file>` (optional) appends one JSON line per eval result. Each run is a `RunRecord`.
+- Results are also written to a gitignored `evals/.results/<timestamp>/` holding one `observations.jsonl` and the session snapshots of failed runs (plan 05 §4.4).
 
 ### 4.3 Reporting
 
@@ -368,6 +377,10 @@ describeLive("eval reviewer planted defects", () => {
 });
 ```
 
+### 4.5 Why not pi's evals package
+
+Pi ships `@earendil-works/pi-evals`, but it is private to the pi monorepo, its runner `vitest-evals` peers vitest 4 while this repo pins vitest 5, and its harness rejects any loaded extension, so it cannot run ours. We keep the custom runner and borrow the run record shape, the isolation pattern, the vitest settings and the session snapshot. Details in [05](05-pi-evals-research.md).
+
 ---
 
 ## 5 Config and script changes
@@ -376,7 +389,7 @@ describeLive("eval reviewer planted defects", () => {
 |---|---|
 | `vitest.config.ts` (unit) | explicit list, no repo-wide glob: `include: ["pi-adapter/tests/**/*.test.ts", "extension-manager/tests/**/*.test.ts", "ui-kit/tests/**/*.test.ts", "shared/tests/**/*.test.ts", "extensions/*/tests/**/*.test.ts", "test-framework/tests/**/*.test.ts", "evals/**/support/**/*.test.ts", "test/**/*.test.ts"]`, `exclude: [...configDefaults.exclude, "**/*.live.test.ts", "**/*.eval.ts"]` |
 | `vitest.live.config.ts` | `include: ["extensions/*/tests/live/**/*.live.test.ts", "pi-adapter/tests/live/**/*.live.test.ts"]`; rest unchanged (no file parallelism, verbose, 600 s test, 120 s hook) |
-| `vitest.evals.config.ts` (new) | `include: ["evals/**/*.eval.ts"]`, `fileParallelism: false`, `reporters: ["verbose"]`, `testTimeout: 1_800_000` (cases set their own), `hookTimeout: 120_000` |
+| `vitest.evals.config.ts` (new) | `include: ["evals/**/*.eval.ts"]`, `pool: "forks"`, `maxWorkers: 1`, `fileParallelism: false`, `reporters: ["verbose"]`, `testTimeout: 1_800_000` (cases set their own), `hookTimeout: 120_000` |
 | `package.json` scripts | add `"evals": "vitest run --config vitest.evals.config.ts"`; keep `test`, `test:live`; `check` stays `typecheck && lint && test` (unit only) |
 | `package.json#files` | explicit entries, no brace patterns (npm 11 expands `extensions/*/{index.ts,api,core,ui}/**` to `extensions/*/index.ts/**`, which drops every `index.ts`, review finding 3): `pi-adapter`, `extension-manager`, `ui-kit`, `shared`, `extensions/*/index.ts`, `extensions/*/api/**`, `extensions/*/core/**`, `extensions/*/ui/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, `extensions/*/ARCHITECTURE.md`, `extensions/*/STRUCTURE.md`, `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`, `!**/tests/**` (negation verified with npm 11.19.1); never list `test-framework`, `evals`, `docs` |
 | `pi.extensions` | `./extensions/<name>/index.ts` |
@@ -412,6 +425,6 @@ describeLive("eval reviewer planted defects", () => {
 3. **Pi calls with no pi-adapter function** (`initTheme`, `setKeybindings`, `createAgentSession`, `DefaultResourceLoader`, pi's theme module URL): keep them in `test-framework/pi/` under the architecture rule, or add test-support exports to pi-adapter (dead code in the shipped package)?
 4. **Eval model env.** Reuse `PI_LIVE_MODEL` / `PI_LIVE_CHORE_MODEL` (proposed) or add `PI_EVAL_MODEL` so evals can run a stronger lead than the live suite without editing the shell each time?
 5. **Thresholds.** Keep the single `MAJORITY` rule for all evals, or allow per-case thresholds (e.g. the cross-module reviewer fixture that is documented as expected to miss on cheap models could declare `{ atLeast: 0 }` and only report)?
-6. **Report location.** Console plus opt-in `PI_EVAL_REPORT` file (proposed), or a fixed gitignored `evals/.results/` history to compare prompt changes over time?
+6. ~~Report location.~~ Decided (plan 05 §4.4): console lines plus a gitignored `evals/.results/<timestamp>/` with `observations.jsonl` and session snapshots; `PI_EVAL_REPORT` stays as the opt-in single file. Tests may write there: the AGENTS.md file rule binds extensions, not tests.
 7. **Grants and handoff.** Both depend on the model following an instruction (call these tools, read files in turn). They are kept as live tests because the assertions are mechanical; confirm, and decide whether a separate handoff *document quality* eval is wanted.
 8. ~~Extension-manager harness for other extensions.~~ Decided: every extension is a `createManagedExtension` result (plan 02 §4), so `startExtension` takes either a plugin list or a managed extension (`extension.boot`) and one harness serves all 13.
