@@ -7,14 +7,14 @@ export type Args = Record<string, unknown>;
 
 export type Context = { view: ToolCallView; args: Args; home: string; key: string };
 
-export type Title = Omit<TitleParts, "mark" | "reason" | "duration">;
+export type Title = Omit<TitleParts, "mark" | "verb" | "reason" | "duration">;
 
 export type Failure = { text: string; timedOut?: boolean };
 
 export type Outcome = { lines: string[]; hint?: boolean; body?: RowRender };
 
 export type Look = {
-  verb: Styled;
+  verb?: Styled;
   title(context: Context, theme: ThemeLike): Title | undefined;
   outcome(context: Context, room: number, theme: ThemeLike, reasonShown: boolean): Outcome;
   failure?(context: Context): Failure | undefined;
@@ -60,5 +60,14 @@ export const errorOutcome = (
   };
 };
 
+export const stopped = (view: ToolCallView) => view.aborted && !view.isPartial;
+
 export const failed = (context: Context) =>
   context.view.isError && !context.view.isPartial && !context.view.aborted;
+
+export const orError =
+  (outcome: Look["outcome"]): Look["outcome"] =>
+  (context, room, theme, reasonShown) =>
+    failed(context)
+      ? errorOutcome(context, room, theme, reasonShown)
+      : outcome(context, room, theme, reasonShown);

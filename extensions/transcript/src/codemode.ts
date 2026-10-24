@@ -134,7 +134,6 @@ const title = (context: Context) => {
   const [first = "", ...rest] = OPTIONS_LINE.test(lines[0] ?? "") ? lines.slice(1) : lines;
 
   return {
-    verb: bold("codemode"),
     target: {
       text: first,
       token: "muted" as const,

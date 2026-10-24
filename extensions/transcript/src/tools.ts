@@ -18,13 +18,14 @@ import {
   bold,
   type Context,
   counted,
-  errorOutcome,
   type Failure,
   failed,
   firstLineFailure,
   type Look,
   type Outcome,
+  orError,
   resultText,
+  stopped,
   type Title,
   textArg,
 } from "./look.ts";
@@ -64,7 +65,7 @@ const readRange = (args: Args) => {
 const pathOf = (context: Context) => textArg(context.args, "path", "file_path");
 
 const pathTitle =
-  (verb: string, tail?: (context: Context) => string) =>
+  (tail?: (context: Context) => string) =>
   (context: Context): Title | undefined => {
     const path = pathOf(context);
 
@@ -75,7 +76,6 @@ const pathTitle =
     const extra = tail?.(context) ?? "";
 
     return {
-      verb: bold(verb),
       target: {
         text: shortPath(path, context.view.cwd, context.home),
         cut: "start",
@@ -90,8 +90,7 @@ const fileFailure = (context: Context): Failure | undefined =>
   ENOENT.test(resultText(context)) ? { text: "file not found" } : firstLineFailure(context);
 
 const summaryOnly = (line: (context: Context, theme: ThemeLike) => string) => ({
-  outcome: (context: Context, room: number, theme: ThemeLike, reasonShown: boolean): Outcome =>
-    failed(context) ? errorOutcome(context, room, theme, reasonShown) : { lines: [line(context, theme)] },
+  outcome: orError((context, _room, theme) => ({ lines: [line(context, theme)] })),
   piBody: (context: Context) => !failed(context),
 });
 
@@ -122,11 +121,7 @@ const changeLine = (added: number, removed: number, theme: ThemeLike) =>
       : []),
   ].join(theme.fg("muted", ", "));
 
-const editOutcome = (context: Context, room: number, theme: ThemeLike, reasonShown: boolean): Outcome => {
-  if (failed(context)) {
-    return errorOutcome(context, room, theme, reasonShown);
-  }
-
+const editOutcome = orError((context, _room, theme): Outcome => {
   const lines = editDiff(context);
 
   if (lines === undefined) {
@@ -141,13 +136,9 @@ const editOutcome = (context: Context, room: number, theme: ThemeLike, reasonSho
     hint: summary.length > 0,
     body: context.view.expanded ? diffBody(lines) : undefined,
   };
-};
+});
 
-const writeOutcome = (context: Context, room: number, theme: ThemeLike, reasonShown: boolean): Outcome => {
-  if (failed(context)) {
-    return errorOutcome(context, room, theme, reasonShown);
-  }
-
+const writeOutcome = orError((context, _room, theme): Outcome => {
   const content = outputLines(textArg(context.args, "content") ?? "");
 
   if (content.length === 0) {
@@ -161,7 +152,7 @@ const writeOutcome = (context: Context, room: number, theme: ThemeLike, reasonSh
     hint: true,
     body: context.view.expanded ? diffBody(rows) : undefined,
   };
-};
+});
 
 const found =
   (word: string, empty: RegExp, none: string, plural?: string) => (context: Context, theme: ThemeLike) => {
@@ -181,13 +172,13 @@ const grepTitle = (context: Context, theme: ThemeLike): Title | undefined => {
   const path = textArg(context.args, "path");
   const where = path ? ` in ${theme.fg("accent", shortPath(path, context.view.cwd, context.home))}` : "";
 
-  return { verb: bold("grep"), target: { text: pattern, cut: "end", ...(where ? { tail: where } : {}) } };
+  return { target: { text: pattern, cut: "end", ...(where ? { tail: where } : {}) } };
 };
 
 const findTitle = (context: Context): Title | undefined => {
   const pattern = textArg(context.args, "pattern");
 
-  return pattern === undefined ? undefined : { verb: bold("find"), target: { text: pattern, cut: "end" } };
+  return pattern === undefined ? undefined : { target: { text: pattern, cut: "end" } };
 };
 
 const listTitle = (context: Context): Title | undefined => {
@@ -195,23 +186,23 @@ const listTitle = (context: Context): Title | undefined => {
 
   return path === undefined
     ? undefined
-    : { verb: bold("ls"), target: { text: shortPath(path, context.view.cwd, context.home), cut: "start" } };
+    : { target: { text: shortPath(path, context.view.cwd, context.home), cut: "start" } };
 };
 
 const LOOKS: Record<string, Look> = {
   read: {
     verb: bold("read"),
-    title: pathTitle("read", (context) => readRange(context.args)),
+    title: pathTitle((context) => readRange(context.args)),
     failure: fileFailure,
     ...summaryOnly(readLine),
   },
   edit: {
     verb: bold("edit"),
-    title: pathTitle("edit"),
+    title: pathTitle(),
     outcome: editOutcome,
     piBody: (context) => !failed(context) && editDiff(context) === undefined,
   },
-  write: { verb: bold("write"), title: pathTitle("write"), outcome: writeOutcome, failure: fileFailure },
+  write: { verb: bold("write"), title: pathTitle(), outcome: writeOutcome, failure: fileFailure },
   bash: shellLook("$"),
   powershell: shellLook("PS>"),
   grep: {
@@ -249,12 +240,12 @@ const durationOf = (view: ToolCallView, failure: Failure | undefined) => {
 const heading = (look: Look, context: Context, width: number, theme: ThemeLike): Heading => {
   const view = context.view;
   const mark = markOf(view);
-  const base: TitleParts = { mark, ...(look.title(context, theme) ?? { verb: look.verb }) };
+  const base: TitleParts = { mark, verb: look.verb, ...look.title(context, theme) };
   const failure = failed(context) && view.result ? (look.failure ?? firstLineFailure)(context) : undefined;
   const duration = durationOf(view, failure);
   const timed = duration === undefined ? base : { ...base, duration };
 
-  if (view.aborted && !view.isPartial) {
+  if (stopped(view)) {
     return { parts: { ...timed, reason: { text: "stopped", token: "muted" } }, reasonShown: true };
   }
 
@@ -266,7 +257,7 @@ const heading = (look: Look, context: Context, width: number, theme: ThemeLike):
 };
 
 const resultRows = (look: Look, context: Context) => (width: number, theme: ThemeLike) => {
-  if (context.view.aborted && !context.view.isPartial && !look.streams) {
+  if (stopped(context.view) && !look.streams) {
     return [];
   }
 

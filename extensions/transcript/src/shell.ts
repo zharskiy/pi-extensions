@@ -13,7 +13,7 @@ import { outputLines, previewRows, shellResult } from "./output.ts";
 
 const MORE = " ...";
 
-const title = (prompt: string) => (context: Context) => {
+const title = (context: Context) => {
   const command = textArg(context.args, "command");
 
   if (command === undefined) {
@@ -24,7 +24,6 @@ const title = (prompt: string) => (context: Context) => {
   const more = rest.some((line) => line.trim() !== "");
 
   return {
-    verb: muted(prompt),
     target: { text: first, token: "text" as const, cut: "end" as const, ...(more ? { tail: MORE } : {}) },
   };
 };
@@ -58,7 +57,7 @@ const outcome = (context: Context, room: number, theme: ThemeLike, reasonShown: 
 
 export const shellLook = (prompt: string): Look => ({
   verb: muted(prompt),
-  title: title(prompt),
+  title,
   failure: (context) => {
     const status = shellResult(resultText(context));
 
