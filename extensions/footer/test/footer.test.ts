@@ -3,8 +3,6 @@ import { TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, FAKE_FOOTER_KEY, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createFooter } from "../src/footer.ts";
 
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
 const setup = () => {
   const host = createFakeHost({ cwd: "/work/my-project" });
 
@@ -14,10 +12,7 @@ const setup = () => {
   createFooter(host);
   host.start();
 
-  const lines = () =>
-    (host.footer?.(80, plainTheme, { branch: "main", statuses: new Map() }) ?? []).map((line) =>
-      line.replace(ANSI, ""),
-    );
+  const lines = () => host.footer?.(80, plainTheme, { branch: "main", statuses: new Map() }) ?? [];
 
   return { host, lines };
 };

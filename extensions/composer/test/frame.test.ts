@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
+import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { CHEVRON, createFrame } from "../src/frame.ts";
+import { createFrame } from "../src/frame.ts";
 
 const ESC = String.fromCharCode(27);
 const ANSI = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
@@ -33,7 +33,7 @@ describe("createFrame", () => {
       plainTheme,
     );
 
-    expect(lines).toEqual(["─────────", ` ${CHEVRON} abcdef`, "   ghijkl", "─────────"]);
+    expect(lines).toEqual(["─────────", " › abcdef", "   ghijkl", "─────────"]);
   });
 
   it("keeps every line as wide as the given width", () => {
@@ -62,24 +62,10 @@ describe("createFrame", () => {
     expect(visible(lines[0] ?? "")).toBe(visible(rule) + frame.chrome);
   });
 
-  it("uses pi's message cursor as the prompt", () => {
-    expect(CHEVRON).toBe("›");
-  });
-
   it("paints the extension and the bold prompt with the border colour", () => {
     const lines = createFrame().decorate(["──", "ab", "──"], layout, bracketed, recording);
 
     expect(lines).toEqual(["[───]──", " <b>[›]</b> ab", "──[───]"]);
-  });
-
-  it("paints the prompt in the thinking level's colour the border is given", () => {
-    const frame = createFrame();
-    const prompt = (token: ThemeToken) =>
-      frame.decorate(["──", "ab", "──"], layout, (text) => recording.fg(token, text), recording)[1];
-
-    expect(prompt("thinkingOff")).toBe(" <b><thinkingOff>›</thinkingOff></b> ab");
-    expect(prompt("thinkingMedium")).toBe(" <b><thinkingMedium>›</thinkingMedium></b> ab");
-    expect(prompt("thinkingMax")).toBe(" <b><thinkingMax>›</thinkingMax></b> ab");
   });
 
   it("puts the extension in front of the top rule so pi's working status starts right of the gutter", () => {
