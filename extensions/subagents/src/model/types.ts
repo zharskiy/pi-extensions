@@ -117,6 +117,7 @@ export type NewAgent = {
 
 export type AgentRegistry = {
   create(input: NewAgent): AgentRecord;
+  restore(records: AgentRecord[]): void;
   get(id: string): AgentRecord | undefined;
   list(): AgentRecord[];
   batch(batchId: string): AgentRecord[];

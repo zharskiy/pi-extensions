@@ -78,7 +78,8 @@ pi-extensions/
 │   │   │   ├── plugins.ts       # ordered plugin list
 │   │   │   ├── model/           # types, events, plugin, settings, paths,
 │   │   │   │                    #   agent-schema, agent-override (override value checks),
-│   │   │   │                    #   model-resolution (resolutionProblem), context-limit
+│   │   │   │                    #   model-resolution (resolutionProblem), context-limit,
+│   │   │   │                    #   manifest (manifest.json read and restore)
 │   │   │   ├── components/      # pure TUI render helpers (format.ts formatters and agentReceipt, padding and
 │   │   │   │                    #   wrapping over the theme, state-text.ts marks, spinner, words
 │   │   │   │                    #   and stop words, agent-row, tree.ts (chain links, terminals,
@@ -179,7 +180,7 @@ fetch-tool/         # the fetch tool: index.ts (plugin, `fetchTool` service, too
 agent-definitions/  # loads agents/**/*.md: loader.ts (files, then the agents.<name> overrides and
                     #   their checks), fields.ts (field rules), yaml-lite.ts (frontmatter parser),
                     #   prompt assembly
-agent-registry/     # in-memory agent records (registry.ts)
+agent-registry/     # in-memory agent records (registry.ts), restored from manifests at session start
 run-agent/          # index.ts (plugin, wake, block invalidation), runner.ts (skills and spawn-cap
                     #   checks), tools.ts (run_agent, message_agent), render.ts (block), placement.ts
                     #   + worktree.ts, task.ts (task text), outbox.ts, result.ts (result pick,

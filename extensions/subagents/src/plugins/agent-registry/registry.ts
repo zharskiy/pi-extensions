@@ -43,6 +43,7 @@ const writeManifestFile = (record: AgentRecord) => {
     turns: record.turns,
     toolCalls: record.toolCalls,
     tokens: record.tokens,
+    cost: record.cost,
   };
 
   writeFileSync(join(record.dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -136,8 +137,18 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     return record;
   };
 
+  const restore = (past: AgentRecord[]) => {
+    past
+      .filter((record) => !records.has(record.id))
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .forEach((record) => {
+        records.set(record.id, record);
+      });
+  };
+
   return {
     create,
+    restore,
     get: (id) => records.get(id),
     list: () => Array.from(records.values()),
     batch: (batchId) => Array.from(records.values()).filter((record) => record.batchId === batchId),

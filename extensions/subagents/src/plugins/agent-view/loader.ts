@@ -1,8 +1,9 @@
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRuntime, Host, SessionRecord } from "../../../../../core/adapter/contract.ts";
 import { errorText } from "../../components/format.ts";
-import { agentsDirFor, handoffPathFor, MANIFEST_FILE } from "../../model/paths.ts";
+import { manifestRecord, readManifest, sessionCost } from "../../model/manifest.ts";
+import { agentsDirFor, handoffPathFor } from "../../model/paths.ts";
 import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../../model/types.ts";
 
 export type ViewData = {
@@ -25,25 +26,13 @@ type AgentSourceDeps = {
 export const createAgentSource = (deps: AgentSourceDeps) => {
   const { host, runtime, registry } = deps;
 
-  const costOf = (file: string | undefined) => {
-    if (!file) {
-      return 0;
-    }
-
-    try {
-      return host.sessionUsage(file).cost.total;
-    } catch {
-      return 0;
-    }
-  };
-
   const fromManifest = (id: string): AgentRecord | undefined => {
     const session = host.session();
     const dir = join(agentsDirFor(session), id);
     let manifest: Partial<AgentRecord>;
 
     try {
-      manifest = JSON.parse(readFileSync(join(dir, MANIFEST_FILE), "utf8")) as Partial<AgentRecord>;
+      manifest = readManifest(dir);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return undefined;
@@ -52,20 +41,12 @@ export const createAgentSource = (deps: AgentSourceDeps) => {
       throw new Error(`manifest of "${id}": ${errorText(error)}`);
     }
 
-    return {
-      turns: 0,
-      toolCalls: 0,
-      tokens: 0,
-      cost: costOf(manifest.sessionFile),
-      lastText: "",
-      handoffRequested: false,
+    return manifestRecord(manifest, {
+      cost: sessionCost(host, manifest.sessionFile),
       contextLimit: deps.limitOf(manifest.agent),
-      chainIndex: 1,
-      version: 0,
       handoffPath: handoffPathFor(session, id),
       dir,
-      ...manifest,
-    } as AgentRecord;
+    });
   };
 
   const readable = {
