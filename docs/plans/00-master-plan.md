@@ -111,6 +111,7 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 - Risk: medium (subagents boot path). Parallelism: none.
 
 ### Phase 7a–7l · Plain extensions, one PR each
+- Status: done, with 7m (dd2d4be..a6f77b2).
 - Goal: each extension in `index.ts api/ core/ ui/ tests/` on `createManagedExtension`.
 - Order (smallest first): command-aliases, composer, working-indicator, style, spending, footer, notifications, questionnaire, context, transcript, mcp-import, session-limits. Moves per 02 §5 tables; `[split]` rows are the only logic cuts.
 - Per PR: `src/` → `api/ core/ ui/`, `test/` already in `tests/` (phase 3) gets `support/` where needed, root `index.ts`, `api/extension.ts`, `api/plugin.ts`, per-extension `ARCHITECTURE.md` + `STRUCTURE.md` (behaviour section moved out of the root ARCHITECTURE.md), `pi.extensions` entry → `./extensions/<x>/index.ts`, README path.
@@ -125,6 +126,7 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 - Risk: medium (70 source, 61 test files). Parallelism: runs alongside 7a–7l; (i)→(ii)→(iii) sequential.
 
 ### Phase 8 · `evals/`
+- Status: done (c27ac08).
 - Goal: the four prompt-quality suites run as evals, not live tests.
 - Moves: `planner-plan`, `reviewer-review`, `implementer-change`, `routing` live tests → `evals/subagents/<subject>/*.eval.ts` + `*-cases.ts` on `test-framework/eval-runs` (`repeatRuns`, `expectPassRate(MAJORITY)`, `reportEval`); eval-only helpers → `evals/subagents/support/`; `evals/README.md`.
 - Config: `vitest.evals.config.ts` (`evals/**/*.eval.ts`, `pool: "forks"`, `maxWorkers: 1`, serial, 1_800_000 ms); gitignored `evals/.results/<timestamp>/` (`observations.jsonl`, session snapshots of failed runs) with an `evals/.results/` entry in `.gitignore`; `npm run evals`; `PI_EVAL_RUNS` replaces the old plan-runs variable/the old routing-runs variable; knip `entry` adds `evals/**/*.eval.ts`; AGENTS.md documents `npm run evals`.
@@ -132,6 +134,7 @@ Each phase is one PR that leaves `npm run check` green. Order: **0 → 1 → 2 �
 - Risk: low. Parallelism: none (depends on 7m(iii)).
 
 ### Phase 9 · Docs and lock-down
+- Status: in progress.
 - Goal: documentation matches the tree; the last exceptions close.
 - Changes: root `ARCHITECTURE.md`/`STRUCTURE.md` shortened to rules + links; `ARCHITECTURE.md`/`STRUCTURE.md` for pi-adapter, extension-manager, ui-kit, shared (admission rule), test-framework; AGENTS.md rule sentence ("extensions import each other only through `index.ts`"); README paths; `test/architecture.test.ts` R14 rejects `src/`; knip `includeEntryExports` enforced on the 13 `index.ts`; revisit `vitest-evals` once a release supports vitest 5 (plan 05 §4.4).
 - Acceptance: `npm run check` green with the final `biome.json` and `knip.json` from 01; no `src/` folder; `test/architecture.test.ts` is ≤ the rows marked vitest in 01's matrix.
