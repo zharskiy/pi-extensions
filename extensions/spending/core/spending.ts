@@ -1,13 +1,6 @@
 import { basename } from "node:path";
 import type { Host, UsageTotals } from "../../../pi-adapter/index.ts";
-import {
-  parseUsageReport,
-  SPENDING_STATUS_KEY,
-  type SpendingTotals,
-  TOTALS_CHANNEL,
-  USAGE_CHANNEL,
-} from "../../../shared/index.ts";
-import { footerText } from "./footer.ts";
+import { parseUsageReport, type SpendingTotals } from "../../../shared/index.ts";
 import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 
 const MAIN_OFFSET_ENTRY = "pi-spending:main-offset";
@@ -17,8 +10,6 @@ const MAIN_TOKENS_OFFSET_ENTRY = "pi-spending:main-tokens-offset";
 const chargeable = (usage: UsageTotals) => usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 
 export const createSpending = (host: Host) => {
-  let closed = false;
-  let started = false;
   let costOffset = 0;
   let tokensOffset = 0;
 
@@ -72,6 +63,28 @@ export const createSpending = (host: Host) => {
     ledger.persist();
   };
 
+  const restore = (parent?: string) => {
+    if (parent) {
+      inherit(parent);
+    } else {
+      resume();
+    }
+  };
+
+  const record = (data: unknown) => {
+    const report = parseUsageReport(data);
+
+    if (!report || !ledger.record(report)) {
+      return false;
+    }
+
+    if (host.isIdle()) {
+      ledger.persist();
+    }
+
+    return true;
+  };
+
   const totals = (): SpendingTotals => {
     const own = host.sessionUsage();
 
@@ -84,58 +97,5 @@ export const createSpending = (host: Host) => {
     };
   };
 
-  const refresh = () => {
-    const current = totals();
-
-    host.ui.setStatus(
-      SPENDING_STATUS_KEY,
-      footerText({ main: current.main.cost, sources: current.sources, subscription: current.subscription }),
-    );
-    host.publish(TOTALS_CHANNEL, current);
-  };
-
-  host.subscribe(USAGE_CHANNEL, (data) => {
-    const report = parseUsageReport(data);
-
-    if (closed || !report || !ledger.record(report)) {
-      return;
-    }
-
-    if (host.isIdle()) {
-      ledger.persist();
-    }
-
-    refresh();
-  });
-
-  host.onSessionStart((_info, parent) => {
-    if (started) {
-      refresh();
-      return;
-    }
-
-    started = true;
-
-    if (parent) {
-      inherit(parent);
-    } else {
-      resume();
-    }
-
-    refresh();
-  });
-
-  host.onTurnEnd(refresh);
-
-  host.onCompact(refresh);
-
-  host.onIdle(() => {
-    ledger.persist();
-    refresh();
-  });
-
-  host.onSessionShutdown(() => {
-    ledger.persist();
-    closed = true;
-  });
+  return { restore, record, totals, persist: ledger.persist };
 };

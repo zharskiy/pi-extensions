@@ -42,4 +42,4 @@ pi.events.on("spending:totals", (totals) => {}); // { main: { cost, tokens }, so
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root); everything else depends on `pi-adapter/index.ts`. `src/spending.ts` wires the channel, the footer and persistence, `src/ledger.ts` keeps the high-water figures and parses reports, `src/footer.ts` formats the segment. The channel name and report parser are shared in `shared/host-channels.ts`. Tests are under `tests/`.
+`index.ts` is the pi entry; `api/extension.ts` builds the extension with `createManagedExtension` from `extension-manager/` (repository root) on the shared pi adapter in `pi-adapter/`; everything else depends on `pi-adapter/index.ts`. `api/plugin.ts` wires the channel, the footer and persistence, `core/spending.ts` keeps the offsets and totals, `core/ledger.ts` keeps the high-water figures and parses reports, `ui/footer-text.ts` formats the segment. The channel name and report parser are shared in `shared/host-channels.ts`. Tests are under `tests/`.

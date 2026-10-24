@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { usageTotals } from "../../../test-framework/index.ts";
-import { createLedger, USAGE_ENTRY } from "../src/ledger.ts";
+import { createLedger, USAGE_ENTRY } from "../core/ledger.ts";
 
 const createStore = () => {
   const entries: { customType: string; data: unknown }[] = [];

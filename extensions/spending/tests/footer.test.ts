@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { footerText } from "../src/footer.ts";
+import { footerText } from "../ui/footer-text.ts";
 
 describe("footer", () => {
   it("formats costs in dollars with two decimals and rounds the raw total", () => {
