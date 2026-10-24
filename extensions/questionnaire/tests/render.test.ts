@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { char, key, plainTheme, tokenTaggingTheme } from "../../../test-framework/index.ts";
-import { answerText, initialForm, pressKey } from "../src/form.ts";
-import { renderForm } from "../src/render.ts";
+import { answerText, initialForm, pressKey } from "../ui/form.ts";
+import { renderForm } from "../ui/render.ts";
 import { PRIORITY, questions, SCOPE } from "./support/questions.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();

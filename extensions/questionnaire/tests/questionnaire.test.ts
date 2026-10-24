@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { RunMode } from "../../../pi-adapter/index.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../shared/index.ts";
 import { char, createFakeHost, flushMicrotasks, key } from "../../../test-framework/index.ts";
-import { createQuestionnaire, QUESTIONNAIRE_SOURCE } from "../src/questionnaire.ts";
-import type { QuestionnaireDetails, QuestionnaireParams } from "../src/result.ts";
-import { ANSWER_ARM_MS } from "../src/view.ts";
+import { createQuestionnaire } from "../api/plugin.ts";
+import { QUESTIONNAIRE_SOURCE } from "../core/questionnaire.ts";
+import type { QuestionnaireDetails, QuestionnaireParams } from "../core/questions.ts";
+import { ANSWER_ARM_MS } from "../ui/view.ts";
 import { PRIORITY, SCOPE } from "./support/questions.ts";
 
 const setup = (mode: RunMode = "tui") => {

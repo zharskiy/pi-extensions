@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../test-framework/index.ts";
-import { type QuestionnaireDetails, resultText } from "../src/result.ts";
-import { callText, resultSummary } from "../src/summary.ts";
+import { type QuestionnaireDetails, resultText } from "../core/questions.ts";
+import { callText, resultSummary } from "../ui/summary.ts";
 import { PRIORITY, questions, SCOPE } from "./support/questions.ts";
 
 const answered = (cancelled: boolean): QuestionnaireDetails => ({

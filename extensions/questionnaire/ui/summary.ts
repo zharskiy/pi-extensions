@@ -8,7 +8,7 @@ import {
   type QuestionnaireDetails,
   type QuestionnaireParams,
   questionInputs,
-} from "./result.ts";
+} from "../core/questions.ts";
 
 const cancelledOf = (state: ToolRenderState) =>
   (state.result?.details as QuestionnaireDetails | undefined)?.cancelled === true;

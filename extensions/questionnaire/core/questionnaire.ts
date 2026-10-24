@@ -1,6 +1,5 @@
-import type { Host, ToolSpec } from "../../../pi-adapter/index.ts";
+import type { Host, RunMode, ToolSpec } from "../../../pi-adapter/index.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../shared/index.ts";
-import { initialForm } from "./form.ts";
 import {
   errorResult,
   normalizeQuestions,
@@ -8,10 +7,7 @@ import {
   type QuestionnaireParams,
   questionInputs,
   questionsError,
-  resultText,
-} from "./result.ts";
-import { callText, resultSummary } from "./summary.ts";
-import { createFormView } from "./view.ts";
+} from "./questions.ts";
 
 export const QUESTIONNAIRE_SOURCE = "pi-questionnaire";
 
@@ -70,10 +66,19 @@ const PARAMETERS = {
   additionalProperties: false,
 };
 
-const questionnaireTool = (
-  host: Host,
-  now: () => number = Date.now,
-): ToolSpec<QuestionnaireParams, QuestionnaireDetails> => ({
+type ToolDefinition = Pick<
+  ToolSpec<QuestionnaireParams, QuestionnaireDetails>,
+  | "name"
+  | "label"
+  | "description"
+  | "promptSnippet"
+  | "promptGuidelines"
+  | "parameters"
+  | "executionMode"
+  | "modelOnly"
+>;
+
+export const questionnaireDefinition: ToolDefinition = {
   name: "questionnaire",
   label: "Questionnaire",
   description: DESCRIPTION,
@@ -82,54 +87,23 @@ const questionnaireTool = (
   parameters: PARAMETERS,
   executionMode: "sequential",
   modelOnly: true,
-  execute: async (params, { signal }) => {
-    const questions = normalizeQuestions(questionInputs(params));
-
-    if (host.session().mode !== "tui") {
-      return errorResult(NOT_INTERACTIVE, questions);
-    }
-
-    const invalid = questionsError(questions);
-
-    if (invalid) {
-      return errorResult(invalid, questions);
-    }
-
-    let latest = initialForm(questions);
-
-    const waiting = (value: boolean) =>
-      host.publish(AWAITING_INPUT_CHANNEL, {
-        source: QUESTIONNAIRE_SOURCE,
-        waiting: value,
-        title: "questionnaire",
-      });
-
-    waiting(true);
-
-    try {
-      const shown = await host.ui.showForm<QuestionnaireDetails>(
-        (api) =>
-          createFormView(api, questions, {
-            now,
-            onChange: (state) => {
-              latest = state;
-            },
-          }),
-        { signal },
-      );
-
-      const details = shown ?? { questions, answers: latest.answers, cancelled: true };
-
-      return { text: resultText(details), details };
-    } finally {
-      waiting(false);
-    }
-  },
-  renderShell: "row",
-  renderCall: callText,
-  renderResult: (result, _state, theme) => resultSummary(result, theme),
-});
-
-export const createQuestionnaire = (host: Host, now?: () => number) => {
-  host.registerTool(questionnaireTool(host, now));
 };
+
+export const checkCall = (params: QuestionnaireParams, mode: () => RunMode) => {
+  const questions = normalizeQuestions(questionInputs(params));
+
+  if (mode() !== "tui") {
+    return { questions, failure: errorResult(NOT_INTERACTIVE, questions) };
+  }
+
+  const invalid = questionsError(questions);
+
+  return { questions, failure: invalid ? errorResult(invalid, questions) : undefined };
+};
+
+export const awaitingInput = (host: Host) => (waiting: boolean) =>
+  host.publish(AWAITING_INPUT_CHANNEL, {
+    source: QUESTIONNAIRE_SOURCE,
+    waiting,
+    title: "questionnaire",
+  });

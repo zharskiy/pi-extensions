@@ -1,4 +1,4 @@
-import { normalizeQuestions, type QuestionInput } from "../../src/result.ts";
+import { normalizeQuestions, type QuestionInput } from "../../core/questions.ts";
 
 export const SCOPE: QuestionInput = {
   id: "scope",

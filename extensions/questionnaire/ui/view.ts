@@ -1,4 +1,5 @@
 import type { FormApi, KeyPress, ViewComponent } from "../../../pi-adapter/index.ts";
+import type { Question, QuestionnaireDetails } from "../core/questions.ts";
 import {
   answerOf,
   answerText,
@@ -9,7 +10,6 @@ import {
   pressKey,
 } from "./form.ts";
 import { inputWidth, renderForm } from "./render.ts";
-import type { Question, QuestionnaireDetails } from "./result.ts";
 
 export const ANSWER_ARM_MS = 250;
 

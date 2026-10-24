@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeQuestions, type QuestionnaireDetails, questionsError, resultText } from "../src/result.ts";
+import {
+  normalizeQuestions,
+  type QuestionnaireDetails,
+  questionsError,
+  resultText,
+} from "../core/questions.ts";
 import { PRIORITY, questions, SCOPE } from "./support/questions.ts";
 
 const answered = (cancelled: boolean): QuestionnaireDetails => ({

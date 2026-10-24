@@ -1,6 +1,6 @@
 import type { KeyPress } from "../../../pi-adapter/index.ts";
 import { listKey, tabStep } from "../../../ui-kit/index.ts";
-import type { Answer, Question, QuestionOption } from "./result.ts";
+import type { Answer, Question, QuestionOption } from "../core/questions.ts";
 
 const OTHER_LABEL = "Type something.";
 
