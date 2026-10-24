@@ -5,7 +5,6 @@ import { loadStyles } from "./styles.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
-/** @public */
 export default createPiExtension(
   (host, _runtime, paths) => {
     createStyle(host, loadStyles(join(paths.root, "prompts")));

@@ -8,7 +8,6 @@ import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "./settings.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
-/** @public */
 export default createPiExtension(
   (piHost, _runtime, paths) => {
     const host = conversationOnly(piHost);

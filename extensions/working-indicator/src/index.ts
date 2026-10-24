@@ -4,7 +4,6 @@ import { createWorkingIndicator } from "./working-indicator.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
-/** @public */
 export default createPiExtension(
   (host) => {
     createWorkingIndicator(host);

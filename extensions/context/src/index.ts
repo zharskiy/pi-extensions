@@ -5,7 +5,6 @@ import { createContext } from "./context.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
-/** @public */
 export default createPiExtension(
   (host) => {
     createContext(host, { home: homedir(), now: Date.now });

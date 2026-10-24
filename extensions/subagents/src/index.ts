@@ -7,7 +7,6 @@ import { plugins } from "./plugins.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
-/** @public */
 export default createManagedExtension({
   namespace: NAMESPACE,
   root,

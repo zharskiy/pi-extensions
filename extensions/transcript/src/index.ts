@@ -4,7 +4,6 @@ import { createTranscript } from "./transcript.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
-/** @public */
 export default createPiExtension(
   (host) => {
     createTranscript(host);

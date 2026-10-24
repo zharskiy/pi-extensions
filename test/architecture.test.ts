@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -190,11 +190,40 @@ describe("architecture", () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
       pi: { extensions: string[] };
     };
-    const entries = extensionDirs().map(
-      (extension) => `./${relative(ROOT, join(extension, "src", "index.ts"))}`,
-    );
+    const entries = extensionDirs().map((extension) => `./${relative(ROOT, join(extension, "index.ts"))}`);
 
     expect([...manifest.pi.extensions].sort()).toEqual(entries.sort());
     expect(entries).toHaveLength(13);
+  });
+
+  it("points every pi.extensions entry at an existing extensions/<name>/index.ts", () => {
+    const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+      pi: { extensions: string[] };
+    };
+    const offenders = manifest.pi.extensions.filter(
+      (entry) => !/^\.\/extensions\/[a-z-]+\/index\.ts$/.test(entry) || !existsSync(join(ROOT, entry)),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps each extension index.ts to re-exports from ./api/ (or ./src/ until the extension migrates)", () => {
+    const offenders = extensionDirs()
+      .map((extension) => join(extension, "index.ts"))
+      .filter((file) => {
+        const statements = readFileSync(file, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .split(";")
+          .map((statement) => statement.trim())
+          .filter((statement) => statement !== "");
+
+        return (
+          statements.length === 0 ||
+          !statements.every((statement) => /^export\s[^;]*\sfrom\s+"\.\/(api|src)\/[^"]+"$/.test(statement))
+        );
+      })
+      .map((file) => relative(ROOT, file));
+
+    expect(offenders).toEqual([]);
   });
 });

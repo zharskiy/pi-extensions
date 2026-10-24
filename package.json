@@ -26,6 +26,10 @@
     "extension-manager",
     "ui-kit",
     "shared",
+    "extensions/*/index.ts",
+    "extensions/*/api/**",
+    "extensions/*/core/**",
+    "extensions/*/ui/**",
     "extensions/*/src/**",
     "extensions/*/prompts/**",
     "extensions/subagents/agents",
@@ -39,19 +43,19 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/subagents/src/index.ts",
-      "./extensions/session-limits/src/index.ts",
-      "./extensions/spending/src/index.ts",
-      "./extensions/working-indicator/src/index.ts",
-      "./extensions/notifications/src/index.ts",
-      "./extensions/command-aliases/src/index.ts",
-      "./extensions/composer/src/index.ts",
-      "./extensions/questionnaire/src/index.ts",
-      "./extensions/style/src/index.ts",
-      "./extensions/context/src/index.ts",
-      "./extensions/footer/src/index.ts",
-      "./extensions/mcp-import/src/index.ts",
-      "./extensions/transcript/src/index.ts"
+      "./extensions/subagents/index.ts",
+      "./extensions/session-limits/index.ts",
+      "./extensions/spending/index.ts",
+      "./extensions/working-indicator/index.ts",
+      "./extensions/notifications/index.ts",
+      "./extensions/command-aliases/index.ts",
+      "./extensions/composer/index.ts",
+      "./extensions/questionnaire/index.ts",
+      "./extensions/style/index.ts",
+      "./extensions/context/index.ts",
+      "./extensions/footer/index.ts",
+      "./extensions/mcp-import/index.ts",
+      "./extensions/transcript/index.ts"
     ]
   },
   "scripts": {

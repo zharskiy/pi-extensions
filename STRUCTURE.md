@@ -265,8 +265,8 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Published vs development-only
 
-- Published: the explicit `files` list in `package.json`: `pi-adapter`, `extension-manager`, `ui-kit`, `shared` (each without its `tests/`), `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures, snapshots, `test-framework/` or `evals/` are packed; CI fails if they appear in `npm pack` or if the pack does not hold the 13 entry files.
-- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/src/index.ts`.
+- Published: the explicit `files` list in `package.json`: `pi-adapter`, `extension-manager`, `ui-kit`, `shared` (each without its `tests/`), `extensions/*/index.ts`, `extensions/*/{api,core,ui}/**`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures, snapshots, `test-framework/` or `evals/` are packed; CI fails if they appear in `npm pack` or if the pack does not hold the 13 entry files.
+- Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/index.ts`: each extension's entry is `extensions/<name>/index.ts`, which re-exports the default from its `src/index.ts`.
 - Development-only: `test-framework/`, `pi-adapter/tests`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/tests`, `test/`, `.github/`, config files below.
 
 ### Config files

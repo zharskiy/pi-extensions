@@ -26,19 +26,19 @@ pi install git:github.com/zharskiy/pi-extensions
 Either installs all extensions. To try one for a single run without installing, pass its entry file:
 
 ```bash
-pi -e ./pi-extensions/extensions/subagents/src/index.ts
-pi -e ./pi-extensions/extensions/session-limits/src/index.ts
-pi -e ./pi-extensions/extensions/spending/src/index.ts
-pi -e ./pi-extensions/extensions/working-indicator/src/index.ts
-pi -e ./pi-extensions/extensions/notifications/src/index.ts
-pi -e ./pi-extensions/extensions/command-aliases/src/index.ts
-pi -e ./pi-extensions/extensions/composer/src/index.ts
-pi -e ./pi-extensions/extensions/questionnaire/src/index.ts
-pi -e ./pi-extensions/extensions/style/src/index.ts
-pi -e ./pi-extensions/extensions/context/src/index.ts
-pi -e ./pi-extensions/extensions/footer/src/index.ts
-pi -e ./pi-extensions/extensions/mcp-import/src/index.ts
-pi -e ./pi-extensions/extensions/transcript/src/index.ts
+pi -e ./pi-extensions/extensions/subagents/index.ts
+pi -e ./pi-extensions/extensions/session-limits/index.ts
+pi -e ./pi-extensions/extensions/spending/index.ts
+pi -e ./pi-extensions/extensions/working-indicator/index.ts
+pi -e ./pi-extensions/extensions/notifications/index.ts
+pi -e ./pi-extensions/extensions/command-aliases/index.ts
+pi -e ./pi-extensions/extensions/composer/index.ts
+pi -e ./pi-extensions/extensions/questionnaire/index.ts
+pi -e ./pi-extensions/extensions/style/index.ts
+pi -e ./pi-extensions/extensions/context/index.ts
+pi -e ./pi-extensions/extensions/footer/index.ts
+pi -e ./pi-extensions/extensions/mcp-import/index.ts
+pi -e ./pi-extensions/extensions/transcript/index.ts
 ```
 
 ## Coming from another tool
@@ -74,7 +74,7 @@ PI_LIVE_MODEL=provider/id:low npm run test:live   # real agents, local only, cos
 - `shared/`: pi-free, theme-free helpers: the plugin and bus types, settings file helpers, the handoff format and channel names the extensions share, and the token, duration and cost formatters (`format.ts`).
 - `ui-kit/`: theme-aware components: the `key to verb` hint strips (`key-hints.ts`), lists, forms and tabs, and `row.ts`, the pi-native row language (state glyphs `◌ ✓ ✗ ⊘ »`, the `↳` outcome line, the two-column grid, pi's hint and count-line wording) that the transcript, questionnaire, subagents, context and session-limits rows share.
 - `extension-manager/tests/`, `ui-kit/tests/` and `shared/tests/` hold their folder's tests. `pi-adapter/tests/` holds the adapter's tests (live ones in `pi-adapter/tests/live/`). `test-framework/` holds the fakes and harnesses shared by every test (fake host, agent runtime and child session, themes, key presses, waiting, temp dirs, the extension harness), `test-framework/live/` and `test-framework/eval-runs/` the pi-free live and eval helpers, and `test-framework/pi/` the only test helpers that import pi packages (real pi rendering, session files, and `pi/live/` for live runs); the fake theme measures with the adapter's `textMetrics`. Extension tests are in `extensions/<name>/tests/`, their local helpers in `tests/support/`.
-- `extensions/<name>/{src,test,prompts}`: one folder per extension, with its own README. `src/index.ts` is the single entry that connects the extension's parts; `package.json` lists every entry file under `pi.extensions`.
+- `extensions/<name>/{src,test,prompts}`: one folder per extension, with its own README. `extensions/<name>/index.ts` is each extension's entry (it re-exports the default from `src/index.ts`, which connects the extension's parts); `package.json` lists every entry file under `pi.extensions`.
 - Everything outside `pi-adapter/` imports only `pi-adapter/index.ts`; extensions, `extension-manager/`, `ui-kit/` and `shared/` use no other adapter file. Layers point one way, `pi-adapter ← shared ← ui-kit ← extension-manager ← extensions`, and the three middle folders are reached only through their `index.ts`. `pi-adapter/` never imports any of them or `extensions/`.
 - Extensions never import each other. They talk over pi's event bus (`pi.events`), for example the `pi:busy`, `pi:awaiting-input` and `spending:usage` channels.
 - `test/architecture.test.ts` enforces these rules, and that tests reach the layers only through their `index.ts` and shipped code never imports `test-framework/`; biome (`biome.json`) enforces that only `pi-adapter/` and `test-framework/pi/` import pi packages. The adapter's own tests in `pi-adapter/tests/` and `test-framework/pi/` may import adapter files directly.
