@@ -26,22 +26,24 @@ describe("request block", () => {
     const twelve = { a: 1, b: 2, c: { d: 3, e: [1, 2] }, f: "x" };
 
     expect(pretty(twelve)).toHaveLength(12);
-    expect(requestLines(twelve, true, false, 80, plainTheme)).toEqual([" ▸ Request · 12 lines"]);
-    expect(requestLines(twelve, true, false, 80, recordingTheme)).toEqual([" <dim>▸ Request · 12 lines</>"]);
+    expect(requestLines(twelve, true, false, 80, plainTheme)).toEqual([" Request · 12 lines (r to expand)"]);
+    expect(requestLines(twelve, true, false, 80, recordingTheme)).toEqual([
+      " <muted>Request · 12 lines</> <dim>(r to expand)</>",
+    ]);
   });
 
   it("says not sent yet when open and not recorded when closed", () => {
-    expect(requestLines(undefined, true, false, 80, plainTheme)).toEqual([" ▸ Request · not sent yet"]);
-    expect(requestLines(undefined, false, false, 80, plainTheme)).toEqual([" ▸ Request · not recorded"]);
-    expect(requestLines(undefined, true, true, 80, plainTheme)).toEqual([" ▸ Request · not sent yet"]);
-    expect(requestLines(undefined, false, true, 80, plainTheme)).toEqual([" ▸ Request · not recorded"]);
+    expect(requestLines(undefined, true, false, 80, plainTheme)).toEqual([" Request · not sent yet"]);
+    expect(requestLines(undefined, false, false, 80, plainTheme)).toEqual([" Request · not recorded"]);
+    expect(requestLines(undefined, true, true, 80, plainTheme)).toEqual([" Request · not sent yet"]);
+    expect(requestLines(undefined, false, true, 80, plainTheme)).toEqual([" Request · not recorded"]);
   });
 
   it("expands to the pretty-printed request at PAD + 2", () => {
     const value = payload();
     const lines = requestLines(value, false, true, 120, plainTheme);
 
-    expect(lines[0]).toBe(` ▾ Request · ${pretty(value).length} lines`);
+    expect(lines[0]).toBe(` Request · ${pretty(value).length} lines (r to collapse)`);
     expect(lines.slice(1)).toEqual(pretty(value).map((line) => `   ${line}`));
   });
 

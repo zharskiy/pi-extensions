@@ -1,5 +1,6 @@
 import { BUSY_CHANNEL } from "../../../../../core/manager/channels.ts";
-import { handoffPathFor } from "../../model/paths.ts";
+import { pastRecords } from "../../model/manifest.ts";
+import { agentsDirFor, handoffPathFor } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, isClosed } from "../../model/types.ts";
 import { createRegistry } from "./registry.ts";
@@ -30,6 +31,15 @@ export const agentRegistryPlugin: Plugin = {
     });
 
     host.onSessionStart(() => {
+      const session = host.session();
+
+      registry.restore(
+        pastRecords(host, agentsDirFor(session), (dir, manifest) => ({
+          dir,
+          handoffPath: handoffPathFor(session, manifest.id as string),
+          contextLimit: 0,
+        })),
+      );
       publish(hasOpenAgents(registry));
     });
 

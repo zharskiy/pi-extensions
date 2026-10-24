@@ -9,23 +9,32 @@ export type UsageTotals = {
 
 export type ThemeToken =
   | "accent"
+  | "border"
+  | "borderAccent"
+  | "syntaxString"
+  | "syntaxVariable"
   | "muted"
   | "dim"
   | "success"
   | "warning"
   | "error"
   | "text"
-  | "comment"
-  | "keyword"
-  | "function"
-  | "string"
-  | "number"
-  | "type"
-  | "heading";
+  | "thinkingOff"
+  | "thinkingMinimal"
+  | "thinkingLow"
+  | "thinkingMedium"
+  | "thinkingHigh"
+  | "thinkingXhigh"
+  | "thinkingMax";
+
+export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
 
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
+  bg(token: BgToken, text: string): string;
   bold(text: string): string;
+  inverse(text: string): string;
+  readonly panels: boolean;
   width(text: string): number;
   truncate(text: string, cols: number): string;
   wrap(text: string, cols: number): string[];
@@ -38,15 +47,14 @@ export type ToolResult<D = unknown> = {
 };
 
 export type ToolRenderState = {
-  toolCallId: string;
   expanded: boolean;
   isPartial: boolean;
   isError: boolean;
   args: unknown;
+  aborted: boolean;
+  result?: ToolResult;
   invalidate(): void;
 };
-
-export type ToolTone = "pending" | "success" | "error";
 
 export type ToolRender = string | ((width: number) => string);
 
@@ -59,7 +67,7 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   parameters: Record<string, unknown>;
   executionMode?: "sequential" | "parallel";
   modelOnly?: boolean;
-  renderShell?: "default" | "box";
+  renderShell?: "default" | "row";
   execute(
     params: P,
     ctx: { signal?: AbortSignal; toolCallId?: string; update(text: string, details?: D): void },
@@ -67,10 +75,30 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   pendingResult?(toolCallId: string, owner: string | undefined): ToolResult<D> | undefined;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
-  renderTone?(state: ToolRenderState, result: ToolResult<D> | undefined): ToolTone | undefined;
 };
 
 export type AnyToolSpec = ToolSpec<never, unknown>;
+
+export type RowLines = (width: number, theme: ThemeLike) => string[];
+
+export type ToolCallView = {
+  name: string;
+  args: unknown;
+  argsComplete: boolean;
+  started: boolean;
+  isPartial: boolean;
+  isError: boolean;
+  expanded: boolean;
+  cwd: string;
+  durationMs?: number;
+  aborted: boolean;
+  label?: string;
+  result?: ToolResult & { images: number };
+};
+
+export type ToolRow = { call: RowLines; result?: RowLines; piBody?: boolean; dropTiming?: boolean };
+
+export type ToolRows = (view: ToolCallView) => ToolRow | undefined;
 
 export type KeyPress = {
   name:
@@ -104,15 +132,9 @@ export type ViewComponent = {
 
 export type TranscriptItem =
   | { kind: "user"; text: string }
-  | {
-      kind: "assistant";
-      text: string;
-      thinking?: string;
-      toolCalls: { name: string; args: unknown }[];
-      raw: unknown;
-    }
-  | { kind: "tool"; toolName: string; toolCallId: string; text: string; isError: boolean; raw: unknown }
-  | { kind: "custom"; customType: string; text: string; raw: unknown };
+  | { kind: "assistant"; raw: unknown }
+  | { kind: "tool"; toolCallId: string; raw: unknown }
+  | { kind: "custom"; raw: unknown };
 
 export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;
@@ -161,15 +183,18 @@ export type FormFactory<T> = (api: FormApi<T>) => ViewComponent;
 
 export type WidgetHandle = { refresh(): void };
 
-export type WorkingIndicator = { frames: string[]; intervalMs: number };
-
 export type EditorLayout = { bottom: number; scrolled: boolean };
 
 export type EditorFrame = {
   chrome: number;
   left: number;
   minWidth: number;
-  decorate(lines: string[], layout: EditorLayout, paint: (text: string) => string): string[];
+  decorate(
+    lines: string[],
+    layout: EditorLayout,
+    paint: (text: string) => string,
+    theme: ThemeLike,
+  ): string[];
 };
 
 export type NotifyChannel = "auto" | "bell";
@@ -179,13 +204,13 @@ export type EditorKeyHandler = (key: KeyPress) => "consumed" | "release";
 export type HostUi = {
   notify(message: string, level?: "info" | "warning" | "error"): void;
   setStatus(key: string, text: string | undefined): void;
+  setNotice(key: string, text: string | undefined): void;
   confirm(title: string, message: string): Promise<boolean>;
-  setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
+  setWidget(key: string, render: RowLines | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;
   showForm<T>(factory: FormFactory<T>, options?: { signal?: AbortSignal }): Promise<T | undefined>;
   style(token: ThemeToken, text: string): string;
   terminalNotify(message: string, channel: NotifyChannel): void;
-  setWorkingIndicator(indicator: WorkingIndicator | undefined): void;
   setWorkingMessage(text: string | undefined): void;
   setWorkingVisible(visible: boolean): void;
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
@@ -199,6 +224,7 @@ export type HostUi = {
   setFooter(render: FooterRender | undefined): WidgetHandle;
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
+  setHiddenThinkingLabel(label: string | undefined, hint?: string): void;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -231,8 +257,6 @@ export type CommandSpec = {
 
 export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "idle";
 
-export type PhaseDetail = { toolName?: string };
-
 export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
@@ -261,6 +285,13 @@ export type ContextFacts = {
 
 export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
 
+export type MessageRender = (
+  message: { text: string; details?: unknown },
+  width: number,
+  expanded: boolean,
+  theme: ThemeLike,
+) => string[];
+
 export type IdleInfo = { aborted: boolean };
 
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
@@ -277,18 +308,19 @@ export type Host = {
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   onCompact(handler: () => void): void;
   isIdle(): boolean;
-  sendUserMessage(text: string): void;
   sendHiddenMessage(message: HiddenMessage): void;
   dispatchCommand(name: string, args?: string): void;
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;
   appendEntry(customType: string, data: unknown): void;
   registerEntryRenderer(customType: string, render: EntryRender): void;
+  registerToolRows(rows: ToolRows): void;
+  registerMessageRenderer(customType: string, render: MessageRender): void;
   readEntries<T>(customType: string, file?: string): T[];
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
   onAgentStart(handler: () => void): void;
-  onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
+  onPhase(handler: (phase: Phase) => void): void;
   onDialog(handler: (event: DialogEvent) => void): void;
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;
@@ -346,23 +378,12 @@ export type SpawnSpec = {
   customTools: AnyToolSpec[];
 };
 
-export type PromptSection = { name: string; text: string };
-
 export type PromptTool = { name: string; description: string; parameters: unknown };
 
 export type SkillInfo = { name: string; description: string };
 
-export type PromptRecord = {
-  sections: PromptSection[];
-  tools: PromptTool[];
-  skills: SkillInfo[];
-  guidelines: string[];
-  providerPayload?: unknown;
-  model?: string;
-};
-
 export type SessionRecord = {
-  prompt: PromptRecord;
+  providerPayload?: unknown;
   items: TranscriptItem[];
   contextTokens?: number;
 };

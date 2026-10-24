@@ -1,4 +1,5 @@
 import type { PromptTokens } from "../../../core/adapter/contract.ts";
+import { isPlainObject } from "../../../core/manager/guards.ts";
 import { type Breakdown, MESSAGE_KEYS, type Part } from "./buckets.ts";
 
 export type Snapshot = {
@@ -15,10 +16,8 @@ const USAGE_KEYS = ["input", "cacheRead", "cacheWrite", "output"];
 
 const MESSAGE_FIELDS = ["count", ...MESSAGE_KEYS];
 
-const isRecord = (value: unknown): value is Fields => typeof value === "object" && value !== null;
-
 const numbers = (value: unknown, keys: readonly string[]) =>
-  isRecord(value) && keys.every((key) => typeof value[key] === "number");
+  isPlainObject(value) && keys.every((key) => typeof value[key] === "number");
 
 const isPart = (value: unknown): value is Part =>
   numbers(value, ["tokens"]) && typeof (value as Fields).name === "string";
@@ -28,11 +27,11 @@ const isParts = (value: unknown): value is Part[] => Array.isArray(value) && val
 const isUsage = (value: unknown): value is PromptTokens => numbers(value, USAGE_KEYS);
 
 const isTools = (value: unknown) =>
-  isRecord(value) && isParts(value.builtin) && isParts(value.mcp) && isParts(value.extension);
+  isPlainObject(value) && isParts(value.builtin) && isParts(value.mcp) && isParts(value.extension);
 
 const isBreakdown = (value: unknown): value is Breakdown =>
   numbers(value, ["window", "reserve", "systemPrompt"]) &&
-  isRecord(value) &&
+  isPlainObject(value) &&
   (value.total === null || typeof value.total === "number") &&
   (value.model === undefined || typeof value.model === "string") &&
   isParts(value.memoryFiles) &&
@@ -41,7 +40,7 @@ const isBreakdown = (value: unknown): value is Breakdown =>
   numbers(value.messages, MESSAGE_FIELDS);
 
 export const parseSnapshot = (data: unknown): Snapshot | undefined => {
-  if (!isRecord(data) || !isBreakdown(data.breakdown) || !isUsage(data.session)) {
+  if (!isPlainObject(data) || !isBreakdown(data.breakdown) || !isUsage(data.session)) {
     return undefined;
   }
 

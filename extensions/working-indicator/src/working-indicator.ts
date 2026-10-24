@@ -1,22 +1,10 @@
-import type { Host, Phase, WorkingIndicator } from "../../../core/adapter/contract.ts";
+import type { Host, Phase } from "../../../core/adapter/contract.ts";
 import { formatDuration } from "../../../core/manager/format.ts";
-
-const SPINNER: keyof typeof SPINNERS = "braille";
-
-export const VERB_MS = 8000;
+import { DOT } from "../../../core/manager/layout.ts";
 
 export const TICK_MS = 1000;
 
-const INTERRUPT_BINDING = "app.interrupt";
-
-const SPINNERS = {
-  braille: undefined,
-  dots: { frames: ["∴", "∷", "∵", "∷"], intervalMs: 200 },
-  bar: { frames: ["·|·", "·/·", "·—·", "·\\·"], intervalMs: 200 },
-  mark: { frames: ["✻"], intervalMs: 500 },
-} satisfies Record<string, WorkingIndicator | undefined>;
-
-export const spinner = SPINNERS[SPINNER];
+export const VERB_MS = 8000;
 
 export const VERBS = [
   "Frolicking",
@@ -81,12 +69,17 @@ export const VERBS = [
 
 const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
 
-const workingMessage = (verb: string, elapsedMs: number, interruptKey: string, toolName?: string) =>
-  `${verb}… (${toolName ? `${toolName} · ` : ""}${formatDuration(elapsedMs)} · ${interruptKey} to interrupt)`;
+const INTERRUPT_BINDING = "app.interrupt";
+
+const workingText = (verb: string, elapsedMs: number, hint: string) => {
+  const elapsed = elapsedMs >= TICK_MS ? `${DOT}${formatDuration(elapsedMs)}` : "";
+
+  return `${verb}${elapsed}${hint}`;
+};
 
 type Run = {
   startedAt: number;
-  interruptKey: string;
+  hint: string;
   verb: string;
   nextVerbAt: number;
   timer: ReturnType<typeof setInterval>;
@@ -94,12 +87,11 @@ type Run = {
 
 export const createWorkingIndicator = (host: Host) => {
   let run: Run | undefined;
-  let toolName: string | undefined;
   let hidden = false;
   let written: string | undefined;
 
   const write = (active: Run) => {
-    const text = workingMessage(active.verb, Date.now() - active.startedAt, active.interruptKey, toolName);
+    const text = workingText(active.verb, Date.now() - active.startedAt, active.hint);
 
     if (text === written) {
       return;
@@ -110,20 +102,18 @@ export const createWorkingIndicator = (host: Host) => {
   };
 
   const tick = () => {
-    const active = run;
-
-    if (!active) {
+    if (!run) {
       return;
     }
 
-    const elapsedMs = Date.now() - active.startedAt;
+    const elapsedMs = Date.now() - run.startedAt;
 
-    if (elapsedMs >= active.nextVerbAt) {
-      active.verb = pickVerb();
-      active.nextVerbAt = elapsedMs + VERB_MS;
+    if (elapsedMs >= run.nextVerbAt) {
+      run.verb = pickVerb();
+      run.nextVerbAt = elapsedMs + VERB_MS;
     }
 
-    write(active);
+    write(run);
   };
 
   const applyVisibility = (next: Phase) => {
@@ -139,12 +129,12 @@ export const createWorkingIndicator = (host: Host) => {
 
   const begin = () => {
     const timer = setInterval(tick, TICK_MS);
+    const key = host.ui.keyText(INTERRUPT_BINDING);
 
     timer.unref?.();
-    toolName = undefined;
     run = {
       startedAt: Date.now(),
-      interruptKey: host.ui.keyText(INTERRUPT_BINDING),
+      hint: key ? host.ui.style("dim", ` (${key} to interrupt)`) : "",
       verb: pickVerb(),
       nextVerbAt: VERB_MS,
       timer,
@@ -165,14 +155,9 @@ export const createWorkingIndicator = (host: Host) => {
   };
 
   const end = () => {
-    toolName = undefined;
     applyVisibility("idle");
     stop();
   };
-
-  host.onSessionStart(() => {
-    host.ui.setWorkingIndicator(spinner);
-  });
 
   host.onAgentStart(() => {
     if (host.session().mode !== "tui" || run) {
@@ -182,7 +167,7 @@ export const createWorkingIndicator = (host: Host) => {
     begin();
   });
 
-  host.onPhase((next, detail) => {
+  host.onPhase((next) => {
     if (next === "idle") {
       end();
       return;
@@ -192,8 +177,6 @@ export const createWorkingIndicator = (host: Host) => {
       return;
     }
 
-    toolName = next === "tool" ? detail.toolName : undefined;
-    write(run);
     applyVisibility(next);
   });
 

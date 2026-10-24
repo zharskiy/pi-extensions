@@ -1,7 +1,8 @@
 import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
+import { type KeyHint, keyHints } from "../../../../../core/manager/hints.ts";
 import { POINTER_BLANK, renderRow, rowLayout } from "../../components/agent-row.ts";
-import { innerWidth, PAD, SEP } from "../../components/format.ts";
-import { stopHint } from "../../components/state-text.ts";
+import { PAD } from "../../components/format.ts";
+import { stopWords } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
 import type { Settings } from "../../model/settings.ts";
 import { type AgentRecord, isClosed } from "../../model/types.ts";
@@ -82,14 +83,15 @@ const windowOf = (rows: TreeRow[], state: PanelState) => {
   return { start, end, below: rows.length - end };
 };
 
-const hintText = (record: AgentRecord, actions: PanelActionsAvailable): string =>
-  [
-    actions.view ? "enter to view" : undefined,
-    actions.stop || isClosed(record.state) ? stopHint(record.state) : undefined,
-    "esc to deselect",
-  ]
-    .filter((part) => part !== undefined)
-    .join(SEP);
+const hintPairs = (record: AgentRecord, actions: PanelActionsAvailable): KeyHint[] => {
+  const pairs: (KeyHint | undefined)[] = [
+    actions.view ? ["enter", "to view"] : undefined,
+    actions.stop || isClosed(record.state) ? ["x", stopWords(record.state)] : undefined,
+    ["esc", "to deselect"],
+  ];
+
+  return pairs.filter((pair) => pair !== undefined);
+};
 
 export const panelLines = (
   rows: TreeRow[],
@@ -106,7 +108,7 @@ export const panelLines = (
   const lines = rows
     .slice(start, end)
     .map((entry) =>
-      renderRow({ ...entry, selected: entry.record.id === state.selectedId }, now, width, theme, layout),
+      renderRow({ ...entry, selected: entry.record.id === state.selectedId }, width, theme, layout),
     );
 
   if (start > 0) {
@@ -118,7 +120,7 @@ export const panelLines = (
   }
 
   if (selected) {
-    lines.push(PAD + theme.fg("dim", theme.truncate(hintText(selected.record, actions), innerWidth(width))));
+    lines.push(theme.truncate(PAD + keyHints(hintPairs(selected.record, actions), theme), width));
   }
 
   lines.push("");

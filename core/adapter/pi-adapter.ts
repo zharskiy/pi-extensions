@@ -14,7 +14,6 @@ import type {
   Host,
   IdleInfo,
   Phase,
-  PhaseDetail,
   SessionControl,
   SessionInfo,
   ShutdownReason,
@@ -26,12 +25,15 @@ import { contextHost } from "./pi-context.ts";
 import { createEditorHooks } from "./pi-editor.ts";
 import { entryHost } from "./pi-entries.ts";
 import { footerHost } from "./pi-footer.ts";
-import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
+import { createNotices, syncNotices } from "./pi-notice.ts";
+import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
+import { recordPad } from "./pi-row-component.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
+import { toolRowsHost } from "./pi-tool-rows.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createUi, type HostState, tuiContext } from "./pi-ui.ts";
+import { createThinkingLabelUi, createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -110,14 +112,17 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
-  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
   const held: HiddenCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
+  const notices = createNotices(state);
   const sections = createPromptSections();
+  const toolRows = toolRowsHost(pi);
+  const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -125,26 +130,20 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   const applyPhase = (event: PhaseEvent) => {
     const next = reducePhase(phaseState, event);
-
-    if (next === phaseState) {
-      return;
-    }
-
-    const previous = phaseState;
-    const detail = detailOf(next);
+    const changed = next.phase !== phaseState.phase;
 
     phaseState = next;
 
-    if (previous.phase === next.phase && detailOf(previous).toolName === detail.toolName) {
+    if (!changed) {
       return;
     }
 
     phaseHandlers.forEach((handler) => {
-      handler(next.phase, detail);
+      handler(next.phase);
     });
   };
 
-  const sendUser = (text: string, options?: { expandPromptTemplates: boolean }) => {
+  const sendCommand = (text: string) => {
     const ctx = state.ctx;
 
     if (!ctx) {
@@ -152,11 +151,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     if (ctx.isIdle()) {
-      pi.sendUserMessage(text, options);
+      pi.sendUserMessage(text, { expandPromptTemplates: true });
       return;
     }
 
-    pi.sendUserMessage(text, { ...options, deliverAs: "followUp" });
+    pi.sendUserMessage(text, { expandPromptTemplates: true, deliverAs: "followUp" });
   };
 
   const startHidden = (customs: HiddenCustom[]) => {
@@ -200,6 +199,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     capture(ctx);
     editor.sync(event.reason);
 
+    const tui = tuiContext(state);
+
+    if (tui) {
+      syncNotices(tui);
+      recordPad(pi.getSettings().outputPad === 0 ? 0 : 1);
+    }
+
     const info = sessionInfo(ctx);
     const created = event.reason === "new" || event.reason === "fork";
     const parent = created ? ctx.sessionManager.getHeader()?.parentSession : undefined;
@@ -230,7 +236,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     );
 
     editor.release();
+    notices.release();
     sections.release();
+    toolRows.release();
+    thinkingLabel.release();
     state.ctx = undefined;
 
     if (errors.length > 0) {
@@ -299,7 +308,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    applyPhase({ type: "tool_start", id: event.toolCallId, name: event.toolName });
+    applyPhase({ type: "tool_start", id: event.toolCallId });
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
@@ -388,7 +397,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       .map((entry) => entry.data as T);
 
   return {
-    ui: createUi(state, process.stdout, process.env, editor),
+    ui: createUi(state, process.stdout, process.env, editor, notices, thinkingLabel),
     registerTool,
     registerCommand,
     setMainPrompt: (text) => {
@@ -413,9 +422,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       compactHandlers.push(handler);
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
-    sendUserMessage: (text) => {
-      sendUser(text);
-    },
     sendHiddenMessage: (message) => {
       const ctx = state.ctx;
 
@@ -447,7 +453,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       }
     },
     dispatchCommand: (name, args) => {
-      sendUser(args ? `/${name} ${args}` : `/${name}`, { expandPromptTemplates: true });
+      sendCommand(args ? `/${name} ${args}` : `/${name}`);
     },
     publish: (channel, data) => {
       if (!state.ctx) {
@@ -479,6 +485,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     ...footerHost(pi, state),
     ...contextHost(pi, state),
     ...entryHost(pi),
+    registerToolRows: toolRows.registerToolRows,
   };
 };
 

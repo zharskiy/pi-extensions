@@ -3,7 +3,9 @@ import { dirname } from "node:path";
 import type { ContextSnapshot, Host, SessionControl } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL, parseBusySignal } from "../../../core/manager/channels.ts";
 import { errorText } from "../../../core/manager/format.ts";
+import { EXPAND_BINDING } from "../../../core/manager/hints.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
+import { seedRow } from "./seed-row.ts";
 import {
   contextLevel,
   type HandoffFile,
@@ -17,7 +19,7 @@ import {
   shouldRequest,
 } from "./thresholds.ts";
 
-const STATUS_KEY = "pi-session-limits";
+const NOTICE_KEY = "pi-session-limits";
 
 const HANDOFF_COMMAND = "session-handoff";
 
@@ -105,11 +107,9 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   };
 
   const refresh = () => {
-    const segment =
-      (state.context || state.phase !== "watching") &&
-      segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
+    const segment = segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
 
-    host.ui.setStatus(STATUS_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
+    host.ui.setNotice(NOTICE_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
   };
 
   const sendRequest = (path: string, origin: RequestOrigin) => {
@@ -379,7 +379,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
     state = { ...state, phase: "queued", focus };
 
     host.ui.notify(
-      "The session handoff starts when the current turn ends; stopping the turn (Esc) cancels it.",
+      "The session handoff starts when the current turn ends; stopping the turn (esc) cancels it.",
       "info",
     );
   };
@@ -438,6 +438,10 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
 
     refresh();
   };
+
+  host.registerMessageRenderer(HANDOFF_TYPE, (message, width, expanded, theme) =>
+    seedRow(message.text, expanded, host.ui.keyText(EXPAND_BINDING))(width, theme),
+  );
 
   host.registerCommand(HANDOFF_COMMAND, {
     description:

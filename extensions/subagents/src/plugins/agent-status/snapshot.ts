@@ -1,9 +1,11 @@
 import {
   cutChars,
+  DOT,
   elapsedOf,
+  formatCalls,
+  formatCtx,
   formatDuration,
   formatTokens,
-  formatToolUses,
   singleLine,
 } from "../../components/format.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../../model/types.ts";
@@ -25,6 +27,7 @@ export type AgentSnapshot = {
   elapsedMs: number;
   tokens: number;
   toolCalls: number;
+  cost?: number;
   contextPercent: number | null;
   lastLine: string;
   resultPath?: string;
@@ -33,7 +36,6 @@ export type AgentSnapshot = {
   graceSecondsLeft?: number;
   chainIndex: number;
   predecessorId?: string;
-  successorId?: string;
   requestedId?: string;
   worktree?: Worktree;
 };
@@ -68,6 +70,7 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   elapsedMs: elapsedOf(record, now),
   tokens: record.tokens,
   toolCalls: record.toolCalls,
+  cost: record.cost,
   contextPercent: record.context?.percent ?? null,
   lastLine: lastLineOf(record.lastText),
   resultPath: record.resultPath,
@@ -76,7 +79,6 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   graceSecondsLeft: graceSecondsLeft(record, now),
   chainIndex: record.chainIndex,
   predecessorId: record.predecessorId,
-  successorId: record.successorId,
   requestedId: requestedId === record.id ? undefined : requestedId,
   worktree: record.worktree,
 });
@@ -90,17 +92,14 @@ const chainText = (snapshot: AgentSnapshot) => {
 };
 
 export const snapshotLine = (snapshot: AgentSnapshot) => {
-  const percent =
-    snapshot.contextPercent === null ? "ctx n/a" : `ctx ${Math.round(snapshot.contextPercent)}%`;
-
   const name = snapshot.requestedId ? `${snapshot.requestedId} → ${snapshot.id}` : snapshot.id;
 
   const parts = [
     `${name} (${snapshot.agent}, ${snapshot.model ?? "model n/a"}) ${stateLabel(snapshot)}`,
     formatDuration(snapshot.elapsedMs),
+    formatCalls(snapshot.toolCalls),
     `${formatTokens(snapshot.tokens)} tokens`,
-    formatToolUses(snapshot.toolCalls),
-    percent,
+    formatCtx(snapshot.contextPercent) ?? "context n/a",
   ];
 
   const extras = [
@@ -114,7 +113,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
 
   const lines = extras.map((extra) => `  ${extra}`);
 
-  lines.unshift(parts.join(" · "));
+  lines.unshift(parts.join(DOT));
 
   return lines.join("\n");
 };

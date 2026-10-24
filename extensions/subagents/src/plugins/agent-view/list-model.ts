@@ -1,5 +1,6 @@
-import { SEP } from "../../components/format.ts";
-import { stopHint } from "../../components/state-text.ts";
+import type { KeyHint } from "../../../../../core/manager/hints.ts";
+import { DOT } from "../../components/format.ts";
+import { stopWords } from "../../components/state-text.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../../components/tree.ts";
 import { type AgentRecord, isClosed, MAIN_CALLER } from "../../model/types.ts";
 
@@ -125,17 +126,19 @@ export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] => {
   return visible.filter((record) => isTerminal(record, byId));
 };
 
-export const listCounts = (
-  records: AgentRecord[],
-  cleared: ReadonlySet<string>,
-): { running: number; completed: number } => {
-  const { terminals, isListRoot } = forestOf(visibleRecords(records, cleared));
+export const listCounts = (visible: AgentRecord[]): { running: number; finished: number } => {
+  const { terminals, isListRoot } = forestOf(visible);
 
   return {
     running: terminals.filter((record) => !isClosed(record.state)).length,
-    completed: terminals.filter((record) => isListRoot(record) && isClosed(record.state)).length,
+    finished: terminals.filter((record) => isListRoot(record) && isClosed(record.state)).length,
   };
 };
+
+export const countsText = (running: number, finished: number): string =>
+  [running > 0 ? `${running} running` : undefined, finished > 0 ? `${finished} finished` : undefined]
+    .filter((part) => part !== undefined)
+    .join(DOT);
 
 export const listSections = (visible: AgentRecord[]): ListSection[] => {
   const { byId, terminals, isListRoot, rootOf } = forestOf(visible);
@@ -166,22 +169,17 @@ export const listSections = (visible: AgentRecord[]): ListSection[] => {
 
   const sections: ListSection[] = [
     { title: "Running", rows: treeOrder(withLinks(running, byId), isListRoot) },
-    { title: `Completed (${completedRoots.length})`, rows: completed },
+    { title: `Finished (${completedRoots.length})`, rows: completed },
   ];
 
   return sections.filter((section) => section.rows.length > 0);
 };
 
 export const subtitle = (visible: AgentRecord[]): string => {
-  const terminals = listedTerminals(visible);
-  const open = terminals.filter((record) => !isClosed(record.state)).length;
-  const done = terminals.length - open;
+  const { running, finished } = listCounts(visible);
+  const text = countsText(running, finished);
 
-  const parts = [open > 0 ? `${open} running` : undefined, done > 0 ? `${done} done` : undefined].filter(
-    (part) => part !== undefined,
-  );
-
-  return parts.length === 0 ? "" : SEP + parts.join(SEP);
+  return text && DOT + text;
 };
 
 export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
@@ -217,10 +215,21 @@ export const clearTargets = (id: string, visible: AgentRecord[]): string[] => {
   ];
 };
 
-export const listHint = (selected: AgentRecord | undefined): string => {
+const EXITS: KeyHint[] = [
+  ["esc", "to close"],
+  ["→", "to main session"],
+];
+
+export const listHint = (selected: AgentRecord | undefined): KeyHint[] => {
   if (!selected) {
-    return "→ to main";
+    return [...EXITS];
   }
 
-  return ["↑/↓ to select", "enter to view", stopHint(selected.state), "X to stop all", "→ to main"].join(SEP);
+  return [
+    ["↑↓", "to select"],
+    ["enter", "to view"],
+    ["x", stopWords(selected.state)],
+    ["shift+x", "to stop all"],
+    ...EXITS,
+  ];
 };

@@ -1,8 +1,9 @@
 import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
+import type { KeyHint } from "./hints.ts";
 
 export type Tab = { label: string; done: boolean };
 
-export const TAB_SWITCH_HINT = "Tab/←→ switch";
+export const TAB_SWITCH_HINT: KeyHint = ["tab/←→", "to switch"];
 
 const SUBMIT_LABEL = "✓ Submit";
 

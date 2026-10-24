@@ -1,4 +1,4 @@
-import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import {
   type EditorTheme,
   KeybindingsManager,
@@ -7,7 +7,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EditorFrame, KeyPress } from "../../adapter/contract.ts";
+import type { EditorFrame, KeyPress, ThemeToken } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
 
 type Factory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
@@ -17,12 +17,18 @@ const userEntry = (content: string | { type: string; text?: string }[]) => ({
   message: { role: "user", content },
 });
 
+const frameTheme = {
+  fg: (token: string, text: string) => `<${token}:${text}>`,
+  bold: (text: string) => text,
+} as unknown as Theme;
+
 const fakeCtx = (existing?: Factory, entries: object[] = []) => {
   const ui = { factory: existing, sets: 0, idle: true };
   const ctx = {
     isIdle: () => ui.idle,
     sessionManager: { buildContextEntries: () => entries },
     ui: {
+      theme: frameTheme,
       getEditorComponent: () => ui.factory,
       setEditorComponent: (factory: Factory) => {
         ui.factory = factory;
@@ -56,6 +62,7 @@ const LEFT = `${ESC}[D`;
 const DOWN = `${ESC}[B`;
 const UP = `${ESC}[A`;
 const JUMP = String.fromCharCode(29);
+const BACKSPACE = String.fromCharCode(127);
 
 const bindings = (map: Record<string, string>) => ({
   matches: (data: string, id: string) => map[data] === id,
@@ -121,6 +128,40 @@ describe("createEditorHooks", () => {
     expect(lines[0]).toBe(`<|>   <${"─".repeat(14)}> <|>`);
     expect(lines[1]?.startsWith("<|>>  ")).toBe(true);
     expect(lines.every((line) => line.startsWith("<|>") && line.endsWith("<|>"))).toBe(true);
+  });
+
+  it("hands the frame the session's theme", () => {
+    const { ctx, ui } = fakeCtx();
+    const painted: string[] = [];
+
+    createEditorFrame(() => ctx)({
+      ...frame,
+      decorate: (lines, layout, paint, theme) => {
+        painted.push(theme.fg("accent", "›"));
+
+        return frame.decorate(lines, layout, paint, theme);
+      },
+    });
+    render(ui.factory, 20);
+
+    expect(painted.at(-1)).toBe("<accent:›>");
+  });
+
+  it("decorates with the border colour pi sets when the thinking level changes", () => {
+    const { ctx, ui } = fakeCtx();
+
+    createEditorFrame(() => ctx)(frame);
+
+    const framed = editor(ui.factory);
+    const prompt = (token: ThemeToken) => {
+      framed.borderColor = (text) => frameTheme.fg(token, text);
+
+      return framed.render(20)[1];
+    };
+
+    expect(prompt("thinkingOff")?.startsWith("<thinkingOff:|>>")).toBe(true);
+    expect(prompt("thinkingMedium")?.startsWith("<thinkingMedium:|>>")).toBe(true);
+    expect(prompt("thinkingMax")?.startsWith("<thinkingMax:|>>")).toBe(true);
   });
 
   it("builds pi's editor with the working status embedded", () => {
@@ -510,6 +551,36 @@ describe("createEditorHooks", () => {
       reached.mockRestore();
       autocomplete.mockRestore();
     }
+  });
+
+  it("hands the interrupt key to the escape hook after typed text is deleted", () => {
+    const { ctx, ui } = fakeCtx();
+    let asked = 0;
+
+    createEditorHooks(() => ctx).onEmptyEditorEscape(() => {
+      asked += 1;
+
+      return true;
+    });
+
+    const keys = piKeys();
+    const matches = keys.matches.bind(keys);
+
+    keys.matches = (data, id) => (id === "app.interrupt" ? data === ESC : matches(data, id));
+
+    const hooked = editor(ui.factory, keys);
+
+    hooked.handleInput("a");
+    hooked.handleInput(ESC);
+
+    expect(hooked.getText()).toBe("a");
+    expect(asked).toBe(0);
+
+    hooked.handleInput(BACKSPACE);
+    hooked.handleInput(ESC);
+
+    expect(hooked.getText()).toBe("");
+    expect(asked).toBe(1);
   });
 
   it("follows a rebound interrupt key, not the escape byte", () => {

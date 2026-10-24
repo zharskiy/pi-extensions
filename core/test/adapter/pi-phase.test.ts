@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   deltaEvent,
-  detailOf,
   initialPhase,
   type PhaseEvent,
   type PhaseState,
@@ -12,21 +11,21 @@ const run = (events: PhaseEvent[], from: PhaseState = initialPhase()) => events.
 
 const delta = (type: string) => deltaEvent(type) as PhaseEvent;
 
-const toolStart = (id: string, name: string): PhaseEvent => ({ type: "tool_start", id, name });
+const toolStart = (id: string): PhaseEvent => ({ type: "tool_start", id });
 
 const toolEnd = (id: string): PhaseEvent => ({ type: "tool_end", id });
 
-const view = (state: PhaseState) => ({ phase: state.phase, detail: detailOf(state) });
+const view = (state: PhaseState) => ({ phase: state.phase, running: [...state.running] });
 
 describe("reducePhase", () => {
   it("starts idle", () => {
-    expect(view(initialPhase())).toEqual({ phase: "idle", detail: {} });
+    expect(view(initialPhase())).toEqual({ phase: "idle", running: [] });
   });
 
   it("enters waiting on agent_start and clears running tools", () => {
-    const state = run([{ type: "agent_start" }, toolStart("a", "bash"), { type: "agent_start" }]);
+    const state = run([{ type: "agent_start" }, toolStart("a"), { type: "agent_start" }]);
 
-    expect(view(state)).toEqual({ phase: "waiting", detail: {} });
+    expect(view(state)).toEqual({ phase: "waiting", running: [] });
   });
 
   it("enters waiting on turn_start", () => {
@@ -63,58 +62,44 @@ describe("reducePhase", () => {
     );
   });
 
-  it("enters tool on a top-level tool start with its name", () => {
-    expect(view(run([{ type: "agent_start" }, toolStart("a", "bash")]))).toEqual({
-      phase: "tool",
-      detail: { toolName: "bash" },
-    });
+  it("enters tool on a top-level tool start", () => {
+    expect(view(run([{ type: "agent_start" }, toolStart("a")]))).toEqual({ phase: "tool", running: ["a"] });
   });
 
   it("returns to waiting when the last tool ends", () => {
-    expect(view(run([{ type: "agent_start" }, toolStart("a", "bash"), toolEnd("a")]))).toEqual({
+    expect(view(run([{ type: "agent_start" }, toolStart("a"), toolEnd("a")]))).toEqual({
       phase: "waiting",
-      detail: {},
+      running: [],
     });
   });
 
   it("ignores the end of an unknown tool", () => {
-    const state = run([{ type: "agent_start" }, toolStart("a", "bash")]);
+    const state = run([{ type: "agent_start" }, toolStart("a")]);
 
     expect(reducePhase(state, toolEnd("other"))).toBe(state);
   });
 
   it("enters waiting on agent_end and clears running tools", () => {
-    expect(view(run([{ type: "agent_start" }, toolStart("a", "bash"), { type: "agent_end" }]))).toEqual({
+    expect(view(run([{ type: "agent_start" }, toolStart("a"), { type: "agent_end" }]))).toEqual({
       phase: "waiting",
-      detail: {},
+      running: [],
     });
   });
 
   it("enters idle on agent_settled", () => {
-    expect(view(run([{ type: "agent_start" }, toolStart("a", "bash"), { type: "agent_settled" }]))).toEqual({
+    expect(view(run([{ type: "agent_start" }, toolStart("a"), { type: "agent_settled" }]))).toEqual({
       phase: "idle",
-      detail: {},
+      running: [],
     });
   });
 
-  it("keeps tool with the last running tool while parallel calls drain", () => {
-    const both = run([{ type: "agent_start" }, toolStart("a", "bash"), toolStart("b", "grep")]);
+  it("stays in tool while parallel calls drain", () => {
+    const both = run([{ type: "agent_start" }, toolStart("a"), toolStart("b")]);
 
-    expect(detailOf(both)).toEqual({ toolName: "grep" });
-    expect(view(reducePhase(both, toolEnd("b")))).toEqual({
-      phase: "tool",
-      detail: { toolName: "bash" },
-    });
-    expect(view(reducePhase(both, toolEnd("a")))).toEqual({
-      phase: "tool",
-      detail: { toolName: "grep" },
-    });
-  });
-
-  it("keeps codemode as the tool while nested calls run (filtered in the adapter)", () => {
-    const outer = run([{ type: "agent_start" }, toolStart("outer", "codemode")]);
-
-    expect(view(outer)).toEqual({ phase: "tool", detail: { toolName: "codemode" } });
+    expect(view(both)).toEqual({ phase: "tool", running: ["a", "b"] });
+    expect(view(reducePhase(both, toolEnd("b")))).toEqual({ phase: "tool", running: ["a"] });
+    expect(view(reducePhase(both, toolEnd("a")))).toEqual({ phase: "tool", running: ["b"] });
+    expect(run([toolEnd("a"), toolEnd("b")], both).phase).toBe("waiting");
   });
 
   it("stays in the run when a follow-up starts a new turn", () => {
@@ -129,17 +114,12 @@ describe("reducePhase", () => {
   });
 
   it("clears running tools on turn_start after an aborted tool", () => {
-    const aborted = run([
-      { type: "agent_start" },
-      toolStart("a", "bash"),
-      toolStart("b", "grep"),
-      toolEnd("a"),
-    ]);
+    const aborted = run([{ type: "agent_start" }, toolStart("a"), toolStart("b"), toolEnd("a")]);
 
     const next = reducePhase(aborted, { type: "turn_start" });
 
-    expect(view(next)).toEqual({ phase: "waiting", detail: {} });
-    expect(run([toolStart("c", "read"), toolEnd("c")], next).phase).toBe("waiting");
+    expect(view(next)).toEqual({ phase: "waiting", running: [] });
+    expect(run([toolStart("c"), toolEnd("c")], next).phase).toBe("waiting");
   });
 
   it("keeps waiting between agent_end and agent_settled", () => {

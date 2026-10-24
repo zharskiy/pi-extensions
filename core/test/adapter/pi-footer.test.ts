@@ -1,12 +1,18 @@
+import { stripVTControlCharacters } from "node:util";
 import { type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
 import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../../adapter/pi-footer.ts";
+import { createNotices, NOTICE_WIDGET_KEY, syncNotices } from "../../adapter/pi-notice.ts";
 import { createUi, type HostState } from "../../adapter/pi-ui.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const NOTICES_KEY = Symbol.for("pi-extensions.notices");
+
+afterEach(() => {
+  delete (globalThis as Record<symbol, unknown>)[NOTICES_KEY];
+});
 
 type Factory = (
   tui: unknown,
@@ -25,8 +31,11 @@ const fakeFooter = (mode: string) => {
     mode,
     ui: {
       setFooter: (factory: Factory | undefined) => installed.push(factory),
-      setWidget: (key: string, factory: WidgetFactory | undefined, options?: { placement?: string }) =>
-        widgets.push({ key, factory, placement: options?.placement }),
+      setWidget: (key: string, factory: WidgetFactory | undefined, options?: { placement?: string }) => {
+        if (key !== NOTICE_WIDGET_KEY) {
+          widgets.push({ key, factory, placement: options?.placement });
+        }
+      },
     },
   };
   const data = {
@@ -69,8 +78,8 @@ describe("setFooter", () => {
     expect(
       mountWidget()
         ?.render(6)
-        .map((line) => line.replace(ANSI, "")),
-    ).toEqual(["main v", "01234…"]);
+        .map((line) => stripVTControlCharacters(line)),
+    ).toEqual(["main v", "012..."]);
   });
 
   it("paints the ellipsis with the current theme on each render", () => {
@@ -85,8 +94,8 @@ describe("setFooter", () => {
 
     const [line = ""] = component?.render(6) ?? [];
 
-    expect(line).toContain("\x1b[2m…");
-    expect(line.replace(ANSI, "")).toBe("01234…");
+    expect(line).toContain("\x1b[2m...");
+    expect(stripVTControlCharacters(line)).toBe("012...");
   });
 
   it("re-renders on refresh and branch changes without setting the widget again, and unsubscribes on dispose", () => {
@@ -148,7 +157,7 @@ describe("setFooter with pi's interactive layout", () => {
       footer: { render: () => ["pi footer"], invalidate: () => {} },
       footerDataProvider: {
         getGitBranch: () => "main",
-        getExtensionStatuses: () => new Map([["pi-subagents", "← to agents"]]),
+        getExtensionStatuses: () => new Map([["pi-subagents", "← to list agents"]]),
         onBranchChange: () => () => {},
       },
       ui: { requestRender: () => {} },
@@ -175,6 +184,7 @@ describe("setFooter with pi's interactive layout", () => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     );
     const setFooter = createFooterSetter(() => state.ctx);
     const footer = () =>
@@ -197,7 +207,7 @@ describe("setFooter with pi's interactive layout", () => {
 
     footer();
 
-    expect(below()).toEqual(["usage", "thinking", "← to agents"]);
+    expect(below()).toEqual(["usage", "thinking", "← to list agents"]);
   });
 
   it("keeps the footer block above a panel set later, across a reset and a second set", () => {
@@ -207,13 +217,13 @@ describe("setFooter with pi's interactive layout", () => {
     ui.setWidget("panel", () => ["panel row"]);
     footer();
 
-    expect(below()).toEqual(["usage", "thinking", "← to agents", "panel row"]);
+    expect(below()).toEqual(["usage", "thinking", "← to list agents", "panel row"]);
 
     reset();
     footer();
     ui.setWidget("panel", () => ["panel row"]);
 
-    expect(below()).toEqual(["usage", "thinking", "← to agents", "panel row"]);
+    expect(below()).toEqual(["usage", "thinking", "← to list agents", "panel row"]);
   });
 
   it("puts a panel set before the footer block above it", () => {
@@ -222,7 +232,232 @@ describe("setFooter with pi's interactive layout", () => {
     ui.setWidget("panel", () => ["panel row"]);
     footer();
 
-    expect(below()).toEqual(["panel row", "usage", "thinking", "← to agents"]);
+    expect(below()).toEqual(["panel row", "usage", "thinking", "← to list agents"]);
+  });
+});
+
+describe("setNotice with pi's interactive layout", () => {
+  const piLayout = () => {
+    initRenderTheme();
+
+    const mode = Object.assign(Object.create(InteractiveMode.prototype), {
+      extensionWidgetsAbove: new Map(),
+      extensionWidgetsBelow: new Map(),
+      widgetContainerAbove: new Container(),
+      widgetContainerBelow: new Container(),
+      footerContainer: new Container(),
+      footer: { render: () => [], invalidate: () => {} },
+      footerDataProvider: {
+        getGitBranch: () => "main",
+        getExtensionStatuses: () => new Map(),
+        onBranchChange: () => () => {},
+      },
+      ui: { requestRender: () => {} },
+    }) as {
+      setExtensionWidget(key: string, content: unknown, options?: unknown): void;
+      setExtensionFooter(factory: unknown): void;
+      clearExtensionWidgets(): void;
+      widgetContainerBelow: Container;
+    };
+    const stateOf = (): HostState => ({
+      tools: new Map(),
+      ctx: {
+        mode: "tui",
+        ui: {
+          setWidget: (key: string, content: unknown, options?: unknown) =>
+            mode.setExtensionWidget(key, content, options),
+          setFooter: (factory: unknown) => mode.setExtensionFooter(factory),
+        },
+      } as unknown as ExtensionContext,
+    });
+    const uiOf = () => {
+      const state = stateOf();
+
+      return createUi(
+        state,
+        { write: () => {} },
+        {},
+        createEditorHooks(() => undefined),
+        createNotices(state),
+      );
+    };
+    const footerUi = uiOf();
+    const footer = () => footerUi.setFooter(() => ["", "usage", ""]);
+    const below = () =>
+      mode.widgetContainerBelow.render(40).map((line) => stripVTControlCharacters(line).trimEnd());
+
+    mode.setExtensionFooter(undefined);
+
+    return { stateOf, uiOf, footer, footerUi, below, reset: () => mode.clearExtensionWidgets() };
+  };
+
+  it("draws a notice between the editor and the footer block, above a panel", () => {
+    const { uiOf, footer, below } = piLayout();
+    const limits = uiOf();
+    const panel = uiOf();
+
+    footer();
+    panel.setWidget("panel", () => ["panel row"]);
+    limits.setNotice("pi-session-limits", "Handoff after this turn");
+
+    expect(below()).toEqual([" Handoff after this turn", "", "usage", "", "panel row"]);
+
+    limits.setNotice("pi-session-limits", undefined);
+
+    expect(below()).toEqual(["", "usage", "", "panel row"]);
+  });
+
+  it("keeps a notice set before the footer above the block, drawn once", () => {
+    const { uiOf, footer, below } = piLayout();
+    const limits = uiOf();
+
+    limits.setNotice("pi-session-limits", "Switching session");
+    footer();
+
+    expect(below()).toEqual([" Switching session", "", "usage", ""]);
+  });
+
+  it("shows notices without a footer and moves them under the editor when the footer leaves", () => {
+    const { uiOf, footer, footerUi, below } = piLayout();
+    const limits = uiOf();
+
+    limits.setNotice("pi-session-limits", "Switching session");
+
+    expect(below()).toEqual([" Switching session"]);
+
+    footer();
+    footerUi.setFooter(undefined);
+
+    expect(below()).toEqual([" Switching session"]);
+
+    limits.setNotice("pi-session-limits", undefined);
+
+    expect(below()).toEqual([]);
+  });
+
+  it("stops showing the notices of a released adapter", () => {
+    const { footer, below } = piLayout();
+    const state: HostState = {
+      tools: new Map(),
+      ctx: { mode: "tui", ui: { setWidget: () => {} } } as unknown as ExtensionContext,
+    };
+    const notices = createNotices(state);
+
+    footer();
+    notices.setNotice("pi-session-limits", "Switching session");
+
+    expect(below()).toEqual([" Switching session", "", "usage", ""]);
+
+    notices.release();
+
+    expect(below()).toEqual(["", "usage", ""]);
+  });
+
+  it("falls back to a status outside the terminal UI", () => {
+    const statuses = new Map<string, string | undefined>();
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "rpc",
+        ui: { setStatus: (key: string, text?: string) => statuses.set(key, text) },
+      } as unknown as ExtensionContext,
+    };
+
+    createNotices(state).setNotice("pi-session-limits", "Switching session");
+
+    expect(statuses.get("pi-session-limits")).toBe("Switching session");
+  });
+
+  it("clears the status of the fallback when the notice is removed", () => {
+    const statuses = new Map<string, string | undefined>();
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "rpc",
+        ui: { setStatus: (key: string, text?: string) => statuses.set(key, text) },
+      } as unknown as ExtensionContext,
+    };
+    const notices = createNotices(state);
+
+    notices.setNotice("pi-session-limits", "Switching session");
+    notices.setNotice("pi-session-limits", undefined);
+
+    expect(statuses.get("pi-session-limits")).toBeUndefined();
+    expect(statuses.has("pi-session-limits")).toBe(true);
+  });
+
+  it("clears the status of the fallback when the adapter is released", () => {
+    const statuses = new Map<string, string | undefined>();
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "rpc",
+        ui: { setStatus: (key: string, text?: string) => statuses.set(key, text) },
+      } as unknown as ExtensionContext,
+    };
+    const notices = createNotices(state);
+
+    notices.setNotice("pi-session-limits", "Switching session");
+    notices.release();
+
+    expect(statuses.get("pi-session-limits")).toBeUndefined();
+    expect(statuses.has("pi-session-limits")).toBe(true);
+  });
+
+  it("does nothing without a live session", () => {
+    const { footer, below } = piLayout();
+
+    footer();
+    createNotices({ tools: new Map() }).setNotice("pi-session-limits", "Switching session");
+
+    expect(below()).toEqual(["", "usage", ""]);
+  });
+
+  it("keeps the notice slot above a panel set later when no footer is on", () => {
+    const { stateOf, uiOf, below } = piLayout();
+    const limits = uiOf();
+    const panel = uiOf();
+
+    syncNotices(stateOf().ctx as ExtensionContext);
+    panel.setWidget("panel", () => ["panel row"]);
+
+    expect(below()).toEqual(["panel row"]);
+
+    limits.setNotice("pi-session-limits", "Switching session");
+
+    expect(below()).toEqual([" Switching session", "panel row"]);
+  });
+
+  it("shows only the new session's notice after pi clears the widgets", () => {
+    const { stateOf, footer, below, reset } = piLayout();
+    const before = createNotices(stateOf());
+
+    footer();
+    before.setNotice("pi-session-limits", "Switching session");
+
+    expect(below()).toEqual([" Switching session", "", "usage", ""]);
+
+    reset();
+    before.release();
+
+    const after = createNotices(stateOf());
+
+    footer();
+    after.setNotice("pi-session-limits", "Handoff after this turn");
+
+    expect(below()).toEqual([" Handoff after this turn", "", "usage", ""]);
+  });
+
+  it("draws a key set by two adapter copies once, with the last text", () => {
+    const { stateOf, footer, below } = piLayout();
+    const first = createNotices(stateOf());
+    const second = createNotices(stateOf());
+
+    footer();
+    first.setNotice("shared", "first text");
+    second.setNotice("shared", "second text");
+
+    expect(below()).toEqual([" second text", "", "usage", ""]);
   });
 });
 

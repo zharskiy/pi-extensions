@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../adapter/contract.ts";
-import { hintLines, padded, prefixed, rule } from "../../manager/layout.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import { hintLines, keyHints } from "../../manager/hints.ts";
+import { padded, prefixed, rule } from "../../manager/layout.ts";
+import { plainTheme, taggedTheme } from "../helpers/fakes.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
+const tagged: ThemeLike = taggedTheme();
 
 describe("rule", () => {
   it("draws an accent line across the width, at least one column wide", () => {
@@ -30,8 +31,42 @@ describe("padded", () => {
 });
 
 describe("hintLines", () => {
+  it("wraps between hints, never inside one", () => {
+    const hints = [
+      ["↑↓", "to select"],
+      ["enter", "to choose"],
+      ["esc", "to cancel"],
+    ] as const;
+
+    expect(hintLines(plainTheme, hints, 34)).toEqual([" ↑↓ to select · enter to choose", " esc to cancel"]);
+    expect(hintLines(plainTheme, [["enter", "to save the whole thing"]], 12)).toEqual([" enter to..."]);
+  });
+
   it("joins the hints with a dot in the dim colour", () => {
-    expect(hintLines(plainTheme, ["Enter save", "Esc back"], 40)).toEqual([" Enter save · Esc back"]);
-    expect(hintLines(tagged, ["Enter save"], 40)[0]).toContain("<dim>Enter save");
+    expect(
+      hintLines(
+        plainTheme,
+        [
+          ["enter", "to save"],
+          ["esc", "to go back"],
+        ],
+        40,
+      ),
+    ).toEqual([" enter to save · esc to go back"]);
+    expect(hintLines(tagged, [["enter", "to save"]], 40)[0]).toBe(" <dim>enter</> <muted>to save</>");
+  });
+});
+
+describe("keyHints", () => {
+  it("joins key-to-verb pairs with keys dim, words muted and a dim dot", () => {
+    const pairs = [
+      ["enter", "to view"],
+      ["x", "to stop"],
+    ] as const;
+
+    expect(keyHints(pairs, plainTheme)).toBe("enter to view · x to stop");
+    expect(keyHints(pairs, tagged)).toBe(
+      "<dim>enter</> <muted>to view</><dim> · </><dim>x</> <muted>to stop</>",
+    );
   });
 });

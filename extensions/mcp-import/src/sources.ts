@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { errorText } from "../../../core/manager/format.ts";
-import { isPlainObject } from "../../../core/manager/settings.ts";
+import { isPlainObject } from "../../../core/manager/guards.ts";
 import type { Scope, Source } from "./args.ts";
 
 export type Origin = { label: string; servers: Record<string, unknown>; note?: string };

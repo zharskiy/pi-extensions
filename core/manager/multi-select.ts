@@ -1,12 +1,19 @@
 import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
-import { hintLines, PAD, padded, prefixed, rule } from "./layout.ts";
+import { framed, type KeyHint } from "./hints.ts";
+import { PAD, padded, prefixed } from "./layout.ts";
 import { CANCEL_HINT, clampIndex } from "./list.ts";
+import { pointerMark } from "./marks.ts";
 
 export type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
-export const MULTI_SELECT_HINTS = ["↑↓ select", "Space toggle", "a all", "n none"] as const;
+export const MULTI_SELECT_HINTS: readonly KeyHint[] = [
+  ["↑↓", "to select"],
+  ["space", "to toggle"],
+  ["a", "to check all"],
+  ["n", "to check none"],
+];
 
 const DEFAULT_HEIGHT = 10;
 
@@ -21,9 +28,6 @@ export const scrollWindow = (count: number, cursor: number, height: number) => {
 
   return { start, end: Math.min(count, start + size) };
 };
-
-export const pointerMark = (theme: ThemeLike, chosen: boolean) =>
-  chosen ? theme.fg("accent", theme.bold("›")) : " ";
 
 export const scrolledLines = (
   theme: ThemeLike,
@@ -85,7 +89,7 @@ export const checkedIndexes = (state: MultiState) =>
 
 const ROW_MARKS = "› [ ] ";
 
-export const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
+const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
   width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
 
 export const descriptionFits = (theme: ThemeLike, option: MultiOption, width: number) =>
@@ -128,19 +132,25 @@ export type MultiSelectSpec<T> = {
 export const multiSelectForm =
   <T>(spec: MultiSelectSpec<T>): FormFactory<T[] | undefined> =>
   (api) => {
-    const hints = [...MULTI_SELECT_HINTS, `Enter ${spec.submitHint ?? "confirm"}`, CANCEL_HINT];
+    const hints: readonly KeyHint[] = [
+      ...MULTI_SELECT_HINTS,
+      ["enter", `to ${spec.submitHint ?? "confirm"}`],
+      CANCEL_HINT,
+    ];
     let state = initialMulti(spec.options.length, spec.checked);
 
     return {
-      render: (width) => [
-        rule(api.theme, width),
-        ...padded(api.theme, api.theme.fg("text", spec.title), width),
-        "",
-        ...multiLines(api.theme, spec.options, state, width),
-        "",
-        ...hintLines(api.theme, hints, width),
-        rule(api.theme, width),
-      ],
+      render: (width) =>
+        framed(
+          api.theme,
+          width,
+          [
+            ...padded(api.theme, api.theme.fg("text", spec.title), width),
+            "",
+            ...multiLines(api.theme, spec.options, state, width),
+          ],
+          hints,
+        ),
       handleKey: (key) => {
         if (key.name === "escape") {
           api.done(undefined);

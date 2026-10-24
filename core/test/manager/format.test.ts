@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { errorText, formatDuration, formatTokens, formatWindow, homeRelative } from "../../manager/format.ts";
+import {
+  errorText,
+  formatCost,
+  formatDuration,
+  formatMoney,
+  formatTokens,
+  formatWindow,
+  homeRelative,
+} from "../../manager/format.ts";
 
 describe("shared formatters", () => {
   it("formats tokens as 999, 1.0k, 1.2M", () => {
@@ -44,5 +52,19 @@ describe("shared formatters", () => {
     expect(homeRelative("/home/me", "/home/me")).toBe("~");
     expect(homeRelative("/home/meow/x", "/home/me")).toBe("/home/meow/x");
     expect(homeRelative("/home/me/x", "")).toBe("/home/me/x");
+  });
+});
+
+describe("costs and calls", () => {
+  it("formats money with two decimals, <$0.01 for fractions and omits or shows zero", () => {
+    expect([0.004, 0.04, 12.3, 4.4249].map((usd) => formatCost(usd))).toEqual([
+      "<$0.01",
+      "$0.04",
+      "$12.30",
+      "$4.42",
+    ]);
+    expect(formatCost(0)).toBeUndefined();
+    expect(formatMoney(0)).toBe("$0.00");
+    expect(formatMoney(12.3)).toBe("$12.30");
   });
 });

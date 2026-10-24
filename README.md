@@ -5,14 +5,15 @@ Extensions for the [pi coding agent](https://pi.dev), shipped as one pi package 
 - [subagents](extensions/subagents/README.md): background agents run, watched and messaged from the main session, inside the main session's process, optionally in their own git worktree, with MCP for every agent with tools. A panel below the editor (under the footer block when the footer is installed) shows the running agents (`↓` to select, `←` for the list), `/agents` lists them and opens any agent's view, the `run_agent` block's rows show each agent's outcome, and agents never ask you anything; what they spend is reported to spending. `/agents setup` sets an agent's model, thinking level and skills, `/agents create` writes a new agent file.
 - [session-limits](extensions/session-limits/README.md): the main session hands itself over to a new session before its context fills up.
 - [spending](extensions/spending/README.md): the session's total spend in the footer, the main session plus everything other extensions report, such as subagents at every depth.
-- [working-indicator](extensions/working-indicator/README.md): pi's working line as a spinner, a playful verb and the elapsed time of the current prompt.
+- [working-indicator](extensions/working-indicator/README.md): pi's working line shows a rotating verb and the elapsed time of the current prompt (`Pondering · 12s`) next to pi's own spinner.
 - [notifications](extensions/notifications/README.md): one terminal notification when pi waits for your input (after the work and any background agents are done) and one when a dialog waits unanswered.
 - [command-aliases](extensions/command-aliases/README.md): friendlier names for built-in commands (`/continue`, `/clear`, `/exit`).
-- [composer](extensions/composer/README.md): the input drawn between two full-width rules in the editor's colour, with a chevron prompt.
+- [composer](extensions/composer/README.md): the input drawn between two full-width rules in the editor's colour, with pi's `›` message cursor as the prompt.
 - [questionnaire](extensions/questionnaire/README.md): a `questionnaire` tool the main session's model uses to ask you a batch of independent multiple-choice questions in one inline form (tabs, number keys, a typed answer per question), with a notification when it waits.
 - [style](extensions/style/README.md): `/style concise` makes the main session and every subagent answer in short, result-first replies; `/style normal` turns it off, and `/style` alone opens a list of the styles to pick from.
-- [context](extensions/context/README.md): `/context` prints what fills the context window into the transcript: a usage grid, the estimated tokens per category (system prompt, tools, memory files, skills, messages, free space, compaction reserve), the cache hit rate of the last turn and the session, and every file, skill and tool with `Ctrl+O`.
+- [context](extensions/context/README.md): `/context` prints what fills the context window into the transcript: a usage grid, the estimated tokens per category (system prompt, tools, memory files, skills, messages, free space, compaction reserve), the cache hit rate of the last turn and the session, and every file, skill and tool with `ctrl+o`.
 - [footer](extensions/footer/README.md): replaces pi's footer with a multi-line block right below the editor, above the subagents panel: context, session cache hit rate, cost, model, session total including agents, folder, branch, thinking level and the other extensions' statuses.
+- [transcript](extensions/transcript/README.md): pi's tool calls drawn as pi-native state rows: a state glyph (`◌` running, `✓` done, `✗` failed, `⊘` stopped), a title (`read src/stats.py:5-14`, `edit`, `bash npm test`) with the failure reason or duration after it, and the outcome on a `↳` line (`10 lines`, `Added 1 line, removed 1 line`, the last lines of shell output) that `ctrl+o` or a click expands; messages and thinking keep pi's own look. The subagents, questionnaire, `/context` and handoff rows use the same row language.
 - [mcp-import](extensions/mcp-import/README.md): `/mcp-import <claude|cursor> [project] [apply]` copies MCP servers from Claude Code or Cursor into pi's `mcp.json`; a dry run unless you add `apply`, and existing servers are never overwritten.
 
 ## Install
@@ -37,6 +38,7 @@ pi -e ./pi-extensions/extensions/style/src/index.ts
 pi -e ./pi-extensions/extensions/context/src/index.ts
 pi -e ./pi-extensions/extensions/footer/src/index.ts
 pi -e ./pi-extensions/extensions/mcp-import/src/index.ts
+pi -e ./pi-extensions/extensions/transcript/src/index.ts
 ```
 
 ## Coming from another tool
@@ -68,7 +70,7 @@ PI_LIVE_MODEL=provider/id:low npm run test:live   # real agents, local only, cos
 ## Layout
 
 - `core/adapter/`: the shared pi adapter, the only code that imports pi. `contract.ts` is the interface every extension depends on; `pi-adapter.ts` exports `createPiExtension(boot, { root, namespace, childExclude })`. It knows nothing about any extension: each entry point passes its root, its namespace for custom entries and the source directories child sessions must not load.
-- `core/manager/`: the shared plugin manager (ordering, typed bus, services), generic over each extension's event map, service map and settings, plus settings file helpers and the handoff format and channel names the extensions share, and the token and duration formatters (`format.ts`).
+- `core/manager/`: the shared plugin manager (ordering, typed bus, services), generic over each extension's event map, service map and settings, plus settings file helpers and the handoff format and channel names the extensions share, the token, duration and receipt formatters (`format.ts`), the `key to verb` hint strips (`layout.ts`), and `row.ts`, the pi-native row language (state glyphs `◌ ✓ ✗ ⊘ »`, the `↳` outcome line, the two-column grid, pi's hint and count-line wording) that the transcript, questionnaire, subagents, context and session-limits rows share.
 - `core/test/`: mirrors `core/`; `core/test/helpers/fakes.ts` holds the fake host, runtime and child shared by every extension's tests, and only `core/test/adapter/` tests import pi packages directly; the fake theme measures with the adapter's `textMetrics`.
 - `extensions/<name>/{src,test,prompts}`: one folder per extension, with its own README. `src/index.ts` is the single entry that connects the extension's parts; `package.json` lists every entry file under `pi.extensions`.
 - Outside `core/adapter` code imports only `core/adapter/contract.ts` and the shared `core/manager/` modules; each extension's `src/index.ts` may also import `core/adapter/pi-adapter.ts`. `core/` never imports from `extensions/`.

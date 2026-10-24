@@ -1,8 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
-  Box,
   type Component,
+  mixColors,
   Text,
   truncateToWidth,
   visibleWidth,
@@ -10,21 +10,23 @@ import {
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type {
+  BgToken,
   ThemeLike,
   ThemeToken,
   ToolRender,
   ToolRenderState,
   ToolResult,
   ToolSpec,
-  ToolTone,
 } from "./contract.ts";
+import { messageText } from "./messages.ts";
+import { abortedText, recordPad, rowComponent, slotFor } from "./pi-row-component.ts";
 
 const ESC = "\x1b";
 
 export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
   width: visibleWidth,
   truncate: (text, cols) => {
-    const cut = truncateToWidth(text, cols, "…");
+    const cut = truncateToWidth(text, cols, "...");
 
     return text.includes(ESC) ? cut : stripVTControlCharacters(cut);
   },
@@ -32,30 +34,39 @@ export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
 };
 
 export const fitLines = (lines: string[], width: number) =>
-  lines.map((line) => truncateToWidth(line, width, "…"));
+  lines.map((line) => truncateToWidth(line, width, "..."));
 
-const PI_COLORS = {
-  accent: "accent",
-  muted: "muted",
-  dim: "dim",
-  success: "success",
-  warning: "warning",
-  error: "error",
-  text: "text",
-  comment: "syntaxComment",
-  keyword: "syntaxKeyword",
-  function: "syntaxFunction",
-  string: "syntaxString",
-  number: "syntaxNumber",
-  type: "syntaxType",
-  heading: "mdHeading",
-} as const satisfies Record<ThemeToken, Parameters<Theme["fg"]>[0]>;
+export const piColor = (token: ThemeToken): Parameters<Theme["fg"]>[0] => token;
 
-export const piColor = (token: ThemeToken) => PI_COLORS[token];
+const WORD_MIX = 0.4;
+
+const NO_BG = "\x1b[49m";
+
+const LINE_BGS = { added: "toolSuccessBg", removed: "toolErrorBg" } as const;
+
+const WORD_BGS = {
+  addedWord: ["toolSuccessBg", "toolDiffAdded"],
+  removedWord: ["toolErrorBg", "toolDiffRemoved"],
+} as const;
+
+const piBg = (theme: Theme, token: BgToken) => {
+  if (token === "added" || token === "removed") {
+    return LINE_BGS[token];
+  }
+
+  const [line, word] = WORD_BGS[token];
+
+  return mixColors(theme.colors[line], theme.colors[word], WORD_MIX);
+};
 
 export const themeLike = (theme: Theme): ThemeLike => ({
   fg: (token, text) => theme.fg(piColor(token), text),
+  bg: (token, text) => theme.style(text, { bg: piBg(theme, token) }),
   bold: (text) => theme.bold(text),
+  inverse: (text) => theme.inverse(text),
+  get panels() {
+    return theme.getBgAnsi("toolSuccessBg") !== NO_BG;
+  },
   ...textMetrics,
 });
 
@@ -102,37 +113,18 @@ const textComponent = (previous: unknown, text: ToolRender): Component => {
 
 const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
 
-class CutLines implements Component {
-  private readonly source: ToolRender;
-
-  constructor(source: ToolRender) {
-    this.source = source;
-  }
-
-  render(width: number): string[] {
-    const text = typeof this.source === "function" ? this.source(width) : this.source;
-
-    return fitLines(splitLines(text), width);
-  }
-
-  invalidate() {}
-}
-
 export const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
 });
 
-const fromPiResult = (result: {
+export const fromPiResult = (result: {
   content: { type: string; text?: string }[];
   details?: unknown;
   isError?: boolean;
 }): ToolResult => ({
-  text: result.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n"),
+  text: messageText(result.content),
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
 });
@@ -141,58 +133,44 @@ export type PiToolRenderContext = Parameters<NonNullable<ToolDefinition["renderC
 
 type RenderContext = Pick<
   PiToolRenderContext,
-  "toolCallId" | "expanded" | "isPartial" | "isError" | "args" | "outputPad" | "invalidate" | "lastComponent"
+  "expanded" | "isPartial" | "isError" | "args" | "outputPad" | "invalidate" | "lastComponent" | "state"
 >;
 
-const renderState = (context: RenderContext): ToolRenderState => ({
-  toolCallId: context.toolCallId,
+const latestResult = (context: RenderContext) => slotFor(context.state).result as ToolResult | undefined;
+
+const renderState = (
+  name: string,
+  context: RenderContext,
+  result = latestResult(context),
+): ToolRenderState => ({
   expanded: context.expanded,
   isPartial: context.isPartial,
   isError: context.isError,
   args: context.args,
+  aborted: context.isError && result !== undefined && abortedText(result.text, name),
+  ...(result ? { result } : {}),
   invalidate: context.invalidate,
 });
 
-const TONE_BG = {
-  pending: "toolPendingBg",
-  success: "toolSuccessBg",
-  error: "toolErrorBg",
-} as const satisfies Record<ToolTone, Parameters<Theme["bg"]>[0]>;
-
-const piTone = (context: RenderContext): ToolTone =>
-  context.isPartial ? "pending" : context.isError ? "error" : "success";
-
-const reuseBox = (box: Box, pad: number, bg: (line: string) => string) => {
-  box.clear();
-  box.setBgFn(bg);
-  box.setPaddingX(pad);
-
-  return box;
-};
-
-const toolBox = (theme: Theme, context: RenderContext, text: ToolRender, tone: ToolTone): Component => {
-  const pad = context.outputPad;
-  const bg = (line: string) => theme.bg(TONE_BG[tone], line);
-  const box =
-    context.lastComponent instanceof Box ? reuseBox(context.lastComponent, pad, bg) : new Box(pad, 1, bg);
-
-  box.addChild(new CutLines(text));
-
-  return box;
-};
-
 const shellComponent = <P, D>(
   spec: ToolSpec<P, D>,
-  theme: Theme,
   context: RenderContext,
-  text: ToolRender,
-  result?: ToolResult<D>,
+  render: () => ToolRender,
 ): Component => {
-  if (spec.renderShell === "box") {
-    return toolBox(theme, context, text, spec.renderTone?.(renderState(context), result) ?? piTone(context));
+  if (spec.renderShell === "row") {
+    recordPad(context.outputPad);
+
+    return rowComponent(context.lastComponent, {
+      lines: (width) => {
+        const text = render();
+
+        return splitLines(typeof text === "function" ? text(width) : text);
+      },
+      pad: context.outputPad,
+    });
   }
 
-  return textComponent(context.lastComponent, text);
+  return textComponent(context.lastComponent, render());
 };
 
 export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionContext) => void = () => {}) =>
@@ -205,7 +183,7 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     parameters: Type.Unsafe<P>(spec.parameters),
     executionMode: spec.executionMode,
     exposure: spec.modelOnly ? "model-only" : undefined,
-    renderShell: spec.renderShell === "box" ? "self" : undefined,
+    renderShell: spec.renderShell === "row" ? "self" : undefined,
     execute: async (
       toolCallId: string,
       params: unknown,
@@ -229,21 +207,25 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
       ? (args: unknown, theme: Theme, context: RenderContext) =>
           shellComponent(
             spec,
-            theme,
             context,
-            spec.renderCall?.(args as P, themeLike(theme), renderState(context)) ?? "",
+            () => spec.renderCall?.(args as P, themeLike(theme), renderState(spec.name, context)) ?? "",
           )
       : undefined,
     renderResult: spec.renderResult
       ? (result: unknown, _options: { expanded: boolean }, theme: Theme, context: RenderContext) => {
-          const converted = fromPiResult(result as never) as ToolResult<D>;
+          const converted = fromPiResult({
+            ...(result as object),
+            isError: context.isError,
+          } as never) as ToolResult<D>;
+
+          slotFor(context.state).result = converted;
 
           return shellComponent(
             spec,
-            theme,
             context,
-            spec.renderResult?.(converted, renderState(context), themeLike(theme)) ?? "",
-            converted,
+            () =>
+              spec.renderResult?.(converted, renderState(spec.name, context, converted), themeLike(theme)) ??
+              "",
           );
         }
       : undefined,

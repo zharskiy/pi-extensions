@@ -97,7 +97,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual([expect.stringMatching(/^ {3}○ explorer {2}look around +queued$/), ""]);
+    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });
@@ -127,6 +127,26 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
   });
 
+  it("draws the running rows, the more marker and the key hints as one table", () => {
+    const panel = setup();
+    const scout = panel.newAgent({ agent: "scout", description: "Map the auth module" });
+    const worker = panel.newAgent({ agent: "worker", description: "Fix the login redirect" });
+
+    panel.registry.update(scout.id, { state: "running", startedAt: 1_000_000 - 65_000, turns: 1 });
+    panel.registry.update(scout.id, { toolCalls: 4, tokens: 12_300 });
+    panel.registry.update(worker.id, { state: "running", startedAt: 1_000_000 - 123_000, turns: 1 });
+    panel.registry.update(worker.id, { toolCalls: 18, tokens: 30_100 });
+    Array.from({ length: 6 }, () => panel.running(panel.newAgent().id));
+    panel.host.pressEmptyDown();
+    panel.key("down");
+
+    expect(panel.lines().slice(0, 2)).toEqual([
+      "   ⠋ scout     Map the auth module     Elapsed 1m 5s · 4 calls · 12.3k tokens",
+      " › ⠋ worker    Fix the login redirect  Elapsed 2m 3s · 18 calls · 30.1k tokens",
+    ]);
+    expect(panel.lines().slice(-3)).toEqual(["   ↓ 3 more", HINT, ""]);
+  });
+
   it("renders seven agents in tree order with markers and (+N)", () => {
     const panel = setup();
     const parent = panel.newAgent({ agent: "reviewer" });
@@ -139,7 +159,7 @@ describe("agent panel", () => {
 
     expect(lines).toHaveLength(7);
     expect(lines[0]).toContain("reviewer (+1)");
-    expect(lines[1].startsWith("   └─ ")).toBe(true);
+    expect(lines[1].startsWith("   ↳ ⠋ explorer")).toBe(true);
     expect(lines[1]).toContain("nested");
     expect(lines.slice(5)).toEqual(["   ↓ 3 more", ""]);
   });
@@ -571,7 +591,7 @@ describe("agent panel", () => {
     expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 28 + 2);
   });
 
-  it("puts the scroll markers in the glyph column and ends every line before the last column", () => {
+  it("puts the scroll markers in the glyph column and keeps every line within the width", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
@@ -589,13 +609,13 @@ describe("agent panel", () => {
       const drawn = panel.lines(width);
 
       drawn.forEach((line) => {
-        expect(plainTheme.width(line)).toBeLessThanOrEqual(width - 1);
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width);
       });
       expect(drawn.slice(0, -1).every((line) => line.startsWith(" "))).toBe(true);
       expect(drawn.at(-1)).toBe("");
     });
 
-    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop ·…");
+    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop ...");
   });
 
   it("degrades without agent-view and run-agent", () => {
@@ -662,7 +682,7 @@ describe("agents hint status", () => {
   it("is set while the panel shows no rows and unset while it lists any", () => {
     const panel = setup();
 
-    expect(hint(panel)).toContain("← to agents");
+    expect(hint(panel)).toContain("← to list agents");
 
     const record = panel.newAgent();
 
@@ -680,7 +700,7 @@ describe("agents hint status", () => {
 
     vi.advanceTimersByTime(1_002);
 
-    expect(hint(panel)).toContain("← to agents");
+    expect(hint(panel)).toContain("← to list agents");
   });
 
   it("returns when x clears the last lingering failed row", () => {
@@ -695,7 +715,7 @@ describe("agents hint status", () => {
 
     panel.type("x");
 
-    expect(hint(panel)).toContain("← to agents");
+    expect(hint(panel)).toContain("← to list agents");
   });
 
   it("is never set with agent-view disabled", () => {
@@ -754,7 +774,7 @@ describe("agents hint status", () => {
 
     panel.host.start();
 
-    expect(hint(panel)).toContain("← to agents");
+    expect(hint(panel)).toContain("← to list agents");
   });
 
   it("is written only on change", () => {
@@ -775,7 +795,7 @@ describe("agents hint status", () => {
 
     panel.newAgent();
 
-    expect(panel.lines().join("\n")).toContain("queued");
+    expect(panel.lines().join("\n")).toContain("Queued");
     expect(hint(panel)).toBeUndefined();
   });
 
@@ -786,7 +806,7 @@ describe("agents hint status", () => {
     panel.running(record.id);
     panel.registry.update(record.id, { state: "grace" });
 
-    expect(panel.lines().join("\n")).toContain("stopping");
+    expect(panel.lines().join("\n")).toContain("Stopping");
     expect(hint(panel)).toBeUndefined();
   });
 

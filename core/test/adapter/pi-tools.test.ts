@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import {
   initTheme,
@@ -7,42 +10,25 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
+  mixColors,
   Text,
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { ToolRenderState, ToolResult, ToolSpec, ToolTone } from "../../adapter/contract.ts";
+import type { ThemeToken, ToolRenderState, ToolResult, ToolSpec } from "../../adapter/contract.ts";
 import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
+import { plainPiTheme } from "./render-theme.ts";
+import { piRenderContext } from "./tool-rows.ts";
 
 initTheme("dark", false);
 
-const theme = {
-  fg: (_token: string, text: string) => text,
-  bold: (text: string) => text,
-  bg: (_token: string, text: string) => text,
-} as unknown as Theme;
+const theme = plainPiTheme;
 
 const invalidate = () => {};
 
-const context = (patch: Partial<PiToolRenderContext> = {}) =>
-  ({
-    args: {},
-    toolCallId: "call-7",
-    invalidate,
-    lastComponent: undefined,
-    state: {},
-    cwd: "/repo",
-    executionStarted: true,
-    argsComplete: true,
-    isPartial: false,
-    expanded: false,
-    showImages: false,
-    isError: false,
-    outputPad: 1,
-    ...patch,
-  }) as PiToolRenderContext;
+const context = (patch: Partial<PiToolRenderContext> = {}) => piRenderContext({ invalidate, ...patch });
 
 type Renderers = {
   renderShell?: "self";
@@ -95,10 +81,7 @@ describe("toPiTool render state", () => {
     tool.renderResult(piResult("x"), options, theme, context({ isError: true }));
 
     expect(states).toHaveLength(2);
-    expect(states.map((state) => [state.toolCallId, state.isError])).toEqual([
-      ["call-7", true],
-      ["call-7", true],
-    ]);
+    expect(states.map((state) => state.isError)).toEqual([true, true]);
     expect(states.every((state) => state.invalidate === invalidate)).toBe(true);
   });
 
@@ -212,153 +195,201 @@ describe("toPiTool render state", () => {
   });
 });
 
-type Phase = "partial" | "final" | "error";
-
-const toolRow = (definition: ToolDefinition, phase: Phase, width = 40) => {
-  const component = new ToolExecutionComponent(
-    "probe",
-    "call-7",
-    {},
-    {},
-    definition,
-    { requestRender() {} } as never,
-    "/repo",
-  );
-
-  component.markExecutionStarted();
-  component.updateResult(
-    { content: [{ type: "text", text: "body" }], ...(phase === "error" ? { isError: true } : {}) } as never,
-    phase === "partial",
-  );
-
-  return component.render(width);
-};
-
-const BACKGROUND = new RegExp(`${String.fromCharCode(27)}\\[48;[0-9;]*m`);
-
-const background = (line: string | undefined) => line?.match(BACKGROUND)?.[0];
-
-const native = (phase: Phase) =>
-  background(
-    toolRow(toPiTool({ ...baseSpec, renderCall: () => "", renderResult: (result) => result.text }), phase)[1],
-  );
-
-const boxed = (tone: () => ToolTone | undefined, phase: Phase, renderCall = () => "") =>
-  toolRow(
-    toPiTool<unknown, unknown>({
-      ...baseSpec,
-      renderShell: "box",
-      renderCall,
-      renderResult: (result) => `${result.text}\n${"z".repeat(60)}`,
-      renderTone: () => tone(),
-    }),
-    phase,
-  );
-
-describe("toPiTool box shell", () => {
-  it("draws pi's tool box with the background of the chosen tone, like a native tool", () => {
-    const tones = { pending: native("partial"), success: native("final"), error: native("error") };
-
-    expect(new Set(Object.values(tones)).size).toBe(3);
-    expect(Object.values(tones).every((bg) => bg !== undefined)).toBe(true);
-
-    (["pending", "success", "error"] as const).forEach((tone) => {
-      const lines = boxed(() => tone, "final");
-      const plain = lines.map(stripVTControlCharacters);
-
-      expect(plain[0]).toBe("");
-      expect(lines.slice(1).every((line) => background(line) === tones[tone])).toBe(true);
-      expect(plain.slice(1).map((line) => line.trimEnd())).toEqual(["", " body", ` ${"z".repeat(37)}…`, ""]);
-      expect(plain.slice(1).every((line) => visibleWidth(line) === 40)).toBe(true);
-    });
-  });
-
-  it("falls back to pi's rule when renderTone gives no tone", () => {
-    (["partial", "final", "error"] as const).forEach((phase) => {
-      expect(background(boxed(() => undefined, phase)[1])).toBe(native(phase));
-    });
-  });
-
-  it("draws no box for an empty render", () => {
-    const lines = boxed(() => "pending", "final");
-    const withCall = boxed(
-      () => "pending",
-      "final",
-      () => "call",
-    );
-
-    expect(lines).toHaveLength(5);
-    expect(withCall).toHaveLength(8);
-  });
-
-  it("calls a width-function render with the width inside the box padding on every render", () => {
+describe("toPiTool row shell", () => {
+  it("hands pi a self shell, puts each line after the output pad and cuts it to the width", () => {
     const widths: number[] = [];
     const tool = piTool<unknown, unknown>({
       ...baseSpec,
-      renderShell: "box",
-      renderResult: () => (width) => {
+      renderShell: "row",
+      renderCall: () => (width) => {
         widths.push(width);
-        return width < 50 ? "" : `head\n${"y".repeat(width + 5)}`;
+        return `✓ probe ${"x".repeat(width)}`;
       },
+      renderResult: () => "",
     });
-    const component = tool.renderResult(piResult("x"), options, theme, context({ outputPad: 1 }));
 
-    const wide = component.render(80).map(stripVTControlCharacters);
-    const narrow = component.render(40).map(stripVTControlCharacters);
+    expect(tool.renderShell).toBe("self");
+
+    const padded = tool
+      .renderCall({}, theme, context({ outputPad: 1 }))
+      .render(30)
+      .map(stripVTControlCharacters);
     const flush = tool
-      .renderResult(piResult("x"), options, theme, context({ outputPad: 0 }))
-      .render(60)
+      .renderCall({}, theme, context({ outputPad: 0 }))
+      .render(30)
       .map(stripVTControlCharacters);
 
-    expect(widths).toEqual([78, 38, 60]);
-    expect(wide.map((line) => line.trimEnd())).toEqual(["", " head", ` ${"y".repeat(77)}…`, ""]);
-    expect(wide.every((line) => visibleWidth(line) === 80)).toBe(true);
-    expect(narrow).toEqual([]);
-    expect(flush.map((line) => line.trimEnd())).toEqual(["", "head", `${"y".repeat(59)}…`, ""]);
+    expect(widths).toEqual([29, 30]);
+    expect(padded).toEqual([` ✓ probe ${"x".repeat(18)}...`]);
+    expect(flush).toEqual([`✓ probe ${"x".repeat(19)}...`]);
+    expect(tool.renderResult(piResult("x"), options, theme, context()).render(30)).toEqual([]);
   });
 
-  it("passes the render state and the result to renderTone and reuses the box", () => {
-    const seen: [boolean, string | undefined][] = [];
-    const tool = piTool({
+  it("lets the row call see the latest result, its duration and an abort when it is drawn", () => {
+    const states: ToolRenderState[] = [];
+    const tool = piTool<unknown, unknown>({
       ...baseSpec,
-      renderShell: "box",
-      renderResult: () => "x",
-      renderTone: (state, result) => {
-        seen.push([state.isPartial, result?.text]);
-        return undefined;
+      renderShell: "row",
+      renderCall: (_params, _theme, state) => {
+        states.push(state);
+        return `✓ probe${state.result ? ` · ${state.result.text}` : ""}`;
       },
+      renderResult: () => "",
     });
+    const shared = context({ state: {}, isError: true });
+    const call = tool.renderCall({}, theme, shared);
 
-    const first = tool.renderResult(piResult("out"), options, theme, context({ isPartial: true }));
-    const second = tool.renderResult(piResult("out"), options, theme, context({ lastComponent: first }));
+    tool.renderResult(piResult("Operation aborted"), options, theme, shared);
 
-    expect(seen).toEqual([
-      [true, "out"],
-      [false, "out"],
+    expect(call.render(40).map(stripVTControlCharacters)).toEqual([" ✓ probe · Operation aborted"]);
+    expect(states.at(-1)).toMatchObject({
+      aborted: true,
+      result: { text: "Operation aborted" },
+    });
+  });
+
+  it("draws the row with the blank line pi puts between tool rows and no tool background", () => {
+    const tool = piTool<unknown, unknown>({
+      ...baseSpec,
+      renderShell: "row",
+      renderCall: () => "✓ probe",
+      renderResult: () => "  ↳ done",
+    });
+    const component = new ToolExecutionComponent(
+      "probe",
+      "call-1",
+      {},
+      {},
+      tool as unknown as ToolDefinition,
+      { requestRender: () => {} } as never,
+      "/repo",
+    );
+
+    component.updateResult({ content: [{ type: "text", text: "x" }], isError: false } as never);
+
+    expect(component.render(40).map((line) => stripVTControlCharacters(line).trimEnd())).toEqual([
+      "",
+      " ✓ probe",
+      "   ↳ done",
     ]);
-    expect(second).toBe(first);
   });
 });
 
 describe("themeLike colours", () => {
-  it("paints role tokens with pi's matching theme colours", () => {
+  it("paints every role token with pi's theme colour of the same name", async () => {
     const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
     const like = themeLike(recording);
+    const live = themeLike((await themeModule()).theme);
+    const tokens = Object.keys({
+      accent: true,
+      border: true,
+      borderAccent: true,
+      syntaxString: true,
+      syntaxVariable: true,
+      muted: true,
+      dim: true,
+      success: true,
+      warning: true,
+      error: true,
+      text: true,
+      thinkingOff: true,
+      thinkingMinimal: true,
+      thinkingLow: true,
+      thinkingMedium: true,
+      thinkingHigh: true,
+      thinkingXhigh: true,
+      thinkingMax: true,
+    } satisfies Record<ThemeToken, true>) as ThemeToken[];
 
-    expect(
-      (["warning", "comment", "keyword", "function", "string", "number", "type", "heading"] as const).map(
-        (token) => like.fg(token, "x"),
-      ),
-    ).toEqual([
-      "<warning>x",
-      "<syntaxComment>x",
-      "<syntaxKeyword>x",
-      "<syntaxFunction>x",
-      "<syntaxString>x",
-      "<syntaxNumber>x",
-      "<syntaxType>x",
-      "<mdHeading>x",
-    ]);
+    expect(tokens.map((token) => like.fg(token, "x"))).toEqual(tokens.map((token) => `<${token}>x`));
+    expect(tokens.map((token) => stripVTControlCharacters(live.fg(token, "x")))).toEqual(
+      tokens.map(() => "x"),
+    );
+  });
+
+  it("paints the thinking-level tokens with pi's thinking colours", () => {
+    const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
+    const like = themeLike(recording);
+    const levels = ["Off", "Minimal", "Low", "Medium", "High", "Xhigh", "Max"] as const;
+
+    expect(levels.map((level) => like.fg(`thinking${level}`, "x"))).toEqual(
+      levels.map((level) => `<thinking${level}>x`),
+    );
+  });
+
+  it("styles inverse text through pi's theme", async () => {
+    const live = await themeModule();
+    const like = themeLike(live.theme);
+
+    expect(like.inverse("x")).toBe(live.theme.inverse("x"));
+  });
+});
+
+const themeModule = async () =>
+  (await import(
+    new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+  )) as { theme: Theme; loadThemeFromPath(path: string, mode: string): Theme };
+
+describe("themeLike panels", () => {
+  const withSuccessBg = async (value: string) => {
+    const { loadThemeFromPath } = await themeModule();
+    const source = new URL(
+      "modes/interactive/theme/dark.json",
+      import.meta.resolve("@earendil-works/pi-coding-agent"),
+    );
+    const json = JSON.parse(readFileSync(source, "utf8"));
+    const file = join(mkdtempSync(join(tmpdir(), "pi-theme-")), "probe.json");
+
+    writeFileSync(
+      file,
+      JSON.stringify({ ...json, name: "probe", colors: { ...json.colors, toolSuccessBg: value } }),
+    );
+
+    return themeLike(loadThemeFromPath(file, "truecolor"));
+  };
+
+  it("reports panels when the tool success background has a colour", async () => {
+    expect((await withSuccessBg("#103010")).panels).toBe(true);
+  });
+
+  it("reports no panels when the tool success background is the terminal default", async () => {
+    expect((await withSuccessBg("")).panels).toBe(false);
+  });
+});
+
+describe("themeLike backgrounds", () => {
+  const live = async () => {
+    const module = await import(
+      new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+    );
+
+    return module.theme as Theme;
+  };
+
+  it("paints diff lines on pi's tool success and error backgrounds", () => {
+    const styled: unknown[] = [];
+    const recording = {
+      style: (text: string, options: unknown) => {
+        styled.push(options);
+        return text;
+      },
+    } as unknown as Theme;
+
+    themeLike(recording).bg("added", "x");
+    themeLike(recording).bg("removed", "x");
+
+    expect(styled).toEqual([{ bg: "toolSuccessBg" }, { bg: "toolErrorBg" }]);
+  });
+
+  it("paints changed words on a background mixed from the line background and the diff colour", async () => {
+    const theme = await live();
+    const like = themeLike(theme);
+    const word = mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
+
+    expect(like.bg("added", "x")).toBe(theme.style("x", { bg: "toolSuccessBg" }));
+    expect(like.bg("addedWord", "x")).toBe(theme.style("x", { bg: word }));
+    expect(like.bg("removedWord", "x")).not.toBe(like.bg("removed", "x"));
+    expect(stripVTControlCharacters(like.bg("removedWord", "x"))).toBe("x");
   });
 });
 
@@ -369,16 +400,18 @@ describe("themeLike text metrics", () => {
     expect(like.width("日本")).toBe(visibleWidth("日本"));
     expect(like.width("a\tb")).toBe(visibleWidth("a\tb"));
     expect(like.width("🚀 \x1b[31mab\x1b[0m")).toBe(visibleWidth("🚀 \x1b[31mab\x1b[0m"));
-    expect(like.truncate("Map the auth module", 8)).toBe("Map the…");
-    expect(like.truncate("日本語テキスト", 5)).toBe("日本…");
+    expect(like.truncate("Map the auth module", 8)).toBe("Map t...");
+    expect(like.truncate("日本語テキスト", 5)).toBe("日...");
     expect(like.truncate("short", 10)).toBe("short");
     expect(like.truncate("x", 0)).toBe("");
+    expect(like.truncate("Map the auth module", 12).endsWith("...")).toBe(true);
+    expect(like.truncate("Map the auth module", 12)).not.toContain("…");
   });
 
   it("keeps pi's resets around the ellipsis of a painted line", () => {
     const painted = "\x1b[31mMap the auth module\x1b[0m";
 
-    expect(themeLike(theme).truncate(painted, 8)).toBe(truncateToWidth(painted, 8, "…"));
+    expect(themeLike(theme).truncate(painted, 8)).toBe(truncateToWidth(painted, 8, "..."));
   });
 
   it("wraps with pi-tui at word boundaries and keeps at least one column", () => {

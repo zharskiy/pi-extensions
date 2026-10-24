@@ -58,26 +58,14 @@ export const childSettings = (snapshot: Settings, reserveTokens: number): Settin
 });
 
 export const createChildExtension =
-  (agentId: string, modelLabel: string, recordEntry: string): ExtensionFactory =>
+  (recordEntry: string): ExtensionFactory =>
   (pi) => {
     let recorded = false;
-    let skills: { name: string; description: string }[] = [];
-    let guidelines: string[] = [];
 
     pi.on("session_before_compact", () => ({ cancel: true }));
 
     pi.on("before_agent_start", (event) => {
       applyPromptSections(event.systemPromptOptions);
-
-      skills = event.systemPromptOptions.skills.map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-      }));
-
-      guidelines = [
-        ...event.systemPromptOptions.promptGuidelines,
-        ...Object.values(event.systemPromptOptions.toolGuidelines).flat(),
-      ];
     });
 
     pi.on("before_provider_request", (event) => {
@@ -87,13 +75,7 @@ export const createChildExtension =
 
       recorded = true;
 
-      pi.appendEntry(recordEntry, {
-        agentId,
-        model: modelLabel,
-        skills,
-        guidelines,
-        providerPayload: event.payload,
-      });
+      pi.appendEntry(recordEntry, { providerPayload: event.payload });
     });
   };
 
@@ -218,7 +200,7 @@ export const createPiRuntime = (
         {
           name: `${options.namespace}-child`,
           hidden: true,
-          factory: createChildExtension(spec.id, modelLabel, recordEntry),
+          factory: createChildExtension(recordEntry),
         },
         ...mcpExtensions(spec.tools, spec.mcp ?? true, parent.mcpDisabled()),
       ],

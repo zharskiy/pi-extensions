@@ -2,8 +2,16 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { createNotices } from "../../adapter/pi-notice.ts";
 import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
-import { createUi, type HostState, notificationSequence } from "../../adapter/pi-ui.ts";
+import { hiddenThinkingLabel } from "../../adapter/pi-thinking-label.ts";
+import {
+  createThinkingLabelUi,
+  createUi,
+  type HostState,
+  notificationSequence,
+  tuiContext,
+} from "../../adapter/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);
@@ -32,6 +40,7 @@ const keyContext = (mode: string) => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     ),
     inputs,
     removed,
@@ -81,6 +90,7 @@ const captured = (mode: string, env = {}) => {
     { write: (data: string) => writes.push(data) },
     env,
     createEditorHooks(() => undefined),
+    createNotices(state),
   );
 
   return { ui, writes, state };
@@ -179,6 +189,7 @@ describe("overlay input routing", () => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     ).openOverlay(() => view);
 
     return components[0] as OverlayComponent;
@@ -292,6 +303,7 @@ describe("showForm", () => {
       { write: () => {} },
       {},
       createEditorHooks(() => undefined),
+      createNotices(state),
     );
 
     void ui.showForm(() => ({ render: () => ["question"], handleKey: () => {} }));
@@ -303,5 +315,66 @@ describe("showForm", () => {
     await vi.advanceTimersByTimeAsync(OVERLAY_POLL_MS);
 
     expect(shown).toEqual([["question"]]);
+  });
+});
+
+describe("thinking label", () => {
+  const labelContext = (mode: string) => {
+    const labels: (string | undefined)[] = [];
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode,
+        ui: {
+          theme: { fg: (token: string, text: string) => `<${token}>${text}` },
+          setHiddenThinkingLabel: (label?: string) => {
+            labels.push(label);
+          },
+        },
+      } as unknown as ExtensionContext,
+    };
+
+    return { label: createThinkingLabelUi(() => tuiContext(state)), labels };
+  };
+
+  it("composes the label with a dim hint after a full reset and keeps it for transcripts", () => {
+    const { label, labels } = labelContext("tui");
+
+    label.setHiddenThinkingLabel("Thinking", "(ctrl+t to expand)");
+
+    expect(labels).toEqual([`Thinking ${ESC}[0m<dim>(ctrl+t to expand)`]);
+    expect(hiddenThinkingLabel()).toBe(labels[0]);
+
+    label.setHiddenThinkingLabel("Thinking");
+
+    expect(labels.at(-1)).toBe("Thinking");
+
+    label.release();
+
+    expect(hiddenThinkingLabel()).toBeUndefined();
+  });
+
+  it("keeps the label another session stored when this one ends", () => {
+    const first = labelContext("tui");
+    const second = labelContext("tui");
+
+    first.label.setHiddenThinkingLabel("Thinking");
+    second.label.setHiddenThinkingLabel("Thinking", "(k to expand)");
+    first.label.release();
+
+    expect(hiddenThinkingLabel()).toBe(`Thinking ${ESC}[0m<dim>(k to expand)`);
+
+    second.label.release();
+
+    expect(hiddenThinkingLabel()).toBeUndefined();
+  });
+
+  it("does nothing outside tui mode", () => {
+    const { label, labels } = labelContext("rpc");
+
+    label.setHiddenThinkingLabel("Thinking", "(k to expand)");
+
+    expect(labels).toEqual([]);
+    expect(hiddenThinkingLabel()).toBeUndefined();
   });
 });

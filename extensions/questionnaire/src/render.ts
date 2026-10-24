@@ -1,5 +1,6 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { hintLines, PAD, padded, rule } from "../../../core/manager/layout.ts";
+import { framed, type KeyHint } from "../../../core/manager/hints.ts";
+import { PAD, padded } from "../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
 import { TAB_SWITCH_HINT, tabBar } from "../../../core/manager/tabs.ts";
 import {
@@ -34,16 +35,21 @@ const optionLines = (state: FormState, theme: ThemeLike, width: number) => {
   return listLines(theme, options, state.option, width);
 };
 
-const hints = (state: FormState) => {
+const SUBMIT_HINT: KeyHint = ["enter", "to submit"];
+
+const hints = (state: FormState): readonly KeyHint[] => {
   if (state.typing) {
-    return ["Enter save", "Esc back to options"];
+    return [
+      ["enter", "to save"],
+      ["esc", "to go back to options"],
+    ];
   }
 
   if (onSubmitTab(state)) {
-    return [TAB_SWITCH_HINT, ...(allAnswered(state) ? ["Enter submit"] : []), CANCEL_HINT];
+    return [TAB_SWITCH_HINT, ...(allAnswered(state) ? [SUBMIT_HINT] : []), CANCEL_HINT];
   }
 
-  const actions = isMulti(state) ? [TAB_SWITCH_HINT, "Enter confirm"] : ["Enter submit"];
+  const actions: KeyHint[] = isMulti(state) ? [TAB_SWITCH_HINT, ["enter", "to confirm"]] : [SUBMIT_HINT];
 
   return [...SELECT_HINTS, ...actions, CANCEL_HINT];
 };
@@ -64,7 +70,7 @@ const submitLines = (state: FormState, theme: ThemeLike, width: number) => {
   const missing = unanswered(state).map((question) => question.label);
   const status = missing.length
     ? theme.fg("warning", `Unanswered: ${missing.join(", ")}`)
-    : theme.fg("success", "Press Enter to submit");
+    : theme.fg("success", "Press enter to submit");
   const title = missing.length ? "Answers" : "Ready to submit";
 
   return [
@@ -108,12 +114,5 @@ export const renderForm = (state: FormState, theme: ThemeLike, width: number, in
     ? submitLines(state, theme, width)
     : questionLines(state, theme, width, input);
 
-  return [
-    rule(theme, width),
-    ...bar,
-    ...body,
-    "",
-    ...hintLines(theme, hints(state), width),
-    rule(theme, width),
-  ];
+  return framed(theme, width, [...bar, ...body], hints(state));
 };

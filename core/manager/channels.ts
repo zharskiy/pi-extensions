@@ -1,4 +1,5 @@
 import type { UsageTotals } from "../adapter/contract.ts";
+import { isPlainObject } from "./guards.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
 
@@ -16,15 +17,12 @@ const COUNTS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as 
 
 const COSTS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
 const isAmount = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 const isLabel = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
 const isUsage = (value: unknown): value is UsageTotals => {
-  if (!isRecord(value) || !isRecord(value.cost)) {
+  if (!isPlainObject(value) || !isPlainObject(value.cost)) {
     return false;
   }
 
@@ -34,7 +32,7 @@ const isUsage = (value: unknown): value is UsageTotals => {
 };
 
 export const parseBusySignal = (data: unknown): BusySignal | undefined => {
-  if (!isRecord(data) || !isLabel(data.source) || typeof data.busy !== "boolean") {
+  if (!isPlainObject(data) || !isLabel(data.source) || typeof data.busy !== "boolean") {
     return undefined;
   }
 
@@ -42,7 +40,7 @@ export const parseBusySignal = (data: unknown): BusySignal | undefined => {
 };
 
 export const parseAwaitingInput = (data: unknown): AwaitingInput | undefined => {
-  if (!isRecord(data) || !isLabel(data.source) || typeof data.waiting !== "boolean") {
+  if (!isPlainObject(data) || !isLabel(data.source) || typeof data.waiting !== "boolean") {
     return undefined;
   }
 
@@ -58,7 +56,7 @@ export const parseAwaitingInput = (data: unknown): AwaitingInput | undefined => 
 };
 
 export const parseUsageReport = (data: unknown): UsageReport | undefined => {
-  if (!isRecord(data) || !isLabel(data.source) || !isLabel(data.id) || !isUsage(data.usage)) {
+  if (!isPlainObject(data) || !isLabel(data.source) || !isLabel(data.id) || !isUsage(data.usage)) {
     return undefined;
   }
 
@@ -76,14 +74,14 @@ export type SourceSpend = Spend & { source: string };
 export type SpendingTotals = { main: Spend; sources: SourceSpend[]; subscription: boolean };
 
 const isSpend = (value: unknown): value is Spend =>
-  isRecord(value) && isAmount(value.cost) && isAmount(value.tokens);
+  isPlainObject(value) && isAmount(value.cost) && isAmount(value.tokens);
 
 const isSourceSpend = (value: unknown): value is SourceSpend =>
-  isRecord(value) && isLabel(value.source) && isSpend(value);
+  isPlainObject(value) && isLabel(value.source) && isSpend(value);
 
 export const parseTotals = (data: unknown): SpendingTotals | undefined => {
   if (
-    !isRecord(data) ||
+    !isPlainObject(data) ||
     !isSpend(data.main) ||
     !Array.isArray(data.sources) ||
     typeof data.subscription !== "boolean"

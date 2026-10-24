@@ -1,28 +1,24 @@
 import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import type { AnyToolSpec, TranscriptItem } from "../../adapter/contract.ts";
+import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../adapter/contract.ts";
+import { releaseLabel, storeLabel } from "../../adapter/pi-thinking-label.ts";
+import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
+import { MARKS, markOf } from "../../manager/marks.ts";
 import { initRenderTheme } from "./render-theme.ts";
+import { renderPaneTool, visible } from "./tool-rows.ts";
 
 initRenderTheme();
 
 const ESC = String.fromCharCode(27);
 
-const APC = new RegExp(
-  `${String.fromCharCode(27)}_[^${String.fromCharCode(7)}]*${String.fromCharCode(7)}`,
-  "g",
-);
-const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
-const visibleText = (lines: string[]) => lines.join("\n").replace(APC, "").replace(SGR, "");
+const visibleText = (lines: string[]) => visible(lines.join("\n"));
 
 const tui = { requestRender: () => {} } as never;
 
 const assistantCall = (name: string, args: unknown, id = "call-1"): TranscriptItem => ({
   kind: "assistant",
-  text: "",
-  toolCalls: [{ name, args }],
   raw: {
     role: "assistant",
     content: [{ type: "toolCall", id, name, arguments: args }],
@@ -33,10 +29,7 @@ const assistantCall = (name: string, args: unknown, id = "call-1"): TranscriptIt
 
 const toolResult = (name: string, text: string, details?: unknown, id = "call-1"): TranscriptItem => ({
   kind: "tool",
-  toolName: name,
   toolCallId: id,
-  text,
-  isError: false,
   raw: {
     role: "toolResult",
     toolCallId: id,
@@ -88,8 +81,6 @@ describe("transcript pane terminal marks", () => {
       { kind: "user", text: "find the files" },
       {
         kind: "assistant",
-        text: "Three files",
-        toolCalls: [],
         raw: {
           role: "assistant",
           content: [{ type: "text", text: "Three files" }],
@@ -104,7 +95,7 @@ describe("transcript pane terminal marks", () => {
     expect(raw).not.toContain(`${ESC}]133;`);
     expect(raw).toContain("find the files");
     expect(raw).toContain("Three files");
-    expect(raw).toMatch(SGR);
+    expect(stripVTControlCharacters(raw)).not.toBe(raw);
   });
 });
 
@@ -152,6 +143,33 @@ describe("pi renderers in the transcript pane", () => {
     expect(text).not.toContain('"code"');
   });
 
+  it("draws a codemode call as a row once rows are registered", () => {
+    const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+
+    host.registerToolRows((view) => ({
+      call: () => [`✓ ${view.name}`],
+      result: () => [
+        `  ↳ ${(view.result?.details as { calls?: unknown[] } | undefined)?.calls?.length} tool call`,
+      ],
+    }));
+
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([
+      assistantCall("codemode", { code: "return 1" }),
+      toolResult("codemode", "src/auth/login.ts", {
+        calls: [{ id: "n1", name: "grep", args: "{}", status: "ok", durationMs: 12 }],
+      }),
+    ]);
+
+    const text = visibleText(pane.render(80));
+
+    host.release();
+
+    expect(text).toContain("✓ codemode\n   ↳ 1 tool call");
+    expect(text).not.toContain("✓ grep");
+  });
+
   it("renders custom specs passed to createTranscript with their own renderers", () => {
     const spec = {
       name: "run_agent",
@@ -193,7 +211,7 @@ describe("transcript pane pending results", () => {
       label: "Run agent",
       description: "run",
       parameters: {},
-      renderShell: "box",
+      renderShell: "row",
       execute: async () => ({ text: "" }),
       renderCall: () => "",
       renderResult: (result: { details?: { n: number } }, state: { isPartial: boolean }) =>
@@ -330,5 +348,111 @@ describe("transcript pane clicks", () => {
     pane.setToolsExpanded(false);
 
     expect(plainLines(pane.render(80))).toEqual(collapsed);
+  });
+});
+
+describe("transcript pane tool rows", () => {
+  const readRow = () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([assistantCall("read", { path: "src/a.ts" }), toolResult("read", "one\ntwo")]);
+
+    return visibleText(pane.render(60));
+  };
+
+  it("draws built-in tools with the registered rows, and with pi's renderers without them", () => {
+    const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
+
+    expect(readRow()).toContain("read src/a.ts");
+
+    host.registerToolRows((view) => ({
+      call: () => [`✓ Read ${(view.args as { path: string }).path}`],
+      result: () => [`  ↳ Read ${view.result?.text.split("\n").length} lines`],
+    }));
+
+    const rows = readRow();
+
+    host.release();
+
+    expect(rows).toContain(" ✓ Read src/a.ts\n   ↳ Read 2 lines");
+    expect(readRow()).not.toContain("✓ Read");
+  });
+});
+
+describe("transcript pane tool views", () => {
+  const seen: ToolCallView[] = [];
+  const rows = (view: ToolCallView) => {
+    seen.push(view);
+
+    return { call: () => [`${MARKS[markOf(view)]} ${view.label ?? view.name}`], result: () => [] };
+  };
+
+  it("passes the duration stored in the result to the rows", () => {
+    seen.length = 0;
+    renderPaneTool(rows, {
+      name: "read",
+      args: { path: "a.ts" },
+      result: "one",
+      durationMs: 6_000,
+      width: 60,
+    });
+
+    expect(seen.filter((view) => view.result).map((view) => view.durationMs)).toContain(6_000);
+  });
+
+  it("draws the open calls of an aborted turn stopped and of a failed turn failed", () => {
+    const drawn = (stopReason: "aborted" | "error") =>
+      renderPaneTool(rows, { name: "bash", args: { command: "ls" }, stopReason, width: 60 })[0];
+
+    expect(drawn("aborted")).toBe(" ⊘ bash");
+    expect(drawn("error")).toBe(" ✗ bash");
+  });
+
+  it("draws a finished call done", () => {
+    expect(renderPaneTool(rows, { name: "read", args: { path: "a.ts" }, result: "one", width: 60 })[0]).toBe(
+      " ✓ read",
+    );
+  });
+
+  it("labels MCP tools by pi's naming pattern", () => {
+    expect(renderPaneTool(rows, { name: "mcp__notes__search", args: {}, result: "x", width: 60 })[0]).toBe(
+      " ✓ notes/search",
+    );
+  });
+});
+
+describe("transcript pane messages", () => {
+  it("draws user and assistant messages in pi's default look with the stored thinking label", () => {
+    const owner = {};
+
+    storeLabel("Thinking", owner);
+
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([
+      { kind: "user", text: "find the files" },
+      {
+        kind: "assistant",
+        raw: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Looking around." },
+            { type: "text", text: "Found them." },
+          ],
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      },
+    ]);
+
+    const text = visibleText(pane.render(60));
+
+    releaseLabel(owner);
+
+    expect(text).toContain(" find the files");
+    expect(text).toContain(" Thinking");
+    expect(text).toContain(" Found them.");
+    expect(text).not.toContain("Looking around.");
+    expect(text).not.toMatch(/[❯●∴]/);
   });
 });

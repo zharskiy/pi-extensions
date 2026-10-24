@@ -1,4 +1,5 @@
 import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
+import { failureSuffix, row, type TitleParts } from "../../../../../core/manager/row.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,
@@ -7,13 +8,7 @@ import {
   isNone,
   MAIN_CALLER,
 } from "../../model/types.ts";
-import {
-  type BlockHints,
-  blockTone,
-  type RunAgentDetails,
-  type RunAgentParams,
-  renderBlock,
-} from "./render.ts";
+import { type BlockHints, type RunAgentDetails, type RunAgentParams, renderBlock } from "./render.ts";
 import type { Runner } from "./runner.ts";
 
 export type MessageAgentParams = { id: string; message: string };
@@ -56,7 +51,7 @@ type DelegateAgent = Pick<AgentFrontmatter, "name" | "description" | "limit"> &
   Partial<Pick<AgentFrontmatter, "model" | "subagents">> &
   Pick<AgentInternals, "thinking">;
 
-export type RunAgentLimits = {
+type RunAgentLimits = {
   callerDepth: number;
   maxDepth: number;
   maxConcurrent: number;
@@ -203,7 +198,7 @@ export const runAgentTool = (
   description,
   promptSnippet: "delegate tasks to background agents (parallel batch, one wake when all are done)",
   parameters: runAgentParameters,
-  renderShell: "box",
+  renderShell: "row",
   execute: async (params, ctx) => {
     const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
 
@@ -270,7 +265,6 @@ export const runAgentTool = (
       hints: deps.hints,
     });
   },
-  renderTone: (state, result) => blockTone(deps.registry, state, result),
   pendingResult: (toolCallId, owner) => {
     const details = owner === undefined ? undefined : deps.calls.get(owner, toolCallId);
 
@@ -310,7 +304,7 @@ export const messageAgentTool = (
       details: { delivery: routed.delivery },
     };
   },
-  renderShell: "box",
+  renderShell: "row",
   renderCall: () => "",
   renderResult: (result, state, theme) => {
     if (!result.isError) {
@@ -318,8 +312,20 @@ export const messageAgentTool = (
     }
 
     const id = String((state.args as MessageAgentParams | undefined)?.id ?? "");
+    const error = result.text.replace(/^Error:\s*/, "").trim();
+    const parts: TitleParts = {
+      mark: "error",
+      verb: (paint) => paint.bold("message_agent"),
+      target: { text: id },
+    };
 
-    return `${theme.bold("message_agent")} ${theme.fg("accent", id)}: ${result.text.replace(/^Error:\s*/, "")}`;
+    return (width: number) => {
+      const suffix = failureSuffix(error, parts, width, theme);
+      const spec = suffix
+        ? { mark: parts.mark, title: { ...parts, reason: { text: suffix } } }
+        : { mark: parts.mark, title: parts, children: [theme.fg("error", error)] };
+
+      return row(spec)(width, theme).join("\n");
+    };
   },
-  renderTone: (_state, result) => (result?.isError ? "error" : undefined),
 });

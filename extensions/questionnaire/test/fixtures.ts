@@ -1,4 +1,3 @@
-import type { KeyPress } from "../../../core/adapter/contract.ts";
 import { normalizeQuestions, type QuestionInput } from "../src/result.ts";
 
 export const SCOPE: QuestionInput = {
@@ -24,6 +23,4 @@ export const PRIORITY: QuestionInput = {
 
 export const questions = (...inputs: QuestionInput[]) => normalizeQuestions(inputs);
 
-export const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-export const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+export { char, key } from "../../../core/test/helpers/keys.ts";

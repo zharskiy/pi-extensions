@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   type AgentRuntime,
@@ -10,7 +10,9 @@ import {
   type SessionInfo,
   type StopReason,
   splitModelRequest,
+  type UsageTotals,
 } from "../../../../../core/adapter/contract.ts";
+import { readText } from "../../../../../core/manager/settings.ts";
 import { settleWithin } from "../../../../../core/manager/settle.ts";
 import { errorText } from "../../components/format.ts";
 import { ALL } from "../../model/agent-schema.ts";
@@ -108,8 +110,6 @@ const ABORT_WAIT_MS = 5_000;
 const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
 const unique = (names: string[]) => [...new Set(names)];
-
-const readText = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
 export const createRunner = (deps: RunnerDeps): Runner => {
   const { place, release } = createPlacer(deps.registry);
@@ -276,6 +276,16 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     });
   };
 
+  const noteUsage = (id: string, usage: UsageTotals) => {
+    const record = deps.registry.get(id);
+
+    if (record && record.cost !== usage.cost.total) {
+      deps.registry.update(id, { cost: usage.cost.total });
+    }
+
+    deps.bus.emit("agent:usage", { id, usage });
+  };
+
   const disposeLive = async (id: string, live: Live) => {
     live.unsubscribe?.();
     live.turn = "idle";
@@ -289,7 +299,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.child = undefined;
 
     if (child) {
-      deps.bus.emit("agent:usage", { id, usage: child.ownUsage() });
+      noteUsage(id, child.ownUsage());
       await child.dispose().catch(() => undefined);
     }
   };
@@ -523,9 +533,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     if (event.type === "turn_end") {
       const usage = live.child?.ownUsage();
       const tokens = usage ? usage.input + usage.output + usage.cacheWrite : record.tokens;
+      const cost = usage ? usage.cost.total : record.cost;
       const turns = record.turns + 1;
 
-      deps.registry.update(id, { turns, context: event.context, tokens, lastText: live.lastText });
+      deps.registry.update(id, { turns, context: event.context, tokens, cost, lastText: live.lastText });
 
       if (usage) {
         deps.bus.emit("agent:usage", { id, usage });
@@ -569,7 +580,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       }
 
       if (live.child) {
-        deps.bus.emit("agent:usage", { id, usage: live.child.ownUsage() });
+        noteUsage(id, live.child.ownUsage());
       }
 
       if (record.state === "grace") {

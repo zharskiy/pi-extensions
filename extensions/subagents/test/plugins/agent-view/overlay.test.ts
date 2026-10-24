@@ -63,8 +63,8 @@ describe("agents overlay", () => {
     overlay.handleKey(key("down"));
     overlay.handleKey(key("enter"));
 
-    expect(lines()[1]).toMatch(/^ \S explorer › second job$/);
-    expect(lines()[2]?.endsWith(`id ${second.id}`)).toBe(true);
+    expect(lines()[1]).toMatch(/^ \S explorer {2}second job$/);
+    expect(lines()[3]?.endsWith(`id ${second.id}`)).toBe(true);
     expect(lines().at(-2)?.startsWith(" esc to go back")).toBe(true);
     expect(state.closed).toBe(false);
     expect(harness.host.overlays).toHaveLength(1);
@@ -117,7 +117,7 @@ describe("agents overlay", () => {
 
     const { lines } = harness.openLast();
 
-    expect(lines().join("\n")).toContain("No agents running");
+    expect(lines().join("\n")).toContain("No running agents");
   });
 
   it("right closes the list opened with left and returns to the editor", () => {
@@ -128,21 +128,21 @@ describe("agents overlay", () => {
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().at(-2)?.endsWith("→ to main")).toBe(true);
+    expect(lines().at(-2)?.endsWith("esc to close · → to main session")).toBe(true);
 
     overlay.handleKey(key("right"));
 
     expect(state.closed).toBe(true);
   });
 
-  it("Esc still closes the list without being advertised", () => {
+  it("Esc closes the list and the hint names both exit keys", () => {
     const harness = setup();
 
     harness.host.pressEmptyLeft();
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().join("\n")).not.toMatch(/esc/i);
+    expect(lines().at(-2)).toBe(" esc to close · → to main session");
 
     overlay.handleKey(key("escape"));
 
@@ -185,7 +185,7 @@ describe("agents overlay", () => {
     harness.registry.close(record.id, { state: "done" });
     overlay.handleKey(key("escape"));
 
-    expect(lines()).toContain(" Completed (1)");
+    expect(lines()).toContain(" Finished (1)");
     expect(lines().join("\n")).toContain("closing job");
   });
 
@@ -256,16 +256,20 @@ describe("agents overlay", () => {
     expect(harness.host.notices[0]?.message).toContain('unknown agent "ghost-0000"');
   });
 
-  it("reports a corrupt manifest instead of throwing", async () => {
-    const harness = setup();
-    const dir = join(agentsDirFor(harness.host.info), "explorer-bad");
+  it("treats an agent with a corrupt manifest as unknown", async () => {
+    const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+      beforeStart: ({ host }) => {
+        const dir = join(agentsDirFor(host.info), "explorer-bad");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, MANIFEST_FILE), "{ broken");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, MANIFEST_FILE), "{ broken");
+      },
+    });
+
     await harness.host.runCommand("agents", "explorer-bad");
 
     expect(harness.host.overlays).toEqual([]);
-    expect(harness.host.notices.at(-1)?.message).toContain('cannot read manifest of "explorer-bad"');
+    expect(harness.host.notices.at(-1)?.message).toContain('unknown agent "explorer-bad"');
   });
 
   it("closes and disposes an open overlay when the session shuts down", async () => {

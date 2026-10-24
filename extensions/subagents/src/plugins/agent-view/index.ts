@@ -1,14 +1,13 @@
 import type { OverlayApi } from "../../../../../core/adapter/contract.ts";
 import { type SelectOption, selectForm } from "../../../../../core/manager/select.ts";
-import { cutChars, errorText, SEP } from "../../components/format.ts";
+import { cutChars, DOT, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";
-import { UNKNOWN_LIMIT } from "../../model/context-limit.ts";
 import { NAMESPACE } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../model/types.ts";
 import { createAgentList } from "./list.ts";
-import { listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
+import { countsText, listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
 import { createAgentSource } from "./loader.ts";
 import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
 import { createAgentView } from "./view.ts";
@@ -43,14 +42,7 @@ export const agentViewPlugin: Plugin = {
     const registry = services.require("registry");
     const cleared = new Set<string>();
 
-    const limitOf = (agent: string | undefined) => {
-      const definition =
-        agent && services.has("definitions") ? services.require("definitions").get(agent) : undefined;
-
-      return definition?.limit ?? UNKNOWN_LIMIT;
-    };
-
-    const source = createAgentSource({ host, runtime, registry, limitOf });
+    const source = createAgentSource({ runtime, registry });
 
     const stop = (id: string) => (services.has("runner") ? services.require("runner").stop(id) : undefined);
 
@@ -120,19 +112,13 @@ export const agentViewPlugin: Plugin = {
       });
 
     const terminalOrNotice = (id: string) => {
-      try {
-        const terminal = source.find(id);
+      const terminal = source.find(id);
 
-        if (!terminal) {
-          host.ui.notify(`${NAMESPACE}: unknown agent "${id}"`, "warning");
-        }
-
-        return terminal;
-      } catch (error) {
-        host.ui.notify(`${NAMESPACE}: cannot read ${errorText(error)}`, "warning");
-
-        return undefined;
+      if (!terminal) {
+        host.ui.notify(`${NAMESPACE}: unknown agent "${id}"`, "warning");
       }
+
+      return terminal;
     };
 
     const open = async (id: string) => {
@@ -148,7 +134,7 @@ export const agentViewPlugin: Plugin = {
     services.provide("agentView", { open });
 
     const label = (record: AgentRecord) =>
-      cutChars(`${record.id} · ${stateWord(record.state)} · ${record.description}`, 100);
+      cutChars(`${record.id}${DOT}${stateWord(record.state)}${DOT}${record.description}`, 100);
 
     const setup = () => (services.has("agentSetup") ? services.require("agentSetup") : undefined);
 
@@ -158,11 +144,11 @@ export const agentViewPlugin: Plugin = {
       return SUBCOMMANDS.filter((word) => word.startsWith(prefix)).flatMap(
         (word): { value: string; label: string }[] => {
           if (word === "view") {
-            return [{ value: word, label: `${word}${SEP}${SUBCOMMAND_TEXT[word]}` }];
+            return [{ value: word, label: `${word}${DOT}${SUBCOMMAND_TEXT[word]}` }];
           }
 
           return service
-            ? [{ value: word, label: `${word}${SEP}${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}` }]
+            ? [{ value: word, label: `${word}${DOT}${SUBCOMMAND_TEXT[word]}: ${service.usage[word]}` }]
             : [];
         },
       );
@@ -195,13 +181,10 @@ export const agentViewPlugin: Plugin = {
       word === "view" ? openList() : runSetupWord(word, args);
 
     const viewText = () => {
-      const counts = listCounts(registry.list(), cleared);
-      const parts = [
-        counts.running > 0 ? `${counts.running} running` : undefined,
-        counts.completed > 0 ? `${counts.completed} done` : undefined,
-      ].filter((part) => part !== undefined);
+      const { running, finished } = listCounts(visibleRecords(registry.list(), cleared));
+      const counts = countsText(running, finished);
 
-      return [SUBCOMMAND_TEXT.view, ...(parts.length > 0 ? [parts.join(", ")] : [])].join(SEP);
+      return counts ? SUBCOMMAND_TEXT.view + DOT + counts : SUBCOMMAND_TEXT.view;
     };
 
     const menu = async () => {

@@ -13,12 +13,12 @@ export const agentRecord = (patch: Partial<AgentRecord> & { id: string }): Agent
   turns: 0,
   toolCalls: 0,
   tokens: 0,
+  cost: 0,
   lastText: "",
   handoffPath: "/x/handoff.md",
   dir: "/x",
   contextLimit: 100_000,
   handoffRequested: false,
-  version: 0,
   ...patch,
 });
 

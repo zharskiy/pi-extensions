@@ -97,23 +97,28 @@ describe("handoffStep", () => {
 });
 
 describe("segmentFor", () => {
-  it("names the token cap when it wins over the ratio", () => {
+  it("names the hard threshold and the tokens used when the token cap wins", () => {
     expect(segmentFor(at(160_000, 1_000_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "ctx 160k · handoff at 175k",
-    });
-    expect(segmentFor(at(100_000, 200_000), "watching", limits, "session-handoff")).toEqual({
-      token: "warning",
-      text: "ctx 50% · handoff at 60%",
+      text: "» Handoff at 175k tokens · 160.0k used",
     });
   });
 
-  it("shows the ratio when it equals the token cap", () => {
+  it("names the hard threshold when the ratio wins", () => {
+    expect(segmentFor(at(100_000, 200_000), "watching", limits, "session-handoff")).toEqual({
+      token: "warning",
+      text: "» Handoff at 120k tokens · 100.0k used",
+    });
     expect(
-      segmentFor(at(100_000, 200_000), "watching", { ...limits, hardTokens: 120_000 }, "session-handoff"),
+      segmentFor(
+        at(142_300, 200_000),
+        "watching",
+        { ...limits, hardTokens: 175_000, hardRatio: 0.9 },
+        "session-handoff",
+      ),
     ).toEqual({
       token: "warning",
-      text: "ctx 50% · handoff at 60%",
+      text: "» Handoff at 175k tokens · 142.3k used",
     });
   });
 
@@ -121,28 +126,37 @@ describe("segmentFor", () => {
     expect(segmentFor(at(40_000), "watching", limits, "session-handoff")).toBeUndefined();
     expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toEqual({
       token: "warning",
-      text: "ctx 50% · handoff at 60%",
+      text: "» Handoff at 60k tokens · 50.0k used",
     });
   });
 
-  it("is red in the pending phases, amber while waiting, and names the command when stuck", () => {
-    expect(segmentFor(at(78_000), "requested", limits, "session-handoff")).toEqual({
-      token: "error",
-      text: "ctx 78% · writing handoff",
-    });
-    expect(segmentFor(at(78_000), "waiting", limits, "session-handoff")).toEqual({
-      token: "warning",
-      text: "ctx 78% · handoff waits for running work",
-    });
-    expect(segmentFor(at(null), "switching", limits, "session-handoff")?.text).toBe("switching session");
-    expect(segmentFor(undefined, "requested", limits, "session-handoff")).toEqual({
-      token: "error",
-      text: "writing handoff",
-    });
-    expect(segmentFor(undefined, "watching", limits, "session-handoff")).toBeUndefined();
-    expect(segmentFor(at(78_000), "stuck", limits, "session-handoff")?.text).toBe(
-      "ctx 78% · handoff failed, run /session-handoff",
+  it("uses one sentence pattern in warning for every phase in progress", () => {
+    const text = (phase: "queued" | "requested" | "waiting" | "switching") =>
+      segmentFor(at(78_000), phase, limits, "session-handoff");
+
+    expect(text("queued")).toEqual({ token: "warning", text: "» Handoff after this turn" });
+    expect(text("waiting")).toEqual({ token: "warning", text: "» Handoff waiting for running work" });
+    expect(text("requested")).toEqual({ token: "warning", text: "» Handoff writing the document" });
+    expect(text("switching")).toEqual({ token: "warning", text: "» Handoff switching to a new session" });
+    expect(segmentFor(undefined, "requested", limits, "session-handoff")?.text).toBe(
+      "» Handoff writing the document",
     );
+    expect(segmentFor(undefined, "watching", limits, "session-handoff")).toBeUndefined();
+  });
+
+  it("marks only the failure with the error glyph and colour, and names the command", () => {
+    expect(segmentFor(at(78_000), "stuck", limits, "session-handoff")).toEqual({
+      token: "error",
+      text: "✗ Handoff failed · run /session-handoff",
+    });
+  });
+
+  it("never repeats the footer's context percentage", () => {
+    const phases = ["watching", "queued", "requested", "waiting", "switching", "stuck"] as const;
+
+    phases.forEach((phase) => {
+      expect(segmentFor(at(78_000), phase, limits, "session-handoff")?.text).not.toMatch(/ctx|%/);
+    });
   });
 });
 

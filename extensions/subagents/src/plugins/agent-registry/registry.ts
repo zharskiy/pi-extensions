@@ -43,6 +43,7 @@ const writeManifestFile = (record: AgentRecord) => {
     turns: record.turns,
     toolCalls: record.toolCalls,
     tokens: record.tokens,
+    cost: record.cost,
   };
 
   writeFileSync(join(record.dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -91,10 +92,10 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       turns: 0,
       toolCalls: 0,
       tokens: 0,
+      cost: 0,
       lastText: "",
       handoffPath: options.handoffPath(id),
       handoffRequested: false,
-      version: 0,
     };
 
     records.set(id, record);
@@ -109,7 +110,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     const stateChanged = patch.state !== undefined && patch.state !== record.state;
     const manifestChanged = stateChanged || "worktree" in patch;
 
-    Object.assign(record, patch, { version: record.version + 1 });
+    Object.assign(record, patch);
 
     if (manifestChanged) {
       persist(record);
@@ -127,7 +128,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       return record;
     }
 
-    Object.assign(record, patch, { endedAt: Date.now(), version: record.version + 1 });
+    Object.assign(record, patch, { endedAt: Date.now() });
     persist(record);
     options.bus.emit("agent:changed", record);
     options.bus.emit("agent:closed", record);
@@ -135,8 +136,18 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
     return record;
   };
 
+  const restore = (past: AgentRecord[]) => {
+    past
+      .filter((record) => !records.has(record.id))
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .forEach((record) => {
+        records.set(record.id, record);
+      });
+  };
+
   return {
     create,
+    restore,
     get: (id) => records.get(id),
     list: () => Array.from(records.values()),
     batch: (batchId) => Array.from(records.values()).filter((record) => record.batchId === batchId),

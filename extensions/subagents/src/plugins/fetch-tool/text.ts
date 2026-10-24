@@ -1,4 +1,4 @@
-export type PageText = { title?: string; text: string };
+type PageText = { title?: string; text: string };
 
 const NAMED: Record<string, string> = {
   amp: "&",

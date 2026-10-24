@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import type { TranscriptItem } from "../../../../core/adapter/contract.ts";
 import { describeLive, realContextMarkers } from "../../../../core/test/adapter/live.ts";
+import { sessionFacts } from "../../../../core/test/adapter/offline.ts";
 import { wakeTexts } from "../helpers/harness.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 
@@ -20,12 +20,10 @@ const skill = (name: string, body: string) =>
 
 type CodemodeResult = { details?: { calls?: { name?: string; status?: string }[] } };
 
-const codemodeCalls = (items: readonly TranscriptItem[]) =>
-  items
-    .flatMap((item) =>
-      item.kind === "tool" && item.toolName === "codemode" ? [item.raw as CodemodeResult] : [],
-    )
-    .flatMap((raw) => raw.details?.calls ?? [])
+const codemodeCalls = (results: ReturnType<typeof sessionFacts>["results"]) =>
+  results
+    .filter((result) => result.toolName === "codemode")
+    .flatMap((result) => (result.details as CodemodeResult["details"])?.calls ?? [])
     .filter((call) => call.status === "ok")
     .map((call) => call.name ?? "tool");
 
@@ -34,16 +32,17 @@ describeLive("live grants", () => {
 
   const sessionOf = (id: string) => {
     const record = live.registry.get(id);
-    const session = live.runtime.readSession(record?.sessionFile ?? "");
-    const calls = session.items.flatMap((item) => (item.kind === "assistant" ? item.toolCalls : []));
+    const file = record?.sessionFile ?? "";
+    const facts = sessionFacts(file);
+    const payload = JSON.stringify(live.runtime.readSession(file).providerPayload);
 
     return {
       record,
-      tools: session.prompt.tools.map((tool) => tool.name).toSorted(),
-      skills: session.prompt.skills.map((entry) => entry.name).toSorted(),
-      calls: [...calls.map((call) => call.name), ...codemodeCalls(session.items)],
-      payload: JSON.stringify(session.prompt.providerPayload),
-      leaks: realContextMarkers().filter((marker) => JSON.stringify(session.prompt).includes(marker)),
+      tools: facts.tools.toSorted(),
+      skills: Object.keys(SKILL_CODES).filter((name) => payload.includes(`${name}/SKILL.md`)),
+      calls: [...facts.calls, ...codemodeCalls(facts.results)],
+      payload,
+      leaks: realContextMarkers().filter((marker) => payload.includes(marker)),
     };
   };
 
@@ -77,7 +76,7 @@ describeLive("live grants", () => {
     await live?.close();
   });
 
-  it("gives tools: [read, ls] and skills: [alpha, gamma] only those, plus every MCP tool, codemode and tool search", async () => {
+  it("gives tools: [read, ls] and skills: [alpha, gamma] only those, plus handoff, every MCP tool, codemode and tool search", async () => {
     const id = await live.run(
       "granted",
       "In one turn, in parallel: read the alpha and gamma skill files, list your current working directory with ls, call mcp__fixture__code, and create out.txt in your current working directory with the write tool if you have one. Then reply with both skills' code words and the MCP code, nothing else.",
@@ -89,7 +88,7 @@ describeLive("live grants", () => {
 
     expect(record?.state).toBe("done");
     expect(leaks).toEqual([]);
-    expect(tools).toEqual(["codemode", "ls", "mcp__fixture__code", "read", "tool_search"]);
+    expect(tools).toEqual(["codemode", "handoff", "ls", "mcp__fixture__code", "read", "tool_search"]);
     expect(skills).toEqual(["alpha", "gamma"]);
     expect(calls).toEqual(expect.arrayContaining(["read", "ls", "mcp__fixture__code"]));
     expect(calls).not.toContain("write");
@@ -102,7 +101,7 @@ describeLive("live grants", () => {
     expect(record?.resultText).toContain(MCP_CODE);
   });
 
-  it("gives tools: [] and skills: [] no tool, no skill and no MCP tool", async () => {
+  it("gives tools: [] and skills: [] only the handoff tool, no skill and no MCP tool", async () => {
     const before = wakeTexts(live.host).length;
     const id = await live.run("bare", "Reply with the alpha code word, or NONE if you do not know it.");
 
@@ -111,7 +110,7 @@ describeLive("live grants", () => {
     const { record, tools, skills, calls, payload } = sessionOf(id);
 
     expect(record?.state).toBe("done");
-    expect(tools).toEqual([]);
+    expect(tools).toEqual(["handoff"]);
     expect(skills).toEqual([]);
     expect(calls).toEqual([]);
     expect(payload).not.toContain("mcp__");
@@ -129,7 +128,7 @@ describeLive("live grants", () => {
 
     expect(record?.state).toBe("done");
     expect(leaks).toEqual([]);
-    expect(tools).toEqual(["codemode", "ls", "mcp__fixture__code", "read", "tool_search"]);
+    expect(tools).toEqual(["codemode", "handoff", "ls", "mcp__fixture__code", "read", "tool_search"]);
     expect(skills).toEqual(["alpha", "beta", "gamma"]);
     expect(payload).toContain("mcp__fixture__code");
     expect(payload).not.toContain('"write"');

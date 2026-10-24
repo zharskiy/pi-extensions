@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KeyPress } from "../../adapter/contract.ts";
 import { multiSelectForm } from "../../manager/multi-select.ts";
 import { plainTheme } from "../helpers/fakes.ts";
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+import { char, key } from "../helpers/keys.ts";
 
 const OPTIONS = [
   { value: "github", label: "github", description: "stdio · gh" },
@@ -46,14 +43,19 @@ describe("multiSelectForm", () => {
     expect(text).toContain("› [x] github  stdio · gh");
     expect(text).toContain("[ ] linear");
     expect(text).toContain("[x] sentry");
-    expect(text).toContain("↑↓ select · Space toggle · a all · n none · Enter add · Esc cancel");
+    expect(text).toContain(
+      " ↑↓ to select · space to toggle · a to check all · n to check none\n enter to add · esc to cancel",
+    );
   });
 
   it("starts with nothing checked and says confirm when no checks or submit word are given", () => {
     const lines = open().view.render(80);
 
     expect(lines.filter((line) => line.includes("[x]"))).toEqual([]);
-    expect(lines.at(-2)).toContain("Enter confirm");
+    expect(lines.slice(-3, -1)).toEqual([
+      " ↑↓ to select · space to toggle · a to check all · n to check none",
+      " enter to confirm · esc to cancel",
+    ]);
   });
 
   it("returns every value on Enter when all start checked", () => {

@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
+import { sharedPad } from "../../adapter/pi-row-component.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -28,6 +29,7 @@ const fakeCtx = (mode: string, idle = true) => ({
     setStatus: () => {},
     confirm: async () => true,
     getEditorComponent: () => undefined,
+    setWidget: () => {},
     theme: { fg: (token: string, text: string) => `<${token}>${text}` },
   },
 });
@@ -105,6 +107,50 @@ describe("pi adapter", () => {
     expect(host.session().mode).toBe("tui");
   });
 
+  it("takes the output pad for entries from pi's settings at a tui session start", async () => {
+    const { pi, fire } = fakePi();
+    const settings: { outputPad?: number } = { outputPad: 0 };
+
+    createPiHost({ ...pi, getSettings: () => settings } as never, { tools: new Map() });
+
+    await fire("session_start", fakeCtx("tui"));
+
+    expect(sharedPad()).toBe(0);
+
+    settings.outputPad = undefined;
+    await fire("session_start", fakeCtx("tui"));
+
+    expect(sharedPad()).toBe(1);
+  });
+
+  it("reserves the notice slot under the editor at a tui session start, before the extension's handlers", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const widgets: string[] = [];
+    const ctxOf = (mode: string) => {
+      const ctx = fakeCtx(mode);
+
+      return {
+        ...ctx,
+        ui: {
+          ...ctx.ui,
+          setWidget: (key: string, _factory: unknown, options?: { placement?: string }) =>
+            widgets.push(`${key} ${options?.placement}`),
+        },
+      };
+    };
+
+    host.onSessionStart(() => widgets.push("start handler"));
+
+    await fire("session_start", ctxOf("rpc"));
+
+    expect(widgets).toEqual(["start handler"]);
+
+    await fire("session_start", ctxOf("tui"));
+
+    expect(widgets).toEqual(["start handler", "pi-notices belowEditor", "start handler"]);
+  });
+
   it("tells idle handlers whether the settled run was aborted", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
@@ -128,7 +174,7 @@ describe("pi adapter", () => {
     const assistant = (type: string) => ({ message: { role: "assistant" }, assistantMessageEvent: { type } });
 
     host.onIdle(() => seen.push("idle handler"));
-    host.onPhase((phase, detail) => seen.push(detail.toolName ? `${phase} ${detail.toolName}` : phase));
+    host.onPhase((phase) => seen.push(phase));
 
     await fire("session_start", ctx);
     await fire("agent_start", ctx);
@@ -149,24 +195,16 @@ describe("pi adapter", () => {
     await fire("agent_end", ctx);
     await fire("agent_settled", ctx, { aborted: false });
 
-    expect(seen).toEqual([
-      "waiting",
-      "writing",
-      "waiting",
-      "tool codemode",
-      "waiting",
-      "idle handler",
-      "idle",
-    ]);
+    expect(seen).toEqual(["waiting", "writing", "waiting", "tool", "waiting", "idle handler", "idle"]);
   });
 
-  it("emits a tool phase only when the named tool changes", async () => {
+  it("stays in the tool phase until the last parallel tool ends", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
     const seen: string[] = [];
     const ctx = fakeCtx("tui");
 
-    host.onPhase((phase, detail) => seen.push(detail.toolName ? `${phase} ${detail.toolName}` : phase));
+    host.onPhase((phase) => seen.push(phase));
 
     await fire("session_start", ctx);
     await fire("agent_start", ctx);
@@ -175,7 +213,7 @@ describe("pi adapter", () => {
     await fire("tool_execution_end", ctx, { toolCallId: "a", toolName: "bash" });
     await fire("tool_execution_end", ctx, { toolCallId: "b", toolName: "grep" });
 
-    expect(seen).toEqual(["waiting", "tool bash", "tool grep", "waiting"]);
+    expect(seen).toEqual(["waiting", "tool", "waiting"]);
   });
 
   it("resets the phase on shutdown without emitting", async () => {
@@ -255,36 +293,30 @@ describe("pi adapter", () => {
     expect(host.session().subscription).toBe(false);
   });
 
-  it("queues user messages and commands as follow-ups while busy", async () => {
+  it("queues commands as follow-ups while busy", async () => {
     const { pi, fire, sent } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
 
     host.dispatchCommand("ignored");
 
     await fire("session_start", fakeCtx("tui", false));
-    host.sendUserMessage("write it");
     host.dispatchCommand("session-handoff");
     host.dispatchCommand("agents", "a1");
 
     expect(sent).toEqual([
-      { text: "write it", options: { deliverAs: "followUp" } },
       { text: "/session-handoff", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
       { text: "/agents a1", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
     ]);
   });
 
-  it("sends user messages and commands as prompts while idle", async () => {
+  it("sends commands as prompts while idle", async () => {
     const { pi, fire, sent } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
-    host.sendUserMessage("write it");
     host.dispatchCommand("skill:review", "src");
 
-    expect(sent).toEqual([
-      { text: "write it", options: undefined },
-      { text: "/skill:review src", options: { expandPromptTemplates: true } },
-    ]);
+    expect(sent).toEqual([{ text: "/skill:review src", options: { expandPromptTemplates: true } }]);
   });
 
   it("seeds the new session with a displayed message that triggers no turn", async () => {
@@ -547,7 +579,7 @@ describe("pi adapter", () => {
     await fire("session_start", fakeCtx("tui"));
 
     expect(host.ui.style("warning", "ctx")).toBe("<warning>ctx");
-    expect(host.ui.style("heading", "ctx")).toBe("<mdHeading>ctx");
+    expect(host.ui.style("thinkingHigh", "ctx")).toBe("<thinkingHigh>ctx");
   });
 
   it("is not idle without a live session and runs shutdown handlers before the session goes stale", async () => {
@@ -754,8 +786,6 @@ describe("pi adapter", () => {
       pane.sync([
         {
           kind: "assistant",
-          text: "",
-          toolCalls: [{ name: "probe", args: {} }],
           raw: {
             role: "assistant",
             content: [{ type: "toolCall", id: "call-1", name: "probe", arguments: {} }],

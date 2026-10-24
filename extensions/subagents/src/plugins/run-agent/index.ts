@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
+import { EXPAND_BINDING } from "../../../../../core/manager/hints.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import {
@@ -30,6 +31,7 @@ export const runAgentPlugin: Plugin = {
     const hints = {
       manage: () => !settings.disabledPlugins.includes("agent-panel"),
       list: () => !settings.disabledPlugins.includes("agent-view"),
+      expandKey: () => host.ui.keyText(EXPAND_BINDING),
     };
 
     const wake = () => {

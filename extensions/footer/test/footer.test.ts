@@ -3,8 +3,6 @@ import { TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, FAKE_FOOTER_KEY, plainTheme } from "../../../core/test/helpers/fakes.ts";
 import { createFooter } from "../src/footer.ts";
 
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
 const setup = () => {
   const host = createFakeHost({ cwd: "/work/my-project" });
 
@@ -14,10 +12,7 @@ const setup = () => {
   createFooter(host);
   host.start();
 
-  const lines = () =>
-    (host.footer?.(80, plainTheme, { branch: "main", statuses: new Map() }) ?? []).map((line) =>
-      line.replace(ANSI, ""),
-    );
+  const lines = () => host.footer?.(80, plainTheme, { branch: "main", statuses: new Map() }) ?? [];
 
   return { host, lines };
 };
@@ -31,7 +26,7 @@ describe("footer", () => {
       "",
       " 50.0k · test-model (200k context)",
       " my-project git:(main)",
-      " ▶▶ thinking medium (<app.thinking.cycle> to cycle)",
+      " thinking medium (<app.thinking.cycle> to cycle)",
       "",
     ]);
   });
@@ -60,7 +55,7 @@ describe("footer", () => {
     expect(host.footerRefreshes).toBe(1);
     expect(lines().slice(1, 3)).toEqual([
       " 50.0k · $1.50 · test-model (200k context)",
-      " session total (agents included) 50.0k / $2.00",
+      " session total (agents included) 50.0k · $2.00",
     ]);
   });
 
@@ -97,6 +92,6 @@ describe("footer", () => {
 
     expect(lines()).toContain(" 190.0k · test-model (200k context)");
     expect(lines()).toContain(" my-project git:(main) • refactor");
-    expect(lines()).toContain(" ▶▶ thinking high (<app.thinking.cycle> to cycle)");
+    expect(lines()).toContain(" thinking high (<app.thinking.cycle> to cycle)");
   });
 });

@@ -7,9 +7,9 @@ import {
   reportedCache,
   sessionCacheHit,
 } from "../../manager/cache.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import { taggedTheme } from "../helpers/fakes.ts";
 
-const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+const tokenTheme: ThemeLike = taggedTheme(() => "");
 
 describe("cache hit", () => {
   it("is the cache read share of the whole prompt, input, reads and writes", () => {

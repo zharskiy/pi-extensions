@@ -1,7 +1,10 @@
-import type { ThemeLike, ToolResult } from "../../../core/adapter/contract.ts";
+import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../core/adapter/contract.ts";
+import { counted } from "../../../core/manager/format.ts";
+import { DOT } from "../../../core/manager/layout.ts";
+import { markOf } from "../../../core/manager/marks.ts";
+import { type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
 import {
   type Answer,
-  defaultLabel,
   labelOf,
   type Question,
   type QuestionnaireDetails,
@@ -9,32 +12,45 @@ import {
   questionInputs,
 } from "./result.ts";
 
-const plural = (count: number) => `${count} question${count === 1 ? "" : "s"}`;
+const cancelledOf = (state: ToolRenderState) =>
+  (state.result?.details as QuestionnaireDetails | undefined)?.cancelled === true;
 
-export const callText = (params: QuestionnaireParams, theme: ThemeLike) => {
-  const questions = questionInputs(params);
-  const labels = questions.map((question, index) => question?.label?.trim() || defaultLabel(index));
-  const title = `${theme.bold("questionnaire")} ${theme.fg("muted", plural(questions.length))}`;
+export const callText = (
+  params: QuestionnaireParams,
+  theme: ThemeLike,
+  state: ToolRenderState,
+): ToolRender => {
+  const count = questionInputs(params).length;
+  const cancelled = cancelledOf(state);
+  const mark = cancelled ? "stopped" : markOf(state);
+  const suffix = cancelled || state.aborted ? "cancelled" : counted(count, "question");
+  const title = (paint: ThemeLike) => `${paint.bold("questionnaire")}${paint.fg("muted", `${DOT}${suffix}`)}`;
 
-  return labels.length > 0 ? `${title}${theme.fg("dim", ` (${labels.join(", ")})`)}` : title;
+  return rowText(row({ mark, title }), theme);
 };
 
-const answerSummary = (questions: Question[], answer: Answer, theme: ThemeLike) => {
+const answerLine = (questions: Question[], answer: Answer, theme: ThemeLike) => {
+  const label = theme.fg("accent", `${labelOf(questions, answer)}:`);
   const shown = answer.wasCustom
-    ? `${theme.fg("dim", "(wrote)")} ${answer.label}`
-    : `${answer.index}. ${answer.label}`;
+    ? `${theme.fg("text", answer.label)} ${theme.fg("dim", "(wrote)")}`
+    : theme.fg("text", `${answer.index}. ${answer.label}`);
 
-  return `${theme.fg("success", "✓")} ${theme.fg("accent", labelOf(questions, answer))}: ${shown}`;
+  return `${label} ${shown}`;
 };
 
-export const resultSummary = (result: ToolResult<QuestionnaireDetails>, theme: ThemeLike) => {
+const resultChildren = (result: ToolResult<QuestionnaireDetails>, theme: ThemeLike): RowChild[] => {
   const details = result.details;
 
-  if (!details || result.isError) {
-    return result.isError ? theme.fg("error", result.text) : result.text;
+  if (result.isError) {
+    return [theme.fg("error", result.text)];
   }
 
-  const lines = details.answers.map((answer) => answerSummary(details.questions, answer, theme));
+  if (!details) {
+    return [theme.fg("muted", result.text)];
+  }
 
-  return (details.cancelled ? [theme.fg("warning", "Cancelled"), ...lines] : lines).join("\n");
+  return details.answers.map((answer) => answerLine(details.questions, answer, theme));
 };
+
+export const resultSummary = (result: ToolResult<QuestionnaireDetails>, theme: ThemeLike): ToolRender =>
+  rowText(rowChildren({ children: resultChildren(result, theme) }), theme);

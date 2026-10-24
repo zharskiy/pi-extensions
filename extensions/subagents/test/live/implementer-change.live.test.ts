@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { expect, it } from "vitest";
 import { formatDuration } from "../../../../core/manager/format.ts";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
+import { sessionFacts } from "../../../../core/test/adapter/offline.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { largestOutput } from "../helpers/findings.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
@@ -93,8 +94,7 @@ const hiddenTests = async (live: LiveHarness, fixture: Fixture) => {
 
 const largestBashOf = (live: LiveHarness, links: AgentRecord[]) =>
   links.reduce((max, link) => {
-    const items = link.sessionFile ? live.runtime.readSession(link.sessionFile).items : [];
-    const outputs = items.flatMap((item) => (item.kind === "tool" ? [item] : []));
+    const outputs = link.sessionFile ? sessionFacts(link.sessionFile).results : [];
 
     return Math.max(max, largestOutput(outputs, "bash"));
   }, 0);

@@ -1,5 +1,6 @@
 import type { Host } from "../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../core/manager/format.ts";
+import { EXPAND_BINDING } from "../../../core/manager/hints.ts";
 import { type Breakdown, breakdownOf } from "./buckets.ts";
 import { renderSnapshot } from "./render.ts";
 import { parseSnapshot, type Snapshot } from "./snapshot.ts";
@@ -7,13 +8,11 @@ import { summaryLine } from "./summary.ts";
 
 export const SNAPSHOT_ENTRY = "pi-context:snapshot";
 
-const EXPAND_BINDING = "app.tools.expand";
-
 const ALL = "all";
 
-export type ContextEnv = { home: string; now(): number };
+type ContextEnv = { home: string; now(): number };
 
-const shortPath = (path: string, home: string, cwd: string) => {
+const cwdOrHomeRelative = (path: string, home: string, cwd: string) => {
   if (cwd && path.startsWith(`${cwd}/`)) {
     return `./${path.slice(cwd.length + 1)}`;
   }
@@ -23,7 +22,10 @@ const shortPath = (path: string, home: string, cwd: string) => {
 
 const shortened = (breakdown: Breakdown, home: string, cwd: string): Breakdown => ({
   ...breakdown,
-  memoryFiles: breakdown.memoryFiles.map((part) => ({ ...part, name: shortPath(part.name, home, cwd) })),
+  memoryFiles: breakdown.memoryFiles.map((part) => ({
+    ...part,
+    name: cwdOrHomeRelative(part.name, home, cwd),
+  })),
 });
 
 export const createContext = (host: Host, env: ContextEnv) => {

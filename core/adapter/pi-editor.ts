@@ -3,16 +3,20 @@ import {
   type ExtensionContext,
   type KeybindingsManager,
   type SessionStartEvent,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
 import { type EditorHistory, type HistoryRecord, seedHistory, takeHistory } from "./pi-editor-history.ts";
 import { keyPress } from "./pi-keys.ts";
+import { shared } from "./pi-shared.ts";
+import { themeLike } from "./pi-tools.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
 type SharedEditor = HistoryRecord & {
   frame?: EditorFrame;
+  frameTheme?: () => Theme | undefined;
   emptyLeft: Set<() => void>;
   emptyDown: Set<() => void>;
   emptyEscape: Set<() => boolean>;
@@ -20,14 +24,8 @@ type SharedEditor = HistoryRecord & {
   installed?: EditorFactory;
 };
 
-const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
-
-const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: Partial<SharedEditor> };
-
 const sharedEditor = (): SharedEditor => {
-  const hooks = shared[EDITOR_KEY] ?? {};
-
-  shared[EDITOR_KEY] = hooks;
+  const hooks = shared<Partial<SharedEditor>>("editor-hooks", () => ({}));
 
   hooks.emptyLeft ??= new Set();
   hooks.emptyDown ??= new Set();
@@ -73,15 +71,16 @@ class HostEditor extends CustomEditor {
 
   render(width: number): string[] {
     const frame = this.hooks.frame;
+    const theme = this.hooks.frameTheme?.();
 
-    if (!frame || width < frame.minWidth) {
+    if (!frame || !theme || width < frame.minWidth) {
       return super.render(width);
     }
 
     const lines = super.render(width - frame.chrome);
     const bottom = lines.indexOf(this.bottomBorder, 1);
 
-    return frame.decorate(lines, { bottom, scrolled: this.scrolled }, this.borderColor);
+    return frame.decorate(lines, { bottom, scrolled: this.scrolled }, this.borderColor, themeLike(theme));
   }
 
   handleMouse(event: TuiMouseEvent) {
@@ -258,6 +257,7 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
 
       if (frame) {
         hooks.frame = frame;
+        hooks.frameTheme = () => tuiCtx()?.ui.theme;
         own.frame = frame;
         ensureInstalled();
         return;
@@ -265,6 +265,7 @@ export const createEditorHooks = (tuiCtx: () => ExtensionContext | undefined): E
 
       if (hooks.frame === own.frame) {
         hooks.frame = undefined;
+        hooks.frameTheme = undefined;
       }
 
       own.frame = undefined;

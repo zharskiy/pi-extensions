@@ -13,7 +13,7 @@ import {
   readSessionFile,
 } from "../../../../../core/test/adapter/offline.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
-import { flush, plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import { type FakeHost, flush, plainTheme, usageOf } from "../../../../../core/test/helpers/fakes.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
@@ -73,8 +73,11 @@ afterEach(() => {
 
 const fixture = () => readSessionFile(FIXTURE, RECORD_ENTRY);
 
-const setup = (plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentViewPlugin]) => {
-  const harness = createHarness(plugins);
+const setup = (
+  plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentViewPlugin],
+  options: Parameters<typeof createHarness>[1] = {},
+) => {
+  const harness = createHarness(plugins, options);
   const registry = harness.services.require("registry");
 
   const openView = async (args: string, rows = 200) => {
@@ -179,7 +182,7 @@ const fixtureWithout = (count: number): SessionRecord => {
 
 const RULE = (width: number) => "─".repeat(width);
 
-const requestIndex = (lines: string[]) => lines.findIndex((line) => /^ [▸▾] Request/.test(line));
+const requestIndex = (lines: string[]) => lines.findIndex((line) => /^ Request · /.test(line));
 
 const firstTextAfter = (lines: string[], index: number) => lines.slice(index + 1).find((line) => line !== "");
 
@@ -206,15 +209,17 @@ describe("agent view", () => {
     const lines = plain(view.render(100));
 
     expect(lines[0]).toBe("");
-    expect(lines[1]).toBe(" ✓ scout › list agents");
-    expect(lines[2]).toBe(` done · ${record.model} · id ${record.id}`);
-    expect(lines[3]).toMatch(/^ \d+ tool uses? · /);
+    expect(lines[1]).toBe(" ✓ scout  list agents");
+    expect(lines[2]).toMatch(/^ \d+s/);
+    expect(lines[3]).toBe(` ${record.model} · id ${record.id}`);
     expect(lines[4]).toBe(RULE(100));
-    expect(lines[5]).toMatch(/^ ▸ Request · \d+ lines$/);
+    expect(lines[5]).toMatch(/^ Request · \d+ lines \(r to expand\)$/);
     expect(lines[6]).toBe("");
     expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
-    expect(lines.at(-2)?.startsWith(" esc to close · r request · ctrl+o tool detail")).toBe(true);
+    expect(lines.at(-2)?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools")).toBe(
+      true,
+    );
     expect(lines.at(-3)).toBe("");
     expect(lines.at(-1)).toBe("");
   });
@@ -282,7 +287,7 @@ describe("agent view", () => {
 
     view.handleKey(key("home"));
 
-    expect(lines()[5]).toBe(" ▸ Request · 12 lines");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
     expect(firstTextAfter(lines(), 5)).toBe(" Task from main (agent id explorer-cb2e):");
     expect(lines().at(-2)).toMatch(/ 1-\d+\/\d+ · end to follow$/);
 
@@ -330,13 +335,13 @@ describe("agent view", () => {
 
     view.handleKey(char("r"));
 
-    expect(lines()[5]).toBe(" ▾ Request · 12 lines");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
 
     update({ record: { ...first, sessionFile: "/other.jsonl" }, session: tail });
 
     const after = lines();
 
-    expect(after[5]).toBe(" ▸ Request · 12 lines");
+    expect(after[5]).toBe(" Request · 12 lines (r to expand)");
     expect(body(after)).not.toEqual(before);
     expect(body(after)).toEqual(body(viewOf(tail, { rows: 40, record: first }).lines()));
     expect(transcripts).toHaveLength(2);
@@ -346,7 +351,7 @@ describe("agent view", () => {
     const { harness, record } = await runningAgent();
     const { view } = await harness.openView(record.id);
 
-    expect(plain(view.render(100))[2]).toContain("running");
+    expect(plain(view.render(100))[2]).toMatch(/^ (Starting|Elapsed)/);
     expect(plain(view.render(100)).at(-2)).toContain("x to stop");
 
     view.handleKey(char("x"));
@@ -362,7 +367,7 @@ describe("agent view", () => {
     expect(harness.runtime.child(record.id).aborted).toBe(true);
   });
 
-  it("shows the worktree and branch under the stats", async () => {
+  it("shows the worktree and branch under the model line", async () => {
     const harness = setup();
     const record = closedAgent(harness);
     const worktree = {
@@ -378,7 +383,7 @@ describe("agent view", () => {
     const lines = plain(view.render(100));
 
     expect(lines[4]).toBe(
-      " worktree: /project/.pi/worktrees/explorer-1-abc (branch pi-agents/explorer-1-abc)",
+      " Worktree /project/.pi/worktrees/explorer-1-abc · branch pi-agents/explorer-1-abc",
     );
     expect(lines[5]).toBe(RULE(100));
 
@@ -386,7 +391,7 @@ describe("agent view", () => {
 
     const again = await harness.openView(record.id);
 
-    expect(plain(again.view.render(100))[4]).toBe(" worktree: removed; branch pi-agents/explorer-1-abc kept");
+    expect(plain(again.view.render(100))[4]).toBe(" Worktree removed · branch pi-agents/explorer-1-abc kept");
   });
 });
 
@@ -405,73 +410,114 @@ describe("agent view header", () => {
     headerLines({ record, chain }, theme, width, 0, 0);
 
   it("renders the header per state", () => {
-    const table: [Partial<AgentRecord>, string[]][] = [
+    const table: [Partial<AgentRecord>, string, string][] = [
+      [{ state: "queued" }, " ◌ explorer  Map the auth module", " Queued"],
+      [{ state: "running" }, " ⠋ explorer  Map the auth module", " Starting"],
       [
-        { state: "queued" },
-        [" ○ explorer › Map the auth module", " queued · provider/model · id explorer-1"],
+        { state: "running", turns: 1, toolCalls: 4 },
+        " ⠋ explorer  Map the auth module",
+        " Elapsed 0s · 4 calls",
       ],
+      [{ state: "grace" }, " ◌ explorer  Map the auth module", " Stopping · Elapsed 0s"],
       [
-        { state: "running" },
-        [" ⠋ explorer › Map the auth module", " running · provider/model · id explorer-1"],
-      ],
-      [
-        { state: "grace" },
-        [" ◐ explorer › Map the auth module", " stopping · provider/model · id explorer-1"],
-      ],
-      [
-        { state: "done", endedAt: 0 },
-        [" ✓ explorer › Map the auth module", " done · provider/model · id explorer-1"],
+        { state: "done", endedAt: 0, toolCalls: 1, cost: 0.04 },
+        " ✓ explorer  Map the auth module",
+        " 0s · 1 call · $0.04",
       ],
       [
         { state: "failed", endedAt: 0, error: "tests failed twice\nstack" },
-        [" ✗ explorer › Map the auth module", " failed · provider/model · id explorer-1"],
+        " ✗ explorer  Map the auth module",
+        " 0s",
       ],
-      [
-        { state: "stopped", endedAt: 0 },
-        [" ■ explorer › Map the auth module", " stopped · provider/model · id explorer-1"],
-      ],
+      [{ state: "stopped", endedAt: 0 }, " ⊘ explorer  Map the auth module", " Stopped · 0s · 0 calls"],
       [
         { state: "handoff", endedAt: 0, handoffPath: "/tmp/h.md" },
-        [" ↪ explorer › Map the auth module", " handed off · provider/model · id explorer-1"],
+        " ⊘ explorer  Map the auth module",
+        " Handed off · 0s",
       ],
     ];
 
-    table.forEach(([patch, expected]) => {
-      const lines = header(base(patch));
-
-      expect(lines.slice(0, 2)).toEqual(expected);
-      expect(lines[2]).toBe(" 0 tool uses · 0s");
+    table.forEach(([patch, title, receipt]) => {
+      expect(header(base(patch)).slice(0, 3)).toEqual([title, receipt, " provider/model · id explorer-1"]);
     });
 
-    expect(header(base({ state: "failed", error: "tests failed twice\nstack" }))[3]).toBe(
-      " error: tests failed twice",
-    );
-    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" handoff: /tmp/h.md");
+    expect(header(base({ state: "failed", error: "tests failed twice\nstack" })).slice(3, 5)).toEqual([
+      " tests failed twice",
+      " stack",
+    ]);
+    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" Handoff file /tmp/h.md");
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md", error: "missing Status" }))[3]).toBe(
-      " handoff: /tmp/h.md (invalid: missing Status)",
+      " Handoff file /tmp/h.md (invalid: missing Status)",
     );
 
-    const painted = header(base({ state: "done", endedAt: 0 }), recordingTheme);
+    const painted = header(base({ state: "failed", endedAt: 0, error: "boom" }), recordingTheme);
 
-    expect(painted[0]).toBe(" <success>✓</> <b>explorer</b> › Map the auth module");
-    expect(painted[1]).toBe(" <dim>done · provider/model · id explorer-1</>");
+    expect(painted.slice(0, 4)).toEqual([
+      " <error>✗</> <b>explorer</b><muted>  Map the auth module</>",
+      " <muted>0s</>",
+      " <dim>provider/model · id explorer-1</>",
+      " <error>boom</>",
+    ]);
+  });
+
+  it("wraps a long error and adds the context share to the receipt", () => {
+    const error =
+      "npm test failed twice after the redirect change; the session cookie is not set on the callback route";
+    const record = base({
+      state: "failed",
+      endedAt: 130_000,
+      toolCalls: 31,
+      tokens: 52_400,
+      cost: 0.21,
+      error,
+      context: { tokens: 64_000, window: 100_000, percent: 64 },
+    });
+
+    expect(header(record, plainTheme, 80).slice(1, 5)).toEqual([
+      " 2m 10s · 31 calls · 52.4k tokens · $0.21 · 64% context",
+      " provider/model · id explorer-1",
+      " npm test failed twice after the redirect change; the session cookie is not set",
+      " on the callback route",
+    ]);
+  });
+
+  it("shows every line of a multi-line error up to six rows, then counts the rest", () => {
+    const error = Array.from({ length: 9 }, (_, index) => `frame ${index + 1}`).join("\n");
+    const lines = header(base({ state: "failed", endedAt: 0, error }), plainTheme, 80);
+
+    expect(lines.slice(3, 10)).toEqual([
+      " frame 1",
+      " frame 2",
+      " frame 3",
+      " frame 4",
+      " frame 5",
+      " frame 6",
+      " ... (3 more lines)",
+    ]);
+  });
+
+  it("counts hidden error lines, not wrapped rows", () => {
+    const error = `${"word ".repeat(40).trim()}\n${Array.from({ length: 8 }, (_, index) => `frame ${index + 1}`).join("\n")}`;
+    const lines = header(base({ state: "failed", endedAt: 0, error }), plainTheme, 20);
+
+    expect(lines.filter((line) => line.includes("more line"))).toEqual([" ... (8 more lines)"]);
   });
 
   it("keeps the glyph colour and the bold name when line 1 is cut below 8 columns of description", () => {
     const record = base({ state: "done", endedAt: 0 });
 
-    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b> › …");
-    expect(header(record, recordingTheme, 8)[0]).toBe(" <success>✓</> <b>exp…</b>");
+    expect(header(record, recordingTheme, 16)[0]).toBe(" <success>✓</> <b>explorer</b><muted> ...</>");
+    expect(header(record, recordingTheme, 8)[0]).toBe(" <success>✓</> <b>e...</b>");
   });
 
-  it("names the agent and the description on line 1 and the id only on line 2", () => {
-    expect(header(base({ model: undefined }))[1]).toBe(" running · model n/a · id explorer-1");
-    expect(header(base({ chainIndex: 2 }))[0]).toBe(" ⠋ explorer #2 › Map the auth module");
+  it("names the agent and the description on line 1 and the id only on the model line", () => {
+    expect(header(base({ model: undefined }))[2]).toBe(" model n/a · id explorer-1");
+    expect(header(base({ chainIndex: 2 }))[0]).toBe(" ⠋ explorer #2  Map the auth module");
 
     const lines = header(base());
 
     expect(lines[0]).not.toContain("explorer-1");
-    expect(lines[1]).toContain("explorer-1");
+    expect(lines[2]).toContain("explorer-1");
   });
 
   it("cuts every header line at the inner width", () => {
@@ -493,11 +539,11 @@ describe("agent view header", () => {
       expect(line.startsWith(" ")).toBe(true);
       expect(plainTheme.width(line)).toBeLessThanOrEqual(39);
     });
-    expect(lines[0]).toMatch(/ › d{8,}…$/);
+    expect(lines[0]).toMatch(/ {2}d{6,}\.\.\.$/);
     expect(lines.at(-1)).toBe(RULE(40));
   });
 
-  it("omits zero tokens and an unknown ctx", () => {
+  it("omits zero tokens and an unknown context share", () => {
     const record = base({
       toolCalls: 4,
       tokens: 0,
@@ -507,23 +553,23 @@ describe("agent view header", () => {
       contextLimit: 0,
     });
 
-    expect(header(record)[2]).toBe(" 4 tool uses · 1m 5s");
-    expect(header({ ...record, tokens: 12_300 })[2]).toBe(" 4 tool uses · 12.3k tokens · 1m 5s");
+    expect(header(record)[1]).toBe(" 1m 5s · 4 calls");
+    expect(header({ ...record, tokens: 12_300 })[1]).toBe(" 1m 5s · 4 calls · 12.3k tokens");
   });
 
-  it("shows the chain index and chain links", () => {
+  it("shows the chain index and chain links by name", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(0);
 
     const record = base({ chainIndex: 2, predecessorId: "explorer-0001", model: undefined });
     const { lines } = viewOf(fixture(), { record });
 
-    expect(lines()[1]).toBe(" ⠋ explorer #2 › Map the auth module");
-    expect(lines()[2]).toBe(" running · model n/a · id explorer-1");
+    expect(lines()[1]).toBe(" ⠋ explorer #2  Map the auth module");
+    expect(lines()[3]).toBe(" model n/a · id explorer-1");
 
     const chained = headerLines({ record, chain: ["explorer-0001", record.id] }, plainTheme, 100, 0, 0);
 
-    expect(chained).toContain(" chain: explorer-0001 → explorer-1 (2 sessions)");
+    expect(chained).toContain(" Chain explorer → explorer #2 (2 sessions) · viewing explorer #2");
   });
 });
 
@@ -535,18 +581,26 @@ describe("agent view hint", () => {
     const open = agentRecord({ id: "explorer-1" });
     const grace = agentRecord({ id: "explorer-1", state: "grace" });
     const closed = agentRecord({ id: "explorer-1", state: "done", endedAt: 0 });
-    const noRequest = { ...fixture(), prompt: { ...fixture().prompt, providerPayload: undefined } };
+    const noRequest = { ...fixture(), providerPayload: undefined };
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
-    expect(hint(hintOf(open))).toBe(" esc to close · x to stop · r request · ctrl+o tool detail");
-    expect(hint(hintOf(closed, { back: true }))).toBe(" esc to go back · r request · ctrl+o tool detail");
-    expect(hint(hintOf(open, { session: noRequest }))).toBe(" esc to close · x to stop · ctrl+o tool detail");
+    expect(hint(hintOf(open))).toBe(
+      " esc to close · x to stop · r to show the request · ctrl+o to expand tools",
+    );
+    expect(hint(hintOf(closed, { back: true }))).toBe(
+      " esc to go back · r to show the request · ctrl+o to expand tools",
+    );
+    expect(hint(hintOf(open, { session: noRequest }))).toBe(
+      " esc to close · x to stop · ctrl+o to expand tools",
+    );
 
     const expanded = hintOf(grace, { back: true });
 
     expanded.view.handleKey(char("r"));
 
-    expect(hint(expanded)).toBe(" esc to go back · x to close now · r hide request · ctrl+o tool detail");
+    expect(hint(expanded)).toBe(
+      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools",
+    );
 
     [open, grace, closed].forEach((record) => {
       expect(hintOf(record).lines().at(-2)).not.toContain("↑/↓");
@@ -562,7 +616,7 @@ describe("agent view hint", () => {
     const narrow = viewOf(fixture(), { record: agentRecord({ id: "explorer-1" }), width: 40 });
     const hintLine = narrow.lines().at(-2) ?? "";
 
-    expect(hintLine).toBe(" esc to close · x to stop · r request …");
+    expect(hintLine).toBe(" esc to close · x to stop · r to sho...");
     expect(plainTheme.width(hintLine)).toBe(39);
 
     const items = Array.from({ length: 900 }, (_, index) => ({
@@ -577,9 +631,7 @@ describe("agent view hint", () => {
     long.view.handleKey(char("r"));
     long.view.handleKey(key("home"));
 
-    expect(long.lines().at(-2)).toBe(
-      " esc to go back · x to close now · r hide request · ctrl+o tool detail",
-    );
+    expect(long.lines().at(-2)).toBe(" esc to go back · x to close now · r to hide the request");
   });
 
   it("pads every line and keeps the last column blank", () => {
@@ -706,7 +758,7 @@ describe("agent view body", () => {
     view.handleKey(char("x"));
     await flush();
 
-    expect(lines().at(-3)).toBe(" stop failed: runner gone");
+    expect(lines().at(-3)).toBe(" Stop failed: runner gone");
     expect(lines().at(-4)).toBe("");
 
     view.handleKey(char("x"));
@@ -774,9 +826,9 @@ describe("agent view with live agents", () => {
     const lines = plain(view.render(200));
 
     expect(second).toBeDefined();
-    expect(lines[1]).toMatch(/^ \S scout #2 › /);
-    expect(lines[2]?.endsWith(`id ${second}`)).toBe(true);
-    expect(lines).toContain(` chain: ${first.id} → ${second} (2 sessions) · opened ${first.id}`);
+    expect(lines[1]).toMatch(/^ \S scout #2 {2}/);
+    expect(lines[3]?.endsWith(`id ${second}`)).toBe(true);
+    expect(lines).toContain(" Chain scout → scout #2 (2 sessions) · viewing scout #2");
     expect(lines.at(-2)).toContain("x to stop");
     expect(lines.join("\n")).not.toContain("(type a message)");
 
@@ -824,52 +876,60 @@ describe("agent view with live agents", () => {
     await flush();
     vi.advanceTimersByTime(350);
 
-    expect(plain(view.render(100))[3]).toMatch(/ · 85% ctx$/);
+    expect(plain(view.render(100))[2]).toMatch(/ · 85% context$/);
   });
 });
 
 describe("agent view past sessions", () => {
-  const writeManifest = (harness: Harness, manifest: Record<string, unknown>) => {
-    const dir = join(agentsDirFor(harness.host.info), String(manifest.id));
+  type Past = { manifests: Record<string, unknown>[]; cost?: number };
+
+  const writeManifest = (host: FakeHost, manifest: Record<string, unknown>) => {
+    const dir = join(agentsDirFor(host.info), String(manifest.id));
 
     mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, MANIFEST_FILE),
-      typeof manifest.raw === "string" ? manifest.raw : JSON.stringify(manifest),
-    );
-
-    return dir;
+    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest));
   };
 
-  const openFromManifest = async (manifest: Record<string, unknown>, session: SessionRecord = fixture()) => {
-    const harness = setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
-    const dir = writeManifest(harness, { description: "old", state: "done", ...manifest });
-    const file = join(dir, "session.jsonl");
+  const restarted = ({ manifests, cost }: Past) =>
+    setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+      beforeStart: ({ root, host, runtime }) => {
+        manifests.forEach((manifest) => {
+          const name = manifest.sessionFile as string | undefined;
+          const file = name && join(root, name);
 
-    writeFileSync(file, "");
-    writeManifest(harness, { description: "old", state: "done", sessionFile: file, ...manifest });
-    harness.runtime.sessions.set(file, session);
+          if (file) {
+            writeFileSync(file, "");
+            runtime.sessions.set(file, fixture());
+          }
 
+          if (file && cost !== undefined) {
+            host.files.set(file, { entries: [], usage: usageOf(cost) });
+          }
+
+          writeManifest(host, file ? { ...manifest, sessionFile: file } : manifest);
+        });
+      },
+    });
+
+  const openFromManifest = async (manifest: Record<string, unknown>, cost?: number) => {
+    const harness = restarted({
+      manifests: [{ description: "old", state: "done", sessionFile: "old.jsonl", ...manifest }],
+      cost,
+    });
     const { view } = await harness.openView(String(manifest.id));
 
     return plain(view.render(100));
   };
 
-  it("opens from the manifest with the definition's limit", async () => {
-    const lines = await openFromManifest({ id: "explorer-dead", agent: "scout" });
-
-    expect(lines[3]).toMatch(/ · 2% ctx$/);
-  });
-
-  it("prefers the limit stored in the manifest, and shows no ctx without a known limit", async () => {
+  it("shows the context limit stored in the manifest, and no context without one", async () => {
     const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
-    const gone = await openFromManifest({ id: "removed-old", agent: "removed" });
+    const unknown = await openFromManifest({ id: "explorer-dead", agent: "scout" });
 
-    expect(stored[3]).toMatch(/ · 3% ctx$/);
-    expect(gone[3]).not.toContain("ctx");
+    expect(stored[2]).toMatch(/ · 3% context$/);
+    expect(unknown[2]).not.toContain("context");
   });
 
-  it("shows persisted counters for agents known only from their manifest", async () => {
+  it("shows persisted counters for agents of an earlier session", async () => {
     const lines = await openFromManifest({
       id: "explorer-past",
       agent: "scout",
@@ -880,10 +940,31 @@ describe("agent view past sessions", () => {
       endedAt: 65_000,
     });
 
-    expect(lines[3]).toBe(" 4 tool uses · 12.3k tokens · 1m 5s · 2% ctx");
+    expect(lines[2]).toBe(" 1m 5s · 4 calls · 12.3k tokens");
   });
 
-  it("shows 0 tool uses for a manifest written before counters were stored", async () => {
+  it("reads the cost of an agent known only from its manifest from its session file", async () => {
+    const manifest = { id: "explorer-paid", agent: "scout", toolCalls: 4, startedAt: 0, endedAt: 65_000 };
+    const lines = await openFromManifest(manifest, 0.04);
+
+    expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.04");
+  });
+
+  it("prefers the cost stored in the manifest", async () => {
+    const manifest = {
+      id: "explorer-kept",
+      agent: "scout",
+      toolCalls: 4,
+      cost: 0.5,
+      startedAt: 0,
+      endedAt: 65_000,
+    };
+    const lines = await openFromManifest(manifest, 0.04);
+
+    expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.50");
+  });
+
+  it("shows only the time for a manifest written before counters were stored", async () => {
     const lines = await openFromManifest({
       id: "explorer-older",
       agent: "scout",
@@ -891,38 +972,37 @@ describe("agent view past sessions", () => {
       endedAt: 3_000,
     });
 
-    expect(lines[3]).toBe(" 0 tool uses · 3s · 2% ctx");
+    expect(lines[2]).toBe(" 3s");
   });
 
   it("follows a chain of an earlier session to its last link", async () => {
-    const harness = setup();
-    const file = join(harness.root, "old-2.jsonl");
-
-    writeFileSync(file, "");
-    harness.runtime.sessions.set(file, fixture());
-    writeManifest(harness, {
-      id: "explorer-old1",
-      agent: "scout",
-      description: "old",
-      state: "handoff",
-      successorId: "explorer-old2",
-    });
-    writeManifest(harness, {
-      id: "explorer-old2",
-      agent: "scout",
-      description: "old",
-      state: "done",
-      chainIndex: 2,
-      predecessorId: "explorer-old1",
-      sessionFile: file,
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          sessionFile: "old-2.jsonl",
+        },
+      ],
     });
 
     const { view } = await harness.openView("explorer-old1");
     const lines = plain(view.render(200));
 
-    expect(lines[1]).toContain("scout #2 › ");
-    expect(lines[2]?.endsWith("id explorer-old2")).toBe(true);
-    expect(lines).toContain(" chain: explorer-old1 → explorer-old2 (2 sessions) · opened explorer-old1");
+    expect(lines[1]).toContain("scout #2  ");
+    expect(lines[3]?.endsWith("id explorer-old2")).toBe(true);
+    expect(lines).toContain(" Chain scout → scout #2 (2 sessions) · viewing scout #2");
   });
 });
 
@@ -1158,20 +1238,20 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" 2 background scout agents launched");
+    expect(shown).toContain(" ◌ 2 background scout agents");
     expect(shown).not.toContain("to manage");
     expect(shown).not.toContain("to list");
-    expect(shown).toContain("scout (find callers)");
-    expect(shown).toContain("scout (find tests)");
-    expect(shown).toContain("Initializing…");
+    expect(shown).toContain("scout  find callers");
+    expect(shown).toContain("scout  find tests");
+    expect(shown).toContain("Starting");
   });
 
   it("draws a waiting nested call while its batch runs and its final block once the result is written", async () => {
     const { harness, running, nested, show, text } = await nestedSetup(true);
     const live = await text();
 
-    expect(live()).toContain(" 2 scout agents launched");
-    expect(live()).toContain("Initializing…");
+    expect(live()).toContain(" ◌ 2 scout agents");
+    expect(live()).toContain("Starting");
 
     nested.forEach((record) => {
       harness.runtime.child(record.id).finish(`${record.id} done`);
@@ -1180,15 +1260,15 @@ describe("agent view nested run_agent calls", () => {
     const result = await running;
 
     await flush();
-    expect(live()).toContain(" 2 scout agents launched");
-    expect(live()).toContain("Done · 0 tool uses");
+    expect(live()).toContain(" ✓ 2 scout agents · 0s");
+    expect(live()).toContain("✓ scout  find callers");
 
     show(nestedSession({ ...ARGS, wait: true }, result), "written");
 
     const final = (await text())();
 
-    expect(final).toContain(" 2 scout agents finished");
-    expect(final).toContain("Done · 0 tool uses");
+    expect(final).toContain(" ✓ 2 scout agents · 0s");
+    expect(final).toContain("✓ scout  find tests");
   });
 
   it("draws the live block when the saved arguments carry a null optional field", async () => {
@@ -1198,8 +1278,8 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" 2 background scout agents launched");
-    expect(shown).toContain("Initializing…");
+    expect(shown).toContain(" ◌ 2 background scout agents");
+    expect(shown).toContain("Starting");
   });
 });
 
@@ -1252,15 +1332,15 @@ describe("agent view request block", () => {
     const { lines } = viewOf(requestSession(), { record: openRecord });
     const all = lines();
 
-    expect(all[all.indexOf(RULE(100)) + 1]).toBe(` ▸ Request · ${PAYLOAD_LINES} lines`);
+    expect(all[all.indexOf(RULE(100)) + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
     expect(all.join("\n")).not.toContain('"model": "provider/model"');
-    expect(all.at(-2)).toContain("x to stop · r request · ctrl+o tool detail");
+    expect(all.at(-2)).toContain("x to stop · r to show the request · ctrl+o to expand tools");
   });
 
   it("leaves a blank line under the collapsed request, apart from the task box padding", () => {
     const { view } = viewOf(requestSession(), { record: openRecord, theme: recordingTheme });
     const raw = plain(view.render(100));
-    const at = raw.findIndex((entry) => entry.includes("▸ Request"));
+    const at = raw.findIndex((entry) => entry.includes("Request · "));
 
     expect(raw[at + 1]).toBe("");
     expect(raw[at + 2]).toBe("");
@@ -1276,10 +1356,10 @@ describe("agent view request block", () => {
     const all = lines();
     const rule = all.indexOf(RULE(100));
 
-    expect(all[rule + 1]).toBe(` ▾ Request · ${PAYLOAD_LINES} lines`);
+    expect(all[rule + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to collapse)`);
     expect(all[rule + 2]).toBe("   {");
     expect(all.at(-2)).toMatch(/ 1-\d+\/\d+ · end to follow$/);
-    expect(all.at(-2)).toContain("r hide request");
+    expect(all.at(-2)).toContain("r to hide the request");
 
     update({ session: requestSession(31) });
 
@@ -1325,7 +1405,7 @@ describe("agent view request block", () => {
     view.handleKey(key("enter"));
     view.handleKey(char("r"));
 
-    expect(plain(view.render(100))).toContain(` ▾ Request · ${PAYLOAD_LINES} lines`);
+    expect(plain(view.render(100))).toContain(` Request · ${PAYLOAD_LINES} lines (r to collapse)`);
 
     view.handleKey(key("escape"));
 
@@ -1333,14 +1413,14 @@ describe("agent view request block", () => {
 
     view.handleKey(key("enter"));
 
-    expect(plain(view.render(100))).toContain(` ▸ Request · ${PAYLOAD_LINES} lines`);
+    expect(plain(view.render(100))).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
   });
 
   it("says not sent yet while the agent is open without a request", () => {
     const { view, lines } = viewOf(requestSession(1, false), { record: openRecord });
     const before = lines();
 
-    expect(before).toContain(" ▸ Request · not sent yet");
+    expect(before).toContain(" Request · not sent yet");
     expect(before.at(-2)).not.toMatch(/ r (request|hide request)/);
 
     view.handleKey(char("r"));
@@ -1349,28 +1429,31 @@ describe("agent view request block", () => {
   });
 
   it("says not recorded for a closed agent without a request", async () => {
-    const harness = setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin]);
-    const dir = join(agentsDirFor(harness.host.info), "explorer-past");
-    const file = join(dir, "session.jsonl");
+    const harness = setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+      beforeStart: ({ host, runtime }) => {
+        const dir = join(agentsDirFor(host.info), "explorer-past");
+        const file = join(dir, "session.jsonl");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(file, "");
-    writeFileSync(
-      join(dir, MANIFEST_FILE),
-      JSON.stringify({
-        id: "explorer-past",
-        agent: "scout",
-        description: "old",
-        state: "done",
-        sessionFile: file,
-      }),
-    );
-    harness.runtime.sessions.set(file, requestSession(1, false));
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(file, "");
+        writeFileSync(
+          join(dir, MANIFEST_FILE),
+          JSON.stringify({
+            id: "explorer-past",
+            agent: "scout",
+            description: "old",
+            state: "done",
+            sessionFile: file,
+          }),
+        );
+        runtime.sessions.set(file, requestSession(1, false));
+      },
+    });
 
     const { view } = await harness.openView("explorer-past");
     const before = plain(view.render(100));
 
-    expect(before).toContain(" ▸ Request · not recorded");
+    expect(before).toContain(" Request · not recorded");
     expect(before.at(-2)).not.toMatch(/ r (request|hide request)/);
 
     view.handleKey(char("r"));
@@ -1383,7 +1466,7 @@ describe("agent view request block", () => {
 
     view.handleKey(key("toggleTools"));
 
-    expect(lines()).toContain(` ▸ Request · ${PAYLOAD_LINES} lines`);
+    expect(lines()).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
 
     view.handleKey(char("r"));
 
@@ -1461,11 +1544,11 @@ describe("agent view clicks", () => {
     const row = requestIndex(lines());
 
     expect(view.handleClick?.(3, row)).toBe(true);
-    expect(lines()[row]).toMatch(/^ ▾ Request · \d+ lines$/);
-    expect(lines().at(-2)).toContain("r hide request");
+    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to collapse\)$/);
+    expect(lines().at(-2)).toContain("r to hide the request");
     expect(view.handleClick?.(3, row + 1)).toBe(false);
     expect(view.handleClick?.(3, row)).toBe(true);
-    expect(lines()[row]).toMatch(/^ ▸ Request · \d+ lines$/);
+    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to expand\)$/);
   });
 
   it("keeps the clicked call in place instead of following the tail", () => {

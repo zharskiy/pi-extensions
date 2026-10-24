@@ -19,6 +19,8 @@ import { captureTui, createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
 import { createShowForm } from "./pi-form.ts";
 import { keyPress } from "./pi-keys.ts";
+import type { Notices } from "./pi-notice.ts";
+import { composeLabel, releaseLabel, storeLabel } from "./pi-thinking-label.ts";
 import { fitLines, piColor, themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
@@ -92,11 +94,37 @@ export const notificationSequence = (message: string, channel: NotifyChannel, en
 
 export const tuiContext = (state: HostState) => (state.ctx?.mode === "tui" ? state.ctx : undefined);
 
+export type ThinkingLabelUi = Pick<HostUi, "setHiddenThinkingLabel"> & { release(): void };
+
+export const createThinkingLabelUi = (tuiCtx: () => ExtensionContext | undefined): ThinkingLabelUi => {
+  const owner = {};
+
+  return {
+    setHiddenThinkingLabel: (label, hint) => {
+      const ctx = tuiCtx();
+
+      if (!ctx) {
+        return;
+      }
+
+      const composed = label === undefined ? undefined : composeLabel(ctx.ui.theme, label, hint);
+
+      ctx.ui.setHiddenThinkingLabel(composed);
+      storeLabel(composed, owner);
+    },
+    release: () => {
+      releaseLabel(owner);
+    },
+  };
+};
+
 export const createUi = (
   state: HostState,
   stdout: TerminalOut,
   env: TerminalEnv,
   editor: EditorHooks,
+  notices: Notices,
+  thinkingLabel: ThinkingLabelUi = createThinkingLabelUi(() => tuiContext(state)),
 ): HostUi => {
   const widgetTuis = new Map<string, TUI>();
   let lastTui: TUI | undefined;
@@ -198,6 +226,7 @@ export const createUi = (
     setStatus: (key, text) => {
       state.ctx?.ui.setStatus(key, text);
     },
+    setNotice: notices.setNotice,
     confirm: async (title, message) => {
       const ctx = state.ctx;
 
@@ -234,6 +263,7 @@ export const createUi = (
     captureEditorKeys: editor.captureEditorKeys,
     setFooter: createFooterSetter(tuiCtx),
     keyText: (binding) => keyText(binding as Keybinding),
+    setHiddenThinkingLabel: thinkingLabel.setHiddenThinkingLabel,
     onKeyPress: (listener) =>
       tuiCtx()?.ui.onTerminalInput((data) => {
         if (!isKeyRelease(data) && !data.startsWith("\x1b[<") && !data.startsWith("\x1b[M")) {

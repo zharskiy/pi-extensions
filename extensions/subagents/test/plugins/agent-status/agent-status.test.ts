@@ -7,7 +7,7 @@ import {
   type AgentStatusParams,
   agentStatusPlugin,
 } from "../../../src/plugins/agent-status/index.ts";
-import { snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
+import { type AgentSnapshot, snapshotLine, snapshotOf } from "../../../src/plugins/agent-status/snapshot.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../helpers/harness.ts";
@@ -86,6 +86,7 @@ describe("agent_status", () => {
         "agent",
         "chainIndex",
         "contextPercent",
+        "cost",
         "description",
         "elapsedMs",
         "error",
@@ -98,7 +99,6 @@ describe("agent_status", () => {
         "requestedId",
         "resultPath",
         "state",
-        "successorId",
         "tokens",
         "toolCalls",
         "worktree",
@@ -107,8 +107,8 @@ describe("agent_status", () => {
     expect(result.details?.agents).toHaveLength(2);
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
     expect(result.text).toContain(`${first.id} (scout, ${first.model}) running`);
-    expect(result.text).toContain("ctx 15%");
-    expect(result.text).toContain(" · 1 tool use · ctx 15%");
+    expect(result.text).toContain(" · 1 call · 2.0k tokens · 15% context");
+    expect(result.text).toContain(" · 0 calls · 0 tokens · context n/a");
     expect(result.text).toContain("ghost-0000: unknown agent");
 
     harness.host.settle();
@@ -191,5 +191,92 @@ describe("agent_status", () => {
     const all = await harness.status.execute({}, { update: () => {} });
 
     expect(all.details?.agents).toHaveLength(1);
+  });
+});
+
+describe("agent_status rows", () => {
+  const details = (count: number): AgentStatusDetails => ({
+    agents: Array.from({ length: count }, () => ({}) as AgentStatusDetails["agents"][number]),
+    unknown: [],
+  });
+
+  it("names the ids, or all, after the bold title", () => {
+    const { host } = setup();
+
+    expect(host.renderTool("agent_status", { call: { ids: ["a-1", "b-2"] } }).call).toBe(
+      "✓ agent_status a-1, b-2",
+    );
+    expect(host.renderTool("agent_status", { call: {} }).call).toBe("✓ agent_status all");
+    expect(host.renderTool("agent_status", { call: {}, state: { isPartial: true } }).call).toBe(
+      "◌ agent_status all",
+    );
+  });
+
+  const snapshot = (patch: Partial<AgentSnapshot>): AgentSnapshot => ({
+    id: "scout-1",
+    agent: "scout",
+    model: "prov/model-a:low",
+    state: "done",
+    description: "Map the auth module",
+    elapsedMs: 65_000,
+    tokens: 12_300,
+    toolCalls: 4,
+    cost: 0.04,
+    contextPercent: 20,
+    lastLine: "",
+    chainIndex: 1,
+    ...patch,
+  });
+
+  it("counts the agents until expanded, then shows the snapshot", () => {
+    const { host } = setup();
+    const result = { text: "a-1: running\nb-2: done", details: details(2) };
+
+    expect(host.renderTool("agent_status", { result }).result).toBe(
+      "  ↳ 2 agents (<app.tools.expand> to expand)",
+    );
+    expect(
+      host.renderTool("agent_status", {
+        result: { text: "No agents in this session.", details: { agents: [], unknown: [] } },
+        state: { expanded: true },
+      }).result,
+    ).toBe("  ↳ No agents in this session.");
+  });
+
+  it("draws one agent row per agent at column 4 when expanded", () => {
+    const { host } = setup();
+    const agents = [
+      snapshot({}),
+      snapshot({
+        id: "worker-2",
+        agent: "worker",
+        state: "running",
+        description: "Fix the login redirect",
+        elapsedMs: 42_000,
+        toolCalls: 9,
+        tokens: 6_100,
+        cost: 0.01,
+      }),
+    ];
+    const result = { text: "model text", details: { agents, unknown: ["gone-1"] } };
+    const rendered = (width: number) =>
+      host.renderTool("agent_status", { result, state: { expanded: true }, width }).result?.split("\n");
+
+    expect(rendered(80)).toEqual([
+      "    ✓ scout   Map the auth module   1m 5s · 4 calls · 12.3k tokens · $0.04",
+      "    ◌ worker  Fix the login red...  Elapsed 42s · 9 calls · 6.1k tokens · $0.01",
+      "    gone-1: unknown agent",
+    ]);
+    expect(rendered(120)?.[0]).toBe(
+      "    ✓ scout   Map the auth module     model-a:low  1m 5s · 4 calls · 12.3k tokens · $0.04",
+    );
+    expect(rendered(41)).toEqual([
+      "    ✓ scout   Map the a...  1m 5s",
+      "    ◌ worker  Fix the l...  Elapsed 42s",
+      "    gone-1: unknown agent",
+    ]);
+    expect(host.renderTool("agent_status", { result: { text: "x", details: details(1) } }).result).toBe(
+      "  ↳ 1 agent (<app.tools.expand> to expand)",
+    );
   });
 });

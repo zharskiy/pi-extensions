@@ -1,17 +1,17 @@
-import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
+import type { ThemeLike } from "../../../../core/adapter/contract.ts";
+import { pointerMark } from "../../../../core/manager/marks.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 import {
-  elapsedOf,
-  formatDuration,
-  formatTokens,
-  innerWidth,
+  agentReceipt,
   PAD,
   padEndCols,
-  SEP,
+  plainReceipt,
+  type ReceiptSegment,
+  receiptText,
   singleLine,
 } from "./format.ts";
-import { stateGlyph, stateToken, stateWord } from "./state-text.ts";
-import type { TreeRow } from "./tree.ts";
+import { liveGlyph, scrollGlyph } from "./state-text.ts";
+import { nestPrefix } from "./tree.ts";
 
 const NAME_COLS_MAX = 24;
 
@@ -19,184 +19,174 @@ const DESCRIPTION_COLS_MAX = 48;
 
 const MIN_DESCRIPTION = 12;
 
-const MIN_ROOM = 8;
+const MODEL_COLS_MAX = 20;
 
-const STATS_COLS = 30;
+const GAP = "  ";
 
 const POINTER_COLS = 2;
 
+const GLYPH_COLS = 2;
+
 export const POINTER_BLANK = " ".repeat(POINTER_COLS);
 
-export type RowInput = TreeRow & { selected: boolean };
+type RowRecord = Pick<
+  AgentRecord,
+  | "agent"
+  | "chainIndex"
+  | "description"
+  | "model"
+  | "state"
+  | "turns"
+  | "toolCalls"
+  | "tokens"
+  | "cost"
+  | "activity"
+  | "createdAt"
+  | "startedAt"
+  | "endedAt"
+>;
 
-export type RowLayout = { nameCols: number; infoAt: number };
+export type RowInput = {
+  record: RowRecord;
+  depth: number;
+  first: boolean;
+  openDescendants: number;
+  selected?: boolean;
+};
 
-type NamedRow = Pick<TreeRow, "record" | "openDescendants">;
+export type RowLayout = {
+  nameCols: number;
+  descriptionCols: number;
+  modelCols: number;
+  statusCols: number;
+  now: number;
+  spinner: boolean;
+  bare: boolean;
+};
 
-export const agentName = (record: AgentRecord): string =>
-  record.chainIndex > 1 ? `${record.agent} #${record.chainIndex}` : record.agent;
+type RowOptions = { spinner?: boolean; bare?: boolean };
+
+export const chainSuffix = (chainIndex: number) => (chainIndex > 1 ? ` #${chainIndex}` : "");
+
+export const agentName = (record: Pick<AgentRecord, "agent" | "chainIndex">): string =>
+  record.agent + chainSuffix(record.chainIndex);
 
 const countSuffix = (openDescendants: number) => (openDescendants > 0 ? ` (+${openDescendants})` : "");
 
-const rowName = (row: NamedRow): string => agentName(row.record) + countSuffix(row.openDescendants);
+const nameText = (input: RowInput) => agentName(input.record) + countSuffix(input.openDescendants);
 
-const nameColumn = (rows: NamedRow[], theme: ThemeLike): number =>
-  Math.min(
-    NAME_COLS_MAX,
-    rows.reduce((widest, row) => Math.max(widest, theme.width(rowName(row))), 0),
-  );
+export const modelId = (model: string): string => model.slice(model.indexOf("/") + 1);
 
-const treePrefix = (row: Pick<TreeRow, "depth" | "last" | "ancestorsContinue">) =>
-  row.depth === 0
-    ? ""
-    : row.ancestorsContinue.map((more) => (more ? "│  " : "   ")).join("") + (row.last ? "└─ " : "├─ ");
+export const modelLabel = (theme: ThemeLike, model: string, cols: number) => {
+  const cut = model.lastIndexOf(":");
+  const suffix = cut > 0 ? model.slice(cut) : "";
+  const room = cols - theme.width(suffix);
 
-type Stats = { plain: string; token: ThemeToken; paint(theme: ThemeLike): string };
-
-const plainStats = (text: string, token: ThemeToken): Stats => ({
-  plain: text,
-  token,
-  paint: (theme) => (text ? theme.fg(token, text) : ""),
-});
-
-const join = (parts: (string | undefined)[]) => parts.filter((part) => part !== undefined).join(SEP);
-
-const statsVariants = (record: AgentRecord, now: number): Stats[] => {
-  const elapsed = formatDuration(elapsedOf(record, now));
-
-  if (isClosed(record.state)) {
-    const word = stateWord(record.state);
-
-    return [
-      {
-        plain: word + SEP + elapsed,
-        token: stateToken(record.state),
-        paint: (theme) =>
-          theme.fg(stateToken(record.state), word) + theme.fg("dim", SEP) + theme.fg("dim", elapsed),
-      },
-      plainStats(word, stateToken(record.state)),
-    ];
+  if (theme.width(model) <= cols || suffix === "" || room < 2) {
+    return theme.truncate(model, cols);
   }
 
-  if (record.state === "grace" || record.state === "queued") {
-    return [plainStats(stateWord(record.state), stateToken(record.state))];
-  }
-
-  const tokens = record.tokens > 0 ? `↓ ${formatTokens(record.tokens)} tokens` : undefined;
-
-  return [join([record.activity, elapsed, tokens]), join([elapsed, tokens]), elapsed, ""].map((text) =>
-    plainStats(text, "dim"),
-  );
+  return `${theme.truncate(model.slice(0, cut), room)}${suffix}`;
 };
 
-const roomFor = (theme: ThemeLike, width: number, fixed: number, stats: string) =>
-  innerWidth(width) - fixed - (stats ? 2 + theme.width(stats) : 0);
+const statusOf = (record: RowRecord, now: number): ReceiptSegment[] =>
+  agentReceipt(record, now, { live: true });
 
-const pickStats = (theme: ThemeLike, variants: Stats[], width: number, infoAt: number) =>
-  variants.find((stats) => !stats.plain || infoAt + 2 + theme.width(stats.plain) <= innerWidth(width)) ??
-  (variants.at(-1) as Stats);
+const plainWidth = (segments: ReceiptSegment[], theme: ThemeLike) => theme.width(plainReceipt(segments));
 
-const statsReserve = (theme: ThemeLike, record: AgentRecord, now: number) =>
-  record.state === "running" ? STATS_COLS : theme.width((statsVariants(record, now)[0] as Stats).plain);
+const widest = (values: number[]) => values.reduce((most, value) => Math.max(most, value), 0);
+
+export const rowLayout = (
+  rows: readonly RowInput[],
+  now: number,
+  width: number,
+  theme: ThemeLike,
+  options: RowOptions = {},
+): RowLayout => {
+  const bare = options.bare ?? false;
+  const avail = bare ? width : width - PAD.length;
+  const nameCols = Math.min(
+    NAME_COLS_MAX,
+    widest(rows.map((row) => theme.width(nestPrefix(row)) + theme.width(nameText(row)))),
+  );
+  const lead = (bare ? 0 : POINTER_COLS) + GLYPH_COLS + nameCols;
+  const wanted = Math.min(
+    DESCRIPTION_COLS_MAX,
+    widest(rows.map((row) => theme.width(singleLine(row.record.description)))),
+  );
+  const floor = Math.min(MIN_DESCRIPTION, wanted);
+  const status = widest(rows.map((row) => plainWidth(statusOf(row.record, now), theme)));
+  const models = Math.min(
+    MODEL_COLS_MAX,
+    widest(rows.map((row) => theme.width(modelId(row.record.model ?? "")))),
+  );
+  const modelGap = models > 0 ? models + GAP.length : 0;
+  const descriptionGap = wanted > 0 ? GAP.length : 0;
+  const fitsModel = modelGap > 0 && lead + descriptionGap + wanted + modelGap + GAP.length + status <= avail;
+  const modelCols = fitsModel ? models : 0;
+  const room = avail - lead - descriptionGap - (fitsModel ? modelGap : 0) - GAP.length;
+  const descriptionCols = Math.max(floor, Math.min(wanted, room - status));
+
+  return {
+    nameCols,
+    descriptionCols,
+    modelCols,
+    statusCols: Math.max(0, room - descriptionCols),
+    now,
+    spinner: options.spinner ?? true,
+    bare,
+  };
+};
 
 const paintName = (input: RowInput, cols: number, theme: ThemeLike) => {
-  const base = agentName(input.record);
-  const suffix = countSuffix(input.openDescendants);
+  const base = input.record.agent;
+  const tail = chainSuffix(input.record.chainIndex) + countSuffix(input.openDescendants);
   const token = isClosed(input.record.state) ? "muted" : "text";
-  const cut = theme.truncate(base + suffix, cols);
+  const whole = `${base}${tail}`;
+  const cut = theme.truncate(whole, Math.max(0, cols));
   const painted =
-    cut === base + suffix
-      ? theme.fg(token, base) + (suffix ? theme.fg("dim", suffix) : "")
-      : theme.fg(token, cut);
+    cut === whole ? theme.fg(token, base) + (tail ? theme.fg("dim", tail) : "") : theme.fg(token, cut);
 
   return painted + " ".repeat(Math.max(0, cols - theme.width(cut)));
 };
 
-const leadOf = (theme: ThemeLike, row: TreeRow, nameCols: number) =>
-  POINTER_COLS + theme.width(treePrefix(row)) + 2 + nameCols + 2;
+const cell = (theme: ThemeLike, text: string, cols: number, paint: (text: string) => string) => {
+  const cut = theme.truncate(text, cols);
 
-export type RowMeasure = {
-  nameCols: number;
-  wanted: number;
-  floor: number;
-  reserve: number;
-  live: AgentRecord[];
+  return padEndCols(theme, cut ? paint(cut) : "", cols);
 };
 
-const hasFixedStats = (record: AgentRecord) => !isClosed(record.state) || record.endedAt !== undefined;
+export const renderRow = (input: RowInput, width: number, theme: ThemeLike, layout: RowLayout): string => {
+  const { record } = input;
+  const pointer = input.selected ? `${pointerMark(theme, true)} ` : POINTER_BLANK;
+  const lead = layout.bare ? "" : `${PAD}${pointer}`;
+  const prefix = nestPrefix(input);
+  const glyph = layout.spinner
+    ? liveGlyph(record.state, layout.now, theme)
+    : scrollGlyph(record.state, theme);
+  const name = paintName(input, layout.nameCols - theme.width(prefix), theme);
+  const description =
+    layout.descriptionCols > 0
+      ? `${GAP}${cell(theme, singleLine(record.description), layout.descriptionCols, (text) => theme.fg("muted", text))}`
+      : "";
+  const model =
+    layout.modelCols > 0
+      ? `${GAP}${cell(theme, modelLabel(theme, modelId(record.model ?? ""), layout.modelCols), layout.modelCols, (text) => theme.fg("dim", text))}`
+      : "";
+  const status = receiptText(statusOf(record, layout.now), layout.statusCols, theme);
+  const line = `${lead}${prefix ? theme.fg("dim", prefix) : ""}${glyph} ${name}${description}${model}${GAP}${status}`;
 
-export const measureRows = (rows: TreeRow[], theme: ThemeLike): RowMeasure => {
-  const nameCols = nameColumn(rows, theme);
-
-  return rows.reduce<RowMeasure>(
-    (measure, row) => {
-      const lead = leadOf(theme, row, nameCols);
-      const described = theme.width(singleLine(row.record.description));
-
-      measure.wanted = Math.max(measure.wanted, lead + Math.min(DESCRIPTION_COLS_MAX, described));
-      measure.floor = Math.max(measure.floor, lead + Math.min(MIN_DESCRIPTION, described));
-
-      if (hasFixedStats(row.record)) {
-        measure.reserve = Math.max(measure.reserve, statsReserve(theme, row.record, 0));
-      } else {
-        measure.live.push(row.record);
-      }
-
-      return measure;
-    },
-    { nameCols, wanted: 0, floor: 0, reserve: 0, live: [] },
-  );
+  return theme.truncate(line, width);
 };
 
-export const layoutOf = (measure: RowMeasure, now: number, width: number, theme: ThemeLike): RowLayout => {
-  const reserve = measure.live.reduce(
-    (most, record) => Math.max(most, statsReserve(theme, record, now)),
-    measure.reserve,
-  );
-  const limit = innerWidth(width) - 2 - reserve;
-  const infoAt = Math.max(measure.floor, Math.min(measure.wanted, limit));
-
-  return { nameCols: measure.nameCols, infoAt: Math.min(innerWidth(width), infoAt) };
-};
-
-export const rowLayout = (rows: TreeRow[], now: number, width: number, theme: ThemeLike): RowLayout =>
-  layoutOf(measureRows(rows, theme), now, width, theme);
-
-export const renderRow = (
-  input: RowInput,
+export const renderRows = (
+  rows: readonly RowInput[],
   now: number,
   width: number,
   theme: ThemeLike,
-  layout: RowLayout,
-): string => {
-  const { record } = input;
-  const { nameCols, infoAt } = layout;
-  const pointer = input.selected ? `${theme.fg("accent", theme.bold("›"))} ` : POINTER_BLANK;
-  const tree = treePrefix(input);
-  const head = `${PAD}${pointer}${tree ? theme.fg("dim", tree) : ""}${theme.fg(stateToken(record.state), stateGlyph(record.state, now))} `;
-  const fixed = leadOf(theme, input, nameCols);
-  const stats = pickStats(theme, statsVariants(record, now), width, infoAt);
-  const room = roomFor(theme, width, fixed, stats.plain);
-  const tail = stats.plain ? `  ${stats.paint(theme)}` : "";
+  options: RowOptions = {},
+): string[] => {
+  const layout = rowLayout(rows, now, width, theme, options);
 
-  if (room < MIN_ROOM) {
-    const after = innerWidth(width) - POINTER_COLS - theme.width(tree) - 2;
-
-    if (stats.plain && 2 + theme.width(stats.plain) > after) {
-      const cut = theme.truncate(stats.plain, Math.max(0, after - 2));
-
-      return `${head}  ${theme.fg(stats.token, cut)}`;
-    }
-
-    const nameRoom = after - (stats.plain ? 2 + theme.width(stats.plain) : 0);
-
-    return head + paintName(input, Math.max(0, nameRoom), theme) + tail;
-  }
-
-  const cols = Math.max(0, Math.min(room, stats.plain ? infoAt - fixed : DESCRIPTION_COLS_MAX));
-  const description = theme.truncate(singleLine(record.description), cols);
-  const shown = stats.plain ? padEndCols(theme, description, cols) : description;
-  const padding = shown.slice(description.length);
-
-  return `${head}${paintName(input, nameCols, theme)}  ${theme.fg("muted", description)}${padding}${tail}`;
+  return rows.map((row) => renderRow(row, width, theme, layout));
 };

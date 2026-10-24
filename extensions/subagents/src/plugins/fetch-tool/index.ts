@@ -3,7 +3,7 @@ import type { Plugin } from "../../model/plugin.ts";
 import type { Settings } from "../../model/settings.ts";
 import { type FetchedPage, fetchPage } from "./fetch.ts";
 
-export type FetchParams = { url: string };
+type FetchParams = { url: string };
 
 const DESCRIPTION =
   "Fetch a web page over http or https and return its readable text with the final URL, status and title. Long pages are cut and say how much was shown.";

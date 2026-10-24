@@ -1,11 +1,16 @@
 import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
+import type { KeyHint } from "./hints.ts";
 import { PAD, prefixed } from "./layout.ts";
+import { pointerMark } from "./marks.ts";
 
 const DESCRIPTION_INDENT = "      ";
 
-export const SELECT_HINTS = ["↑↓ select", "1-9 pick"] as const;
+export const SELECT_HINTS: readonly KeyHint[] = [
+  ["↑↓", "to select"],
+  ["1-9", "to pick"],
+];
 
-export const CANCEL_HINT = "Esc cancel";
+export const CANCEL_HINT: KeyHint = ["esc", "to cancel"];
 
 export type ListOption = {
   label: string;
@@ -25,7 +30,7 @@ export const listLines = (
 ) =>
   options.flatMap((option, index) => {
     const chosen = index === selected;
-    const pointer = chosen ? theme.fg("accent", theme.bold("›")) : " ";
+    const pointer = pointerMark(theme, chosen);
     const mark = option.mark ? ` ${option.mark}` : "";
 
     const label = theme.fg(

@@ -1,8 +1,5 @@
 import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
-import { PAD } from "../../../core/manager/layout.ts";
 import { apportion, type CategoryKey, type UsageModel } from "./breakdown.ts";
-
-type Cell = { key: CategoryKey; partial: boolean };
 
 type Grid = { rows: string[]; columns: number; beside: boolean };
 
@@ -13,47 +10,41 @@ const NARROW_MAX = 50;
 const WIDE_WINDOW = 1_000_000;
 
 const COLORS: Record<CategoryKey, ThemeToken> = {
-  systemPrompt: "comment",
-  systemTools: "type",
-  mcpTools: "function",
-  extensionTools: "keyword",
-  memoryFiles: "string",
-  skills: "number",
-  messages: "accent",
-  free: "dim",
+  systemPrompt: "thinkingOff",
+  systemTools: "thinkingMinimal",
+  mcpTools: "thinkingLow",
+  extensionTools: "thinkingMedium",
+  memoryFiles: "thinkingHigh",
+  skills: "thinkingXhigh",
+  messages: "text",
+  free: "muted",
   reserve: "warning",
 };
 
-const GLYPHS: Partial<Record<CategoryKey, string>> = { free: "⛶", reserve: "⛝" };
+const CELLS: Partial<Record<CategoryKey, string>> = { free: "·", reserve: "░" };
 
-const USED = "⛁";
+const USED = "■";
 
-const PARTIAL = "⛀";
+export const legendGlyph = (theme: ThemeLike, key: CategoryKey) => theme.fg(COLORS[key], CELLS[key] ?? USED);
 
-const glyphOf = (cell: Cell) => GLYPHS[cell.key] ?? (cell.partial ? PARTIAL : USED);
+const besideWidth = (columns: number, side: number) => columns * 2 - 1 + GAP.length + side;
 
-const paintCell = (theme: ThemeLike, cell: Cell) => theme.fg(COLORS[cell.key], glyphOf(cell));
-
-export const legendGlyph = (theme: ThemeLike, key: CategoryKey) => paintCell(theme, { key, partial: false });
-
-const besideWidth = (columns: number, side: number) => PAD.length + columns * 2 - 1 + GAP.length + side;
-
-const gridLayout = (window: number, width: number, side: number) => {
+const gridLayout = (window: number, width: number, room: number, side: number) => {
   if (width < NARROW_MAX) {
     return { columns: 5, rows: 5, beside: false };
   }
 
-  if (window >= WIDE_WINDOW && besideWidth(20, side) <= width) {
+  if (window >= WIDE_WINDOW && besideWidth(20, side) <= room) {
     return { columns: 20, rows: 10, beside: true };
   }
 
-  return { columns: 10, rows: 10, beside: besideWidth(10, side) <= width };
+  return { columns: 10, rows: 10, beside: besideWidth(10, side) <= room };
 };
 
-const sameCells = (count: number, key: CategoryKey): Cell[] =>
-  Array.from({ length: count }, () => ({ key, partial: false }));
+const sameCells = (count: number, key: CategoryKey): CategoryKey[] =>
+  Array.from({ length: count }, () => key);
 
-const gridCells = (model: UsageModel, count: number): Cell[] => {
+const gridCells = (model: UsageModel, count: number): CategoryKey[] => {
   const cellTokens = model.window / count;
 
   if (cellTokens <= 0) {
@@ -71,28 +62,25 @@ const gridCells = (model: UsageModel, count: number): Cell[] => {
   const exact = categories.map((category) => category.tokens / cellTokens);
   const filled = Math.min(room, Math.round(exact.reduce((sum, cells) => sum + cells, 0)));
   const shares = apportion(exact, filled);
-
-  const used = categories.flatMap((category, index) => {
-    const share = shares[index] ?? 0;
-    const partial = share > (exact[index] ?? 0);
-
-    return Array.from({ length: share }, (_, cell) => ({
-      key: category.key,
-      partial: partial && cell === share - 1,
-    }));
-  });
+  const used = categories.flatMap((category, index) => sameCells(shares[index] ?? 0, category.key));
 
   return [...used, ...sameCells(room - used.length, "free"), ...sameCells(reserveCells, "reserve")];
 };
 
-export const gridOf = (theme: ThemeLike, model: UsageModel, width: number, side: number): Grid => {
-  const layout = gridLayout(model.window, width, side);
+export const gridOf = (
+  theme: ThemeLike,
+  model: UsageModel,
+  width: number,
+  room: number,
+  side: number,
+): Grid => {
+  const layout = gridLayout(model.window, width, room, side);
   const cells = gridCells(model, layout.columns * layout.rows);
 
   const rows = Array.from({ length: layout.rows }, (_, row) =>
     cells
       .slice(row * layout.columns, (row + 1) * layout.columns)
-      .map((cell) => paintCell(theme, cell))
+      .map((key) => legendGlyph(theme, key))
       .join(" "),
   );
 

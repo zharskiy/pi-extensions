@@ -1,4 +1,4 @@
-import { sep } from "node:path";
+import { isAbsolute, relative, sep } from "node:path";
 
 export const formatTokens = (n: number): string => {
   if (n < 1_000) {
@@ -44,3 +44,26 @@ export const errorText = (error: unknown): string => (error instanceof Error ? e
 
 export const homeRelative = (path: string, home: string): string =>
   home && (path === home || path.startsWith(`${home}${sep}`)) ? `~${path.slice(home.length)}` : path;
+
+export const shortPath = (path: string, cwd: string, home: string): string => {
+  if (cwd && isAbsolute(path) && (path === cwd || path.startsWith(`${cwd}${sep}`))) {
+    return relative(cwd, path) || ".";
+  }
+
+  return homeRelative(path, home);
+};
+
+export const formatCost = (usd: number): string | undefined => {
+  if (usd <= 0) {
+    return undefined;
+  }
+
+  return usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
+};
+
+export const formatMoney = (usd: number) => formatCost(usd) ?? "$0.00";
+
+export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
+
+export const counted = (count: number, word: string, plural?: string) =>
+  `${count} ${noun(count, word, plural)}`;

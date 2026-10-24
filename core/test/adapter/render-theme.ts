@@ -1,4 +1,4 @@
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 
 export const initRenderTheme = () => {
@@ -13,3 +13,9 @@ export const initRenderKeys = () => {
     }),
   );
 };
+
+export const plainPiTheme = {
+  fg: (_token: string, text: string) => text,
+  bold: (text: string) => text,
+  bg: (_token: string, text: string) => text,
+} as unknown as Theme;

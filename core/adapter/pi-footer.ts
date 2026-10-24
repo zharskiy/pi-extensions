@@ -6,6 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import type { ContextSnapshot, FooterData, FooterRender, Host, HostUi, WidgetHandle } from "./contract.ts";
+import { drawNoticesIn, noticeLines, syncNotices } from "./pi-notice.ts";
 import { themeLike } from "./pi-tools.ts";
 import type { HostState } from "./pi-ui.ts";
 import { contextOf } from "./usage.ts";
@@ -27,8 +28,8 @@ export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): 
   });
 
   const draw = (width: number, theme: Theme, data: ReadonlyFooterDataProvider | undefined) =>
-    (current?.(width, themeLike(theme), dataOf(data)) ?? []).map((line) =>
-      truncateToWidth(line, width, theme.fg("dim", "…")),
+    [...noticeLines(), ...(current?.(width, themeLike(theme), dataOf(data)) ?? [])].map((line) =>
+      truncateToWidth(line, width, theme.fg("dim", "...")),
     );
 
   const mountFooter = (ctx: ExtensionContext) => {
@@ -64,12 +65,16 @@ export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): 
     ctx.ui.setWidget(
       FOOTER_WIDGET_KEY,
       (tui, theme) => {
+        const stopNotices = drawNoticesIn({ refresh: () => tui.requestRender() });
+
         widgetTui = tui;
 
         return {
           render: (width: number) => draw(width, theme, footerData),
           invalidate: () => {},
           dispose: () => {
+            stopNotices();
+
             if (widgetTui === tui) {
               widgetTui = undefined;
             }
@@ -93,6 +98,7 @@ export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): 
       removeWidget(ctx);
       footerTui = undefined;
       ctx.ui.setFooter(undefined);
+      syncNotices(ctx);
       return handle;
     }
 
@@ -103,6 +109,7 @@ export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): 
 
     mountFooter(ctx);
     mountWidget(ctx);
+    syncNotices(ctx);
 
     return handle;
   };

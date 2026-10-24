@@ -1,9 +1,10 @@
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, truncateToWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FormApi, KeyPress, TextInput, ViewComponent } from "../../adapter/contract.ts";
 import { createShowForm } from "../../adapter/pi-form.ts";
 import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
+import { plainPiTheme } from "./render-theme.ts";
 
 const ESC = String.fromCharCode(27);
 
@@ -19,10 +20,7 @@ type Shown = {
   result?: unknown;
 };
 
-const theme = {
-  fg: (_token: string, text: string) => text,
-  bold: (text: string) => text,
-} as unknown as Theme;
+const theme = plainPiTheme;
 
 const formContext = (mode = "tui") => {
   const shown: Shown[] = [];
@@ -98,7 +96,7 @@ describe("showForm", () => {
 
     expect(await pending).toBe("picked");
     expect(entry.options).toBeUndefined();
-    expect(entry.component.render(6)).toEqual([truncateToWidth("a long line of text", 6, "…")]);
+    expect(entry.component.render(6)).toEqual([truncateToWidth("a long line of text", 6, "...")]);
     expect(keys.map((key) => [key.name, key.char])).toEqual([
       ["backTab", undefined],
       ["tab", undefined],

@@ -1,6 +1,7 @@
-type SourceCost = { source: string; cost: number };
+import { formatMoney } from "../../../core/manager/format.ts";
+import { DOT } from "../../../core/manager/layout.ts";
 
-const formatCost = (usd: number) => `$${usd.toFixed(3)}`;
+type SourceCost = { source: string; cost: number };
 
 export const footerText = ({
   main,
@@ -19,10 +20,10 @@ export const footerText = ({
   const total = sources.reduce((sum, entry) => sum + entry.cost, main);
 
   const parts = [
-    `main ${formatCost(main)}`,
-    ...sources.map((entry) => `${entry.source} ${formatCost(entry.cost)}`),
-    `total ${formatCost(total)}`,
+    `main ${formatMoney(main)}`,
+    ...sources.map((entry) => `${entry.source} ${formatMoney(entry.cost)}`),
+    `total ${formatMoney(total)}`,
   ];
 
-  return `${parts.join(" · ")}${suffix}`;
+  return `${parts.join(DOT)}${suffix}`;
 };

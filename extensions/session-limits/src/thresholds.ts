@@ -1,5 +1,7 @@
 import type { ContextSnapshot, ThemeToken } from "../../../core/adapter/contract.ts";
-import { formatWindow } from "../../../core/manager/format.ts";
+import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
+import { DOT } from "../../../core/manager/layout.ts";
+import { MARKS } from "../../../core/manager/marks.ts";
 
 type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
@@ -12,9 +14,6 @@ export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
 export type Limits = { softRatio: number; hardRatio: number; softTokens: number; hardTokens: number };
-
-const percentOf = (context: ContextTokens) =>
-  context.tokens === null || context.window <= 0 ? null : Math.floor((context.tokens * 100) / context.window);
 
 export const thresholdsFor = (window: number, limits: Limits) => ({
   soft: Math.min(window * limits.softRatio, limits.softTokens),
@@ -63,13 +62,14 @@ export const handoffStep = (input: HandoffInput) => {
   return input.instructions < MAX_INSTRUCTIONS ? "resend" : "give-up";
 };
 
-const pendingLabels = (command: string): Record<Exclude<Phase, "watching">, string> => ({
-  queued: "handoff after this turn",
-  requested: "writing handoff",
-  waiting: "handoff waits for running work",
-  switching: "switching session",
-  stuck: `handoff failed, run /${command}`,
-});
+const pendingLabels: Record<Exclude<Phase, "watching" | "stuck">, string> = {
+  queued: "Handoff after this turn",
+  requested: "Handoff writing the document",
+  waiting: "Handoff waiting for running work",
+  switching: "Handoff switching to a new session",
+};
+
+const notice = (text: string) => ({ token: "warning" as const, text: `${MARKS.info} ${text}` });
 
 export const segmentFor = (
   context: ContextTokens | undefined,
@@ -77,33 +77,27 @@ export const segmentFor = (
   limits: Limits,
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
-  const percent = context ? percentOf(context) : null;
-
-  if (phase !== "watching") {
-    const label = pendingLabels(command)[phase];
-
-    return {
-      token: phase === "waiting" || phase === "queued" ? "warning" : "error",
-      text: percent === null ? label : `ctx ${percent}% · ${label}`,
-    };
+  if (phase === "stuck") {
+    return { token: "error", text: `${MARKS.error} Handoff failed${DOT}run /${command}` };
   }
 
-  if (!context) {
+  if (phase !== "watching") {
+    return notice(pendingLabels[phase]);
+  }
+
+  if (!context || context.tokens === null) {
     return undefined;
   }
 
   const level = contextLevel(context, limits);
 
-  if (level === "unknown" || level === "normal") {
+  if (level === "normal") {
     return undefined;
   }
 
-  const text =
-    context.window * limits.hardRatio <= limits.hardTokens
-      ? `ctx ${percent}% · handoff at ${Math.round(limits.hardRatio * 100)}%`
-      : `ctx ${formatWindow(context.tokens ?? 0)} · handoff at ${formatWindow(limits.hardTokens)}`;
+  const { hard } = thresholdsFor(context.window, limits);
 
-  return { token: "warning", text };
+  return notice(`Handoff at ${formatWindow(hard)} tokens${DOT}${formatTokens(context.tokens)} used`);
 };
 
 export const retryInstruction = (instruction: string, errors: string[]) =>

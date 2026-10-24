@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
-import { createWorkingIndicator, spinner, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
+import { createWorkingIndicator, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
 
 const setup = (mode: RunMode = "tui") => {
   const host = createFakeHost({ mode });
@@ -12,14 +12,15 @@ const setup = (mode: RunMode = "tui") => {
   return host;
 };
 
+const HINT = "<dim> (<app.interrupt> to interrupt)";
+
+const message = (activity: string, elapsed?: string) => `${activity}${elapsed ? ` · ${elapsed}` : ""}${HINT}`;
+
 const pickIndex = (index: number) => {
   vi.spyOn(Math, "random").mockReturnValue(index / VERBS.length);
 };
 
-const message = (verb: string | undefined, elapsed: string, tool?: string) =>
-  `${verb}… (${tool ? `${tool} · ` : ""}${elapsed} · <app.interrupt> to interrupt)`;
-
-const V0 = VERBS[0];
+const WAITING = `${VERBS[0]}`;
 
 describe("working indicator", () => {
   beforeEach(() => {
@@ -32,26 +33,86 @@ describe("working indicator", () => {
     vi.restoreAllMocks();
   });
 
-  it("applies the spinner at session start", () => {
-    const host = setup();
+  it("shows a verb from the list and no ellipsis while waiting for the model", () => {
+    pickIndex(7);
 
-    expect(host.workingIndicators).toEqual([spinner]);
-  });
-
-  it("keeps pi's own spinner by default so it is drawn in the input's colour", () => {
-    const host = setup();
-
-    expect(spinner).toBeUndefined();
-    expect(host.workingIndicators).toEqual([undefined]);
-  });
-
-  it("shows the first message on agent start without re-setting the spinner", () => {
     const host = setup();
 
     host.agentStart();
 
-    expect(host.workingIndicators).toEqual([spinner]);
-    expect(host.workingMessages).toEqual([message(V0, "0s")]);
+    expect(host.workingMessages).toEqual([message(`${VERBS[7]}`)]);
+  });
+
+  it("keeps the verb between rotations and picks a new one every VERB_MS", () => {
+    const host = setup();
+
+    host.agentStart();
+    pickIndex(1);
+    vi.advanceTimersByTime(VERB_MS - TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "7s"));
+
+    host.setPhase("thinking");
+    host.setPhase("waiting");
+
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "7s"));
+
+    vi.advanceTimersByTime(TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}`, "8s"));
+
+    pickIndex(2);
+    vi.advanceTimersByTime(VERB_MS - TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}`, "15s"));
+
+    vi.advanceTimersByTime(TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[2]}`, "16s"));
+  });
+
+  it("picks a fresh verb on the next run", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.settle();
+    pickIndex(3);
+    host.agentStart();
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[3]}`));
+  });
+
+  it("keeps the verb while the model thinks and tools run", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("thinking");
+    host.setPhase("toolArgs");
+    host.setPhase("tool");
+    vi.advanceTimersByTime(TICK_MS);
+
+    expect(host.workingMessages).toEqual([message(WAITING), message(WAITING, "1s")]);
+  });
+
+  it("leaves pi's own spinner in place and shows a verb on agent start", () => {
+    const host = setup();
+
+    host.agentStart();
+
+    expect(host.workingMessages).toEqual([message(WAITING)]);
+  });
+
+  it("shows the elapsed time from one second on", () => {
+    const host = setup();
+
+    host.agentStart();
+    vi.advanceTimersByTime(TICK_MS - 1);
+
+    expect(host.workingMessages).toEqual([message(WAITING)]);
+
+    vi.advanceTimersByTime(1);
+
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "1s"));
   });
 
   it("advances the elapsed seconds every tick and switches to minutes after one minute", () => {
@@ -60,31 +121,12 @@ describe("working indicator", () => {
     host.agentStart();
     vi.advanceTimersByTime(TICK_MS * 3);
 
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "3s"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "3s"));
 
     vi.advanceTimersByTime(TICK_MS * 62);
 
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1m 5s"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "1m 5s"));
     expect(host.workingMessages.some((text) => text?.includes("65s"))).toBe(false);
-  });
-
-  it("picks a new verb every VERB_MS", () => {
-    const host = setup();
-
-    host.agentStart();
-    pickIndex(1);
-    vi.advanceTimersByTime(VERB_MS - TICK_MS);
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "7s"));
-
-    vi.advanceTimersByTime(TICK_MS);
-
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[1], "8s"));
-
-    pickIndex(2);
-    vi.advanceTimersByTime(VERB_MS);
-
-    expect(host.workingMessages.at(-1)).toBe(message(VERBS[2], "16s"));
   });
 
   it("keeps counting across turns of one run", () => {
@@ -94,7 +136,7 @@ describe("working indicator", () => {
     vi.advanceTimersByTime(TICK_MS * 5);
     host.turnEnd({ tokens: 10, window: 100 });
 
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "5s"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "5s"));
     expect(host.workingMessages).not.toContain(undefined);
   });
 
@@ -105,7 +147,7 @@ describe("working indicator", () => {
     host.settle();
     vi.advanceTimersByTime(TICK_MS * 3);
 
-    expect(host.workingMessages).toEqual([message(V0, "0s"), undefined]);
+    expect(host.workingMessages).toEqual([message(WAITING), undefined]);
   });
 
   it("clears the message on shutdown", async () => {
@@ -137,7 +179,7 @@ describe("working indicator", () => {
     host.settle();
     host.agentStart();
 
-    expect(host.workingMessages.slice(-2)).toEqual([undefined, message(V0, "0s")]);
+    expect(host.workingMessages.slice(-2)).toEqual([undefined, message(WAITING)]);
   });
 
   it("nothing outside tui", () => {
@@ -145,7 +187,7 @@ describe("working indicator", () => {
 
     host.agentStart();
     host.setPhase("writing");
-    host.setPhase("tool", { toolName: "bash" });
+    host.setPhase("tool");
     vi.advanceTimersByTime(TICK_MS * 3);
 
     expect(host.workingMessages).toEqual([]);
@@ -160,25 +202,25 @@ describe("working indicator", () => {
 
     expect(host.workingVisibility).toEqual([false]);
 
-    host.setPhase("tool", { toolName: "bash" });
+    host.setPhase("tool");
 
     expect(host.workingVisibility).toEqual([false, true]);
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "0s", "bash"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING));
   });
 
-  it("writes the fresh message before showing the row again", () => {
+  it("shows the row again with the current message", () => {
     const host = setup();
     const write = vi.spyOn(host.ui, "setWorkingMessage");
     const show = vi.spyOn(host.ui, "setWorkingVisible");
 
     host.agentStart();
     host.setPhase("writing");
-    host.setPhase("tool", { toolName: "bash" });
+    host.setPhase("tool");
 
     const showCall = show.mock.calls.findIndex(([visible]) => visible);
     const lastWrite = write.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY;
 
-    expect(write.mock.calls.at(-1)).toEqual([message(V0, "0s", "bash")]);
+    expect(write.mock.calls.at(-1)).toEqual([message(WAITING)]);
     expect(lastWrite).toBeLessThan(show.mock.invocationCallOrder[showCall] ?? 0);
   });
 
@@ -190,7 +232,7 @@ describe("working indicator", () => {
     host.setPhase("waiting");
 
     expect(host.workingVisibility).toEqual([false, true]);
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "0s"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING));
   });
 
   it("keeps the row for thinking, tool arguments and tools", () => {
@@ -200,28 +242,10 @@ describe("working indicator", () => {
     host.setPhase("waiting");
     host.setPhase("thinking");
     host.setPhase("toolArgs");
-    host.setPhase("tool", { toolName: "bash" });
+    host.setPhase("tool");
     host.setPhase("waiting");
 
     expect(host.workingVisibility).toEqual([]);
-  });
-
-  it("names the running tool", () => {
-    const host = setup();
-
-    host.agentStart();
-    host.setPhase("tool", { toolName: "bash" });
-    vi.advanceTimersByTime(TICK_MS);
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "bash"));
-
-    host.setPhase("tool", { toolName: "grep" });
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s", "grep"));
-
-    host.setPhase("waiting");
-
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "1s"));
   });
 
   it("keeps ticking while hidden", () => {
@@ -231,7 +255,7 @@ describe("working indicator", () => {
     host.setPhase("writing");
     vi.advanceTimersByTime(TICK_MS * 3);
 
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "3s"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "3s"));
     expect(host.workingVisibility).toEqual([false]);
   });
 
@@ -241,12 +265,11 @@ describe("working indicator", () => {
 
     host.agentStart();
     vi.advanceTimersByTime(TICK_MS * 5);
-    pickIndex(3);
     host.agentStart();
 
-    expect(host.workingMessages.at(-1)).toBe(message(V0, "5s"));
-    expect(host.workingMessages.slice(1)).not.toContain(message(V0, "0s"));
-    expect(host.workingMessages.slice(1)).not.toContain(message(VERBS[3], "0s"));
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "5s"));
+    expect(host.workingMessages.slice(1)).not.toContain(message(WAITING));
+    expect(host.workingMessages.slice(1)).not.toContain(message(WAITING, "0s"));
     expect(keyText).toHaveBeenCalledTimes(1);
   });
 
@@ -254,7 +277,7 @@ describe("working indicator", () => {
     const host = setup();
 
     host.setPhase("writing");
-    host.setPhase("tool", { toolName: "bash" });
+    host.setPhase("tool");
 
     expect(host.workingMessages).toEqual([]);
     expect(host.workingVisibility).toEqual([]);

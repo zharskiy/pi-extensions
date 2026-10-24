@@ -1,6 +1,9 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
@@ -14,7 +17,13 @@ import { CODEMODE_WORKERS_SETTING } from "../../adapter/pi-codemode.ts";
 import { availableModels } from "../../adapter/pi-models.ts";
 import { ASSISTANT_DELTA_TYPES } from "../../adapter/pi-phase.ts";
 import { discoverSkills } from "../../adapter/pi-skills.ts";
+import { composeLabel, OSC133_ZONE_PREFIX } from "../../adapter/pi-thinking-label.ts";
+import { BUILTIN_TOOLS, piShipped } from "../../adapter/pi-tool-rows.ts";
+import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
+import { capturePiRenderers } from "../../adapter/pi-transcript.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
+import { initRenderTheme } from "./render-theme.ts";
+import { piRenderContext } from "./tool-rows.ts";
 
 const ADAPTER_PI_MAJOR = 1;
 
@@ -169,6 +178,7 @@ describe("pi adapter conformance", () => {
       "isKeyRelease",
       "Key",
       "matchesKey",
+      "mixColors",
       "ScrollView",
       "Text",
       "truncateToWidth",
@@ -211,6 +221,10 @@ describe("pi adapter conformance", () => {
             factory: (api) => {
               seen.api = api;
               api.registerTool({ ...namedTool("probe_tool"), exposure: "model-only" } as never);
+              api.registerTool({
+                ...namedTool("mcp__probe_srv__search"),
+                namespace: { name: "mcp__probe_srv", aliases: ["probe"] },
+              } as never);
               api.on("session_start", (_event, ctx) => {
                 seen.ui = ctx.ui;
               });
@@ -233,20 +247,54 @@ describe("pi adapter conformance", () => {
 
       await session.bindExtensions({ mode: "print" });
 
-      const api = ["registerEntryRenderer", "getSettings", "getAllTools", "getActiveTools", "getCommands"];
-      const ui = ["custom", "getEditorComponent", "setEditorComponent", "setWidget", "onTerminalInput"];
+      const api = [
+        "registerEntryRenderer",
+        "registerToolRenderer",
+        "registerMessageRenderer",
+        "getSettings",
+        "getAllTools",
+        "getActiveTools",
+        "getCommands",
+      ];
+      const ui = [
+        "custom",
+        "getEditorComponent",
+        "setEditorComponent",
+        "setWidget",
+        "onTerminalInput",
+        "setHiddenThinkingLabel",
+      ];
       const probe = seen.api?.getAllTools().find((tool) => tool.name === "probe_tool");
 
       expect(api.filter((name) => typeof Reflect.get(seen.api ?? {}, name) !== "function")).toEqual([]);
       expect(ui.filter((name) => typeof Reflect.get(seen.ui ?? {}, name) !== "function")).toEqual([]);
       expect(typeof seen.api?.getSettings()).toBe("object");
+      expect(Reflect.has(seen.ui ?? {}, "theme")).toBe(true);
+      expect(
+        ["getBgAnsi", "italic", "inverse"].filter(
+          (name) => typeof Reflect.get(pi.Theme.prototype, name) !== "function",
+        ),
+      ).toEqual([]);
       expect(typeof probe?.sourceInfo.path).toBe("string");
       expect(probe?.exposure).toBe("model-only");
+      expect(
+        seen.api?.getAllTools().find((tool) => tool.name === "mcp__probe_srv__search")?.namespace,
+      ).toEqual({
+        name: "mcp__probe_srv",
+        aliases: ["probe"],
+      });
 
       session.dispose();
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("cuts with the ASCII ellipsis inside the width", () => {
+    const cut = tui.truncateToWidth("Map the auth module", 10, "...");
+
+    expect(tui.visibleWidth(cut)).toBe(10);
+    expect(stripVTControlCharacters(cut)).toBe("Map the...");
   });
 
   it("names only assistant event types pi has", () => {
@@ -385,7 +433,7 @@ describe("pi adapter conformance", () => {
   it("cancels every compaction attempt inside a child", () => {
     const { api, fire } = fakeExtensionApi();
 
-    createChildExtension("a1", "acme/x", promptRecordEntry("test-ext"))(api as never);
+    createChildExtension(promptRecordEntry("test-ext"))(api as never);
 
     expect(fire("session_before_compact", { reason: "threshold" })).toEqual([{ cancel: true }]);
     expect(fire("session_before_compact", { reason: "overflow" })).toEqual([{ cancel: true }]);
@@ -427,7 +475,7 @@ describe("pi adapter conformance", () => {
   it("records the first provider request once as the prompt record", () => {
     const { api, entries, fire } = fakeExtensionApi();
 
-    createChildExtension("a1", "acme/x", promptRecordEntry("test-ext"))(api as never);
+    createChildExtension(promptRecordEntry("test-ext"))(api as never);
 
     fire("before_agent_start", {
       systemPromptOptions: {
@@ -442,13 +490,7 @@ describe("pi adapter conformance", () => {
     expect(entries).toEqual([
       {
         customType: "test-ext:prompt-record",
-        data: {
-          agentId: "a1",
-          model: "acme/x",
-          skills: [{ name: "s", description: "d" }],
-          guidelines: ["g1", "g2"],
-          providerPayload: { model: "x", n: 1 },
-        },
+        data: { providerPayload: { model: "x", n: 1 } },
       },
     ]);
   });
@@ -852,6 +894,393 @@ describe("pi adapter conformance", () => {
       );
       expect(servers.isMcpToolName(serverTool)).toBe(true);
       expect(servers.createToolNameMatcher(added)(serverTool)).toBe(true);
+    });
+  });
+
+  describe("transcript rows", () => {
+    const fakeTui = { requestRender: () => {} } as never;
+
+    const plain = (component: { render(width: number): string[] }, width = 80) =>
+      component.render(width).map((line) => tui.stripTerminalSequences(line).trimEnd());
+
+    const textResult = (text: string, details?: unknown) =>
+      ({ content: [{ type: "text", text }], details, isError: false }) as never;
+
+    const renderContext = (patch: Partial<PiToolRenderContext> = {}) =>
+      piRenderContext({ expanded: true, outputPad: 0, ...patch });
+
+    it("names the same built-in tools as pi", async () => {
+      const tools = await import(
+        new URL("core/tools/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+      );
+
+      expect([...BUILTIN_TOOLS].toSorted()).toEqual([...tools.allToolNames].toSorted());
+    });
+
+    it("hands renderers the context fields the rows read, and puts one blank line before a self-drawn tool", () => {
+      initRenderTheme();
+
+      const contexts: Record<string, unknown>[] = [];
+      const capture = (_value: unknown, ...rest: unknown[]) => {
+        contexts.push(rest.at(-1) as Record<string, unknown>);
+        return new tui.Text("row", 0, 0);
+      };
+      const component = new pi.ToolExecutionComponent(
+        "probe",
+        "call-1",
+        { a: 1 },
+        { outputPad: 1 },
+        { renderShell: "self", renderCall: capture, renderResult: capture } as never,
+        fakeTui,
+        "/repo",
+      );
+
+      component.updateResult(textResult("out"));
+
+      const fields = ["args", "argsComplete", "executionStarted", "isPartial", "isError", "expanded", "cwd"];
+
+      expect(plain(component)).toEqual(["", "row", "row"]);
+      expect(contexts.length).toBeGreaterThan(0);
+      contexts.forEach((context) => {
+        expect(fields.filter((field) => !(field in context))).toEqual([]);
+        expect(typeof context.outputPad).toBe("number");
+        expect(typeof context.state).toBe("object");
+        expect("lastComponent" in context).toBe(true);
+      });
+    });
+
+    it("draws the call before the result in one update and hands both the recorded duration", () => {
+      initRenderTheme();
+
+      const order: string[] = [];
+      const durations: unknown[] = [];
+      const capture =
+        (name: string) =>
+        (_value: unknown, ...rest: unknown[]) => {
+          order.push(name);
+          durations.push((rest.at(-1) as { durationMs?: number }).durationMs);
+          return new tui.Text(name, 0, 0);
+        };
+      const component = new pi.ToolExecutionComponent(
+        "probe",
+        "call-1",
+        {},
+        { outputPad: 1 },
+        { renderShell: "self", renderCall: capture("call"), renderResult: capture("result") } as never,
+        fakeTui,
+        "/repo",
+      );
+
+      order.length = 0;
+      durations.length = 0;
+      component.updateResult({ ...(textResult("out") as object), durationMs: 4_200 } as never);
+
+      expect(order).toEqual(["call", "result"]);
+      expect(durations).toEqual([4_200, 4_200]);
+    });
+
+    it("shows the edit diff from the result details when the call was never drawn", () => {
+      initRenderTheme();
+
+      const edit = pi.createEditToolDefinition("/repo") as unknown as pi.ToolDefinition;
+      const lines = plain(
+        edit.renderResult?.(
+          textResult("ok", { diff: "-1 old line\n+1 new line" }),
+          { expanded: false, isPartial: false },
+          {} as never,
+          renderContext({ args: { path: "a.ts" }, expanded: false }),
+        ) as never,
+      );
+
+      expect(lines.some((line) => line.includes("old line"))).toBe(true);
+      expect(lines.some((line) => line.includes("new line"))).toBe(true);
+    });
+
+    it("returns an edit diff of numbered added, removed and context lines the rows parse", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const lines = Array.from({ length: 20 }, (_value, index) => `line ${index + 1}`);
+
+      writeFileSync(join(dir, "a.txt"), `${lines.join("\n")}\n`);
+
+      const edit = pi.createEditToolDefinition(dir) as unknown as pi.ToolDefinition;
+      const result = await edit.execute(
+        "call-1",
+        {
+          path: "a.txt",
+          edits: [
+            { oldText: "line 2\n", newText: "line 2 changed\n" },
+            { oldText: "line 18\n", newText: "line 18 changed\n" },
+          ],
+        } as never,
+        undefined,
+        undefined,
+        undefined as never,
+      );
+      const diff = (result.details as { diff: string }).diff;
+
+      rmSync(dir, { recursive: true, force: true });
+
+      expect(diff.split("\n")).toEqual(
+        expect.arrayContaining(["- 2 line 2", "+ 2 line 2 changed", "    ..."]),
+      );
+      expect(
+        diff.split("\n").filter((line) => !/^[+\- ] *\d+ /.test(line) && !/^ +\.\.\.$/.test(line)),
+      ).toEqual([]);
+      expect(pi.generateDiffString("a\n", "b\n").diff).toBe("-1 a\n+1 b");
+    });
+
+    it("has the theme colours, background style and colour mixing the diff and user row backgrounds use", async () => {
+      const themes = await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      );
+
+      pi.initTheme("dark", false);
+
+      const theme: pi.Theme = themes.theme;
+      const colors = [
+        "toolSuccessBg",
+        "toolErrorBg",
+        "toolDiffAdded",
+        "toolDiffRemoved",
+        "userMessageBg",
+      ] as const;
+      const mixed = tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
+
+      expect(colors.filter((name) => theme.colors[name] === undefined)).toEqual([]);
+      expect(theme.style("x", { bg: "toolSuccessBg" })).toContain("\x1b[48;");
+      expect(theme.style("x", { bg: mixed })).toContain("\x1b[48;");
+      expect(tui.stripTerminalSequences(theme.style("x", { bg: mixed }))).toBe("x");
+    });
+
+    it("closes a foreground with its own reset only, so a surrounding background stays", async () => {
+      const themes = await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      );
+
+      pi.initTheme("dark", false);
+
+      const theme: pi.Theme = themes.theme;
+      const painted = (["success", "error", "dim", "text"] as const).map((token) => theme.fg(token, "x"));
+
+      painted.forEach((text) => {
+        expect(text.endsWith("\x1b[39m")).toBe(true);
+        expect(text).not.toContain("\x1b[0m");
+        expect(text).not.toContain("\x1b[49m");
+      });
+    });
+
+    it("gives concrete colours for tokens set to the terminal default", async () => {
+      const themes = await import(
+        new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
+          .href
+      );
+      const dark = JSON.parse(
+        readFileSync(
+          new URL(
+            "modes/interactive/theme/dark.json",
+            import.meta.resolve("@earendil-works/pi-coding-agent"),
+          ),
+          "utf8",
+        ),
+      );
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const path = join(dir, "blank.json");
+
+      writeFileSync(
+        path,
+        JSON.stringify({
+          ...dark,
+          name: "blank",
+          colors: { ...dark.colors, toolSuccessBg: "", toolDiffAdded: "" },
+        }),
+      );
+
+      const theme: pi.Theme = themes.loadThemeFromPath(path, "truecolor");
+
+      rmSync(dir, { recursive: true, force: true });
+
+      expect(theme.colors.toolSuccessBg).toBeDefined();
+      expect(theme.colors.toolDiffAdded).toBeDefined();
+      expect(() => tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4)).not.toThrow();
+    });
+
+    it("shows the whole read and bash output when expanded", () => {
+      initRenderTheme();
+
+      const output = Array.from({ length: 20 }, (_value, index) => `out ${index + 1}`).join("\n");
+      const render = (definition: pi.ToolDefinition, args: unknown) =>
+        plain(
+          definition.renderResult?.(
+            textResult(output),
+            { expanded: true, isPartial: false },
+            {
+              fg: (_token: string, text: string) => text,
+              bold: (text: string) => text,
+            } as never,
+            renderContext({ args }),
+          ) as never,
+        );
+
+      expect(render(pi.createReadToolDefinition("/repo") as never, { path: "a.txt" })).toContain("out 20");
+      expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 20");
+      expect(render(pi.createBashToolDefinition("/repo") as never, { command: "ls" })).toContain("out 1");
+    });
+
+    it("marks pi's own tools, codemode among them, with the builtin source and a third-party tool without it", async () => {
+      vi.stubEnv("PI_CODING_AGENT_DIR", mkdtempSync(join(tmpdir(), "pi-conformance-")));
+
+      const dir = mkdtempSync(join(tmpdir(), "pi-conformance-"));
+      const seen: { api?: pi.ExtensionAPI } = {};
+      const settingsManager = pi.SettingsManager.inMemory({});
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "probe",
+            factory: (api) => {
+              seen.api = api;
+              api.registerTool({
+                ...namedTool("probe_tool"),
+                renderCall: () => new tui.Text("own", 0, 0),
+              } as never);
+            },
+          },
+          { name: "codemode", factory: pi.createCodemodeExtension(), replaceable: true, builtin: true },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const api = seen.api as pi.ExtensionAPI;
+      const shipped = ["read", "codemode", "probe_tool"].map((name) => piShipped(api, name));
+
+      session.dispose();
+      vi.unstubAllEnvs();
+
+      expect(shipped).toEqual([true, true, false]);
+    });
+
+    it("pi's codemode renderer drops the `Script … Wall time … Output:` header", () => {
+      initRenderTheme();
+
+      const captured = capturePiRenderers({ codemode: pi.createCodemodeExtension });
+      const header = { type: "text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" };
+      const lines = plain(
+        captured.codemode?.renderResult?.(
+          {
+            content: [header, { type: "text", text: "out 1" }],
+            details: { calls: [] },
+            isError: false,
+          } as never,
+          { expanded: true, isPartial: false },
+          { fg: (_token: string, text: string) => text, bold: (text: string) => text } as never,
+          renderContext({ args: { code: "return 1" } }),
+        ) as never,
+      );
+
+      expect(lines).toContain("out 1");
+      expect(lines.some((line) => line.includes("Wall time"))).toBe(false);
+    });
+  });
+
+  describe("messages and the thinking label", () => {
+    const message = {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "plan" },
+        { type: "text", text: "answer" },
+      ],
+      stopReason: "stop",
+      timestamp: 0,
+    } as never;
+
+    const ESC = String.fromCharCode(27);
+
+    const SGR = new RegExp(`${ESC}\\[([0-9;]*)m`, "g");
+
+    const italicAt = (line: string, index: number) =>
+      Array.from(line.slice(0, index).matchAll(SGR)).reduce((italic, match) => {
+        const codes = (match[1] ?? "").split(";");
+
+        if (codes.includes("3")) {
+          return true;
+        }
+
+        return codes.includes("23") || codes.includes("0") || codes.includes("") ? false : italic;
+      }, false);
+
+    it("draws the user message between prompt marks the transcript pane takes off", () => {
+      initRenderTheme();
+
+      const lines = new pi.UserMessageComponent("hello", pi.getMarkdownTheme()).render(30);
+
+      expect(lines[0]?.startsWith("\x1b]133;A\x07")).toBe(true);
+      expect(lines.at(-1)?.startsWith("\x1b]133;B\x07\x1b]133;C\x07")).toBe(true);
+      expect(
+        lines.map((line) => line.replace(OSC133_ZONE_PREFIX, "")).some((line) => line.includes(`${ESC}]`)),
+      ).toBe(false);
+    });
+
+    it("routes clicks in a container by the child layout of the last render", () => {
+      expect(typeof tui.Container.prototype.handleMouse).toBe("function");
+    });
+
+    it("takes the hidden thinking label as the fourth constructor argument", () => {
+      initRenderTheme();
+
+      const component = new pi.AssistantMessageComponent(message, true, pi.getMarkdownTheme(), "Thinking");
+
+      expect(component.render(40).some((line) => tui.stripTerminalSequences(line).includes("Thinking"))).toBe(
+        true,
+      );
+    });
+
+    it("draws the composed hint dim and not italic after the italic label", async () => {
+      initRenderTheme();
+
+      const themeUrl = new URL(
+        "modes/interactive/theme/theme.js",
+        import.meta.resolve("@earendil-works/pi-coding-agent"),
+      );
+      const { default: chalk } = (await import(
+        pathToFileURL(createRequire(themeUrl).resolve("chalk")).href
+      )) as { default: { level: number } };
+      const level = chalk.level;
+      const { theme } = (await import(themeUrl.href)) as { theme: pi.Theme };
+
+      chalk.level = 1;
+
+      try {
+        const label = composeLabel(theme, "Thinking", "(ctrl+t to expand)");
+        const line =
+          new pi.AssistantMessageComponent(message, true, pi.getMarkdownTheme(), label)
+            .render(60)
+            .find((text) => text.includes("(ctrl+t to expand)")) ?? "";
+        const hint = line.indexOf("(ctrl+t to expand)");
+
+        expect(tui.stripTerminalSequences(line).trim()).toBe("Thinking (ctrl+t to expand)");
+        expect(italicAt(line, line.indexOf("Thinking") + 1)).toBe(true);
+        expect(line.slice(0, hint).endsWith(`${ESC}[0m${theme.getFgAnsi("dim")}`)).toBe(true);
+        expect(italicAt(line, hint)).toBe(false);
+      } finally {
+        chalk.level = level;
+      }
     });
   });
 });

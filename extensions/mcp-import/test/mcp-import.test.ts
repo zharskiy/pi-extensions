@@ -225,7 +225,7 @@ describe("/mcp-import without arguments", () => {
     const servers = host.form().render(120);
 
     expect(servers.join("\n")).toContain("Servers to add to ~/.pi/agent/mcp.json");
-    expect(servers.join("\n")).toContain("Enter add");
+    expect(servers.join("\n")).toContain("enter to add");
     expect(line(servers, "github")).toContain("[x]");
     expect(line(servers, "github")).toContain("stdio · gh mcp serve");
     expect(line(servers, "docs")).toContain("[x]");

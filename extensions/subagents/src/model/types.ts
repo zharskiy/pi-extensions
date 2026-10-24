@@ -59,6 +59,7 @@ export type AgentRecord = {
   turns: number;
   toolCalls: number;
   tokens: number;
+  cost: number;
   context?: ContextSnapshot;
   lastText: string;
   resultText?: string;
@@ -74,7 +75,6 @@ export type AgentRecord = {
   contextLimit: number;
   handoffRequested: boolean;
   graceEndsAt?: number;
-  version: number;
 };
 
 export type AgentSource = "builtin" | "user" | "project";
@@ -116,6 +116,7 @@ export type NewAgent = {
 
 export type AgentRegistry = {
   create(input: NewAgent): AgentRecord;
+  restore(records: AgentRecord[]): void;
   get(id: string): AgentRecord | undefined;
   list(): AgentRecord[];
   batch(batchId: string): AgentRecord[];

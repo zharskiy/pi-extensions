@@ -20,6 +20,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
 import type { AnyToolSpec, TranscriptItem, TranscriptPane } from "./contract.ts";
+import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "./pi-thinking-label.ts";
+import { applyToolRows } from "./pi-tool-rows.ts";
 import { toPiResult, toPiTool } from "./pi-tools.ts";
 
 const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
@@ -83,9 +85,6 @@ export type TranscriptPaneOptions = {
   owner?: string;
 };
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: OSC 133 prompt marks are ESC and BEL sequences
-const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
-
 export const createTranscriptPane = (
   tui: TUI,
   cwd: string,
@@ -101,11 +100,11 @@ export const createTranscriptPane = (
   let synced = 0;
   let rendered = 0;
 
-  const resolveDefinition = (name: string): object | undefined => {
+  const baseDefinition = (name: string): ToolRenderers | undefined => {
     const builtin = toolDefinitionFactories[name];
 
     if (builtin) {
-      return builtin(cwd);
+      return builtin(cwd) as ToolRenderers;
     }
 
     const spec = options.tools?.find((tool) => tool.name === name);
@@ -117,6 +116,12 @@ export const createTranscriptPane = (
     }
 
     return renderers[name];
+  };
+
+  const resolveDefinition = (name: string) => {
+    const base = baseDefinition(name);
+
+    return applyToolRows(name, base, () => base === renderers[name]);
   };
 
   const definitionFor = (name: string) => {
@@ -174,7 +179,9 @@ export const createTranscriptPane = (
     if (item.kind === "assistant") {
       const message = item.raw as RawAssistant;
 
-      container.addChild(new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme()));
+      container.addChild(
+        new AssistantMessageComponent(item.raw as never, true, getMarkdownTheme(), hiddenThinkingLabel()),
+      );
 
       message.content
         .filter((part) => part.type === "toolCall")
