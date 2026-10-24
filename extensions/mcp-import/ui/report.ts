@@ -1,7 +1,7 @@
 import { counted } from "../../../shared/index.ts";
-import type { ImportArgs } from "./args.ts";
-import { needsSignIn } from "./convert.ts";
-import type { Entry, Plan, Skipped } from "./plan.ts";
+import type { ImportArgs } from "../core/args.ts";
+import { needsSignIn } from "../core/convert.ts";
+import type { Entry, Plan, Skipped } from "../core/plan.ts";
 
 type ReportInput = { args: ImportArgs; plan: Plan; checked: readonly string[]; target: string };
 
@@ -95,8 +95,6 @@ export const appliedReport = (input: ReportInput) =>
   addedReport(`${NAMESPACE}: ${command(input.args, true)}`, input);
 
 export const pickedReport = (input: ReportInput) => addedReport(`${NAMESPACE}:`, input);
-
-export const NOT_SELECTED = "not selected";
 
 export const NOTHING_SELECTED = `${NAMESPACE}: nothing selected, nothing written`;
 

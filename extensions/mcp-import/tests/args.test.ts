@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completeArgs, parseArgs } from "../src/args.ts";
+import { completeArgs, parseArgs } from "../core/args.ts";
 
 describe("mcp-import arguments", () => {
   it("defaults to a user-scope dry run", () => {

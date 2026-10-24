@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { claudeLocalServers, findServers, serversOf } from "../src/sources.ts";
+import { claudeLocalServers, findServers, serversOf } from "../core/sources.ts";
 
 const roots: string[] = [];
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planImport } from "../src/plan.ts";
+import { planImport } from "../core/plan.ts";
 
 const context = { home: "/home/me", sep: "/" };
 

@@ -1,80 +1,16 @@
 import type { Host } from "../../../pi-adapter/index.ts";
 import { counted, DOT, ELLIPSIS } from "../../../shared/index.ts";
 import { multiSelectForm, selectForm } from "../../../ui-kit/index.ts";
-import type { Scope, Source } from "./args.ts";
-import { needsSignIn } from "./convert.ts";
-import type { Entry, Plan, Skipped } from "./plan.ts";
-import type { Found } from "./sources.ts";
-
-export type Pair = {
-  source: Source;
-  scope: Scope;
-  found: Found;
-  plan: Plan;
-  path: string;
-  target: string;
-  text?: string;
-};
-
-type Scan =
-  | { kind: "pairs"; pairs: Pair[] }
-  | { kind: "untrusted" }
-  | { kind: "empty"; files: string[]; targets: string[]; skipped: Skipped[]; present: boolean };
-
-export const PAIRS: readonly { source: Source; scope: Scope }[] = [
-  { source: "claude", scope: "user" },
-  { source: "claude", scope: "project" },
-  { source: "cursor", scope: "user" },
-  { source: "cursor", scope: "project" },
-];
+import type { Scope, Source } from "../core/args.ts";
+import { needsSignIn } from "../core/convert.ts";
+import type { Pair } from "../core/import-flow.ts";
+import type { Entry, Plan } from "../core/plan.ts";
 
 const SOURCE_NAMES: Record<Source, string> = { claude: "Claude Code", cursor: "Cursor" };
 
 const SCOPE_NAMES: Record<Scope, string> = { user: "user", project: "this project" };
 
 const NAMES_ROOM = 40;
-
-const foundNames = (pair: Pair) => [
-  ...new Set(pair.found.origins.flatMap((origin) => Object.keys(origin.servers))),
-];
-
-const allPresent = (pair: Pair) => {
-  const present = new Set(pair.plan.skipped.filter((skip) => skip.present).map((skip) => skip.name));
-
-  return foundNames(pair).every((name) => present.has(name));
-};
-
-export const visibleScope = (scope: Scope, trusted: boolean) => trusted || scope === "user";
-
-export const scanPairs = (candidates: readonly Pair[], trusted: boolean): Scan => {
-  const addable = candidates.filter((pair) => pair.plan.added.length > 0);
-  const pairs = addable.filter((pair) => visibleScope(pair.scope, trusted));
-
-  if (pairs.length > 0) {
-    return { kind: "pairs", pairs };
-  }
-
-  if (addable.length > 0) {
-    return { kind: "untrusted" };
-  }
-
-  const withServers = candidates.filter(
-    (pair) => visibleScope(pair.scope, trusted) && foundNames(pair).length > 0,
-  );
-  const files = withServers.flatMap((pair) =>
-    pair.found.origins
-      .filter((origin) => Object.keys(origin.servers).length > 0)
-      .map((origin) => origin.label),
-  );
-
-  return {
-    kind: "empty",
-    files: [...new Set(files)],
-    targets: [...new Set(withServers.map((pair) => pair.target))],
-    skipped: withServers.flatMap((pair) => pair.plan.skipped),
-    present: withServers.length > 0 && withServers.every(allPresent),
-  };
-};
 
 const nameList = (names: readonly string[]) => {
   const over = names.findIndex((_, index) => names.slice(0, index + 1).join(", ").length > NAMES_ROOM);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertServer, helperCommand, needsSignIn } from "../src/convert.ts";
+import { convertServer, helperCommand, needsSignIn } from "../core/convert.ts";
 
 const context = { home: "/home/me", sep: "/" };
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyPress } from "../../../pi-adapter/index.ts";
 import { createFakeHost } from "../../../test-framework/index.ts";
-import { createMcpImport } from "../src/mcp-import.ts";
+import { createMcpImport } from "../api/plugin.ts";
 
 const roots: string[] = [];
 
