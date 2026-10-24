@@ -256,13 +256,13 @@ describe("S6 bash and powershell", () => {
 
   it("shows a running command without output or duration", () => {
     expect(bash("npm test -- --run", { isPartial: true, durationMs: 12_000 }).lines).toEqual([
-      " ◌ $ npm test -- --run",
+      " ◌ bash npm test -- --run",
     ]);
   });
 
   it("keeps the tail of running output under a keyed count line", () => {
     expect(bash("npm test -- --run", done(numbered(40), { isPartial: true })).lines).toEqual([
-      " ◌ $ npm test -- --run",
+      " ◌ bash npm test -- --run",
       "   ↳ ... (37 earlier lines, ctrl+o to expand)",
       "     out 38",
       "     out 39",
@@ -274,13 +274,13 @@ describe("S6 bash and powershell", () => {
     const drawn = bash("npm test -- --run", done(numbered(43), { durationMs: 14_000 }));
 
     expect(drawn.lines).toEqual([
-      " ✓ $ npm test -- --run · 14s",
+      " ✓ bash npm test -- --run · 14s",
       "   ↳ ... (40 earlier lines, ctrl+o to expand)",
       "     out 41",
       "     out 42",
       "     out 43",
     ]);
-    expect(tokenOf(drawn.painted, "$")).toBe("muted");
+    expect(drawn.bolded).toContain("bash");
     expect(tokenOf(drawn.painted, "npm test -- --run")).toBe("text");
     expect(tokenOf(drawn.painted, "out 43")).toBe("muted");
     expect(tokenOf(drawn.painted, "... (40 earlier lines, ")).toBe("muted");
@@ -289,7 +289,7 @@ describe("S6 bash and powershell", () => {
   });
 
   it("says when there is no output", () => {
-    expect(bash("git add -A", done("")).lines).toEqual([" ✓ $ git add -A", "   ↳ No output"]);
+    expect(bash("git add -A", done("")).lines).toEqual([" ✓ bash git add -A", "   ↳ No output"]);
   });
 
   it("puts the exit code on the title and keeps the output muted without pi's status line", () => {
@@ -299,7 +299,7 @@ describe("S6 bash and powershell", () => {
     );
 
     expect(drawn.lines).toEqual([
-      " ✗ $ npm test -- --run · exit 1 · 9s",
+      " ✗ bash npm test -- --run · exit 1 · 9s",
       "   ↳ ... (52 earlier lines, ctrl+o to expand)",
       "     out 53",
       "     out 54",
@@ -323,7 +323,7 @@ describe("S6 bash and powershell", () => {
     );
 
     expect(drawn.lines).toEqual([
-      " ✗ $ npm test -- --run src/s... · exit 1",
+      " ✗ bash npm test -- --run sr... · exit 1",
       "   ↳ ... (51 earlier lines)",
       "     out 52",
       "     FAIL src/stats.test.ts > mean > ...",
@@ -338,7 +338,7 @@ describe("S6 bash and powershell", () => {
         done(`${numbered(11)}\n\nCommand aborted`, { isError: true, aborted: true, durationMs: 72_000 }),
       ).lines,
     ).toEqual([
-      " ⊘ $ npm run dev · stopped · 1m 12s",
+      " ⊘ bash npm run dev · stopped · 1m 12s",
       "   ↳ ... (8 earlier lines, ctrl+o to expand)",
       "     out 9",
       "     out 10",
@@ -347,30 +347,32 @@ describe("S6 bash and powershell", () => {
     expect(
       bash("sleep 100", done("Command timed out after 30 seconds", { isError: true, durationMs: 30_000 }))
         .lines,
-    ).toEqual([" ✗ $ sleep 100 · timed out after 30s"]);
+    ).toEqual([" ✗ bash sleep 100 · timed out after 30s"]);
   });
 
   it("shows a multi-line command as its first line and a muted marker", () => {
     const drawn = bash("cd app\nnpm test", { isPartial: true });
 
-    expect(drawn.lines).toEqual([" ◌ $ cd app ..."]);
+    expect(drawn.lines).toEqual([" ◌ bash cd app ..."]);
     expect(tokenOf(drawn.painted, " ...")).toBe("muted");
     expect(draw(view("powershell", { command: "Get-Item ." }, { isPartial: true })).lines).toEqual([
-      " ◌ PS> Get-Item .",
+      " ◌ powershell Get-Item .",
     ]);
   });
 
   it("hands the expanded output to pi's body without its timing line", () => {
     const drawn = bash("ls", done(numbered(5), { expanded: true }));
 
-    expect(drawn.lines).toEqual([" ✓ $ ls"]);
+    expect(drawn.lines).toEqual([" ✓ bash ls"]);
     expect(drawn).toMatchObject({ piBody: true, dropTiming: true });
-    expect(bash("ls", done("", { expanded: true }))).toMatchObject({ lines: [" ✓ $ ls", "   ↳ No output"] });
+    expect(bash("ls", done("", { expanded: true }))).toMatchObject({
+      lines: [" ✓ bash ls", "   ↳ No output"],
+    });
   });
 
   it("shows a shell error with no status line as an error", () => {
     expect(bash("ls", done("spawn /bin/sh ENOENT", { isError: true })).lines).toEqual([
-      " ✗ $ ls · spawn /bin/sh ENOENT",
+      " ✗ bash ls · spawn /bin/sh ENOENT",
     ]);
   });
 });

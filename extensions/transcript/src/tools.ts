@@ -203,8 +203,8 @@ const LOOKS: Record<string, Look> = {
     piBody: (context) => !failed(context) && editDiff(context) === undefined,
   },
   write: { verb: bold("write"), title: pathTitle(), outcome: writeOutcome, failure: fileFailure },
-  bash: shellLook("$"),
-  powershell: shellLook("PS>"),
+  bash: shellLook("bash"),
+  powershell: shellLook("powershell"),
   grep: {
     verb: bold("grep"),
     title: grepTitle,

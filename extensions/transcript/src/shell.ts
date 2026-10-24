@@ -1,12 +1,12 @@
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import {
+  bold,
   type Context,
   errorOutcome,
   failed,
   firstLineFailure,
   type Look,
   MORE,
-  muted,
   resultText,
   textArg,
 } from "./look.ts";
@@ -54,8 +54,8 @@ const outcome = (context: Context, room: number, theme: ThemeLike, reasonShown: 
   };
 };
 
-export const shellLook = (prompt: string): Look => ({
-  verb: muted(prompt),
+export const shellLook = (id: string): Look => ({
+  verb: bold(id),
   title,
   failure: (context) => {
     const status = shellResult(resultText(context));

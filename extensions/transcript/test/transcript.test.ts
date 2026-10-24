@@ -21,7 +21,7 @@ describe("transcript", () => {
       result: { text: "a\nb\nc\nd", images: 0 },
     });
 
-    expect(row?.call(40, plainTheme)).toEqual(["✓ $ ls"]);
+    expect(row?.call(40, plainTheme)).toEqual(["✓ bash ls"]);
     expect(row?.result?.(60, plainTheme)[0]).toBe("  ↳ ... (1 earlier line, <app.tools.expand> to expand)");
   });
 

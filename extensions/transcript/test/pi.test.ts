@@ -133,7 +133,7 @@ describe("pi's bodies under the rows", () => {
     });
 
     expect(lines.map((line) => line.trimEnd()).filter((line) => line !== "")).toEqual([
-      " ✓ $ ls · 6s",
+      " ✓ bash ls · 6s",
       "   ↳ out 1",
       "     out 2",
       "     out 3",
@@ -192,7 +192,7 @@ describe("finished rows pi replays without a start", () => {
           width: 60,
         }).lines,
       ),
-    ).toEqual([" ✓ $ ls · 7s", "   ↳ a.ts"]);
+    ).toEqual([" ✓ bash ls · 7s", "   ↳ a.ts"]);
   });
 
   it("marks a call of an aborted turn stopped, without pi's abort text as output", () => {
@@ -207,7 +207,7 @@ describe("finished rows pi replays without a start", () => {
           width: 60,
         }).lines,
       ),
-    ).toEqual([" ⊘ $ npm run dev · stopped"]);
+    ).toEqual([" ⊘ bash npm run dev · stopped"]);
   });
 
   it("marks a call of a failed turn failed", () => {
@@ -233,7 +233,7 @@ describe("finished rows pi replays without a start", () => {
           width: 60,
         }),
       ),
-    ).toEqual([" ⊘ $ npm run dev · stopped"]);
+    ).toEqual([" ⊘ bash npm run dev · stopped"]);
     expect(
       renderPaneTool(rows, {
         name: "read",

@@ -11,7 +11,7 @@ A pi extension that draws pi's tool calls as rows: a state glyph, a title, and t
  ✓ edit src/stats.py
    ↳ Added 1 line, removed 1 line (ctrl+o to expand)
 
- ✗ $ npm test -- --run · exit 1 · 9s
+ ✗ bash npm test -- --run · exit 1 · 9s
    ↳ ... (52 earlier lines, ctrl+o to expand)
      FAIL src/stats.test.ts > mean > counts the first value
      AssertionError: expected 2 to be 3
@@ -34,7 +34,7 @@ A pi extension that draws pi's tool calls as rows: a state glyph, a title, and t
 | read | `read path:5-14` (the range muted, pi's form) | `10 lines`, `Image`, `0 lines`; expanded, pi's body under it |
 | edit | `edit path` | `Added N lines, removed M lines`; expanded, the diff (below); pi's body when the diff does not parse |
 | write | `write path` | `12 lines`, `Empty file`; expanded, every line as an added line |
-| bash, powershell | `$ command` (`PS>`); a multi-line command is its first line and a muted ` ...` | the last three output lines under `... (N earlier lines, ctrl+o to expand)`, in every state, muted even on failure; `No output`; expanded, pi's body without its `Took` line |
+| bash, powershell | `bash command` (`powershell`); a multi-line command is its first line and a muted ` ...` | the last three output lines under `... (N earlier lines, ctrl+o to expand)`, in every state, muted even on failure; `No output`; expanded, pi's body without its `Took` line |
 | grep | `grep pattern in path` | `12 matching lines`, `No matches` |
 | find | `find pattern` | `3 files`, `No files` |
 | ls | `ls path` | `8 entries`, `Empty directory` |
