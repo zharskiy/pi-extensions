@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../../../core/test/helpers/fakes.ts";
 import type { AgentRegistry, HandoffService } from "../../../src/model/types.ts";
 import { handoffTool } from "../../../src/plugins/run-agent/handoff-tool.ts";
 
@@ -28,7 +28,7 @@ const state = (patch: Partial<ToolRenderState> = {}): ToolRenderState => ({
 
 const drawn = (render: ToolRender | undefined) => (typeof render === "function" ? render(80) : render);
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+const tagged: ThemeLike = taggedTheme(() => "");
 
 describe("handoff tool rows", () => {
   it("draws the bold title as a row", () => {

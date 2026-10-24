@@ -37,6 +37,24 @@ export const visible = (line: string) => line.replace(APC, "").replace(SGR, "");
 
 type EditRender = { diff: string; outputPad: number; width: number };
 
+export const piRenderContext = (patch: Partial<PiToolRenderContext> = {}) =>
+  ({
+    args: {},
+    toolCallId: "call-1",
+    invalidate: () => {},
+    lastComponent: undefined,
+    state: {},
+    cwd: "/repo",
+    executionStarted: true,
+    argsComplete: true,
+    isPartial: false,
+    expanded: false,
+    showImages: false,
+    isError: false,
+    outputPad: 1,
+    ...patch,
+  }) as PiToolRenderContext;
+
 export const renderExpandedEdit = (rows: ToolRows, { diff, outputPad, width }: EditRender) => {
   initTheme("dark", false);
 
@@ -47,22 +65,7 @@ export const renderExpandedEdit = (rows: ToolRows, { diff, outputPad, width }: E
         { content: [{ type: "text", text: "ok" }], details: { diff } } as never,
         { expanded: true, isPartial: false },
         themes.theme as Theme,
-        {
-          args: { path: "/repo/a.ts" },
-          toolCallId: "call-1",
-          invalidate: () => {},
-          lastComponent: undefined,
-          state: {},
-          cwd: "/repo",
-          executionStarted: true,
-          argsComplete: true,
-          isPartial: false,
-          expanded: true,
-          showImages: false,
-          isError: false,
-          durationMs: undefined,
-          outputPad,
-        } as PiToolRenderContext,
+        piRenderContext({ args: { path: "/repo/a.ts" }, expanded: true, outputPad }),
       )
       .render(width) ?? [];
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
 import { renderSnapshot } from "../src/render.ts";
 import { summaryLine } from "../src/summary.ts";
 import { breakdown, snapshot, usage } from "./fixtures.ts";
 
-const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+const tokenTheme: ThemeLike = taggedTheme(() => "");
 
 const cacheLine = (lines: string[]) => lines.find((line) => line.includes("Cache hit:"));
 

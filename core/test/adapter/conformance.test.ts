@@ -23,6 +23,7 @@ import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
 import { capturePiRenderers } from "../../adapter/pi-transcript.ts";
 import { promptRecordEntry } from "../../adapter/session-file.ts";
 import { initRenderTheme } from "./render-theme.ts";
+import { piRenderContext } from "./tool-rows.ts";
 
 const ADAPTER_PI_MAJOR = 1;
 
@@ -912,23 +913,7 @@ describe("pi adapter conformance", () => {
       ({ content: [{ type: "text", text }], details, isError: false }) as never;
 
     const renderContext = (patch: Partial<PiToolRenderContext> = {}) =>
-      ({
-        args: {},
-        toolCallId: "call-1",
-        invalidate: () => {},
-        lastComponent: undefined,
-        state: {},
-        cwd: "/repo",
-        executionStarted: true,
-        argsComplete: true,
-        isPartial: false,
-        expanded: true,
-        showImages: false,
-        isError: false,
-        durationMs: undefined,
-        outputPad: 0,
-        ...patch,
-      }) as PiToolRenderContext;
+      piRenderContext({ expanded: true, outputPad: 0, ...patch });
 
     it("names the same built-in tools as pi", async () => {
       const tools = await import(

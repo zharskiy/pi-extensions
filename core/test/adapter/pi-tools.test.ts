@@ -19,34 +19,16 @@ import {
 import { describe, expect, it } from "vitest";
 import type { ThemeToken, ToolRenderState, ToolResult, ToolSpec } from "../../adapter/contract.ts";
 import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
+import { plainPiTheme } from "./render-theme.ts";
+import { piRenderContext } from "./tool-rows.ts";
 
 initTheme("dark", false);
 
-const theme = {
-  fg: (_token: string, text: string) => text,
-  bold: (text: string) => text,
-  bg: (_token: string, text: string) => text,
-} as unknown as Theme;
+const theme = plainPiTheme;
 
 const invalidate = () => {};
 
-const context = (patch: Partial<PiToolRenderContext> = {}) =>
-  ({
-    args: {},
-    toolCallId: "call-7",
-    invalidate,
-    lastComponent: undefined,
-    state: {},
-    cwd: "/repo",
-    executionStarted: true,
-    argsComplete: true,
-    isPartial: false,
-    expanded: false,
-    showImages: false,
-    isError: false,
-    outputPad: 1,
-    ...patch,
-  }) as PiToolRenderContext;
+const context = (patch: Partial<PiToolRenderContext> = {}) => piRenderContext({ invalidate, ...patch });
 
 type Renderers = {
   renderShell?: "self";

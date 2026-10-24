@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../../core/test/helpers/fakes.ts";
 import { modelLabel, type RowInput, renderRows } from "../../src/components/agent-row.ts";
 import type { AgentRecord } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
@@ -160,8 +160,7 @@ describe("agent rows", () => {
 
   it("paints the pointer, names, suffixes, description, model and status by role", () => {
     const tagged: ThemeLike = {
-      ...plainTheme,
-      fg: (token, text) => `<${token}>${text}</${token}>`,
+      ...taggedTheme((token) => `</${token}>`),
       bold: (text) => `<b>${text}</b>`,
     };
     const [open, finished] = renderRows(

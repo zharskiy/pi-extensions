@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { KeyPress, ThemeLike } from "../../adapter/contract.ts";
+import type { ThemeLike } from "../../adapter/contract.ts";
 import { keyHints } from "../../manager/hints.ts";
 import { TAB_SWITCH_HINT, tabBar, tabStep } from "../../manager/tabs.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../helpers/fakes.ts";
+import { key } from "../helpers/keys.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
+const tagged: ThemeLike = taggedTheme();
 
 const TABS = [
   { label: "One", done: true },

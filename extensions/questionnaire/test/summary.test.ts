@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
 import { type QuestionnaireDetails, resultText } from "../src/result.ts";
 import { callText, resultSummary } from "../src/summary.ts";
 import { PRIORITY, questions, SCOPE } from "./fixtures.ts";
@@ -26,7 +26,7 @@ const state = (patch: Partial<ToolRenderState> = {}): ToolRenderState => ({
 
 const drawn = (render: ToolRender, width = 80) => (typeof render === "function" ? render(width) : render);
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+const tagged: ThemeLike = taggedTheme(() => "");
 
 describe("rendering", () => {
   it("renders the call as a row with the question count", () => {

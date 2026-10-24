@@ -71,7 +71,8 @@ pi-extensions/
 │       │                        #   offline.ts (pi loaded offline for extension tests), tool-rows.ts
 │       │                        #   (tool rows rendered through pi for extension tests)
 │       ├── manager/
-│       └── helpers/             # fakes.ts (fake host, runtime and child session), fake-form.ts (fake showForm)
+│       └── helpers/             # fakes.ts (fake host, runtime and child session, plainTheme, taggedTheme),
+│                                #   fake-form.ts (fake showForm), keys.ts (key and char KeyPress builders)
 ├── extensions/
 │   ├── subagents/               # background agents (main extension)
 │   │   ├── src/

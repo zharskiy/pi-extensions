@@ -1,20 +1,19 @@
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
 import { createFrame } from "../src/frame.ts";
 
 const ESC = String.fromCharCode(27);
-const ANSI = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
 const recording: ThemeLike = {
-  ...plainTheme,
-  fg: (token, text) => `<${token}>${text}</${token}>`,
+  ...taggedTheme((token) => `</${token}>`),
   bold: (text) => `<b>${text}</b>`,
 };
 
 const plain = (text: string) => text;
 const bracketed = (text: string) => `[${text}]`;
 const layout = { bottom: 2, scrolled: false };
-const visible = (line: string) => line.replaceAll(ANSI, "").length;
+const visible = (line: string) => stripVTControlCharacters(line).length;
 
 describe("createFrame", () => {
   it("reserves the margin and the chevron gutter", () => {

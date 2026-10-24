@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../adapter/contract.ts";
 import { hintLines, keyHints } from "../../manager/hints.ts";
 import { padded, prefixed, rule } from "../../manager/layout.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../helpers/fakes.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
+const tagged: ThemeLike = taggedTheme();
 
 describe("rule", () => {
   it("draws an accent line across the width, at least one column wide", () => {

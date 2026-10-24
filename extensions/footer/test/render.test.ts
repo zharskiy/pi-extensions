@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
-import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
 import { type FooterState, renderFooter } from "../src/render.ts";
 
-const tokenTheme: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}` };
+const tokenTheme: ThemeLike = taggedTheme(() => "");
 
 const boldTheme: ThemeLike = { ...tokenTheme, bold: (text) => `<b>${text}</b>` };
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeToken } from "../../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   displayWord,
   liveGlyph,
@@ -15,7 +14,7 @@ import { agentRecord } from "../helpers/records.ts";
 
 const STATES: AgentState[] = ["queued", "running", "grace", "done", "failed", "stopped", "handoff"];
 
-const tagged = { ...plainTheme, fg: (token: ThemeToken, text: string) => `<${token}>${text}</${token}>` };
+const tagged = taggedTheme((token) => `</${token}>`);
 
 describe("agent state text", () => {
   it("draws the shared marks, with pi's spinner only for a running agent on a live surface", () => {

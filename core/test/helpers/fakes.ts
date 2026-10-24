@@ -35,6 +35,7 @@ import {
   type StopReason,
   THINKING_LEVELS,
   type ThemeLike,
+  type ThemeToken,
   type ToolRender,
   type ToolRenderState,
   type ToolResult,
@@ -54,6 +55,11 @@ export const plainTheme: ThemeLike = {
   panels: true,
   ...textMetrics,
 };
+
+export const taggedTheme = (close: (token: ThemeToken) => string = () => "</>"): ThemeLike => ({
+  ...plainTheme,
+  fg: (token, text) => `<${token}>${text}${close(token)}`,
+});
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 

@@ -7,19 +7,13 @@ import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
 import { MARKS, markOf } from "../../manager/marks.ts";
 import { initRenderTheme } from "./render-theme.ts";
-import { renderPaneTool } from "./tool-rows.ts";
+import { renderPaneTool, visible } from "./tool-rows.ts";
 
 initRenderTheme();
 
 const ESC = String.fromCharCode(27);
 
-const APC = new RegExp(
-  `${String.fromCharCode(27)}_[^${String.fromCharCode(7)}]*${String.fromCharCode(7)}`,
-  "g",
-);
-const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
-const visibleText = (lines: string[]) => lines.join("\n").replace(APC, "").replace(SGR, "");
+const visibleText = (lines: string[]) => visible(lines.join("\n"));
 
 const tui = { requestRender: () => {} } as never;
 
@@ -108,7 +102,7 @@ describe("transcript pane terminal marks", () => {
     expect(raw).not.toContain(`${ESC}]133;`);
     expect(raw).toContain("find the files");
     expect(raw).toContain("Three files");
-    expect(raw).toMatch(SGR);
+    expect(stripVTControlCharacters(raw)).not.toBe(raw);
   });
 });
 

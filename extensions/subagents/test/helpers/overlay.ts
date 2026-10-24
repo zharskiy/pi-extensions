@@ -11,14 +11,14 @@ import {
   promptRecordEntry,
   realOverlayParts,
 } from "../../../../core/test/adapter/offline.ts";
-import { type FakeHost, plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { type FakeHost, plainTheme, taggedTheme } from "../../../../core/test/helpers/fakes.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 
 export const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
 
 export const key = (name: KeyPress["name"], char?: string): KeyPress => ({ name, char });
 
-export const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+export { char } from "../../../../core/test/helpers/keys.ts";
 
 export const fakeOverlayApi = (
   rows = 200,
@@ -81,8 +81,7 @@ export const disposeOverlays = () => {
 export const selectedRow = (lines: string[]) => lines.find((line) => line.startsWith(" › "));
 
 export const recordingTheme: ThemeLike = {
-  ...plainTheme,
-  fg: (token, text) => `<${token}>${text}</>`,
+  ...taggedTheme(),
   bold: (text) => `<b>${text}</b>`,
 };
 

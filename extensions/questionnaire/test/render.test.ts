@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
 import { answerText, initialForm, pressKey } from "../src/form.ts";
 import { renderForm } from "../src/render.ts";
 import { char, key, PRIORITY, questions, SCOPE } from "./fixtures.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
+const tagged: ThemeLike = taggedTheme();
 
 const rule = (width: number) => "─".repeat(width);
 

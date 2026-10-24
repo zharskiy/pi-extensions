@@ -4,7 +4,6 @@ import {
   createEditToolDefinition,
   createReadToolDefinition,
   type ExtensionAPI,
-  type Theme,
   ToolExecutionComponent,
   type ToolRendererResolver,
   type ToolRenderers,
@@ -21,31 +20,15 @@ import {
   toolRowsHost,
 } from "../../adapter/pi-tool-rows.ts";
 import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
-import { initRenderTheme } from "./render-theme.ts";
-import { renderTool } from "./tool-rows.ts";
+import { initRenderTheme, plainPiTheme } from "./render-theme.ts";
+import { piRenderContext, renderTool } from "./tool-rows.ts";
 
 beforeAll(() => {
   initRenderTheme();
 });
 
 const context = (patch: Partial<PiToolRenderContext> = {}) =>
-  ({
-    args: { path: "a.ts" },
-    toolCallId: "call-1",
-    invalidate: () => {},
-    lastComponent: undefined,
-    state: {},
-    cwd: "/repo",
-    executionStarted: true,
-    argsComplete: true,
-    isPartial: false,
-    expanded: false,
-    showImages: false,
-    isError: false,
-    durationMs: undefined,
-    outputPad: 1,
-    ...patch,
-  }) as PiToolRenderContext;
+  piRenderContext({ args: { path: "a.ts" }, ...patch });
 
 const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
 
@@ -65,13 +48,7 @@ const rows: ToolRows = (view) => {
   };
 };
 
-const fakeTheme = {
-  fg: (_token: string, text: string) => text,
-  bold: (text: string) => text,
-  bg: (_token: string, text: string) => text,
-} as unknown as Theme;
-
-const theme = () => fakeTheme;
+const theme = () => plainPiTheme;
 
 const editResult = { content: [{ type: "text", text: "ok" }], details: { diff: "-1 old line\n+1 new line" } };
 

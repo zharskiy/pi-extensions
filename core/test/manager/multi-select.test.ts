@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { KeyPress } from "../../adapter/contract.ts";
 import {
   checkedIndexes,
   initialMulti,
@@ -8,10 +7,7 @@ import {
   scrollWindow,
 } from "../../manager/multi-select.ts";
 import { plainTheme } from "../helpers/fakes.ts";
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+import { char, key } from "../helpers/keys.ts";
 
 describe("multiKey", () => {
   it("keeps the pointer inside the list and leaves Enter, Escape and other keys to the caller", () => {

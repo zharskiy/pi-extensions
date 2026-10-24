@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,8 +13,6 @@ const NOTICES_KEY = Symbol.for("pi-extensions.notices");
 afterEach(() => {
   delete (globalThis as Record<symbol, unknown>)[NOTICES_KEY];
 });
-
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
 type Factory = (
   tui: unknown,
@@ -79,7 +78,7 @@ describe("setFooter", () => {
     expect(
       mountWidget()
         ?.render(6)
-        .map((line) => line.replace(ANSI, "")),
+        .map((line) => stripVTControlCharacters(line)),
     ).toEqual(["main v", "012..."]);
   });
 
@@ -96,7 +95,7 @@ describe("setFooter", () => {
     const [line = ""] = component?.render(6) ?? [];
 
     expect(line).toContain("\x1b[2m...");
-    expect(line.replace(ANSI, "")).toBe("012...");
+    expect(stripVTControlCharacters(line)).toBe("012...");
   });
 
   it("re-renders on refresh and branch changes without setting the widget again, and unsubscribes on dispose", () => {
@@ -284,7 +283,8 @@ describe("setNotice with pi's interactive layout", () => {
     };
     const footerUi = uiOf();
     const footer = () => footerUi.setFooter(() => ["", "usage", ""]);
-    const below = () => mode.widgetContainerBelow.render(40).map((line) => line.replace(ANSI, "").trimEnd());
+    const below = () =>
+      mode.widgetContainerBelow.render(40).map((line) => stripVTControlCharacters(line).trimEnd());
 
     mode.setExtensionFooter(undefined);
 

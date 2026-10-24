@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { KeyPress, ThemeLike } from "../../adapter/contract.ts";
 import { type SelectOption, selectForm } from "../../manager/select.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../helpers/fakes.ts";
+import { char, key } from "../helpers/keys.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-const digit = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+const tagged: ThemeLike = taggedTheme();
 
 const OPTIONS = [
   { value: "a", label: "Alpha", description: "first one" },
@@ -103,7 +100,7 @@ describe("selectForm", () => {
     const picked = open();
     const cancelled = open({ selected: 2 });
 
-    picked.press(digit("7"), digit("2"));
+    picked.press(char("7"), char("2"));
     cancelled.press(key("escape"));
 
     expect(picked.results).toEqual(["b"]);

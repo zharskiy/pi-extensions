@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KeyPress } from "../../adapter/contract.ts";
 import { multiSelectForm } from "../../manager/multi-select.ts";
 import { plainTheme } from "../helpers/fakes.ts";
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-const char = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+import { char, key } from "../helpers/keys.ts";
 
 const OPTIONS = [
   { value: "github", label: "github", description: "stdio · gh" },

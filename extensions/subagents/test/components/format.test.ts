@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../../core/adapter/contract.ts";
-import { plainTheme } from "../../../../core/test/helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../../../../core/test/helpers/fakes.ts";
 import {
   agentReceipt,
   alignRight,
@@ -17,7 +17,7 @@ import {
 import type { AgentRecord } from "../../src/model/types.ts";
 import { agentRecord } from "../helpers/records.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
+const tagged: ThemeLike = taggedTheme();
 
 const worked = { startedAt: 0, toolCalls: 4, tokens: 12_300, cost: 0.04, turns: 2 };
 

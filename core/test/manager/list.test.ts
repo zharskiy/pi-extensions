@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { KeyPress, ThemeLike } from "../../adapter/contract.ts";
 import { keyHints } from "../../manager/hints.ts";
 import { CANCEL_HINT, listKey, listLines, SELECT_HINTS } from "../../manager/list.ts";
-import { plainTheme } from "../helpers/fakes.ts";
+import { plainTheme, taggedTheme } from "../helpers/fakes.ts";
+import { char, key } from "../helpers/keys.ts";
 
-const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${text}</>` };
-
-const key = (name: KeyPress["name"]): KeyPress => ({ name });
-
-const digit = (value: string): KeyPress => ({ name: "other", char: value, raw: value });
+const tagged: ThemeLike = taggedTheme();
 
 const options = [
   { label: "Alpha", description: "first one" },
@@ -71,9 +68,9 @@ describe("listKey", () => {
 
   it("picks the current row with Enter and a row by its digit, and ignores other keys", () => {
     expect(listKey(key("enter"), 1, 3)).toMatchObject({ index: 1, pick: true });
-    expect(listKey(digit("3"), 0, 3)).toMatchObject({ index: 2, pick: true });
-    expect(listKey(digit("4"), 0, 3)).toBeUndefined();
-    expect(listKey(digit("0"), 0, 3)).toBeUndefined();
+    expect(listKey(char("3"), 0, 3)).toMatchObject({ index: 2, pick: true });
+    expect(listKey(char("4"), 0, 3)).toBeUndefined();
+    expect(listKey(char("0"), 0, 3)).toBeUndefined();
     expect(listKey(key("tab"), 0, 3)).toBeUndefined();
   });
 });
