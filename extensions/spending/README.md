@@ -108,7 +108,7 @@ pi.events.on("spending:totals", (totals) => {}); // { main: { cost, tokens }, so
 
 - The subagents extension's own views count an agent's tokens as `input + output + cacheWrite`, without cache reads, so their per-agent figures do not add up to the agents tokens here.
 - Main tokens carry over a fork or handoff like main cost, through a `pi-spending:main-tokens-offset` entry.
-- A parent session forked before that entry existed has none, so main tokens leave out what its own parents spent, while main cost stays correct. Every session forked from now on writes the entry, so new chains count fully.
+- When a parent session has no such entry, main tokens leave out what that parent's own parents spent, while main cost stays correct.
 
 </details>
 

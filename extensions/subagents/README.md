@@ -61,19 +61,6 @@ pi -e ./pi-extensions/extensions/subagents/index.ts
 </details>
 
 <details>
-<summary>What changed in 0.4.0</summary>
-
-- The progress widget is replaced with a panel below the editor.
-- `run_agent` is redrawn as a live block.
-- The list and the view are merged into one `/agents` overlay; you can browse all agents and open any agent's view with `/agents`.
-- Notifications moved to the notifications extension.
-- Agents can start their own agents when their file allows it, up to three levels by default (main session, agent, sub-agent).
-- An agent that runs out of context continues itself from a handoff file.
-- The main session's own context limit is handled by the separate session-limits extension shipped in the same package.
-
-</details>
-
-<details>
 <summary>Update</summary>
 
 ```bash
@@ -279,7 +266,6 @@ Starter agents, each with a description of the form use for / not for / returns,
 - **Who may start whom**: `planner` may start `scout`, `shell` and `fetch` agents of its own, `reviewer` `scout` and `shell` agents, `implementer` `scout`, `shell` and `verifier` agents (it runs no checks itself; its last step is one `verifier`), `general` every other agent; the other six start none.
 - **Picking one**: every agent is listed the same way in `run_agent`; when to pick one is said in its `description`.
 - **`image`** needs a model that accepts image input; pi drops images silently for a model that does not, so check the model you give it.
-- **`explorer` is now `scout`**: there is no alias, so a copy of the old file in `~/.pi/agent/agents/` keeps working only under its own name.
 - **Your own agents**: add them as Markdown files with frontmatter in `~/.pi/agent/agents/` or, for trusted projects, `.pi/agents/`, directly or in subfolders of any depth. Project files win over user files, user files over built-ins; the name comes from `name:`, not the file or folder, and a name defined twice in one location gives a warning and the later file in path order wins.
 - **Changing a starter agent**: to change its model, thinking level or skills, use `/agents setup` (see [Agent setup](#agent-setup)); it keeps the shipped prompt, so prompt fixes from updates still reach the agent. To change anything else, copy its file to `~/.pi/agent/agents/` and edit it there, or start a new agent with `/agents create`.
 

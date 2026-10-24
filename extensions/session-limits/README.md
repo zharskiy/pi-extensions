@@ -153,13 +153,6 @@ pi.events.emit("pi:busy", { source: "my-extension", busy: false });
 - **When to send**: send `busy: true` when work starts and `busy: false` when the last piece ends; repeated signals are harmless. The set starts empty in every session (pi creates a new extension instance per session), so a source that is busy when a session starts must announce it after session start, for example in its own `session_start` handler.
 - **A confirmed manual switch** ends the old session, so work that is still running when the user confirms gets pi's normal `session_shutdown` with reason `new`.
 
-<details>
-<summary>Changed in 0.4.0</summary>
-
-The channel was named `session-limits:busy`; publishers using that literal name must switch to `pi:busy`.
-
-</details>
-
 ## Architecture
 
 - `core/` holds the logic: `limits.ts` the flow (phases, the handoff request, the switch, the busy channel), `thresholds.ts` the pure decisions, `handoff.ts` the path and seed, `settings.ts` the schema, defaults and `pi-session-limits.json`, and `conversation-host.ts` the `conversationOnly` host wrapper that passes the conversational modes `tui` and `rpc` only.
