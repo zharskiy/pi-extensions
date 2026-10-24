@@ -35,7 +35,7 @@ const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
 
 const SPEND: ThemeToken = "text";
 
-const PLACE: ThemeToken = "border";
+const SETUP: ThemeToken = "border";
 
 const BRANCH: ThemeToken = "borderAccent";
 
@@ -71,7 +71,7 @@ const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo 
 
   const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
 
-  return `${theme.bold(theme.fg("text", model.name))} ${theme.fg(META, window)}`;
+  return `${theme.fg(SETUP, model.name)} ${theme.fg(META, window)}`;
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
@@ -105,7 +105,7 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
 };
 
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
-  const folder = theme.fg(PLACE, folderName(cwd));
+  const folder = theme.fg(SETUP, folderName(cwd));
   const place = branch
     ? `${folder}${theme.fg(META, " git:(")}${theme.fg(BRANCH, branch)}${theme.fg(META, ")")}`
     : folder;
