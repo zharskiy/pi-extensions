@@ -150,7 +150,7 @@ describe("agents overlay", () => {
     expect(state.closed).toBe(true);
   });
 
-  it("right in a view opened from the list does not close the overlay", async () => {
+  it("right in a view opened from the list closes the overlay and the hint names it", async () => {
     const harness = setup();
 
     harness.create("first job", 1);
@@ -159,10 +159,27 @@ describe("agents overlay", () => {
     const { overlay, state, lines } = harness.openLast();
 
     overlay.handleKey(key("enter"));
+
+    expect(lines().at(-2)?.startsWith(" esc to go back · → to main session")).toBe(true);
+
     overlay.handleKey(key("right"));
 
-    expect(state.closed).toBe(false);
-    expect(lines().at(-2)?.startsWith(" esc to go back")).toBe(true);
+    expect(state.closed).toBe(true);
+  });
+
+  it("right in a view opened directly closes the overlay and the hint names it", async () => {
+    const harness = setup();
+    const record = harness.create("first job", 1);
+
+    await harness.host.runCommand("agents", record.id);
+
+    const { overlay, state, lines } = harness.openLast();
+
+    expect(lines().at(-2)?.startsWith(" esc to close · → to main session")).toBe(true);
+
+    overlay.handleKey(key("right"));
+
+    expect(state.closed).toBe(true);
   });
 
   it("drops the left hook on disable", async () => {

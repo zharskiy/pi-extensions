@@ -28,6 +28,7 @@ type ViewDeps = {
   stop(): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void, onTick: () => void): () => void;
   leave(): void;
+  close(): void;
 };
 
 const MIN_DESCRIPTION = 8;
@@ -229,13 +230,14 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const hintPairs = (): (readonly [string, string])[] => {
     const record = data.record;
     const exit = ["esc", deps.back ? "to go back" : "to close"] as const;
+    const main = ["→", "to main session"] as const;
     const stop = isOpen() ? [["x", stopWords(record.state)] as const] : [];
     const request = hasRequest()
       ? [["r", requestExpanded ? "to hide the request" : "to show the request"] as const]
       : [];
     const tools = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"] as const;
 
-    return [exit, ...stop, ...request, tools];
+    return [exit, main, ...stop, ...request, tools];
   };
 
   const positionText = () => {
@@ -373,6 +375,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     home: () => scroll.scrollToStart(),
     end: () => scroll.scrollToEnd(),
     toggleTools,
+    right: () => deps.close(),
     escape: () => deps.leave(),
   };
 
