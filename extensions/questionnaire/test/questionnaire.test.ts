@@ -269,7 +269,7 @@ describe("questionnaire tool", () => {
     const { host } = setup();
 
     expect(host.renderTool("questionnaire", { call: { questions: [SCOPE, PRIORITY] } }).call).toBe(
-      "✓ Questionnaire · 2 questions",
+      "✓ questionnaire · 2 questions",
     );
   });
 });

@@ -33,14 +33,14 @@ describe("rendering", () => {
   it("renders the call as a row with the question count", () => {
     expect(
       drawn(callText({ questions: [SCOPE, { ...PRIORITY, label: undefined }] }, plainTheme, state())),
-    ).toBe("✓ Questionnaire · 2 questions");
-    expect(drawn(callText({ questions: [SCOPE] }, plainTheme, state()))).toBe("✓ Questionnaire · 1 question");
-    expect(drawn(callText({}, plainTheme, state()))).toBe("✓ Questionnaire · 0 questions");
+    ).toBe("✓ questionnaire · 2 questions");
+    expect(drawn(callText({ questions: [SCOPE] }, plainTheme, state()))).toBe("✓ questionnaire · 1 question");
+    expect(drawn(callText({}, plainTheme, state()))).toBe("✓ questionnaire · 0 questions");
     expect(drawn(callText({ questions: "nope" as never }, plainTheme, state()))).toBe(
-      "✓ Questionnaire · 0 questions",
+      "✓ questionnaire · 0 questions",
     );
     expect(drawn(callText({ questions: [SCOPE] }, tagged, state()))).toBe(
-      "<success>✓ Questionnaire<muted> · 1 question",
+      "<success>✓ questionnaire<muted> · 1 question",
     );
   });
 
@@ -48,7 +48,7 @@ describe("rendering", () => {
     expect(drawn(callText({}, tagged, state({ isPartial: true })))).toMatch(/^<dim>◌ /);
     expect(drawn(callText({}, tagged, state({ isError: true })))).toMatch(/^<error>✗ /);
     expect(drawn(callText({}, plainTheme, state({ isError: true, aborted: true })))).toBe(
-      "⊘ Questionnaire · cancelled",
+      "⊘ questionnaire · cancelled",
     );
   });
 
@@ -57,9 +57,9 @@ describe("rendering", () => {
     const cancelled = state({ result: { text: resultText(details), details } });
 
     expect(drawn(callText({ questions: [SCOPE, PRIORITY] }, plainTheme, cancelled))).toBe(
-      "⊘ Questionnaire · cancelled",
+      "⊘ questionnaire · cancelled",
     );
-    expect(drawn(callText({}, tagged, cancelled))).toBe("<muted>⊘ Questionnaire<muted> · cancelled");
+    expect(drawn(callText({}, tagged, cancelled))).toBe("<muted>⊘ questionnaire<muted> · cancelled");
   });
 
   it("lists the answers on a ↳ line without a check mark, typed answers marked (wrote)", () => {

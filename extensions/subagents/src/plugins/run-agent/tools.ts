@@ -313,7 +313,11 @@ export const messageAgentTool = (
 
     const id = String((state.args as MessageAgentParams | undefined)?.id ?? "");
     const error = result.text.replace(/^Error:\s*/, "").trim();
-    const parts: TitleParts = { mark: "error", verb: (paint) => paint.bold("Message"), target: { text: id } };
+    const parts: TitleParts = {
+      mark: "error",
+      verb: (paint) => paint.bold("message_agent"),
+      target: { text: id },
+    };
 
     return (width: number) => {
       const suffix = failureSuffix(error, parts, width, theme);

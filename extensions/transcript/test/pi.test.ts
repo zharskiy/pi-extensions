@@ -88,7 +88,7 @@ describe("diff rows through pi", () => {
     });
 
     expect(lines.map((line) => line.trimEnd())).toEqual([
-      " ✓ Edit a.ts",
+      " ✓ edit a.ts",
       "   ↳ Added 1 line, removed 1 line",
       "     -1 let total = sum(values[1:]) if",
       "        values else 0",
@@ -104,7 +104,7 @@ describe("diff rows through pi", () => {
   it("draws an expanded edit in the agent view's transcript", () => {
     const text = renderPaneEdit(rows, "-1 old line\n+1 new line", 60).join("\n");
 
-    expect(text).toContain(" ✓ Edit a.ts\n   ↳ Added 1 line, removed 1 line\n     -1 old line");
+    expect(text).toContain(" ✓ edit a.ts\n   ↳ Added 1 line, removed 1 line\n     -1 old line");
     expect(text).toContain("     +1 new line");
   });
 });
@@ -120,7 +120,7 @@ describe("pi's bodies under the rows", () => {
     });
 
     expect(lines.slice(0, 4).map((line) => line.trimEnd())).toEqual([
-      " ✓ Read a.ts",
+      " ✓ read a.ts",
       "   ↳ 10 lines",
       "     out 1",
       "     out 2",
@@ -185,7 +185,7 @@ describe("finished rows pi replays without a start", () => {
           width: 60,
         }).lines,
       ),
-    ).toEqual([" ✓ Read a.ts · 7s", "   ↳ 2 lines"]);
+    ).toEqual([" ✓ read a.ts · 7s", "   ↳ 2 lines"]);
     expect(
       trimmed(
         renderTool(rows, {
@@ -225,7 +225,7 @@ describe("finished rows pi replays without a start", () => {
         started: false,
         width: 60,
       }).lines[0]?.trimEnd(),
-    ).toBe(" ✗ Read a.ts · Error");
+    ).toBe(" ✗ read a.ts · Error");
   });
 
   it("marks the open calls of an aborted or failed agent turn stopped or failed in the pane", () => {
@@ -246,6 +246,6 @@ describe("finished rows pi replays without a start", () => {
         stopReason: "error",
         width: 60,
       })[0]?.trimEnd(),
-    ).toBe(" ✗ Read a.ts · Error");
+    ).toBe(" ✗ read a.ts · Error");
   });
 });

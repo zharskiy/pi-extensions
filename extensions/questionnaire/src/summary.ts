@@ -24,7 +24,7 @@ export const callText = (
   const cancelled = cancelledOf(state);
   const mark = cancelled ? "stopped" : markOf(state);
   const suffix = cancelled || state.aborted ? "cancelled" : counted(count, "question");
-  const title = (paint: ThemeLike) => `${paint.bold("Questionnaire")}${paint.fg("muted", `${DOT}${suffix}`)}`;
+  const title = (paint: ThemeLike) => `${paint.bold("questionnaire")}${paint.fg("muted", `${DOT}${suffix}`)}`;
 
   return rowText(row({ mark, title }), theme);
 };

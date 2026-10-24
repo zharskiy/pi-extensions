@@ -14,11 +14,11 @@ A pi extension that gives the main session's model a `questionnaire` tool: it as
 - What the model reads, one line per question: `Scope (scope): selected 2. Backend only [value: backend]` or `Notes (notes): wrote: keep the old API for one release`. The transcript shows the call as a row with the state glyph and the answers under it on a `↳` line, labels in accent, answers in the text colour, a typed answer followed by a dim `(wrote)`; a cancelled form is `⊘ … · cancelled` with any answers given before the cancel, and an error is shown on the `↳` line in the error colour:
 
   ```
-  ✓ Questionnaire · 2 questions
+  ✓ questionnaire · 2 questions
     ↳ Scope: 2. Backend only
       Priority: Fix the login bug first (wrote)
 
-  ⊘ Questionnaire · cancelled
+  ⊘ questionnaire · cancelled
   ```
 - While the form waits for you it reports on the awaiting-input channel (`pi:awaiting-input`), so the notifications extension sends `pi needs your input: questionnaire` after its dialog delay.
 - Interactive TUI only. In `--mode rpc`, `--mode json` and `-p` the tool returns an error result and the model decides without asking. Only the main session has the tool: agents started by subagents never get it.

@@ -5,10 +5,10 @@ A pi extension that draws pi's tool calls as rows: a state glyph, a title, and t
 ```
  Thinking (ctrl+t to expand)
 
- ✓ Read src/stats.py:5-14
+ ✓ read src/stats.py:5-14
    ↳ 10 lines
 
- ✓ Edit src/stats.py
+ ✓ edit src/stats.py
    ↳ Added 1 line, removed 1 line (ctrl+o to expand)
 
  ✗ $ npm test -- --run · exit 1 · 9s
@@ -31,13 +31,13 @@ A pi extension that draws pi's tool calls as rows: a state glyph, a title, and t
 
 | Tool | Title | Outcome |
 |---|---|---|
-| read | `Read path:5-14` (the range muted, pi's form) | `10 lines`, `Image`, `0 lines`; expanded, pi's body under it |
-| edit | `Edit path` | `Added N lines, removed M lines`; expanded, the diff (below); pi's body when the diff does not parse |
-| write | `Write path` | `12 lines`, `Empty file`; expanded, every line as an added line |
+| read | `read path:5-14` (the range muted, pi's form) | `10 lines`, `Image`, `0 lines`; expanded, pi's body under it |
+| edit | `edit path` | `Added N lines, removed M lines`; expanded, the diff (below); pi's body when the diff does not parse |
+| write | `write path` | `12 lines`, `Empty file`; expanded, every line as an added line |
 | bash, powershell | `$ command` (`PS>`); a multi-line command is its first line and a muted ` ...` | the last three output lines under `... (N earlier lines, ctrl+o to expand)`, in every state, muted even on failure; `No output`; expanded, pi's body without its `Took` line |
-| grep | `Grep pattern in path` | `12 matching lines`, `No matches` |
-| find | `Find pattern` | `3 files`, `No files` |
-| ls | `List path` | `8 entries`, `Empty directory` |
+| grep | `grep pattern in path` | `12 matching lines`, `No matches` |
+| find | `find pattern` | `3 files`, `No files` |
+| ls | `ls path` | `8 entries`, `Empty directory` |
 | codemode | `codemode` and the first script line (after an `// @options:` line), muted | `3 calls, 1 failed · 1611 lines of output`, `2 calls` while it runs, a failed script's error; expanded, the script, its calls as nested rows (`✓ grep {"pattern":"login"} 12ms`, the error under a failed one) and the output |
 | MCP tools | `server/tool` in accent bold, as pi names it, and up to three `key=value` arguments | the first three output lines, each cut, then `... (N more lines, ctrl+o to expand)`; expanded, every line wrapped |
 | any other tool | the bold tool name and its arguments | as MCP tools |

@@ -181,13 +181,13 @@ const grepTitle = (context: Context, theme: ThemeLike): Title | undefined => {
   const path = textArg(context.args, "path");
   const where = path ? ` in ${theme.fg("accent", shortPath(path, context.view.cwd, context.home))}` : "";
 
-  return { verb: bold("Grep"), target: { text: pattern, cut: "end", ...(where ? { tail: where } : {}) } };
+  return { verb: bold("grep"), target: { text: pattern, cut: "end", ...(where ? { tail: where } : {}) } };
 };
 
 const findTitle = (context: Context): Title | undefined => {
   const pattern = textArg(context.args, "pattern");
 
-  return pattern === undefined ? undefined : { verb: bold("Find"), target: { text: pattern, cut: "end" } };
+  return pattern === undefined ? undefined : { verb: bold("find"), target: { text: pattern, cut: "end" } };
 };
 
 const listTitle = (context: Context): Title | undefined => {
@@ -195,37 +195,37 @@ const listTitle = (context: Context): Title | undefined => {
 
   return path === undefined
     ? undefined
-    : { verb: bold("List"), target: { text: shortPath(path, context.view.cwd, context.home), cut: "start" } };
+    : { verb: bold("ls"), target: { text: shortPath(path, context.view.cwd, context.home), cut: "start" } };
 };
 
 const LOOKS: Record<string, Look> = {
   read: {
-    verb: bold("Read"),
-    title: pathTitle("Read", (context) => readRange(context.args)),
+    verb: bold("read"),
+    title: pathTitle("read", (context) => readRange(context.args)),
     failure: fileFailure,
     ...summaryOnly(readLine),
   },
   edit: {
-    verb: bold("Edit"),
-    title: pathTitle("Edit"),
+    verb: bold("edit"),
+    title: pathTitle("edit"),
     outcome: editOutcome,
     piBody: (context) => !failed(context) && editDiff(context) === undefined,
   },
-  write: { verb: bold("Write"), title: pathTitle("Write"), outcome: writeOutcome, failure: fileFailure },
+  write: { verb: bold("write"), title: pathTitle("write"), outcome: writeOutcome, failure: fileFailure },
   bash: shellLook("$"),
   powershell: shellLook("PS>"),
   grep: {
-    verb: bold("Grep"),
+    verb: bold("grep"),
     title: grepTitle,
     ...summaryOnly(found("matching line", /^No matches found/, "No matches")),
   },
   find: {
-    verb: bold("Find"),
+    verb: bold("find"),
     title: findTitle,
     ...summaryOnly(found("file", /^No files found/, "No files")),
   },
   ls: {
-    verb: bold("List"),
+    verb: bold("ls"),
     title: listTitle,
     ...summaryOnly(found("entry", /^\(empty directory\)$/, "Empty directory", "entries")),
   },

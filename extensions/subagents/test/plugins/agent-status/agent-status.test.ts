@@ -205,11 +205,11 @@ describe("agent_status rows", () => {
     const { host } = setup();
 
     expect(host.renderTool("agent_status", { call: { ids: ["a-1", "b-2"] } }).call).toBe(
-      "✓ Agent status a-1, b-2",
+      "✓ agent_status a-1, b-2",
     );
-    expect(host.renderTool("agent_status", { call: {} }).call).toBe("✓ Agent status all");
+    expect(host.renderTool("agent_status", { call: {} }).call).toBe("✓ agent_status all");
     expect(host.renderTool("agent_status", { call: {}, state: { isPartial: true } }).call).toBe(
-      "◌ Agent status all",
+      "◌ agent_status all",
     );
   });
 

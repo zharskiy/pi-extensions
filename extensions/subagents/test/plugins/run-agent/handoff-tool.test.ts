@@ -34,7 +34,7 @@ const tagged: ThemeLike = { ...plainTheme, fg: (token, text) => `<${token}>${tex
 describe("handoff tool rows", () => {
   it("draws the bold title as a row", () => {
     expect(tool.renderShell).toBe("row");
-    expect(drawn(tool.renderCall?.({ content: "" }, plainTheme, state()))).toBe("✓ Handoff");
+    expect(drawn(tool.renderCall?.({ content: "" }, plainTheme, state()))).toBe("✓ handoff");
   });
 
   it("names the saved file under the home directory, or the error lines", () => {

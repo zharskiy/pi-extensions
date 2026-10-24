@@ -94,7 +94,7 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
   renderShell: "row",
   renderCall: (params, theme, state) => {
     const ids = params.ids && params.ids.length > 0 ? params.ids.join(", ") : "all";
-    const verb = (paint: ThemeLike) => paint.bold("Agent status");
+    const verb = (paint: ThemeLike) => paint.bold("agent_status");
 
     return rowText(row({ mark: markOf(state), title: { verb, target: { text: ids } } }), theme);
   },

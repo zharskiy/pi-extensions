@@ -63,7 +63,7 @@ export const handoffTool = (deps: HandoffToolDeps, agentId: string): ToolSpec<Ha
   },
   renderShell: "row",
   renderCall: (_params, theme, state) =>
-    rowText(row({ mark: markOf(state), title: { verb: (paint) => paint.bold("Handoff") } }), theme),
+    rowText(row({ mark: markOf(state), title: { verb: (paint) => paint.bold("handoff") } }), theme),
   renderResult: (result, _state, theme) => {
     if (result.isError) {
       const lines = result.text.split("\n");

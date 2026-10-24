@@ -71,7 +71,7 @@ describe("message_agent", () => {
 
     expect(result.text).toBe('Error: unknown agent "ghost".');
     expect(rendered.call).toBe("");
-    expect(rendered.result).toBe('✗ Message ghost · unknown agent "ghost".');
+    expect(rendered.result).toBe('✗ message_agent ghost · unknown agent "ghost".');
 
     const narrow = host.renderTool("message_agent", {
       call: { id: "ghost", message: "focus on tests" },
@@ -79,7 +79,7 @@ describe("message_agent", () => {
       width: 30,
     });
 
-    expect(narrow.result).toBe(["✗ Message ghost", '  ↳ unknown agent "ghost".'].join("\n"));
+    expect(narrow.result).toBe(["✗ message_agent ghost", '  ↳ unknown agent "ghost".'].join("\n"));
   });
 
   it("answers a message in the stop grace period with a follow-up turn", async () => {

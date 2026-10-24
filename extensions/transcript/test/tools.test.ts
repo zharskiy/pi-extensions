@@ -79,14 +79,14 @@ describe("S1 tool row states", () => {
   });
 
   it("shows only the verb while the key argument streams, then the full title", () => {
-    expect(draw(view("read", {}, { argsComplete: false, isPartial: true })).lines).toEqual([" ◌ Read"]);
-    expect(draw(read({ isPartial: true })).lines).toEqual([" ◌ Read src/auth/session.ts"]);
+    expect(draw(view("read", {}, { argsComplete: false, isPartial: true })).lines).toEqual([" ◌ read"]);
+    expect(draw(read({ isPartial: true })).lines).toEqual([" ◌ read src/auth/session.ts"]);
   });
 
   it("adds the recorded duration to a finished row from five seconds on, never to a running one", () => {
-    expect(draw(read(done("x", { durationMs: 4999 }))).lines[0]).toBe(" ✓ Read src/auth/session.ts");
-    expect(draw(read(done("x", { durationMs: 12_400 }))).lines[0]).toBe(" ✓ Read src/auth/session.ts · 12s");
-    expect(draw(read({ isPartial: true, durationMs: 12_400 })).lines[0]).toBe(" ◌ Read src/auth/session.ts");
+    expect(draw(read(done("x", { durationMs: 4999 }))).lines[0]).toBe(" ✓ read src/auth/session.ts");
+    expect(draw(read(done("x", { durationMs: 12_400 }))).lines[0]).toBe(" ✓ read src/auth/session.ts · 12s");
+    expect(draw(read({ isPartial: true, durationMs: 12_400 })).lines[0]).toBe(" ◌ read src/auth/session.ts");
   });
 
   it("marks a stopped call with a muted state word and its duration", () => {
@@ -94,14 +94,14 @@ describe("S1 tool row states", () => {
       read(done("Operation aborted", { isError: true, aborted: true, durationMs: 72_000 })),
     );
 
-    expect(stopped.lines).toEqual([" ⊘ Read src/auth/session.ts · stopped · 1m 12s"]);
+    expect(stopped.lines).toEqual([" ⊘ read src/auth/session.ts · stopped · 1m 12s"]);
     expect(tokenOf(stopped.painted, "stopped")).toBe("muted");
   });
 
   it("puts a short failure reason on the title in the error colour", () => {
     const failed = draw(read(done("Path is a directory", { isError: true })));
 
-    expect(failed.lines).toEqual([" ✗ Read src/auth/session.ts · Path is a directory"]);
+    expect(failed.lines).toEqual([" ✗ read src/auth/session.ts · Path is a directory"]);
     expect(tokenOf(failed.painted, "Path is a directory")).toBe("error");
   });
 
@@ -133,28 +133,28 @@ describe("S2 read", () => {
   it("titles a read with its accent path and muted range, and counts the lines without a hint", () => {
     const drawn = draw(read({ path: "/repo/src/auth/session.ts", offset: 5, limit: 10 }, done(numbered(10))));
 
-    expect(drawn.lines).toEqual([" ✓ Read src/auth/session.ts:5-14", "   ↳ 10 lines"]);
+    expect(drawn.lines).toEqual([" ✓ read src/auth/session.ts:5-14", "   ↳ 10 lines"]);
     expect(tokenOf(drawn.painted, "src/auth/session.ts")).toBe("accent");
     expect(tokenOf(drawn.painted, ":5-14")).toBe("muted");
     expect(tokenOf(drawn.painted, "↳")).toBe("dim");
     expect(tokenOf(drawn.painted, "10")).toBe("text");
     expect(tokenOf(drawn.painted, " lines")).toBe("muted");
-    expect(drawn.bolded).toContain("Read");
+    expect(drawn.bolded).toContain("read");
   });
 
   it("names an image and an empty file", () => {
     const image = read({ path: "a.png" }, { result: { text: "", images: 1 } });
 
-    expect(draw(image).lines).toEqual([" ✓ Read a.png", "   ↳ Image"]);
-    expect(draw(read({ path: "a.txt" }, done(""))).lines).toEqual([" ✓ Read a.txt", "   ↳ 0 lines"]);
+    expect(draw(image).lines).toEqual([" ✓ read a.png", "   ↳ Image"]);
+    expect(draw(read({ path: "a.txt" }, done(""))).lines).toEqual([" ✓ read a.txt", "   ↳ 0 lines"]);
   });
 
   it("names a missing file on the title, and gives the long error its own wrapped line when the title has no room", () => {
     expect(draw(read({ path: "src/auth/sesion.ts" }, done(enoent, { isError: true }))).lines).toEqual([
-      " ✗ Read src/auth/sesion.ts · file not found",
+      " ✗ read src/auth/sesion.ts · file not found",
     ]);
     expect(draw(read({ path: "src/auth/sesion.ts" }, done(enoent, { isError: true })), 24).lines).toEqual([
-      " ✗ Read ...uth/sesion.ts",
+      " ✗ read ...uth/sesion.ts",
       "   ↳ ENOENT: no such",
       "     file or directory,",
       "     ... (1 more line)",
@@ -167,13 +167,13 @@ describe("S2 read", () => {
       40,
     );
 
-    expect(drawn.lines).toEqual([" ✓ Read ...th/middleware/session.ts:5-14", "   ↳ 10 lines"]);
+    expect(drawn.lines).toEqual([" ✓ read ...th/middleware/session.ts:5-14", "   ↳ 10 lines"]);
   });
 
   it("asks for pi's body under the count when expanded, and writes the range pi's way", () => {
     expect(draw(read({ path: "a.ts" }, done("x", { expanded: true }))).piBody).toBe(true);
-    expect(draw(read({ path: "a.ts", offset: 7 })).lines[0]).toBe(" ✓ Read a.ts:7");
-    expect(draw(read({ path: "a.ts", limit: 3 })).lines[0]).toBe(" ✓ Read a.ts:1-3");
+    expect(draw(read({ path: "a.ts", offset: 7 })).lines[0]).toBe(" ✓ read a.ts:7");
+    expect(draw(read({ path: "a.ts", limit: 3 })).lines[0]).toBe(" ✓ read a.ts:1-3");
   });
 });
 
@@ -185,7 +185,7 @@ describe("S3 edit", () => {
     const drawn = edit("-1 old\n+1 new");
 
     expect(drawn.lines).toEqual([
-      " ✓ Edit src/stats.py",
+      " ✓ edit src/stats.py",
       "   ↳ Added 1 line, removed 1 line (ctrl+o to expand)",
     ]);
     expect(tokenOf(drawn.painted, "(ctrl+o to expand)")).toBe("dim");
@@ -195,7 +195,7 @@ describe("S3 edit", () => {
 
   it("drops the hint before the summary on a narrow terminal", () => {
     expect(edit("-1 old\n+1 new", {}, 40).lines).toEqual([
-      " ✓ Edit src/stats.py",
+      " ✓ edit src/stats.py",
       "   ↳ Added 1 line, removed 1 line",
     ]);
   });
@@ -204,14 +204,14 @@ describe("S3 edit", () => {
     const expanded = edit("-1 old\n+1 new", { expanded: true });
 
     expect(expanded.lines.map((line) => line.trimEnd())).toEqual([
-      " ✓ Edit src/stats.py",
+      " ✓ edit src/stats.py",
       "   ↳ Added 1 line, removed 1 line",
       "     -1 old",
       "     +1 new",
     ]);
     expect(expanded.piBody).toBe(false);
     expect(edit("@@ -1 +1 @@\n-old\n+new", { expanded: true })).toMatchObject({
-      lines: [" ✓ Edit src/stats.py"],
+      lines: [" ✓ edit src/stats.py"],
       piBody: true,
     });
   });
@@ -222,7 +222,7 @@ describe("S3 edit", () => {
     const drawn = draw(view("edit", { path: "src/stats.py" }, done(error, { isError: true })));
 
     expect(drawn.lines).toEqual([
-      " ✗ Edit src/stats.py",
+      " ✗ edit src/stats.py",
       "   ↳ Could not find the exact text in src/stats.py. The old text must match",
       "     exactly including all whitespace and newlines.",
     ]);
@@ -234,9 +234,9 @@ describe("S5 write", () => {
   it("counts the written lines with a hint, and names an empty file without one", () => {
     expect(
       draw(view("write", { path: "/home/me/notes.md", content: numbered(12) }, done("ok"))).lines,
-    ).toEqual([" ✓ Write ~/notes.md", "   ↳ 12 lines (ctrl+o to expand)"]);
+    ).toEqual([" ✓ write ~/notes.md", "   ↳ 12 lines (ctrl+o to expand)"]);
     expect(draw(view("write", { path: "/home/me/empty.txt", content: "" }, done("ok"))).lines).toEqual([
-      " ✓ Write ~/empty.txt",
+      " ✓ write ~/empty.txt",
       "   ↳ Empty file",
     ]);
   });
@@ -247,7 +247,7 @@ describe("S5 write", () => {
     );
 
     expect(drawn.lines.map((line) => line.trimEnd())).toEqual([
-      " ✓ Write a.txt",
+      " ✓ write a.txt",
       "   ↳ 2 lines",
       "     +1 one",
       "     +2 two",
@@ -384,27 +384,27 @@ describe("S7 grep, find and ls", () => {
   it("counts the results without repeating the verb, with a muted separator and no hint", () => {
     const grep = draw(view("grep", { pattern: "TODO", path: "/repo/src" }, done(numbered(12))));
 
-    expect(grep.lines).toEqual([" ✓ Grep TODO in src", "   ↳ 12 matching lines"]);
+    expect(grep.lines).toEqual([" ✓ grep TODO in src", "   ↳ 12 matching lines"]);
     expect(tokenOf(grep.painted, "TODO")).toBe("accent");
     expect(tokenOf(grep.painted, "src")).toBe("accent");
     expect(grep.painted.find((entry) => entry.text.startsWith(" in "))?.token).toBe("muted");
     expect(draw(view("grep", { pattern: "FIXME" }, done("No matches found"))).lines).toEqual([
-      " ✓ Grep FIXME",
+      " ✓ grep FIXME",
       "   ↳ No matches",
     ]);
     expect(draw(view("find", { pattern: "**/*.test.ts" }, done(numbered(3)))).lines).toEqual([
-      " ✓ Find **/*.test.ts",
+      " ✓ find **/*.test.ts",
       "   ↳ 3 files",
     ]);
     expect(draw(view("find", { pattern: "*.md" }, done("No files found matching pattern"))).lines[1]).toBe(
       "   ↳ No files",
     );
     expect(draw(view("ls", { path: "src" }, done(numbered(8)))).lines).toEqual([
-      " ✓ List src",
+      " ✓ ls src",
       "   ↳ 8 entries",
     ]);
     expect(draw(view("ls", {}, done("(empty directory)"))).lines).toEqual([
-      " ✓ List .",
+      " ✓ ls .",
       "   ↳ Empty directory",
     ]);
     expect(draw(view("ls", {}, done("a", { expanded: true }))).piBody).toBe(true);
