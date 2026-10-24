@@ -4,6 +4,7 @@ import { createComposer } from "./composer.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createComposer(host);

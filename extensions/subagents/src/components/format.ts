@@ -9,7 +9,7 @@ export { DOT, PAD } from "../../../../core/manager/layout.ts";
 
 export const formatCalls = (count: number): string => counted(count, "call");
 
-export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity";
+type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity";
 
 export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken };
 

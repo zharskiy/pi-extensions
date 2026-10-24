@@ -11,8 +11,24 @@
   "linter": {
     "rules": {
       "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error",
+        "noUnusedPrivateClassMembers": "error",
+        "noPrivateImports": "error"
+      },
+      "nursery": {
+        "noSelfImport": "error"
+      },
+      "performance": {
+        "noReExportAll": "error"
+      },
       "style": {
         "noRestrictedImports": "off"
+      },
+      "suspicious": {
+        "noImportCycles": "error"
       }
     }
   },

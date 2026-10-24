@@ -5,13 +5,8 @@ import { createEditorHooks } from "../../adapter/pi-editor.ts";
 import { createNotices } from "../../adapter/pi-notice.ts";
 import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
 import { hiddenThinkingLabel } from "../../adapter/pi-thinking-label.ts";
-import {
-  createThinkingLabelUi,
-  createUi,
-  type HostState,
-  notificationSequence,
-  tuiContext,
-} from "../../adapter/pi-ui.ts";
+import { type HostState, tuiContext } from "../../adapter/pi-tui-context.ts";
+import { createThinkingLabelUi, createUi, notificationSequence } from "../../adapter/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);

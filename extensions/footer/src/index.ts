@@ -4,6 +4,7 @@ import { createFooter } from "./footer.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createFooter(host);

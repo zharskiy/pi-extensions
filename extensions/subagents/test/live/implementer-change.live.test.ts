@@ -92,7 +92,7 @@ const hiddenTests = async (live: LiveHarness, fixture: Fixture) => {
   );
 };
 
-const largestBashOf = (live: LiveHarness, links: AgentRecord[]) =>
+const largestBashOf = (links: AgentRecord[]) =>
   links.reduce((max, link) => {
     const outputs = link.sessionFile ? sessionFacts(link.sessionFile).results : [];
 
@@ -113,7 +113,7 @@ const implementOnce = async (fixture: Fixture, index: number): Promise<Outcome> 
     live.seed(`${fixture.sha}^`);
 
     const chain = await runChain(live, "implementer", fixture.task, RUN_TIMEOUT_MS);
-    const largestBash = largestBashOf(live, chain.links);
+    const largestBash = largestBashOf(chain.links);
     const status = chain.timedOut ? "timeout" : (chain.terminal?.state ?? "missing");
     const hidden =
       status === "done"

@@ -8,7 +8,7 @@ import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import type { ContextSnapshot, FooterData, FooterRender, Host, HostUi, WidgetHandle } from "./contract.ts";
 import { drawNoticesIn, noticeLines, syncNotices } from "./pi-notice.ts";
 import { themeLike } from "./pi-tools.ts";
-import type { HostState } from "./pi-ui.ts";
+import type { HostState } from "./pi-tui-context.ts";
 import { contextOf } from "./usage.ts";
 
 export const FOOTER_WIDGET_KEY = "pi-footer";

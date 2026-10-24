@@ -13,6 +13,7 @@ pi-extensions/
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation, thinking label, columns
+│   │   ├── pi-tui-context.ts    # HostState (current ctx and tools) and tuiContext (the ctx when in tui mode)
 │   │   ├── pi-form.ts           # HostUi.showForm: the inline form shell
 │   │   ├── pi-overlay.ts        # overlaysCleared: waits until no overlay is visible
 │   │   ├── pi-text-input.ts     # form TextInput over pi-tui's Editor, its theme and focus

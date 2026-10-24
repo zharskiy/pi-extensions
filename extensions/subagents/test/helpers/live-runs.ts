@@ -6,9 +6,9 @@ import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../src
 import { PACKAGE_ROOT } from "./harness.ts";
 import type { LiveHarness } from "./live.ts";
 
-export const REPO_ROOT = resolve(PACKAGE_ROOT, "..", "..");
+const REPO_ROOT = resolve(PACKAGE_ROOT, "..", "..");
 
-export const RUNS_ENV = "PI_LIVE_PLAN_RUNS";
+const RUNS_ENV = "PI_LIVE_PLAN_RUNS";
 
 export const liveRuns = () => Math.max(1, Math.floor(Number(process.env[RUNS_ENV] ?? "1")) || 1);
 

@@ -6,6 +6,7 @@ import { defaults, SETTINGS_FILE, schema } from "./settings.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createNotifications(host, watchSettings(host, "pi-notifications", schema, defaults, SETTINGS_FILE));

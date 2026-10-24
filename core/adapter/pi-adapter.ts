@@ -33,7 +33,8 @@ import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
 import { toolRowsHost } from "./pi-tool-rows.ts";
 import { toPiTool } from "./pi-tools.ts";
-import { createThinkingLabelUi, createUi, type HostState, tuiContext } from "./pi-ui.ts";
+import { type HostState, tuiContext } from "./pi-tui-context.ts";
+import { createThinkingLabelUi, createUi } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
 import { contextOf, sumUsage } from "./usage.ts";
 
@@ -95,7 +96,7 @@ type HiddenCustom = { customType: string; content: string; display: false; detai
 
 const HELD_POLL_MS = 100;
 
-export const parentTools = (pi: ExtensionAPI) => {
+const parentTools = (pi: ExtensionAPI) => {
   const active = new Set(pi.getActiveTools());
 
   return pi

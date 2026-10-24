@@ -69,7 +69,7 @@ export const TOTALS_CHANNEL = "spending:totals";
 
 type Spend = { cost: number; tokens: number };
 
-export type SourceSpend = Spend & { source: string };
+type SourceSpend = Spend & { source: string };
 
 export type SpendingTotals = { main: Spend; sources: SourceSpend[]; subscription: boolean };
 

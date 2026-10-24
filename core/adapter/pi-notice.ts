@@ -3,7 +3,7 @@ import { PAD } from "../manager/layout.ts";
 import type { HostUi } from "./contract.ts";
 import { shared } from "./pi-shared.ts";
 import { fitLines } from "./pi-tools.ts";
-import { type HostState, tuiContext } from "./pi-ui.ts";
+import { type HostState, tuiContext } from "./pi-tui-context.ts";
 
 export const NOTICE_WIDGET_KEY = "pi-notices";
 

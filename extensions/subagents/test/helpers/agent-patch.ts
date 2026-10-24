@@ -4,7 +4,7 @@ export type AgentPatch = { from: string; fields?: Record<string, string>; body?:
 
 export type LiveModels = { lead: string; chore: string };
 
-export const LIVE_LIMIT = "20000";
+const LIVE_LIMIT = "20000";
 
 const frontmatterOf = (text: string) => {
   const end = text.indexOf("\n---", 4);

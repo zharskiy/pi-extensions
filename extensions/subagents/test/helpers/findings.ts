@@ -1,6 +1,6 @@
 import { relativeTo } from "./plan-rows.ts";
 
-export type Severity = "high" | "medium" | "low";
+type Severity = "high" | "medium" | "low";
 
 export type FindingRef = { path: string; start: number; end: number };
 

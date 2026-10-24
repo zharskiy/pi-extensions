@@ -94,7 +94,7 @@ export const prepareAgentDir = (realAgentDir: string, agentDir: string) => {
   });
 };
 
-export const setupLive = async () => {
+const setupLive = async () => {
   if (state) {
     return;
   }
@@ -124,7 +124,7 @@ export const setupLive = async () => {
   }
 };
 
-export const teardownLive = () => {
+const teardownLive = () => {
   if (state) {
     rmSync(state.agentDir, { recursive: true, force: true });
     state = undefined;

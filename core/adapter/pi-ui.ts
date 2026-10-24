@@ -6,14 +6,7 @@ import {
   type TUI,
   type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
-import type {
-  AnyToolSpec,
-  HostUi,
-  NotifyChannel,
-  OverlayFactory,
-  ScrollPane,
-  WidgetHandle,
-} from "./contract.ts";
+import type { HostUi, NotifyChannel, OverlayFactory, ScrollPane, WidgetHandle } from "./contract.ts";
 import type { EditorHooks } from "./pi-editor.ts";
 import { captureTui, createEditorInput } from "./pi-editor-input.ts";
 import { createFooterSetter } from "./pi-footer.ts";
@@ -23,9 +16,8 @@ import type { Notices } from "./pi-notice.ts";
 import { composeLabel, releaseLabel, storeLabel } from "./pi-thinking-label.ts";
 import { fitLines, piColor, themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
+import { type HostState, tuiContext } from "./pi-tui-context.ts";
 import { createWorkingUi } from "./pi-working.ts";
-
-export type HostState = { ctx?: ExtensionContext; tools: Map<string, AnyToolSpec> };
 
 export const createScrollPane = (requestRender: () => void): ScrollPane => {
   let content: string[] = [];
@@ -91,8 +83,6 @@ export const notificationSequence = (message: string, channel: NotifyChannel, en
 
   return `\x1b]9;${text}\x07`;
 };
-
-export const tuiContext = (state: HostState) => (state.ctx?.mode === "tui" ? state.ctx : undefined);
 
 export type ThinkingLabelUi = Pick<HostUi, "setHiddenThinkingLabel"> & { release(): void };
 

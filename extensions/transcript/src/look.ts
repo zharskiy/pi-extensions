@@ -34,8 +34,6 @@ export const resultText = (context: Context) => context.view.result?.text ?? "";
 export const counted = (count: number, word: string, theme: ThemeLike, plural?: string) =>
   `${theme.fg("text", String(count))}${theme.fg("muted", ` ${noun(count, word, plural)}`)}`;
 
-export const muted = (text: string) => (theme: ThemeLike) => theme.fg("muted", text);
-
 export const bold = (text: string) => (theme: ThemeLike) => theme.bold(text);
 
 export const firstLineFailure = (context: Context): Failure | undefined => {

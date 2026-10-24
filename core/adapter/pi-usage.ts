@@ -1,6 +1,6 @@
 import { getLastAssistantUsage } from "@earendil-works/pi-coding-agent";
 import type { Host, PromptTokens } from "./contract.ts";
-import type { HostState } from "./pi-ui.ts";
+import type { HostState } from "./pi-tui-context.ts";
 import { requestUsageOf, sumAssistantUsage } from "./usage.ts";
 
 type UsageCache = { session: string; file: string | undefined; leaf: string | null; usage: PromptTokens };

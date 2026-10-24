@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["extensions/*/src/index.ts", "extensions/subagents/test/live/fixtures/mcp-server.ts"],
+  "project": ["core/**/*.ts", "extensions/**/*.ts", "test/**/*.ts", "*.ts"],
+  "includeEntryExports": true,
+  "vitest": { "config": ["vitest.config.ts", "vitest.live.config.ts"] }
+}

@@ -6,7 +6,7 @@ import {
 import type { ContextFacts, Host } from "./contract.ts";
 import { messageFacts } from "./pi-context-messages.ts";
 import { type PromptApi, promptFacts } from "./pi-context-prompt.ts";
-import type { HostState } from "./pi-ui.ts";
+import type { HostState } from "./pi-tui-context.ts";
 import { usageHost } from "./pi-usage.ts";
 
 type ContextApi = PromptApi & Pick<ExtensionAPI, "getSettings">;

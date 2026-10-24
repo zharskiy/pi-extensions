@@ -8,6 +8,7 @@ import { plugins } from "./plugins.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host, runtime, paths) => {
     const disabled = disabledPlugins(paths.agentDir);

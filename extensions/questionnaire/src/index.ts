@@ -4,6 +4,7 @@ import { createQuestionnaire } from "./questionnaire.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createQuestionnaire(host);

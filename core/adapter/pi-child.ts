@@ -157,7 +157,6 @@ export const createPiRuntime = (
       throw new Error(resolutionFailure(resolution));
     }
 
-    const modelLabel = `${model.provider}/${model.id}`;
     const listeners = new Set<(event: ChildEvent) => void>();
     let running = false;
     let disposed = false;

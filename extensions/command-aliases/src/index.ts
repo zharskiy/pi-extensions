@@ -4,6 +4,7 @@ import { createCommandAliases } from "./command-aliases.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createCommandAliases(host);

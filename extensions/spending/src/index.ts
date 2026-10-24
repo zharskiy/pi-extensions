@@ -4,6 +4,7 @@ import { createSpending } from "./spending.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createSpending(host);

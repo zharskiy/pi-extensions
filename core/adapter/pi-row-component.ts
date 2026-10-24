@@ -74,7 +74,7 @@ const bodyLines = (body: Component, width: number, filter: (line: string) => boo
 
 const keepAll = () => true;
 
-export class RowComponent implements Component {
+class RowComponent implements Component {
   private parts: RowParts;
 
   private drawn?: { width: number; lines: string[] };

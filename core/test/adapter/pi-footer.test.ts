@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createEditorHooks } from "../../adapter/pi-editor.ts";
 import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../../adapter/pi-footer.ts";
 import { createNotices, NOTICE_WIDGET_KEY, syncNotices } from "../../adapter/pi-notice.ts";
-import { createUi, type HostState } from "../../adapter/pi-ui.ts";
+import type { HostState } from "../../adapter/pi-tui-context.ts";
+import { createUi } from "../../adapter/pi-ui.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 const NOTICES_KEY = Symbol.for("pi-extensions.notices");

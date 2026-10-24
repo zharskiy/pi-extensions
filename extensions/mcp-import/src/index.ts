@@ -5,6 +5,7 @@ import { createMcpImport } from "./mcp-import.ts";
 
 const root = resolve(import.meta.dirname, "..");
 
+/** @public */
 export default createPiExtension(
   (host) => {
     createMcpImport(host, homedir());
