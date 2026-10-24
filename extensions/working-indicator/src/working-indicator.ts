@@ -5,6 +5,71 @@ import { cutStart, DOT, ELLIPSIS } from "../../../core/manager/layout.ts";
 
 export const TICK_MS = 1000;
 
+export const VERB_MS = 8000;
+
+export const VERBS = [
+  "Frolicking",
+  "Metamorphosing",
+  "Misting",
+  "Moonwalking",
+  "Moseying",
+  "Mulling",
+  "Musing",
+  "Nebulizing",
+  "Nesting",
+  "Newspapering",
+  "Noodling",
+  "Nucleating",
+  "Orbiting",
+  "Orchestrating",
+  "Osmosing",
+  "Perambulating",
+  "Percolating",
+  "Perusing",
+  "Philosophising",
+  "Photosynthesizing",
+  "Pollinating",
+  "Pondering",
+  "Pontificating",
+  "Pouncing",
+  "Precipitating",
+  "Prestidigitating",
+  "Proofing",
+  "Propagating",
+  "Puttering",
+  "Puzzling",
+  "Quantumizing",
+  "Razzle-dazzling",
+  "Razzmatazzing",
+  "Recombobulating",
+  "Reticulating",
+  "Roosting",
+  "Ruminating",
+  "Sautéing",
+  "Scampering",
+  "Schlepping",
+  "Scurrying",
+  "Seasoning",
+  "Shenaniganing",
+  "Shimmying",
+  "Simmering",
+  "Skedaddling",
+  "Sketching",
+  "Slithering",
+  "Smooshing",
+  "Sock-hopping",
+  "Spelunking",
+  "Sprouting",
+  "Stewing",
+  "Sublimating",
+  "Swirling",
+  "Swooping",
+  "Symbioting",
+  "Synthesizing",
+];
+
+const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
+
 const INTERRUPT_BINDING = "app.interrupt";
 
 const MIN_ACTIVITY = 12;
@@ -75,7 +140,7 @@ const toolActivity = (tool: RunningTool, place: Place): Activity => {
   return { verb: "Running", target: tool.name, cut: "end" };
 };
 
-export const activityOf = (phase: Phase, detail: PhaseDetail, place: Place): Activity => {
+export const activityOf = (phase: Phase, detail: PhaseDetail, place: Place, idle: string): Activity => {
   const tools = detail.tools ?? (detail.toolName ? [{ name: detail.toolName, args: {} }] : []);
 
   if (phase === "thinking") {
@@ -83,7 +148,7 @@ export const activityOf = (phase: Phase, detail: PhaseDetail, place: Place): Act
   }
 
   if (phase !== "tool" || tools.length === 0) {
-    return { verb: "Waiting for the model" };
+    return { verb: `${idle}${ELLIPSIS}` };
   }
 
   if (tools.length > 1) {
@@ -147,6 +212,8 @@ export const workingText = (parts: WorkingParts, dim: (text: string) => string, 
 type Run = {
   startedAt: number;
   hint: string;
+  verb: string;
+  nextVerbAt: number;
   timer: ReturnType<typeof setInterval>;
 };
 
@@ -161,7 +228,7 @@ export const createWorkingIndicator = (host: Host, home = homedir()) => {
   const write = (active: Run) => {
     const text = workingText(
       {
-        activity: activityOf(phase, detail, place),
+        activity: activityOf(phase, detail, place, active.verb),
         elapsedMs: Date.now() - active.startedAt,
         hint: active.hint,
         columns: host.ui.workingColumns(),
@@ -179,9 +246,18 @@ export const createWorkingIndicator = (host: Host, home = homedir()) => {
   };
 
   const tick = () => {
-    if (run) {
-      write(run);
+    if (!run) {
+      return;
     }
+
+    const elapsedMs = Date.now() - run.startedAt;
+
+    if (elapsedMs >= run.nextVerbAt) {
+      run.verb = pickVerb();
+      run.nextVerbAt = elapsedMs + VERB_MS;
+    }
+
+    write(run);
   };
 
   const applyVisibility = (next: Phase) => {
@@ -202,7 +278,13 @@ export const createWorkingIndicator = (host: Host, home = homedir()) => {
     timer.unref?.();
     phase = "waiting";
     detail = {};
-    run = { startedAt: Date.now(), hint: key ? `(${key} to interrupt)` : "", timer };
+    run = {
+      startedAt: Date.now(),
+      hint: key ? `(${key} to interrupt)` : "",
+      verb: pickVerb(),
+      nextVerbAt: VERB_MS,
+      timer,
+    };
 
     write(run);
   };

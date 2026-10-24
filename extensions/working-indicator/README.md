@@ -14,7 +14,7 @@ A pi extension that replaces pi's plain `Working...` line with what the agent is
 
   | Situation | Text |
   |---|---|
-  | request sent, model streaming a tool call, between steps | `Waiting for the model` |
+  | request sent, model streaming a tool call, between steps | a rotating verb and `...` (`Pondering...`), a new random one every 8 s |
   | thinking | `Thinking` |
   | read / edit / write | `Reading src/stats.py` / `Editing src/stats.py` / `Writing ~/notes.md` |
   | bash, powershell | `Running npm test -- --run` (the first line of the command) |

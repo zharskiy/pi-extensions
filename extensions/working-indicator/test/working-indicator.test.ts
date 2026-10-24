@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode, RunningTool } from "../../../core/adapter/contract.ts";
 import { createFakeHost, plainTheme } from "../../../core/test/helpers/fakes.ts";
-import { createWorkingIndicator, TICK_MS } from "../src/working-indicator.ts";
+import { createWorkingIndicator, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
 
 const HOME = "/home/me";
 
@@ -19,11 +19,16 @@ const HINT = "<dim> (<app.interrupt> to interrupt)";
 
 const message = (activity: string, elapsed?: string) => `${activity}${elapsed ? ` · ${elapsed}` : ""}${HINT}`;
 
-const WAITING = "Waiting for the model";
+const pickIndex = (index: number) => {
+  vi.spyOn(Math, "random").mockReturnValue(index / VERBS.length);
+};
+
+const WAITING = `${VERBS[0]}...`;
 
 describe("working indicator", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    pickIndex(0);
   });
 
   afterEach(() => {
@@ -31,7 +36,66 @@ describe("working indicator", () => {
     vi.restoreAllMocks();
   });
 
-  it("leaves pi's own spinner in place and waits for the model on agent start", () => {
+  it("shows a verb from the list and an ellipsis while waiting for the model", () => {
+    pickIndex(7);
+
+    const host = setup();
+
+    host.agentStart();
+
+    expect(host.workingMessages).toEqual([message(`${VERBS[7]}...`)]);
+  });
+
+  it("keeps the verb between rotations and picks a new one every VERB_MS", () => {
+    const host = setup();
+
+    host.agentStart();
+    pickIndex(1);
+    vi.advanceTimersByTime(VERB_MS - TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "7s"));
+
+    host.setPhase("thinking");
+    host.setPhase("waiting");
+
+    expect(host.workingMessages.at(-1)).toBe(message(WAITING, "7s"));
+
+    vi.advanceTimersByTime(TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}...`, "8s"));
+
+    pickIndex(2);
+    vi.advanceTimersByTime(VERB_MS - TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[1]}...`, "15s"));
+
+    vi.advanceTimersByTime(TICK_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[2]}...`, "16s"));
+  });
+
+  it("picks a fresh verb on the next run", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.settle();
+    pickIndex(3);
+    host.agentStart();
+
+    expect(host.workingMessages.at(-1)).toBe(message(`${VERBS[3]}...`));
+  });
+
+  it("prefers a running tool over the verb", () => {
+    const host = setup();
+
+    host.agentStart();
+    host.setPhase("tool", { toolName: "bash" });
+    vi.advanceTimersByTime(VERB_MS);
+
+    expect(host.workingMessages.at(-1)).toBe(message("Running bash", "8s"));
+  });
+
+  it("leaves pi's own spinner in place and shows a verb on agent start", () => {
     const host = setup();
 
     host.agentStart();
@@ -274,10 +338,12 @@ describe("working indicator", () => {
 describe("working activity", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    pickIndex(0);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   const during = (tools: RunningTool[], columns?: number) => {
@@ -323,7 +389,7 @@ describe("working activity", () => {
     ).toBe(message("Running 3 tools", "12s"));
   });
 
-  it("says Thinking while the model thinks and waits for the model between steps", () => {
+  it("says Thinking while the model thinks and shows the verb between steps", () => {
     const host = setup();
 
     host.agentStart();
