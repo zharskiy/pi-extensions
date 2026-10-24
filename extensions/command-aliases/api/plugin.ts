@@ -1,4 +1,5 @@
 import type { Host } from "../../../pi-adapter/index.ts";
+import type { Plugin } from "../../../shared/index.ts";
 
 const ALIASES = new Map([
   ["/continue", "/resume"],
@@ -26,4 +27,13 @@ export const createCommandAliases = (host: Host) => {
       },
     });
   });
+};
+
+export const commandAliasesPlugin: Plugin<never, never, undefined> = {
+  id: "command-aliases",
+  enable({ host }) {
+    createCommandAliases(host);
+
+    return undefined;
+  },
 };

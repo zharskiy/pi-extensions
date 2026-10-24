@@ -13,8 +13,8 @@ A pi extension that gives friendlier names to built-in commands: `/continue` run
 
 ## Configuration
 
-`ALIASES` at the top of `src/command-aliases.ts` maps each alias to its target, both with the leading `/`.
+`ALIASES` at the top of `api/plugin.ts` maps each alias to its target, both with the leading `/`.
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root). `src/command-aliases.ts` holds the aliases and wires them to the host. The editor plumbing (submit key, autocomplete wrapper, re-submitting through the focused editor) is in `pi-adapter/editor/input.ts`. Tests are under `tests/`.
+`index.ts` is the pi entry; it re-exports `api/extension.ts`, which builds the extension with `createManagedExtension` (`extension-manager/`) on the shared pi adapter in `pi-adapter/` (repository root). `api/plugin.ts` holds the aliases and the plugin that wires them to the host. How it works is in [ARCHITECTURE.md](ARCHITECTURE.md), where things are in [STRUCTURE.md](STRUCTURE.md). The editor plumbing (submit key, autocomplete wrapper, re-submitting through the focused editor) is in `pi-adapter/editor/input.ts`. Tests are under `tests/`.

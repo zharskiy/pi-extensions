@@ -1,0 +1,6 @@
+# command-aliases architecture
+
+- `index.ts` re-exports the default of `api/extension.ts`, which calls `createManagedExtension` with the namespace `pi-command-aliases` and one plugin, `commandAliasesPlugin` (`api/plugin.ts`). The plugin's `enable` wires the aliases to the host and returns nothing to undo. No settings, no bus, no services.
+- `ALIASES` maps an alias to a built-in command (`/continue` -> `/resume`, `/clear` -> `/new`, `/exit` -> `/quit`). pi runs built-ins in the editor's submit path before extension commands, so the alias is rewritten before pi sees it, through three `HostUi` calls implemented in `pi-adapter/editor/input.ts`, all no-ops outside tui mode.
+- `onEditorSubmit`: a terminal input listener that, on the `tui.input.submit` key, swaps an editor text that is exactly an alias for its target before the key is processed. `mapCommandCompletion`: wraps the autocomplete provider so picking an alias in the slash menu inserts the target. Both are installed on session start.
+- Each alias is also a registered command. If it still runs, `submitEditor` waits one macrotask, sets the target as editor text and feeds Enter to the TUI's focused component (the TUI is captured through a widget factory that is removed at once); when no component takes input the extension notifies `Could not run <target>`. No state, no files.
