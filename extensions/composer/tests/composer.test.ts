@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeHost, plainTheme } from "../../../test-framework/index.ts";
-import { createComposer } from "../src/composer.ts";
-import { CHEVRON } from "../src/frame.ts";
+import { createComposer } from "../api/plugin.ts";
+import { CHEVRON } from "../ui/frame.ts";
 
 const layout = { bottom: 2, scrolled: false };
 const plain = (text: string) => text;
