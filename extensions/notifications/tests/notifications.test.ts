@@ -2,12 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { watchSettings } from "../../../extension-manager/index.ts";
 import type { RunMode } from "../../../pi-adapter/index.ts";
 import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL } from "../../../shared/index.ts";
-import { createFakeHost, type FakeHost } from "../../../test-framework/index.ts";
-import { createNotifications } from "../src/notifications.ts";
-import { defaults, SETTINGS_FILE, schema } from "../src/settings.ts";
+import { createFakeAgentRuntime, createFakeHost, type FakeHost } from "../../../test-framework/index.ts";
+import notifications from "../api/extension.ts";
+import { SETTINGS_FILE } from "../core/settings.ts";
 
 const IDLE = { message: "pi is waiting for your input", channel: "auto" };
 
@@ -28,7 +27,7 @@ const prepare = (mode: RunMode = "tui", file?: unknown) => {
 
   const host = createFakeHost({ mode, agentDir, cwd });
 
-  createNotifications(host, watchSettings(host, "pi-notifications", schema, defaults, SETTINGS_FILE));
+  notifications.boot(host, createFakeAgentRuntime(), { root: notifications.options.root, agentDir });
 
   return { host, settingsFile: join(agentDir, SETTINGS_FILE) };
 };

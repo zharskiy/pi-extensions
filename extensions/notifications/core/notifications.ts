@@ -1,10 +1,5 @@
-import type { Host, NotifyChannel } from "../../../pi-adapter/index.ts";
-import {
-  AWAITING_INPUT_CHANNEL,
-  BUSY_CHANNEL,
-  parseAwaitingInput,
-  parseBusySignal,
-} from "../../../shared/index.ts";
+import type { DialogEvent, NotifyChannel, RunMode } from "../../../pi-adapter/index.ts";
+import { parseAwaitingInput, parseBusySignal } from "../../../shared/index.ts";
 import type { NotificationSettings } from "./settings.ts";
 
 const IDLE_TEXT = "pi is waiting for your input";
@@ -32,16 +27,18 @@ const slot = () => {
   return { arm, clear };
 };
 
-export const createNotifications = (host: Host, settings: () => NotificationSettings) => {
+export const createNotifier = (
+  settings: NotificationSettings,
+  notify: (text: string, channel: NotifyChannel) => void,
+) => {
   const sources = new Set<string>();
   const idle = slot();
   const waitTimer = slot();
   const waits = new Map<string, { title?: string; fired: boolean }>();
   let channel: NotifyChannel | undefined;
   let pending = false;
-  let offKeys: (() => void) | undefined;
 
-  const send = (text: string) => channel && host.ui.terminalNotify(text, channel);
+  const send = (text: string) => channel && notify(text, channel);
 
   const hasUnnotified = () => Array.from(waits.values()).some((wait) => !wait.fired);
 
@@ -68,9 +65,9 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     send(dialogText(latest.title));
   };
 
-  const armIdle = () => idle.arm(fireIdle, settings().idleDelayMs);
+  const armIdle = () => idle.arm(fireIdle, settings.idleDelayMs);
 
-  const armWait = () => waitTimer.arm(fireWait, settings().dialogDelayMs);
+  const armWait = () => waitTimer.arm(fireWait, settings.dialogDelayMs);
 
   const openWait = (owner: string, title?: string) => {
     if (!channel) {
@@ -108,17 +105,15 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     }
   };
 
-  host.onSessionStart((info) => {
-    const configured = settings().channel;
+  const start = (mode: RunMode) => {
+    const configured = settings.channel;
 
-    channel = info.mode === "tui" && configured !== "off" ? configured : undefined;
+    channel = mode === "tui" && configured !== "off" ? configured : undefined;
 
-    if (channel && !offKeys) {
-      offKeys = host.ui.onKeyPress(key);
-    }
-  });
+    return channel !== undefined;
+  };
 
-  host.subscribe(BUSY_CHANNEL, (data) => {
+  const busy = (data: unknown) => {
     const signal = parseBusySignal(data);
 
     if (!signal) {
@@ -136,9 +131,9 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     if (removed && sources.size === 0 && pending) {
       armIdle();
     }
-  });
+  };
 
-  host.onIdle(() => {
+  const settled = () => {
     if (!channel) {
       return;
     }
@@ -148,14 +143,14 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     if (sources.size === 0) {
       armIdle();
     }
-  });
+  };
 
-  host.onAgentStart(() => {
+  const agentStart = () => {
     pending = false;
     idle.clear();
-  });
+  };
 
-  host.onDialog((event) => {
+  const dialog = (event: DialogEvent) => {
     if (event.kind === "custom") {
       return;
     }
@@ -166,9 +161,9 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     }
 
     closeWait(DIALOG);
-  });
+  };
 
-  host.subscribe(AWAITING_INPUT_CHANNEL, (data) => {
+  const awaiting = (data: unknown) => {
     const signal = parseAwaitingInput(data);
 
     if (!signal) {
@@ -181,15 +176,15 @@ export const createNotifications = (host: Host, settings: () => NotificationSett
     }
 
     closeWait(sourceKey(signal.source));
-  });
+  };
 
-  host.onSessionShutdown(() => {
+  const shutdown = () => {
     channel = undefined;
     pending = false;
     waits.clear();
     idle.clear();
     waitTimer.clear();
-    offKeys?.();
-    offKeys = undefined;
-  });
+  };
+
+  return { start, key, busy, settled, agentStart, dialog, awaiting, shutdown };
 };
