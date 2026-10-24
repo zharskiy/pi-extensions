@@ -1,0 +1,25 @@
+# ui-kit architecture
+
+The theme-aware rendering components the extensions share. It imports only `platform/pi-adapter/index.ts` (types and the row geometry, no pi logic) and `platform/shared/index.ts`; extensions reach it through `index.ts`, from their `ui/`, `api/` and `tests/` folders only (an extension's `core/` paints nothing). Every component is pure over `ThemeLike` and `KeyPress`: lines in, lines out, no `Host`.
+
+## Rows
+
+`row.ts` is the pi-native row layout every row of the package is built with: pi's tool rows (through the transcript extension), the run_agent block, the subagents and questionnaire tool rows, the `/context` row and the handoff seed row.
+
+- `MARKS` (`glyphs.ts`) are one single-column glyph per state, read by shape first and colour second: `◌` pending (`dim`), `✓` success (`success`), `✗` error (`error`), `⊘` stopped, cancelled or handed off (`muted`, since a call you stopped needs no attention), `»` informational, a row with no state (`accent`), plus `↳`, the dim mark of a row's first outcome line, and `›`, the accent selection pointer (pi's message cursor), painted bold by `pointerMark`. `Mark` names the five states, `markGlyph` paints one in its token, and `markOf` derives it from a call: pending until started (the adapter counts a call with a result as started) and while partial, stopped when aborted, then error or success.
+- The grid has two columns: the glyph at column 0, the title at `TITLE_COLUMN` 2, `↳` at 2 on the first child line with the child text at `CHILD_COLUMN` 4 and every later child or body line at 4. A nested row (an agent in a run_agent block, a codemode sub-call, a `/context` section) shifts by `NEST` 4: its glyph at 4, its text at 6 and its own `↳` at 6. `PAD`, `CHILD_COLUMN` and `childLead` come from `pi-adapter`, which draws rows with the same geometry.
+- `row`/`rowChildren` build a row from a `MarkedRow`: a title (plain, multi-line with continuation at column 2, or `TitleParts` laid out by `titleLine`), children (styled lines or nested rows), an optional hint and an optional body drawn at `width - 4` and indented 4; blank lines stay empty.
+- `titleLine` gives the title its width priority: the glyph, the failure reason or state word, the verb, the target (paths cut at the start by `cutStart` so the file name stays, everything else at the end), the arguments, which are cut before the target, then the duration, which drops first. The parts after the target join with a muted ` · `. `failureSuffix` decides whether a reason goes on the title as ` · reason` (one line, at most 32 columns, beside at least 8 columns of target) or onto the `↳` line.
+- `wrapChild` wraps a child at column 4, `preview` keeps the head or the tail of an output with the hidden count in logical lines, and `rowText` is the small helper the tool renderers share.
+
+## Hints
+
+The hint grammar is pi's (`key-hints.ts`). `expandHint(key)` is the dim `(ctrl+o to expand)` for the key of `EXPAND_BINDING` (pi's `app.tools.expand`), and none when the key is unset. `appendHint` drops a hint that does not fit, except that a one-line summary that must be cut anyway keeps 20 columns. `countLine` is pi's tool-renderer count line, `... (37 more lines, ctrl+o to expand)` with `more`/`earlier` and `line`/`item`, whose `, key to expand` part drops first when narrow while the count stays. Bottom strips use `keyHints`, `enter to view · x to stop` with keys dim, words muted and a dim ` · `, so every hint reads `key to verb` with pi's lower-case key names; `hintLines` is the dim form and `framed` puts a form's accent rules around its lines and hint strip.
+
+## Forms and lists
+
+- `list.ts`: the selectable list, `listLines` with descriptions `below` or `beside` the label, `listKey`, and the shared `SELECT_HINTS`/`CANCEL_HINT`; used by the questionnaire form, the `/style` picker and the subagents forms.
+- `select.ts`: `selectForm`, a single-choice `FormFactory` for `HostUi.showForm` over the list.
+- `tabs.ts`: the tab bar `← □ A  ■ B  ✓ Submit →` and `tabStep` for Tab/→ and Shift+Tab/←; used by the questionnaire and `/agents setup`.
+- `multi-select.ts`: checkbox rows over a scroll window (Space toggles, `a` all, `n` none): `initialMulti`, `multiKey`, `multiLines`, which cuts each description to one row, `descriptionFits`, whether a description fits the room it leaves, `scrolledLines`, the rows of a scroll window, and `multiSelectForm`, a `FormFactory` that returns the checked values on Enter and `undefined` on Esc (used by `/mcp-import`).
+- `cache-tone.ts`: the cache rate's colour thresholds and `cachePercentText`, the rounded percentage in its colour; shared by context and the footer. The rate itself is `platform/shared/cache-hit.ts`.

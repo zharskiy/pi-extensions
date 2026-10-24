@@ -1,0 +1,85 @@
+# pi-adapter structure
+
+- `index.ts`: the public surface; contract types, `createPiExtension`, `settleWithin`, `resolveModel`, `textMetrics`, the row geometry.
+- `types/host-capabilities.ts`: `Host` = `ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }`.
+- `types/host-ui.ts`: `HostUi` = `NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
+- `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `SyntaxToken`, `ThinkingToken`), `BgToken`, `ThemeLike`.
+- `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`), `isNavigationKey`.
+- `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
+- `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
+- `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
+- `types/session.ts`: `SessionInfo`, `SessionControl`, `RunMode`, `ShutdownReason`, `Phase`, dialog and idle events.
+- `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
+- `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
+- `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.
+- `types/messages.ts`: `CommandSpec`, `HiddenMessage`, `RoutedMessage`, `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
+- `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
+- `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages.
+- `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).
+- `runtime/child-scope.ts`: the child scope in which no extension boots.
+- `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
+- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts, context tokens.
+- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run), `formatRoutedMessage`.
+- `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
+- `child/child-runtime.ts`: the runtime that starts child agent sessions.
+- `child/child-extension.ts`: the hidden child extension (no compaction, prompt sections, prompt record), `ParentSource`.
+- `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery.
+- `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
+- `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
+- `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.
+- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, key observation, thinking label, columns.
+- `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
+- `ui/form.ts`: `HostUi.showForm`, the inline form shell.
+- `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.
+- `ui/text-input.ts`: the form `TextInput` over pi-tui's `Editor`, its theme and focus.
+- `ui/key-events.ts`: `KeyPress` naming through pi keybinding ids.
+- `ui/footer.ts`: the custom footer and its live context, model and thinking getters.
+- `ui/notices.ts`: `HostUi.setNotice`; one-line notices between the editor and the footer.
+- `ui/thinking-label.ts`: the hidden thinking label: composed hint, record on `globalThis`, OSC 133 prefix.
+- `ui/working-message.ts`: the working message and its visibility.
+- `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours), `textMetrics` (width, truncate, wrap), `fitLines`.
+- `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
+- `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
+- `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
+- `editor/input.ts`: the editor submit key, command completion, re-submit.
+- `tools/tool-bridge.ts`: tool wrapping: `toPiTool`, `toPiResult`, `fromPiResult`.
+- `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
+- `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers.
+- `tools/transcript.ts`: the transcript pane and pi renderer capture.
+- `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
+- `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
+- `context/context-messages.ts`: per-message and per-block token estimates.
+- `context/usage-math.ts`: usage sums.
+- `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
+- `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
+- `prompt/sections.ts`: prompt sections shared by every adapter copy, each with its owner.
+- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
+- `tests/contract-types.test.ts`: type-level checks of the contract unions (theme tokens, keys, thinking levels, host capabilities).
+- `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
+- `tests/phase.test.ts`: `runtime/phase.ts`.
+- `tests/child-scope.test.ts`: `runtime/child-scope.ts`.
+- `tests/session-file.test.ts`: `runtime/session-file.ts`.
+- `tests/message-text.test.ts`: `runtime/message-text.ts`.
+- `tests/settle-within.test.ts`: `runtime/settle-within.ts`.
+- `tests/child-runtime.test.ts`: `child/child-runtime.ts` and `child/child-extension.ts`.
+- `tests/skills.test.ts`: `child/skills.ts`.
+- `tests/model-resolver.test.ts`: `child/model-resolver.ts`.
+- `tests/codemode.test.ts`: `child/codemode.ts`.
+- `tests/create-ui.test.ts`: `ui/create-ui.ts`.
+- `tests/form.test.ts`: `ui/form.ts` and `ui/overlay.ts`.
+- `tests/overlay.test.ts`: `ui/overlay.ts`.
+- `tests/key-events.test.ts`: `ui/key-events.ts`.
+- `tests/footer.test.ts`: `ui/footer.ts` and `ui/notices.ts`.
+- `tests/theme-bridge.test.ts`: `ui/theme-bridge.ts`.
+- `tests/working-message.test.ts`: `ui/working-message.ts`.
+- `tests/editor.test.ts`: `editor/editor.ts`, its hooks and the shared history.
+- `tests/input.test.ts`: `editor/input.ts`.
+- `tests/tool-bridge.test.ts`: `tools/tool-bridge.ts`.
+- `tests/tool-rows.test.ts`: `tools/tool-rows.ts` and `tools/row-component.ts`.
+- `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
+- `tests/transcript.test.ts`: `tools/transcript.ts`.
+- `tests/context-facts.test.ts`: the `context/` files.
+- `tests/usage-math.test.ts`: `context/usage-math.ts`.
+- `tests/main-prompt.test.ts`: `prompt/main-prompt.ts`.
+- `tests/live/wake.live.test.ts`: wakes a real child session (`npm run test:live`).

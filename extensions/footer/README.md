@@ -1,6 +1,18 @@
+<div align="center">
+
 # footer
 
-A pi extension that replaces pi's footer with a multi-line status block drawn right below the editor:
+**A multi-line status block below the editor: context, cache, cost, model, session total, folder, branch, thinking level.**
+
+Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+
+</div>
+
+## Why
+
+This extension replaces pi's footer with a status block right below the editor. Besides the main session's figures, it shows the cost of the whole session, subagents at every depth included, as reported to the [spending](../spending/README.md) extension. The status texts other extensions set get a line each.
+
+## What it looks like
 
 ```
 
@@ -13,30 +25,31 @@ A pi extension that replaces pi's footer with a multi-line status block drawn ri
 
 ```
 
-## What it does
+## Quick start
 
-- Every colour is a pi theme token, so the block follows the active theme, including `system` (foreground only, no backgrounds). Each kind of value has its own tint, and there are exactly two greys: key hints (`(shift+tab to cycle)`, and hints other extensions set such as `← to list agents`) are `dim`; everything that describes a shown value (`cache`, `session total (agents included)`, ` (sub)`, `(1M context)`, ` git:(` and `)`, ` · `, ` • ` with the session name, `?`, `thinking unavailable`) is `muted`:
-  - gauges use the state scale: the context tokens in `success`, `warning` above 70 percent, `error` above 90, and the cache rate on its own scale (below);
-  - money and session tokens (`$4.00`, `162.4k · $4.42`) in `text`;
-  - the model name in pi's `borderAccent` violet (`no model` is muted), and `thinking high` bold in pi's colour for that thinking level (the colour of the editor border, one per level from `off` to `max`);
-  - the folder in pi's `border` blue, the branch in `syntaxString` orange, or `syntaxVariable` cyan on a theme that paints `syntaxString` exactly like `success`, inside the muted ` git:(`…`)`.
-- The branch is the one span in the extensions that borrows syntax-highlighting tokens. Pi's chrome palette has only blue (`border`, the folder), violet (`accent`, `borderAccent`, the model name), greys and the state colours, so no chrome token was left with a hue of its own. Orange `syntaxString` stands clear of all of them on the built-in themes; pi's cyan `syntaxVariable` sits too close to the folder's blue there. Pi's `system` theme draws `syntaxString` from the terminal's green slot, the same colour as `success` (with or without a palette report), and a custom theme may reuse green for strings. So the footer compares the two paints of a probe text and switches to `syntaxVariable` when they are identical: the branch must never look like the gauge.
-- Money uses the shared `formatCost` from `core/manager/format.ts`, the same as the spending status: two decimals (`$4.00`), `<$0.01` under a cent, `$0.00` for nothing.
-- Line 1: the main session's context-window occupancy (warning colour above 70 percent, error above 90, `?` while pi does not know it, for example right after a compaction), the session's cache hit rate, the main session's cost, and the model name pi reports with its context window.
-- `cache 91%` is the share of the main session's prompt tokens read from the provider's cache, `cacheRead / (input + cacheRead + cacheWrite)` summed over every main-session request (agents, cache warming and compaction summaries left out), as an integer: success colour from 70 percent, warning from 30, error below. It stays hidden until the session reported any cache read or write (some providers never do), and it is the first segment dropped when the line does not fit the terminal. `/context` shows the same figure next to the last turn's: both compute and paint it with `sessionCacheHit` and `cachePercentText` from `core/manager/cache.ts`.
-- Line 2: the cumulative chargeable tokens (`input + output + cacheRead + cacheWrite`) and cost of the whole session, the main session plus everything reported to the spending extension, such as subagents at every depth.
-- Line 3: the current folder name followed by `git:(<branch>)` when pi reports a git branch (just the folder name otherwise), plus the session name when one is set.
-- Line 4: the thinking level and the key that cycles it, or `thinking unavailable` for models without reasoning.
-- Then, after a blank line, the status texts other extensions set, one per line, sorted by key, whitespace collapsed. For example, the subagents extension contributes the `← to list agents` line through its status while its panel is empty. Spending's own `main · agents · total` segment is left out, since lines 1 and 2 already show it, its ` (sub)` marker included.
-- Notices other extensions set through the adapter's `setNotice` (for example the session-limits extension's `» Handoff at 175k tokens · 142.3k used`) are drawn above the block, right under the editor, one per line; they are not statuses and do not appear among the status lines.
-- The block is indented one column (`PAD` is a single space), in line with the composer prompt, and is preceded and followed by one blank line, so pi's command list and the editor's bottom rule never touch line 1; `PAD` is a constant at the top of `src/render.ts`. Every line is cut to the terminal width with pi's `...`.
-- Placement: the block is drawn as the first below-editor widget and pi's own footer slot is left empty, so below-editor widgets other extensions add later, such as the subagents panel, sit under the block (usage, thinking and statuses first, then the panel). pi keeps below-editor widgets in the order they were first set and clears them on reload and session switch; the footer sets its block at session start and only re-renders it afterwards, so it stays first unless another extension sets a below-editor widget during its own session start ahead of the footer.
-- Active only in tui mode; elsewhere it does nothing.
+```bash
+pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi -e ./pi-extensions/extensions/footer/index.ts   # this extension alone, from a checkout
+```
 
-## Where the figures come from
+Start pi in a git checkout and read the block line by line:
 
-Cost and token figures come only from the spending extension, over the `spending:totals` channel: spending publishes them on session start, every turn end, every accepted report, compaction and idle, and the footer keeps the last payload. pi sets up every extension before it starts the session, so the footer hears the first publish whatever the load order. Until spending publishes (or without spending installed) the main cost on line 1 and the whole of line 2 are hidden. Line 2 ends with a dim ` (sub)` when pi reports a subscription for the model. Context, cache usage, model, thinking level, session name, branch and statuses are read live from pi on each render (the context usage is recomputed only when the session leaf or the model changes, the cache usage only when the leaf changes); the footer re-renders when the totals arrive, when the session goes idle and when the git branch changes.
+| Try | What you see |
+|---|---|
+| Line 1 | How full the context window is, the cache hit rate, the main session's cost and the model. |
+| Line 2 | Tokens and cost of the whole session, agents included. Hidden until spending reports. |
+| Line 3 | The folder name, the git branch and the session name when one is set. |
+| Press `shift+tab` | The thinking level on line 4 changes. |
 
-## Layout
+## Development
 
-`src/index.ts` is the pi entry on the shared adapter in `core/adapter/` (repository root). `src/footer.ts` wires the channel and the footer, `src/render.ts` holds the pure formatting and line builders behind `renderFooter`; the token and window formats (`formatTokens`, `formatWindow`) come from `core/manager/format.ts`, the padding and separator from `core/manager/layout.ts`, both shared with `/context`. The channel names, the totals parser and spending's status key are shared in `core/manager/channels.ts`. Tests are under `test/`.
+```bash
+npm run test -- extensions/footer   # this extension's unit tests
+npm run check                       # typecheck, biome, knip, unit tests
+```
+
+The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
+
+## Contributing
+
+Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

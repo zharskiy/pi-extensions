@@ -1,267 +1,63 @@
+<div align="center">
+
 # subagents
 
-Repository: https://github.com/zharskiy/pi-extensions
+**Background agents the main session runs, watches, messages and stops, each with its own context.**
 
-Background subagents for the [pi coding agent](https://pi.dev). The main session decides what should happen and delegates the work to agents that run in the background with their own context, is woken once per batch with all results, and can check on, message, inspect and stop any agent. The spend of every agent is reported to the spending extension, which adds it up in the footer.
+Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
-Version 0.4.0 replaces the progress widget with a panel below the editor, redraws `run_agent` as a live block, merges the list and the view into one `/agents` overlay, and moves notifications to the notifications extension. Agents can start their own agents when their file allows it, up to three levels by default (main session, agent, sub-agent). An agent that runs out of context continues itself from a handoff file; you can browse all agents and open any agent's view with `/agents`. The main session's own context limit is handled by the separate session-limits extension shipped in the same package.
+</div>
 
-## What you need
+## Why
 
-- pi 1.2.0 or later within pi 1 (`pi --version`); it is developed and tested against pi 1.3.0.
-- Node 22.19 or newer (only for development; pi loads the TypeScript sources directly).
-- A model configured in pi. The shipped agents name OpenAI and Anthropic models (see [Agents](#agents)); without credentials for those providers, pick one of your models per agent with `/agents setup`, or name a model in the `model` parameter of `run_agent`. An agent file without a `model` line runs on the main session's model and thinking level.
+A long task fills the main session's context with searches, edits and test output. This extension lets the main session delegate that work with `run_agent` to agents that run in the background, each with its own context. The main session is woken once per batch with all results, and can check on, message and stop any agent. Starter agents ship with the package (a scout, a planner, an implementer, a reviewer and more), and you can add your own as Markdown files.
 
-## Install
+## What it looks like
 
-From a local checkout:
+```
+ ✗ 3 background agents · 4m 2s · 35 calls · 64.7k tokens · $0.25
+   ↳ ✓ scout  Map the auth module · model-a:low
+       1m 5s · 4 calls · 12.3k tokens · $0.04
+     ✗ worker  Fix the login redirect · model-a:low
+       tests failed twice · 2m 10s · 31 calls · 52.4k tokens · $0.21
+     ⊘ reviewer  Review the diff of PR 5 · model-b:high
+       Stopped · 3s · 0 calls · worktree removed
+```
+
+## Quick start
 
 ```bash
-git clone https://github.com/zharskiy/pi-extensions.git
-pi install ./pi-extensions           # installs every extension of the package; add -l for the current project only
+pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi -e ./pi-extensions/extensions/subagents/index.ts   # this extension alone, from a checkout
 ```
 
-From git:
+Start pi and try:
+
+| Try | What you see |
+|---|---|
+| Ask for work that splits well, like "find every place we parse dates and review them" | The main session calls `run_agent`, ends its turn and is woken with every result once the batch is done. |
+| `/agents` | The agents menu: view running and finished agents, set up models and skills, create a new agent. |
+| `/agents setup` | A form with one tab per agent to change its model, thinking level and skills. |
+| `/agents create` | The main session asks what the new agent should do and writes its file. |
+
+<details>
+<summary>What you need</summary>
+
+A model configured in pi. The shipped agents name specific models; without credentials for those, pick one of your models per agent with `/agents setup`. An agent file without a `model` line runs on the main session's model.
+
+</details>
+
+## Development
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions
-```
-
-Try it for one run without installing: `pi -e ./pi-extensions/extensions/subagents/src/index.ts`.
-
-## Use
-
-- Ask for work that splits well ("find every place we parse dates and review them"). The main session calls `run_agent` and ends its turn. The call shows a block, a transcript row: a header with the state mark and `N [background] [kind] agent(s)`, and under it one nested row per agent (`↳` hangs under the header text, each agent's mark sits at column 4): `name  description · id:thinking` (the model without its provider, dim; left out when fewer than 20 columns would stay for the description, which is cut after that), and a status line in the shared receipt format. A background batch never ticks in scrollback: its status lines say `Queued`, `Starting`, `Running` or `Stopping` while open, and the panel below the editor carries the live figures. Under `wait: true` the block is the live bottom row, so a running agent shows `Elapsed 42s · 9 calls · 6.1k tokens · $0.01`. Closed agents show their receipt (`1m 5s · 4 calls · 12.3k tokens · $0.04`), stopped and handed-off agents lead with the word (`Stopped · 3s · 0 calls`, `Handed off · 1h 2m · …`), and the worktree outcome follows when there is room (`· worktree removed`, `· branch <branch> kept`, `· worktree kept`). A failure reason that is one line of at most 40 columns leads the status line (`tests failed twice · 2m 10s · …`); a longer one comes under the receipt, wrapped, two rows while collapsed and then `... (N more lines, ctrl+o to expand)`. The header mark is `◌` while any agent is open, `✗` when the call or an agent failed, `⊘` when every agent was stopped or handed off, and `✓` otherwise (with `· 1 stopped` when some were). Once every agent has closed the header adds the batch receipt: the wall time from the first start to the last close, then the summed calls, tokens and cost. While any agent is open a background block of the main session carries the hint `(↓ to manage, ← to list)`; `↓ to manage` needs the `agent-panel` plugin and `← to list` the `agent-view` plugin, so a key whose plugin is in `disabledPlugins` is left out, `← to list` goes first when the header is narrow, and blocks of batches that an agent started, which you see only in that agent's view, carry no hint. The `← to list agents` status (a pi status the `agent-panel` plugin sets in tui mode, shown by pi's built-in footer and by the footer extension) appears only while `agent-view` is enabled and the panel shows no rows, so it returns when the last finished row leaves, by timer or when you clear it with `x`. The block stops updating when the batch is done; in a forked session its rows carry `»` and say `Status unavailable · /agents <id>` (`Status unavailable` without the agent-view plugin):
-
-  ```
-   ✗ 3 background agents · 4m 2s · 35 calls · 64.7k tokens · $0.25
-     ↳ ✓ scout  Map the auth module · model-a:low
-         1m 5s · 4 calls · 12.3k tokens · $0.04
-       ✗ worker  Fix the login redirect · model-a:low
-         tests failed twice · 2m 10s · 31 calls · 52.4k tokens · $0.21
-       ⊘ reviewer  Review the diff of PR 5 · model-b:high
-         Stopped · 3s · 0 calls · worktree removed
-  ```
-
-- When the whole batch is done the main session gets every result in one message that is hidden from the transcript, sent at once. If the main session is busy (a run is active), the results join that run as a hidden follow-up and nothing new appears. If it is idle, the hidden results start its turn: you see the working indicator and then the reply, with no message in your name. The model is told that you saw only the block's status row per agent and must relay what matters. An interrupted `wait: true` call shows `⊘ 3 scout agents · stopped`: pi replaces the result with its abort error; the agents were stopped; their panel rows and `/agents` show them. A call that starts nothing shows `✗ No agents started · <reason>`, or the reason on a `↳` line when it is long.
-- While agents run you can keep typing. Corrections for a running agent are forwarded with `message_agent`, which draws nothing when the message is delivered and `✗ message_agent <id> · <reason>` when it is not (the reason on a `↳` line when it is long). `agent_status` calls read `✓ agent_status <ids or all>` with `↳ N agents (ctrl+o to expand)` under them and, when expanded, one agent row per agent in the panel's columns (static marks, the figures as of the call).
-- The panel below the editor shows one row per agent (with the footer extension it sits under the footer block, below the usage and thinking lines), in aligned columns: pi's spinner for a running agent or the state mark (`◌` queued or stopping, `✓` done, `✗` failed, `⊘` stopped or handed off), the agent name (with `#2` for a continued session and `(+N)` for agents it started, both dim; finished names are muted), the description, the agent's model as `id:thinking` without the provider (dim, in its own column, only when the row has room), and the status cell in the shared receipt format: `Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04 · grep` while it runs (the last part is the current tool or `writing`), `1m 5s · 4 calls · 12.3k tokens · $0.04` once done, and `Queued`, `Starting`, `Stopping · Elapsed 2m 3s`, `Stopped · 3s · 0 calls` or `Handed off · 1h 2m · 88 calls` for the other states. A failed row shows only its figures; the reason is in the run_agent block, the agent view and `agent_status`. Cost has two decimals (`<$0.01` below a cent) and is left out while it is zero. On a narrow row the model column goes first, then the description is cut down to 12 columns, then the receipt drops the activity, the cost, the calls and the tokens; the time and the state word always stay. Agents started by other agents sit under their caller: the first child has `↳` in its parent's glyph column, later siblings two spaces, each deeper level two more. At most five rows are shown; `↑ N more` and `↓ N more` mark the rest. With a row selected the strip below reads `enter to view · x to stop · esc to deselect` (`x to close now` while stopping, `x to clear` on a finished row):
-
-  ```
-     ⠹ scout   Map the auth module     Elapsed 1m 5s · 4 calls · 12.3k tokens
-   › ⠹ worker  Fix the login redirect  Elapsed 2m 3s · 18 calls · 30.1k tokens
-     ↓ 3 more
-   enter to view · x to stop · esc to deselect
-  ```
-- Press `↓` in an empty prompt (after the newest input history entry) to select the first row, `↑`/`↓` to move (`↑` on the first row returns to the prompt), `Enter` to open the agent's view, `x` to stop a running agent (it keeps answering for `stopGraceSeconds`; `x` again closes it now), to close a queued agent at once, or to clear a finished row (the selection moves to the next row); `Esc` deselects. The prompt keeps the focus: any other key deselects and is typed, and `Esc` never interrupts the main session while a row is selected. While the panel shows rows, `↓` on an empty prompt always selects the panel; `Esc` returns you to typing. `←` in an empty prompt, or on a selected row, opens the agents list (as `/agents` does), also when there are no agents (the list says `No running agents`). While the panel shows no rows pi's footer shows the status `← to list agents`.
-- Finished rows leave after `doneLingerMs` (10 s); failed, stopped and handoff rows after `failedLingerMs` (30 s) or when you clear them. The panel disappears with its last row.
-- `/agents` with no arguments opens a menu titled `Agents`: `view` (the agents list, with `2 running · 3 finished` appended when there are agents, counted as in the list title), `setup` and `create`; `↑`/`↓` or a digit picks, `Enter` chooses, `Esc` closes it and does nothing. Each word also works typed: `/agents view`, `/agents setup`, `/agents create`. With the agent-setup plugin disabled `/agents` opens the list directly. Outside the interactive terminal `/agents` and `/agents view` only say that the list needs it.
-- `/agents view` (or `←` in an empty prompt) opens the agents list over the whole screen in two sections, each showing every agent under the agent that started it: `Running` (open agents, with their finished children still under them while the caller runs) and `Finished (n)` (finished, failed, stopped or handed off agents started by the main session, newest first, each with the agents it started; they stay for the whole session, up to the 200 most recent, also across `/reload` and a resume of the session; `/new` and `/fork` start an empty list). Each row reads like a panel row, model included when there is room. The title counts `Agents · 3 running · 2 finished`, the finished count matching the `n` of `Finished (n)`. `↑`/`↓` select, PgUp/PgDn, Home/End and the mouse wheel move faster, `Enter` opens the agent's view in the same overlay, `x` stops the selected agent or clears a finished row (a finished top-level agent together with the agents it started), `shift+x` twice within 3 seconds stops every running or queued agent (the first press says `Press shift+x again to stop all agents`; with none it says `No running agents`; a failed stop says `Stop failed: <reason>`), `esc` (or `→`) closes it and returns to the prompt. The strip at the bottom reads `↑↓ to select · enter to view · x to stop · shift+x to stop all · esc to close · → to main session`:
-
-  ```
-
-   Agents · 2 running · 3 finished
-
-   Running
-   › ⠹ scout (+2)    Map the auth module   Elapsed 2m 4s · 12 calls · 31.0k tokens
-     ↳ ⠹ scout       Find callers of l...  Elapsed 40s · 5 calls · 9.2k tokens
-       ✓ scout       Find parseDate users  45s · 6 calls · 7.7k tokens · $0.02
-
-   Finished (2)
-     ✓ reviewer      Review the diff       1s · 1 call · 912 tokens · <$0.01
-     ↳ ✓ scout       Collect changed f...  40s · 3 calls · 4.0k tokens · $0.01
-     ✗ worker        Fix the login red...  2m 10s · 31 calls · 52.4k tokens
-
-   ↑↓ to select · enter to view · x to stop · shift+x to stop all · esc to close · → to main session
-  ```
-- `Esc` in an empty prompt right after you interrupted a turn, while agents are still queued or running, asks `Stop running agents?` and names them; `Yes` stops them as `shift+x` in the list does (running agents get `stopGraceSeconds`), `No` leaves them. Either answer, or a new turn, ends this until the next interrupted turn, so the next `Esc` is pi's own again. Add `interrupt` to `disabledPlugins` to turn it off.
-- The agent view (`Enter` in the list or on a panel row, or `/agents <id>` for any agent of this session, also from earlier runs and any link of a handoff chain) shows a header: the state mark (pi's spinner while it runs) with the agent's name and description (`scout  Map the auth module`), the receipt in the panel's format followed by the context share (`Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04 · 31% context`), the full model and the id (`provider/id:thinking · id scout-ab12`; the id is what `/agents <id>` takes), then the error (every line wrapped, in the error colour, at most six rows and a count of the rest), the chain (`Chain scout → scout #2 (2 sessions) · viewing scout #2`), the handoff file (`Handoff file <path>`, with `(invalid: <reasons>)` when it does not follow the schema) and the worktree (`Worktree <path> · branch <branch>`), then its transcript drawn with pi's own components, starting with the task it was given: codemode scripts with their nested tool calls and output, and nested `run_agent` blocks as in the main session, live while the nested agents run. It opens at the end and follows new output; `↑`, PgUp, Home or the wheel stop following, `End` resumes. Ctrl+O (pi's tools key) toggles tool detail for every call; in pi's fullscreen mode (the default) a click on a tool call toggles that call alone and a click on the Request line works like `r`. Press `r` to show the first request as the model received it (the literal body, pretty-printed), collapsed by default to one line, `Request · 12 lines (r to expand)`; `r` again hides it. `x` stops the agent: its turn is aborted and it closes after `stopGraceSeconds` unless its caller messages it first; `x` again closes it now. `Esc` goes back to the list when you came from it, otherwise closes. Worktree agents show `Worktree <path> · branch <branch>`, and after they finish what became of it (`Worktree removed`, `Worktree removed · branch <branch> kept` or `· kept`; below). The strip at the bottom reads `esc to go back` (`esc to close` when the view was opened directly), `x to stop` while the agent is open, `r to show the request` and `ctrl+o to expand tools` (left out first when the strip is narrow), with the scroll position right-aligned; a stop that fails says `Stop failed: <reason>` above it:
-
-  ```
-
-   ⠹ scout  Map the auth module
-   Elapsed 1m 5s · 4 calls · 12.3k tokens · $0.04 · 31% context
-   provider/model-a:low · id scout-ab12
-   Worktree .pi/worktrees/scout-ab12-lq3 · branch pi-agents/scout-ab12-lq3
-   ──────────────────────────────────────────────────────────────────────────────
-   Request · 12 lines (r to expand)
-
-   Task from main (agent id scout-ab12): Map the auth module ...
-
-   esc to go back · x to stop · r to show the request    1-40/120 · end to follow
-  ```
-
-  To correct an agent, ask the main session; it messages the agent with `message_agent`.
-- An agent that reaches its context limit saves a handoff file with its `handoff` tool, which every agent has, read-only ones included (the tool writes only the agent's own handoff file and reports what is wrong with an invalid one; in the agent's view its row reads `✓ handoff` with `↳ Saved <path>` under it) and, when its work is only partial, continues itself in a new session from that file, up to `maxChainLength` sessions (3 by default). The caller is woken once, at the end of the chain, with one result; rows show `#2`, `#3` for the later sessions and any id of the chain works with `message_agent`, `agent_status` and `/agents`, also for chains from earlier sessions. A successor also receives, in its task, the batch results that reached its predecessor after it stopped for the handoff. Only a blocked handoff, one at the cap, or one that does not follow the schema (marked `(invalid: <reasons>)` after its path) reaches the caller as `handoff`; an agent that wrote no handoff file and whose final reply is not a handoff fails.
-- Notifications are not part of this extension: the notifications extension in this repository (`extensions/notifications/`) sends one terminal notification when pi waits for your input after the agents are done, and one when a dialog of the main session waits unanswered (agents never ask). It waits for agents through the busy channel this extension reports on (`pi:busy`, source `pi-subagents`).
-- Agents never ask you anything: only the main session is interactive. Extensions loaded in an agent see no UI (`ctx.hasUI` is false): a confirmation, a choice or a text request (for example a permission gate of another extension) gets the denial at once (no, no choice, no text) and nothing appears in the main session; its notifications are dropped. An agent that needs a decision says so in its result, and the main session takes it from there.
-- Main session context limits are not part of this extension: the session-limits extension in this repository (`extensions/session-limits/`) writes a handoff at the main session's hard limit and continues in a new session. This extension reports on the busy channel (`pi:busy`, consumed by session-limits and notifications; source `pi-subagents`) whenever agents are running, so the automatic switch waits until they finish, and `/session-handoff` asks before ending them. The main session prompt tells the model to list delegated agents with their result files in that handoff.
-- To run an agent on another model or thinking level, say so ("review this with <model name>", "use <model name> on high"). The main session passes your words in the `model` parameter of `run_agent` as `name[:thinking]`; it never picks a model on its own. The harness resolves the name among the models pi has credentials for, tolerating misspellings, and takes the newest version when you give none. If the name fits several model families, or none, nothing starts and the main session asks you with the candidates and their prices. The model that actually runs, as `provider/id:thinking`, is shown in the start block, `agent_status`, the agent view header and the agent's manifest.
-- Spending totals are not part of this extension: the spending extension in this repository (`extensions/spending/`) shows `main $x · agents $y · total $z` in the footer. This extension reports each agent's usage, at every depth and under its own id, on that extension's channel (`spending:usage`, source `agents`) whenever it grows. Tool results carry no usage, so pi's own session cost counts the main session only; without the spending extension agent spend is visible only in the agent rows and views.
-
-Each agent has its own folder, which the agent is told in its task (`Agent folder: <dir>`; a shell agent keeps its full command logs there), `<main session file without .jsonl>/agents/<id>/` next to the main session file in pi's sessions folder (`~/.pi/agent/pi-subagents/<session id>/agents/<id>/` for a session without a file): `manifest.json`, the agent's session file and `result.md`. Handoff files go to the OS temp dir, `<temp dir>/pi-subagents/<session id>/<agent id>-handoff.md`, so they need no cleanup. Nothing is written to your project, except a worktree agent's checkout under `.pi/worktrees/` (plus that folder's `.gitignore`), its branch and git's worktree record (below), and the files you ask for in a trusted project: `.pi/pi-subagents.json` from `/agents setup` and `.pi/agents/<name>.md` that the main session writes after `/agents create … project`.
-
-Tools added to the main session: `run_agent`, `agent_status`, `message_agent`. Commands: `/agents [view | id]`, `/agents setup` and `/agents create` (see [Agent setup](#agent-setup) and [New agents](#new-agents)).
-
-## Agents
-
-Starter agents, each with a description of the form use for / not for / returns, so they do not overlap: `scout` (read-only questions about this codebase, `openai/gpt-6-luna:low`), `planner` (read-only; turns an ambiguous or multi-step request into ordered batches of agent tasks with a full brief per task, `openai/gpt-6.1-sol:high`), `implementer` (scoped edits, `openai/gpt-6-luna:medium`), `editor` (applies edits the task describes exactly, runs nothing, `openai/gpt-6-luna:low`), `reviewer` (read-only review, `openai/gpt-6.1-sol:high`), `fetch` (reads web pages with the `fetch` tool, `openai/gpt-6-luna:low`), `shell` (runs commands and tests and reports a digest, `openai/gpt-6-luna:low`), `image` (describes images given in `files`, `openai/gpt-6-luna:low`), `verifier` (checks a change against given commands and done-when statements and returns a pass, fail or incomplete verdict, `openai/gpt-6-luna:low`) and `general` (`openai/gpt-6.1-sol:medium`, all tools), whose description tells the main session to use it only when no other agent fits. The `image` agent needs a model that accepts image input; pi drops images silently for a model that does not, so check the model you give it. `explorer` is now `scout`; there is no alias, so a copy of the old file in `~/.pi/agent/agents/` keeps working only under its own name. Every agent is listed the same way in `run_agent`; when to pick one is said in its `description`. `planner` may start `scout`, `shell` and `fetch` agents of its own, `reviewer` `scout` and `shell` agents, `implementer` `scout`, `shell` and `verifier` agents (it runs no checks itself; its last step is one `verifier`), `general` every other agent; the other six start none. The shipped files live in `agents/leads/` (planner, implementer, reviewer, general) and `agents/chores/` (scout, editor, fetch, shell, image, verifier). Add your own as Markdown files with frontmatter in `~/.pi/agent/agents/` or, for trusted projects, `.pi/agents/`, directly or in subfolders of any depth (project files win over user files, user files over built-ins; the name comes from `name:`, not the file or folder, and a name defined twice in one location gives a warning and the later file in path order wins). To change a starter agent's model, thinking level or skills, use `/agents setup` (below); it keeps the shipped prompt, so prompt fixes from updates still reach the agent. To change anything else, copy its file to `~/.pi/agent/agents/` and edit it there, or start a new agent with `/agents create`.
-
-Every agent file declares the three list fields `tools`, `skills` and `subagents`; there is no default for them. Each takes the same three forms: a list of names (`[read, grep]`, a block list, or `read, grep`), `[]` for none, or the word `all` (also `[all]`) for everything the main session has (for `skills`, every skill of the agent's caller). `all` mixed with names (`[all, read]`) is an error, and so is `All` or `ALL`: `all` is written in lowercase. Names are plain names of letters, digits, `_` and `-`, not starting with `-`, so pi's `+name`/`-name` modifiers and `*` patterns are not accepted. A key with no value (`tools:` and nothing under it) counts as missing; write `[]` for none. The other fields are optional with the defaults below, except `name`, `description` and `limit`. A name listed twice in any list field warns and counts once. The table is the whole frontmatter: these are the settings you decide per agent, and the file's body is the agent's prompt. Everything else (how results come back, the context reserve, compaction, cache warming, depth) is the same for every agent and comes from the harness and [Settings](#settings). The shipped agents declare every field, in this order, so they double as reference files.
-
-| Field | Type | Required or default | Meaning |
-|---|---|---|---|
-| `name` | letters, digits, `-`, `_` | required | Name the caller passes to `run_agent`. |
-| `description` | text | required | When to use the agent; shown in the `run_agent` description. |
-| `model` | `name[:thinking]` or `inherit[:thinking]` | `inherit` | Model the agent runs on; `inherit` is the main session's model. |
-| `limit` | integer, at least 5000 | required | Context limit in tokens; at the limit the agent writes a handoff. |
-| `tools` | list, `[]` or `all` | required | Tools the agent may use; any tool also brings `codemode` and `tool_search`, plus every MCP tool with `mcp: true`, and `[]` brings none of them. `[]`: no tool of its own (only the agent tools when it may start agents), and no MCP server connects (see MCP tools below). `all`: the tools active in the main session when the agent starts, as pi's `defaultTools` setting, `--tools` and any tools toggled since left them; this package's tools follow `subagents`. |
-| `skills` | list, `[]` or `all` | required | Skills by name. `[]`: none. `all`: every skill of the agent's caller (the main session's loaded skills, or the calling agent's skills). Named skills are picked from the available skills, found from the main session's project, so a `worktree: true` agent gets uncommitted project skills too. A name that is not an available skill gives a warning at session start and is skipped; the others still load. |
-| `subagents` | list of agent names, `[]` or `all` | required | Agents it may start. `[]`: none. `all`: every other agent, among those loaded, never itself. |
-| `worktree` | `true` or `false` | `false` | `true` runs the agent in its own git worktree. See below. |
-| `mcp` | `true` or `false` | `true` | `true` loads pi's MCP built-in in the agent's session, so it connects every enabled server and gets every MCP tool; `false` keeps `codemode` and `tool_search` but no MCP. The shipped leads have `true`, the chores `false`. |
-
-```markdown
----
-name: doc-writer
-description: Writes or updates docs for one module.
-model: provider/model-id:low
-limit: 80000
-tools: [read, grep, find, ls, edit, write]
-skills: [docs-style]
-subagents: []
-worktree: false
----
-You write documentation...
-```
-
-The shipped agents are limited to what they need: `scout` and `planner` have read-only tools (`read`, `grep`, `find`, `ls`), `reviewer` adds `bash` for short read-only commands such as `git diff`, `implementer` the editing tools and `bash`, `editor` the read-only and editing tools without `bash`, `fetch` has `fetch` and `read`, `shell` `bash` and `read`, `image` only `read`, `verifier` the read-only tools and `bash` to run the checks it is given, and these nine have `skills: []`; the leads `planner` (`subagents: [scout, shell, fetch]`), `implementer` (`subagents: [scout, shell, verifier]`) and `reviewer` (`subagents: [scout, shell]`) have `mcp: true`, the chores `scout`, `editor`, `fetch`, `shell`, `image` and `verifier` `subagents: []` and `mcp: false`. `general`, for anything the others do not fit, has `tools: all`, `skills: all`, `subagents` naming every other agent and `mcp: true`. Leads start with no skills and the main session passes the relevant ones per task through `skills` on `run_agent`; chores never get skills; `skills: all` remains available for your own agents. Since `tools: all` is what the main session has active, `general` gets `grep`, `find` and `ls` when your main session has them, through `defaultTools`, `--tools` or by turning them on. `all` does not include the `fetch` tool: only an agent that lists `fetch` in `tools` gets it. To give a shipped agent a fixed skill, set it with `/agents setup` (or an `agents` override in [Settings](#settings)), or pass the skill in the `skills` parameter of `run_agent` for one task.
-
-**Skills in three layers.** An agent's skills are its file's `skills`, replaced by an `agents.<name>.skills` override when one is set (user file, then project file; a replacement, not a union, so an override of `[]` gives the agent none), plus the skills its caller passes for the task; `skills: all` is every skill of the caller. Skills narrow down the tree: a caller can pass only skills it has itself, and the main session has the skills pi loaded into it. Other tools bind skills only in the agent definition; the per-call `skills` parameter is this package's addition.
-
-**Available skills.** Agent files, overrides and `/agents setup` name skills from every skill pi discovers for the project and the user (a trusted project's `.pi/skills` and `.agents/skills`, `~/.pi/agent/skills`, `~/.agents/skills`, the `skills` setting and packages), whether or not the main session loaded it, plus the skills the main session loaded itself (`--skill`, extensions), which win a name clash. The main session keeps whatever skills pi gives it. `!` and `-` exclusions in pi's `skills` setting (user or project) apply to the main session only: an agent can still name an excluded skill in its own `skills` list, so the setting keeps a skill out of the main session while agents that name it keep it. An excluded skill is not among the main session's skills, so the main session cannot pass it per task and `all` from the main session leaves it out. The list is read at each session start; after adding a skill, `/reload`.
-
-**Skills per task.** `run_agent` takes an optional `skills` list on each agent entry: skill names added to the agent's own `skills` for this task (a union; the agent file is not changed, and an agent with `skills: all` already has them). The main session passes the skills whose descriptions fit the task, plus any you named, and none to chores. Names must be in the caller's own effective skills (the skills loaded into the main session for the main session; for an agent, its own `skills`, with `all` resolved to names at its start, plus the skills its caller passed); any other name starts nothing and the error lists the caller's skills (`skill(s) "x" not in this caller's skills. This caller's skills: a, b.`, or `This caller has no skills.`). An agent whose `tools` do not include `read` cannot use skills, so naming one for it is refused too. Skills stay listed and are read on demand; their bodies are not copied into the prompt.
-
-**Fetch tool.** The `fetch-tool` plugin provides a `fetch` tool, `fetch(url)`, given to an agent only when its `tools` names `fetch` (the shipped `fetch` agent). It reads an `http` or `https` page and returns the final URL, the status, the title, the fetch time and the readable text (markup stripped), and says how much was shown when a page is cut. A failure comes back as an error result (`Fetch failed: <url>: <reason>`). The limits are the settings `fetchTimeoutSeconds` (per request, including redirects and the body), `fetchMaxBytes` (bytes read from the body) and `fetchMaxChars` (characters of text returned). It fetches any http(s) host the agent asks for, including local and private addresses. Page text is treated as data (the fetch agent's prompt says so) but is not filtered. Plain text, JSON and XML bodies pass through as text; other types are refused. It needs no extra dependency; add `fetch-tool` to `disabledPlugins` to remove it, and an agent that names `fetch` then has no such tool.
-
-A file that misses `limit` or one of the list fields, names an unknown agent in `subagents`, lists itself, or forms a cycle (`a` may start `b`, `b` may start `a`) is not loaded; pi shows a warning naming the file and the fields to add. `subagents: all` counts as naming every other agent for the cycle check, so an `all` agent cannot be started by any agent it can reach, and two `all` agents rule each other out; give agents that start others, like `general`, a list of names. `model` is `name[:thinking]`: an exact `provider/id` as listed by `pi --list-models`, or a name the harness resolves when the agent starts, like a `model` passed to `run_agent` (a model name or part of one, optionally `:high`). The thinking suffix is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; without it the agent uses the main session's thinking level, and `inherit:high` keeps the main session's model with its own level. A suffix that is not a known level stops the file from loading. There is no separate `thinking` field; any key outside the table is ignored with a warning. A model whose provider has no credentials, or a name that is ambiguous or unknown, is rejected when the agent is started, before anything runs. The body is the prompt.
-
-**MCP tools.** MCP follows `tools` and `mcp`; there is no per-server filter. An agent with any tool, named or `all`, gets pi's codemode and tool search built-ins and `codemode` and `tool_search`; with `mcp: false` that is all. With `mcp: true` (the default) it also gets pi's MCP built-in in its session, every MCP tool of every server, pi's MCP resource tools when a server offers resources, and `codemode` and `tool_search`: the harness adds `codemode`, `tool_search`, the pattern `mcp__*` and the resource tools to a named list, and to the main session's active tools for `tools: all` (MCP tools, `codemode`, `tool_search` and this package's tools of the main session are left out of that copy and added back this way). An agent with `tools: []` loads none of the built-ins, connects to no server and has no tool of its own (only the agent tools when it may start agents); an MCP tool that another extension registers itself, outside pi's MCP, stays registered in its session but is never active, and without `codemode` and `tool_search` the agent can neither see nor call it. With pi's default `codemode` exposure the agent calls MCP tools from codemode scripts, so the agent view shows `codemode` and pi's `mcp_servers` prompt section rather than one tool per MCP tool; `direct` tools appear by name. The agent connects its own servers, every enabled one, from the same `mcp.json` files as the main session (global, and the project's when it is trusted), when it starts. Every agent with tools therefore pays for its own connections, and its first prompt waits up to 10 seconds for the servers whose tools are exposed `direct` (pi's MCP startup wait; servers with other exposures connect in the background). When the main session has not loaded pi's MCP built-in, agents do not load it either, so no server connects and no MCP tool appears; they keep `codemode` and `tool_search`. This covers `pi --no-mcp`, `-builtin:mcp` in the `extensions` setting and an SDK host that disables the built-in: the harness checks, at each spawn, whether the main session has the `/mcp` command that pi's built-in registers. The `run_agent` description does not list MCP tools. The main session's MCP setup is not touched.
-
-**Worktree agents.** `worktree: true` gives each run of the agent its own git worktree, so agents that edit code in parallel do not step on each other or on you. When the agent starts, the harness runs `git worktree add -b <branch> .pi/worktrees/<id>-<stamp> <HEAD commit>` in the main session's directory and starts the agent there (in the same subdirectory when the session runs in one), with the main session's project trust; a successor session of the same agent continues in the same worktree. The worktree starts from the last commit: uncommitted changes and untracked files of your checkout (an uncommitted `.pi/` folder, `.env`, `node_modules`) are not in it. The branch is named `pi-agents/<id>-<stamp>`, where the stamp is the creation time in base 36, so an agent id that repeats one from an earlier session still gets a branch of its own. If the session's directory is not inside a git repository, or git or the file system fails, the agent fails with `worktree failed: <error>` before anything runs. When the agent is done (done, failed, stopped, or a handoff with no successor; a chain cleans up after its last session), the harness runs `git worktree remove <path>` (without `--force`) and deletes the branch if it still points at the commit the worktree started from. The result, `agent_status`, the agent's `manifest.json` and its view report the outcome: `removed` (nothing committed), `removed; branch <branch> kept` (the agent committed; take the work with `git merge <branch>`, drop it with `git branch -D <branch>`), or `kept: <path> (branch <branch>)` when git refuses, for example over uncommitted changes (review with `git -C <path> diff`, clean up with `git worktree remove --force <path>` and `git branch -D <branch>`). The harness writes `.pi/worktrees/.gitignore` (`*`) when it is missing, so the checkouts never show in your `git status`.
-
-An agent whose `subagents` is not `[]`, and which runs below the depth cap, gets `run_agent`, `message_agent` and `agent_status` tools. It learns which agents it may start, and the depth, concurrency and context limit rules, from the description of its `run_agent` tool, which lists only its `subagents` (every other agent for `all`, shown as `may start any other agent` in its caller's list). Its system prompt holds no orchestration rules. Like the main session, an agent that starts a batch ends its turn and is woken once with all results; while it waits it holds no concurrency slot, so a tree of agents cannot deadlock. Each agent run (a whole handoff chain) may start at most `maxChildrenPerAgent` agents (6 by default), counted over all its batches; a call that would pass the cap starts nothing and tells the agent to finish and list the rest under Open. The cap is in the `run_agent` description the agent sees. The main session is not capped, and `0` turns nesting off without editing agent files.
-
-**Result contract.** Every agent ends with a result in one shape, defined in `base-system-prompt.md`: `Status: done | partial | blocked`, the sections its agent file asks for, `Verification:` (what it ran or checked, or `none`) and `Open:` (what is left, assumptions, questions, or `none`). `partial` means part is finished and Open says what is not; `blocked` means nothing was changed and either the task was ambiguous or contradicted the code (the result lists the questions) or the task is outside the agent's role (a `Wrong agent:` line names the kind of agent that fits, and the caller re-routes). The first line of an agent's task is `Task from <caller> (agent id <id>):`, followed by `Agent folder: <dir>`.
-
-**Results.** An agent's result is the last text of its final run that starts with a `Status:` line (within its first five lines; `**Status:**` counts), so a result followed by one more tool call or a one-line sign-off still arrives; with none, the run's last text arrives with a `(shape: no Status line)` note. It is written in full to `result.md` in the agent's folder. A result up to `inlineResultChars` (8000) arrives whole; a longer one arrives as its head, cut at the last line break before the limit, followed by `Result file: <path> (<N> more chars)`, so the Status line and the first sections always arrive. A failed or stopped agent's last text arrives too, under the same rule, marked `(unverified partial output: <reason>)`; the main session does not treat it as a result.
-
-## Main session
-
-The main session keeps its full tool set. It decides what should happen and delegates the work to agents: it may read one short file or run one orienting command for a brief, and hands searching, editing and checks to agents. For multi-step or ambiguous work its prompt tells it to work out a plan first with the `planner` lead and agree it with you before implementing. Leads never hand their whole task to another agent; one that cannot finish returns `Status: partial` with the rest under Open.
-
-## Agent setup
-
-`/agents setup` opens a form with one tab per agent (the shipped agents by name, then your own agents) and a Submit tab. On each agent's tab you change its model (`inherit` or any model you have credentials for), its thinking level (the levels that model accepts) and its skills (a checklist of the available skills: `Space` toggles, `a` all, `n` none; checking every skill saves their names, so skills loaded later are not added; an agent with `all`, every skill of its caller, opens with no box ticked and keeps `all` unless you change a box); its tools and MCP access are shown but fixed (to change tools, create your own agent). `Tab`/`→` and `Shift+Tab`/`←` switch tabs, `Enter` opens a field, `Esc` closes a picker or the form. The strip at the bottom names the keys in the same `key to verb` grammar, for example `↑↓ to select a field · enter to change · tab/←→ to switch · esc to cancel`, and `esc to go back` inside a picker. The Submit tab lists the changes and where to save them: this project's `.pi/pi-subagents.json` (the default in a trusted project; refused in an untrusted one) or your `~/.pi/agent/pi-subagents.json`. Saving reloads the settings and agent files at once: agents started from then on use the new values, running agents keep theirs.
-
-For scripts and other modes there is a one-line form, which saves to the project file in a trusted project and to the user file in an untrusted one, unless you add `scope=`:
-
-```text
-/agents setup reviewer model=provider/id:high skills=docs-style,testing scope=user
-/agents setup scout thinking=low
-/agents setup planner skills=none
-```
-
-Both write an `agents` entry in the settings file (see [Settings](#settings)). A user-file value that the project file also sets gets a warning, since the project file wins.
-
-## New agents
-
-`/agents create` hands the job to the main session: it sends the main session a hidden message (from `prompts/create-agent.md`; it does not show in the chat, and starts a turn) with the names already taken, the available skills with their descriptions, the lead and chore skeletons and where to write, and says `asked the main session to create the agent; answer its questions, then /reload`. The main session asks, in one message, only what the conversation does not already answer (what the agent does, when to pick it, lead or chore, what it returns, and a name if you gave none), writes the file with every frontmatter field and the body filled in, and tells you to `/reload` so the agent can be started. Three forms:
-
-```text
-/agents create                                  # the main session asks for everything
-/agents create reviewer [project]               # ~/.pi/agent/agents/reviewer.md, or .pi/agents/ in a trusted project
-/agents create a reviewer for SQL migrations    # the purpose; the main session proposes a name
-```
-
-Without a name the agent goes to `~/.pi/agent/agents/`, or to `.pi/agents/` when you want it for a trusted project alone; in an untrusted project the main session is told not to write a project agent. A given name is checked first: a shipped agent's name, an existing file, or `project` in an untrusted project is refused with an error and nothing is sent. It works in every mode; while the main session is busy the message waits as a follow-up. To cancel, tell the main session.
-
-## Prompts
-
-Five prompt files ship in the extension's `prompts/` directory:
-
-- `main-session.md`: replaces pi's default system prompt in the main session. It holds the main session's role (understand, decide, delegate, judge results, plan work that needs splitting or ordering with the `planner` lead and you first), a guide to which agent fits by task complexity (chores on cheap models for simple, well-specified tasks, leads for work that needs judgement, acting itself only for a tiny action; editor for exactly described edits, implementer, planner, scout, verifier after a change, reviewer only when judgement is needed, fetch, shell, image, general), the brief every task must carry (Goal, User's words, Known, Where to look, Scope, Done when, Return), how to handle each result status, how to run a `planner` result batch by batch, and when to forward corrections. pi's tool list, rules and docs sections are kept. The replacement happens at runtime, only in sessions where this extension and its `run-agent` plugin are enabled; nothing is written to `~/.pi/agent`.
-- `main-session-agent-status.md`: a short paragraph about `agent_status`, appended to the main prompt only when the agent-status plugin is on.
-- `base-system-prompt.md`: added to every agent's system prompt, followed by the agent file's body. It holds the rules every agent shares and the result contract (`Status`, `Verification`, `Open`), so agent files do not repeat them.
-- `handoff.md`: the instruction an agent gets at its context limit, with the handoff schema: call the `handoff` tool, then reply `handoff saved`.
-- `create-agent.md`: the message `/agents create` sends the main session (see [New agents](#new-agents)).
-
-To customise them, edit the files in your local checkout of this package (the one you passed to `pi install`) and run `/reload` in pi:
-
-```bash
-$EDITOR pi-extensions/extensions/subagents/prompts/main-session.md
-```
-
-Packages installed from git or npm are overwritten by `pi update`, so keep custom prompts in a fork or local checkout.
-
-## Settings
-
-Optional JSON in `~/.pi/agent/pi-subagents.json` or `.pi/pi-subagents.json` (trusted projects):
-
-```json
-{
-  "maxConcurrent": 12,
-  "softContextRatio": 0.8,
-  "inlineResultChars": 8000,
-  "maxChildrenPerAgent": 6,
-  "disabledPlugins": [],
-  "agents": {
-    "reviewer": { "model": "provider/id:high", "skills": ["testing"] },
-    "scout": { "thinking": "low" }
-  }
-}
-```
-
-`maxConcurrent` is how many agents run at once, `inlineResultChars` the longest result handed back whole (see Results under [Agents](#agents)), `softContextRatio` (0.8) the share of an agent's `limit` at which it gets the context limit warning, and `disabledPlugins` the ids of plugins to switch off. `disabledPlugins` is read from the user file only; in a project file it is ignored with a warning. The other keys are read once at session start (defaults, then the user file, then the project file of a trusted project); change them and run `/reload` or start a new session.
-
-Agents run in the main session's process and share pi's codemode worker pool, which pi caps at two workers by default. A worker is held only while a script runs, so the cap is an allowance, not a reservation: nothing is used until a script starts, and a running script may use up to 256 MB. At session start, on `/reload` and after `/agents setup` saves, the extension sets `PI_CODEMODE_MAX_WORKERS` to `maxConcurrent × maxDepth + 2`, unless you set it yourself before starting pi. `maxConcurrent` covers the agents running scripts at once. The `× maxDepth` covers the rare case of an agent that calls `run_agent` from inside a script and waits there: it gives up its `maxConcurrent` slot but keeps its worker, so each nesting level can hold its own. The 2 covers the main session and a cancelled worker that is still exiting. A value you set is never changed; one below that count gives a warning, since scripts beyond it wait up to 60 seconds for a worker and then fail. The value is inherited by subprocesses (the bash tool, MCP stdio servers, a nested pi, which treats it as set by you) and is never restored.
-
-`agents` overrides a loaded agent's `model` (`provider/id[:thinking]` or `inherit`), `thinking` and `skills` (a list or `all`) without copying its file; nothing else can be overridden. The user file and the project file are merged per agent and per field, the project winning, and each field replaces what the agent file says, whichever file defines the agent. A `model` override without a `:thinking` suffix keeps the agent file's thinking level; add the suffix or a `thinking` override to change it. `/agents setup` writes this key. At session start an override model that does not resolve to a model with credentials, or skills that are not available, are dropped with a warning, as is an override for an unknown agent; an override for an agent defined only in an untrusted project gives a note instead.
-
-`maxChildrenPerAgent` (0 to 50) is the spawn cap per agent run; `fetchTimeoutSeconds` (20; 1 to 300), `fetchMaxBytes` (5000000) and `fetchMaxChars` (40000) limit the `fetch` tool.
-
-Other keys: `maxDepth` (3, from 2 to 4; the main session counts as level 1, so 2 means agents cannot start agents), `maxChainLength` (3; sessions one agent may use before a partial handoff reaches the caller), `hardContextRatio` (1.15; share past which an agent asked for a handoff is stopped; the turn right after the request is exempt, so the agent can still hand off after one huge tool result; an agent asked for a handoff is also stopped three turns after the request), `reserveTokens` (16384), `stopGraceSeconds` (60), `doneLingerMs` (10000; how long a finished agent's row stays in the panel below the editor), `failedLingerMs` (30000; the same for failed, stopped and handoff rows, unless `x` clears them first), `renderThrottleMs` (250; minimum time between redraws; it governs every surface: the start block, the panel, the list and the view).
-
-## Update
-
-```bash
-pi update --extensions            # reconciles the git install of github.com/zharskiy/pi-extensions
-git -C pi-extensions pull         # local checkout; then /reload in pi
-```
-
-## Develop
-
-```bash
-npm install
-npm run check        # tsc, biome, vitest
+npm run test -- extensions/subagents   # this extension's unit tests
+npm run check                          # typecheck, biome, knip, unit tests
 PI_LIVE_MODEL=provider/id[:thinking] npm run test:live    # real agents, local only, costs money
+PI_LIVE_MODEL=provider/id[:thinking] npm run evals        # prompt-quality evals, local only, costs money
 ```
 
-`src/index.ts` is the single entry: it computes the extension's root, reads the settings and hands the plugin list from `src/plugins.ts` to the shared manager and pi adapter in `core/` (repository root). Only `core/adapter/` talks to pi. Plugins in `src/plugins/` use the shared contract (`core/adapter/contract.ts`) and the typed bus; `src/model/` holds the subagents types, bus events, service map, settings schema and paths. Plugin and component tests are under `test/`; adapter and manager tests live in `core/test/`.
+The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
-### Live tests
+## Contributing
 
-`extensions/subagents/test/live/` runs the real plugin set over the fake host, bound to the real pi runtime, against the model in `PI_LIVE_MODEL`. Each suite writes only the agents it uses, copied from the shipped files with that model and short limits, to a temporary agent dir. Pi itself runs against a second temporary agent dir that holds only a link to the developer's `auth.json` and a copy of `models.json`, so nothing else from the real pi agent dir (context files, skills, extensions, packages, MCP config) reaches a live agent. Set `PI_LIVE_CHORE_MODEL=provider/id[:thinking]` as well to run the agents copied from `agents/chores/` on a second model (validated the same way); the leads stay on `PI_LIVE_MODEL`. A patch may set `fields` (they win over the forced model and limit) and `body`, which replaces the prompt. `seed(sha)` fills the temporary project with `git archive <sha>` of this repository, commits it as the one commit of a fresh repository (author `live`, no remotes, so git commands work and no history after `<sha>` is reachable) and links this repository's `node_modules` into it, excluded from git, so installed packages can be read inside the project. Closing a suite checks that no plugin reported an error and that every agent ran on one of those models:
-
-- `run-agent.live.test.ts`: a scout settles as done with a result, reports a cost on `agent:usage` and writes a session file linked to the main session.
-- `handoff.live.test.ts`: an agent at the smallest `limit` writes a valid handoff, a successor continues, and the caller is woken once (the suite raises `hardContextRatio` to 2 so the agent is not aborted before its handoff).
-- `nesting.live.test.ts`: `general`, with no tools besides the agent tools, starts a scout that reads a random secret from a file; `general` learns the secret only from the scout's result, which reaches its session as one wake message, and `general` wakes the main session once.
-- `worktree.live.test.ts`: a `worktree: true` agent creates `hello.txt` in its own worktree under `.pi/worktrees/` on a `pi-agents/...` branch; the uncommitted worktree is kept, and the main checkout's `git status` stays clean.
-- `grants.live.test.ts`: the `tools` and `skills` grants, and MCP following `tools` (every fixture agent sets `mcp: true`), against a real pi, read from each agent's session file. The named-grant cases use several entries. An agent with `tools: [read, ls]` and `skills: [alpha, gamma]` out of three temporary skills (each with its own secret word) has exactly `read`, `ls`, `mcp__fixture__code` (a stdio MCP server in `test/live/fixtures/mcp-server.ts`, named in the trusted temporary project's `.pi/mcp.json` with `exposure: "direct"`), `codemode` and `tool_search`, only `alpha` and `gamma` with no trace of `beta` in its prompt, reads both skills' secrets, lists its directory, calls the MCP tool, and creates no file when asked to write one; an agent with `tools: []` and `skills: []` has no tool, no skill and no MCP tool; an agent with `tools: [read, ls]` and `skills: all` gets the same tools and all three skills, without `write`, `edit` or `bash`.
-- `routing.live.test.ts`: the real main prompt and the full tool set decide which agent a request goes to. Each case sends one request (a codebase question, a named edit, a review, a design request, a URL, a test run, an image, a drafting task, and a request that names a skill) and checks from the `run_agent` calls that the expected agent started, the brief has the required lines and `skills` is passed only when a skill was named. It runs the model as the main session, so it is the one suite whose result depends on the main-session prompt; set `PI_LIVE_ROUTING_RUNS` to repeat each case and see the hit count printed per case.
-- `planner-plan.live.test.ts`: plan quality on past requests from this repository. Each fixture seeds the project from the commit's parent, runs the planner (its shipped limit, its scout, shell and fetch helpers on the chore model) with the request as a user would have phrased it, and logs per run the status, the recall of the commit's scored source files among the plan rows' `files:`, the missing paths (not marked new, and not even their directory exists; globs are only logged), the helpers it started by kind, its own tool calls and the cost of the tree. It asserts that most runs are done naming at least 2 of the scored files (all of them when there are fewer), that most runs name at most two missing paths, and, for a fixture that sets `maxHelpers` (the tiny one sets 0), that most runs start no more helpers than that; set `PI_LIVE_PLAN_RUNS` to repeat each fixture. The repeats of a fixture run in parallel, each with its own harness and seeded project, so a fixture takes about as long as its slowest run; fixtures still run one after another, and `-t "plans <sha>"` picks one.
-- `reviewer-review.live.test.ts`: review quality on past changes from this repository. Each fixture seeds the project from the commit's parent, applies the commit's diff uncommitted, plants one defect inside a hunk of it by an exact string replacement (optional further edits keep the diff's tests and docs consistent with it), and asks the reviewer (its shipped limit, its scout, shell and verifier helpers on the chore model) to review the uncommitted change as a user would. It logs per run whether a finding names the planted file and a line within 5 lines of the planted one (`path:line` refs parsed from the Findings items by `test/helpers/findings.ts`), for a fixture that names call sites outside the diff (the harder one, where the defect only does harm at one) whether a finding cites one, the findings count, the verdict, the helpers by kind, the reviewer's tool calls and the cost of the tree, and asserts that most runs find the defect. The cross-module fixture (the one with the planted ledger defect and a call site outside the diff) is meant for a strong lead model and is expected to miss on a cheap one, so a failed majority there with a cheap `PI_LIVE_MODEL` is not a regression. A run whose lead fails or times out logs the first line of its error (up to 160 characters) as `(failed: …)` after the cost.
-- `implementer-change.live.test.ts`: change quality on past commits that add tests. Each fixture seeds the project from the commit's parent and gives the implementer (its shipped limit, its scout, shell and verifier helpers on the chore model) the behaviour to build as a user would describe it; when it is done, the commit's own test files are copied in from `<sha>` and run with vitest in the seeded project. It logs per run whether those hidden tests pass with vitest's summary, the helpers by kind, the implementer's tool calls, the largest bash output it read and the cost of the tree, and asserts that most runs pass. A run that does not finish done is recorded as failed without running them. Both suites repeat each fixture `PI_LIVE_PLAN_RUNS` times in parallel, like the planner's: despite its name, `PI_LIVE_PLAN_RUNS` sets the repeat count for all three suites.
-
-Run them with `PI_LIVE_MODEL=provider/id[:thinking] npm run test:live` from the package root. Without `PI_LIVE_MODEL`, or without pi credentials for that model, every live suite fails at once with a message saying what is missing. CI never runs them. An OAuth token refreshed during a run is written through the link to the real `auth.json`, so a rotated refresh token is never lost. Pi's lock file sits next to the link in the temporary dir, so a pi running at the same time is not serialised with the tests while it refreshes.
+Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

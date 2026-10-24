@@ -1,20 +1,51 @@
+<div align="center">
+
 # command-aliases
 
-A pi extension that gives friendlier names to built-in commands: `/continue` runs `/resume`, `/clear` runs `/new` and `/exit` runs `/quit`.
+**Friendlier names for built-in commands: `/continue`, `/clear` and `/exit`.**
 
-## What it does
+Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
-- Each alias is listed as a command (`Alias for /resume`) and completes in the slash menu like any other command.
-- pi runs its built-in commands in the editor's submit path, before extension commands, so an alias is turned into its target three ways, in this order:
-  1. When the submit key is pressed and the editor holds exactly an alias (surrounding whitespace ignored), the editor text is swapped for the target before pi handles the key. An alias followed by arguments is not rewritten; the alias command then runs the target and ignores the arguments.
-  2. Picking an alias in the slash autocomplete inserts the target instead.
-  3. If the alias command still runs, it waits one tick, puts the target in the editor and submits it again through the focused editor. When the editor cannot be reached the target stays in the editor and an error says `Could not run /resume`; press Enter to run it.
-- The rewriting works in tui mode only. In other modes the alias commands are registered but can only report the error.
+</div>
 
-## Configuration
+## Why
 
-`ALIASES` at the top of `src/command-aliases.ts` maps each alias to its target, both with the leading `/`.
+This extension gives three of pi's built-in commands a second name: `/continue` for `/resume`, `/clear` for `/new` and `/exit` for `/quit`. Typing an alias, picking it in the slash menu or running it as a command all end in the built-in.
 
-## Layout
+## What it looks like
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root). `src/command-aliases.ts` holds the aliases and wires them to the host. The editor plumbing (submit key, autocomplete wrapper, re-submitting through the focused editor) is in `core/adapter/pi-editor-input.ts`. Tests are under `test/`.
+The slash menu after typing `/`, pi's own commands left out:
+
+```
+→ clear       Alias for /new
+  continue    Alias for /resume
+  exit        Alias for /quit
+```
+
+## Quick start
+
+```bash
+pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi -e ./pi-extensions/extensions/command-aliases/index.ts   # this extension alone, from a checkout
+```
+
+Type an alias in the interactive TUI:
+
+| Try | What you see |
+|---|---|
+| `/continue` | pi's `/resume` runs. |
+| `/clear` | pi's `/new` runs. |
+| Type `/` | The aliases in the slash menu, each marked `Alias for` its target. |
+
+## Development
+
+```bash
+npm run test -- extensions/command-aliases   # this extension's unit tests
+npm run check                                # typecheck, biome, knip, unit tests
+```
+
+The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
+
+## Contributing
+
+Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
