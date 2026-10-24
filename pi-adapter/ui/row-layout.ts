@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import type { ThemeLike } from "../types/contract.ts";
+import type { ThemeLike } from "../types/theme.ts";
 
 export const PAD = " ";
 

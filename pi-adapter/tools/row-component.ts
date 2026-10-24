@@ -1,6 +1,6 @@
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { globalRecord } from "../runtime/global-record.ts";
-import type { ToolRows } from "../types/contract.ts";
+import type { ToolRows } from "../types/tools.ts";
 import { CHILD_COLUMN, isBlankLine } from "../ui/row-layout.ts";
 
 type RowsRecord = { rows?: ToolRows; owners?: Map<object, ToolRows>; pad: number };

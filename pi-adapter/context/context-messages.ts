@@ -1,5 +1,5 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
-import type { ContextMessage, MessageBlock } from "../types/contract.ts";
+import type { ContextMessage, MessageBlock } from "../types/context.ts";
 
 type Message = Parameters<typeof estimateTokens>[0];
 

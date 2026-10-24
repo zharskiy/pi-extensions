@@ -1,4 +1,4 @@
-import { splitModelRequest, THINKING_LEVELS } from "../../../../pi-adapter/index.ts";
+import { isThinkingLevel, splitModelRequest, THINKING_LEVELS } from "../../../../pi-adapter/index.ts";
 import { type AgentOverride, ALL, INHERIT_MODEL } from "./agent-schema.ts";
 
 export type OverrideField = { patch: AgentOverride; error?: string };
@@ -26,7 +26,7 @@ export const overrideModel = (value: unknown): OverrideField => {
 };
 
 export const overrideThinking = (value: unknown): OverrideField =>
-  typeof value === "string" && THINKING_LEVELS.includes(value)
+  typeof value === "string" && isThinkingLevel(value)
     ? { patch: { thinking: value } }
     : { patch: {}, error: `thinking must be one of ${THINKING_LEVELS.join(", ")}` };
 

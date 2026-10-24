@@ -2,7 +2,7 @@ import type { ExtensionContext, Theme, ToolDefinition } from "@earendil-works/pi
 import { type Component, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { messageText } from "../runtime/message-text.ts";
-import type { ToolRender, ToolRenderState, ToolResult, ToolSpec } from "../types/contract.ts";
+import type { ToolRender, ToolRenderState, ToolResult, ToolSpec } from "../types/tools.ts";
 import { themeLike } from "../ui/theme-bridge.ts";
 import { abortedText, recordPad, rowComponent, slotFor } from "./row-component.ts";
 

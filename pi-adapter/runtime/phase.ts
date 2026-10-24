@@ -1,4 +1,4 @@
-import type { Phase } from "../types/contract.ts";
+import type { Phase } from "../types/session.ts";
 
 export type PhaseState = { phase: Phase; running: ReadonlySet<string> };
 

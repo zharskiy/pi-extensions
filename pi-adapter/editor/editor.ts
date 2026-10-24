@@ -7,7 +7,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import { globalRecord } from "../runtime/global-record.ts";
-import type { EditorFrame, EditorKeyHandler, HostUi } from "../types/contract.ts";
+import type { EditorUi } from "../types/host-ui.ts";
+import type { EditorFrame, EditorKeyHandler } from "../types/view.ts";
 import { keyPress } from "../ui/key-events.ts";
 import { themeLike } from "../ui/theme-bridge.ts";
 import { type EditorHistory, type HistoryRecord, seedHistory, takeHistory } from "./history.ts";
@@ -153,7 +154,7 @@ class HostEditor extends CustomEditor {
 }
 
 type EditorHooksUi = Pick<
-  HostUi,
+  EditorUi,
   "setEditorFrame" | "onEmptyEditorLeft" | "onEmptyEditorDown" | "onEmptyEditorEscape" | "captureEditorKeys"
 >;
 

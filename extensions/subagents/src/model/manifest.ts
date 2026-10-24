@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Host } from "../../../../pi-adapter/index.ts";
+import type { SessionHost } from "../../../../pi-adapter/index.ts";
 import { MANIFEST_FILE } from "./paths.ts";
 import { type AgentRecord, isClosed } from "./types.ts";
 
 type ManifestDefaults = Pick<AgentRecord, "dir" | "handoffPath" | "contextLimit">;
 
-const sessionCost = (host: Pick<Host, "sessionUsage">, file: string | undefined) => {
+const sessionCost = (host: Pick<SessionHost, "sessionUsage">, file: string | undefined) => {
   if (!file) {
     return 0;
   }
@@ -22,7 +22,7 @@ const readManifest = (dir: string): Partial<AgentRecord> =>
   JSON.parse(readFileSync(join(dir, MANIFEST_FILE), "utf8")) as Partial<AgentRecord>;
 
 const manifestRecord = (
-  host: Pick<Host, "sessionUsage">,
+  host: Pick<SessionHost, "sessionUsage">,
   manifest: Partial<AgentRecord>,
   defaults: ManifestDefaults,
 ): AgentRecord =>
@@ -49,7 +49,7 @@ const settled = (record: AgentRecord): AgentRecord =>
       };
 
 export const pastRecords = (
-  host: Pick<Host, "sessionUsage">,
+  host: Pick<SessionHost, "sessionUsage">,
   agentsDir: string,
   defaults: (dir: string, manifest: Partial<AgentRecord>) => ManifestDefaults,
 ): AgentRecord[] => {

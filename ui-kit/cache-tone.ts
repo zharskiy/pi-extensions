@@ -1,8 +1,6 @@
-import type { ThemeLike } from "../pi-adapter/index.ts";
+import type { StatusToken, ThemeLike } from "../pi-adapter/index.ts";
 
-export type CacheTone = "success" | "warning" | "error";
-
-export const cacheTone = (percent: number): CacheTone => {
+export const cacheTone = (percent: number): StatusToken => {
   if (percent >= 70) {
     return "success";
   }

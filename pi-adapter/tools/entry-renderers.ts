@@ -1,7 +1,8 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { messageText } from "../runtime/message-text.ts";
-import type { EntryRender, Host, MessageRender } from "../types/contract.ts";
+import type { EntryHost } from "../types/host-capabilities.ts";
+import type { EntryRender, MessageRender } from "../types/view.ts";
 import { fitLines, themeLike } from "../ui/theme-bridge.ts";
 import { sharedPad } from "./row-component.ts";
 
@@ -26,7 +27,7 @@ const paddedComponent = (pad: () => number, draw: (width: number) => string[]): 
 export const entryHost = (
   pi: Pick<ExtensionAPI, "registerEntryRenderer" | "registerMessageRenderer">,
   entryPad: () => number = sharedPad,
-): Pick<Host, "registerEntryRenderer" | "registerMessageRenderer"> => ({
+): Pick<EntryHost, "registerEntryRenderer" | "registerMessageRenderer"> => ({
   registerEntryRenderer: (customType, render: EntryRender) => {
     pi.registerEntryRenderer(customType, (entry, options, theme: Theme) =>
       paddedComponent(entryPad, (width) => render(entry.data, width, options.expanded, themeLike(theme))),

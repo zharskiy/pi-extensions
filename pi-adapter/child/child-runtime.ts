@@ -25,8 +25,8 @@ import type {
   MessageDelivery,
   SpawnSpec,
   StopReason,
-  UsageTotals,
-} from "../types/contract.ts";
+} from "../types/runtime.ts";
+import type { UsageTotals } from "../types/usage.ts";
 import { createChildExtension, type ParentSource } from "./child-extension.ts";
 import { reserveCodemodeWorkers } from "./codemode.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./model-catalog.ts";

@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
-import type { TextInput } from "../types/contract.ts";
+import type { TextInput } from "../types/view.ts";
 
 const editorTheme = (theme: Theme): EditorTheme => ({
   borderColor: (text) => theme.fg("accent", text),

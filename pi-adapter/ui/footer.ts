@@ -6,21 +6,17 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import { contextOf } from "../context/usage-math.ts";
-import type {
-  ContextSnapshot,
-  FooterData,
-  FooterRender,
-  Host,
-  HostUi,
-  WidgetHandle,
-} from "../types/contract.ts";
+import type { ContextSnapshot } from "../types/context.ts";
+import type { SessionHost } from "../types/host-capabilities.ts";
+import type { WidgetUi } from "../types/host-ui.ts";
+import type { FooterData, FooterRender, WidgetHandle } from "../types/view.ts";
 import { drawNoticesIn, noticeLines, syncNotices } from "./notices.ts";
 import { themeLike } from "./theme-bridge.ts";
 import type { HostState } from "./tui-context.ts";
 
 export const FOOTER_WIDGET_KEY = "pi-footer";
 
-export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): HostUi["setFooter"] => {
+export const createFooterSetter = (tuiCtx: () => ExtensionContext | undefined): WidgetUi["setFooter"] => {
   let footerTui: TUI | undefined;
   let widgetTui: TUI | undefined;
   let footerData: ReadonlyFooterDataProvider | undefined;
@@ -127,7 +123,7 @@ type ContextCache = { leaf: string | null; model: ExtensionContext["model"]; sna
 export const footerHost = (
   pi: Pick<ExtensionAPI, "getThinkingLevel">,
   state: HostState,
-): Pick<Host, "context" | "model" | "thinkingLevel" | "sessionName"> => {
+): Pick<SessionHost, "context" | "model" | "thinkingLevel" | "sessionName"> => {
   let cache: ContextCache | undefined;
 
   const context = () => {

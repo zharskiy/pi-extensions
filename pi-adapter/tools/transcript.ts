@@ -19,7 +19,8 @@ import {
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
-import type { AnyToolSpec, TranscriptItem, TranscriptPane } from "../types/contract.ts";
+import type { AnyToolSpec } from "../types/tools.ts";
+import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 import { toPiResult, toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";

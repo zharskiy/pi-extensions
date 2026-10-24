@@ -1,8 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AutocompleteProvider, type Component, getKeybindings, type TUI } from "@earendil-works/pi-tui";
-import type { HostUi } from "../types/contract.ts";
+import type { EditorUi } from "../types/host-ui.ts";
 
-type EditorInput = Pick<HostUi, "onEditorSubmit" | "mapCommandCompletion" | "submitEditor">;
+type EditorInput = Pick<EditorUi, "onEditorSubmit" | "mapCommandCompletion" | "submitEditor">;
 
 type FocusedTui = TUI & { getFocusedComponent(): Component | null };
 

@@ -1,7 +1,9 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import type { Host, RowLines, ThemeLike, ToolCallView, ToolRow, ToolRows } from "../types/contract.ts";
+import type { Host } from "../types/host-capabilities.ts";
+import type { ThemeLike } from "../types/theme.ts";
+import type { RowLines, ToolCallView, ToolRow, ToolRows } from "../types/tools.ts";
 import { childLead } from "../ui/row-layout.ts";
 import { themeLike } from "../ui/theme-bridge.ts";
 import {

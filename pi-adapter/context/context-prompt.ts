@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { replaySystemMessages } from "../runtime/session-file.ts";
-import type { ContextSection, ContextTool, PromptTool, ToolSource } from "../types/contract.ts";
+import type { ContextSection, ContextTool, ToolSource } from "../types/context.ts";
+import type { PromptTool } from "../types/messages.ts";
 
 export type PromptApi = Pick<ExtensionAPI, "getAllTools" | "getActiveTools">;
 

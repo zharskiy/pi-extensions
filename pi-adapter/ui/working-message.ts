@@ -1,9 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { HostUi } from "../types/contract.ts";
+import type { WidgetUi } from "../types/host-ui.ts";
 
 export const createWorkingUi = (
   tuiCtx: () => ExtensionContext | undefined,
-): Pick<HostUi, "setWorkingMessage" | "setWorkingVisible"> => ({
+): Pick<WidgetUi, "setWorkingMessage" | "setWorkingVisible"> => ({
   setWorkingMessage: (text) => {
     tuiCtx()?.ui.setWorkingMessage(text);
   },

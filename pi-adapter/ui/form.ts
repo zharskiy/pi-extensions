@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import type { FormFactory, HostUi } from "../types/contract.ts";
+import type { OverlayUi } from "../types/host-ui.ts";
+import type { FormFactory } from "../types/view.ts";
 import { keyPress } from "./key-events.ts";
 import { overlaysCleared } from "./overlay.ts";
 import { createTextInputs } from "./text-input.ts";
@@ -10,7 +11,7 @@ export const createShowForm =
   (
     tuiCtx: () => ExtensionContext | undefined,
     tuiOf: (ctx: ExtensionContext) => Pick<TUI, "hasOverlay"> | undefined,
-  ): HostUi["showForm"] =>
+  ): OverlayUi["showForm"] =>
   async <T>(factory: FormFactory<T>, options: { signal?: AbortSignal } = {}) => {
     const { signal } = options;
     const ctx = tuiCtx();

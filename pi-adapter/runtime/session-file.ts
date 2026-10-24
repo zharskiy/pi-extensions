@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { calculateContextTokens } from "@earendil-works/pi-coding-agent";
-import type { PromptTool, SessionRecord, TranscriptItem } from "../types/contract.ts";
+import type { PromptTool, SessionRecord } from "../types/messages.ts";
+import type { TranscriptItem } from "../types/view.ts";
 import { messageText } from "./message-text.ts";
 
 export const promptRecordEntry = (namespace: string) => `${namespace}:prompt-record`;

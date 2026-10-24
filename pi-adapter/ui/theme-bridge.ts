@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { mixColors, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { BgToken, ThemeLike, ThemeToken } from "../types/contract.ts";
+import type { BgToken, ThemeLike, ThemeToken } from "../types/theme.ts";
 
 const ESC = "\x1b";
 

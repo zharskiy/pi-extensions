@@ -1,10 +1,5 @@
-import {
-  addUsage,
-  type ContextSnapshot,
-  emptyUsage,
-  type PromptTokens,
-  type UsageTotals,
-} from "../types/contract.ts";
+import type { ContextSnapshot, PromptTokens } from "../types/context.ts";
+import { addUsage, emptyUsage, type UsageTotals } from "../types/usage.ts";
 
 type RawEntry = {
   type: string;

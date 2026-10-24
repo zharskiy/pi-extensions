@@ -3,7 +3,8 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { ContextFacts, Host } from "../types/contract.ts";
+import type { ContextFacts } from "../types/context.ts";
+import type { SessionHost } from "../types/host-capabilities.ts";
 import type { HostState } from "../ui/tui-context.ts";
 import { messageFacts } from "./context-messages.ts";
 import { type PromptApi, promptFacts } from "./context-prompt.ts";
@@ -48,7 +49,7 @@ const factsOf = (pi: ContextApi, ctx: ExtensionContext): ContextFacts => {
 export const contextHost = (
   pi: ContextApi,
   state: HostState,
-): Pick<Host, "contextFacts" | "lastRequestUsage" | "mainRequestUsage"> => ({
+): Pick<SessionHost, "contextFacts" | "lastRequestUsage" | "mainRequestUsage"> => ({
   contextFacts: () => (state.ctx ? factsOf(pi, state.ctx) : undefined),
   ...usageHost(state),
 });

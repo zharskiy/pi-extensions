@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AnyToolSpec } from "../types/contract.ts";
+import type { AnyToolSpec } from "../types/tools.ts";
 
 export type HostState = { ctx?: ExtensionContext; tools: Map<string, AnyToolSpec> };
 

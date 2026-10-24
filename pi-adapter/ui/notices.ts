@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { globalRecord } from "../runtime/global-record.ts";
-import type { HostUi } from "../types/contract.ts";
+import type { NoticeUi } from "../types/host-ui.ts";
 import { PAD } from "./row-layout.ts";
 import { fitLines } from "./theme-bridge.ts";
 import { type HostState, tuiContext } from "./tui-context.ts";
@@ -72,7 +72,7 @@ export const drawNoticesIn = (redraw: Redraw) => {
   };
 };
 
-export type Notices = { setNotice: HostUi["setNotice"]; release(): void };
+export type Notices = { setNotice: NoticeUi["setNotice"]; release(): void };
 
 export const createNotices = (state: HostState): Notices => {
   const own = new Map<string, string>();

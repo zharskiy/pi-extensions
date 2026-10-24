@@ -13,19 +13,18 @@ import { entryHost } from "../tools/entry-renderers.ts";
 import { recordPad } from "../tools/row-component.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
+import type { ContextSnapshot } from "../types/context.ts";
+import type { Host } from "../types/host-capabilities.ts";
+import type { CommandSpec } from "../types/messages.ts";
 import type {
-  AnyToolSpec,
-  CommandSpec,
-  ContextSnapshot,
   DialogEvent,
-  Host,
   IdleInfo,
   Phase,
   SessionControl,
   SessionInfo,
   ShutdownReason,
-  ToolSpec,
-} from "../types/contract.ts";
+} from "../types/session.ts";
+import type { AnyToolSpec, ToolSpec } from "../types/tools.ts";
 import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";

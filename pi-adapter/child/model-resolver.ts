@@ -1,4 +1,4 @@
-import type { ModelChoice, ModelResolution } from "../types/contract.ts";
+import type { ModelChoice, ModelResolution } from "../types/model.ts";
 
 export type CatalogModel = {
   provider: string;

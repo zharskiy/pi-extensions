@@ -1,4 +1,4 @@
-import type { CodemodeShortfall } from "../types/contract.ts";
+import type { CodemodeShortfall } from "../types/messages.ts";
 
 export const CODEMODE_WORKERS_SETTING = "PI_CODEMODE_MAX_WORKERS";
 

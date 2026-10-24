@@ -2,7 +2,8 @@ import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { createPiRuntime } from "../child/child-runtime.ts";
 import { createSkillInventory, type SkillFile } from "../child/skills.ts";
-import type { AgentRuntime, Host } from "../types/contract.ts";
+import type { Host } from "../types/host-capabilities.ts";
+import type { AgentRuntime } from "../types/runtime.ts";
 import type { HostState } from "../ui/tui-context.ts";
 import { insideChildSession } from "./child-scope.ts";
 import { createPiHost, liveCtx } from "./host.ts";

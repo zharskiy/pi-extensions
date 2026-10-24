@@ -9,7 +9,18 @@ pi-extensions/
 ├── pi-adapter/                  # the only shipped code that imports pi packages
 │   ├── index.ts                 # the public surface: contract types, createPiExtension, settleWithin, row geometry
 │   ├── types/                   # contract types
-│   │   └── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
+│   │   ├── host-capabilities.ts     # Host = ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }
+│   │   ├── host-ui.ts           # HostUi = NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }, NotifyChannel
+│   │   ├── theme.ts             # ThemeToken (PaintToken, StatusToken, SyntaxToken, ThinkingToken), BgToken, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
+│   │   ├── keys.ts              # KeyPress, KeyName (NavigationKey, EditKey, AppKey, "other"), isNavigationKey
+│   │   ├── model.ts             # THINKING_LEVELS, ThinkingLevel, isThinkingLevel, splitModelRequest, model choice and resolution types
+│   │   ├── runtime.ts           # AgentRuntime, ChildSession, ChildEvent, SpawnSpec, StopReason, MessageDelivery
+│   │   ├── tools.ts             # ToolSpec, ToolResult, ToolRenderState, ToolCallView, ToolRow(s), RowLines
+│   │   ├── session.ts           # SessionInfo, SessionControl, RunMode, ShutdownReason, Phase, dialog and idle events
+│   │   ├── context.ts           # ContextSnapshot, ContextFacts and their sections, tools, messages; PromptTokens
+│   │   ├── usage.ts             # UsageTotals, emptyUsage, addUsage
+│   │   ├── view.ts              # view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers
+│   │   └── messages.ts          # CommandSpec, HiddenMessage, RoutedMessage, PromptTool, SkillInfo, SessionRecord, CodemodeShortfall
 │   ├── runtime/                 # pi session wiring
 │   │   ├── extension.ts         # createPiExtension: boots the contract on pi, the child runtime's parent source
 │   │   ├── host.ts              # createPiHost: Host over the pi API, phase events, held hidden messages

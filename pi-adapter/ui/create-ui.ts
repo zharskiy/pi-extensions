@@ -9,7 +9,8 @@ import {
 import type { EditorHooks } from "../editor/editor.ts";
 import { captureTui, createEditorInput } from "../editor/input.ts";
 import { createTranscriptPane } from "../tools/transcript.ts";
-import type { HostUi, NotifyChannel, OverlayFactory, ScrollPane, WidgetHandle } from "../types/contract.ts";
+import type { HostUi, NotifyChannel, WidgetUi } from "../types/host-ui.ts";
+import type { OverlayFactory, ScrollPane, WidgetHandle } from "../types/view.ts";
 import { createFooterSetter } from "./footer.ts";
 import { createShowForm } from "./form.ts";
 import { keyPress } from "./key-events.ts";
@@ -84,7 +85,7 @@ export const notificationSequence = (message: string, channel: NotifyChannel, en
   return `\x1b]9;${text}\x07`;
 };
 
-export type ThinkingLabelUi = Pick<HostUi, "setHiddenThinkingLabel"> & { release(): void };
+export type ThinkingLabelUi = Pick<WidgetUi, "setHiddenThinkingLabel"> & { release(): void };
 
 export const createThinkingLabelUi = (tuiCtx: () => ExtensionContext | undefined): ThinkingLabelUi => {
   const owner = {};
@@ -121,7 +122,7 @@ export const createUi = (
 
   const tuiCtx = () => tuiContext(state);
 
-  const setWidget: HostUi["setWidget"] = (key, render) => {
+  const setWidget: WidgetUi["setWidget"] = (key, render) => {
     const ctx = tuiCtx();
     const handle: WidgetHandle = { refresh: () => widgetTuis.get(key)?.requestRender() };
 

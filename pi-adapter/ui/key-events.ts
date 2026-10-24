@@ -1,5 +1,5 @@
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import type { KeyPress } from "../types/contract.ts";
+import type { KeyPress } from "../types/keys.ts";
 
 const BINDINGS = [
   ["toggleTools", "app.tools.expand"],

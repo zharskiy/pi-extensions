@@ -1,6 +1,6 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AvailableModel, ModelResolution } from "../types/contract.ts";
+import type { AvailableModel, ModelResolution } from "../types/model.ts";
 import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolver.ts";
 
 type PiModel = NonNullable<ExtensionContext["model"]>;

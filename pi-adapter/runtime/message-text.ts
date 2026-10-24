@@ -1,4 +1,4 @@
-import type { RoutedMessage } from "../types/contract.ts";
+import type { RoutedMessage } from "../types/messages.ts";
 
 export const contentParts = (content: unknown) => (Array.isArray(content) ? content : []);
 

@@ -1,11 +1,12 @@
 import { getLastAssistantUsage } from "@earendil-works/pi-coding-agent";
-import type { Host, PromptTokens } from "../types/contract.ts";
+import type { PromptTokens } from "../types/context.ts";
+import type { SessionHost } from "../types/host-capabilities.ts";
 import type { HostState } from "../ui/tui-context.ts";
 import { requestUsageOf, sumAssistantUsage } from "./usage-math.ts";
 
 type UsageCache = { session: string; file: string | undefined; leaf: string | null; usage: PromptTokens };
 
-export const usageHost = (state: HostState): Pick<Host, "lastRequestUsage" | "mainRequestUsage"> => {
+export const usageHost = (state: HostState): Pick<SessionHost, "lastRequestUsage" | "mainRequestUsage"> => {
   let cache: UsageCache | undefined;
 
   return {
