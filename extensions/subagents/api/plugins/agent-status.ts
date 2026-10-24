@@ -1,15 +1,15 @@
-import type { AnyToolSpec, ToolSpec } from "../../../../../pi-adapter/index.ts";
-import { EXPAND_BINDING } from "../../../../../ui-kit/index.ts";
+import type { AnyToolSpec, ToolSpec } from "../../../../pi-adapter/index.ts";
+import { EXPAND_BINDING } from "../../../../ui-kit/index.ts";
 import {
   type AgentStatusDetails,
   type AgentStatusParams,
   snapshotLine,
   snapshotOf,
   unknownText,
-} from "../../../core/agent-status/snapshot.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
-import { type AgentRegistry, chainTerminal } from "../../../core/model/types.ts";
-import { statusCall, statusResult } from "../../../ui/agent-status/status-text.ts";
+} from "../../core/agent-status/snapshot.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
+import { type AgentRegistry, chainTerminal } from "../../core/model/types.ts";
+import { statusCall, statusResult } from "../../ui/agent-status/status-text.ts";
 
 type StatusScope = {
   registry: AgentRegistry;

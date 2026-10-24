@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { char, type FakeForm, flushMicrotasks, key } from "../../../../../test-framework/index.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
-import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentSetupPlugin } from "../../../api/plugins/agent-setup.ts";
+import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const APPLIES = "agents started from now on use it";

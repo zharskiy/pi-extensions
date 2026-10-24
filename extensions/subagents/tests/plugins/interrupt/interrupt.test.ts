@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks } from "../../../../../test-framework/index.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { interruptPlugin } from "../../../src/plugins/interrupt/index.ts";
-import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import { plugins } from "../../../src/plugins.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { interruptPlugin } from "../../../api/plugins/interrupt.ts";
+import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
+import { plugins } from "../../../api/plugins.ts";
 import { createHarness, spawnAgents } from "../../support/subagents-harness.ts";
 
 beforeEach(() => {

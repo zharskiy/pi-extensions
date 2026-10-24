@@ -9,11 +9,11 @@ import {
   initPiRenderTheme,
   openLastOverlay,
 } from "../../../../../test-framework/pi/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentPanelPlugin } from "../../../api/plugins/agent-panel.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
 import { agentsDirFor, MANIFEST_FILE } from "../../../core/model/paths.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { selectedRow } from "../../support/overlay-rows.ts";
 import { grepSession } from "../../support/recorded-grep-session.ts";

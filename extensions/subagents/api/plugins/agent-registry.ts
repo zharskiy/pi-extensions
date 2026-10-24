@@ -1,9 +1,9 @@
-import { BUSY_CHANNEL } from "../../../../../shared/index.ts";
-import { createRegistry } from "../../../core/agent-registry/registry.ts";
-import { pastRecords } from "../../../core/model/manifest.ts";
-import { agentsDirFor, handoffPathFor } from "../../../core/model/paths.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
-import { type AgentRegistry, isClosed } from "../../../core/model/types.ts";
+import { BUSY_CHANNEL } from "../../../../shared/index.ts";
+import { createRegistry } from "../../core/agent-registry/registry.ts";
+import { pastRecords } from "../../core/model/manifest.ts";
+import { agentsDirFor, handoffPathFor } from "../../core/model/paths.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
+import { type AgentRegistry, isClosed } from "../../core/model/types.ts";
 
 const BUSY_SOURCE = "pi-subagents";
 

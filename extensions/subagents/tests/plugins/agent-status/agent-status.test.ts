@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { flushMicrotasks, usageTotals } from "../../../../../test-framework/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";
+import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { AgentStatusDetails, AgentStatusParams } from "../../../core/agent-status/snapshot.ts";
 import { type AgentSnapshot, snapshotLine, snapshotOf } from "../../../core/agent-status/snapshot.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
-import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const setup = () => {

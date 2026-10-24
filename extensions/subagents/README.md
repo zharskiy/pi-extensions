@@ -27,7 +27,7 @@ From git:
 pi install git:github.com/zharskiy/pi-extensions
 ```
 
-Try it for one run without installing: `pi -e ./pi-extensions/extensions/subagents/src/index.ts`.
+Try it for one run without installing: `pi -e ./pi-extensions/extensions/subagents/index.ts`.
 
 ## Use
 
@@ -248,7 +248,7 @@ npm run check        # tsc, biome, vitest
 PI_LIVE_MODEL=provider/id[:thinking] npm run test:live    # real agents, local only, costs money
 ```
 
-`src/index.ts` is the single entry: it hands the extension's root, settings and the plugin list from `src/plugins.ts` to `createManagedExtension` in `extension-manager/`, which boots them on the pi adapter in `pi-adapter/` and keeps child sessions from loading the extension's folder. Only `pi-adapter/` talks to pi. Plugins in `src/plugins/` use the shared contract (`pi-adapter/index.ts`) and the typed bus; `src/model/` holds the subagents types, bus events, service map, settings schema and paths. Plugin and component tests are under `tests/` (local helpers in `tests/support/`); adapter tests live in `pi-adapter/tests/`, manager tests in `extension-manager/tests/`, and the shared fakes and harnesses in `test-framework/`.
+`index.ts` re-exports the extension from `api/extension.ts`, the single entry: it hands the extension's root, settings and the plugin list from `api/plugins.ts` to `createManagedExtension` in `extension-manager/`, which boots them on the pi adapter in `pi-adapter/` and keeps child sessions from loading the extension's folder. Only `pi-adapter/` talks to pi. The plugin entries in `api/plugins/` use the shared contract (`pi-adapter/index.ts`) and the typed bus and wire the theme-free code in `core/` to the painted code in `ui/`; `core/model/` holds the subagents types, bus events, service map, settings schema and paths. Plugin and component tests are under `tests/` (local helpers in `tests/support/`); adapter tests live in `pi-adapter/tests/`, manager tests in `extension-manager/tests/`, and the shared fakes and harnesses in `test-framework/`. [ARCHITECTURE.md](ARCHITECTURE.md) describes the runtime behaviour and [STRUCTURE.md](STRUCTURE.md) the file map.
 
 ### Live tests
 

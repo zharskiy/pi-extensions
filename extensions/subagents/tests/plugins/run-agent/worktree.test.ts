@@ -3,6 +3,10 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { limitsPlugin } from "../../../api/plugins/limits.ts";
+import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import { snapshotLine, snapshotOf } from "../../../core/agent-status/snapshot.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
 import type { Settings } from "../../../core/model/settings.ts";
@@ -10,10 +14,6 @@ import type { AgentRecord } from "../../../core/model/types.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createWorktree } from "../../../core/run-agent/worktree.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
-import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { createHarness, tempDir } from "../../support/subagents-harness.ts";
 
 const fixedBytes = vi.hoisted(() => ({ value: undefined as Buffer | undefined }));

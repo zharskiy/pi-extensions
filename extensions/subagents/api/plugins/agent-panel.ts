@@ -1,18 +1,18 @@
-import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
-import { errorText } from "../../../../../shared/index.ts";
+import type { ThemeLike } from "../../../../pi-adapter/index.ts";
+import { errorText } from "../../../../shared/index.ts";
 import {
   createPanelState,
   type PanelActionsAvailable,
   panelRows,
   reconcile,
-} from "../../../core/agent-panel/panel-state.ts";
-import { tickFor, watchAgents } from "../../../core/components/refresh.ts";
-import type { TreeRow } from "../../../core/components/tree.ts";
-import { NAMESPACE } from "../../../core/model/paths.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
-import { type PanelActions, panelKeyHandler, selectFirst } from "../../../ui/agent-panel/keys.ts";
-import { createPanelWidget } from "../../../ui/agent-panel/panel.ts";
-import { panelLines } from "../../../ui/agent-panel/panel-lines.ts";
+} from "../../core/agent-panel/panel-state.ts";
+import { tickFor, watchAgents } from "../../core/components/refresh.ts";
+import type { TreeRow } from "../../core/components/tree.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
+import { type PanelActions, panelKeyHandler, selectFirst } from "../../ui/agent-panel/keys.ts";
+import { createPanelWidget } from "../../ui/agent-panel/panel.ts";
+import { panelLines } from "../../ui/agent-panel/panel-lines.ts";
 
 const HINT_KEY = NAMESPACE;
 

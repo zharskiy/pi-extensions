@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { KeyPress } from "../../../../../pi-adapter/index.ts";
 import { flushMicrotasks } from "../../../../../test-framework/index.ts";
 import { openLastOverlay } from "../../../../../test-framework/pi/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentSetupPlugin } from "../../../api/plugins/agent-setup.ts";
+import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
+import { plugins } from "../../../api/plugins.ts";
 import type { AgentRecord } from "../../../core/model/types.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentSetupPlugin } from "../../../src/plugins/agent-setup/index.ts";
-import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
-import { plugins } from "../../../src/plugins.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 

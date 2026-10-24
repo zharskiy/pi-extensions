@@ -13,11 +13,11 @@ import {
   initPiRenderTheme,
   openLastOverlay,
 } from "../../../../../test-framework/pi/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
+import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { AgentRecord, NewAgent } from "../../../core/model/types.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
-import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { selectedRow } from "../../support/overlay-rows.ts";
 import { createHarness, spawnAgents } from "../../support/subagents-harness.ts";

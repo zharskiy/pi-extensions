@@ -1,7 +1,7 @@
-import { counted, errorText } from "../../../../../shared/index.ts";
-import { stoppableAgents } from "../../../core/components/tree.ts";
-import { NAMESPACE } from "../../../core/model/paths.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
+import { counted, errorText } from "../../../../shared/index.ts";
+import { stoppableAgents } from "../../core/components/tree.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
 
 const SHOWN_IDS = 3;
 

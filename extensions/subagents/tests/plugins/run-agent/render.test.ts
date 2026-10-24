@@ -2,6 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike, ToolRender, ToolResult } from "../../../../../pi-adapter/index.ts";
 import { flushMicrotasks, plainTheme, tokenTaggingTheme } from "../../../../../test-framework/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
 import type { AgentRecord, AgentRegistry, AgentState } from "../../../core/model/types.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
@@ -11,9 +14,6 @@ import {
   type RunAgentParams,
   runAgentTool,
 } from "../../../core/run-agent/tools.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { pendingRows } from "../../../ui/run-agent/pending-rows.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { createHarness, tempDir } from "../../support/subagents-harness.ts";

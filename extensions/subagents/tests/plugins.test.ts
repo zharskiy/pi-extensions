@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plugins } from "../src/plugins.ts";
+import { plugins } from "../api/plugins.ts";
 import { createHarness } from "./support/subagents-harness.ts";
 
 describe("subagents plugin set", () => {

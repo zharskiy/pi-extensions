@@ -1,28 +1,28 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AnyToolSpec } from "../../../../../pi-adapter/index.ts";
-import { EXPAND_BINDING } from "../../../../../ui-kit/index.ts";
-import { watchAgents } from "../../../core/components/refresh.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
+import type { AnyToolSpec } from "../../../../pi-adapter/index.ts";
+import { EXPAND_BINDING } from "../../../../ui-kit/index.ts";
+import { watchAgents } from "../../core/components/refresh.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
 import {
   type AgentDefinition,
   type AgentRecord,
   allowlist,
   isClosed,
   subagentNames,
-} from "../../../core/model/types.ts";
-import { createHandoff } from "../../../core/run-agent/handoff.ts";
-import { handoffTool } from "../../../core/run-agent/handoff-tool.ts";
-import { joinTexts } from "../../../core/run-agent/outbox.ts";
-import { createRunner } from "../../../core/run-agent/runner.ts";
+} from "../../core/model/types.ts";
+import { createHandoff } from "../../core/run-agent/handoff.ts";
+import { handoffTool } from "../../core/run-agent/handoff-tool.ts";
+import { joinTexts } from "../../core/run-agent/outbox.ts";
+import { createRunner } from "../../core/run-agent/runner.ts";
 import {
   createPendingCalls,
   describeRunAgent,
   messageAgentTool,
   runAgentTool,
-} from "../../../core/run-agent/tools.ts";
-import { handoffRows } from "../../../ui/run-agent/handoff-row.ts";
-import { pendingRows } from "../../../ui/run-agent/pending-rows.ts";
+} from "../../core/run-agent/tools.ts";
+import { handoffRows } from "../../ui/run-agent/handoff-row.ts";
+import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 

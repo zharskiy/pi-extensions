@@ -71,7 +71,7 @@ const fixtures: Fixture[] = [
         to: "only when its cost goes up and its tokens do not go down",
       },
     ],
-    callSites: ["extensions/subagents/src/plugins/usage-report/index.ts"],
+    callSites: ["extensions/subagents/api/plugins/usage-report.ts"],
   },
 ];
 

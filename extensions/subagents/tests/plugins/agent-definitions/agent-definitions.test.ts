@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { FRONTMATTER_FIELDS } from "../../../core/agent-definitions/fields.ts";
 import {
   loadDefinitions,
@@ -9,7 +10,6 @@ import {
 } from "../../../core/agent-definitions/loader.ts";
 import { assemblePromptAppend } from "../../../core/agent-definitions/prompt.ts";
 import { parseFrontmatter } from "../../../core/agent-definitions/yaml-lite.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../support/subagents-harness.ts";
 
 const writeAgent = (dir: string, file: string, content: string) => {

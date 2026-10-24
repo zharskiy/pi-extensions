@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SessionInfo } from "../../../../../pi-adapter/index.ts";
-import { type DefinitionDir, loadDefinitions } from "../../../core/agent-definitions/loader.ts";
-import { assemblePromptAppend } from "../../../core/agent-definitions/prompt.ts";
-import { resolutionProblem } from "../../../core/model/model-resolution.ts";
-import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../../core/model/paths.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
-import { reloadSettings, settingsWarning } from "../../../core/model/settings.ts";
-import type { AgentDefinitions } from "../../../core/model/types.ts";
+import type { SessionInfo } from "../../../../pi-adapter/index.ts";
+import { type DefinitionDir, loadDefinitions } from "../../core/agent-definitions/loader.ts";
+import { assemblePromptAppend } from "../../core/agent-definitions/prompt.ts";
+import { resolutionProblem } from "../../core/model/model-resolution.ts";
+import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../core/model/paths.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
+import { reloadSettings, settingsWarning } from "../../core/model/settings.ts";
+import type { AgentDefinitions } from "../../core/model/types.ts";
 
 export const agentDefinitionsPlugin: Plugin = {
   id: "agent-definitions",

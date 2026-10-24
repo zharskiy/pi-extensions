@@ -1,33 +1,28 @@
-import type { OverlayApi } from "../../../../../pi-adapter/index.ts";
-import { DOT, errorText } from "../../../../../shared/index.ts";
-import {
-  countsText,
-  listCounts,
-  listedTerminals,
-  visibleRecords,
-} from "../../../core/agent-view/list-model.ts";
-import { createAgentSource } from "../../../core/agent-view/source.ts";
-import { cutChars } from "../../../core/components/receipt.ts";
-import { watchAgents } from "../../../core/components/refresh.ts";
-import { NAMESPACE } from "../../../core/model/paths.ts";
-import type { Plugin } from "../../../core/model/plugin.ts";
-import { type AgentRecord, chainLinks } from "../../../core/model/types.ts";
-import { createAgentList } from "../../../ui/agent-view/list.ts";
+import type { OverlayApi } from "../../../../pi-adapter/index.ts";
+import { DOT, errorText } from "../../../../shared/index.ts";
+import { countsText, listCounts, listedTerminals, visibleRecords } from "../../core/agent-view/list-model.ts";
+import { createAgentSource } from "../../core/agent-view/source.ts";
+import { cutChars } from "../../core/components/receipt.ts";
+import { watchAgents } from "../../core/components/refresh.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
+import type { Plugin } from "../../core/model/plugin.ts";
+import { type AgentRecord, chainLinks } from "../../core/model/types.ts";
+import { createAgentList } from "../../ui/agent-view/list.ts";
 import {
   type AgentsOverlay,
   createAgentsOverlay,
   type OverlayParts,
   type OverlayStart,
-} from "../../../ui/agent-view/overlay.ts";
+} from "../../ui/agent-view/overlay.ts";
 import {
   isSubcommand,
   SUBCOMMAND_TEXT,
   SUBCOMMANDS,
   type Subcommand,
   subcommandPicker,
-} from "../../../ui/agent-view/picker.ts";
-import { createAgentView } from "../../../ui/agent-view/view.ts";
-import { stateWord } from "../../../ui/components/state-text.ts";
+} from "../../ui/agent-view/picker.ts";
+import { createAgentView } from "../../ui/agent-view/view.ts";
+import { stateWord } from "../../ui/components/state-text.ts";
 
 const SETUP_PREFIX = "setup ";
 

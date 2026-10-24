@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchToolPlugin } from "../../../src/plugins/fetch-tool/index.ts";
+import { fetchToolPlugin } from "../../../api/plugins/fetch-tool.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const html = (body: string) =>

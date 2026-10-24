@@ -16,10 +16,10 @@ import {
   liveChoreModel,
   startLiveExtension,
 } from "../../../../test-framework/pi/live/index.ts";
+import extension from "../../api/extension.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Settings } from "../../core/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../core/run-agent/tools.ts";
-import extension from "../../src/index.ts";
 import {
   type AgentGroup,
   type AgentPatch,

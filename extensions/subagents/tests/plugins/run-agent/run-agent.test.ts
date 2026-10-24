@@ -2,14 +2,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
+import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
+import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";
+import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import { createOutbox, joinTexts } from "../../../core/run-agent/outbox.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import { createSemaphore } from "../../../core/run-agent/semaphore.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
-import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
-import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
 import { createHarness, PACKAGE_ROOT } from "../../support/subagents-harness.ts";
 
 const setup = (overrides = {}) => {
