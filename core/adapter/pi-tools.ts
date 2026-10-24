@@ -39,6 +39,7 @@ const PI_COLORS = {
   accent: "accent",
   border: "border",
   borderAccent: "borderAccent",
+  syntaxString: "syntaxString",
   syntaxVariable: "syntaxVariable",
   muted: "muted",
   dim: "dim",

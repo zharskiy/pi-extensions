@@ -31,13 +31,13 @@ export type FooterState = {
   cache: number | undefined;
 };
 
+const modelToken = (theme: ThemeLike): ThemeToken => (theme.panels ? "syntaxString" : "syntaxVariable");
+
 const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
 
 const SPEND: ThemeToken = "text";
 
 const PLACE: ThemeToken = "border";
-
-const MODEL: ThemeToken = "syntaxVariable";
 
 const BRANCH: ThemeToken = "borderAccent";
 
@@ -73,7 +73,7 @@ const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo 
 
   const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
 
-  return `${theme.fg(MODEL, model.name)} ${theme.fg(META, window)}`;
+  return `${theme.fg(modelToken(theme), model.name)} ${theme.fg(META, window)}`;
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
