@@ -2,7 +2,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../pi-adapter/index.ts";
-import { handoffPath, seedText, validateMainHandoff } from "../src/handoff.ts";
+import { handoffPath, seedText, validateMainHandoff } from "../core/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",

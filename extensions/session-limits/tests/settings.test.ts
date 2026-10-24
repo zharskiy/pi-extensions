@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { watchSettings } from "../../../extension-manager/index.ts";
 import { userSettingsPath } from "../../../shared/index.ts";
 import { createFakeHost } from "../../../test-framework/index.ts";
-import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../src/settings.ts";
+import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../core/settings.ts";
 
 const roots: string[] = [];
 

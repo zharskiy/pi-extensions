@@ -3,10 +3,10 @@ import {
   contextLevel,
   handoffStep,
   retryInstruction,
-  segmentFor,
   shouldRequest,
   thresholdsFor,
-} from "../src/thresholds.ts";
+} from "../core/thresholds.ts";
+import { segmentFor } from "../ui/threshold-text.ts";
 
 const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
 

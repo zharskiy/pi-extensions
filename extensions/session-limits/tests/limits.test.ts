@@ -5,9 +5,9 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../pi-adapter/index.ts";
 import { BUSY_CHANNEL } from "../../../shared/index.ts";
 import { createFakeHost, flushTimers as flush } from "../../../test-framework/index.ts";
-import { conversationOnly } from "../src/conversation.ts";
-import { createLimits } from "../src/limits.ts";
-import { DEFAULT_LIMITS } from "../src/settings.ts";
+import { createLimits } from "../api/plugin.ts";
+import { conversationOnly } from "../core/conversation-host.ts";
+import { DEFAULT_LIMITS } from "../core/settings.ts";
 
 const created: string[] = [];
 

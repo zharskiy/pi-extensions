@@ -1,11 +1,10 @@
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ContextSnapshot, Host, SessionControl } from "../../../pi-adapter/index.ts";
+import type { ContextSnapshot, Host, SessionControl, ThemeToken } from "../../../pi-adapter/index.ts";
 import { BUSY_CHANNEL, errorText, parseBusySignal } from "../../../shared/index.ts";
-import { EXPAND_BINDING } from "../../../ui-kit/index.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
-import { seedRow } from "./seed-row.ts";
 import {
+  type ContextTokens,
   contextLevel,
   type HandoffFile,
   handoffStep,
@@ -14,7 +13,6 @@ import {
   MAX_INSTRUCTIONS,
   type Phase,
   retryInstruction,
-  segmentFor,
   shouldRequest,
 } from "./thresholds.ts";
 
@@ -22,7 +20,7 @@ const NOTICE_KEY = "pi-session-limits";
 
 const HANDOFF_COMMAND = "session-handoff";
 
-const HANDOFF_TYPE = "pi-session-limits-handoff";
+export const HANDOFF_TYPE = "pi-session-limits-handoff";
 
 const REQUEST_TYPE = "pi-session-limits-request";
 
@@ -32,10 +30,18 @@ const IDLE_POLL_MS = 250;
 
 const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
 
-type LimitsOptions = {
+type Segment = { token: ThemeToken; text: string };
+
+type LimitWatchOptions = {
   host: Host;
   template: string;
   limits: () => Limits;
+  segment: (
+    context: ContextTokens | undefined,
+    phase: Phase,
+    limits: Limits,
+    command: string,
+  ) => Segment | undefined;
   releaseDelayMs?: number;
 };
 
@@ -70,7 +76,13 @@ const readHandoff = (path: string) => {
   }
 };
 
-export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }: LimitsOptions) => {
+export const watchLimits = ({
+  host,
+  template,
+  limits,
+  segment,
+  releaseDelayMs = 1_000,
+}: LimitWatchOptions) => {
   const sources = new Set<string>();
   let state: LimitsState = {
     phase: "watching",
@@ -106,9 +118,9 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   };
 
   const refresh = () => {
-    const segment = segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
+    const notice = segment(state.context, state.phase, limits(), HANDOFF_COMMAND);
 
-    host.ui.setNotice(NOTICE_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
+    host.ui.setNotice(NOTICE_KEY, notice ? host.ui.style(notice.token, notice.text) : undefined);
   };
 
   const sendRequest = (path: string, origin: RequestOrigin) => {
@@ -437,10 +449,6 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
 
     refresh();
   };
-
-  host.registerMessageRenderer(HANDOFF_TYPE, (message, width, expanded, theme) =>
-    seedRow(message.text, expanded, host.ui.keyText(EXPAND_BINDING))(width, theme),
-  );
 
   host.registerCommand(HANDOFF_COMMAND, {
     description:

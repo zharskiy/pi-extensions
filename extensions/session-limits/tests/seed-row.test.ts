@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { paintRecordingTheme, plainTheme } from "../../../test-framework/index.ts";
-import { seedText } from "../src/handoff.ts";
-import { firstSentence, seedRow } from "../src/seed-row.ts";
+import { seedText } from "../core/handoff.ts";
+import { firstSentence, seedRow } from "../ui/seed-row.ts";
 
 const seed = seedText("/s/main.jsonl", "## Status\npartial\n\n## Outcome\nThe parser is fixed.");
 
