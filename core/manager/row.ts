@@ -1,12 +1,12 @@
 import { stripVTControlCharacters } from "node:util";
-import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
+import type { RowLines, ThemeLike, ThemeToken } from "../adapter/contract.ts";
 import { appendHint } from "./hints.ts";
 import { cutStart, DOT, ELLIPSIS } from "./layout.ts";
 import { MARKS, type Mark, markGlyph } from "./marks.ts";
 
 export type Styled = string | ((theme: ThemeLike) => string);
 
-export type RowRender = (width: number, theme: ThemeLike) => string[];
+export type RowRender = RowLines;
 
 const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? text(theme) : text);
 
@@ -23,7 +23,7 @@ const MIN_TARGET = 8;
 
 const MAX_REASON = 32;
 
-const isBlankLine = (line: string) => stripVTControlCharacters(line).trim() === "";
+export const isBlankLine = (line: string) => stripVTControlCharacters(line).trim() === "";
 
 const fitTo = (line: string, width: number, theme: ThemeLike) =>
   isBlankLine(line) ? "" : theme.truncate(line, Math.max(0, width));
@@ -75,6 +75,7 @@ const argsWidth = (parts: TitleParts, theme: ThemeLike) =>
 
 const paintTarget = (target: TitleTarget, room: number, theme: ThemeLike) => {
   const tail = target.tail ?? "";
+  const shownTail = tail ? theme.fg("muted", tail) : "";
   const whole = theme.width(target.text) + theme.width(tail);
   const style = (text: string) => {
     const colored = theme.fg(target.token ?? "accent", text);
@@ -83,13 +84,13 @@ const paintTarget = (target: TitleTarget, room: number, theme: ThemeLike) => {
   };
 
   if (whole <= room) {
-    return `${style(target.text)}${tail ? theme.fg("muted", tail) : ""}`;
+    return `${style(target.text)}${shownTail}`;
   }
 
   if (target.cut === "start") {
     const kept = Math.max(0, room - theme.width(tail));
 
-    return `${style(cutStart(target.text, kept, theme))}${tail ? theme.fg("muted", tail) : ""}`;
+    return `${style(cutStart(target.text, kept, theme))}${shownTail}`;
   }
 
   return style(theme.truncate(target.text, Math.max(0, room)));
@@ -161,8 +162,10 @@ const isParts = (title: MarkedRow["title"]): title is Omit<TitleParts, "mark"> =
 
 const joined = ({ prefix, text }: Placed) => (isBlankLine(text) ? "" : `${prefix}${text}`);
 
+export const childLead = (theme: ThemeLike) => `  ${theme.fg("dim", MARKS.child)} `;
+
 const childArea = (children: RowChild[], width: number, theme: ThemeLike): Placed[] => {
-  const lead = `  ${theme.fg("dim", MARKS.child)} `;
+  const lead = childLead(theme);
   const indent = " ".repeat(CHILD_COLUMN);
   const lines = children.flatMap((child) =>
     isRow(child)
@@ -221,13 +224,23 @@ const bodyArea = (body: RowRender | undefined, width: number, theme: ThemeLike) 
     : [];
 };
 
-const markedRow = (spec: MarkedRow, width: number, theme: ThemeLike): string[] => {
-  const own = [...titleArea(spec, width, theme), ...childArea(spec.children ?? [], width, theme)];
-
-  return [...hinted(own, spec, width, theme), ...bodyArea(spec.body, width, theme)].map((line) =>
+const laidOut = (
+  own: Placed[],
+  spec: Pick<MarkedRow, "hint" | "hintCuts" | "body">,
+  width: number,
+  theme: ThemeLike,
+) =>
+  [...hinted(own, spec, width, theme), ...bodyArea(spec.body, width, theme)].map((line) =>
     fitTo(line, width, theme),
   );
-};
+
+const markedRow = (spec: MarkedRow, width: number, theme: ThemeLike): string[] =>
+  laidOut(
+    [...titleArea(spec, width, theme), ...childArea(spec.children ?? [], width, theme)],
+    spec,
+    width,
+    theme,
+  );
 
 export const row =
   (spec: MarkedRow): RowRender =>
@@ -236,10 +249,5 @@ export const row =
 
 export const rowChildren =
   (spec: Omit<MarkedRow, "mark" | "title">): RowRender =>
-  (width, theme) => {
-    const own = childArea(spec.children ?? [], width, theme);
-
-    return [...hinted(own, spec, width, theme), ...bodyArea(spec.body, width, theme)].map((line) =>
-      fitTo(line, width, theme),
-    );
-  };
+  (width, theme) =>
+    laidOut(childArea(spec.children ?? [], width, theme), spec, width, theme);

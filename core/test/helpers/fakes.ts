@@ -26,6 +26,7 @@ import {
   type Phase,
   type PromptTokens,
   type RoutedMessage,
+  type RowLines,
   type SessionControl,
   type SessionInfo,
   type SessionRecord,
@@ -72,7 +73,7 @@ export type FakeHost = Host & {
   statuses: Map<string, string | undefined>;
   editorNotices: Map<string, string | undefined>;
   statusCalls: { key: string; text: string | undefined }[];
-  widgets: Map<string, ((width: number, theme: ThemeLike) => string[]) | undefined>;
+  widgets: Map<string, RowLines | undefined>;
   belowEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];

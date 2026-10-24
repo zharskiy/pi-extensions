@@ -212,7 +212,7 @@ export type HostUi = {
   setStatus(key: string, text: string | undefined): void;
   setNotice(key: string, text: string | undefined): void;
   confirm(title: string, message: string): Promise<boolean>;
-  setWidget(key: string, render: ((width: number, theme: ThemeLike) => string[]) | undefined): WidgetHandle;
+  setWidget(key: string, render: RowLines | undefined): WidgetHandle;
   openOverlay(factory: OverlayFactory): Promise<void>;
   showForm<T>(factory: FormFactory<T>, options?: { signal?: AbortSignal }): Promise<T | undefined>;
   style(token: ThemeToken, text: string): string;

@@ -9,6 +9,7 @@ import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { EditorFrame, EditorKeyHandler, HostUi } from "./contract.ts";
 import { type EditorHistory, type HistoryRecord, seedHistory, takeHistory } from "./pi-editor-history.ts";
 import { keyPress } from "./pi-keys.ts";
+import { shared } from "./pi-shared.ts";
 import { themeLike } from "./pi-tools.ts";
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
@@ -23,14 +24,8 @@ type SharedEditor = HistoryRecord & {
   installed?: EditorFactory;
 };
 
-const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
-
-const shared = globalThis as typeof globalThis & { [EDITOR_KEY]?: Partial<SharedEditor> };
-
 const sharedEditor = (): SharedEditor => {
-  const hooks = shared[EDITOR_KEY] ?? {};
-
-  shared[EDITOR_KEY] = hooks;
+  const hooks = shared<Partial<SharedEditor>>("editor-hooks", () => ({}));
 
   hooks.emptyLeft ??= new Set();
   hooks.emptyDown ??= new Set();

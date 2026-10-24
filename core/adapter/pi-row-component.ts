@@ -1,19 +1,11 @@
-import { stripVTControlCharacters } from "node:util";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
-import { CHILD_COLUMN } from "../manager/row.ts";
+import { CHILD_COLUMN, isBlankLine } from "../manager/row.ts";
 import type { ToolRows } from "./contract.ts";
+import { shared } from "./pi-shared.ts";
 
 type RowsRecord = { rows?: ToolRows; owners?: Map<object, ToolRows>; pad: number };
 
-const RECORD = Symbol.for("pi-extensions.tool-rows");
-
-export const toolRowsRecord = (): RowsRecord => {
-  const store = globalThis as { [RECORD]?: RowsRecord };
-
-  store[RECORD] ??= { pad: 1 };
-
-  return store[RECORD];
-};
+export const toolRowsRecord = () => shared<RowsRecord>("tool-rows", () => ({ pad: 1 }));
 
 export const sharedPad = () => toolRowsRecord().pad;
 
@@ -69,16 +61,13 @@ export type RowParts = {
   pad: number;
   body?: Component;
   lead?: string;
-  indent?: number;
   filter?: (line: string) => boolean;
   fallback?: () => Component | undefined;
 };
 
-const isBlank = (line: string) => stripVTControlCharacters(line).trim() === "";
-
 const bodyLines = (body: Component, width: number, filter: (line: string) => boolean) => {
   const lines = body.render(Math.max(1, width)).filter(filter);
-  const start = lines.findIndex((line) => !isBlank(line));
+  const start = lines.findIndex((line) => !isBlankLine(line));
 
   return start < 0 ? [] : lines.slice(start);
 };
@@ -110,12 +99,13 @@ export class RowComponent implements Component {
       return this.parts.fallback?.()?.render(width) ?? [];
     }
 
-    const columns = this.parts.indent ?? CHILD_COLUMN;
-    const indent = `${margin}${" ".repeat(columns)}`;
+    const indent = `${margin}${" ".repeat(CHILD_COLUMN)}`;
     const first = drawn.length === 0 && lead !== undefined ? `${margin}${lead}` : indent;
-    const shown = body ? bodyLines(body, width - pad - columns, this.parts.filter ?? keepAll) : [];
-    const hung = shown.map((line, index) => (isBlank(line) ? "" : `${index === 0 ? first : indent}${line}`));
-    const own = drawn.map((line) => (isBlank(line) ? "" : `${margin}${line}`));
+    const shown = body ? bodyLines(body, width - pad - CHILD_COLUMN, this.parts.filter ?? keepAll) : [];
+    const hung = shown.map((line, index) =>
+      isBlankLine(line) ? "" : `${index === 0 ? first : indent}${line}`,
+    );
+    const own = drawn.map((line) => (isBlankLine(line) ? "" : `${margin}${line}`));
 
     return [...own, ...hung].map((line) => truncateToWidth(line, width, "..."));
   }

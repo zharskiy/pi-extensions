@@ -17,7 +17,7 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { ToolRenderState, ToolResult, ToolSpec } from "../../adapter/contract.ts";
+import type { ThemeToken, ToolRenderState, ToolResult, ToolSpec } from "../../adapter/contract.ts";
 import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
 
 initTheme("dark", false);
@@ -294,33 +294,35 @@ describe("toPiTool row shell", () => {
 });
 
 describe("themeLike colours", () => {
-  it("paints role tokens with pi's matching theme colours", () => {
+  it("paints every role token with pi's theme colour of the same name", async () => {
     const recording = { fg: (token: string, text: string) => `<${token}>${text}` } as unknown as Theme;
     const like = themeLike(recording);
+    const live = themeLike((await themeModule()).theme);
+    const tokens = Object.keys({
+      accent: true,
+      border: true,
+      borderAccent: true,
+      syntaxString: true,
+      syntaxVariable: true,
+      muted: true,
+      dim: true,
+      success: true,
+      warning: true,
+      error: true,
+      text: true,
+      thinkingOff: true,
+      thinkingMinimal: true,
+      thinkingLow: true,
+      thinkingMedium: true,
+      thinkingHigh: true,
+      thinkingXhigh: true,
+      thinkingMax: true,
+    } satisfies Record<ThemeToken, true>) as ThemeToken[];
 
-    expect(
-      (
-        [
-          "warning",
-          "accent",
-          "border",
-          "borderAccent",
-          "syntaxString",
-          "syntaxVariable",
-          "thinkingOff",
-          "thinkingXhigh",
-        ] as const
-      ).map((token) => like.fg(token, "x")),
-    ).toEqual([
-      "<warning>x",
-      "<accent>x",
-      "<border>x",
-      "<borderAccent>x",
-      "<syntaxString>x",
-      "<syntaxVariable>x",
-      "<thinkingOff>x",
-      "<thinkingXhigh>x",
-    ]);
+    expect(tokens.map((token) => like.fg(token, "x"))).toEqual(tokens.map((token) => `<${token}>x`));
+    expect(tokens.map((token) => stripVTControlCharacters(live.fg(token, "x")))).toEqual(
+      tokens.map(() => "x"),
+    );
   });
 
   it("paints the thinking-level tokens with pi's thinking colours", () => {

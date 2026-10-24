@@ -18,6 +18,7 @@ import type {
   ToolResult,
   ToolSpec,
 } from "./contract.ts";
+import { messageText } from "./messages.ts";
 import { abortedText, recordPad, rowComponent, slotFor } from "./pi-row-component.ts";
 
 const ESC = "\x1b";
@@ -35,28 +36,7 @@ export const textMetrics: Pick<ThemeLike, "width" | "truncate" | "wrap"> = {
 export const fitLines = (lines: string[], width: number) =>
   lines.map((line) => truncateToWidth(line, width, "..."));
 
-const PI_COLORS = {
-  accent: "accent",
-  border: "border",
-  borderAccent: "borderAccent",
-  syntaxString: "syntaxString",
-  syntaxVariable: "syntaxVariable",
-  muted: "muted",
-  dim: "dim",
-  success: "success",
-  warning: "warning",
-  error: "error",
-  text: "text",
-  thinkingOff: "thinkingOff",
-  thinkingMinimal: "thinkingMinimal",
-  thinkingLow: "thinkingLow",
-  thinkingMedium: "thinkingMedium",
-  thinkingHigh: "thinkingHigh",
-  thinkingXhigh: "thinkingXhigh",
-  thinkingMax: "thinkingMax",
-} as const satisfies Record<ThemeToken, Parameters<Theme["fg"]>[0]>;
-
-export const piColor = (token: ThemeToken) => PI_COLORS[token];
+export const piColor = (token: ThemeToken): Parameters<Theme["fg"]>[0] => token;
 
 const WORD_MIX = 0.4;
 
@@ -144,10 +124,7 @@ export const fromPiResult = (result: {
   details?: unknown;
   isError?: boolean;
 }): ToolResult => ({
-  text: result.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n"),
+  text: messageText(result.content),
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
 });

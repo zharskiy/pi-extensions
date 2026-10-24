@@ -1,4 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { shared } from "./pi-shared.ts";
 
 const ESC = String.fromCharCode(27);
 
@@ -8,15 +9,7 @@ export const OSC133_ZONE_PREFIX = new RegExp(`^(?:${ESC}\\]133;[ABC](?:${BEL}|${
 
 type LabelRecord = { label?: string; owner?: object };
 
-const RECORD = Symbol.for("pi-extensions.thinking-label");
-
-const record = (): LabelRecord => {
-  const store = globalThis as { [RECORD]?: LabelRecord };
-
-  store[RECORD] ??= {};
-
-  return store[RECORD];
-};
+const record = () => shared<LabelRecord>("thinking-label", () => ({}));
 
 export const hiddenThinkingLabel = () => record().label;
 

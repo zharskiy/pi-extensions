@@ -1,12 +1,10 @@
+import { shared } from "./pi-shared.ts";
+
 type SectionOptions = { sections: Record<string, string> };
 
 type Section = { text: string; owner: symbol };
 
-const SECTIONS_KEY = Symbol.for("pi-extensions.owned-prompt-sections");
-
-const shared = globalThis as typeof globalThis & { [SECTIONS_KEY]?: Map<string, Section> };
-
-const sharedSections = (): Map<string, Section> => (shared[SECTIONS_KEY] ??= new Map());
+const sharedSections = () => shared("owned-prompt-sections", () => new Map<string, Section>());
 
 export const applyPromptSections = (options: SectionOptions) => {
   sharedSections().forEach(({ text }, name) => {

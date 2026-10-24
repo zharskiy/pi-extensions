@@ -39,6 +39,7 @@ pi-extensions/
 │   │   │                        #   their thinking levels), matching
 │   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
 │   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
+│   │   ├── pi-shared.ts         # shared(name, init): one record per name on globalThis, shared by adapter copies
 │   │   ├── pi-codemode.ts       # codemode worker cap (PI_CODEMODE_MAX_WORKERS), owned value shared by adapter copies
 │   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
 │   │   ├── pi-working.ts        # working message and visibility (HostUi)

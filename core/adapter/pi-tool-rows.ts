@@ -1,12 +1,12 @@
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { MARKS } from "../manager/marks.ts";
-import { CHILD_COLUMN } from "../manager/row.ts";
-import type { Host, ThemeLike, ToolCallView, ToolRow, ToolRows } from "./contract.ts";
+import { childLead } from "../manager/row.ts";
+import type { Host, RowLines, ThemeLike, ToolCallView, ToolRow, ToolRows } from "./contract.ts";
 import {
   abortedText,
   abortNotice,
+  type RowSlot,
   recordPad,
   rowComponent,
   slotFor,
@@ -127,6 +127,12 @@ const piBody = (
   return slot.component;
 };
 
+const baseContext = (context: PiToolRenderContext, slot: RowSlot): PiToolRenderContext => ({
+  ...context,
+  state: slot.state,
+  lastComponent: undefined,
+});
+
 const fallback = (render: () => Component | undefined) => () => {
   try {
     return render();
@@ -135,7 +141,7 @@ const fallback = (render: () => Component | undefined) => () => {
   }
 };
 
-const linesOf = (render: ((width: number, theme: ThemeLike) => string[]) | undefined, theme: ThemeLike) =>
+const linesOf = (render: RowLines | undefined, theme: ThemeLike) =>
   render ? (width: number) => render(width, theme) : () => [];
 
 const TIMING = /^(Took|Elapsed) \d/;
@@ -182,38 +188,28 @@ export const rowRenderers = (
         lines: (width) =>
           linesOf(rows(callView(name, context, slot.result as PiResult, label))?.call, like)(width),
         pad: context.outputPad,
-        fallback: fallback(() =>
-          base?.renderCall?.(args, theme, {
-            ...context,
-            state: slotFor(context.state).state,
-            lastComponent: undefined,
-          }),
-        ),
+        fallback: fallback(() => base?.renderCall?.(args, theme, baseContext(context, slot))),
       });
     },
     renderResult: (result, options, theme, context) => {
       recordPad(context.outputPad);
 
-      slotFor(context.state).result = result;
+      const slot = slotFor(context.state);
 
+      slot.result = result;
+
+      const like = themeLike(theme);
       const row = rows(callView(name, context, result, label));
       const body =
         context.expanded && row?.piBody && base ? piBody(base, result, options, theme, context) : undefined;
 
       return rowComponent(context.lastComponent, {
-        lines: linesOf(row?.result, themeLike(theme)),
+        lines: linesOf(row?.result, like),
         pad: context.outputPad,
         body,
-        lead: `  ${theme.fg("dim", MARKS.child)} `,
-        indent: CHILD_COLUMN,
+        lead: childLead(like),
         filter: timingFilter(row),
-        fallback: fallback(() =>
-          base?.renderResult?.(result, options, theme, {
-            ...context,
-            state: slotFor(context.state).state,
-            lastComponent: undefined,
-          }),
-        ),
+        fallback: fallback(() => base?.renderResult?.(result, options, theme, baseContext(context, slot))),
       });
     },
   };

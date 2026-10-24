@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { PAD } from "../manager/layout.ts";
 import type { HostUi } from "./contract.ts";
+import { shared } from "./pi-shared.ts";
 import { fitLines } from "./pi-tools.ts";
 import { type HostState, tuiContext } from "./pi-ui.ts";
 
@@ -10,15 +11,7 @@ type Redraw = { refresh(): void };
 
 type NoticeBoard = { sources: Set<Map<string, string>>; footer?: Redraw; widget?: Redraw };
 
-const BOARD_KEY = Symbol.for("pi-extensions.notices");
-
-const shared = globalThis as typeof globalThis & { [BOARD_KEY]?: NoticeBoard };
-
-const board = (): NoticeBoard => {
-  shared[BOARD_KEY] ??= { sources: new Set() };
-
-  return shared[BOARD_KEY];
-};
+const board = () => shared<NoticeBoard>("notices", () => ({ sources: new Set() }));
 
 export const noticeLines = (): string[] =>
   Array.from(new Map(Array.from(board().sources).flatMap((source) => Array.from(source))))
