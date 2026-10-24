@@ -76,7 +76,7 @@ export const agentViewPlugin: Plugin = {
           },
           api,
         ),
-      view: (id, found, back, leave, close) =>
+      view: (id, found, back, leave) =>
         createAgentView(
           {
             load: source.loader(id, found),
@@ -85,7 +85,6 @@ export const agentViewPlugin: Plugin = {
             stop: () => stop(id),
             watch: viewWatch(id),
             leave,
-            close,
           },
           api,
         ),

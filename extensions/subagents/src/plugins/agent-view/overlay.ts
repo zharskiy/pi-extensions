@@ -9,7 +9,7 @@ type ListHooks = { open(record: AgentRecord): void; leave(): void };
 
 export type OverlayParts = {
   list(hooks: ListHooks): ListComponent;
-  view(id: string, found: AgentRecord, back: boolean, leave: () => void, close: () => void): ViewComponent;
+  view(id: string, found: AgentRecord, back: boolean, leave: () => void): ViewComponent;
 };
 
 export type AgentsOverlay = ViewComponent & { close(): void; dispose(): void };
@@ -55,12 +55,12 @@ export const createAgentsOverlay = (
 
   const showView = (record: AgentRecord) => {
     list?.suspend();
-    current = parts.view(record.id, record, true, showList, close);
+    current = parts.view(record.id, record, true, showList);
     api.requestRender();
   };
 
   let current: ViewComponent =
-    start.kind === "list" ? resumeList() : parts.view(start.id, start.found, false, close, close);
+    start.kind === "list" ? resumeList() : parts.view(start.id, start.found, false, close);
 
   return {
     render: (width) => current.render(width),

@@ -153,7 +153,6 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
           changed = onChange;
           return () => {};
         },
-        close: () => undefined,
         leave: () => {
           left.count += 1;
         },
@@ -215,7 +214,9 @@ describe("agent view", () => {
     expect(lines[6]).toBe("");
     expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
-    expect(lines.at(-2)?.startsWith(" esc to close · → to main session · r to show the request")).toBe(true);
+    expect(lines.at(-2)?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools")).toBe(
+      true,
+    );
     expect(lines.at(-3)).toBe("");
     expect(lines.at(-1)).toBe("");
   });
@@ -580,12 +581,14 @@ describe("agent view hint", () => {
     const noRequest = { ...fixture(), prompt: { ...fixture().prompt, providerPayload: undefined } };
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
-    expect(hint(hintOf(open))).toBe(" esc to close · → to main session · x to stop · r to show the request");
+    expect(hint(hintOf(open))).toBe(
+      " esc to close · x to stop · r to show the request · ctrl+o to expand tools",
+    );
     expect(hint(hintOf(closed, { back: true }))).toBe(
-      " esc to go back · → to main session · r to show the request · ctrl+o to expand tools",
+      " esc to go back · r to show the request · ctrl+o to expand tools",
     );
     expect(hint(hintOf(open, { session: noRequest }))).toBe(
-      " esc to close · → to main session · x to stop · ctrl+o to expand tools",
+      " esc to close · x to stop · ctrl+o to expand tools",
     );
 
     const expanded = hintOf(grace, { back: true });
@@ -593,7 +596,7 @@ describe("agent view hint", () => {
     expanded.view.handleKey(char("r"));
 
     expect(hint(expanded)).toBe(
-      " esc to go back · → to main session · x to close now · r to hide the request",
+      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools",
     );
 
     [open, grace, closed].forEach((record) => {
@@ -610,7 +613,7 @@ describe("agent view hint", () => {
     const narrow = viewOf(fixture(), { record: agentRecord({ id: "explorer-1" }), width: 40 });
     const hintLine = narrow.lines().at(-2) ?? "";
 
-    expect(hintLine).toBe(" esc to close · → to main session · ...");
+    expect(hintLine).toBe(" esc to close · x to stop · r to sho...");
     expect(plainTheme.width(hintLine)).toBe(39);
 
     const items = Array.from({ length: 900 }, (_, index) => ({
@@ -625,9 +628,7 @@ describe("agent view hint", () => {
     long.view.handleKey(char("r"));
     long.view.handleKey(key("home"));
 
-    expect(long.lines().at(-2)).toBe(
-      " esc to go back · → to main session · x to close now · r to hide the request",
-    );
+    expect(long.lines().at(-2)).toBe(" esc to go back · x to close now · r to hide the request");
   });
 
   it("pads every line and keeps the last column blank", () => {
@@ -1317,7 +1318,7 @@ describe("agent view request block", () => {
 
     expect(all[all.indexOf(RULE(100)) + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
     expect(all.join("\n")).not.toContain('"model": "provider/model"');
-    expect(all.at(-2)).toContain("x to stop · r to show the request");
+    expect(all.at(-2)).toContain("x to stop · r to show the request · ctrl+o to expand tools");
   });
 
   it("leaves a blank line under the collapsed request, apart from the task box padding", () => {
