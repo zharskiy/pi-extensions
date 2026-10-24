@@ -438,9 +438,10 @@ describe("agent view header", () => {
       expect(header(base(patch)).slice(0, 3)).toEqual([title, receipt, " provider/model · id explorer-1"]);
     });
 
-    expect(header(base({ state: "failed", error: "tests failed twice\nstack" }))[3]).toBe(
+    expect(header(base({ state: "failed", error: "tests failed twice\nstack" })).slice(3, 5)).toEqual([
       " tests failed twice",
-    );
+      " stack",
+    ]);
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" Handoff file /tmp/h.md");
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md", error: "missing Status" }))[3]).toBe(
       " Handoff file /tmp/h.md (invalid: missing Status)",
@@ -474,6 +475,21 @@ describe("agent view header", () => {
       " provider/model · id explorer-1",
       " npm test failed twice after the redirect change; the session cookie is not set",
       " on the callback route",
+    ]);
+  });
+
+  it("shows every line of a multi-line error up to six rows, then counts the rest", () => {
+    const error = Array.from({ length: 9 }, (_, index) => `frame ${index + 1}`).join("\n");
+    const lines = header(base({ state: "failed", endedAt: 0, error }), plainTheme, 80);
+
+    expect(lines.slice(3, 10)).toEqual([
+      " frame 1",
+      " frame 2",
+      " frame 3",
+      " frame 4",
+      " frame 5",
+      " frame 6",
+      " ... (3 more lines)",
     ]);
   });
 

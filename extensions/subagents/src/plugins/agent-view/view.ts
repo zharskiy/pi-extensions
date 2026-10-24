@@ -1,13 +1,13 @@
 import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { type ReceiptSegment, receiptText } from "../../../../../core/manager/format.ts";
 import { keyHints } from "../../../../../core/manager/layout.ts";
+import { countLine, preview, wrapChild } from "../../../../../core/manager/row.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
   agentReceipt,
   alignRight,
   DOT,
   errorText,
-  firstLine,
   formatCtx,
   innerWidth,
   PAD,
@@ -96,12 +96,19 @@ const worktreeLine = (worktree: Worktree) => {
   return `Worktree ${worktree.path}${DOT}branch ${worktree.branch}${kept}`;
 };
 
-const errorLines = (record: AgentRecord, theme: ThemeLike, inner: number) =>
-  record.state === "failed"
-    ? theme
-        .wrap(firstLine(record.error ?? "unknown error"), inner)
-        .map((line) => PAD + theme.fg("error", line))
-    : [];
+const ERROR_ROWS = 6;
+
+const errorLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
+  if (record.state !== "failed") {
+    return [];
+  }
+
+  const rows = wrapChild((record.error ?? "unknown error").trim(), inner, 0, theme);
+  const { shown, hidden } = preview(rows, { keep: "head", max: ERROR_ROWS });
+  const more = hidden > 0 ? [PAD + countLine({ hidden, end: "more", noun: "line" }, inner, theme)] : [];
+
+  return [...shown.map((line) => PAD + theme.fg("error", line)), ...more];
+};
 
 const handoffLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
   if (record.state !== "handoff") {

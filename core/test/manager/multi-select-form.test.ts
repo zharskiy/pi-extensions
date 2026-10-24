@@ -47,7 +47,7 @@ describe("multiSelectForm", () => {
     expect(text).toContain("[ ] linear");
     expect(text).toContain("[x] sentry");
     expect(text).toContain(
-      " ↑↓ to select · space to toggle · a for all · n for none\n enter to add · esc to cancel",
+      " ↑↓ to select · space to toggle · a to check all · n to check none\n enter to add · esc to cancel",
     );
   });
 
@@ -56,8 +56,8 @@ describe("multiSelectForm", () => {
 
     expect(lines.filter((line) => line.includes("[x]"))).toEqual([]);
     expect(lines.slice(-3, -1)).toEqual([
-      " ↑↓ to select · space to toggle · a for all · n for none · enter to confirm",
-      " esc to cancel",
+      " ↑↓ to select · space to toggle · a to check all · n to check none",
+      " enter to confirm · esc to cancel",
     ]);
   });
 

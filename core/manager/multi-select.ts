@@ -9,8 +9,8 @@ export type MultiState = { cursor: number; checked: readonly boolean[] };
 export const MULTI_SELECT_HINTS: readonly KeyHint[] = [
   ["↑↓", "to select"],
   ["space", "to toggle"],
-  ["a", "for all"],
-  ["n", "for none"],
+  ["a", "to check all"],
+  ["n", "to check none"],
 ];
 
 const DEFAULT_HEIGHT = 10;
