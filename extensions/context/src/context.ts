@@ -10,7 +10,7 @@ export const SNAPSHOT_ENTRY = "pi-context:snapshot";
 
 const ALL = "all";
 
-export type ContextEnv = { home: string; now(): number };
+type ContextEnv = { home: string; now(): number };
 
 const cwdOrHomeRelative = (path: string, home: string, cwd: string) => {
   if (cwd && path.startsWith(`${cwd}/`)) {

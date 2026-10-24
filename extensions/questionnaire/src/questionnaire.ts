@@ -70,7 +70,7 @@ const PARAMETERS = {
   additionalProperties: false,
 };
 
-export const questionnaireTool = (
+const questionnaireTool = (
   host: Host,
   now: () => number = Date.now,
 ): ToolSpec<QuestionnaireParams, QuestionnaireDetails> => ({
@@ -126,7 +126,7 @@ export const questionnaireTool = (
     }
   },
   renderShell: "row",
-  renderCall: (params, theme, state) => callText(params, theme, state),
+  renderCall: callText,
   renderResult: (result, _state, theme) => resultSummary(result, theme),
 });
 

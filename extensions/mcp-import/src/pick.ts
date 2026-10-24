@@ -1,4 +1,5 @@
 import type { Host } from "../../../core/adapter/contract.ts";
+import { counted } from "../../../core/manager/format.ts";
 import { DOT, ELLIPSIS } from "../../../core/manager/layout.ts";
 import { multiSelectForm } from "../../../core/manager/multi-select.ts";
 import { selectForm } from "../../../core/manager/select.ts";
@@ -17,7 +18,7 @@ export type Pair = {
   text?: string;
 };
 
-export type Scan =
+type Scan =
   | { kind: "pairs"; pairs: Pair[] }
   | { kind: "untrusted" }
   | { kind: "empty"; files: string[]; targets: string[]; skipped: Skipped[]; present: boolean };
@@ -85,10 +86,10 @@ const nameList = (names: readonly string[]) => {
   return `${shown.join(", ")}${rest}`;
 };
 
-export const pairLabel = (pair: Pick<Pair, "source" | "scope">) =>
+const pairLabel = (pair: Pick<Pair, "source" | "scope">) =>
   `${SOURCE_NAMES[pair.source]} · ${SCOPE_NAMES[pair.scope]}`;
 
-export const sourceOptions = (pairs: readonly Pair[]) =>
+const sourceOptions = (pairs: readonly Pair[]) =>
   pairs.map((pair) => {
     const names = pair.plan.added.map((entry) => entry.name);
 
@@ -104,21 +105,21 @@ const strings = (value: unknown) =>
 
 const transport = ({ server }: Entry) =>
   typeof server.url === "string"
-    ? `http · ${server.url}`
-    : `stdio · ${[server.command, ...strings(server.args)].filter((part) => typeof part === "string").join(" ")}`;
+    ? `http${DOT}${server.url}`
+    : `stdio${DOT}${[server.command, ...strings(server.args)].filter((part) => typeof part === "string").join(" ")}`;
 
 const serverDescription = (entry: Entry) => {
   const notes = entry.notes.length;
   const parts = [
     transport(entry),
     ...(needsSignIn(entry.server) ? ["needs sign-in"] : []),
-    ...(notes > 0 ? [notes === 1 ? "1 note" : `${notes} notes`] : []),
+    ...(notes > 0 ? [counted(notes, "note")] : []),
   ];
 
   return parts.join(DOT);
 };
 
-export const serverOptions = (plan: Plan) =>
+const serverOptions = (plan: Plan) =>
   plan.added.map((entry) => ({
     label: entry.name,
     description: serverDescription(entry),

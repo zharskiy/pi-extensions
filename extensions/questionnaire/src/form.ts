@@ -3,9 +3,9 @@ import { listKey } from "../../../core/manager/list.ts";
 import { tabStep } from "../../../core/manager/tabs.ts";
 import type { Answer, Question, QuestionOption } from "./result.ts";
 
-export const OTHER_LABEL = "Type something.";
+const OTHER_LABEL = "Type something.";
 
-export type FormOption = QuestionOption & { other?: boolean };
+type FormOption = QuestionOption & { other?: boolean };
 
 export type FormState = {
   questions: Question[];

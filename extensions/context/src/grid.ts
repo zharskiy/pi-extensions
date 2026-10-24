@@ -25,9 +25,7 @@ const CELLS: Partial<Record<CategoryKey, string>> = { free: "·", reserve: "░"
 
 const USED = "■";
 
-const paintCell = (theme: ThemeLike, key: CategoryKey) => theme.fg(COLORS[key], CELLS[key] ?? USED);
-
-export const legendGlyph = paintCell;
+export const legendGlyph = (theme: ThemeLike, key: CategoryKey) => theme.fg(COLORS[key], CELLS[key] ?? USED);
 
 const besideWidth = (columns: number, side: number) => columns * 2 - 1 + GAP.length + side;
 
@@ -82,7 +80,7 @@ export const gridOf = (
   const rows = Array.from({ length: layout.rows }, (_, row) =>
     cells
       .slice(row * layout.columns, (row + 1) * layout.columns)
-      .map((key) => paintCell(theme, key))
+      .map((key) => legendGlyph(theme, key))
       .join(" "),
   );
 

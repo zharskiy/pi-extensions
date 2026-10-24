@@ -7,11 +7,11 @@ import {
   userSettingsPath,
 } from "../../../core/manager/settings.ts";
 
-export type StyleSettings = { style: string };
+type StyleSettings = { style: string };
 
 export const SETTINGS_FILE = "pi-style.json";
 
-export const styleSchema = (names: readonly string[]): SettingsSchema<StyleSettings> => ({
+const styleSchema = (names: readonly string[]): SettingsSchema<StyleSettings> => ({
   style: { type: "choice", values: names },
 });
 

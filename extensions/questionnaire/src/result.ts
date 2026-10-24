@@ -30,7 +30,7 @@ const ANSWERED_BEFORE = "Answered before cancelling:";
 
 const FALLBACK = "Pick a sensible default for anything unanswered, or stop.";
 
-export const defaultLabel = (index: number) => `Q${index + 1}`;
+const defaultLabel = (index: number) => `Q${index + 1}`;
 
 export const questionInputs = (params: QuestionnaireParams) =>
   Array.isArray(params.questions) ? params.questions : [];
