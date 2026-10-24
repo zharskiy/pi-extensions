@@ -281,7 +281,7 @@ describe("S6 bash and powershell", () => {
       "     out 43",
     ]);
     expect(drawn.bolded).toContain("bash");
-    expect(tokenOf(drawn.painted, "npm test -- --run")).toBe("text");
+    expect(tokenOf(drawn.painted, "npm test -- --run")).toBe("accent");
     expect(tokenOf(drawn.painted, "out 43")).toBe("muted");
     expect(tokenOf(drawn.painted, "... (40 earlier lines, ")).toBe("muted");
     expect(tokenOf(drawn.painted, "ctrl+o")).toBe("dim");
@@ -354,6 +354,7 @@ describe("S6 bash and powershell", () => {
     const drawn = bash("cd app\nnpm test", { isPartial: true });
 
     expect(drawn.lines).toEqual([" ◌ bash cd app ..."]);
+    expect(tokenOf(drawn.painted, "cd app")).toBe("accent");
     expect(tokenOf(drawn.painted, " ...")).toBe("muted");
     expect(draw(view("powershell", { command: "Get-Item ." }, { isPartial: true })).lines).toEqual([
       " ◌ powershell Get-Item .",

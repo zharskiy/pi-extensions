@@ -23,7 +23,7 @@ const title = (context: Context) => {
   const more = rest.some((line) => line.trim() !== "");
 
   return {
-    target: { text: first, token: "text" as const, cut: "end" as const, ...(more ? { tail: MORE } : {}) },
+    target: { text: first, cut: "end" as const, ...(more ? { tail: MORE } : {}) },
   };
 };
 
