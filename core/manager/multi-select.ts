@@ -91,7 +91,7 @@ export const checkedIndexes = (state: MultiState) =>
 
 const ROW_MARKS = "› [ ] ";
 
-export const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
+const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
   width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
 
 export const descriptionFits = (theme: ThemeLike, option: MultiOption, width: number) =>

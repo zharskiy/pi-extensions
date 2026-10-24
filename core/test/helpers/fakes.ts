@@ -49,7 +49,6 @@ export const plainTheme: ThemeLike = {
   fg: (_token, text) => text,
   bg: (_token, text) => text,
   bold: (text) => text,
-  italic: (text) => text,
   inverse: (text) => text,
   panels: true,
   ...textMetrics,
@@ -62,7 +61,6 @@ export type FakeHost = Host & {
   commands: Map<string, CommandSpec>;
   mainPrompt?: string;
   promptSections: Map<string, string>;
-  promptSectionCalls: { name: string; text: string | undefined }[];
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   sent: string[];
@@ -79,13 +77,10 @@ export type FakeHost = Host & {
   widgetRefreshes: number;
   overlays: OverlayFactory[];
   forms: FakeForm[];
-  formTheme: ThemeLike;
   form(): FakeForm;
   editorFrame?: EditorFrame;
   foreignEditor: boolean;
   emptyLeftHandlers: Set<() => void>;
-  emptyDownHandlers: Set<() => void>;
-  emptyEscapeHandlers: Set<() => boolean>;
   editorCapture?: EditorKeyHandler;
   pressEmptyLeft(): boolean;
   pressEmptyDown(): boolean;
@@ -118,7 +113,6 @@ export type FakeHost = Host & {
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
   agentStart(): void;
-  phases: Phase[];
   setPhase(phase: Phase): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
@@ -132,10 +126,8 @@ export type FakeHost = Host & {
   sessionTitle?: string;
   keyListeners: Set<() => void>;
   pressKey(): void;
-  entryRenderers: Map<string, EntryRender>;
   toolRows?: ToolRows;
   thinkingLabels: { label: string | undefined; hint?: string }[];
-  messageRenderers: Map<string, MessageRender>;
   renderMessage(
     customType: string,
     message: { text: string; details?: unknown },
@@ -165,6 +157,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const agentStartHandlers: (() => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
+  const emptyDownHandlers = new Set<() => void>();
+  const emptyEscapeHandlers = new Set<() => boolean>();
+  const entryRenderers = new Map<string, EntryRender>();
+  const messageRenderers = new Map<string, MessageRender>();
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
   let started = false;
@@ -212,7 +208,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     tools: new Map(),
     commands: new Map(),
     promptSections: new Map(),
-    promptSectionCalls: [],
     entries: [],
     files: new Map(),
     sent: [],
@@ -229,7 +224,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     widgetRefreshes: 0,
     overlays: [],
     forms: [],
-    formTheme: plainTheme,
     form: () => {
       const open = host.forms.at(-1);
 
@@ -241,12 +235,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     foreignEditor: false,
     emptyLeftHandlers: new Set(),
-    emptyDownHandlers: new Set(),
-    emptyEscapeHandlers: new Set(),
     pressEmptyLeft: () => pressEmpty(host.emptyLeftHandlers),
-    pressEmptyDown: () => pressEmpty(host.emptyDownHandlers),
+    pressEmptyDown: () => pressEmpty(emptyDownHandlers),
     pressEmptyEscape: () =>
-      editorLive() && host.idle && Array.from(host.emptyEscapeHandlers).some((handler) => handler()),
+      editorLive() && host.idle && Array.from(emptyEscapeHandlers).some((handler) => handler()),
     pressEditorKey: (key) => {
       if (!editorLive()) {
         return "editor";
@@ -328,7 +320,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           return undefined;
         }
 
-        return openFakeForm(factory, host.formTheme, options.signal, (form) => {
+        return openFakeForm(factory, plainTheme, options.signal, (form) => {
           host.forms.push(form);
         });
       },
@@ -376,19 +368,19 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       onEmptyEditorDown: (handler) => {
         const entry = () => handler();
 
-        host.emptyDownHandlers.add(entry);
+        emptyDownHandlers.add(entry);
 
         return () => {
-          host.emptyDownHandlers.delete(entry);
+          emptyDownHandlers.delete(entry);
         };
       },
       onEmptyEditorEscape: (handler) => {
         const entry = () => handler();
 
-        host.emptyEscapeHandlers.add(entry);
+        emptyEscapeHandlers.add(entry);
 
         return () => {
-          host.emptyEscapeHandlers.delete(entry);
+          emptyEscapeHandlers.delete(entry);
         };
       },
       captureEditorKeys: (handler) => {
@@ -439,8 +431,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       host.mainPrompt = text;
     },
     setPromptSection: (name, text) => {
-      host.promptSectionCalls.push({ name, text });
-
       if (text === undefined) {
         host.promptSections.delete(name);
         return;
@@ -596,7 +586,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     renderTool: (name, { call, result, state: overrides, width = 80 }) => {
       const spec = host.tool<unknown, unknown>(name);
       const state: ToolRenderState = {
-        toolCallId: "call-1",
         expanded: false,
         isPartial: false,
         isError: result?.isError ?? false,
@@ -631,7 +620,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       host.setPhase("waiting");
     },
-    phases: [],
     onPhase: (handler) => {
       phaseHandlers.push(handler);
     },
@@ -641,7 +629,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       currentPhase = phase;
-      host.phases.push(phase);
 
       phaseHandlers.forEach((handler) => {
         handler(phase);
@@ -654,20 +641,18 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
-    entryRenderers: new Map(),
     registerEntryRenderer: (customType, render) => {
-      host.entryRenderers.set(customType, render);
+      entryRenderers.set(customType, render);
     },
     registerToolRows: (rows) => {
       host.toolRows = rows;
     },
     thinkingLabels: [],
-    messageRenderers: new Map(),
     registerMessageRenderer: (customType, render) => {
-      host.messageRenderers.set(customType, render);
+      messageRenderers.set(customType, render);
     },
     renderMessage: (customType, message, { width = 80, expanded = false, theme = plainTheme } = {}) => {
-      const render = host.messageRenderers.get(customType);
+      const render = messageRenderers.get(customType);
 
       if (!render) {
         throw new Error(`message renderer ${customType} not registered`);
@@ -678,7 +663,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       );
     },
     renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme } = {}) => {
-      const render = host.entryRenderers.get(customType);
+      const render = entryRenderers.get(customType);
 
       if (!render) {
         throw new Error(`entry renderer ${customType} not registered`);

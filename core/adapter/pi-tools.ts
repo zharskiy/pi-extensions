@@ -83,7 +83,6 @@ export const themeLike = (theme: Theme): ThemeLike => ({
   fg: (token, text) => theme.fg(piColor(token), text),
   bg: (token, text) => theme.style(text, { bg: piBg(theme, token) }),
   bold: (text) => theme.bold(text),
-  italic: (text) => theme.italic(text),
   inverse: (text) => theme.inverse(text),
   get panels() {
     return theme.getBgAnsi("toolSuccessBg") !== NO_BG;
@@ -157,16 +156,7 @@ export type PiToolRenderContext = Parameters<NonNullable<ToolDefinition["renderC
 
 type RenderContext = Pick<
   PiToolRenderContext,
-  | "toolCallId"
-  | "expanded"
-  | "isPartial"
-  | "isError"
-  | "args"
-  | "outputPad"
-  | "invalidate"
-  | "lastComponent"
-  | "durationMs"
-  | "state"
+  "expanded" | "isPartial" | "isError" | "args" | "outputPad" | "invalidate" | "lastComponent" | "state"
 >;
 
 const latestResult = (context: RenderContext) => slotFor(context.state).result as ToolResult | undefined;
@@ -176,13 +166,11 @@ const renderState = (
   context: RenderContext,
   result = latestResult(context),
 ): ToolRenderState => ({
-  toolCallId: context.toolCallId,
   expanded: context.expanded,
   isPartial: context.isPartial,
   isError: context.isError,
   args: context.args,
   aborted: context.isError && result !== undefined && abortedText(result.text, name),
-  ...(context.durationMs === undefined ? {} : { durationMs: context.durationMs }),
   ...(result ? { result } : {}),
   invalidate: context.invalidate,
 });

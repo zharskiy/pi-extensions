@@ -99,10 +99,7 @@ describe("toPiTool render state", () => {
     tool.renderResult(piResult("x"), options, theme, context({ isError: true }));
 
     expect(states).toHaveLength(2);
-    expect(states.map((state) => [state.toolCallId, state.isError])).toEqual([
-      ["call-7", true],
-      ["call-7", true],
-    ]);
+    expect(states.map((state) => state.isError)).toEqual([true, true]);
     expect(states.every((state) => state.invalidate === invalidate)).toBe(true);
   });
 
@@ -257,14 +254,13 @@ describe("toPiTool row shell", () => {
       },
       renderResult: () => "",
     });
-    const shared = context({ state: {}, isError: true, durationMs: 7_000 });
+    const shared = context({ state: {}, isError: true });
     const call = tool.renderCall({}, theme, shared);
 
     tool.renderResult(piResult("Operation aborted"), options, theme, shared);
 
     expect(call.render(40).map(stripVTControlCharacters)).toEqual([" ✓ probe · Operation aborted"]);
     expect(states.at(-1)).toMatchObject({
-      durationMs: 7_000,
       aborted: true,
       result: { text: "Operation aborted" },
     });
@@ -337,11 +333,10 @@ describe("themeLike colours", () => {
     );
   });
 
-  it("styles italic and inverse text through pi's theme", async () => {
+  it("styles inverse text through pi's theme", async () => {
     const live = await themeModule();
     const like = themeLike(live.theme);
 
-    expect(like.italic("x")).toBe(live.theme.italic("x"));
     expect(like.inverse("x")).toBe(live.theme.inverse("x"));
   });
 });

@@ -8,7 +8,7 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 pi-extensions/
 ├── core/                        # shared code, no extension-specific logic
 │   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, italic, inverse, panels, width, truncate, wrap)
+│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery

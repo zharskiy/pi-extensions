@@ -33,7 +33,6 @@ export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;
   bg(token: BgToken, text: string): string;
   bold(text: string): string;
-  italic(text: string): string;
   inverse(text: string): string;
   readonly panels: boolean;
   width(text: string): number;
@@ -48,12 +47,10 @@ export type ToolResult<D = unknown> = {
 };
 
 export type ToolRenderState = {
-  toolCallId: string;
   expanded: boolean;
   isPartial: boolean;
   isError: boolean;
   args: unknown;
-  durationMs?: number;
   aborted: boolean;
   result?: ToolResult;
   invalidate(): void;

@@ -101,7 +101,6 @@ const renderWith = (
     tool.renderResult?.(
       result,
       {
-        toolCallId: "call-1",
         expanded: false,
         isPartial: false,
         isError: result.isError ?? false,

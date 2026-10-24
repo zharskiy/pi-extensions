@@ -17,7 +17,6 @@ const tool = handoffTool(
 );
 
 const state = (patch: Partial<ToolRenderState> = {}): ToolRenderState => ({
-  toolCallId: "call-1",
   aborted: false,
   expanded: false,
   isPartial: false,
