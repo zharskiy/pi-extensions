@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../../../test-framework/index.ts";
 import type { AgentRegistry, HandoffService } from "../../../core/model/types.ts";
-import { handoffTool } from "../../../src/plugins/run-agent/handoff-tool.ts";
+import { handoffTool } from "../../../core/run-agent/handoff-tool.ts";
+import { handoffRows } from "../../../ui/run-agent/handoff-row.ts";
 
 const tool = handoffTool(
   {
@@ -12,6 +13,7 @@ const tool = handoffTool(
       get: () => ({ handoffPath: join(homedir(), "work", "handoff.md") }),
     } as unknown as AgentRegistry,
     handoff: {} as HandoffService,
+    rows: handoffRows,
   },
   "worker-1",
 );

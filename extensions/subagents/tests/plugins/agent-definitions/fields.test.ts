@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRONTMATTER_FIELDS } from "../../../src/plugins/agent-definitions/fields.ts";
+import { FRONTMATTER_FIELDS } from "../../../core/agent-definitions/fields.ts";
 
 describe("frontmatter fields", () => {
   it("lets only the list fields take all, each saying what all and its names mean", () => {

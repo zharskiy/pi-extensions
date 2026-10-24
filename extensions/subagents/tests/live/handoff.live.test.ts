@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { hiddenMessageTexts, pause } from "../../../../test-framework/index.ts";
 import { describeLive, LIVE_TIMEOUT_MS } from "../../../../test-framework/pi/live/index.ts";
 import type { AgentRecord } from "../../core/model/types.ts";
-import { createHandoff } from "../../src/plugins/run-agent/handoff.ts";
+import { createHandoff } from "../../core/run-agent/handoff.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
 import { PACKAGE_ROOT } from "../support/subagents-harness.ts";
 

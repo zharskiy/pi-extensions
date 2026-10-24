@@ -18,8 +18,8 @@ import {
 } from "../../../../test-framework/pi/live/index.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Settings } from "../../core/model/settings.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../core/run-agent/tools.ts";
 import extension from "../../src/index.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";
 import {
   type AgentGroup,
   type AgentPatch,

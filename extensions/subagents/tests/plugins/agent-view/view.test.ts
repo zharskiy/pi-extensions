@@ -22,17 +22,17 @@ import {
   promptRecordEntry,
   readSessionFile,
 } from "../../../../../test-framework/pi/index.ts";
+import type { ViewData } from "../../../core/agent-view/source.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../core/model/paths.ts";
 import type { AgentRecord } from "../../../core/model/types.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { agentStatusPlugin } from "../../../src/plugins/agent-status/index.ts";
 import { agentViewPlugin } from "../../../src/plugins/agent-view/index.ts";
-import type { ViewData } from "../../../src/plugins/agent-view/loader.ts";
-import { createAgentView, headerLines } from "../../../src/plugins/agent-view/view.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
+import { createAgentView, headerLines } from "../../../ui/agent-view/view.ts";
 import { agentRecord, newAgentInput } from "../../support/agent-records.ts";
 import { grepSession } from "../../support/recorded-grep-session.ts";
 import { createHarness, spawnAgents } from "../../support/subagents-harness.ts";

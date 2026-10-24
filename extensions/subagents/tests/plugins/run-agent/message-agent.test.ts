@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatRoutedMessage } from "../../../../../pi-adapter/index.ts";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
 import { parseSessionLines } from "../../../../../test-framework/pi/index.ts";
+import type { MessageAgentParams, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
-import type { MessageAgentParams } from "../../../src/plugins/run-agent/tools.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const setup = async (maxConcurrent = 4) => {

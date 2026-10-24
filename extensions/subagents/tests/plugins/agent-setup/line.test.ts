@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type LineCheck, parseSetupLine } from "../../../src/plugins/agent-setup/line.ts";
+import { type LineCheck, parseSetupLine } from "../../../core/agent-setup/line.ts";
 
 const check = (extra: Partial<LineCheck> = {}): LineCheck => ({
   agents: ["scout"],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeRunAgent } from "../../../src/plugins/run-agent/tools.ts";
+import { describeRunAgent } from "../../../core/run-agent/tools.ts";
 
 const agents = [
   {

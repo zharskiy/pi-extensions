@@ -1,40 +1,39 @@
 import type { OverlayApi } from "../../../../../pi-adapter/index.ts";
 import { DOT, errorText } from "../../../../../shared/index.ts";
-import { type SelectOption, selectForm } from "../../../../../ui-kit/index.ts";
+import {
+  countsText,
+  listCounts,
+  listedTerminals,
+  visibleRecords,
+} from "../../../core/agent-view/list-model.ts";
+import { createAgentSource } from "../../../core/agent-view/source.ts";
 import { cutChars } from "../../../core/components/receipt.ts";
 import { watchAgents } from "../../../core/components/refresh.ts";
 import { NAMESPACE } from "../../../core/model/paths.ts";
 import type { Plugin } from "../../../core/model/plugin.ts";
 import { type AgentRecord, chainLinks } from "../../../core/model/types.ts";
+import { createAgentList } from "../../../ui/agent-view/list.ts";
+import {
+  type AgentsOverlay,
+  createAgentsOverlay,
+  type OverlayParts,
+  type OverlayStart,
+} from "../../../ui/agent-view/overlay.ts";
+import {
+  isSubcommand,
+  SUBCOMMAND_TEXT,
+  SUBCOMMANDS,
+  type Subcommand,
+  subcommandPicker,
+} from "../../../ui/agent-view/picker.ts";
+import { createAgentView } from "../../../ui/agent-view/view.ts";
 import { stateWord } from "../../../ui/components/state-text.ts";
-import { createAgentList } from "./list.ts";
-import { countsText, listCounts, listedTerminals, visibleRecords } from "./list-model.ts";
-import { createAgentSource } from "./loader.ts";
-import { type AgentsOverlay, createAgentsOverlay, type OverlayParts, type OverlayStart } from "./overlay.ts";
-import { createAgentView } from "./view.ts";
 
 const SETUP_PREFIX = "setup ";
 
-const SUBCOMMANDS = ["view", "create", "setup"] as const;
-
-type Subcommand = (typeof SUBCOMMANDS)[number];
-
 type SetupWord = Exclude<Subcommand, "view">;
 
-const SUBCOMMAND_TEXT: Record<Subcommand, string> = {
-  view: "agents list",
-  create: "new agent",
-  setup: "model, thinking and skills per agent",
-};
-
-const MENU_TEXT: Record<Subcommand, string> = {
-  ...SUBCOMMAND_TEXT,
-  create: "new agent; the main session asks what it is for and writes it",
-};
-
 const NO_TERMINAL = `${NAMESPACE}: the agents list needs the interactive terminal; /agents create works in any mode`;
-
-const isSubcommand = (word: string): word is Subcommand => (SUBCOMMANDS as readonly string[]).includes(word);
 
 export const agentViewPlugin: Plugin = {
   id: "agent-view",
@@ -194,12 +193,7 @@ export const agentViewPlugin: Plugin = {
         return;
       }
 
-      const options: SelectOption<Subcommand>[] = [
-        { value: "view", label: "view", description: viewText() },
-        { value: "setup", label: "setup", description: MENU_TEXT.setup },
-        { value: "create", label: "create", description: MENU_TEXT.create },
-      ];
-      const choice = await host.ui.showForm(selectForm({ title: "Agents", options }));
+      const choice = await host.ui.showForm(subcommandPicker(viewText()));
 
       if (choice) {
         await runSubcommand(choice, "");

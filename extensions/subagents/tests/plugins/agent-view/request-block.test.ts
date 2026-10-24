@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../../../test-framework/index.ts";
-import { requestLineCount, requestLines } from "../../../src/plugins/agent-view/request-block.ts";
+import { requestLineCount, requestLines } from "../../../ui/agent-view/request-block.ts";
 
 const payload = () => ({
   model: "provider/model",

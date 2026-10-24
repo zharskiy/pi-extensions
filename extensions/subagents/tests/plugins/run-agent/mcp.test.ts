@@ -2,11 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flushMicrotasks } from "../../../../../test-framework/index.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 describe("run_agent mcp", () => {

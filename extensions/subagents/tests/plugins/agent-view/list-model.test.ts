@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { listSections, MAX_CLOSED_ROOTS, visibleRecords } from "../../../core/agent-view/list-model.ts";
 import type { AgentRecord } from "../../../core/model/types.ts";
-import {
-  listSections,
-  MAX_CLOSED_ROOTS,
-  visibleRecords,
-} from "../../../src/plugins/agent-view/list-model.ts";
 import { agentRecord } from "../../support/agent-records.ts";
 
 const NOW = 1_000_000;

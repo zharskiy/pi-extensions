@@ -6,7 +6,7 @@ import {
   setupChanges,
   thinkingOptions,
   UNTRUSTED,
-} from "../../../src/plugins/agent-setup/form.ts";
+} from "../../../ui/agent-setup/form.ts";
 import { context, PATHS, press, render } from "../../support/setup-context.ts";
 
 describe("agent setup form", () => {

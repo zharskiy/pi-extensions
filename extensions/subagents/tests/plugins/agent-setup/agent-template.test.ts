@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseDefinition } from "../../../src/plugins/agent-definitions/loader.ts";
+import { parseDefinition } from "../../../core/agent-definitions/loader.ts";
 import {
   type AgentTemplate,
   agentTemplate,
   DESCRIPTION_PLACEHOLDER,
-} from "../../../src/plugins/agent-setup/agent-template.ts";
+} from "../../../core/agent-setup/agent-template.ts";
 
 const parse = (template: AgentTemplate) => parseDefinition(agentTemplate(template), "x.md", "user");
 

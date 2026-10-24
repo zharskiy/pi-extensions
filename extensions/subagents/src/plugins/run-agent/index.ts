@@ -11,11 +11,18 @@ import {
   isClosed,
   subagentNames,
 } from "../../../core/model/types.ts";
-import { createHandoff } from "./handoff.ts";
-import { handoffTool } from "./handoff-tool.ts";
-import { joinTexts } from "./outbox.ts";
-import { createRunner } from "./runner.ts";
-import { createPendingCalls, describeRunAgent, messageAgentTool, runAgentTool } from "./tools.ts";
+import { createHandoff } from "../../../core/run-agent/handoff.ts";
+import { handoffTool } from "../../../core/run-agent/handoff-tool.ts";
+import { joinTexts } from "../../../core/run-agent/outbox.ts";
+import { createRunner } from "../../../core/run-agent/runner.ts";
+import {
+  createPendingCalls,
+  describeRunAgent,
+  messageAgentTool,
+  runAgentTool,
+} from "../../../core/run-agent/tools.ts";
+import { handoffRows } from "../../../ui/run-agent/handoff-row.ts";
+import { pendingRows } from "../../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 
@@ -61,7 +68,7 @@ export const runAgentPlugin: Plugin = {
 
       const granted = own && allowlist(own.tools)?.includes("fetch") && services.has("fetchTool");
       const extra: AnyToolSpec[] = [
-        handoffTool({ registry, handoff }, record.id),
+        handoffTool({ registry, handoff, rows: handoffRows }, record.id),
         ...(granted ? [services.require("fetchTool").tool()] : []),
       ];
 
@@ -76,7 +83,7 @@ export const runAgentPlugin: Plugin = {
         childCap: settings.maxChildrenPerAgent,
       });
 
-      const childDeps = { runner, registry, calls, hints };
+      const childDeps = { runner, registry, calls, rows: pendingRows({ registry, hints }) };
 
       const tools: AnyToolSpec[] = [
         ...extra,
@@ -130,17 +137,13 @@ export const runAgentPlugin: Plugin = {
       invalidators.delete(batchId);
     });
 
-    const toolDeps = {
-      runner,
-      registry,
-      calls,
-      hints,
-      onRendered: (batchId: string, invalidate: () => void) => {
-        if (invalidators.has(batchId) || registry.batch(batchId).some((record) => !isClosed(record.state))) {
-          invalidators.set(batchId, invalidate);
-        }
-      },
+    const onRendered = (batchId: string, invalidate: () => void) => {
+      if (invalidators.has(batchId) || registry.batch(batchId).some((record) => !isClosed(record.state))) {
+        invalidators.set(batchId, invalidate);
+      }
     };
+
+    const toolDeps = { runner, registry, calls, rows: pendingRows({ registry, hints, onRendered }) };
 
     let registeredDescription: string | undefined;
 

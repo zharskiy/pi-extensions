@@ -1,51 +1,22 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { FormFactory, SessionInfo } from "../../../../../pi-adapter/index.ts";
-import { SCOPES, type Scope, type SetupChange } from "../../../core/agent-setup/scope.ts";
+import type { SessionInfo } from "../../../../../pi-adapter/index.ts";
+import { CREATE_USAGE, createAgentCommand } from "../../../core/agent-setup/create.ts";
+import { parseSetupLine, SETUP_USAGE } from "../../../core/agent-setup/line.ts";
+import type { Scope, SetupChange } from "../../../core/agent-setup/scope.ts";
+import { overriddenFields, writeChanges } from "../../../core/agent-setup/write.ts";
 import { INHERIT_MODEL } from "../../../core/model/agent-schema.ts";
 import { resolutionProblem } from "../../../core/model/model-resolution.ts";
 import { NAMESPACE } from "../../../core/model/paths.ts";
 import type { Plugin } from "../../../core/model/plugin.ts";
 import { settingsPaths } from "../../../core/model/settings.ts";
 import type { AgentDefinition } from "../../../core/model/types.ts";
-import { CREATE_USAGE, createAgentCommand } from "./create.ts";
-import { initialSetup, pressSetupKey, type SetupContext, setupChanges } from "./form.ts";
-import { parseSetupLine, SETUP_USAGE } from "./line.ts";
-import { renderSetup, type SetupPaths } from "./render.ts";
-import { overriddenFields, writeChanges } from "./write.ts";
-
-type SetupResult = { scope: Scope; changes: SetupChange[] };
+import type { SetupContext } from "../../../ui/agent-setup/form.ts";
+import { setupForm } from "../../../ui/agent-setup/setup-overlay.ts";
 
 const shippedFirst = (left: AgentDefinition, right: AgentDefinition) =>
   Number(left.source !== "builtin") - Number(right.source !== "builtin") ||
   left.name.localeCompare(right.name);
-
-const setupForm =
-  (context: SetupContext, paths: SetupPaths): FormFactory<SetupResult | undefined> =>
-  (api) => {
-    let state = initialSetup(context);
-
-    return {
-      render: (width) => renderSetup(context, state, paths, api.theme, width),
-      handleKey: (key) => {
-        const outcome = pressSetupKey(context, state, key);
-
-        state = outcome.state;
-
-        if (outcome.done === "cancel") {
-          api.done(undefined);
-          return;
-        }
-
-        if (outcome.done === "save") {
-          api.done({ scope: SCOPES[state.scope] ?? "user", changes: setupChanges(context, state) });
-          return;
-        }
-
-        api.requestRender();
-      },
-    };
-  };
 
 const changeSummary = (changes: SetupChange[]) =>
   changes.map((change) => `${change.name} (${Object.keys(change.patch).join(", ")})`).join(", ");

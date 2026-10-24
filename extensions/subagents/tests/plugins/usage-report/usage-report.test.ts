@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { USAGE_CHANNEL } from "../../../../../shared/index.ts";
 import { type FakeChildSession, flushMicrotasks, usageTotals } from "../../../../../test-framework/index.ts";
+import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentDetails, RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { usageReportPlugin } from "../../../src/plugins/usage-report/index.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 

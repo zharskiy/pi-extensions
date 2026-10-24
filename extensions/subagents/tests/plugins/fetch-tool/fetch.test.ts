@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchPage } from "../../../src/plugins/fetch-tool/fetch.ts";
+import { fetchPage } from "../../../core/fetch-tool/fetch.ts";
 
 const LIMITS = { timeoutSeconds: 5, maxBytes: 100000, maxChars: 10000 };
 

@@ -1,13 +1,18 @@
-import type { ThemeLike, WidgetHandle } from "../../../../../pi-adapter/index.ts";
+import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
 import { errorText } from "../../../../../shared/index.ts";
+import {
+  createPanelState,
+  type PanelActionsAvailable,
+  panelRows,
+  reconcile,
+} from "../../../core/agent-panel/panel-state.ts";
 import { tickFor, watchAgents } from "../../../core/components/refresh.ts";
 import type { TreeRow } from "../../../core/components/tree.ts";
 import { NAMESPACE } from "../../../core/model/paths.ts";
 import type { Plugin } from "../../../core/model/plugin.ts";
-import { type PanelActions, panelKeyHandler, selectFirst } from "./keys.ts";
-import { createPanelState, type PanelActionsAvailable, panelLines, panelRows, reconcile } from "./model.ts";
-
-const WIDGET_KEY = "pi-subagents-agents";
+import { type PanelActions, panelKeyHandler, selectFirst } from "../../../ui/agent-panel/keys.ts";
+import { createPanelWidget } from "../../../ui/agent-panel/panel.ts";
+import { panelLines } from "../../../ui/agent-panel/panel-lines.ts";
 
 const HINT_KEY = NAMESPACE;
 
@@ -20,7 +25,6 @@ export const agentPanelPlugin: Plugin = {
     const registry = services.require("registry");
     const state = createPanelState();
     let current: TreeRow[] = [];
-    let handle: WidgetHandle | undefined;
     let capture: (() => void) | undefined;
     let tui = false;
     let enabled = true;
@@ -35,6 +39,8 @@ export const agentPanelPlugin: Plugin = {
 
     const render = (width: number, theme: ThemeLike) =>
       panelLines(current, state, Date.now(), width, theme, available());
+
+    const widget = createPanelWidget(host.ui, render);
 
     const release = () => {
       const remove = capture;
@@ -65,17 +71,12 @@ export const agentPanelPlugin: Plugin = {
       }
 
       if (current.length === 0) {
-        if (handle) {
-          host.ui.setWidget(WIDGET_KEY, undefined);
-        }
-
-        handle = undefined;
+        widget.hide();
 
         return;
       }
 
-      handle ??= host.ui.setWidget(WIDGET_KEY, render);
-      handle.refresh();
+      widget.show();
     };
 
     const report = (action: string, error: unknown) => {
@@ -143,11 +144,7 @@ export const agentPanelPlugin: Plugin = {
       offDown();
       release();
       unwatch();
-
-      if (handle) {
-        host.ui.setWidget(WIDGET_KEY, undefined);
-        handle = undefined;
-      }
+      widget.hide();
     };
   },
 };

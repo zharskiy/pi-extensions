@@ -3,12 +3,12 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { StopReason, ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { flushMicrotasks, hiddenMessageTexts, VALID_HANDOFF } from "../../../../../test-framework/index.ts";
+import { contextStep } from "../../../core/limits/context-step.ts";
+import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
-import { contextStep } from "../../../src/plugins/limits/context-step.ts";
 import { limitsPlugin } from "../../../src/plugins/limits/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";
-import type { RunAgentParams } from "../../../src/plugins/run-agent/render.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const WIDE_AGENT = [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeChanges } from "../../../src/plugins/agent-setup/write.ts";
+import { mergeChanges } from "../../../core/agent-setup/write.ts";
 
 describe("agent setup write", () => {
   it("merges changes field by field into existing agent entries", () => {

@@ -1,15 +1,15 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FRONTMATTER_FIELDS } from "../../../src/plugins/agent-definitions/fields.ts";
-import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
+import { FRONTMATTER_FIELDS } from "../../../core/agent-definitions/fields.ts";
 import {
   loadDefinitions,
   type OverrideCheck,
   parseDefinition,
-} from "../../../src/plugins/agent-definitions/loader.ts";
-import { assemblePromptAppend } from "../../../src/plugins/agent-definitions/prompt.ts";
-import { parseFrontmatter } from "../../../src/plugins/agent-definitions/yaml-lite.ts";
+} from "../../../core/agent-definitions/loader.ts";
+import { assemblePromptAppend } from "../../../core/agent-definitions/prompt.ts";
+import { parseFrontmatter } from "../../../core/agent-definitions/yaml-lite.ts";
+import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../support/subagents-harness.ts";
 
 const writeAgent = (dir: string, file: string, content: string) => {

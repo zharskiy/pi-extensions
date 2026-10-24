@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageText, readableText } from "../../../src/plugins/fetch-tool/text.ts";
+import { pageText, readableText } from "../../../core/fetch-tool/text.ts";
 
 describe("readableText", () => {
   it("extracts the title and drops the head", () => {

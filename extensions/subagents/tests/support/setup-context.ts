@@ -1,7 +1,7 @@
 import type { KeyPress } from "../../../../pi-adapter/index.ts";
 import { plainTheme } from "../../../../test-framework/index.ts";
-import { pressSetupKey, type SetupContext, type SetupState } from "../../src/plugins/agent-setup/form.ts";
-import { renderSetup } from "../../src/plugins/agent-setup/render.ts";
+import { pressSetupKey, type SetupContext, type SetupState } from "../../ui/agent-setup/form.ts";
+import { renderSetup } from "../../ui/agent-setup/setup-render.ts";
 
 const model = (ref: string, thinking: string[]) => ({
   ref,

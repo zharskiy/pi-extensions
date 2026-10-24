@@ -15,7 +15,7 @@ import {
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { defaultSettings, type Settings } from "../../core/model/settings.ts";
-import type { RunAgentParams } from "../../src/plugins/run-agent/render.ts";
+import type { RunAgentParams } from "../../core/run-agent/tools.ts";
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");
 
