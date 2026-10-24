@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme, taggedTheme } from "../../core/test/helpers/fakes.ts";
-import { char, key } from "../../core/test/helpers/keys.ts";
 import type { KeyPress, ThemeLike } from "../../pi-adapter/index.ts";
+import { char, key, plainTheme, tokenTaggingTheme } from "../../test-framework/index.ts";
 import { type SelectOption, selectForm } from "../select.ts";
 
-const tagged: ThemeLike = taggedTheme();
+const tagged: ThemeLike = tokenTaggingTheme();
 
 const OPTIONS = [
   { value: "a", label: "Alpha", description: "first one" },

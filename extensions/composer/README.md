@@ -22,4 +22,4 @@ A pi extension that draws the input as two horizontal lines, edge to edge, with 
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root). `src/composer.ts` sets the frame on session start, `src/frame.ts` decorates the editor's rendered lines (prompt gutter, rule extensions) as plain strings, given the rule positions the editor subclass reports. The editor subclass that renders through the frame is `pi-adapter/editor/pi-editor.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root). `src/composer.ts` sets the frame on session start, `src/frame.ts` decorates the editor's rendered lines (prompt gutter, rule extensions) as plain strings, given the rule positions the editor subclass reports. The editor subclass that renders through the frame is `pi-adapter/editor/pi-editor.ts`. Tests are under `tests/`.

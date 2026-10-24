@@ -17,8 +17,8 @@
     "extension-manager",
     "ui-kit",
     "shared",
-    "core",
     "extensions",
+    "test-framework",
     "test",
     "vitest.config.ts",
     "vitest.live.config.ts"

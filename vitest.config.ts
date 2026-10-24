@@ -3,14 +3,16 @@ import { configDefaults, defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: [
+      "pi-adapter/tests/**/*.test.ts",
       "extension-manager/tests/**/*.test.ts",
       "ui-kit/tests/**/*.test.ts",
       "shared/tests/**/*.test.ts",
-      "core/test/**/*.test.ts",
-      "extensions/*/test/**/*.test.ts",
+      "extensions/*/tests/**/*.test.ts",
+      "test-framework/tests/**/*.test.ts",
+      "evals/**/support/**/*.test.ts",
       "test/**/*.test.ts",
     ],
-    exclude: [...configDefaults.exclude, "**/*.live.test.ts"],
+    exclude: [...configDefaults.exclude, "**/*.live.test.ts", "**/*.eval.ts"],
     environment: "node",
   },
 });

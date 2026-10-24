@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createFakeHost } from "../../core/test/helpers/fakes.ts";
 import {
   loadSettingsFiles,
   parseSettings,
@@ -12,6 +11,7 @@ import {
   type SettingsSchema,
   userSettingsPath,
 } from "../../shared/index.ts";
+import { createFakeHost } from "../../test-framework/index.ts";
 import { reportSettingsErrors, watchSettings } from "../watch-settings.ts";
 
 type Example = { count: number; ratio: number; names: string[]; loud?: boolean };

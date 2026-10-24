@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme } from "../../core/test/helpers/fakes.ts";
-import { char, key } from "../../core/test/helpers/keys.ts";
+import { char, key, plainTheme } from "../../test-framework/index.ts";
 import { checkedIndexes, initialMulti, multiKey, multiLines, scrollWindow } from "../multi-select.ts";
 
 describe("multiKey", () => {

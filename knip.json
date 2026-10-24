@@ -1,13 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["extensions/*/src/index.ts", "extensions/subagents/test/live/fixtures/mcp-server.ts"],
+  "entry": ["extensions/*/src/index.ts", "test-framework/live/fixture-mcp-server.ts"],
   "project": [
     "pi-adapter/**/*.ts",
     "extension-manager/**/*.ts",
     "ui-kit/**/*.ts",
     "shared/**/*.ts",
-    "core/**/*.ts",
     "extensions/**/*.ts",
+    "test-framework/**/*.ts",
     "test/**/*.ts",
     "*.ts"
   ],

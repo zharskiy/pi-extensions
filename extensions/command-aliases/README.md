@@ -17,4 +17,4 @@ A pi extension that gives friendlier names to built-in commands: `/continue` run
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root). `src/command-aliases.ts` holds the aliases and wires them to the host. The editor plumbing (submit key, autocomplete wrapper, re-submitting through the focused editor) is in `pi-adapter/editor/pi-editor-input.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root). `src/command-aliases.ts` holds the aliases and wires them to the host. The editor plumbing (submit key, autocomplete wrapper, re-submitting through the focused editor) is in `pi-adapter/editor/pi-editor-input.ts`. Tests are under `tests/`.

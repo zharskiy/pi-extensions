@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createFakeHost, createFakeRuntime } from "../../core/test/helpers/fakes.ts";
 import type { Plugin } from "../../shared/index.ts";
+import { createFakeAgentRuntime, createFakeHost } from "../../test-framework/index.ts";
 import { createExtensionManager } from "../extension-manager.ts";
 
 type Events = { ping: { from: string } };
@@ -28,7 +28,7 @@ const managerOf = (plugins: TestPlugin[], disabled: string[] = []) => {
 
   const manager = createExtensionManager({
     host,
-    runtime: createFakeRuntime(),
+    runtime: createFakeAgentRuntime(),
     settings: { label: "test" },
     plugins,
     root: "/ext",

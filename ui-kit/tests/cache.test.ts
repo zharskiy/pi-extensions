@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { taggedTheme } from "../../core/test/helpers/fakes.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { cacheHitPercent, reportedCache, sessionCacheHit } from "../../shared/index.ts";
+import { tokenTaggingTheme } from "../../test-framework/index.ts";
 import { cachePercentText, cacheTone } from "../cache-tone.ts";
 
-const tokenTheme: ThemeLike = taggedTheme(() => "");
+const tokenTheme: ThemeLike = tokenTaggingTheme({ close: () => "" });
 
 describe("cache hit", () => {
   it("is the cache read share of the whole prompt, input, reads and writes", () => {

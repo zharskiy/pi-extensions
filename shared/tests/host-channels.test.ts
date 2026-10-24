@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { usageOf } from "../../core/test/helpers/fakes.ts";
+import { usageTotals } from "../../test-framework/index.ts";
 import {
   AWAITING_INPUT_CHANNEL,
   BUSY_CHANNEL,
@@ -59,22 +59,26 @@ describe("parseAwaitingInput", () => {
 
 describe("parseUsageReport", () => {
   it("accepts a source, an id and complete usage totals", () => {
-    const report = { source: "agents", id: "a1", usage: usageOf(0.1) };
+    const report = { source: "agents", id: "a1", usage: usageTotals(0.1) };
 
     expect(parseUsageReport(report)).toEqual(report);
   });
 
   it("ignores malformed payloads", () => {
-    const { cost: _cost, ...withoutCost } = usageOf(0.1);
+    const { cost: _cost, ...withoutCost } = usageTotals(0.1);
 
     expect(parseUsageReport(undefined)).toBeUndefined();
     expect(parseUsageReport("agents")).toBeUndefined();
-    expect(parseUsageReport({ source: "", id: "a1", usage: usageOf(0.1) })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: 7, usage: usageOf(0.1) })).toBeUndefined();
+    expect(parseUsageReport({ source: "", id: "a1", usage: usageTotals(0.1) })).toBeUndefined();
+    expect(parseUsageReport({ source: "agents", id: 7, usage: usageTotals(0.1) })).toBeUndefined();
     expect(parseUsageReport({ source: "agents", id: "a1", usage: withoutCost })).toBeUndefined();
-    expect(parseUsageReport({ source: "agents", id: "a1", usage: usageOf(-1) })).toBeUndefined();
+    expect(parseUsageReport({ source: "agents", id: "a1", usage: usageTotals(-1) })).toBeUndefined();
     expect(
-      parseUsageReport({ source: "agents", id: "a1", usage: { ...usageOf(0.1), totalTokens: Number.NaN } }),
+      parseUsageReport({
+        source: "agents",
+        id: "a1",
+        usage: { ...usageTotals(0.1), totalTokens: Number.NaN },
+      }),
     ).toBeUndefined();
   });
 });

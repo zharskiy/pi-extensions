@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme, taggedTheme } from "../../core/test/helpers/fakes.ts";
-import { key } from "../../core/test/helpers/keys.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
+import { key, plainTheme, tokenTaggingTheme } from "../../test-framework/index.ts";
 import { keyHints } from "../key-hints.ts";
 import { TAB_SWITCH_HINT, tabBar, tabStep } from "../tabs.ts";
 
-const tagged: ThemeLike = taggedTheme();
+const tagged: ThemeLike = tokenTaggingTheme();
 
 const TABS = [
   { label: "One", done: true },

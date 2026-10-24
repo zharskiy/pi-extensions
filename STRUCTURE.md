@@ -6,7 +6,7 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 
 ```
 pi-extensions/
-├── pi-adapter/                  # the only place that imports pi packages
+├── pi-adapter/                  # the only shipped code that imports pi packages
 │   ├── index.ts                 # the public surface: contract types, createPiExtension, settleWithin, row geometry
 │   ├── types/                   # contract types
 │   │   └── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
@@ -55,9 +55,10 @@ pi-extensions/
 │   │   ├── pi-context-messages.ts # per-message and per-block token estimates
 │   │   ├── usage.ts             # usage sums
 │   │   └── pi-usage.ts          # last and main request usage, main memoised on session and leaf
-│   └── prompt/
-│       ├── main-prompt.ts       # rebuilds the main session system prompt
-│       └── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
+│   ├── prompt/
+│   │   ├── main-prompt.ts       # rebuilds the main session system prompt
+│   │   └── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
+│   └── tests/                   # adapter tests (may import adapter files and pi directly), live/wake.live.test.ts
 ├── extension-manager/           # plugin runtime; imports pi-adapter/index.ts and shared/index.ts only
 │   ├── index.ts                 # public surface
 │   ├── extension-manager.ts     # enables plugins in dependency order
@@ -89,13 +90,22 @@ pi-extensions/
 │   ├── plain-object.ts          # isPlainObject
 │   ├── settings-files.ts        # settings schema, file parsing and merge, readText
 │   └── tests/
-├── core/
-│   └── test/                    # adapter tests and shared test helpers
-│       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
-│       │                        #   offline.ts (pi loaded offline for extension tests; `sessionFacts` for the live tests), tool-rows.ts
-│       │                        #   (tool rows rendered through pi for extension tests)
-│       └── helpers/             # fakes.ts (fake host, runtime and child session, plainTheme, taggedTheme),
-│                                #   fake-form.ts (fake showForm), keys.ts (key and char KeyPress builders)
+├── test-framework/              # test-only fakes and harnesses, never published
+│   ├── index.ts                 # pi-free surface (imports only the four layer index.ts files)
+│   ├── fake-host.ts             # createFakeHost, createTurnScope, hiddenMessageTexts, FAKE_FOOTER_KEY
+│   ├── fake-agent-runtime.ts    # createFakeAgentRuntime, FakeChildSession, catalogModel (invented refs)
+│   ├── fake-form.ts             # fake showForm with a fake text input
+│   ├── themes.ts                # plainTheme, tokenTaggingTheme, paintRecordingTheme
+│   ├── key-presses.ts  rendered-text.ts  usage-builders.ts  waiting.ts  temp-dirs.ts
+│   ├── extension-harness.ts     # startExtension: plugins on the extension manager over the fakes
+│   ├── recorded-sessions.ts     # session .jsonl line builders
+│   ├── valid-handoff.ts         # VALID_HANDOFF
+│   ├── live/                    # pi-free live helpers: seed-project, session-reading, cost, the MCP fixture server
+│   ├── eval-runs/               # pi-free eval runner: run-record, repeatRuns, rubric, pass-threshold, reportEval
+│   ├── pi/                      # the only test helpers that import pi: render-theme, tool-rows, overlay, session-files
+│   │   └── live/                # describeLive, isolated agent dir, live runtime, openPiSession,
+│   │                            #   startLiveExtension, session-events (RunRecord from a live session)
+│   └── tests/                   # unit tests of the framework
 ├── extensions/
 │   ├── subagents/               # background agents (main extension)
 │   │   ├── src/
@@ -117,7 +127,7 @@ pi-extensions/
 │   │   │                        #   image, verifier)
 │   │   ├── prompts/             # main-session.md, main-session-agent-status.md,
 │   │   │                        #   base-system-prompt.md, handoff.md, create-agent.md (the /agents create brief)
-│   │   ├── test/                # mirrors src, plus helpers/ and live/ (+ live/fixtures; routing.live.test.ts
+│   │   ├── tests/               # mirrors src, plus support/ and live/ (routing.live.test.ts
 │   │   │                        #   checks the main session's routing, planner-plan.live.test.ts
 │   │   │                        #   the planner's plan on past commits, reviewer-review and
 │   │   │                        #   implementer-change score the reviewer and implementer
@@ -127,51 +137,51 @@ pi-extensions/
 │   │   ├── src/                 # index, conversation, limits, thresholds,
 │   │   │                        #   handoff, settings, seed-row (the handoff seed message as a row)
 │   │   ├── prompts/handoff.md   # handoff instruction template
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── spending/                # footer with total session cost
 │   │   ├── src/                 # index, ledger, footer, spending
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── working-indicator/       # rotating verb and prompt time in the working line
 │   │   ├── src/                 # index, working-indicator
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── notifications/           # terminal notification when pi waits for you
 │   │   ├── src/                 # index, notifications, settings
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── command-aliases/         # friendlier names for built-in commands
 │   │   ├── src/                 # index, command-aliases (ALIASES)
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── composer/                # input between two rules with pi's › message cursor as the prompt
 │   │   ├── src/                 # index, composer, frame
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── questionnaire/           # questionnaire tool: batch of multiple-choice questions in one form
 │   │   ├── src/                 # index, questionnaire (tool spec, execute), view (form view, arm delay),
 │   │   │                        #   form (pure state; tab keys from ui-kit/tabs.ts), render (form
 │   │   │                        #   lines), summary (call and result renderers), result (types,
 │   │   │                        #   normalising, model text)
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── style/                   # /style: output style for the main session and every agent
 │   │   ├── src/                 # index, style (wiring), styles (prompt files), settings (file I/O),
 │   │   │                        #   pick (the list)
 │   │   ├── prompts/concise.md   # one file per style, front matter `description:`
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── context/                 # /context: context window breakdown and cache hits
 │   │   ├── src/                 # index, context (command, entry renderer, short paths), buckets (facts
 │   │   │                        #   to breakdown), breakdown (usage model, cache figures), snapshot
 │   │   │                        #   (stored entry validation), grid, details (sections, message buckets),
 │   │   │                        #   render (compose), summary (plain one-line summary)
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── footer/                  # multi-line status footer with session totals
 │   │   ├── src/                 # index, footer (wiring), render (pure line builders)
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   ├── transcript/              # tool rows (state glyph, title, ↳ outcome) and the thinking label
 │   │   ├── src/                 # index, transcript (wiring), tools (the look per tool, titles, outcomes),
@@ -179,14 +189,14 @@ pi-extensions/
 │   │   │                        #   codemode (summary and nested call rows), generic (MCP and unknown
 │   │   │                        #   tools), output (clean lines, shell status, previews, count lines),
 │   │   │                        #   diff (parse, count and draw an edit's diff), words (changed words)
-│   │   ├── test/
+│   │   ├── tests/
 │   │   └── README.md
 │   └── mcp-import/              # /mcp-import: MCP servers from Claude Code or Cursor into pi's mcp.json
 │       ├── src/                 # index, mcp-import (command, file I/O), args (parse, complete),
 │       │                        #   sources (each tool's files), convert (one entry), plan (merge
 │       │                        #   without overwriting), pick (source and server choice without
 │       │                        #   arguments), report (messages)
-│       ├── test/
+│       ├── tests/
 │       └── README.md
 ├── docs/research/               # background notes: pi's rendering surface, another agent's transcript
 ├── test/architecture.test.ts    # import-boundary and layout rules
@@ -228,11 +238,11 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Conventions
 
-- Only `pi-adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages, and everything else reaches it only through `pi-adapter/index.ts`; both enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules.
+- Only `pi-adapter/**` (including `pi-adapter/tests/`) and `test-framework/pi/**` may import pi packages, and everything else reaches the adapter only through `pi-adapter/index.ts`; both enforced by biome (`noRestrictedImports`). Shipped code never imports `test-framework/`. `test/architecture.test.ts` enforces the other import and layout rules.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `extension-manager/`, `ui-kit/` and `shared/`. Cross-extension formats and channel names live in `shared/handoff-document.ts` and `shared/host-channels.ts`.
-- Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
-- `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same). `extensions/subagents/test/helpers/live.ts` builds the live harness on top (`seed(sha)` fills the project from `git archive`), with the pure `agent-patch.ts`, `plan-rows.ts` and `findings.ts` beside it, `turns.ts` to keep the fake host busy across overlapping runs and settle it once per turn, and `live-runs.ts` to run a lead's chain to its close and repeat a fixture in parallel.
+- Tests live outside `src/` in `tests/` and mirror the source path (`src/plugins/x` -> `tests/plugins/x`); extension-local helpers live in `tests/support/`, shared ones in `test-framework/`.
+- `*.live.test.ts` (in `extensions/subagents/tests/live/`, plus the adapter's `pi-adapter/tests/live/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API is `test-framework/pi/live/`: `describeLive` creates the temporary agent dir in `beforeAll` (a link to the real `auth.json`, a copy of `models.json`, `PI_CODING_AGENT_DIR` pointed at it) and removes it and restores the variable in `afterAll`; it fails, never skips, when setup is impossible. `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same), `startLiveExtension` boots a plugin list on the real runtime over the fake host, and `openPiSession` opens a real pi session. `extensions/subagents/tests/support/live-harness.ts` builds the subagents live harness on top (`seed(sha)` fills the project through `seedProjectFromCommit`), with the pure `agent-patch.ts`, `plan-rows.ts` and `findings.ts` beside it and `live-runs.ts` to run a lead's chain to its close.
 - Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. The files the extensions write are listed in ARCHITECTURE.md (Persistence summary).
 - Custom entries in the main session file are named `<namespace>:<kind>`, for example `pi-spending:usage` and `pi-context:snapshot` (one per `/context` in tui mode).
 - Prompts (`prompts/*.md`) and agent definitions (`agents/**/*.md`) are markdown read at runtime.
@@ -240,16 +250,16 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Published vs development-only
 
-- Published: the explicit `files` list in `package.json`: `pi-adapter`, `extension-manager`, `ui-kit`, `shared` (each without its `tests/`), `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
+- Published: the explicit `files` list in `package.json`: `pi-adapter`, `extension-manager`, `ui-kit`, `shared` (each without its `tests/`), `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures, snapshots, `test-framework/` or `evals/` are packed; CI fails if they appear in `npm pack` or if the pack does not hold the 13 entry files.
 - Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/src/index.ts`.
-- Development-only: `core/test`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/test`, `test/`, `.github/`, config files below.
+- Development-only: `test-framework/`, `pi-adapter/tests`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/tests`, `test/`, `.github/`, config files below.
 
 ### Config files
 
 - `package.json`: version, pi entry points, `files`, scripts (`check`, `test`, `test:live`).
-- `tsconfig.json`: strict NodeNext, no emit, includes `pi-adapter`, `extension-manager`, `ui-kit`, `shared`, `core`, `extensions`, `test`.
-- `vitest.config.ts`: unit tests (`extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `core/test`, `extensions/*/test`, `test`), excludes `*.live.test.ts`.
-- `vitest.live.config.ts`: only live tests, serial, long timeouts.
-- `biome.json`: format/lint, plus the pi-import restriction outside the adapter and the layer rules for `shared`, `ui-kit` and `extension-manager`.
+- `tsconfig.json`: strict NodeNext, no emit, includes `pi-adapter`, `extension-manager`, `ui-kit`, `shared`, `extensions`, `test-framework`, `test`.
+- `vitest.config.ts`: unit tests (`pi-adapter/tests`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/tests`, `test-framework/tests`, `test`), excludes `*.live.test.ts` and `*.eval.ts`.
+- `vitest.live.config.ts`: only live tests (`extensions/*/tests/live`, `pi-adapter/tests/live`), serial, long timeouts.
+- `biome.json`: format/lint, plus the pi-import restriction outside the adapter and `test-framework/pi`, and the layer rules for `pi-adapter`, `shared`, `ui-kit`, `extension-manager`, `test-framework`, `evals` and `test`.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests.
 - `.gitignore`: node_modules, .DS_Store, .claude.

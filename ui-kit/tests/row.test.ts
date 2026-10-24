@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme } from "../../core/test/helpers/fakes.ts";
 import { CHILD_COLUMN, type ThemeLike, type ThemeToken } from "../../pi-adapter/index.ts";
 import { cutStart } from "../../shared/index.ts";
+import { paintRecordingTheme, plainTheme } from "../../test-framework/index.ts";
 import { MARKS, type Mark } from "../glyphs.ts";
 import { appendHint, countLine, expandHint } from "../key-hints.ts";
 import {
@@ -14,19 +14,6 @@ import {
   titleLine,
   wrapChild,
 } from "../row.ts";
-
-const recordingTheme = () => {
-  const painted: { token: ThemeToken; text: string }[] = [];
-  const theme: ThemeLike = {
-    ...plainTheme,
-    fg: (token, text) => {
-      painted.push({ token, text });
-      return text;
-    },
-  };
-
-  return { theme, painted };
-};
 
 const tokenOf = (painted: { token: ThemeToken; text: string }[], text: string) =>
   painted.find((entry) => entry.text === text)?.token;
@@ -199,7 +186,7 @@ describe("row", () => {
   });
 
   it("paints each mark with its token and the ↳ dim", () => {
-    const { theme, painted } = recordingTheme();
+    const { theme, painted } = paintRecordingTheme();
     const marks: [Mark, ThemeToken][] = [
       ["pending", "dim"],
       ["success", "success"],
@@ -275,7 +262,7 @@ describe("titleLine", () => {
   });
 
   it("paints the verb as given, the target in accent and the separators muted", () => {
-    const { theme, painted } = recordingTheme();
+    const { theme, painted } = paintRecordingTheme();
 
     titleLine({ ...shell(), verb: (t) => t.fg("muted", "$") }, 79, theme);
 
@@ -316,7 +303,7 @@ describe("cutStart", () => {
 
 describe("expandHint", () => {
   it("names the key in pi's in-row form, all dim, and nothing when the key is unset", () => {
-    const { theme, painted } = recordingTheme();
+    const { theme, painted } = paintRecordingTheme();
     const hint = expandHint("ctrl+o");
 
     expect(typeof hint === "function" ? hint(theme) : hint).toBe("(ctrl+o to expand)");
@@ -364,7 +351,7 @@ describe("countLine", () => {
   });
 
   it("paints the words muted and the key dim", () => {
-    const { theme, painted } = recordingTheme();
+    const { theme, painted } = paintRecordingTheme();
 
     countLine({ hidden: 2, end: "more", noun: "line", key: "ctrl+o" }, 79, theme);
 

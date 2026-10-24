@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme } from "../../core/test/helpers/fakes.ts";
-import { char, key } from "../../core/test/helpers/keys.ts";
 import type { KeyPress } from "../../pi-adapter/index.ts";
+import { char, key, plainTheme } from "../../test-framework/index.ts";
 import { multiSelectForm } from "../multi-select.ts";
 
 const OPTIONS = [

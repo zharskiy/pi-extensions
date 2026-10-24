@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme, taggedTheme } from "../../core/test/helpers/fakes.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { padded, prefixed, rule } from "../../shared/index.ts";
+import { plainTheme, tokenTaggingTheme } from "../../test-framework/index.ts";
 import { hintLines, keyHints } from "../key-hints.ts";
 
-const tagged: ThemeLike = taggedTheme();
+const tagged: ThemeLike = tokenTaggingTheme();
 
 describe("rule", () => {
   it("draws an accent line across the width, at least one column wide", () => {
