@@ -1,8 +1,8 @@
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { DOT } from "../../../shared/index.ts";
 import { type Mark, row, TITLE_COLUMN } from "../../../ui-kit/index.ts";
-import { bold, type Context, counted, failed, type Look, MORE, resultText, textArg } from "./look.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
+import { bold, type Context, counted, failed, type Look, MORE, resultText, textArg } from "./tool-look.ts";
 
 type Call = {
   name: string;

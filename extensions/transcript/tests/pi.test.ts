@@ -8,7 +8,7 @@ import {
   renderToolRows,
   visible,
 } from "../../../test-framework/pi/index.ts";
-import { parseDiff } from "../src/diff.ts";
+import { parseDiff } from "../ui/diff.ts";
 import { numbered, rows } from "./support/transcript-rows.ts";
 
 const diff = "  1 keep\n- 2 let total = 1;\n+ 2 let total = 2;\n+ 3 log(total);\n    ...\n 30 tail";

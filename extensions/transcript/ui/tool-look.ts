@@ -1,11 +1,10 @@
 import type { ThemeLike, ToolCallView } from "../../../pi-adapter/index.ts";
 import { ELLIPSIS, noun } from "../../../shared/index.ts";
 import type { RowRender, Styled, TitleParts } from "../../../ui-kit/index.ts";
+import type { Args } from "../core/tool-kinds.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 
 export const MORE = ` ${ELLIPSIS}`;
-
-export type Args = Record<string, unknown>;
 
 export type Context = { view: ToolCallView; args: Args; home: string; key: string };
 

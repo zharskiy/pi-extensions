@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../test-framework/index.ts";
-import { diffRows, parseDiff } from "../src/diff.ts";
+import { diffRows, parseDiff } from "../ui/diff.ts";
 
 const tagged: ThemeLike = {
   ...tokenTaggingTheme(),

@@ -5,7 +5,7 @@ import {
   type ToolRow,
   type ToolRows,
 } from "../../../pi-adapter/index.ts";
-import { formatDuration, isPlainObject, shortPath } from "../../../shared/index.ts";
+import { shortPath } from "../../../shared/index.ts";
 import {
   expandHint,
   failureSuffix,
@@ -15,11 +15,13 @@ import {
   rowChildren,
   type TitleParts,
 } from "../../../ui-kit/index.ts";
+import { argsOf, diffText, isMissingFile, listedCount, readRange, slowDuration } from "../core/tool-kinds.ts";
 import { codemodeLook } from "./codemode.ts";
 import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";
 import { genericLook } from "./generic.ts";
+import { outputLines } from "./output.ts";
+import { shellLook } from "./shell.ts";
 import {
-  type Args,
   bold,
   type Context,
   counted,
@@ -33,38 +35,7 @@ import {
   stopped,
   type Title,
   textArg,
-} from "./look.ts";
-import { outputLines } from "./output.ts";
-import { shellLook } from "./shell.ts";
-
-const SLOW_MS = 5000;
-
-const argsOf = (view: ToolCallView): Args => (isPlainObject(view.args) ? view.args : {});
-
-const listed = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !/^\[.*\]$/.test(line));
-
-const numberArg = (value: unknown) => {
-  const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-
-  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const readRange = (args: Args) => {
-  const offset = numberArg(args.offset);
-  const limit = numberArg(args.limit);
-
-  if (offset === undefined && limit === undefined) {
-    return "";
-  }
-
-  const start = offset ?? 1;
-
-  return limit === undefined ? `:${start}` : `:${start}-${start + limit - 1}`;
-};
+} from "./tool-look.ts";
 
 const pathOf = (context: Context) => textArg(context.args, "path", "file_path");
 
@@ -88,10 +59,8 @@ const pathTitle =
     };
   };
 
-const ENOENT = /ENOENT|no such file or directory/i;
-
 const fileFailure = (context: Context): Failure | undefined =>
-  ENOENT.test(resultText(context)) ? { text: "file not found" } : firstLineFailure(context);
+  isMissingFile(resultText(context)) ? { text: "file not found" } : firstLineFailure(context);
 
 const summaryOnly = (line: (context: Context, theme: ThemeLike) => string) => ({
   outcome: orError((context, _room, theme) => ({ lines: [line(context, theme)] })),
@@ -112,9 +81,9 @@ const diffBody =
     diffRows(lines, width, theme);
 
 const editDiff = (context: Context) => {
-  const diff = (context.view.result?.details as { diff?: unknown } | undefined)?.diff;
+  const diff = diffText(context.view);
 
-  return typeof diff === "string" ? parseDiff(diff) : undefined;
+  return diff === undefined ? undefined : parseDiff(diff);
 };
 
 const changeLine = (added: number, removed: number, theme: ThemeLike) =>
@@ -161,7 +130,7 @@ const writeOutcome = orError((context, _room, theme): Outcome => {
 const found =
   (word: string, empty: RegExp, none: string, plural?: string) => (context: Context, theme: ThemeLike) => {
     const text = resultText(context);
-    const count = empty.test(text.trim()) ? 0 : listed(text).length;
+    const count = listedCount(text, empty);
 
     return count === 0 ? theme.fg("muted", none) : counted(count, word, theme, plural);
   };
@@ -231,22 +200,12 @@ const lookFor = (view: ToolCallView) => LOOKS[view.name] ?? genericLook(view.nam
 
 type Heading = { parts: TitleParts; reasonShown: boolean };
 
-const durationOf = (view: ToolCallView, failure: Failure | undefined) => {
-  if (view.isPartial || view.result === undefined || failure?.timedOut) {
-    return undefined;
-  }
-
-  return view.durationMs !== undefined && view.durationMs >= SLOW_MS
-    ? formatDuration(view.durationMs)
-    : undefined;
-};
-
 const heading = (look: Look, context: Context, width: number, theme: ThemeLike): Heading => {
   const view = context.view;
   const mark = markOf(view);
   const base: TitleParts = { mark, verb: look.verb, ...look.title(context, theme) };
   const failure = failed(context) && view.result ? (look.failure ?? firstLineFailure)(context) : undefined;
-  const duration = durationOf(view, failure);
+  const duration = slowDuration(view, failure?.timedOut);
   const timed = duration === undefined ? base : { ...base, duration };
 
   if (stopped(view)) {

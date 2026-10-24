@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import type { Host } from "../../../pi-adapter/index.ts";
+import type { Plugin } from "../../../shared/index.ts";
 import { EXPAND_BINDING } from "../../../ui-kit/index.ts";
-import { transcriptRows } from "./tools.ts";
+import { transcriptRows } from "../ui/tools.ts";
 
 const THINKING_BINDING = "app.thinking.toggle";
 
@@ -19,4 +20,12 @@ export const createTranscript = (host: Host, home = homedir()) => {
 
     host.ui.setHiddenThinkingLabel(THINKING_LABEL, key ? `(${key} to expand)` : undefined);
   });
+};
+
+export const transcriptPlugin: Plugin<never, never, undefined> = {
+  id: "transcript",
+  enable({ host }) {
+    createTranscript(host);
+    return undefined;
+  },
 };

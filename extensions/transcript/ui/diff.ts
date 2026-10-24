@@ -1,7 +1,7 @@
 import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
 import { ELLIPSIS } from "../../../shared/index.ts";
+import { merged, type Span, wordSpans } from "../core/word-spans.ts";
 import { cleanLine } from "./output.ts";
-import { merged, type Span, wordSpans } from "./words.ts";
 
 type Kind = "added" | "removed" | "context" | "gap";
 

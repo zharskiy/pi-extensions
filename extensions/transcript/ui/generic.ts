@@ -1,6 +1,6 @@
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
-import { bold, type Context, firstLineFailure, type Look, orError, resultText } from "./look.ts";
 import { outputLines, previewRows, wrappedRows } from "./output.ts";
+import { bold, type Context, firstLineFailure, type Look, orError, resultText } from "./tool-look.ts";
 
 const MAX_PAIRS = 3;
 

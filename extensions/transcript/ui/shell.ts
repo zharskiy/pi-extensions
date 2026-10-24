@@ -1,4 +1,5 @@
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import { outputLines, previewRows, shellResult } from "./output.ts";
 import {
   bold,
   type Context,
@@ -9,8 +10,7 @@ import {
   MORE,
   resultText,
   textArg,
-} from "./look.ts";
-import { outputLines, previewRows, shellResult } from "./output.ts";
+} from "./tool-look.ts";
 
 const title = (context: Context) => {
   const command = textArg(context.args, "command");

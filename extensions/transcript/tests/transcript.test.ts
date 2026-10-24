@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakeHost, plainTheme } from "../../../test-framework/index.ts";
-import { createTranscript } from "../src/transcript.ts";
+import { createTranscript } from "../api/plugin.ts";
 
 describe("transcript", () => {
   it("registers the tool rows at load, with the expand key the host names", () => {

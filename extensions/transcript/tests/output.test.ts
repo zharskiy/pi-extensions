@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme } from "../../../test-framework/index.ts";
-import { errorRows, outputLines, previewRows, shellResult } from "../src/output.ts";
+import { errorRows, outputLines, previewRows, shellResult } from "../ui/output.ts";
 import { numbered } from "./support/transcript-rows.ts";
 
 describe("outputLines", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeToken, ToolCallView } from "../../../pi-adapter/index.ts";
 import { paintRecordingTheme, plainTheme } from "../../../test-framework/index.ts";
-import { diffCounts, parseDiff } from "../src/diff.ts";
+import { diffCounts, parseDiff } from "../ui/diff.ts";
 import { numbered, rows } from "./support/transcript-rows.ts";
 
 const view = (name: string, args: unknown, patch: Partial<ToolCallView> = {}): ToolCallView => ({

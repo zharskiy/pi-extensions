@@ -1,4 +1,4 @@
-import { transcriptRows } from "../../src/tools.ts";
+import { transcriptRows } from "../../ui/tools.ts";
 
 export const rows = transcriptRows(() => "ctrl+o", "/home/me");
 
