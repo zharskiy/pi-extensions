@@ -30,7 +30,6 @@
     "extensions/*/api/**",
     "extensions/*/core/**",
     "extensions/*/ui/**",
-    "extensions/*/src/**",
     "extensions/*/prompts/**",
     "extensions/subagents/agents",
     "extensions/*/README.md",
