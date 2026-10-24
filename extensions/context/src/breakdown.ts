@@ -1,5 +1,5 @@
-import { cacheHitPercent, reportedCache, sessionCacheHit } from "../../../core/manager/cache.ts";
 import type { PromptTokens } from "../../../pi-adapter/index.ts";
+import { cacheHitPercent, reportedCache, sessionCacheHit } from "../../../shared/index.ts";
 import { type Breakdown, MESSAGE_KEYS, sumParts } from "./buckets.ts";
 import type { Snapshot } from "./snapshot.ts";
 

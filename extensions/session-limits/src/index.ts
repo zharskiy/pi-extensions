@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { watchSettings } from "../../../core/manager/settings.ts";
+import { watchSettings } from "../../../extension-manager/index.ts";
 import { createPiExtension } from "../../../pi-adapter/index.ts";
 import { conversationOnly } from "./conversation.ts";
 import { createLimits } from "./limits.ts";

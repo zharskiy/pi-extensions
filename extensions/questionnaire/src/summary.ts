@@ -1,8 +1,6 @@
-import { counted } from "../../../core/manager/format.ts";
-import { DOT } from "../../../core/manager/layout.ts";
-import { markOf } from "../../../core/manager/marks.ts";
-import { type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
 import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../pi-adapter/index.ts";
+import { counted, DOT } from "../../../shared/index.ts";
+import { markOf, type RowChild, row, rowChildren, rowText } from "../../../ui-kit/index.ts";
 import {
   type Answer,
   labelOf,

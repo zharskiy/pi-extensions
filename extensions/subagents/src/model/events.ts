@@ -1,5 +1,5 @@
-import type { Bus as CoreBus } from "../../../../core/manager/bus.ts";
 import type { ContextSnapshot, UsageTotals } from "../../../../pi-adapter/index.ts";
+import type { Bus as CoreBus } from "../../../../shared/index.ts";
 import type { AgentRecord } from "./types.ts";
 
 export type BusEvents = {

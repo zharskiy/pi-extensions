@@ -1,11 +1,10 @@
-import { counted, formatCost, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
-import { DOT, PAD } from "../../../../core/manager/layout.ts";
-import type { ThemeLike, ThemeToken } from "../../../../pi-adapter/index.ts";
+import { PAD, type ThemeLike, type ThemeToken } from "../../../../pi-adapter/index.ts";
+import { counted, DOT, formatCost, formatDuration, formatTokens } from "../../../../shared/index.ts";
 import type { AgentRecord } from "../model/types.ts";
 import { displayWord, isStarting } from "./state-text.ts";
 
-export { counted, errorText, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
-export { DOT, PAD } from "../../../../core/manager/layout.ts";
+export { PAD } from "../../../../pi-adapter/index.ts";
+export { counted, DOT, errorText, formatDuration, formatTokens } from "../../../../shared/index.ts";
 
 export const formatCalls = (count: number): string => counted(count, "call");
 

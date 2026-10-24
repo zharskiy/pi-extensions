@@ -1,5 +1,5 @@
-import { pointerMark } from "../../../../core/manager/marks.ts";
 import type { ThemeLike } from "../../../../pi-adapter/index.ts";
+import { pointerMark } from "../../../../ui-kit/index.ts";
 import { type AgentRecord, isClosed } from "../model/types.ts";
 import {
   agentReceipt,

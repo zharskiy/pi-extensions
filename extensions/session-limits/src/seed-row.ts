@@ -1,6 +1,5 @@
-import { expandHint } from "../../../core/manager/hints.ts";
-import { CHILD_COLUMN, type RowRender, row, wrapChild } from "../../../core/manager/row.ts";
-import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import { CHILD_COLUMN, type ThemeLike } from "../../../pi-adapter/index.ts";
+import { expandHint, type RowRender, row, wrapChild } from "../../../ui-kit/index.ts";
 
 const SEED_TITLE = "Handoff from the previous session";
 

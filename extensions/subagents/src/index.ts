@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { createExtensionManager } from "../../../core/manager/extension-manager.ts";
+import { createExtensionManager } from "../../../extension-manager/index.ts";
 import { createPiExtension } from "../../../pi-adapter/index.ts";
 import { errorText } from "./components/format.ts";
 import { NAMESPACE } from "./model/paths.ts";

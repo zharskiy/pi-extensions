@@ -5,7 +5,7 @@ import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../../pi-adap
 import { toolRowsHost } from "../../../pi-adapter/tools/pi-tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../../../pi-adapter/tools/pi-transcript.ts";
 import { releaseLabel, storeLabel } from "../../../pi-adapter/ui/pi-thinking-label.ts";
-import { MARKS, markOf } from "../../manager/marks.ts";
+import { MARKS, markOf } from "../../../ui-kit/index.ts";
 import { initRenderTheme } from "./render-theme.ts";
 import { renderPaneTool, visible } from "./tool-rows.ts";
 

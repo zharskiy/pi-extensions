@@ -1,6 +1,6 @@
-import { homeRelative } from "../../../core/manager/format.ts";
-import { EXPAND_BINDING } from "../../../core/manager/hints.ts";
 import type { Host } from "../../../pi-adapter/index.ts";
+import { homeRelative } from "../../../shared/index.ts";
+import { EXPAND_BINDING } from "../../../ui-kit/index.ts";
 import { type Breakdown, breakdownOf } from "./buckets.ts";
 import { renderSnapshot } from "./render.ts";
 import { parseSnapshot, type Snapshot } from "./snapshot.ts";

@@ -1,4 +1,4 @@
-import { isPlainObject } from "../../../core/manager/guards.ts";
+import { isPlainObject } from "../../../shared/index.ts";
 import type { Source } from "./args.ts";
 
 type RawServer = Record<string, unknown>;

@@ -1,11 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { errorText } from "../../../core/manager/format.ts";
 import {
+  errorText,
   readSettingsFiles,
   type SettingsLocation,
   type SettingsSchema,
   userSettingsPath,
-} from "../../../core/manager/settings.ts";
+} from "../../../shared/index.ts";
 
 type StyleSettings = { style: string };
 

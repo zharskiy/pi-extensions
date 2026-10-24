@@ -1,7 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isPlainObject } from "../../../../../core/manager/guards.ts";
-import { readText } from "../../../../../core/manager/settings.ts";
+import { isPlainObject, readText } from "../../../../../shared/index.ts";
 import { errorText } from "../../components/format.ts";
 import type { SetupChange } from "./form.ts";
 

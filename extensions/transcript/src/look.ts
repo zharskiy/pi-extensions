@@ -1,7 +1,6 @@
-import { noun } from "../../../core/manager/format.ts";
-import { ELLIPSIS } from "../../../core/manager/layout.ts";
-import type { RowRender, Styled, TitleParts } from "../../../core/manager/row.ts";
 import type { ThemeLike, ToolCallView } from "../../../pi-adapter/index.ts";
+import { ELLIPSIS, noun } from "../../../shared/index.ts";
+import type { RowRender, Styled, TitleParts } from "../../../ui-kit/index.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 
 export const MORE = ` ${ELLIPSIS}`;

@@ -1,6 +1,5 @@
-import { listKey } from "../../../core/manager/list.ts";
-import { tabStep } from "../../../core/manager/tabs.ts";
 import type { KeyPress } from "../../../pi-adapter/index.ts";
+import { listKey, tabStep } from "../../../ui-kit/index.ts";
 import type { Answer, Question, QuestionOption } from "./result.ts";
 
 const OTHER_LABEL = "Type something.";

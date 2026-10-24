@@ -1,13 +1,13 @@
-import { isPlainObject } from "../../../../core/manager/guards.ts";
+import type { AgentRuntime, CodemodeShortfall } from "../../../../pi-adapter/index.ts";
 import {
+  isPlainObject,
   type ObjectParse,
   projectSettingsPath,
   readSettingsFile,
   type SettingsParse,
   type SettingsSchema,
   userSettingsPath,
-} from "../../../../core/manager/settings.ts";
-import type { AgentRuntime, CodemodeShortfall } from "../../../../pi-adapter/index.ts";
+} from "../../../../shared/index.ts";
 import {
   OVERRIDE_FIELDS,
   type OverrideField,

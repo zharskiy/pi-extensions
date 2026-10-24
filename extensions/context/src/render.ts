@@ -1,10 +1,6 @@
-import { cachePercentText } from "../../../core/manager/cache.ts";
-import { formatTokens } from "../../../core/manager/format.ts";
-import { countLine } from "../../../core/manager/hints.ts";
-import { DOT } from "../../../core/manager/layout.ts";
-import { markGlyph } from "../../../core/manager/marks.ts";
-import { CHILD_COLUMN } from "../../../core/manager/row.ts";
-import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import { CHILD_COLUMN, type ThemeLike } from "../../../pi-adapter/index.ts";
+import { DOT, formatTokens } from "../../../shared/index.ts";
+import { cachePercentText, countLine, markGlyph } from "../../../ui-kit/index.ts";
 import {
   type CacheFigures,
   type Category,

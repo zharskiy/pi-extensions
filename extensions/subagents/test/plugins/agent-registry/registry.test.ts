@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createBus } from "../../../../../core/manager/bus.ts";
+import { createBus } from "../../../../../extension-manager/index.ts";
 import type { BusEvents } from "../../../src/model/events.ts";
 import { MANIFEST_FILE } from "../../../src/model/paths.ts";
 import { MAIN_CALLER } from "../../../src/model/types.ts";

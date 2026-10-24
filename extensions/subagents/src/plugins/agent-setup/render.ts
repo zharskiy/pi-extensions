@@ -1,15 +1,19 @@
-import { framed, type KeyHint } from "../../../../../core/manager/hints.ts";
-import { PAD, padded, prefixed } from "../../../../../core/manager/layout.ts";
-import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../../../core/manager/list.ts";
-import { pointerMark } from "../../../../../core/manager/marks.ts";
+import { PAD, type ThemeLike } from "../../../../../pi-adapter/index.ts";
+import { padded, prefixed } from "../../../../../shared/index.ts";
 import {
+  CANCEL_HINT,
   descriptionFits,
+  framed,
+  type KeyHint,
+  listLines,
   MULTI_SELECT_HINTS,
   multiLines,
+  pointerMark,
+  SELECT_HINTS,
   scrolledLines,
-} from "../../../../../core/manager/multi-select.ts";
-import { TAB_SWITCH_HINT, tabBar } from "../../../../../core/manager/tabs.ts";
-import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
+  TAB_SWITCH_HINT,
+  tabBar,
+} from "../../../../../ui-kit/index.ts";
 import { ALL, INHERIT_MODEL } from "../../model/agent-schema.ts";
 import {
   FIELDS,

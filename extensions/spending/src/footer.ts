@@ -1,5 +1,4 @@
-import { formatMoney } from "../../../core/manager/format.ts";
-import { DOT } from "../../../core/manager/layout.ts";
+import { DOT, formatMoney } from "../../../shared/index.ts";
 
 type SourceCost = { source: string; cost: number };
 

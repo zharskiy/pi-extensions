@@ -1,4 +1,4 @@
-import { reportSettingsErrors } from "../../../core/manager/settings.ts";
+import { reportSettingsErrors } from "../../../extension-manager/index.ts";
 import type { Host, SessionInfo } from "../../../pi-adapter/index.ts";
 import { pickStyle } from "./pick.ts";
 import { readStyleSettings, SETTINGS_FILE, saveStyle } from "./settings.ts";

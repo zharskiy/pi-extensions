@@ -1,16 +1,20 @@
-import { formatDuration, shortPath } from "../../../core/manager/format.ts";
-import { isPlainObject } from "../../../core/manager/guards.ts";
-import { expandHint } from "../../../core/manager/hints.ts";
-import { markOf } from "../../../core/manager/marks.ts";
 import {
   CHILD_COLUMN,
+  type ThemeLike,
+  type ToolCallView,
+  type ToolRow,
+  type ToolRows,
+} from "../../../pi-adapter/index.ts";
+import { formatDuration, isPlainObject, shortPath } from "../../../shared/index.ts";
+import {
+  expandHint,
   failureSuffix,
+  markOf,
   type RowRender,
   row,
   rowChildren,
   type TitleParts,
-} from "../../../core/manager/row.ts";
-import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../pi-adapter/index.ts";
+} from "../../../ui-kit/index.ts";
 import { codemodeLook } from "./codemode.ts";
 import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";
 import { genericLook } from "./generic.ts";

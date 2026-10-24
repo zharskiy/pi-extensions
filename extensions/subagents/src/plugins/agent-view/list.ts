@@ -1,5 +1,5 @@
-import { keyHints } from "../../../../../core/manager/hints.ts";
 import type { KeyPress, OverlayApi, ThemeToken } from "../../../../../pi-adapter/index.ts";
+import { keyHints } from "../../../../../ui-kit/index.ts";
 import { type RowLayout, renderRow, rowLayout } from "../../components/agent-row.ts";
 import { errorText, innerWidth, PAD, padLine, truncatePainted } from "../../components/format.ts";
 import { tickFor } from "../../components/refresh.ts";

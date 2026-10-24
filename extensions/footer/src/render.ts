@@ -1,14 +1,20 @@
-import { cachePercentText } from "../../../core/manager/cache.ts";
-import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../core/manager/channels.ts";
-import { formatMoney, formatTokens, formatWindow } from "../../../core/manager/format.ts";
-import { DOT, PAD } from "../../../core/manager/layout.ts";
-import type {
-  ContextSnapshot,
-  FooterData,
-  ModelInfo,
-  ThemeLike,
-  ThemeToken,
+import {
+  type ContextSnapshot,
+  type FooterData,
+  type ModelInfo,
+  PAD,
+  type ThemeLike,
+  type ThemeToken,
 } from "../../../pi-adapter/index.ts";
+import {
+  DOT,
+  formatMoney,
+  formatTokens,
+  formatWindow,
+  SPENDING_STATUS_KEY,
+  type SpendingTotals,
+} from "../../../shared/index.ts";
+import { cachePercentText } from "../../../ui-kit/index.ts";
 
 const LEVEL_TOKENS: Record<string, ThemeToken> = {
   off: "thinkingOff",

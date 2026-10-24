@@ -1,5 +1,5 @@
-import { ELLIPSIS } from "../../../core/manager/layout.ts";
 import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
+import { ELLIPSIS } from "../../../shared/index.ts";
 import { cleanLine } from "./output.ts";
 import { merged, type Span, wordSpans } from "./words.ts";
 

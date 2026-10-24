@@ -1,7 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
-import { countLine } from "../../../core/manager/hints.ts";
-import { preview } from "../../../core/manager/row.ts";
 import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
+import { countLine, preview } from "../../../ui-kit/index.ts";
 
 const TAB = "   ";
 

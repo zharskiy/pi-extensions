@@ -1,12 +1,12 @@
 import { basename } from "node:path";
+import type { Host, UsageTotals } from "../../../pi-adapter/index.ts";
 import {
   parseUsageReport,
   SPENDING_STATUS_KEY,
   type SpendingTotals,
   TOTALS_CHANNEL,
   USAGE_CHANNEL,
-} from "../../../core/manager/channels.ts";
-import type { Host, UsageTotals } from "../../../pi-adapter/index.ts";
+} from "../../../shared/index.ts";
 import { footerText } from "./footer.ts";
 import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 

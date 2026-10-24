@@ -1,5 +1,5 @@
-import { type SelectOption, selectForm } from "../../../../../core/manager/select.ts";
 import type { OverlayApi } from "../../../../../pi-adapter/index.ts";
+import { type SelectOption, selectForm } from "../../../../../ui-kit/index.ts";
 import { cutChars, DOT, errorText } from "../../components/format.ts";
 import { watchAgents } from "../../components/refresh.ts";
 import { stateWord } from "../../components/state-text.ts";

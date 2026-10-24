@@ -1,6 +1,5 @@
-import { countLine, type KeyHint, keyHints } from "../../../../../core/manager/hints.ts";
-import { preview, wrapChild } from "../../../../../core/manager/row.ts";
 import type { KeyPress, OverlayApi, ThemeLike, ViewComponent } from "../../../../../pi-adapter/index.ts";
+import { countLine, type KeyHint, keyHints, preview, wrapChild } from "../../../../../ui-kit/index.ts";
 import { agentName } from "../../components/agent-row.ts";
 import {
   agentReceipt,

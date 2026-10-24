@@ -1,4 +1,4 @@
-import { MARKS } from "../../../../core/manager/marks.ts";
+import { MARKS } from "../../../../ui-kit/index.ts";
 import { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../model/types.ts";
 
 export type TreeRow = {

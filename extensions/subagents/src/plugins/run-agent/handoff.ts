@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { validateHandoff } from "../../../../../core/manager/handoff.ts";
+import { validateHandoff } from "../../../../../shared/index.ts";
 import type { HandoffService } from "../../model/types.ts";
 
 export const createHandoff = (root: string): HandoffService => {

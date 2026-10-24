@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "..");
 const ADAPTER = join(ROOT, "pi-adapter");
 const ADAPTER_INDEX = join(ADAPTER, "index.ts");
-const CORE = join(ROOT, "core");
-const MANAGER = join(CORE, "manager");
-const CORE_TESTS = join(CORE, "test");
+const CORE_TESTS = join(ROOT, "core", "test");
+const SHARED = join(ROOT, "shared");
+const UI_KIT = join(ROOT, "ui-kit");
+const MANAGER = join(ROOT, "extension-manager");
+const LAYERS = [SHARED, UI_KIT, MANAGER];
 const EXTENSIONS = join(ROOT, "extensions");
 
 const exists = (path: string) => {
@@ -61,7 +63,13 @@ const importsIn = (files: string[]): Import[] =>
 
 const describeImport = ({ file, specifier }: Import) => `${relative(ROOT, file)} imports ${specifier}`;
 
-const coreCode = () => sourceFiles(CORE).filter((file) => !isInside(CORE_TESTS)(file));
+const layerCode = (layer: string) =>
+  sourceFiles(layer).filter((file) => !isInside(join(layer, "tests"))(file));
+
+const allLayerCode = () => LAYERS.flatMap(layerCode);
+
+const isLayerInternal = (target: string) =>
+  LAYERS.some((layer) => isInside(layer)(target) && target !== join(layer, "index.ts"));
 
 const extensionCode = () => extensionDirs().flatMap((extension) => sourceFiles(join(extension, "src")));
 
@@ -72,7 +80,7 @@ const isPiPackage = (specifier: string) =>
 
 describe("architecture", () => {
   it("outside pi-adapter only pi-adapter/index.ts is imported", () => {
-    const offenders = importsIn([...coreCode(), ...extensionCode()])
+    const offenders = importsIn([...allLayerCode(), ...extensionCode()])
       .filter((entry) => entry.target !== undefined && isInside(ADAPTER)(entry.target))
       .filter((entry) => entry.target !== ADAPTER_INDEX)
       .map(describeImport);
@@ -121,25 +129,50 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("core never imports from extensions", () => {
-    const offenders = importsIn(sourceFiles(CORE))
-      .filter((entry) => entry.target !== undefined && isInside(EXTENSIONS)(entry.target))
+  it("extensions reach shared, ui-kit and extension-manager only through their index.ts", () => {
+    const offenders = extensionDirs()
+      .flatMap((extension) => importsIn(sourceFiles(extension)))
+      .filter((entry) => entry.target !== undefined && isLayerInternal(entry.target))
       .map(describeImport);
 
     expect(offenders).toEqual([]);
   });
 
-  it("pi-adapter never imports core or extensions", () => {
+  it.each([
+    ["shared", SHARED, [UI_KIT, MANAGER, EXTENSIONS]],
+    ["ui-kit", UI_KIT, [MANAGER, EXTENSIONS]],
+    ["extension-manager", MANAGER, [UI_KIT, EXTENSIONS]],
+  ])("%s never imports a layer above it", (_, layer, banned) => {
+    const offenders = importsIn(sourceFiles(layer))
+      .filter((entry) => entry.target !== undefined)
+      .filter((entry) => banned.some((dir) => isInside(dir)(entry.target ?? "")))
+      .map(describeImport);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("shared, ui-kit and extension-manager reach each other only through their index.ts", () => {
+    const offenders = LAYERS.flatMap((layer) =>
+      importsIn(sourceFiles(layer))
+        .filter((entry) => entry.target !== undefined && !isInside(layer)(entry.target))
+        .filter((entry) => isLayerInternal(entry.target ?? ""))
+        .map(describeImport),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("pi-adapter never imports shared, ui-kit, extension-manager, core or extensions", () => {
     const offenders = importsIn(sourceFiles(ADAPTER))
       .filter((entry) => entry.target !== undefined)
-      .filter((entry) => isInside(CORE)(entry.target ?? "") || isInside(EXTENSIONS)(entry.target ?? ""))
+      .filter((entry) => [...LAYERS, CORE_TESTS, EXTENSIONS].some((dir) => isInside(dir)(entry.target ?? "")))
       .map(describeImport);
 
     expect(offenders).toEqual([]);
   });
 
-  it("keeps every test outside src, pi-adapter and core/manager", () => {
-    const offenders = [...extensionCode(), ...sourceFiles(ADAPTER), ...sourceFiles(MANAGER)]
+  it("keeps every test outside src and pi-adapter, and inside tests/ of shared, ui-kit and extension-manager", () => {
+    const offenders = [...extensionCode(), ...sourceFiles(ADAPTER), ...allLayerCode()]
       .filter((file) => file.endsWith(".test.ts"))
       .map((file) => relative(ROOT, file));
 
@@ -150,7 +183,7 @@ describe("architecture", () => {
     const offenders = sourceFiles(CORE_TESTS)
       .filter((file) => file.endsWith(".test.ts"))
       .map((file) => relative(CORE_TESTS, file).split(sep)[0])
-      .filter((area) => !["adapter", "manager"].includes(area));
+      .filter((area) => area !== "adapter");
 
     expect(offenders).toEqual([]);
   });

@@ -1,8 +1,14 @@
-import { framed, type KeyHint } from "../../../core/manager/hints.ts";
-import { PAD, padded } from "../../../core/manager/layout.ts";
-import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
-import { TAB_SWITCH_HINT, tabBar } from "../../../core/manager/tabs.ts";
-import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import { PAD, type ThemeLike } from "../../../pi-adapter/index.ts";
+import { padded } from "../../../shared/index.ts";
+import {
+  CANCEL_HINT,
+  framed,
+  type KeyHint,
+  listLines,
+  SELECT_HINTS,
+  TAB_SWITCH_HINT,
+  tabBar,
+} from "../../../ui-kit/index.ts";
 import {
   allAnswered,
   answerOf,

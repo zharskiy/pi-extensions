@@ -1,8 +1,6 @@
-import { counted, formatTokens } from "../../../core/manager/format.ts";
-import { DOT } from "../../../core/manager/layout.ts";
-import { MARKS } from "../../../core/manager/marks.ts";
-import { TITLE_COLUMN } from "../../../core/manager/row.ts";
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import { counted, DOT, formatTokens } from "../../../shared/index.ts";
+import { MARKS, TITLE_COLUMN } from "../../../ui-kit/index.ts";
 import { type Breakdown, type MessageKey, type Part, sumParts } from "./buckets.ts";
 
 type Section = {

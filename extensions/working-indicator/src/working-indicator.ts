@@ -1,6 +1,5 @@
-import { formatDuration } from "../../../core/manager/format.ts";
-import { DOT } from "../../../core/manager/layout.ts";
 import type { Host, Phase } from "../../../pi-adapter/index.ts";
+import { DOT, formatDuration } from "../../../shared/index.ts";
 
 export const TICK_MS = 1000;
 

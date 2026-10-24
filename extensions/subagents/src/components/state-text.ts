@@ -1,5 +1,5 @@
-import { MARKS, type Mark, markGlyph } from "../../../../core/manager/marks.ts";
 import type { ThemeLike, ThemeToken } from "../../../../pi-adapter/index.ts";
+import { MARKS, type Mark, markGlyph } from "../../../../ui-kit/index.ts";
 import { type AgentRecord, type AgentState, isClosed } from "../model/types.ts";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

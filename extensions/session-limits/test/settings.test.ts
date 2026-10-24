@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { userSettingsPath, watchSettings } from "../../../core/manager/settings.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import { watchSettings } from "../../../extension-manager/index.ts";
+import { userSettingsPath } from "../../../shared/index.ts";
 import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../src/settings.ts";
 
 const roots: string[] = [];

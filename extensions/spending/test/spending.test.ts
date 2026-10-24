@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseTotals, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, usageOf } from "../../../core/test/helpers/fakes.ts";
+import { parseTotals, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../shared/index.ts";
 import { USAGE_ENTRY } from "../src/ledger.ts";
 import { createSpending } from "../src/spending.ts";
 

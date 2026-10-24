@@ -1,4 +1,4 @@
-import { counted } from "../../../core/manager/format.ts";
+import { counted } from "../../../shared/index.ts";
 import type { ImportArgs } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
 import type { Entry, Plan, Skipped } from "./plan.ts";

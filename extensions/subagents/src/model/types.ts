@@ -1,5 +1,5 @@
-import type { HandoffValidation } from "../../../../core/manager/handoff.ts";
 import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../pi-adapter/index.ts";
+import type { HandoffValidation } from "../../../../shared/index.ts";
 import { type AgentFrontmatter, ALL, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";

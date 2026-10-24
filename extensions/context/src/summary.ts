@@ -1,5 +1,4 @@
-import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
-import { DOT } from "../../../core/manager/layout.ts";
+import { DOT, formatTokens, formatWindow } from "../../../shared/index.ts";
 import { type UsageModel, usageModel } from "./breakdown.ts";
 import type { Snapshot } from "./snapshot.ts";
 

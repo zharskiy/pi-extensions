@@ -1,8 +1,8 @@
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
-import { formatDuration } from "../../../../core/manager/format.ts";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
+import { formatDuration } from "../../../../shared/index.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import {
   concurrentRuns,

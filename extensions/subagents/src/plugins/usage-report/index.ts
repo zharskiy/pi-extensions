@@ -1,4 +1,4 @@
-import { USAGE_CHANNEL } from "../../../../../core/manager/channels.ts";
+import { USAGE_CHANNEL } from "../../../../../shared/index.ts";
 import type { Plugin } from "../../model/plugin.ts";
 
 export const usageReportPlugin: Plugin = {

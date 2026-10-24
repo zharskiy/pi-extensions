@@ -1,8 +1,6 @@
-import { counted } from "../../../core/manager/format.ts";
-import { DOT, ELLIPSIS } from "../../../core/manager/layout.ts";
-import { multiSelectForm } from "../../../core/manager/multi-select.ts";
-import { selectForm } from "../../../core/manager/select.ts";
 import type { Host } from "../../../pi-adapter/index.ts";
+import { counted, DOT, ELLIPSIS } from "../../../shared/index.ts";
+import { multiSelectForm, selectForm } from "../../../ui-kit/index.ts";
 import type { Scope, Source } from "./args.ts";
 import { needsSignIn } from "./convert.ts";
 import type { Entry, Plan, Skipped } from "./plan.ts";

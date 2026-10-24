@@ -12,5 +12,15 @@
     "types": ["node"],
     "lib": ["ES2023"]
   },
-  "include": ["pi-adapter", "core", "extensions", "test", "vitest.config.ts", "vitest.live.config.ts"]
+  "include": [
+    "pi-adapter",
+    "extension-manager",
+    "ui-kit",
+    "shared",
+    "core",
+    "extensions",
+    "test",
+    "vitest.config.ts",
+    "vitest.live.config.ts"
+  ]
 }

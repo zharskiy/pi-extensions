@@ -58,32 +58,42 @@ pi-extensions/
 │   └── prompt/
 │       ├── main-prompt.ts       # rebuilds the main session system prompt
 │       └── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
-├── core/                        # shared code, no extension-specific logic
-│   ├── manager/                 # pi-free shared code
-│   │   ├── extension-manager.ts # enables plugins in dependency order
-│   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
-│   │   ├── handoff.ts           # handoff sections and validator (shared format)
-│   │   ├── channels.ts          # busy/awaiting-input/usage/totals channel names, payloads, parsers
-│   │   ├── format.ts            # token, window, duration, error-text, ~/ and short path formatters,
-│   │   │                        #   noun/counted, formatCost and formatMoney
-│   │   ├── cache.ts             # cache hit rate, its colour thresholds and coloured percentage
-│   │   ├── layout.ts            # padding, dot separator, ELLIPSIS and cutStart, accent rule, wrapped lines
-│   │   ├── list.ts              # selectable list: lines, keys, shared hints
-│   │   ├── select.ts            # single-choice form over the list
-│   │   ├── tabs.ts              # tab bar and Tab/←→ keys (questionnaire, /agents setup)
-│   │   ├── multi-select.ts      # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
-│   │   ├── marks.ts             # state marks: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), Mark, markGlyph, markOf, pointerMark
-│   │   ├── hints.ts             # hint grammar: EXPAND_BINDING, expandHint, appendHint, countLine,
-│   │   │                        #   keyHints and hintLines (bottom strips), framed (rule, lines, hints, rule)
-│   │   ├── row.ts               # pi-native row layout: the 0/2/4 grid, row/rowChildren, titleLine,
-│   │   │                        #   failureSuffix, wrapChild, preview
-│   │   ├── guards.ts            # isPlainObject
-│   │   └── settings.ts          # settings (schema, file merge, session watch, readText)
-│   └── test/                    # mirrors pi-adapter and core/manager
+├── extension-manager/           # plugin runtime; imports pi-adapter/index.ts and shared/index.ts only
+│   ├── index.ts                 # public surface
+│   ├── extension-manager.ts     # enables plugins in dependency order
+│   ├── bus.ts                   # createBus, the typed event bus
+│   ├── watch-settings.ts        # settings session watch and once-per-error warnings
+│   └── tests/
+├── ui-kit/                      # theme-aware components; imports pi-adapter/index.ts and shared/index.ts only
+│   ├── index.ts                 # public surface
+│   ├── cache-tone.ts            # cache rate colour thresholds and coloured percentage
+│   ├── list.ts                  # selectable list: lines, keys, shared hints
+│   ├── select.ts                # single-choice form over the list
+│   ├── tabs.ts                  # tab bar and Tab/←→ keys (questionnaire, /agents setup)
+│   ├── multi-select.ts          # checkbox list (Space, a all, n none, scroll window) and multiSelectForm
+│   ├── glyphs.ts                # state marks: MARKS (◌ ✓ ✗ ⊘ » ↳ ›), Mark, markGlyph, markOf, pointerMark
+│   ├── key-hints.ts             # hint grammar: EXPAND_BINDING, expandHint, appendHint, countLine,
+│   │                            #   keyHints and hintLines (bottom strips), framed (rule, lines, hints, rule)
+│   ├── row.ts                   # pi-native row layout: the 0/2/4 grid, row/rowChildren, titleLine,
+│   │                            #   failureSuffix, wrapChild, preview
+│   └── tests/
+├── shared/                      # pi-free, theme-free helpers; imports pi-adapter/index.ts only
+│   ├── index.ts                 # public surface
+│   ├── plugin-contract.ts       # plugin, services and typed event bus types
+│   ├── handoff-document.ts      # handoff sections and validator (shared format)
+│   ├── host-channels.ts         # busy/awaiting-input/usage/totals channel names, payloads, parsers
+│   ├── format.ts                # token, window, duration, error-text, ~/ and short path formatters,
+│   │                            #   noun/counted, formatCost and formatMoney
+│   ├── cache-hit.ts             # cache hit rate
+│   ├── text-layout.ts           # dot separator, ELLIPSIS and cutStart, accent rule, wrapped lines
+│   ├── plain-object.ts          # isPlainObject
+│   ├── settings-files.ts        # settings schema, file parsing and merge, readText
+│   └── tests/
+├── core/
+│   └── test/                    # adapter tests and shared test helpers
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
 │       │                        #   offline.ts (pi loaded offline for extension tests; `sessionFacts` for the live tests), tool-rows.ts
 │       │                        #   (tool rows rendered through pi for extension tests)
-│       ├── manager/
 │       └── helpers/             # fakes.ts (fake host, runtime and child session, plainTheme, taggedTheme),
 │                                #   fake-form.ts (fake showForm), keys.ts (key and char KeyPress builders)
 ├── extensions/
@@ -141,7 +151,7 @@ pi-extensions/
 │   │   └── README.md
 │   ├── questionnaire/           # questionnaire tool: batch of multiple-choice questions in one form
 │   │   ├── src/                 # index, questionnaire (tool spec, execute), view (form view, arm delay),
-│   │   │                        #   form (pure state; tab keys from core/manager/tabs.ts), render (form
+│   │   │                        #   form (pure state; tab keys from ui-kit/tabs.ts), render (form
 │   │   │                        #   lines), summary (call and result renderers), result (types,
 │   │   │                        #   normalising, model text)
 │   │   ├── test/
@@ -220,7 +230,7 @@ usage-report/       # reports agent usage to the spending channel
 
 - Only `pi-adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages, and everything else reaches it only through `pi-adapter/index.ts`; both enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
-- Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
+- Extensions never import each other; they only share `extension-manager/`, `ui-kit/` and `shared/`. Cross-extension formats and channel names live in `shared/handoff-document.ts` and `shared/host-channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
 - `*.live.test.ts` (in `extensions/subagents/test/live/`, plus the adapter's `core/test/adapter/wake.live.test.ts`) are local-only and need `PI_LIVE_MODEL` plus pi credentials. Their helper API in `core/test/adapter/live.ts`: `setupLive()` and `teardownLive()` create and remove the temporary agent dir (`describeLive` calls them in `beforeAll`/`afterAll` and fails, never skips, when setup is impossible), `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same). `extensions/subagents/test/helpers/live.ts` builds the live harness on top (`seed(sha)` fills the project from `git archive`), with the pure `agent-patch.ts`, `plan-rows.ts` and `findings.ts` beside it, `turns.ts` to keep the fake host busy across overlapping runs and settle it once per turn, and `live-runs.ts` to run a lead's chain to its close and repeat a fixture in parallel.
 - Settings files are `<agentDir>/pi-<extension>.json` (user) and `<cwd>/.pi/pi-<extension>.json` (trusted projects): `pi-subagents.json`, `pi-session-limits.json`, `pi-notifications.json`, `pi-style.json`. The files the extensions write are listed in ARCHITECTURE.md (Persistence summary).
@@ -230,16 +240,16 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Published vs development-only
 
-- Published: the explicit `files` list in `package.json`: `pi-adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
+- Published: the explicit `files` list in `package.json`: `pi-adapter`, `extension-manager`, `ui-kit`, `shared` (each without its `tests/`), `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
 - Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/src/index.ts`.
-- Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
+- Development-only: `core/test`, `extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `extensions/*/test`, `test/`, `.github/`, config files below.
 
 ### Config files
 
 - `package.json`: version, pi entry points, `files`, scripts (`check`, `test`, `test:live`).
-- `tsconfig.json`: strict NodeNext, no emit, includes `core`, `extensions`, `test`.
-- `vitest.config.ts`: unit tests (`core/test`, `extensions/*/test`, `test`), excludes `*.live.test.ts`.
+- `tsconfig.json`: strict NodeNext, no emit, includes `pi-adapter`, `extension-manager`, `ui-kit`, `shared`, `core`, `extensions`, `test`.
+- `vitest.config.ts`: unit tests (`extension-manager/tests`, `ui-kit/tests`, `shared/tests`, `core/test`, `extensions/*/test`, `test`), excludes `*.live.test.ts`.
 - `vitest.live.config.ts`: only live tests, serial, long timeouts.
-- `biome.json`: format/lint, plus the pi-import restriction outside the adapter.
+- `biome.json`: format/lint, plus the pi-import restriction outside the adapter and the layer rules for `shared`, `ui-kit` and `extension-manager`.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests.
 - `.gitignore`: node_modules, .DS_Store, .claude.

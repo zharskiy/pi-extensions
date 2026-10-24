@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, FAKE_FOOTER_KEY, plainTheme } from "../../../core/test/helpers/fakes.ts";
+import { TOTALS_CHANNEL } from "../../../shared/index.ts";
 import { createFooter } from "../src/footer.ts";
 
 const setup = () => {

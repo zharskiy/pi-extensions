@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { formatDuration } from "../../../../core/manager/format.ts";
 import { describeLive } from "../../../../core/test/adapter/live.ts";
+import { formatDuration } from "../../../../shared/index.ts";
 import { citesFile, hitsLine, parseFindings } from "../helpers/findings.ts";
 import { createLiveHarness, type LiveHarness } from "../helpers/live.ts";
 import {

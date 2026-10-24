@@ -1,4 +1,4 @@
-import { BUSY_CHANNEL } from "../../../../../core/manager/channels.ts";
+import { BUSY_CHANNEL } from "../../../../../shared/index.ts";
 import { pastRecords } from "../../model/manifest.ts";
 import { agentsDirFor, handoffPathFor } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";

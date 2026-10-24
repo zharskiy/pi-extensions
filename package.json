@@ -23,7 +23,9 @@
   ],
   "files": [
     "pi-adapter",
-    "core/manager",
+    "extension-manager",
+    "ui-kit",
+    "shared",
     "extensions/*/src/**",
     "extensions/*/prompts/**",
     "extensions/subagents/agents",
@@ -32,7 +34,8 @@
     "LICENSE",
     "ARCHITECTURE.md",
     "STRUCTURE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "!**/tests/**"
   ],
   "pi": {
     "extensions": [

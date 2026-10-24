@@ -1,7 +1,6 @@
-import { DOT } from "../../../core/manager/layout.ts";
-import type { Mark } from "../../../core/manager/marks.ts";
-import { row, TITLE_COLUMN } from "../../../core/manager/row.ts";
 import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import { DOT } from "../../../shared/index.ts";
+import { type Mark, row, TITLE_COLUMN } from "../../../ui-kit/index.ts";
 import { bold, type Context, counted, failed, type Look, MORE, resultText, textArg } from "./look.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 

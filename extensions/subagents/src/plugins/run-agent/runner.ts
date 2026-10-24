@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { readText } from "../../../../../core/manager/settings.ts";
 import {
   type AgentRuntime,
   type AnyToolSpec,
@@ -14,6 +13,7 @@ import {
   splitModelRequest,
   type UsageTotals,
 } from "../../../../../pi-adapter/index.ts";
+import { readText } from "../../../../../shared/index.ts";
 import { errorText } from "../../components/format.ts";
 import { ALL } from "../../model/agent-schema.ts";
 import type { Bus } from "../../model/events.ts";
