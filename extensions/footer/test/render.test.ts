@@ -150,11 +150,11 @@ describe("renderFooter", () => {
     });
 
     expect(lines[1]).toBe(
-      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <syntaxString>test-model <muted>(1M context)",
+      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <borderAccent>test-model <muted>(1M context)",
     );
     expect(lines[2]).toBe(" <muted>session total (agents included) <text>162.4k<muted> · <text>$4.42");
     expect(lines[3]).toBe(
-      " <border>my-project<muted> git:(<borderAccent>feature-branch<muted>)<muted> • refactor",
+      " <border>my-project<muted> git:(<syntaxString>feature-branch<muted>)<muted> • refactor",
     );
     expect(lines.join("")).not.toContain(`${String.fromCharCode(27)}[38;5;`);
   });
@@ -183,26 +183,26 @@ describe("renderFooter", () => {
     expect(unavailable).toBe(" <muted>thinking unavailable <dim>(shift+tab to cycle)");
   });
 
-  it("tints the model name orange, leaves spend plain and nothing on the line bold", () => {
+  it("tints the model name violet, leaves spend plain and nothing on the line bold", () => {
     const boldTheme: ThemeLike = { ...tokenTheme, bold: (text) => `<b>${text}</b>` };
     const line = (patch: Partial<FooterState>) =>
       renderFooter(boldTheme, state(patch), { branch: null, statuses: new Map() })[1];
 
-    expect(line({})).toMatch(/<text>\$4\.00<muted> · <syntaxString>test-model <muted>\(1M context\)$/);
+    expect(line({})).toMatch(/<text>\$4\.00<muted> · <borderAccent>test-model <muted>\(1M context\)$/);
     expect(line({})).not.toContain("<b>");
     expect(renderFooter(boldTheme, state({}), { branch: null, statuses: new Map() })[2]).not.toContain("<b>");
     expect(line({ model: undefined })).toMatch(/<muted>no model$/);
   });
 
-  it("tints the model name cyan instead of orange when the theme paints orange like the success gauge", () => {
+  it("tints the branch cyan instead of orange when the theme paints orange like the success gauge", () => {
     const greenStrings: ThemeLike = {
       ...tokenTheme,
       fg: (token, text) => tokenTheme.fg(token === "syntaxString" ? "success" : token, text),
     };
     const line = (theme: ThemeLike) =>
-      renderFooter(theme, state({ cache: 91 }), { branch: null, statuses: new Map() })[1];
+      renderFooter(theme, state({}), { branch: "main", statuses: new Map() })[3];
 
-    expect(line(tokenTheme)).toContain("<syntaxString>test-model");
+    expect(line(tokenTheme)).toContain("<syntaxString>main");
     expect(line(greenStrings)).toBe(line(tokenTheme).replace("<syntaxString>", "<syntaxVariable>"));
   });
 

@@ -34,7 +34,7 @@ export type FooterState = {
 const looksLikeGauge = (theme: ThemeLike, token: ThemeToken) =>
   theme.fg(token, "x") === theme.fg("success", "x");
 
-const modelToken = (theme: ThemeLike): ThemeToken =>
+const branchToken = (theme: ThemeLike): ThemeToken =>
   looksLikeGauge(theme, "syntaxString") ? "syntaxVariable" : "syntaxString";
 
 const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
@@ -43,7 +43,7 @@ const SPEND: ThemeToken = "text";
 
 const PLACE: ThemeToken = "border";
 
-const BRANCH: ThemeToken = "borderAccent";
+const MODEL: ThemeToken = "borderAccent";
 
 const META: ThemeToken = "muted";
 
@@ -77,7 +77,7 @@ const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo 
 
   const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
 
-  return `${theme.fg(modelToken(theme), model.name)} ${theme.fg(META, window)}`;
+  return `${theme.fg(MODEL, model.name)} ${theme.fg(META, window)}`;
 };
 
 const cacheSegment = (theme: ThemeLike, percent: number) =>
@@ -113,7 +113,7 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
   const folder = theme.fg(PLACE, folderName(cwd));
   const place = branch
-    ? `${folder}${theme.fg(META, " git:(")}${theme.fg(BRANCH, branch)}${theme.fg(META, ")")}`
+    ? `${folder}${theme.fg(META, " git:(")}${theme.fg(branchToken(theme), branch)}${theme.fg(META, ")")}`
     : folder;
 
   return sessionName ? `${place}${theme.fg(META, ` • ${sessionName}`)}` : place;
