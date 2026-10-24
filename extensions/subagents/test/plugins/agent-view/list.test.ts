@@ -77,7 +77,7 @@ describe("agents list", () => {
     expect(lines()[0]).toBe("");
     expect(lines()[1]).toBe(" Agents");
     expect(lines()).toContain(" No running agents");
-    expect(lines().at(-2)).toBe(" esc to close");
+    expect(lines().at(-2)).toBe(" esc to close · → to main session");
     expect(lines().at(-1)).toBe("");
   });
 
@@ -143,14 +143,14 @@ describe("agents list", () => {
 
     expect(selectedRow(lines())).toContain("first");
     expect(lines().at(-2)).toBe(
-      " ↑↓ to select · enter to view · x to stop · shift+x to stop all · esc to close",
+      " ↑↓ to select · enter to view · x to stop · shift+x to stop all · esc to close · → to main session",
     );
 
     view.handleKey(key("down"));
 
     expect(selectedRow(lines())).toContain("closed one");
     expect(lines().at(-2)).toBe(
-      " ↑↓ to select · enter to view · x to clear · shift+x to stop all · esc to close",
+      " ↑↓ to select · enter to view · x to clear · shift+x to stop all · esc to close · → to main session",
     );
 
     view.handleKey(key("down"));

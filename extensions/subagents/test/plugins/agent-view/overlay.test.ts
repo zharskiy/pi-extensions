@@ -128,22 +128,21 @@ describe("agents overlay", () => {
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().at(-2)?.endsWith("esc to close")).toBe(true);
+    expect(lines().at(-2)?.endsWith("esc to close · → to main session")).toBe(true);
 
     overlay.handleKey(key("right"));
 
     expect(state.closed).toBe(true);
   });
 
-  it("Esc closes the list and is the one exit key the hint names", () => {
+  it("Esc closes the list and the hint names both exit keys", () => {
     const harness = setup();
 
     harness.host.pressEmptyLeft();
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().at(-2)).toBe(" esc to close");
-    expect(lines().join("\n")).not.toContain("→");
+    expect(lines().at(-2)).toBe(" esc to close · → to main session");
 
     overlay.handleKey(key("escape"));
 

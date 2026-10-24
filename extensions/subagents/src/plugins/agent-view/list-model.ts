@@ -221,7 +221,10 @@ export type HintPair = readonly [key: string, words: string];
 
 export const listHint = (selected: AgentRecord | undefined): HintPair[] => {
   if (!selected) {
-    return [["esc", "to close"]];
+    return [
+      ["esc", "to close"],
+      ["→", "to main session"],
+    ];
   }
 
   return [
@@ -230,5 +233,6 @@ export const listHint = (selected: AgentRecord | undefined): HintPair[] => {
     ["x", stopWords(selected.state)],
     ["shift+x", "to stop all"],
     ["esc", "to close"],
+    ["→", "to main session"],
   ];
 };
