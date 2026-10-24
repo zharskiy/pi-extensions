@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../pi-adapter/index.ts";
 import { createFakeHost } from "../../../test-framework/index.ts";
-import { createWorkingIndicator, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
+import { createWorkingIndicator } from "../api/plugin.ts";
+import { TICK_MS, VERB_MS } from "../core/indicator-state.ts";
+import { VERBS } from "../ui/indicator-text.ts";
 
 const setup = (mode: RunMode = "tui") => {
   const host = createFakeHost({ mode });

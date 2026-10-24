@@ -18,4 +18,4 @@ A pi extension that replaces pi's plain `Working...` line with a rotating verb a
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root); `src/working-indicator.ts` holds the verbs, their rotation (`VERB_MS`, 8000) and the prompt timer (`TICK_MS`, 1000), and depends only on `pi-adapter/index.ts` and `shared/index.ts`, whose duration format (`12s`, `1m 5s`) it shares with subagents. Tests are under `tests/`.
+`index.ts` is the pi entry; it re-exports `api/extension.ts`, which builds the extension with `createManagedExtension` (`extension-manager/`) on the shared pi adapter in `pi-adapter/` (repository root). `core/indicator-state.ts` holds the run state, the verb rotation (`VERB_MS`, 8000) and the prompt timer (`TICK_MS`, 1000); `ui/indicator-text.ts` holds the verbs and the working line text, whose duration format (`12s`, `1m 5s`) comes from `shared/index.ts` and is shared with subagents; `api/plugin.ts` wires them to the host's working line. Tests are under `tests/`. How it works is in [ARCHITECTURE.md](ARCHITECTURE.md), where things are in [STRUCTURE.md](STRUCTURE.md).
