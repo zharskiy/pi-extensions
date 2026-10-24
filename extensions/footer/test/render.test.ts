@@ -194,12 +194,16 @@ describe("renderFooter", () => {
     expect(line({ model: undefined })).toMatch(/<muted>no model$/);
   });
 
-  it("tints the model name cyan instead of orange on a theme without panels", () => {
-    const line = (panels: boolean) =>
-      renderFooter({ ...tokenTheme, panels }, state({ cache: 91 }), { branch: null, statuses: new Map() })[1];
+  it("tints the model name cyan instead of orange when the theme paints orange like the success gauge", () => {
+    const greenStrings: ThemeLike = {
+      ...tokenTheme,
+      fg: (token, text) => tokenTheme.fg(token === "syntaxString" ? "success" : token, text),
+    };
+    const line = (theme: ThemeLike) =>
+      renderFooter(theme, state({ cache: 91 }), { branch: null, statuses: new Map() })[1];
 
-    expect(line(false)).toBe(line(true).replace("<syntaxString>", "<syntaxVariable>"));
-    expect(line(false)).toContain("<syntaxVariable>test-model");
+    expect(line(tokenTheme)).toContain("<syntaxString>test-model");
+    expect(line(greenStrings)).toBe(line(tokenTheme).replace("<syntaxString>", "<syntaxVariable>"));
   });
 
   it("paints both brackets around the branch in the same muted span", () => {

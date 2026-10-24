@@ -31,7 +31,11 @@ export type FooterState = {
   cache: number | undefined;
 };
 
-const modelToken = (theme: ThemeLike): ThemeToken => (theme.panels ? "syntaxString" : "syntaxVariable");
+const looksLikeGauge = (theme: ThemeLike, token: ThemeToken) =>
+  theme.fg(token, "x") === theme.fg("success", "x");
+
+const modelToken = (theme: ThemeLike): ThemeToken =>
+  looksLikeGauge(theme, "syntaxString") ? "syntaxVariable" : "syntaxString";
 
 const money = (cost: number) => formatCost(cost, { zero: "show" }) ?? "$0.00";
 
