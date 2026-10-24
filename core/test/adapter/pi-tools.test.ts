@@ -303,10 +303,17 @@ describe("themeLike colours", () => {
     const like = themeLike(recording);
 
     expect(
-      (["warning", "accent", "border", "thinkingOff", "thinkingXhigh"] as const).map((token) =>
-        like.fg(token, "x"),
+      (["warning", "accent", "border", "borderAccent", "thinkingOff", "thinkingXhigh"] as const).map(
+        (token) => like.fg(token, "x"),
       ),
-    ).toEqual(["<warning>x", "<accent>x", "<border>x", "<thinkingOff>x", "<thinkingXhigh>x"]);
+    ).toEqual([
+      "<warning>x",
+      "<accent>x",
+      "<border>x",
+      "<borderAccent>x",
+      "<thinkingOff>x",
+      "<thinkingXhigh>x",
+    ]);
   });
 
   it("paints the thinking-level tokens with pi's thinking colours", () => {

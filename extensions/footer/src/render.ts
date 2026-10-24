@@ -37,6 +37,8 @@ const SPEND: ThemeToken = "text";
 
 const PLACE: ThemeToken = "border";
 
+const BRANCH: ThemeToken = "borderAccent";
+
 const META: ThemeToken = "muted";
 
 const HINT: ThemeToken = "dim";
@@ -105,7 +107,7 @@ const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
 const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
   const folder = theme.fg(PLACE, folderName(cwd));
   const place = branch
-    ? `${folder}${theme.fg(META, " git:(")}${theme.fg("text", branch)}${theme.fg(META, ")")}`
+    ? `${folder}${theme.fg(META, " git:(")}${theme.fg(BRANCH, branch)}${theme.fg(META, ")")}`
     : folder;
 
   return sessionName ? `${place}${theme.fg(META, ` • ${sessionName}`)}` : place;
