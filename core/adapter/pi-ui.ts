@@ -21,7 +21,7 @@ import { createShowForm } from "./pi-form.ts";
 import { keyPress } from "./pi-keys.ts";
 import type { Notices } from "./pi-notice.ts";
 import { composeLabel, releaseLabel, storeLabel } from "./pi-thinking-label.ts";
-import { fitLines, piColor, textMetrics, themeLike } from "./pi-tools.ts";
+import { fitLines, piColor, themeLike } from "./pi-tools.ts";
 import { createTranscriptPane } from "./pi-transcript.ts";
 import { createWorkingUi } from "./pi-working.ts";
 
@@ -118,10 +118,6 @@ export const createThinkingLabelUi = (tuiCtx: () => ExtensionContext | undefined
   };
 };
 
-const STATUS_BORDER_COLUMNS = 5;
-
-const SPINNER_COLUMNS = 2;
-
 export const createUi = (
   state: HostState,
   stdout: TerminalOut,
@@ -134,18 +130,6 @@ export const createUi = (
   let lastTui: TUI | undefined;
 
   const tuiCtx = () => tuiContext(state);
-
-  const terminalColumns = () => {
-    const ctx = tuiCtx();
-
-    if (!ctx) {
-      return undefined;
-    }
-
-    lastTui ??= captureTui(ctx);
-
-    return lastTui?.terminal.columns;
-  };
 
   const setWidget: HostUi["setWidget"] = (key, render) => {
     const ctx = tuiCtx();
@@ -280,14 +264,6 @@ export const createUi = (
     setFooter: createFooterSetter(tuiCtx),
     keyText: (binding) => keyText(binding as Keybinding),
     setHiddenThinkingLabel: thinkingLabel.setHiddenThinkingLabel,
-    workingColumns: () => {
-      const columns = terminalColumns();
-
-      return columns === undefined
-        ? undefined
-        : columns - editor.frameColumns(columns) - STATUS_BORDER_COLUMNS - SPINNER_COLUMNS;
-    },
-    metrics: textMetrics,
     onKeyPress: (listener) =>
       tuiCtx()?.ui.onTerminalInput((data) => {
         if (!isKeyRelease(data) && !data.startsWith("\x1b[<") && !data.startsWith("\x1b[M")) {

@@ -24,7 +24,6 @@ import {
   type NotifyChannel,
   type OverlayFactory,
   type Phase,
-  type PhaseDetail,
   type PromptTokens,
   type RoutedMessage,
   type SessionControl,
@@ -119,8 +118,8 @@ export type FakeHost = Host & {
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
   agentStart(): void;
-  phases: { phase: Phase; detail: PhaseDetail }[];
-  setPhase(phase: Phase, detail?: PhaseDetail): void;
+  phases: Phase[];
+  setPhase(phase: Phase): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
@@ -136,7 +135,6 @@ export type FakeHost = Host & {
   entryRenderers: Map<string, EntryRender>;
   toolRows?: ToolRows;
   thinkingLabels: { label: string | undefined; hint?: string }[];
-  workingColumns?: number;
   messageRenderers: Map<string, MessageRender>;
   renderMessage(
     customType: string,
@@ -165,7 +163,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
-  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: { name: string; args?: string }[] = [];
@@ -187,7 +185,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   };
   let stale = false;
   let settling = false;
-  let currentPhase: { phase: Phase; detail: PhaseDetail } = { phase: "idle", detail: {} };
+  let currentPhase: Phase = "idle";
 
   const control: SessionControl = {
     newSession: async (options) => {
@@ -430,8 +428,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       setHiddenThinkingLabel: (label, hint) => {
         host.thinkingLabels.push(hint === undefined ? { label } : { label, hint });
       },
-      workingColumns: () => host.workingColumns,
-      metrics: textMetrics,
     },
     registerTool: (spec) => {
       host.tools.set(spec.name, spec as unknown as ToolSpec<never, never>);
@@ -578,7 +574,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       await spec.run(args, control);
     },
     shutdown: async (reason = "quit") => {
-      currentPhase = { phase: "idle", detail: {} };
+      currentPhase = "idle";
 
       await shutdownHandlers.reduce<Promise<void>>(
         (chain, handler) => chain.then(() => handler(reason)),
@@ -639,16 +635,16 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     onPhase: (handler) => {
       phaseHandlers.push(handler);
     },
-    setPhase: (phase, detail = {}) => {
-      if (currentPhase.phase === phase && currentPhase.detail.toolName === detail.toolName) {
+    setPhase: (phase) => {
+      if (currentPhase === phase) {
         return;
       }
 
-      currentPhase = { phase, detail };
-      host.phases.push({ phase, detail });
+      currentPhase = phase;
+      host.phases.push(phase);
 
       phaseHandlers.forEach((handler) => {
-        handler(phase, detail);
+        handler(phase);
       });
     },
     footerRefreshes: 0,

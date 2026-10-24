@@ -1,6 +1,6 @@
-import type { Phase, PhaseDetail, RunningTool } from "./contract.ts";
+import type { Phase } from "./contract.ts";
 
-export type PhaseState = { phase: Phase; running: Map<string, RunningTool> };
+export type PhaseState = { phase: Phase; running: ReadonlySet<string> };
 
 type DeltaBlock = "text" | "thinking" | "toolcall";
 
@@ -12,7 +12,7 @@ export type PhaseEvent =
   | { type: ClearingType }
   | { type: "delta"; block: DeltaBlock; edge: DeltaEdge }
   | { type: "message_end" }
-  | { type: "tool_start"; id: string; tool: RunningTool }
+  | { type: "tool_start"; id: string }
   | { type: "tool_end"; id: string };
 
 export const ASSISTANT_DELTA_TYPES = [
@@ -44,7 +44,7 @@ const CLEARING: Record<ClearingType, Phase> = {
   agent_settled: "idle",
 };
 
-export const initialPhase = (): PhaseState => ({ phase: "idle", running: new Map() });
+export const initialPhase = (): PhaseState => ({ phase: "idle", running: new Set() });
 
 export const deltaEvent = (assistantEventType: string): PhaseEvent | undefined =>
   DELTAS.get(assistantEventType);
@@ -53,7 +53,7 @@ const withPhase = (state: PhaseState, phase: Phase): PhaseState =>
   state.phase === phase ? state : { phase, running: state.running };
 
 const cleared = (state: PhaseState, phase: Phase): PhaseState =>
-  state.phase === phase && state.running.size === 0 ? state : { phase, running: new Map() };
+  state.phase === phase && state.running.size === 0 ? state : { phase, running: new Set() };
 
 export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState => {
   if (event.type === "delta") {
@@ -65,7 +65,7 @@ export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState =>
   }
 
   if (event.type === "tool_start") {
-    return { phase: "tool", running: new Map(state.running).set(event.id, event.tool) };
+    return { phase: "tool", running: new Set(state.running).add(event.id) };
   }
 
   if (event.type === "tool_end") {
@@ -73,7 +73,7 @@ export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState =>
       return state;
     }
 
-    const running = new Map(state.running);
+    const running = new Set(state.running);
 
     running.delete(event.id);
 
@@ -81,14 +81,4 @@ export const reducePhase = (state: PhaseState, event: PhaseEvent): PhaseState =>
   }
 
   return cleared(state, CLEARING[event.type]);
-};
-
-export const detailOf = (state: PhaseState): PhaseDetail => {
-  if (state.running.size === 0) {
-    return {};
-  }
-
-  const tools = [...state.running.values()];
-
-  return { toolName: tools.at(-1)?.name, tools };
 };

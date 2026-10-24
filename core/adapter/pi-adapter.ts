@@ -14,7 +14,6 @@ import type {
   Host,
   IdleInfo,
   Phase,
-  PhaseDetail,
   SessionControl,
   SessionInfo,
   ShutdownReason,
@@ -27,12 +26,12 @@ import { createEditorHooks } from "./pi-editor.ts";
 import { entryHost } from "./pi-entries.ts";
 import { footerHost } from "./pi-footer.ts";
 import { createNotices, syncNotices } from "./pi-notice.ts";
-import { deltaEvent, detailOf, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
+import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./pi-phase.ts";
 import { recordPad } from "./pi-row-component.ts";
 import { insideChildSession } from "./pi-scope.ts";
 import { applyPromptSections, createPromptSections } from "./pi-sections.ts";
 import { createSkillInventory, type SkillFile } from "./pi-skills.ts";
-import { toolLabel, toolRowsHost } from "./pi-tool-rows.ts";
+import { toolRowsHost } from "./pi-tool-rows.ts";
 import { toPiTool } from "./pi-tools.ts";
 import { createThinkingLabelUi, createUi, type HostState, tuiContext } from "./pi-ui.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -113,7 +112,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
-  const phaseHandlers: ((phase: Phase, detail: PhaseDetail) => void)[] = [];
+  const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
@@ -129,30 +128,18 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     state.ctx = ctx;
   };
 
-  const labelled = (name: string) => {
-    const label = toolLabel(pi, name);
-
-    return label ? { label } : {};
-  };
-
   const applyPhase = (event: PhaseEvent) => {
     const next = reducePhase(phaseState, event);
-
-    if (next === phaseState) {
-      return;
-    }
-
-    const previous = phaseState;
-    const detail = detailOf(next);
+    const changed = next.phase !== phaseState.phase;
 
     phaseState = next;
 
-    if (previous.phase === next.phase && previous.running === next.running) {
+    if (!changed) {
       return;
     }
 
     phaseHandlers.forEach((handler) => {
-      handler(next.phase, detail);
+      handler(next.phase);
     });
   };
 
@@ -321,11 +308,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    applyPhase({
-      type: "tool_start",
-      id: event.toolCallId,
-      tool: { name: event.toolName, args: event.args, ...labelled(event.toolName) },
-    });
+    applyPhase({ type: "tool_start", id: event.toolCallId });
   });
 
   pi.on("tool_execution_end", (event, ctx) => {

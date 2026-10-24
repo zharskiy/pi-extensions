@@ -195,22 +195,6 @@ describe("createEditorHooks", () => {
     expect(working.filter((line) => line.includes("──")).length).toBe(2);
   });
 
-  it("counts the frame's columns only while it draws the editor", () => {
-    const { ctx, ui } = fakeCtx();
-    const hooks = createEditorHooks(() => ctx);
-
-    expect(hooks.frameColumns(40)).toBe(0);
-
-    hooks.setEditorFrame(frame);
-
-    expect(hooks.frameColumns(40)).toBe(6);
-    expect(hooks.frameColumns(13)).toBe(0);
-
-    ui.factory = undefined;
-
-    expect(hooks.frameColumns(40)).toBe(0);
-  });
-
   it("falls back to the plain editor below the minimum width", () => {
     const { ctx, ui } = fakeCtx();
 

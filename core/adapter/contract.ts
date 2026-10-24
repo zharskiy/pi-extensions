@@ -234,8 +234,6 @@ export type HostUi = {
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
   setHiddenThinkingLabel(label: string | undefined, hint?: string): void;
-  workingColumns(): number | undefined;
-  readonly metrics: Pick<ThemeLike, "width" | "truncate">;
 };
 
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
@@ -267,10 +265,6 @@ export type CommandSpec = {
 };
 
 export type Phase = "waiting" | "thinking" | "writing" | "toolArgs" | "tool" | "idle";
-
-export type RunningTool = { name: string; args: unknown; label?: string };
-
-export type PhaseDetail = { toolName?: string; tools?: RunningTool[] };
 
 export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 
@@ -336,7 +330,7 @@ export type Host = {
   sessionUsage(file?: string): UsageTotals;
   session(): SessionInfo;
   onAgentStart(handler: () => void): void;
-  onPhase(handler: (phase: Phase, detail: PhaseDetail) => void): void;
+  onPhase(handler: (phase: Phase) => void): void;
   onDialog(handler: (event: DialogEvent) => void): void;
   context(): ContextSnapshot;
   model(): ModelInfo | undefined;

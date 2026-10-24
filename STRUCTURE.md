@@ -107,7 +107,7 @@ pi-extensions/
 │   │   ├── src/                 # index, ledger, footer, spending
 │   │   ├── test/
 │   │   └── README.md
-│   ├── working-indicator/       # current activity and prompt time in the working line
+│   ├── working-indicator/       # rotating verb and prompt time in the working line
 │   │   ├── src/                 # index, working-indicator
 │   │   ├── test/
 │   │   └── README.md
