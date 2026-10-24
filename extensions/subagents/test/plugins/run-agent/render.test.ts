@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ThemeLike, ToolRender, ToolResult } from "../../../../../core/adapter/contract.ts";
 import { flush, plainTheme, taggedTheme } from "../../../../../core/test/helpers/fakes.ts";
+import type { ThemeLike, ToolRender, ToolResult } from "../../../../../pi-adapter/index.ts";
 import type { AgentRecord, AgentRegistry, AgentState } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";

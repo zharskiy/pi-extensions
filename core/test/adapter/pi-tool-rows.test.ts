@@ -10,16 +10,16 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { ToolCallView, ToolRows } from "../../adapter/contract.ts";
-import { abortedText } from "../../adapter/pi-row-component.ts";
+import type { ToolCallView, ToolRows } from "../../../pi-adapter/index.ts";
+import { abortedText } from "../../../pi-adapter/tools/pi-row-component.ts";
 import {
   applyToolRows,
   mcpLabel,
   rowRenderers,
   toolLabel,
   toolRowsHost,
-} from "../../adapter/pi-tool-rows.ts";
-import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
+} from "../../../pi-adapter/tools/pi-tool-rows.ts";
+import type { PiToolRenderContext } from "../../../pi-adapter/tools/pi-tools.ts";
 import { initRenderTheme, plainPiTheme } from "./render-theme.ts";
 import { piRenderContext, renderTool } from "./tool-rows.ts";
 

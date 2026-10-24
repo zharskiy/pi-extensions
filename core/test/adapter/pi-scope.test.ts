@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { childScope, insideChildSession } from "../../adapter/pi-scope.ts";
+import { childScope, insideChildSession } from "../../../pi-adapter/runtime/pi-scope.ts";
 
-type ScopeModule = typeof import("../../adapter/pi-scope.ts");
+type ScopeModule = typeof import("../../../pi-adapter/runtime/pi-scope.ts");
 
 const loadCopy = async (tag: string): Promise<ScopeModule> =>
-  import(new URL(`../../adapter/pi-scope.ts?copy=${tag}`, import.meta.url).href);
+  import(new URL(`../../../pi-adapter/runtime/pi-scope.ts?copy=${tag}`, import.meta.url).href);
 
 describe("child scope", () => {
   it("is outside a child session unless run inside the scope", async () => {
@@ -18,7 +18,7 @@ describe("child scope", () => {
   it("shares one store across separately loaded copies of the module", async () => {
     const copy = await loadCopy("second");
 
-    expect(copy).not.toBe(await import("../../adapter/pi-scope.ts"));
+    expect(copy).not.toBe(await import("../../../pi-adapter/runtime/pi-scope.ts"));
     expect(copy.childScope).toBe(childScope);
 
     const seen = await copy.childScope.run({ agentId: "a2" }, async () => [

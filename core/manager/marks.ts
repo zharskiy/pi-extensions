@@ -1,4 +1,4 @@
-import type { ThemeLike, ThemeToken } from "../adapter/contract.ts";
+import { CHILD_MARK, type ThemeLike, type ThemeToken } from "../../pi-adapter/index.ts";
 
 export const MARKS = {
   pending: "◌",
@@ -6,7 +6,7 @@ export const MARKS = {
   error: "✗",
   stopped: "⊘",
   info: "»",
-  child: "↳",
+  child: CHILD_MARK,
   pointer: "›",
 } as const;
 

@@ -5,7 +5,7 @@ import {
   type PhaseEvent,
   type PhaseState,
   reducePhase,
-} from "../../adapter/pi-phase.ts";
+} from "../../../pi-adapter/runtime/pi-phase.ts";
 
 const run = (events: PhaseEvent[], from: PhaseState = initialPhase()) => events.reduce(reducePhase, from);
 

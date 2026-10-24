@@ -39,4 +39,4 @@ Set `"channel": "off"`, or disable this extension's entry with `pi config` (it c
 
 ## Layout
 
-`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `core/adapter/` (repository root); `src/notifications.ts` holds the timers and the rules, `src/settings.ts` the settings schema and defaults, both depending only on `core/adapter/contract.ts` and `core/manager/`; `watchSettings` in `core/manager/settings.ts` reads the files. The busy and awaiting-input channel names are shared in `core/manager/channels.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry and builds the extension on the shared pi adapter in `pi-adapter/` (repository root); `src/notifications.ts` holds the timers and the rules, `src/settings.ts` the settings schema and defaults, both depending only on `pi-adapter/index.ts` and `core/manager/`; `watchSettings` in `core/manager/settings.ts` reads the files. The busy and awaiting-input channel names are shared in `core/manager/channels.ts`. Tests are under `test/`.

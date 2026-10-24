@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ViewComponent } from "../../../../../core/adapter/contract.ts";
 import { initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
+import type { ViewComponent } from "../../../../../pi-adapter/index.ts";
 import { agentsDirFor, MANIFEST_FILE } from "../../../src/model/paths.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentPanelPlugin } from "../../../src/plugins/agent-panel/index.ts";

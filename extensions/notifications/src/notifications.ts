@@ -1,10 +1,10 @@
-import type { Host, NotifyChannel } from "../../../core/adapter/contract.ts";
 import {
   AWAITING_INPUT_CHANNEL,
   BUSY_CHANNEL,
   parseAwaitingInput,
   parseBusySignal,
 } from "../../../core/manager/channels.ts";
+import type { Host, NotifyChannel } from "../../../pi-adapter/index.ts";
 import type { NotificationSettings } from "./settings.ts";
 
 const IDLE_TEXT = "pi is waiting for your input";

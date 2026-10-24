@@ -1,4 +1,4 @@
-import type { ThemeLike, WidgetHandle } from "../../../../../core/adapter/contract.ts";
+import type { ThemeLike, WidgetHandle } from "../../../../../pi-adapter/index.ts";
 import { errorText } from "../../components/format.ts";
 import { tickFor, watchAgents } from "../../components/refresh.ts";
 import type { TreeRow } from "../../components/tree.ts";

@@ -12,10 +12,10 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe } from "vitest";
-import type { AgentRuntime, AnyToolSpec, UsageTotals } from "../../adapter/contract.ts";
-import { replaceMainPrompt } from "../../adapter/main-prompt.ts";
-import { createPiRuntime, type SkillFile } from "../../adapter/pi-child.ts";
-import { toPiTool } from "../../adapter/pi-tools.ts";
+import { createPiRuntime, type SkillFile } from "../../../pi-adapter/child/pi-child.ts";
+import type { AgentRuntime, AnyToolSpec, UsageTotals } from "../../../pi-adapter/index.ts";
+import { replaceMainPrompt } from "../../../pi-adapter/prompt/main-prompt.ts";
+import { toPiTool } from "../../../pi-adapter/tools/pi-tools.ts";
 
 export const LIVE_TIMEOUT_MS = 180_000;
 

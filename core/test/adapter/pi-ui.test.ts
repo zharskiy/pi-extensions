@@ -1,12 +1,12 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { KeyPress, ViewComponent } from "../../adapter/contract.ts";
-import { createEditorHooks } from "../../adapter/pi-editor.ts";
-import { createNotices } from "../../adapter/pi-notice.ts";
-import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
-import { hiddenThinkingLabel } from "../../adapter/pi-thinking-label.ts";
-import { type HostState, tuiContext } from "../../adapter/pi-tui-context.ts";
-import { createThinkingLabelUi, createUi, notificationSequence } from "../../adapter/pi-ui.ts";
+import { createEditorHooks } from "../../../pi-adapter/editor/pi-editor.ts";
+import type { KeyPress, ViewComponent } from "../../../pi-adapter/index.ts";
+import { createNotices } from "../../../pi-adapter/ui/pi-notice.ts";
+import { OVERLAY_POLL_MS } from "../../../pi-adapter/ui/pi-overlay.ts";
+import { hiddenThinkingLabel } from "../../../pi-adapter/ui/pi-thinking-label.ts";
+import { type HostState, tuiContext } from "../../../pi-adapter/ui/pi-tui-context.ts";
+import { createThinkingLabelUi, createUi, notificationSequence } from "../../../pi-adapter/ui/pi-ui.ts";
 
 const BEL = String.fromCharCode(7);
 const ESC = String.fromCharCode(27);

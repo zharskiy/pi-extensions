@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Host } from "../adapter/contract.ts";
+import type { Host } from "../../pi-adapter/index.ts";
 import { errorText } from "./format.ts";
 import { isPlainObject } from "./guards.ts";
 

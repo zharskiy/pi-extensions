@@ -1,4 +1,4 @@
-import type { Host } from "../../../core/adapter/contract.ts";
+import type { Host } from "../../../pi-adapter/index.ts";
 
 const ALIASES = new Map([
   ["/continue", "/resume"],

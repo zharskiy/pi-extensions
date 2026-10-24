@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { KeyPress } from "../../adapter/contract.ts";
+import type { KeyPress } from "../../../pi-adapter/index.ts";
 import { multiSelectForm } from "../../manager/multi-select.ts";
 import { plainTheme } from "../helpers/fakes.ts";
 import { char, key } from "../helpers/keys.ts";

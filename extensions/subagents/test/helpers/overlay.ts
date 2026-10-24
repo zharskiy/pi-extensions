@@ -1,17 +1,17 @@
 import { stripVTControlCharacters } from "node:util";
-import type {
-  AnyToolSpec,
-  KeyPress,
-  OverlayApi,
-  ThemeLike,
-  ViewComponent,
-} from "../../../../core/adapter/contract.ts";
 import {
   parseSessionLines,
   promptRecordEntry,
   realOverlayParts,
 } from "../../../../core/test/adapter/offline.ts";
 import { type FakeHost, plainTheme, taggedTheme } from "../../../../core/test/helpers/fakes.ts";
+import type {
+  AnyToolSpec,
+  KeyPress,
+  OverlayApi,
+  ThemeLike,
+  ViewComponent,
+} from "../../../../pi-adapter/index.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 
 export const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());

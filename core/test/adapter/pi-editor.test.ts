@@ -7,8 +7,8 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EditorFrame, KeyPress, ThemeToken } from "../../adapter/contract.ts";
-import { createEditorHooks } from "../../adapter/pi-editor.ts";
+import { createEditorHooks } from "../../../pi-adapter/editor/pi-editor.ts";
+import type { EditorFrame, KeyPress, ThemeToken } from "../../../pi-adapter/index.ts";
 
 type Factory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
@@ -107,7 +107,7 @@ const historyOf = (hooked: CustomEditor) => (hooked as unknown as { history: str
 const adapterCopy = async () => {
   vi.resetModules();
 
-  const copy = await import("../../adapter/pi-editor.ts");
+  const copy = await import("../../../pi-adapter/editor/pi-editor.ts");
 
   return copy.createEditorHooks;
 };

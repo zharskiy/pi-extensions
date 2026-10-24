@@ -1,4 +1,4 @@
-import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
+import type { KeyPress, ThemeLike } from "../../pi-adapter/index.ts";
 import type { KeyHint } from "./hints.ts";
 import { PAD, prefixed } from "./layout.ts";
 import { pointerMark } from "./marks.ts";

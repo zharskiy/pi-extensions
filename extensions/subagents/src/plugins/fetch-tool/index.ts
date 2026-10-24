@@ -1,4 +1,4 @@
-import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
+import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import type { Settings } from "../../model/settings.ts";
 import { type FetchedPage, fetchPage } from "./fetch.ts";

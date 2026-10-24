@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike, ThemeToken, ToolCallView } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import type { ThemeLike, ThemeToken, ToolCallView } from "../../../pi-adapter/index.ts";
 import { diffCounts, parseDiff } from "../src/diff.ts";
 import { numbered, rows } from "./helpers.ts";
 

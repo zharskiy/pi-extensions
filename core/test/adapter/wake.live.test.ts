@@ -12,8 +12,8 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import type { Host } from "../../adapter/contract.ts";
-import { createPiExtension } from "../../adapter/pi-adapter.ts";
+import type { Host } from "../../../pi-adapter/index.ts";
+import { createPiExtension } from "../../../pi-adapter/index.ts";
 import {
   describeLive,
   LIVE_TIMEOUT_MS,

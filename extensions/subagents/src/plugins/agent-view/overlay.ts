@@ -1,4 +1,4 @@
-import type { OverlayApi, ViewComponent } from "../../../../../core/adapter/contract.ts";
+import type { OverlayApi, ViewComponent } from "../../../../../pi-adapter/index.ts";
 import type { AgentRecord } from "../../model/types.ts";
 
 export type OverlayStart = { kind: "list" } | { kind: "view"; id: string; found: AgentRecord };

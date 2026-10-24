@@ -1,7 +1,7 @@
 import type { AutocompleteProviderFactory, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { createEditorInput } from "../../adapter/pi-editor-input.ts";
+import { createEditorInput } from "../../../pi-adapter/editor/pi-editor-input.ts";
 
 type Captured = (tui: unknown, theme: unknown) => unknown;
 

@@ -11,7 +11,6 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { expect } from "vitest";
-import type { UsageTotals } from "../../../../core/adapter/contract.ts";
 import { errorText } from "../../../../core/manager/format.ts";
 import {
   costOf,
@@ -23,6 +22,7 @@ import {
   waitUntil,
 } from "../../../../core/test/adapter/live.ts";
 import { createFakeHost } from "../../../../core/test/helpers/fakes.ts";
+import type { UsageTotals } from "../../../../pi-adapter/index.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Settings } from "../../src/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../src/plugins/run-agent/render.ts";

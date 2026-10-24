@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { diffRows, parseDiff } from "../src/diff.ts";
 
 const tagged: ThemeLike = {

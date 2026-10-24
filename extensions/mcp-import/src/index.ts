@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
+import { createPiExtension } from "../../../pi-adapter/index.ts";
 import { createMcpImport } from "./mcp-import.ts";
 
 const root = resolve(import.meta.dirname, "..");

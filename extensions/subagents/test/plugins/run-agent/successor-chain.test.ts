@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AnyToolSpec } from "../../../../../core/adapter/contract.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import type { AnyToolSpec } from "../../../../../pi-adapter/index.ts";
 import { MANIFEST_FILE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../adapter/contract.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { hintLines, keyHints } from "../../manager/hints.ts";
 import { padded, prefixed, rule } from "../../manager/layout.ts";
 import { plainTheme, taggedTheme } from "../helpers/fakes.ts";

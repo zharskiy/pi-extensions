@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { createFrame } from "../src/frame.ts";
 
 const ESC = String.fromCharCode(27);

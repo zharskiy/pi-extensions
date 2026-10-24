@@ -1,4 +1,4 @@
-import type { FormFactory, KeyPress, ThemeLike } from "../adapter/contract.ts";
+import type { FormFactory, KeyPress, ThemeLike } from "../../pi-adapter/index.ts";
 import { framed, type KeyHint } from "./hints.ts";
 import { PAD, padded, prefixed } from "./layout.ts";
 import { CANCEL_HINT, clampIndex } from "./list.ts";

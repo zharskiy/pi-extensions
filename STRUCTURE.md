@@ -6,47 +6,59 @@ Folder layout only. Runtime behavior is described in ARCHITECTURE.md.
 
 ```
 pi-extensions/
-├── core/                        # shared code, no extension-specific logic
-│   ├── adapter/                 # the only place that imports pi packages
-│   │   ├── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
+├── pi-adapter/                  # the only place that imports pi packages
+│   ├── index.ts                 # the public surface: contract types, createPiExtension, settleWithin, row geometry
+│   ├── types/                   # contract types
+│   │   └── contract.ts          # host/runtime interfaces and shared types, ThemeLike (fg over role tokens, bold, inverse, panels, width, truncate, wrap)
+│   ├── runtime/                 # pi session wiring
 │   │   ├── pi-adapter.ts        # createPiExtension: contract -> pi API
+│   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
+│   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
+│   │   ├── pi-shared.ts         # shared(name, init): one record per name on globalThis, shared by adapter copies
+│   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
+│   │   ├── messages.ts / route.ts # text (finalRunTexts: a child's final run), routing
+│   │   └── settle-within.ts     # settleWithin: wait for a promise at most ms
+│   ├── child/                   # child sessions, models, skills
 │   │   ├── pi-child.ts          # runtime that starts child agent sessions
 │   │   ├── pi-skills.ts         # skill inventory: loaded skill commands plus pi's default discovery
+│   │   ├── pi-models.ts / model-resolver.ts  # model catalog (availableModels: credentialed models with
+│   │   │                        #   their thinking levels), matching
+│   │   └── pi-codemode.ts       # codemode worker cap (PI_CODEMODE_MAX_WORKERS), owned value shared by adapter copies
+│   ├── ui/                      # HostUi on pi-tui
 │   │   ├── pi-ui.ts             # HostUi: widgets, overlay, notify, key observation, thinking label, columns
 │   │   ├── pi-tui-context.ts    # HostState (current ctx and tools) and tuiContext (the ctx when in tui mode)
 │   │   ├── pi-form.ts           # HostUi.showForm: the inline form shell
 │   │   ├── pi-overlay.ts        # overlaysCleared: waits until no overlay is visible
 │   │   ├── pi-text-input.ts     # form TextInput over pi-tui's Editor, its theme and focus
-│   │   ├── pi-transcript.ts     # transcript pane, pi renderer capture
-│   │   ├── pi-tools.ts          # tool wrapping, themeLike (role tokens -> pi colours) and textMetrics
-│   │   │                        #   (width, truncate, wrap), fitLines (cut lines to a width)
 │   │   ├── pi-keys.ts           # KeyPress naming through pi keybinding ids
-│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓/Esc hooks, key capture
-│   │   ├── pi-editor-history.ts # ↑ input history shared by every editor, seeded on resume and fork
-│   │   ├── pi-editor-input.ts   # editor submit key, command completion, re-submit
 │   │   ├── pi-footer.ts         # custom footer, live context/model/thinking getters
 │   │   ├── pi-notice.ts         # HostUi.setNotice: one-line notices between the editor and the footer
+│   │   ├── pi-thinking-label.ts # hidden thinking label: composed hint, record on globalThis, OSC 133 prefix
+│   │   ├── pi-working.ts        # working message and visibility (HostUi)
+│   │   └── row-layout.ts        # PAD, CHILD_COLUMN, CHILD_MARK, isBlankLine, childLead: row geometry
+│   ├── editor/
+│   │   ├── pi-editor.ts         # editor subclass: optional EditorFrame, empty-←/↓/Esc hooks, key capture
+│   │   ├── pi-editor-history.ts # ↑ input history shared by every editor, seeded on resume and fork
+│   │   └── pi-editor-input.ts   # editor submit key, command completion, re-submit
+│   ├── tools/                   # tool registration and rendering
+│   │   ├── pi-tools.ts          # tool wrapping, themeLike (role tokens -> pi colours) and textMetrics
+│   │   │                        #   (width, truncate, wrap), fitLines (cut lines to a width)
+│   │   ├── pi-tool-rows.ts      # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins
+│   │   │                        #   included) in the self shell, shared with transcript panes
+│   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ↳), the
+│   │   │                        #   tool-rows record on globalThis and the shared output pad
+│   │   ├── pi-entries.ts        # Host.registerEntryRenderer and registerMessageRenderer over pi's renderers
+│   │   └── pi-transcript.ts     # transcript pane, pi renderer capture
+│   ├── context/
 │   │   ├── pi-context.ts        # Host.contextFacts and request usage, composed
 │   │   ├── pi-context-prompt.ts # prompt sections (replay or system prompt) and tools with source and exposure
 │   │   ├── pi-context-messages.ts # per-message and per-block token estimates
-│   │   ├── pi-usage.ts          # last and main request usage, main memoised on session and leaf
-│   │   ├── pi-entries.ts        # Host.registerEntryRenderer and registerMessageRenderer over pi's renderers
-│   │   ├── pi-thinking-label.ts # hidden thinking label: composed hint, record on globalThis, OSC 133 prefix
-│   │   ├── pi-row-component.ts  # RowComponent (padded row lines plus an indented pi body under ↳), the
-│   │   │                        #   tool-rows record on globalThis and the shared output pad
-│   │   ├── pi-tool-rows.ts      # Host.registerToolRows: a pi tool renderer resolver that draws rows (built-ins
-│   │   │                        #   included) in the self shell, shared with transcript panes
-│   │   ├── pi-models.ts / model-resolver.ts  # model catalog (availableModels: credentialed models with
-│   │   │                        #   their thinking levels), matching
-│   │   ├── pi-phase.ts          # turn phase reducer (waiting/thinking/writing/toolArgs/tool/idle)
-│   │   ├── pi-scope.ts          # child scope (no extension boots in an agent)
-│   │   ├── pi-shared.ts         # shared(name, init): one record per name on globalThis, shared by adapter copies
-│   │   ├── pi-codemode.ts       # codemode worker cap (PI_CODEMODE_MAX_WORKERS), owned value shared by adapter copies
-│   │   ├── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
-│   │   ├── pi-working.ts        # working message and visibility (HostUi)
-│   │   ├── main-prompt.ts       # rebuilds the main session system prompt
-│   │   ├── session-file.ts      # reads session jsonl: entries, transcripts, context tokens
-│   │   └── usage.ts / messages.ts / route.ts # usage sums, text (finalRunTexts: a child's final run), routing
+│   │   ├── usage.ts             # usage sums
+│   │   └── pi-usage.ts          # last and main request usage, main memoised on session and leaf
+│   └── prompt/
+│       ├── main-prompt.ts       # rebuilds the main session system prompt
+│       └── pi-sections.ts       # prompt sections shared by every adapter copy (main and agents), each with its owner
+├── core/                        # shared code, no extension-specific logic
 │   ├── manager/                 # pi-free shared code
 │   │   ├── extension-manager.ts # enables plugins in dependency order
 │   │   ├── plugin.ts / bus.ts   # plugin and typed event bus types
@@ -66,8 +78,8 @@ pi-extensions/
 │   │   ├── row.ts               # pi-native row layout: the 0/2/4 grid, row/rowChildren, titleLine,
 │   │   │                        #   failureSuffix, wrapChild, preview
 │   │   ├── guards.ts            # isPlainObject
-│   │   └── settings.ts / settle.ts  # settings (schema, file merge, session watch, readText), timeouts
-│   └── test/                    # mirrors core/adapter and core/manager
+│   │   └── settings.ts          # settings (schema, file merge, session watch, readText)
+│   └── test/                    # mirrors pi-adapter and core/manager
 │       ├── adapter/             # adapter tests, wake.live.test.ts, live.ts, render-theme.ts,
 │       │                        #   offline.ts (pi loaded offline for extension tests; `sessionFacts` for the live tests), tool-rows.ts
 │       │                        #   (tool rows rendered through pi for extension tests)
@@ -206,7 +218,7 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Conventions
 
-- Only `core/adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages; enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules, including that extension tests reach the adapter only through `contract.ts` and `core/test/adapter`.
+- Only `pi-adapter/**` (and its tests in `core/test/adapter/**`) may import pi packages, and everything else reaches it only through `pi-adapter/index.ts`; both enforced by biome (`noRestrictedImports`). `test/architecture.test.ts` enforces the other import and layout rules.
 - Each plugin folder has `index.ts` (the plugin) plus helpers; plugins never import each other.
 - Extensions never import each other; they only share `core/`. Cross-extension formats and channel names live in `core/manager/handoff.ts` and `core/manager/channels.ts`.
 - Tests live outside `src/` and mirror the source path (`src/plugins/x` -> `test/plugins/x`).
@@ -218,7 +230,7 @@ usage-report/       # reports agent usage to the spending channel
 
 ### Published vs development-only
 
-- Published: the explicit `files` list in `package.json`: `core/adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
+- Published: the explicit `files` list in `package.json`: `pi-adapter`, `core/manager`, `extensions/*/src/**`, `extensions/*/prompts/**`, `extensions/subagents/agents`, `extensions/*/README.md`, and the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md`, `AGENTS.md`. No tests, fixtures or snapshots are packed; CI fails if they appear in `npm pack`.
 - Entry points (`pi.extensions`): `extensions/{subagents,session-limits,spending,working-indicator,notifications,command-aliases,composer,questionnaire,style,context,footer,mcp-import,transcript}/src/index.ts`.
 - Development-only: `core/test`, `extensions/*/test`, `test/`, `.github/`, config files below.
 

@@ -1,4 +1,4 @@
-import type { EditorFrame, EditorLayout, ThemeLike } from "../../../core/adapter/contract.ts";
+import type { EditorFrame, EditorLayout, ThemeLike } from "../../../pi-adapter/index.ts";
 
 export const CHEVRON = "›";
 

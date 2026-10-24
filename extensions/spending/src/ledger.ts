@@ -1,5 +1,5 @@
-import { addUsage, emptyUsage, type UsageTotals } from "../../../core/adapter/contract.ts";
 import { parseUsageReport, type UsageReport } from "../../../core/manager/channels.ts";
+import { addUsage, emptyUsage, type UsageTotals } from "../../../pi-adapter/index.ts";
 
 export const USAGE_ENTRY = "pi-spending:usage";
 

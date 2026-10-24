@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, sep } from "node:path";
-import type { Host } from "../../../core/adapter/contract.ts";
 import { errorText, homeRelative } from "../../../core/manager/format.ts";
 import { projectSettingsPath, readText, userSettingsPath } from "../../../core/manager/settings.ts";
+import type { Host } from "../../../pi-adapter/index.ts";
 import {
   completeArgs,
   type ImportArgs,

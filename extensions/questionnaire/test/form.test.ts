@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { KeyPress } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import type { KeyPress } from "../../../pi-adapter/index.ts";
 import { answerText, type FormOutcome, type FormState, initialForm, pressKey } from "../src/form.ts";
 import { renderForm } from "../src/render.ts";
 import { char, key, PRIORITY, questions, SCOPE } from "./fixtures.ts";

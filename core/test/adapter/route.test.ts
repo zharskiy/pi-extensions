@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../../adapter/route.ts";
+import { formatRoutedMessage } from "../../../pi-adapter/index.ts";
 
 describe("routed messages", () => {
   it("puts the sender header on its own line before the text", () => {

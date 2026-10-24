@@ -1,7 +1,7 @@
-import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { DOT } from "../../../core/manager/layout.ts";
 import type { Mark } from "../../../core/manager/marks.ts";
 import { row, TITLE_COLUMN } from "../../../core/manager/row.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { bold, type Context, counted, failed, type Look, MORE, resultText, textArg } from "./look.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 

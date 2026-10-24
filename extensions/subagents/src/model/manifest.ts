@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Host } from "../../../../core/adapter/contract.ts";
+import type { Host } from "../../../../pi-adapter/index.ts";
 import { MANIFEST_FILE } from "./paths.ts";
 import { type AgentRecord, isClosed } from "./types.ts";
 

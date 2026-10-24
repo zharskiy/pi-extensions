@@ -1,8 +1,16 @@
-import { stripVTControlCharacters } from "node:util";
-import type { RowLines, ThemeLike, ThemeToken } from "../adapter/contract.ts";
+import {
+  CHILD_COLUMN,
+  childLead,
+  isBlankLine,
+  type RowLines,
+  type ThemeLike,
+  type ThemeToken,
+} from "../../pi-adapter/index.ts";
 import { appendHint } from "./hints.ts";
 import { cutStart, DOT, ELLIPSIS } from "./layout.ts";
-import { MARKS, type Mark, markGlyph } from "./marks.ts";
+import { type Mark, markGlyph } from "./marks.ts";
+
+export { CHILD_COLUMN } from "../../pi-adapter/index.ts";
 
 export type Styled = string | ((theme: ThemeLike) => string);
 
@@ -15,15 +23,11 @@ export const rowText = (render: RowRender, theme: ThemeLike) => (width: number) 
 
 export const TITLE_COLUMN = 2;
 
-export const CHILD_COLUMN = 4;
-
 export const NEST = 4;
 
 const MIN_TARGET = 8;
 
 const MAX_REASON = 32;
-
-export const isBlankLine = (line: string) => stripVTControlCharacters(line).trim() === "";
 
 const fitTo = (line: string, width: number, theme: ThemeLike) =>
   isBlankLine(line) ? "" : theme.truncate(line, Math.max(0, width));
@@ -161,8 +165,6 @@ const isRow = (child: RowChild): child is MarkedRow => typeof child === "object"
 const isParts = (title: MarkedRow["title"]): title is Omit<TitleParts, "mark"> => typeof title === "object";
 
 const joined = ({ prefix, text }: Placed) => (isBlankLine(text) ? "" : `${prefix}${text}`);
-
-export const childLead = (theme: ThemeLike) => `  ${theme.fg("dim", MARKS.child)} `;
 
 const childArea = (children: RowChild[], width: number, theme: ThemeLike): Placed[] => {
   const lead = childLead(theme);

@@ -1,6 +1,6 @@
-import type { ThemeLike, ThemeToken } from "../../../../core/adapter/contract.ts";
 import { counted, formatCost, formatDuration, formatTokens } from "../../../../core/manager/format.ts";
 import { DOT, PAD } from "../../../../core/manager/layout.ts";
+import type { ThemeLike, ThemeToken } from "../../../../pi-adapter/index.ts";
 import type { AgentRecord } from "../model/types.ts";
 import { displayWord, isStarting } from "./state-text.ts";
 

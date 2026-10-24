@@ -1,12 +1,6 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  SessionRecord,
-  ThemeLike,
-  ToolSpec,
-  ViewComponent,
-} from "../../../../../core/adapter/contract.ts";
 import {
   parseSessionLines,
   promptRecordEntry,
@@ -14,6 +8,7 @@ import {
 } from "../../../../../core/test/adapter/offline.ts";
 import { initRenderKeys, initRenderTheme } from "../../../../../core/test/adapter/render-theme.ts";
 import { type FakeHost, flush, plainTheme, usageOf } from "../../../../../core/test/helpers/fakes.ts";
+import type { SessionRecord, ThemeLike, ToolSpec, ViewComponent } from "../../../../../pi-adapter/index.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../src/model/paths.ts";
 import type { AgentRecord } from "../../../src/model/types.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";

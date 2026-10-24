@@ -1,5 +1,5 @@
-import type { Host, ToolSpec } from "../../../core/adapter/contract.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../core/manager/channels.ts";
+import type { Host, ToolSpec } from "../../../pi-adapter/index.ts";
 import { initialForm } from "./form.ts";
 import {
   errorResult,

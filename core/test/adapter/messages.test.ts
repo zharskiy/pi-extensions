@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finalRunTexts } from "../../adapter/messages.ts";
+import { finalRunTexts } from "../../../pi-adapter/runtime/messages.ts";
 
 const message = (role: string, content: unknown) => ({ type: "message", message: { role, content } });
 

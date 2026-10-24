@@ -56,8 +56,8 @@ const fixtures: Fixture[] = [
     sha: "aafb579",
     request:
       "When the composer or subagents install their custom editor, ↑ prompt history is lost on /reload and /new, and after /resume or /fork the earlier prompts of that session cannot be recalled either. pi's own editor keeps its history across all of these. Make our editor behave the same: keep the input history across reload and new, and on resume and fork seed it with the session's user messages.",
-    expected: ["core/adapter/pi-editor.ts"],
-    unscored: ["core/adapter/pi-adapter.ts", "ARCHITECTURE.md"],
+    expected: ["pi-adapter/editor/pi-editor.ts"],
+    unscored: ["pi-adapter/runtime/pi-adapter.ts", "ARCHITECTURE.md"],
   },
 ];
 

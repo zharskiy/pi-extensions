@@ -1,8 +1,8 @@
-import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { noun } from "../../../../../core/manager/format.ts";
 import { EXPAND_BINDING, expandHint } from "../../../../../core/manager/hints.ts";
 import { markOf } from "../../../../../core/manager/marks.ts";
 import { row, rowChildren, rowText } from "../../../../../core/manager/row.ts";
+import type { AnyToolSpec, ThemeLike, ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { type RowInput, renderRows } from "../../components/agent-row.ts";
 import type { Plugin } from "../../model/plugin.ts";
 import { type AgentRegistry, chainTerminal } from "../../model/types.ts";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike, ToolRender, ToolRenderState } from "../../../core/adapter/contract.ts";
 import { plainTheme, taggedTheme } from "../../../core/test/helpers/fakes.ts";
+import type { ThemeLike, ToolRender, ToolRenderState } from "../../../pi-adapter/index.ts";
 import { type QuestionnaireDetails, resultText } from "../src/result.ts";
 import { callText, resultSummary } from "../src/summary.ts";
 import { PRIORITY, questions, SCOPE } from "./fixtures.ts";

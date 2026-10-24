@@ -1,8 +1,8 @@
-import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../core/adapter/contract.ts";
 import { noun } from "../../../../../core/manager/format.ts";
 import { countLine, expandHint } from "../../../../../core/manager/hints.ts";
 import { type Mark, markOf } from "../../../../../core/manager/marks.ts";
 import { failureSuffix, type MarkedRow, NEST, row, TITLE_COLUMN } from "../../../../../core/manager/row.ts";
+import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../../pi-adapter/index.ts";
 import { chainSuffix, modelId } from "../../components/agent-row.ts";
 import {
   agentReceipt,

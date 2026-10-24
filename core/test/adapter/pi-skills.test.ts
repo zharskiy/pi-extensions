@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSkillInventory, type SkillFile } from "../../adapter/pi-skills.ts";
+import { createSkillInventory, type SkillFile } from "../../../pi-adapter/child/pi-skills.ts";
 
 const skill = (name: string, path = `/discovered/${name}/SKILL.md`): SkillFile => ({
   name,

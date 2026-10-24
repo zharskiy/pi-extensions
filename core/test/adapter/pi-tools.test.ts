@@ -17,8 +17,8 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { ThemeToken, ToolRenderState, ToolResult, ToolSpec } from "../../adapter/contract.ts";
-import { type PiToolRenderContext, themeLike, toPiTool } from "../../adapter/pi-tools.ts";
+import type { ThemeToken, ToolRenderState, ToolResult, ToolSpec } from "../../../pi-adapter/index.ts";
+import { type PiToolRenderContext, themeLike, toPiTool } from "../../../pi-adapter/tools/pi-tools.ts";
 import { plainPiTheme } from "./render-theme.ts";
 import { piRenderContext } from "./tool-rows.ts";
 

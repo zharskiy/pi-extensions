@@ -1,5 +1,5 @@
-import type { KeyPress } from "../../../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../../../core/test/helpers/fakes.ts";
+import type { KeyPress } from "../../../../../pi-adapter/index.ts";
 import { pressSetupKey, type SetupContext, type SetupState } from "../../../src/plugins/agent-setup/form.ts";
 import { renderSetup } from "../../../src/plugins/agent-setup/render.ts";
 

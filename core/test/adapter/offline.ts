@@ -1,11 +1,15 @@
-import type { TranscriptPane } from "../../adapter/contract.ts";
-import { contentParts, messageText } from "../../adapter/messages.ts";
-import { createTranscriptPane, type TranscriptPaneOptions } from "../../adapter/pi-transcript.ts";
-import { createScrollPane } from "../../adapter/pi-ui.ts";
-import { readSessionEntries, replaySystemMessages } from "../../adapter/session-file.ts";
+import type { TranscriptPane } from "../../../pi-adapter/index.ts";
+import { contentParts, messageText } from "../../../pi-adapter/runtime/messages.ts";
+import { readSessionEntries, replaySystemMessages } from "../../../pi-adapter/runtime/session-file.ts";
+import { createTranscriptPane, type TranscriptPaneOptions } from "../../../pi-adapter/tools/pi-transcript.ts";
+import { createScrollPane } from "../../../pi-adapter/ui/pi-ui.ts";
 
-export { formatRoutedMessage } from "../../adapter/route.ts";
-export { parseSessionLines, promptRecordEntry, readSessionFile } from "../../adapter/session-file.ts";
+export { formatRoutedMessage } from "../../../pi-adapter/index.ts";
+export {
+  parseSessionLines,
+  promptRecordEntry,
+  readSessionFile,
+} from "../../../pi-adapter/runtime/session-file.ts";
 
 export const realOverlayParts = (requestRender: () => void) => ({
   createTranscript: (options?: TranscriptPaneOptions): TranscriptPane =>

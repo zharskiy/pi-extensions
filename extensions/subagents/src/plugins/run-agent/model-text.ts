@@ -1,4 +1,4 @@
-import type { ModelChoice } from "../../../../../core/adapter/contract.ts";
+import type { ModelChoice } from "../../../../../pi-adapter/index.ts";
 import { formatTokens } from "../../components/format.ts";
 import { resolutionProblem, type UnresolvedModel } from "../../model/model-resolution.ts";
 

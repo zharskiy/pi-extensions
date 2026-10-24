@@ -1,5 +1,5 @@
-import type { PromptTokens } from "../../../core/adapter/contract.ts";
 import { isPlainObject } from "../../../core/manager/guards.ts";
+import type { PromptTokens } from "../../../pi-adapter/index.ts";
 import { type Breakdown, MESSAGE_KEYS, type Part } from "./buckets.ts";
 
 export type Snapshot = {

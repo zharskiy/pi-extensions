@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { StopReason, ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { flush } from "../../../../../core/test/helpers/fakes.ts";
+import type { StopReason, ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { contextStep } from "../../../src/plugins/limits/context-step.ts";

@@ -2,10 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RunMode } from "../../../core/adapter/contract.ts";
 import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { watchSettings } from "../../../core/manager/settings.ts";
 import { createFakeHost, type FakeHost } from "../../../core/test/helpers/fakes.ts";
+import type { RunMode } from "../../../pi-adapter/index.ts";
 import { createNotifications } from "../src/notifications.ts";
 import { defaults, SETTINGS_FILE, schema } from "../src/settings.ts";
 

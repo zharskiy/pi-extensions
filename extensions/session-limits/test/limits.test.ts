@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import type { RunMode } from "../../../core/adapter/contract.ts";
 import { BUSY_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flushTimers as flush } from "../../../core/test/helpers/fakes.ts";
+import type { RunMode } from "../../../pi-adapter/index.ts";
 import { conversationOnly } from "../src/conversation.ts";
 import { createLimits } from "../src/limits.ts";
 import { DEFAULT_LIMITS } from "../src/settings.ts";

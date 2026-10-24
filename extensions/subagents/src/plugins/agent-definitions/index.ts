@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SessionInfo } from "../../../../../core/adapter/contract.ts";
+import type { SessionInfo } from "../../../../../pi-adapter/index.ts";
 import { resolutionProblem } from "../../model/model-resolution.ts";
 import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../model/paths.ts";
 import type { Plugin } from "../../model/plugin.ts";

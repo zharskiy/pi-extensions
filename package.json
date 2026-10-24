@@ -22,7 +22,7 @@
     "transcript"
   ],
   "files": [
-    "core/adapter",
+    "pi-adapter",
     "core/manager",
     "extensions/*/src/**",
     "extensions/*/prompts/**",

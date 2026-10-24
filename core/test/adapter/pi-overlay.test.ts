@@ -1,6 +1,6 @@
 import { type Terminal, TuiMainScreen } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OVERLAY_POLL_MS, overlaysCleared } from "../../adapter/pi-overlay.ts";
+import { OVERLAY_POLL_MS, overlaysCleared } from "../../../pi-adapter/ui/pi-overlay.ts";
 
 const silentTerminal = (): Terminal =>
   ({

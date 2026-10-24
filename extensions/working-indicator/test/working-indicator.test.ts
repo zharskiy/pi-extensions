@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RunMode } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import type { RunMode } from "../../../pi-adapter/index.ts";
 import { createWorkingIndicator, TICK_MS, VERB_MS, VERBS } from "../src/working-indicator.ts";
 
 const setup = (mode: RunMode = "tui") => {

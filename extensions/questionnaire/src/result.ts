@@ -1,4 +1,4 @@
-import type { ToolResult } from "../../../core/adapter/contract.ts";
+import type { ToolResult } from "../../../pi-adapter/index.ts";
 
 export type QuestionOption = { value: string; label: string; description?: string };
 

@@ -1,4 +1,4 @@
-import type { AgentRuntime, Host } from "../adapter/contract.ts";
+import type { AgentRuntime, Host } from "../../pi-adapter/index.ts";
 import type { Bus, EventMap } from "./bus.ts";
 
 export type Services<S> = {

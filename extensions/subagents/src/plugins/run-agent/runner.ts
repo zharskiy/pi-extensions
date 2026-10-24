@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { readText } from "../../../../../core/manager/settings.ts";
 import {
   type AgentRuntime,
   type AnyToolSpec,
@@ -9,11 +10,10 @@ import {
   type RoutedMessage,
   type SessionInfo,
   type StopReason,
+  settleWithin,
   splitModelRequest,
   type UsageTotals,
-} from "../../../../../core/adapter/contract.ts";
-import { readText } from "../../../../../core/manager/settings.ts";
-import { settleWithin } from "../../../../../core/manager/settle.ts";
+} from "../../../../../pi-adapter/index.ts";
 import { errorText } from "../../components/format.ts";
 import { ALL } from "../../model/agent-schema.ts";
 import type { Bus } from "../../model/events.ts";

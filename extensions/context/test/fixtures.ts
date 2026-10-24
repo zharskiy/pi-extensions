@@ -1,4 +1,4 @@
-import type { ContextFacts, PromptTokens } from "../../../core/adapter/contract.ts";
+import type { ContextFacts, PromptTokens } from "../../../pi-adapter/index.ts";
 import type { Breakdown } from "../src/buckets.ts";
 import type { Snapshot } from "../src/snapshot.ts";
 

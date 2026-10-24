@@ -1,4 +1,4 @@
-import type { Host } from "../../../core/adapter/contract.ts";
+import type { Host } from "../../../pi-adapter/index.ts";
 import { createFrame } from "./frame.ts";
 
 export const createComposer = (host: Host) => {

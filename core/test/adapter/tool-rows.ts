@@ -16,10 +16,10 @@ import {
   ToolExecutionComponent,
   type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
-import type { ToolRows } from "../../adapter/contract.ts";
-import { rowRenderers, toolRowsHost } from "../../adapter/pi-tool-rows.ts";
-import type { PiToolRenderContext } from "../../adapter/pi-tools.ts";
-import { createTranscriptPane } from "../../adapter/pi-transcript.ts";
+import type { ToolRows } from "../../../pi-adapter/index.ts";
+import { rowRenderers, toolRowsHost } from "../../../pi-adapter/tools/pi-tool-rows.ts";
+import type { PiToolRenderContext } from "../../../pi-adapter/tools/pi-tools.ts";
+import { createTranscriptPane } from "../../../pi-adapter/tools/pi-transcript.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 const themes = await import(

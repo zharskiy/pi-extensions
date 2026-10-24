@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike, ThemeToken } from "../../adapter/contract.ts";
+import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
 import { appendHint, countLine, expandHint } from "../../manager/hints.ts";
 import { cutStart } from "../../manager/layout.ts";
 import { MARKS, type Mark } from "../../manager/marks.ts";

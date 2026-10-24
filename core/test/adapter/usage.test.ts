@@ -1,6 +1,6 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { contextOf, sumAssistantUsage, sumUsage } from "../../adapter/usage.ts";
+import { contextOf, sumAssistantUsage, sumUsage } from "../../../pi-adapter/context/usage.ts";
 
 const usage = (total: number) => ({
   input: 1,

@@ -1,5 +1,6 @@
 import {
   type AgentRuntime,
+  type CatalogModel,
   type ChildEvent,
   type ChildSession,
   type CodemodeShortfall,
@@ -20,6 +21,7 @@ import {
   type MessageDelivery,
   type MessageRender,
   type ModelInfo,
+  type ModelPreferences,
   type NewSessionOptions,
   type NotifyChannel,
   type OverlayFactory,
@@ -27,6 +29,7 @@ import {
   type PromptTokens,
   type RoutedMessage,
   type RowLines,
+  resolveModel,
   type SessionControl,
   type SessionInfo,
   type SessionRecord,
@@ -41,10 +44,9 @@ import {
   type ToolResult,
   type ToolRows,
   type ToolSpec,
+  textMetrics,
   type UsageTotals,
-} from "../../adapter/contract.ts";
-import { type CatalogModel, type ModelPreferences, resolveModel } from "../../adapter/model-resolver.ts";
-import { textMetrics } from "../../adapter/pi-tools.ts";
+} from "../../../pi-adapter/index.ts";
 import { type FakeForm, openFakeForm } from "./fake-form.ts";
 
 export const plainTheme: ThemeLike = {

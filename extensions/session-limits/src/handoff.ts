@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionInfo } from "../../../core/adapter/contract.ts";
 import { validateHandoff } from "../../../core/manager/handoff.ts";
+import type { SessionInfo } from "../../../pi-adapter/index.ts";
 
 const HANDOFF_STATUSES = ["done", "partial", "blocked"] as const;
 

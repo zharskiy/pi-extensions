@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RunMode } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import type { RunMode } from "../../../pi-adapter/index.ts";
 import { conversationOnly } from "../src/conversation.ts";
 
 const setup = (mode: RunMode) => {

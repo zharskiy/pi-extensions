@@ -1,4 +1,3 @@
-import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../core/adapter/contract.ts";
 import { formatDuration, shortPath } from "../../../core/manager/format.ts";
 import { isPlainObject } from "../../../core/manager/guards.ts";
 import { expandHint } from "../../../core/manager/hints.ts";
@@ -11,6 +10,7 @@ import {
   rowChildren,
   type TitleParts,
 } from "../../../core/manager/row.ts";
+import type { ThemeLike, ToolCallView, ToolRow, ToolRows } from "../../../pi-adapter/index.ts";
 import { codemodeLook } from "./codemode.ts";
 import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";
 import { genericLook } from "./generic.ts";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../adapter/contract.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import { keyHints } from "../../manager/hints.ts";
 import { TAB_SWITCH_HINT, tabBar, tabStep } from "../../manager/tabs.ts";
 import { plainTheme, taggedTheme } from "../helpers/fakes.ts";

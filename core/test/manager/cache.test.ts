@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../adapter/contract.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import {
   cacheHitPercent,
   cachePercentText,

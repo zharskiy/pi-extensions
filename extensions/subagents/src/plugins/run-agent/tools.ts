@@ -1,5 +1,5 @@
-import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { failureSuffix, row, type TitleParts } from "../../../../../core/manager/row.ts";
+import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { type AgentFrontmatter, ALL } from "../../model/agent-schema.ts";
 import {
   type AgentInternals,

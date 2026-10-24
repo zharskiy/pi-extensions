@@ -1,4 +1,10 @@
-import type { FormFactory, KeyPress, TextInput, ThemeLike, ViewComponent } from "../../adapter/contract.ts";
+import type {
+  FormFactory,
+  KeyPress,
+  TextInput,
+  ThemeLike,
+  ViewComponent,
+} from "../../../pi-adapter/index.ts";
 
 export type FakeForm = {
   view: ViewComponent;

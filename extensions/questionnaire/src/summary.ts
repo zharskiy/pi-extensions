@@ -1,8 +1,8 @@
-import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../core/adapter/contract.ts";
 import { counted } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
 import { markOf } from "../../../core/manager/marks.ts";
 import { type RowChild, row, rowChildren, rowText } from "../../../core/manager/row.ts";
+import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../pi-adapter/index.ts";
 import {
   type Answer,
   labelOf,

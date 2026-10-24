@@ -5,8 +5,8 @@ import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type EditorTheme, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../adapter/pi-adapter.ts";
-import { sharedPad } from "../../adapter/pi-row-component.ts";
+import { createPiExtension, createPiHost, mcpBuiltinLoaded } from "../../../pi-adapter/runtime/pi-adapter.ts";
+import { sharedPad } from "../../../pi-adapter/tools/pi-row-component.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;

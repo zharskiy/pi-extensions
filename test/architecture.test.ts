@@ -3,13 +3,12 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "..");
+const ADAPTER = join(ROOT, "pi-adapter");
+const ADAPTER_INDEX = join(ADAPTER, "index.ts");
 const CORE = join(ROOT, "core");
-const ADAPTER = join(CORE, "adapter");
 const MANAGER = join(CORE, "manager");
 const CORE_TESTS = join(CORE, "test");
 const EXTENSIONS = join(ROOT, "extensions");
-const CONTRACT = join(ADAPTER, "contract.ts");
-const PI_ADAPTER = join(ADAPTER, "pi-adapter.ts");
 
 const exists = (path: string) => {
   try {
@@ -71,27 +70,22 @@ const extensionTests = () => extensionDirs().flatMap((extension) => sourceFiles(
 const isPiPackage = (specifier: string) =>
   specifier.startsWith("@earendil-works/") || specifier === "typebox";
 
-const isEntry = (file: string) =>
-  extensionDirs().some((extension) => file === join(extension, "src", "index.ts"));
-
 describe("architecture", () => {
-  it("outside core/adapter only the contract is imported, except pi-adapter by each extension's entry", () => {
+  it("outside pi-adapter only pi-adapter/index.ts is imported", () => {
     const offenders = importsIn([...coreCode(), ...extensionCode()])
-      .filter((entry) => !isInside(ADAPTER)(entry.file))
       .filter((entry) => entry.target !== undefined && isInside(ADAPTER)(entry.target))
-      .filter((entry) => entry.target !== CONTRACT)
-      .filter((entry) => !(entry.target === PI_ADAPTER && isEntry(entry.file)))
+      .filter((entry) => entry.target !== ADAPTER_INDEX)
       .map(describeImport);
 
     expect(offenders).toEqual([]);
   });
 
-  it("extension tests reach the adapter only through the contract and core/test/adapter", () => {
+  it("extension tests reach the adapter only through pi-adapter/index.ts and core/test/adapter", () => {
     const offenders = importsIn(extensionTests())
       .filter(
         (entry) =>
           isPiPackage(entry.specifier) ||
-          (entry.target !== undefined && isInside(ADAPTER)(entry.target) && entry.target !== CONTRACT),
+          (entry.target !== undefined && isInside(ADAPTER)(entry.target) && entry.target !== ADAPTER_INDEX),
       )
       .map(describeImport);
 
@@ -135,7 +129,16 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps every test outside src, core/adapter and core/manager", () => {
+  it("pi-adapter never imports core or extensions", () => {
+    const offenders = importsIn(sourceFiles(ADAPTER))
+      .filter((entry) => entry.target !== undefined)
+      .filter((entry) => isInside(CORE)(entry.target ?? "") || isInside(EXTENSIONS)(entry.target ?? ""))
+      .map(describeImport);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps every test outside src, pi-adapter and core/manager", () => {
     const offenders = [...extensionCode(), ...sourceFiles(ADAPTER), ...sourceFiles(MANAGER)]
       .filter((file) => file.endsWith(".test.ts"))
       .map((file) => relative(ROOT, file));

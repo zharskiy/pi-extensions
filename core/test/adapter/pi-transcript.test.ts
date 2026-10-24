@@ -1,10 +1,10 @@
 import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../adapter/contract.ts";
-import { releaseLabel, storeLabel } from "../../adapter/pi-thinking-label.ts";
-import { toolRowsHost } from "../../adapter/pi-tool-rows.ts";
-import { capturePiRenderers, createTranscriptPane } from "../../adapter/pi-transcript.ts";
+import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../../../pi-adapter/index.ts";
+import { toolRowsHost } from "../../../pi-adapter/tools/pi-tool-rows.ts";
+import { capturePiRenderers, createTranscriptPane } from "../../../pi-adapter/tools/pi-transcript.ts";
+import { releaseLabel, storeLabel } from "../../../pi-adapter/ui/pi-thinking-label.ts";
 import { MARKS, markOf } from "../../manager/marks.ts";
 import { initRenderTheme } from "./render-theme.ts";
 import { renderPaneTool, visible } from "./tool-rows.ts";

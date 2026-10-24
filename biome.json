@@ -44,7 +44,7 @@
       }
     },
     {
-      "includes": ["core/**", "extensions/*/src/**", "!core/adapter/**", "!core/test/**"],
+      "includes": ["pi-adapter/**"],
       "linter": {
         "rules": {
           "style": {
@@ -53,8 +53,52 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["@earendil-works/*", "typebox"],
-                    "message": "Only core/adapter/** may import pi packages."
+                    "group": ["**/extensions/**"],
+                    "message": "This layer must not import extensions."
+                  },
+                  {
+                    "group": ["**/extension-manager/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/ui-kit/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/shared/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/core/**"],
+                    "message": "pi-adapter imports nothing from the repo (R3)."
+                  },
+                  {
+                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "message": "Shipped code never imports test code."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["core/**", "extensions/*/src/**", "!core/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
                   }
                 ]
               }
@@ -73,8 +117,108 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["@earendil-works/*", "typebox"],
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
                     "message": "Only the adapter tests in core/test/adapter/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/*/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["extensions/*/*/*/*/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "Only pi-adapter/** may import pi packages."
+                  },
+                  {
+                    "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
+                    "message": "Import pi-adapter only through pi-adapter/index.ts."
                   }
                 ]
               }

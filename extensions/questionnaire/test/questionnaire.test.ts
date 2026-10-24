@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { RunMode } from "../../../core/adapter/contract.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../core/manager/channels.ts";
 import { createFakeHost, flush } from "../../../core/test/helpers/fakes.ts";
+import type { RunMode } from "../../../pi-adapter/index.ts";
 import { createQuestionnaire, QUESTIONNAIRE_SOURCE } from "../src/questionnaire.ts";
 import type { QuestionnaireDetails, QuestionnaireParams } from "../src/result.ts";
 import { ANSWER_ARM_MS } from "../src/view.ts";

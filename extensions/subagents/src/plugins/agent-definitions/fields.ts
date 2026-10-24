@@ -1,4 +1,4 @@
-import { splitModelRequest } from "../../../../../core/adapter/contract.ts";
+import { splitModelRequest } from "../../../../../pi-adapter/index.ts";
 import {
   type AgentFrontmatter,
   ALL,

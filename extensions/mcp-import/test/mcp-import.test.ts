@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { KeyPress } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import type { KeyPress } from "../../../pi-adapter/index.ts";
 import { createMcpImport } from "../src/mcp-import.ts";
 
 const roots: string[] = [];

@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../adapter/contract.ts";
+import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { noun } from "./format.ts";
 import { DOT, ELLIPSIS, PAD, rule } from "./layout.ts";
 import type { Styled } from "./row.ts";

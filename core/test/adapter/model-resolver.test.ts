@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitModelRequest } from "../../adapter/contract.ts";
-import { type CatalogModel, resolveModel } from "../../adapter/model-resolver.ts";
+import { type CatalogModel, resolveModel, splitModelRequest } from "../../../pi-adapter/index.ts";
 import { catalogModel } from "../helpers/fakes.ts";
 
 const catalog: CatalogModel[] = [

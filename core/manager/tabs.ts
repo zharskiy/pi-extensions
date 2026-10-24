@@ -1,4 +1,4 @@
-import type { KeyPress, ThemeLike } from "../adapter/contract.ts";
+import type { KeyPress, ThemeLike } from "../../pi-adapter/index.ts";
 import type { KeyHint } from "./hints.ts";
 
 export type Tab = { label: string; done: boolean };

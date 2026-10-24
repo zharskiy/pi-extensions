@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createWorkingUi } from "../../adapter/pi-working.ts";
+import { createWorkingUi } from "../../../pi-adapter/ui/pi-working.ts";
 
 const fakeCtx = () => {
   const messages: (string | undefined)[] = [];

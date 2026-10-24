@@ -1,10 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
-import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { homeRelative } from "../../../../../core/manager/format.ts";
 import { markOf } from "../../../../../core/manager/marks.ts";
 import { row, rowChildren, rowText } from "../../../../../core/manager/row.ts";
+import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { errorText } from "../../components/format.ts";
 import type { AgentRegistry, HandoffService } from "../../model/types.ts";
 

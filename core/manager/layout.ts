@@ -1,6 +1,6 @@
-import type { ThemeLike } from "../adapter/contract.ts";
+import { PAD, type ThemeLike } from "../../pi-adapter/index.ts";
 
-export const PAD = " ";
+export { PAD } from "../../pi-adapter/index.ts";
 
 export const DOT = " · ";
 

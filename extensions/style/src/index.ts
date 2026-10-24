@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
+import { createPiExtension } from "../../../pi-adapter/index.ts";
 import { createStyle } from "./style.ts";
 import { loadStyles } from "./styles.ts";
 

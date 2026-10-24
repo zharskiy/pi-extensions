@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SessionInfo } from "../../../core/adapter/contract.ts";
 import { createFakeHost } from "../../../core/test/helpers/fakes.ts";
+import type { SessionInfo } from "../../../pi-adapter/index.ts";
 import { createContext, SNAPSHOT_ENTRY } from "../src/context.ts";
 import { facts, STAMP, snapshot, usage } from "./fixtures.ts";
 

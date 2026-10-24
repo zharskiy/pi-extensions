@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import type { AnyToolSpec } from "../../../../core/adapter/contract.ts";
 import { describeLive, openMainLikeSession, PI_DEFAULT_TOOLS } from "../../../../core/test/adapter/live.ts";
+import type { AnyToolSpec } from "../../../../pi-adapter/index.ts";
 import { defaultSettings } from "../../src/model/settings.ts";
 import { loadDefinitions } from "../../src/plugins/agent-definitions/loader.ts";
 import type { RunAgentParams } from "../../src/plugins/run-agent/render.ts";

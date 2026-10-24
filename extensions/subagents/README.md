@@ -248,7 +248,7 @@ npm run check        # tsc, biome, vitest
 PI_LIVE_MODEL=provider/id[:thinking] npm run test:live    # real agents, local only, costs money
 ```
 
-`src/index.ts` is the single entry: it computes the extension's root, reads the settings and hands the plugin list from `src/plugins.ts` to the shared manager and pi adapter in `core/` (repository root). Only `core/adapter/` talks to pi. Plugins in `src/plugins/` use the shared contract (`core/adapter/contract.ts`) and the typed bus; `src/model/` holds the subagents types, bus events, service map, settings schema and paths. Plugin and component tests are under `test/`; adapter and manager tests live in `core/test/`.
+`src/index.ts` is the single entry: it computes the extension's root, reads the settings and hands the plugin list from `src/plugins.ts` to the shared manager in `core/manager/` and the pi adapter in `pi-adapter/`. Only `pi-adapter/` talks to pi. Plugins in `src/plugins/` use the shared contract (`pi-adapter/index.ts`) and the typed bus; `src/model/` holds the subagents types, bus events, service map, settings schema and paths. Plugin and component tests are under `test/`; adapter and manager tests live in `core/test/`.
 
 ### Live tests
 

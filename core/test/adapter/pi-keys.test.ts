@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyPress } from "../../adapter/pi-keys.ts";
+import { keyPress } from "../../../pi-adapter/ui/pi-keys.ts";
 
 const ESC = String.fromCharCode(27);
 

@@ -1,7 +1,7 @@
-import type { ContextSnapshot, ThemeToken } from "../../../core/adapter/contract.ts";
 import { formatTokens, formatWindow } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
 import { MARKS } from "../../../core/manager/marks.ts";
+import type { ContextSnapshot, ThemeToken } from "../../../pi-adapter/index.ts";
 
 type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 

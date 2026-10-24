@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { CODEMODE_WORKERS_SETTING, reserveCodemodeWorkers } from "../../adapter/pi-codemode.ts";
+import { CODEMODE_WORKERS_SETTING, reserveCodemodeWorkers } from "../../../pi-adapter/child/pi-codemode.ts";
 
-type CodemodeModule = typeof import("../../adapter/pi-codemode.ts");
+type CodemodeModule = typeof import("../../../pi-adapter/child/pi-codemode.ts");
 
 const loadCopy = async (tag: string): Promise<CodemodeModule> =>
-  import(new URL(`../../adapter/pi-codemode.ts?copy=${tag}`, import.meta.url).href);
+  import(new URL(`../../../pi-adapter/child/pi-codemode.ts?copy=${tag}`, import.meta.url).href);
 
 const original = process.env[CODEMODE_WORKERS_SETTING];
 

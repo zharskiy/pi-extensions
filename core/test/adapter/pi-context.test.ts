@@ -4,8 +4,8 @@ import { join } from "node:path";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { contextHost } from "../../adapter/pi-context.ts";
-import type { HostState } from "../../adapter/pi-tui-context.ts";
+import { contextHost } from "../../../pi-adapter/context/pi-context.ts";
+import type { HostState } from "../../../pi-adapter/ui/pi-tui-context.ts";
 
 const offlineModel = {
   id: "offline",

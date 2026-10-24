@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionLines, replaySystemMessages } from "../../adapter/session-file.ts";
+import { parseSessionLines, replaySystemMessages } from "../../../pi-adapter/runtime/session-file.ts";
 
 const usage = (input: number, output: number, cacheRead: number) => ({
   input,

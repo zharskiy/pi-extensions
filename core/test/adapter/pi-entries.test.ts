@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import type * as pi from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { entryHost } from "../../adapter/pi-entries.ts";
+import { entryHost } from "../../../pi-adapter/tools/pi-entries.ts";
 
 const fakeApi = () => {
   const renderers = new Map<string, pi.EntryRenderer>();

@@ -1,4 +1,4 @@
-import type { FormApi, KeyPress, ViewComponent } from "../../../core/adapter/contract.ts";
+import type { FormApi, KeyPress, ViewComponent } from "../../../pi-adapter/index.ts";
 import {
   answerOf,
   answerText,

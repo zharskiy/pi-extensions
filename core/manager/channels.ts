@@ -1,4 +1,4 @@
-import type { UsageTotals } from "../adapter/contract.ts";
+import type { UsageTotals } from "../../pi-adapter/index.ts";
 import { isPlainObject } from "./guards.ts";
 
 export const BUSY_CHANNEL = "pi:busy";

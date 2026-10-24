@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { settleWithin } from "../../manager/settle.ts";
+import { settleWithin } from "../../../pi-adapter/index.ts";
 
 describe("settleWithin", () => {
   it("resolves when the promise settles, even by rejecting", async () => {

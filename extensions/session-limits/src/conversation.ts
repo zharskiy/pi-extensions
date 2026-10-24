@@ -1,4 +1,4 @@
-import type { Host, RunMode } from "../../../core/adapter/contract.ts";
+import type { Host, RunMode } from "../../../pi-adapter/index.ts";
 
 const CONVERSATIONAL: ReadonlySet<RunMode> = new Set(["tui", "rpc"]);
 

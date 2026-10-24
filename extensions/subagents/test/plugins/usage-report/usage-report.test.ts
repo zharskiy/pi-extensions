@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ToolSpec } from "../../../../../core/adapter/contract.ts";
 import { USAGE_CHANNEL } from "../../../../../core/manager/channels.ts";
 import { type FakeChild, flush, usageOf } from "../../../../../core/test/helpers/fakes.ts";
+import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
 import { agentDefinitionsPlugin } from "../../../src/plugins/agent-definitions/index.ts";
 import { agentRegistryPlugin } from "../../../src/plugins/agent-registry/index.ts";
 import { runAgentPlugin } from "../../../src/plugins/run-agent/index.ts";

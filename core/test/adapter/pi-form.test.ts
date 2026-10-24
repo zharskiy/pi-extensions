@@ -1,9 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, truncateToWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FormApi, KeyPress, TextInput, ViewComponent } from "../../adapter/contract.ts";
-import { createShowForm } from "../../adapter/pi-form.ts";
-import { OVERLAY_POLL_MS } from "../../adapter/pi-overlay.ts";
+import type { FormApi, KeyPress, TextInput, ViewComponent } from "../../../pi-adapter/index.ts";
+import { createShowForm } from "../../../pi-adapter/ui/pi-form.ts";
+import { OVERLAY_POLL_MS } from "../../../pi-adapter/ui/pi-overlay.ts";
 import { plainPiTheme } from "./render-theme.ts";
 
 const ESC = String.fromCharCode(27);

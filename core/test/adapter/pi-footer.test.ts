@@ -2,11 +2,11 @@ import { stripVTControlCharacters } from "node:util";
 import { type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it } from "vitest";
-import { createEditorHooks } from "../../adapter/pi-editor.ts";
-import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../../adapter/pi-footer.ts";
-import { createNotices, NOTICE_WIDGET_KEY, syncNotices } from "../../adapter/pi-notice.ts";
-import type { HostState } from "../../adapter/pi-tui-context.ts";
-import { createUi } from "../../adapter/pi-ui.ts";
+import { createEditorHooks } from "../../../pi-adapter/editor/pi-editor.ts";
+import { createFooterSetter, FOOTER_WIDGET_KEY, footerHost } from "../../../pi-adapter/ui/pi-footer.ts";
+import { createNotices, NOTICE_WIDGET_KEY, syncNotices } from "../../../pi-adapter/ui/pi-notice.ts";
+import type { HostState } from "../../../pi-adapter/ui/pi-tui-context.ts";
+import { createUi } from "../../../pi-adapter/ui/pi-ui.ts";
 import { initRenderTheme } from "./render-theme.ts";
 
 const NOTICES_KEY = Symbol.for("pi-extensions.notices");

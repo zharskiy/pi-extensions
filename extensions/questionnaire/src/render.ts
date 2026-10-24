@@ -1,8 +1,8 @@
-import type { ThemeLike } from "../../../core/adapter/contract.ts";
 import { framed, type KeyHint } from "../../../core/manager/hints.ts";
 import { PAD, padded } from "../../../core/manager/layout.ts";
 import { CANCEL_HINT, listLines, SELECT_HINTS } from "../../../core/manager/list.ts";
 import { TAB_SWITCH_HINT, tabBar } from "../../../core/manager/tabs.ts";
+import type { ThemeLike } from "../../../pi-adapter/index.ts";
 import {
   allAnswered,
   answerOf,

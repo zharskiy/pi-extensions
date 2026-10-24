@@ -2,7 +2,6 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { afterAll } from "vitest";
-import type { AgentRuntime } from "../../../../core/adapter/contract.ts";
 import { createExtensionManager } from "../../../../core/manager/extension-manager.ts";
 import {
   catalogModel,
@@ -11,6 +10,7 @@ import {
   type FakeHost,
   flush,
 } from "../../../../core/test/helpers/fakes.ts";
+import type { AgentRuntime } from "../../../../pi-adapter/index.ts";
 import { NAMESPACE } from "../../src/model/paths.ts";
 import type { Plugin } from "../../src/model/plugin.ts";
 import { defaultSettings, type Settings } from "../../src/model/settings.ts";

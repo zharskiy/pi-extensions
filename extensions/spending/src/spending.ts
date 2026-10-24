@@ -1,6 +1,4 @@
 import { basename } from "node:path";
-
-import type { Host, UsageTotals } from "../../../core/adapter/contract.ts";
 import {
   parseUsageReport,
   SPENDING_STATUS_KEY,
@@ -8,6 +6,7 @@ import {
   TOTALS_CHANNEL,
   USAGE_CHANNEL,
 } from "../../../core/manager/channels.ts";
+import type { Host, UsageTotals } from "../../../pi-adapter/index.ts";
 import { footerText } from "./footer.ts";
 import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 

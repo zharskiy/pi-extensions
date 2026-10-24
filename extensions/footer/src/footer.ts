@@ -1,6 +1,6 @@
-import type { Host, WidgetHandle } from "../../../core/adapter/contract.ts";
 import { sessionCacheHit } from "../../../core/manager/cache.ts";
 import { parseTotals, type SpendingTotals, TOTALS_CHANNEL } from "../../../core/manager/channels.ts";
+import type { Host, WidgetHandle } from "../../../pi-adapter/index.ts";
 import { renderFooter } from "./render.ts";
 
 const CYCLE_BINDING = "app.thinking.cycle";

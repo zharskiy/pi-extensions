@@ -1,4 +1,4 @@
-import type { KeyPress } from "../../adapter/contract.ts";
+import type { KeyPress } from "../../../pi-adapter/index.ts";
 
 export const key = (name: KeyPress["name"]): KeyPress => ({ name });
 

@@ -1,4 +1,3 @@
-import type { AgentRuntime, CodemodeShortfall } from "../../../../core/adapter/contract.ts";
 import { isPlainObject } from "../../../../core/manager/guards.ts";
 import {
   type ObjectParse,
@@ -8,6 +7,7 @@ import {
   type SettingsSchema,
   userSettingsPath,
 } from "../../../../core/manager/settings.ts";
+import type { AgentRuntime, CodemodeShortfall } from "../../../../pi-adapter/index.ts";
 import {
   OVERRIDE_FIELDS,
   type OverrideField,

@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
-import { createPiExtension } from "../../../core/adapter/pi-adapter.ts";
 import { createExtensionManager } from "../../../core/manager/extension-manager.ts";
+import { createPiExtension } from "../../../pi-adapter/index.ts";
 import { errorText } from "./components/format.ts";
 import { NAMESPACE } from "./model/paths.ts";
 import { defaultSettings, disabledPlugins, reloadSettings, settingsWarning } from "./model/settings.ts";

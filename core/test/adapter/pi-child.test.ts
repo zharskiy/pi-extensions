@@ -1,9 +1,9 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SpawnSpec } from "../../adapter/contract.ts";
-import { childToolNames, createPiRuntime, type ParentSource } from "../../adapter/pi-child.ts";
-import { createPromptSections } from "../../adapter/pi-sections.ts";
+import { childToolNames, createPiRuntime, type ParentSource } from "../../../pi-adapter/child/pi-child.ts";
+import type { SpawnSpec } from "../../../pi-adapter/index.ts";
+import { createPromptSections } from "../../../pi-adapter/prompt/pi-sections.ts";
 
 type InlineEntry = {
   name: string;

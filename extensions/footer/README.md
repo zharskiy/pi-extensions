@@ -39,4 +39,4 @@ Cost and token figures come only from the spending extension, over the `spending
 
 ## Layout
 
-`src/index.ts` is the pi entry on the shared adapter in `core/adapter/` (repository root). `src/footer.ts` wires the channel and the footer, `src/render.ts` holds the pure formatting and line builders behind `renderFooter`; the token and window formats (`formatTokens`, `formatWindow`) come from `core/manager/format.ts`, the padding and separator from `core/manager/layout.ts`, both shared with `/context`. The channel names, the totals parser and spending's status key are shared in `core/manager/channels.ts`. Tests are under `test/`.
+`src/index.ts` is the pi entry on the shared adapter in `pi-adapter/` (repository root). `src/footer.ts` wires the channel and the footer, `src/render.ts` holds the pure formatting and line builders behind `renderFooter`; the token and window formats (`formatTokens`, `formatWindow`) come from `core/manager/format.ts`, the padding and separator from `core/manager/layout.ts`, both shared with `/context`. The channel names, the totals parser and spending's status key are shared in `core/manager/channels.ts`. Tests are under `test/`.

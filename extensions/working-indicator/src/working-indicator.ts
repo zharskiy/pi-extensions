@@ -1,6 +1,6 @@
-import type { Host, Phase } from "../../../core/adapter/contract.ts";
 import { formatDuration } from "../../../core/manager/format.ts";
 import { DOT } from "../../../core/manager/layout.ts";
+import type { Host, Phase } from "../../../pi-adapter/index.ts";
 
 export const TICK_MS = 1000;
 

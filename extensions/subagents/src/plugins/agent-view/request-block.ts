@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../../../../../core/adapter/contract.ts";
+import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
 import { counted, innerWidth, PAD, padLine, wrapCols } from "../../components/format.ts";
 
 const INDENT = `${PAD}  `;

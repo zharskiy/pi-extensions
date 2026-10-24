@@ -1,9 +1,3 @@
-import {
-  type AvailableModel,
-  type KeyPress,
-  type SkillInfo,
-  THINKING_LEVELS,
-} from "../../../../../core/adapter/contract.ts";
 import { clampIndex } from "../../../../../core/manager/list.ts";
 import {
   checkedIndexes,
@@ -12,6 +6,12 @@ import {
   multiKey,
 } from "../../../../../core/manager/multi-select.ts";
 import { tabStep } from "../../../../../core/manager/tabs.ts";
+import {
+  type AvailableModel,
+  type KeyPress,
+  type SkillInfo,
+  THINKING_LEVELS,
+} from "../../../../../pi-adapter/index.ts";
 import { type AgentOverride, ALL, type Grant, INHERIT_MODEL } from "../../model/agent-schema.ts";
 
 type Draft = { model: string; thinking?: string; skills: Grant };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike, ThemeToken } from "../../../core/adapter/contract.ts";
 import { plainTheme } from "../../../core/test/helpers/fakes.ts";
+import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
 import { seedText } from "../src/handoff.ts";
 import { firstSentence, seedRow } from "../src/seed-row.ts";
 

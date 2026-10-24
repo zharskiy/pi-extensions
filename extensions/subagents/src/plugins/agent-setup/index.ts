@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { FormFactory, SessionInfo } from "../../../../../core/adapter/contract.ts";
+import type { FormFactory, SessionInfo } from "../../../../../pi-adapter/index.ts";
 import { INHERIT_MODEL } from "../../model/agent-schema.ts";
 import { resolutionProblem } from "../../model/model-resolution.ts";
 import { NAMESPACE } from "../../model/paths.ts";

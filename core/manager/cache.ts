@@ -1,4 +1,4 @@
-import type { PromptTokens, ThemeLike } from "../adapter/contract.ts";
+import type { PromptTokens, ThemeLike } from "../../pi-adapter/index.ts";
 
 type PromptUsage = Pick<PromptTokens, "input" | "cacheRead" | "cacheWrite">;
 
