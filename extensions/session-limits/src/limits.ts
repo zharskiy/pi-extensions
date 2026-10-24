@@ -107,9 +107,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs = 1_000 }:
   };
 
   const refresh = () => {
-    const segment =
-      (state.context || state.phase !== "watching") &&
-      segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
+    const segment = segmentFor(state.context, state.phase, limits(), HANDOFF_COMMAND);
 
     host.ui.setNotice(NOTICE_KEY, segment ? host.ui.style(segment.token, segment.text) : undefined);
   };

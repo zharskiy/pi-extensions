@@ -85,21 +85,19 @@ export const segmentFor = (
     return notice(pendingLabels[phase]);
   }
 
-  if (!context) {
+  if (!context || context.tokens === null) {
     return undefined;
   }
 
   const level = contextLevel(context, limits);
 
-  if (level === "unknown" || level === "normal") {
+  if (level === "normal") {
     return undefined;
   }
 
   const { hard } = thresholdsFor(context.window, limits);
 
-  const used = context.tokens === null ? "" : `${DOT}${formatTokens(context.tokens)} used`;
-
-  return notice(`Handoff at ${formatWindow(hard)} tokens${used}`);
+  return notice(`Handoff at ${formatWindow(hard)} tokens${DOT}${formatTokens(context.tokens)} used`);
 };
 
 export const retryInstruction = (instruction: string, errors: string[]) =>
