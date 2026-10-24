@@ -1,5 +1,5 @@
 import { PAD, type ThemeLike } from "../pi-adapter/index.ts";
-import { DOT, ELLIPSIS, noun, rule } from "../shared/index.ts";
+import { DOT, ELLIPSIS, noun } from "../shared/index.ts";
 import type { Styled } from "./row.ts";
 
 export const EXPAND_BINDING = "app.tools.expand";
@@ -81,6 +81,8 @@ export const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: nu
 
   return groups.map((pairs) => `${PAD}${theme.truncate(keyHints(pairs, theme), room)}`);
 };
+
+export const rule = (theme: ThemeLike, width: number) => theme.fg("accent", "─".repeat(Math.max(1, width)));
 
 export const framed = (theme: ThemeLike, width: number, lines: string[], hints: readonly KeyHint[]) => [
   rule(theme, width),

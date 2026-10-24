@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
-import { padded, prefixed, rule } from "../../shared/index.ts";
+import { padded, prefixed } from "../../shared/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../test-framework/index.ts";
-import { hintLines, keyHints } from "../key-hints.ts";
+import { hintLines, keyHints, rule } from "../key-hints.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
 

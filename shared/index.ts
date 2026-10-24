@@ -40,4 +40,4 @@ export {
   type SettingsSchema,
   userSettingsPath,
 } from "./settings-files.ts";
-export { cutStart, DOT, ELLIPSIS, padded, prefixed, rule } from "./text-layout.ts";
+export { cutStart, DOT, ELLIPSIS, padded, prefixed } from "./text-layout.ts";

@@ -27,8 +27,6 @@ export const cutStart = (text: string, cols: number, theme: Pick<ThemeLike, "wid
   return `${ELLIPSIS}${parts.slice(0, count).reverse().join("")}`;
 };
 
-export const rule = (theme: ThemeLike, width: number) => theme.fg("accent", "─".repeat(Math.max(1, width)));
-
 export const prefixed = (theme: ThemeLike, first: string, text: string, width: number) => {
   const indent = " ".repeat(theme.width(first));
 
