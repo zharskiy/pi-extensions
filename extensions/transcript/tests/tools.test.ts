@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeToken, ToolCallView } from "../../../pi-adapter/index.ts";
-import { paintRecordingTheme, plainTheme } from "../../../test-framework/index.ts";
+import type { ThemeToken, ToolCallView } from "../../../platform/pi-adapter/index.ts";
+import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.ts";
 import { diffCounts, parseDiff } from "../ui/diff.ts";
 import { numbered, rows } from "./support/transcript-rows.ts";
 

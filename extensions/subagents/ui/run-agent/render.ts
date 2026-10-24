@@ -1,5 +1,5 @@
-import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../pi-adapter/index.ts";
-import { DOT, noun } from "../../../../shared/index.ts";
+import type { ThemeLike, ToolRenderState, ToolResult } from "../../../../platform/pi-adapter/index.ts";
+import { DOT, noun } from "../../../../platform/shared/index.ts";
 import {
   countLine,
   expandHint,
@@ -10,7 +10,7 @@ import {
   NEST,
   row,
   TITLE_COLUMN,
-} from "../../../../ui-kit/index.ts";
+} from "../../../../platform/ui-kit/index.ts";
 import {
   agentReceipt,
   firstLine,

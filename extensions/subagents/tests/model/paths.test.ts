@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFakeHost } from "../../../../test-framework/index.ts";
+import { createFakeHost } from "../../../../test/framework/index.ts";
 import { agentsDirFor, handoffPathFor } from "../../core/model/paths.ts";
 
 describe("agentsDirFor", () => {

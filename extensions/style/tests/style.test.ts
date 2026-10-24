@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFakeHost, useTempDirs } from "../../../test-framework/index.ts";
+import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
 import { createStyle } from "../api/plugin.ts";
 import { SETTINGS_FILE } from "../core/settings.ts";
 import { SECTION } from "../core/style.ts";

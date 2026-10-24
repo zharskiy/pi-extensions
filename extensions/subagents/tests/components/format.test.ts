@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../../../pi-adapter/index.ts";
-import { plainTheme, tokenTaggingTheme } from "../../../../test-framework/index.ts";
+import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { plainTheme, tokenTaggingTheme } from "../../../../test/framework/index.ts";
 import {
   agentReceipt,
   cutChars,

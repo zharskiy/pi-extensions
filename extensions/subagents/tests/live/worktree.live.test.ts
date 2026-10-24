@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { describeLive } from "../../../../test-framework/pi/live/index.ts";
+import { describeLive } from "../../../../test/framework/pi/live/index.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
 
 const git = (cwd: string, args: string[]) =>

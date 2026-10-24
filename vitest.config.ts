@@ -5,7 +5,7 @@ const RESULTS_ENV = "PI_EVAL_RESULTS";
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-const results = process.env[RESULTS_ENV] ?? join(import.meta.dirname, "evals", ".results", stamp);
+const results = process.env[RESULTS_ENV] ?? join(import.meta.dirname, "test", "evals", ".results", stamp);
 
 export default defineConfig({
   test: {
@@ -14,14 +14,11 @@ export default defineConfig({
         test: {
           name: "unit",
           include: [
-            "pi-adapter/tests/**/*.test.ts",
-            "extension-manager/tests/**/*.test.ts",
-            "ui-kit/tests/**/*.test.ts",
-            "shared/tests/**/*.test.ts",
+            "platform/*/tests/**/*.test.ts",
             "extensions/*/tests/**/*.test.ts",
-            "test-framework/tests/**/*.test.ts",
-            "evals/**/tests/**/*.test.ts",
-            "test/**/*.test.ts",
+            "test/framework/tests/**/*.test.ts",
+            "test/evals/**/tests/**/*.test.ts",
+            "test/*.test.ts",
           ],
           exclude: [...configDefaults.exclude, "**/*.live.test.ts", "**/*.eval.ts"],
           environment: "node",
@@ -31,7 +28,10 @@ export default defineConfig({
       {
         test: {
           name: "live",
-          include: ["extensions/*/tests/live/**/*.live.test.ts", "pi-adapter/tests/live/**/*.live.test.ts"],
+          include: [
+            "extensions/*/tests/live/**/*.live.test.ts",
+            "platform/pi-adapter/tests/live/**/*.live.test.ts",
+          ],
           environment: "node",
           fileParallelism: false,
           testTimeout: 600_000,
@@ -41,7 +41,7 @@ export default defineConfig({
       {
         test: {
           name: "evals",
-          include: ["evals/**/*.eval.ts"],
+          include: ["test/evals/**/*.eval.ts"],
           environment: "node",
           pool: "forks",
           maxWorkers: 1,

@@ -1,14 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ViewComponent } from "../../../../../pi-adapter/index.ts";
-import { key } from "../../../../../test-framework/index.ts";
+import type { ViewComponent } from "../../../../../platform/pi-adapter/index.ts";
+import { key } from "../../../../../test/framework/index.ts";
 import {
   createOverlayApi,
   disposeOverlays,
   initPiRenderTheme,
   openLastOverlay,
-} from "../../../../../test-framework/pi/index.ts";
+} from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentPanelPlugin } from "../../../api/plugins/agent-panel.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";

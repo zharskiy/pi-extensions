@@ -1,4 +1,4 @@
-import { splitModelRequest } from "../../../../pi-adapter/index.ts";
+import { splitModelRequest } from "../../../../platform/pi-adapter/index.ts";
 import {
   AGENT_SCOPE_ALL,
   type AgentFrontmatter,

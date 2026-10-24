@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../../../pi-adapter/index.ts";
-import { plainTheme, tokenTaggingTheme } from "../../../../test-framework/index.ts";
+import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { plainTheme, tokenTaggingTheme } from "../../../../test/framework/index.ts";
 import type { AgentRecord } from "../../core/model/agent-record.ts";
 import { modelLabel, type RowInput, renderRows } from "../../ui/components/agent-row.ts";
 import { agentRecord } from "../support/agent-records.ts";

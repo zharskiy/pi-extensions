@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFakeHost, plainTheme } from "../../../test-framework/index.ts";
+import { createFakeHost, plainTheme } from "../../../test/framework/index.ts";
 import { createComposer } from "../api/plugin.ts";
 import { CHEVRON } from "../ui/frame.ts";
 

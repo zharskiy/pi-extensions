@@ -1,4 +1,4 @@
-import type { KeyHint } from "../../../../ui-kit/index.ts";
+import type { KeyHint } from "../../../../platform/ui-kit/index.ts";
 import type { AgentRecord } from "../../core/model/agent-record.ts";
 import { stopWords } from "../components/state-text.ts";
 

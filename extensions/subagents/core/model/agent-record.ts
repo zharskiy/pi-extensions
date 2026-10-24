@@ -1,5 +1,5 @@
-import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../pi-adapter/index.ts";
-import type { HandoffValidation } from "../../../../shared/index.ts";
+import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../platform/pi-adapter/index.ts";
+import type { HandoffValidation } from "../../../../platform/shared/index.ts";
 import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";

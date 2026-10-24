@@ -3,7 +3,7 @@ import {
   type KeyPress,
   type SkillInfo,
   THINKING_LEVELS,
-} from "../../../../pi-adapter/index.ts";
+} from "../../../../platform/pi-adapter/index.ts";
 import {
   checkedIndexes,
   clampIndex,
@@ -11,7 +11,7 @@ import {
   type MultiState,
   multiKey,
   tabStep,
-} from "../../../../ui-kit/index.ts";
+} from "../../../../platform/ui-kit/index.ts";
 import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
 import {
   AGENT_SCOPE_ALL,

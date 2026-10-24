@@ -1,4 +1,4 @@
-import { counted, errorText } from "../../../../shared/index.ts";
+import { counted, errorText } from "../../../../platform/shared/index.ts";
 import { stoppableAgents } from "../../core/components/tree.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";

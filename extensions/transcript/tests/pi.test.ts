@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme } from "../../../test-framework/index.ts";
+import { plainTheme } from "../../../test/framework/index.ts";
 import {
   piEditDiff,
   renderEditDiff,
@@ -7,7 +7,7 @@ import {
   renderPaneToolRows,
   renderToolRows,
   visible,
-} from "../../../test-framework/pi/index.ts";
+} from "../../../test/framework/pi/index.ts";
 import { parseDiff } from "../ui/diff.ts";
 import { numbered, rows } from "./support/transcript-rows.ts";
 

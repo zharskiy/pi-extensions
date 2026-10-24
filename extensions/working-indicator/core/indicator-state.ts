@@ -1,4 +1,4 @@
-import type { Phase } from "../../../pi-adapter/index.ts";
+import type { Phase } from "../../../platform/pi-adapter/index.ts";
 
 export const TICK_MS = 1000;
 

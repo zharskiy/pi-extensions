@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { errorText, isPlainObject, readText } from "../../../../shared/index.ts";
+import { errorText, isPlainObject, readText } from "../../../../platform/shared/index.ts";
 import type { SetupChange } from "./scope.ts";
 
 const readObject = (path: string): Record<string, unknown> => {

@@ -4,7 +4,7 @@ import type {
   ContextSection,
   ContextTool,
   ToolSource,
-} from "../../../pi-adapter/index.ts";
+} from "../../../platform/pi-adapter/index.ts";
 
 export type Part = { name: string; tokens: number };
 

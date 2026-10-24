@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseTotals, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../shared/index.ts";
+import { parseTotals, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
   type FakeHost,
   usageTotals,
-} from "../../../test-framework/index.ts";
+} from "../../../test/framework/index.ts";
 import spending from "../api/extension.ts";
 import { USAGE_ENTRY } from "../core/ledger.ts";
 

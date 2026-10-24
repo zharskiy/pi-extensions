@@ -1,4 +1,4 @@
-import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL, type Plugin } from "../../../shared/index.ts";
+import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL, type Plugin } from "../../../platform/shared/index.ts";
 import { createNotifier } from "../core/notifications.ts";
 import type { NotificationSettings } from "../core/settings.ts";
 

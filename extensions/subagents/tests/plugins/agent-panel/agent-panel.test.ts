@@ -1,12 +1,12 @@
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
+import type { ThemeLike } from "../../../../../platform/pi-adapter/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
   FAKE_FOOTER_KEY,
   plainTheme,
-} from "../../../../../test-framework/index.ts";
+} from "../../../../../test/framework/index.ts";
 import { agentPanelPlugin } from "../../../api/plugins/agent-panel.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../core/model/agent-record.ts";

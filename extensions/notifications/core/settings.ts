@@ -1,5 +1,5 @@
-import type { NotifyChannel } from "../../../pi-adapter/index.ts";
-import type { SettingsSchema } from "../../../shared/index.ts";
+import type { NotifyChannel } from "../../../platform/pi-adapter/index.ts";
+import type { SettingsSchema } from "../../../platform/shared/index.ts";
 
 export type NotificationSettings = {
   channel: NotifyChannel | "off";

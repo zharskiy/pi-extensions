@@ -1,4 +1,4 @@
-import { DOT, formatTokens, formatWindow } from "../../../shared/index.ts";
+import { DOT, formatTokens, formatWindow } from "../../../platform/shared/index.ts";
 import { type UsageModel, usageModel } from "../core/breakdown.ts";
 import type { Snapshot } from "../core/snapshot.ts";
 

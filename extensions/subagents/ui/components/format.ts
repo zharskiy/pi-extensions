@@ -1,5 +1,5 @@
-import { PAD, type ThemeLike, type ThemeToken } from "../../../../pi-adapter/index.ts";
-import { DOT } from "../../../../shared/index.ts";
+import { PAD, type ThemeLike, type ThemeToken } from "../../../../platform/pi-adapter/index.ts";
+import { DOT } from "../../../../platform/shared/index.ts";
 import { plainReceipt, type ReceiptKind, type ReceiptSegment } from "../../core/components/receipt.ts";
 
 const DROP_ORDER: readonly ReceiptKind[] = ["activity", "cost", "calls", "tokens"];

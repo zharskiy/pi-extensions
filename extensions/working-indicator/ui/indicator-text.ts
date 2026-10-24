@@ -1,4 +1,4 @@
-import { DOT, formatDuration } from "../../../shared/index.ts";
+import { DOT, formatDuration } from "../../../platform/shared/index.ts";
 import { TICK_MS } from "../core/indicator-state.ts";
 
 export const VERBS = [

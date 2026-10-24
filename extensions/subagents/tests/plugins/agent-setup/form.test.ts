@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { char, key } from "../../../../../test-framework/index.ts";
+import { char, key } from "../../../../../test/framework/index.ts";
 import {
   initialSetup,
   modelOptions,

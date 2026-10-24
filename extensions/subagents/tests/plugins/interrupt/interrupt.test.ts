@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { flushMicrotasks } from "../../../../../test-framework/index.ts";
+import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { interruptPlugin } from "../../../api/plugins/interrupt.ts";

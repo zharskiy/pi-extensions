@@ -1,5 +1,5 @@
-import type { ThemeLike } from "../../../../pi-adapter/index.ts";
-import { errorText } from "../../../../shared/index.ts";
+import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { errorText } from "../../../../platform/shared/index.ts";
 import {
   createPanelState,
   type PanelActionsAvailable,

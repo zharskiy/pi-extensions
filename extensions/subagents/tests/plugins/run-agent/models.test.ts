@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { catalogModel, flushMicrotasks } from "../../../../../test-framework/index.ts";
+import { catalogModel, flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";

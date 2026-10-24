@@ -1,4 +1,4 @@
-import type { FormFactory } from "../../../../pi-adapter/index.ts";
+import type { FormFactory } from "../../../../platform/pi-adapter/index.ts";
 import { SCOPES, type Scope, type SetupChange } from "../../core/agent-setup/scope.ts";
 import { initialSetup, pressSetupKey, type SetupContext, setupChanges } from "./form.ts";
 import { renderSetup, type SetupPaths } from "./setup-render.ts";

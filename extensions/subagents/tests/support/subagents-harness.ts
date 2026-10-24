@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import type { AgentRuntime } from "../../../../pi-adapter/index.ts";
+import type { AgentRuntime } from "../../../../platform/pi-adapter/index.ts";
 import {
   catalogModel,
   createFakeAgentRuntime,
@@ -11,7 +11,7 @@ import {
   flushMicrotasks,
   startExtension,
   useTempDirs,
-} from "../../../../test-framework/index.ts";
+} from "../../../../test/framework/index.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { defaultSettings, type Settings } from "../../core/model/settings.ts";

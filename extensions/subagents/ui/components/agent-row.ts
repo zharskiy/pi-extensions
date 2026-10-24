@@ -1,5 +1,5 @@
-import { PAD, type ThemeLike } from "../../../../pi-adapter/index.ts";
-import { pointerMark } from "../../../../ui-kit/index.ts";
+import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { pointerMark } from "../../../../platform/ui-kit/index.ts";
 import {
   agentReceipt,
   plainReceipt,

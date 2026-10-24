@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { hiddenMessageTexts, pause } from "../../../../test-framework/index.ts";
-import { sessionLines } from "../../../../test-framework/pi/index.ts";
-import { describeLive, LIVE_TIMEOUT_MS } from "../../../../test-framework/pi/live/index.ts";
+import { hiddenMessageTexts, pause } from "../../../../test/framework/index.ts";
+import { sessionLines } from "../../../../test/framework/pi/index.ts";
+import { describeLive, LIVE_TIMEOUT_MS } from "../../../../test/framework/pi/live/index.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
 
 const SECRET = randomUUID().slice(0, 8);

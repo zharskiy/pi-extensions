@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import { homeRelative } from "../../../../shared/index.ts";
-import { markOf, row, rowChildren, rowText } from "../../../../ui-kit/index.ts";
+import { homeRelative } from "../../../../platform/shared/index.ts";
+import { markOf, row, rowChildren, rowText } from "../../../../platform/ui-kit/index.ts";
 import type { HandoffRows } from "../../core/run-agent/handoff-tool.ts";
 
 export const handoffRows = (savedPath: () => string | undefined): HandoffRows => ({

@@ -1,5 +1,5 @@
-import { PAD, type ThemeLike } from "../../../../pi-adapter/index.ts";
-import { padded, prefixed } from "../../../../shared/index.ts";
+import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { padded, prefixed } from "../../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
   descriptionFits,
@@ -13,7 +13,7 @@ import {
   scrolledLines,
   TAB_SWITCH_HINT,
   tabBar,
-} from "../../../../ui-kit/index.ts";
+} from "../../../../platform/ui-kit/index.ts";
 import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {

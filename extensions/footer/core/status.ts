@@ -1,5 +1,5 @@
-import type { Host } from "../../../pi-adapter/index.ts";
-import { parseTotals, type SpendingTotals, TOTALS_CHANNEL } from "../../../shared/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
+import { parseTotals, type SpendingTotals, TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
 
 export const watchTotals = (host: Host, changed: () => void) => {
   let totals: SpendingTotals | undefined;

@@ -3,11 +3,14 @@ import { basename, dirname, join, posix, relative, resolve, sep } from "node:pat
 import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const FRAMEWORK = join(ROOT, "test-framework");
-const EVALS = join(ROOT, "evals");
+const TEST = join(ROOT, "test");
+const FRAMEWORK = join(TEST, "framework");
+const EVALS = join(TEST, "evals");
 const EXTENSIONS = join(ROOT, "extensions");
-const LAYERS = ["pi-adapter", "shared", "ui-kit", "extension-manager"].map((name) => join(ROOT, name));
-const CODE_ROOTS = [...LAYERS, EXTENSIONS, FRAMEWORK, EVALS, join(ROOT, "test")];
+const LAYERS = ["pi-adapter", "shared", "ui-kit", "extension-manager"].map((name) =>
+  join(ROOT, "platform", name),
+);
+const CODE_ROOTS = [...LAYERS, EXTENSIONS, TEST];
 const EXTENSION_ENTRIES = [
   "index.ts",
   "api",
@@ -138,23 +141,23 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it(`keeps extension code at most ${MAX_DEPTH} folders below the extension`, () => {
-    const offenders = extensionDirs()
-      .flatMap((extension) =>
-        sourceFiles(extension).filter((file) => relative(extension, file).split(sep).length - 1 > MAX_DEPTH),
+  it(`keeps extension and platform layer code at most ${MAX_DEPTH} folders below its own root`, () => {
+    const offenders = [...extensionDirs(), ...LAYERS]
+      .flatMap((unit) =>
+        sourceFiles(unit).filter((file) => relative(unit, file).split(sep).length - 1 > MAX_DEPTH),
       )
       .map((file) => relative(ROOT, file));
 
     expect(offenders).toEqual([]);
   });
 
-  it("keeps *.test.ts inside a tests/ folder and *.eval.ts inside evals/", () => {
+  it("keeps *.test.ts inside a tests/ folder and *.eval.ts inside test/evals/", () => {
     const offenders = allFiles()
       .filter(
         (file) =>
           (file.endsWith(".test.ts") &&
             !relative(ROOT, file).split(sep).includes("tests") &&
-            !isInside(join(ROOT, "test"))(file)) ||
+            dirname(file) !== TEST) ||
           (file.endsWith(".eval.ts") && !isInside(EVALS)(file)),
       )
       .map((file) => relative(ROOT, file));
@@ -162,7 +165,7 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("gives every layer and test-framework file a basename of its own", () => {
+  it("gives every platform layer and test/framework file a basename of its own", () => {
     const names = [...LAYERS, FRAMEWORK]
       .flatMap(sourceFiles)
       .filter((file) => !file.endsWith(".test.ts") && basename(file) !== "index.ts")

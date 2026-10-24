@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { createManagedExtension } from "../../../extension-manager/index.ts";
+import { createManagedExtension } from "../../../platform/extension-manager/index.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
 import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../core/settings.ts";
 import { sessionLimitsPlugin } from "./plugin.ts";

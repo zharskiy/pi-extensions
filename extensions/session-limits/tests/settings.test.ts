@@ -1,9 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { watchSettings } from "../../../extension-manager/index.ts";
-import { userSettingsPath } from "../../../shared/index.ts";
-import { createFakeHost, useTempDirs } from "../../../test-framework/index.ts";
+import { watchSettings } from "../../../platform/extension-manager/index.ts";
+import { userSettingsPath } from "../../../platform/shared/index.ts";
+import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
 import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../core/settings.ts";
 
 const temp = useTempDirs();

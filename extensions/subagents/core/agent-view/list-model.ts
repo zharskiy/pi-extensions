@@ -1,4 +1,4 @@
-import { DOT } from "../../../../shared/index.ts";
+import { DOT } from "../../../../platform/shared/index.ts";
 import { isTerminal, type TreeRow, treeOrder, withLinks } from "../components/tree.ts";
 import { type AgentRecord, isClosed, MAIN_CALLER } from "../model/agent-record.ts";
 

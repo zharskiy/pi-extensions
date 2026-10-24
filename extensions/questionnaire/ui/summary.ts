@@ -1,6 +1,11 @@
-import type { ThemeLike, ToolRender, ToolRenderState, ToolResult } from "../../../pi-adapter/index.ts";
-import { counted, DOT } from "../../../shared/index.ts";
-import { markOf, type RowChild, row, rowChildren, rowText } from "../../../ui-kit/index.ts";
+import type {
+  ThemeLike,
+  ToolRender,
+  ToolRenderState,
+  ToolResult,
+} from "../../../platform/pi-adapter/index.ts";
+import { counted, DOT } from "../../../platform/shared/index.ts";
+import { markOf, type RowChild, row, rowChildren, rowText } from "../../../platform/ui-kit/index.ts";
 import {
   type Answer,
   labelOf,

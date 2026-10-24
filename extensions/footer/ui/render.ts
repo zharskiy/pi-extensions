@@ -5,9 +5,15 @@ import {
   PAD,
   type ThemeLike,
   type ThemeToken,
-} from "../../../pi-adapter/index.ts";
-import { DOT, formatMoney, formatTokens, formatWindow, type SpendingTotals } from "../../../shared/index.ts";
-import { cachePercentText } from "../../../ui-kit/index.ts";
+} from "../../../platform/pi-adapter/index.ts";
+import {
+  DOT,
+  formatMoney,
+  formatTokens,
+  formatWindow,
+  type SpendingTotals,
+} from "../../../platform/shared/index.ts";
+import { cachePercentText } from "../../../platform/ui-kit/index.ts";
 import { type FooterState, folderName, sessionSpend, statusLines } from "../core/segments.ts";
 
 const LEVEL_TOKENS: Record<string, ThemeToken> = {

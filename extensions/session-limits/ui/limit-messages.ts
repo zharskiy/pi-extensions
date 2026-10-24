@@ -1,5 +1,5 @@
-import type { MessageRender } from "../../../pi-adapter/index.ts";
-import { EXPAND_BINDING } from "../../../ui-kit/index.ts";
+import type { MessageRender } from "../../../platform/pi-adapter/index.ts";
+import { EXPAND_BINDING } from "../../../platform/ui-kit/index.ts";
 import { seedRow } from "./seed-row.ts";
 
 export const seedMessage =

@@ -1,6 +1,6 @@
-import type { ThemeToken } from "../../../pi-adapter/index.ts";
-import { DOT, formatTokens, formatWindow } from "../../../shared/index.ts";
-import { MARKS } from "../../../ui-kit/index.ts";
+import type { ThemeToken } from "../../../platform/pi-adapter/index.ts";
+import { DOT, formatTokens, formatWindow } from "../../../platform/shared/index.ts";
+import { MARKS } from "../../../platform/ui-kit/index.ts";
 import {
   type ContextTokens,
   contextLevel,

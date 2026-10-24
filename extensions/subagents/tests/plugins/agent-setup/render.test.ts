@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { key } from "../../../../../test-framework/index.ts";
+import { key } from "../../../../../test/framework/index.ts";
 import { initialSetup } from "../../../ui/agent-setup/form.ts";
 import { context, PATHS, press, render } from "../../support/setup-context.ts";
 

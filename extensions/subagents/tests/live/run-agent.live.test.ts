@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { hiddenMessageTexts } from "../../../../test-framework/index.ts";
-import { sessionHeader } from "../../../../test-framework/pi/index.ts";
-import { describeLive } from "../../../../test-framework/pi/live/index.ts";
+import { hiddenMessageTexts } from "../../../../test/framework/index.ts";
+import { sessionHeader } from "../../../../test/framework/pi/index.ts";
+import { describeLive } from "../../../../test/framework/pi/live/index.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
 
 const TINY_TASK = "Reply with the single word OK. Do not call any tool.";

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ToolSpec } from "../../../../../pi-adapter/index.ts";
+import type { ToolSpec } from "../../../../../platform/pi-adapter/index.ts";
 import {
   type FakeChildSession,
   flushMicrotasks,
   hiddenMessageTexts,
-} from "../../../../../test-framework/index.ts";
+} from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";

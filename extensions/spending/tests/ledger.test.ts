@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { usageTotals } from "../../../test-framework/index.ts";
+import { usageTotals } from "../../../test/framework/index.ts";
 import { createLedger, USAGE_ENTRY } from "../core/ledger.ts";
 
 const createStore = () => {

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { char, type FakeForm, flushMicrotasks, key } from "../../../../../test-framework/index.ts";
+import { char, type FakeForm, flushMicrotasks, key } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentSetupPlugin } from "../../../api/plugins/agent-setup.ts";

@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BUSY_CHANNEL } from "../../../../../shared/index.ts";
-import { createFakeHost, flushMicrotasks } from "../../../../../test-framework/index.ts";
+import { BUSY_CHANNEL } from "../../../../../platform/shared/index.ts";
+import { createFakeHost, flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";

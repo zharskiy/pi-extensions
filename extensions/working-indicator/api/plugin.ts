@@ -1,5 +1,5 @@
-import type { Host, Phase } from "../../../pi-adapter/index.ts";
-import type { Plugin } from "../../../shared/index.ts";
+import type { Host, Phase } from "../../../platform/pi-adapter/index.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
 import { elapsedOf, isVisibleIn, type Run, rotateVerb, startRun, TICK_MS } from "../core/indicator-state.ts";
 import { interruptHint, pickVerb, workingText } from "../ui/indicator-text.ts";
 

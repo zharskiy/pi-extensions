@@ -1,5 +1,5 @@
-import { addUsage, emptyUsage, type UsageTotals } from "../../../pi-adapter/index.ts";
-import { parseUsageReport, type UsageReport } from "../../../shared/index.ts";
+import { addUsage, emptyUsage, type UsageTotals } from "../../../platform/pi-adapter/index.ts";
+import { parseUsageReport, type UsageReport } from "../../../platform/shared/index.ts";
 
 export const USAGE_ENTRY = "pi-spending:usage";
 

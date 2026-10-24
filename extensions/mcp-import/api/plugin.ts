@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import type { Host } from "../../../pi-adapter/index.ts";
-import type { Plugin } from "../../../shared/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
 import {
   completeArgs,
   type ImportArgs,

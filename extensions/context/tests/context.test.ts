@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SessionInfo } from "../../../pi-adapter/index.ts";
-import { createFakeHost } from "../../../test-framework/index.ts";
+import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
+import { createFakeHost } from "../../../test/framework/index.ts";
 import { createContext, SNAPSHOT_ENTRY } from "../api/plugin.ts";
 import { facts, STAMP, snapshot, usage } from "./support/context-snapshots.ts";
 

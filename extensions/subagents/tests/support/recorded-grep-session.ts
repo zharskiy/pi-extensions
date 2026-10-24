@@ -3,8 +3,8 @@ import {
   customLine,
   toolResultLine,
   userLine,
-} from "../../../../test-framework/index.ts";
-import { parseSessionLines, promptRecordEntry } from "../../../../test-framework/pi/index.ts";
+} from "../../../../test/framework/index.ts";
+import { parseSessionLines, promptRecordEntry } from "../../../../test/framework/pi/index.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 
 const grepCall = (id: string, pattern: string) => assistantToolCallLine(id, "grep", { pattern, path: "src" });

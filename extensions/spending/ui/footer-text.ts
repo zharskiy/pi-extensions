@@ -1,4 +1,4 @@
-import { DOT, formatMoney } from "../../../shared/index.ts";
+import { DOT, formatMoney } from "../../../platform/shared/index.ts";
 
 type SourceCost = { source: string; cost: number };
 

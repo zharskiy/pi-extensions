@@ -1,5 +1,5 @@
-import type { Host } from "../../../pi-adapter/index.ts";
-import type { Plugin } from "../../../shared/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
 import { ALIASES, targetOf } from "../core/aliases.ts";
 
 export const createCommandAliases = (host: Host) => {

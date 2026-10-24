@@ -1,5 +1,5 @@
-import type { AnyToolSpec, ToolSpec } from "../../../../pi-adapter/index.ts";
-import { EXPAND_BINDING } from "../../../../ui-kit/index.ts";
+import type { AnyToolSpec, ToolSpec } from "../../../../platform/pi-adapter/index.ts";
+import { EXPAND_BINDING } from "../../../../platform/ui-kit/index.ts";
 import {
   type AgentStatusDetails,
   type AgentStatusParams,

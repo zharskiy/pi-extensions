@@ -1,5 +1,5 @@
-import type { ContextSnapshot, Host, ModelInfo } from "../../../pi-adapter/index.ts";
-import { SPENDING_STATUS_KEY, type SpendingTotals, sessionCacheHit } from "../../../shared/index.ts";
+import type { ContextSnapshot, Host, ModelInfo } from "../../../platform/pi-adapter/index.ts";
+import { SPENDING_STATUS_KEY, type SpendingTotals, sessionCacheHit } from "../../../platform/shared/index.ts";
 
 export type FooterState = {
   context: ContextSnapshot;

@@ -5,7 +5,7 @@ import {
   type SettingsLocation,
   type SettingsSchema,
   userSettingsPath,
-} from "../../../shared/index.ts";
+} from "../../../platform/shared/index.ts";
 
 type StyleSettings = { style: string };
 

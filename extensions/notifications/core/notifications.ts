@@ -1,5 +1,5 @@
-import type { DialogEvent, NotifyChannel, RunMode } from "../../../pi-adapter/index.ts";
-import { parseAwaitingInput, parseBusySignal } from "../../../shared/index.ts";
+import type { DialogEvent, NotifyChannel, RunMode } from "../../../platform/pi-adapter/index.ts";
+import { parseAwaitingInput, parseBusySignal } from "../../../platform/shared/index.ts";
 import type { NotificationSettings } from "./settings.ts";
 
 const IDLE_TEXT = "pi is waiting for your input";

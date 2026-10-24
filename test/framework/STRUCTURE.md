@@ -1,0 +1,45 @@
+# test/framework structure
+
+- `index.ts`: the pi-free surface (fakes, harness, `live/` helpers).
+- `fake-host.ts`: `createFakeHost`, `FakeHost`, `createTurnScope`, `hiddenMessageTexts`, `FAKE_FOOTER_KEY`.
+- `fake-agent-runtime.ts`: `createFakeAgentRuntime`, `FakeAgentRuntime`, `FakeChildSession`, `catalogModel` (invented refs).
+- `fake-form.ts`: `openFakeForm`, `FakeForm`; the fake `showForm` with a fake text input.
+- `themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`.
+- `extension-harness.ts`: `startExtension`; a plugin list or a managed extension on the extension manager over the fakes.
+- `key-presses.ts`: `key`, `char`; `KeyPress` builders.
+- `rendered-text.ts`: `plainText`, `plainLines`, `visibleWidth`; rendered lines without escapes.
+- `usage-builders.ts`: `usageTotals`, `promptTokens`.
+- `waiting.ts`: `flushMicrotasks`, `flushTimers`, `pause`, `waitUntil`.
+- `temp-dirs.ts`: `useTempDirs`; temporary directories removed after the suite.
+- `recorded-sessions.ts`: session `.jsonl` line builders (user, assistant tool call, tool result, custom).
+- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation.
+- `live/seed-project.ts`: `seedProjectFromCommit`, `applyCommitDiff`, `replaceExactlyOnce`, `repoGit`.
+- `live/session-reading.ts`: `bashCommands`, `commandsLine`, `largestToolOutput`.
+- `live/cost.ts`: `totalCost`, `reportCost`.
+- `live/fixture-mcp-server.ts`: a stdio MCP server with one tool that returns a code word.
+- `live/fixture-mcp-server-path.ts`: `fixtureMcpServerPath`; the path live tests spawn it by.
+- `eval-runs/index.ts`: the eval runner's surface.
+- `eval-runs/eval-runs.ts`: `evalRunCount` (`PI_EVAL_RUNS`), `repeatRuns`.
+- `eval-runs/run-record.ts`: `RunRecord`, `RunEvent`; what one run leaves to grade.
+- `eval-runs/rubric.ts`: `Rubric`, `Check`, `gradeRun`, `gradeRuns`.
+- `eval-runs/pass-threshold.ts`: `expectPassRate`, `MAJORITY`.
+- `eval-runs/eval-report.ts`: `reportRun`, `reportEval` (console, `PI_EVAL_REPORT`).
+- `eval-runs/eval-results.ts`: `observations.jsonl` and failed-session snapshots under `PI_EVAL_RESULTS`.
+- `pi/index.ts`: the surface of the helpers that load pi offline.
+- `pi/render-theme.ts`: `initPiRenderTheme`, `initPiKeybindings`, `plainPiTheme`.
+- `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
+- `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.
+- `pi/session-files.ts`: real session files: read, parse, header, facts, prompt record.
+- `pi/live/index.ts`: the live helpers' surface.
+- `pi/live/live-model.ts`: `describeLive`, `liveAgentModel`, `liveChoreModel`, `LIVE_TIMEOUT_MS`.
+- `pi/live/live-agent-dir.ts`: `prepareAgentDir`, `isolateAgentDir`, `restoreAgentDir`, `realContextMarkers`.
+- `pi/live/live-runtime.ts`: the real agent runtime for live tests, `PI_DEFAULT_TOOLS`.
+- `pi/live/live-extension.ts`: `startLiveExtension`.
+- `pi/live/pi-session.ts`: `openPiSession`.
+- `pi/live/session-events.ts`: `sessionEvents`, `runUsage`; a `RunRecord` from a live session.
+- `tests/fake-host.test.ts`: the fake host.
+- `tests/extension-harness.test.ts`: `startExtension`.
+- `tests/session-reading.test.ts`: `live/session-reading.ts`.
+- `tests/eval-runs.test.ts`: the eval runner, thresholds, reports and results.
+- `tests/live-agent-dir.test.ts`: the temporary agent dir and its restore.
+- `tests/session-events.test.ts`: `pi/live/session-events.ts`.

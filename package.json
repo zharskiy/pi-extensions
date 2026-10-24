@@ -22,10 +22,7 @@
     "transcript"
   ],
   "files": [
-    "pi-adapter",
-    "extension-manager",
-    "ui-kit",
-    "shared",
+    "platform",
     "extensions/*/index.ts",
     "extensions/*/api/**",
     "extensions/*/core/**",

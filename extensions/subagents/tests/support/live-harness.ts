@@ -2,20 +2,20 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect } from "vitest";
-import type { UsageTotals } from "../../../../pi-adapter/index.ts";
+import type { UsageTotals } from "../../../../platform/pi-adapter/index.ts";
 import {
   hiddenMessageTexts,
   reportCost,
   seedProjectFromCommit,
   totalCost,
   waitUntil,
-} from "../../../../test-framework/index.ts";
+} from "../../../../test/framework/index.ts";
 import {
   LIVE_TIMEOUT_MS,
   liveAgentModel,
   liveChoreModel,
   startLiveExtension,
-} from "../../../../test-framework/pi/live/index.ts";
+} from "../../../../test/framework/pi/live/index.ts";
 import extension from "../../api/extension.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Settings } from "../../core/model/settings.ts";

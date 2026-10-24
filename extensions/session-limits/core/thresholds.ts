@@ -1,4 +1,4 @@
-import type { ContextSnapshot } from "../../../pi-adapter/index.ts";
+import type { ContextSnapshot } from "../../../platform/pi-adapter/index.ts";
 
 export type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 

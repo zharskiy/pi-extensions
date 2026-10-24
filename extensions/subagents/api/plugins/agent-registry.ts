@@ -1,4 +1,4 @@
-import { BUSY_CHANNEL } from "../../../../shared/index.ts";
+import { BUSY_CHANNEL } from "../../../../platform/shared/index.ts";
 import { createRegistry } from "../../core/agent-registry/registry.ts";
 import { type AgentRegistry, isClosed } from "../../core/model/agent-record.ts";
 import { pastRecords } from "../../core/model/manifest.ts";

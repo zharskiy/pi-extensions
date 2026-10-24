@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AnyToolSpec } from "../../../../pi-adapter/index.ts";
+import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import { loadDefinitions } from "../../core/agent-definitions/loader.ts";
 import { defaultSettings } from "../../core/model/settings.ts";
 import {

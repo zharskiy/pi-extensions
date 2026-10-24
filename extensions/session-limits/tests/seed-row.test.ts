@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paintRecordingTheme, plainTheme } from "../../../test-framework/index.ts";
+import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.ts";
 import { seedText } from "../core/handoff.ts";
 import { firstSentence, seedRow } from "../ui/seed-row.ts";
 

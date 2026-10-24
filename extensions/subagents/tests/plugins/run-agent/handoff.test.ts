@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VALID_HANDOFF } from "../../../../../test-framework/index.ts";
+import { VALID_HANDOFF } from "../../../../../test/framework/index.ts";
 import { createHandoff } from "../../../core/run-agent/handoff.ts";
 import { PACKAGE_ROOT } from "../../support/subagents-harness.ts";
 

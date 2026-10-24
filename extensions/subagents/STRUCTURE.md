@@ -2,7 +2,7 @@
 
 Folder layout only. Runtime behaviour is described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-`core/` is theme-free logic that imports only `pi-adapter/index.ts` and `shared/index.ts`; `ui/` paints over `ui-kit/index.ts` and may import `core/`; `api/` wires both into plugins and never leaks into them. Basenames are unique inside `api/`, `core/` and `ui/`.
+`core/` is theme-free logic that imports only `platform/pi-adapter/index.ts` and `platform/shared/index.ts`; `ui/` paints over `platform/ui-kit/index.ts` and may import `core/`; `api/` wires both into plugins and never leaks into them. Basenames are unique inside `api/`, `core/` and `ui/`.
 
 ```
 extensions/subagents/
@@ -140,8 +140,8 @@ extensions/subagents/
     │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant tests
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
-    └── support/                           # the one support folder evals/subagents/ may import
-        ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test-framework
+    └── support/                           # the one support folder test/evals/subagents/ may import
+        ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test/framework
         ├── live-harness.ts                # createLiveHarness over the default export: seed, agents, wakes, chains
         ├── routing-session.ts             # mainSessionPrompt, recordingTools: the routing eval's main prompt and run_agent stubs
         ├── agent-records.ts               # agentRecord, newAgentInput fixtures; AgentRecord and chain helpers for evals

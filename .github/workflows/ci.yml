@@ -19,5 +19,5 @@ jobs:
       - name: Package contains no tests
         run: |
           npm pack --dry-run 2>&1 | tee pack.txt
-          ! grep -E '/tests?/|test-framework/|evals/|\.snap|fixtures|\.eval\.ts' pack.txt
+          ! grep -E '/tests?/|test/framework/|test/evals/|\.snap|fixtures|\.eval\.ts' pack.txt
           test "$(grep -c 'extensions/[a-z-]*/index.ts' pack.txt)" = 13

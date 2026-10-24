@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorText } from "../../../../shared/index.ts";
+import { errorText } from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, plainReceipt, receipt, singleLine } from "../components/receipt.ts";
 import { isTerminal } from "../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../model/agent-record.ts";

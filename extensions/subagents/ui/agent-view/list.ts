@@ -1,6 +1,11 @@
-import { type KeyPress, type OverlayApi, PAD, type ThemeToken } from "../../../../pi-adapter/index.ts";
-import { errorText } from "../../../../shared/index.ts";
-import { keyHints } from "../../../../ui-kit/index.ts";
+import {
+  type KeyPress,
+  type OverlayApi,
+  PAD,
+  type ThemeToken,
+} from "../../../../platform/pi-adapter/index.ts";
+import { errorText } from "../../../../platform/shared/index.ts";
+import { keyHints } from "../../../../platform/ui-kit/index.ts";
 import { clearTargets, listSections, subtitle, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { tickFor } from "../../core/components/refresh.ts";
 import { carrySelection, stoppableAgents, type TreeRow } from "../../core/components/tree.ts";

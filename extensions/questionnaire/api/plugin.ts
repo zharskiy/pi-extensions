@@ -1,5 +1,5 @@
-import type { Host, ToolSpec } from "../../../pi-adapter/index.ts";
-import type { Plugin } from "../../../shared/index.ts";
+import type { Host, ToolSpec } from "../../../platform/pi-adapter/index.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
 import { awaitingInput, checkCall, questionnaireDefinition } from "../core/questionnaire.ts";
 import { type QuestionnaireDetails, type QuestionnaireParams, resultText } from "../core/questions.ts";
 import { initialForm } from "../ui/form.ts";

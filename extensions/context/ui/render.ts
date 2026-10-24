@@ -1,6 +1,6 @@
-import { CHILD_COLUMN, type ThemeLike } from "../../../pi-adapter/index.ts";
-import { DOT, formatTokens } from "../../../shared/index.ts";
-import { cachePercentText, countLine, markGlyph } from "../../../ui-kit/index.ts";
+import { CHILD_COLUMN, type ThemeLike } from "../../../platform/pi-adapter/index.ts";
+import { DOT, formatTokens } from "../../../platform/shared/index.ts";
+import { cachePercentText, countLine, markGlyph } from "../../../platform/ui-kit/index.ts";
 import {
   type CacheFigures,
   type Category,

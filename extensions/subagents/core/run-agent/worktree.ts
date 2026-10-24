@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { errorText } from "../../../../shared/index.ts";
+import { errorText } from "../../../../platform/shared/index.ts";
 import type { Worktree, WorktreeCleanup } from "../model/agent-record.ts";
 
 type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };

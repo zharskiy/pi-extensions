@@ -1,14 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RunMode } from "../../../pi-adapter/index.ts";
-import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL } from "../../../shared/index.ts";
+import type { RunMode } from "../../../platform/pi-adapter/index.ts";
+import { AWAITING_INPUT_CHANNEL, BUSY_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
   type FakeHost,
   useTempDirs,
-} from "../../../test-framework/index.ts";
+} from "../../../test/framework/index.ts";
 import notifications from "../api/extension.ts";
 import { SETTINGS_FILE } from "../core/settings.ts";
 

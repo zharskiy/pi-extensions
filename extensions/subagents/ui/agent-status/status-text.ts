@@ -1,6 +1,6 @@
-import type { ThemeLike, ToolSpec } from "../../../../pi-adapter/index.ts";
-import { noun } from "../../../../shared/index.ts";
-import { expandHint, markOf, row, rowChildren, rowText } from "../../../../ui-kit/index.ts";
+import type { ThemeLike, ToolSpec } from "../../../../platform/pi-adapter/index.ts";
+import { noun } from "../../../../platform/shared/index.ts";
+import { expandHint, markOf, row, rowChildren, rowText } from "../../../../platform/ui-kit/index.ts";
 import {
   type AgentSnapshot,
   type AgentStatusDetails,

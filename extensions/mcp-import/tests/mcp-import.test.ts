@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { KeyPress } from "../../../pi-adapter/index.ts";
-import { createFakeHost, useTempDirs } from "../../../test-framework/index.ts";
+import type { KeyPress } from "../../../platform/pi-adapter/index.ts";
+import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
 import { createMcpImport } from "../api/plugin.ts";
 
 const temp = useTempDirs();

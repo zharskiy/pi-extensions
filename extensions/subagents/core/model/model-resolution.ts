@@ -1,4 +1,4 @@
-import type { ModelChoice, ModelResolution } from "../../../../pi-adapter/index.ts";
+import type { ModelChoice, ModelResolution } from "../../../../platform/pi-adapter/index.ts";
 
 export type UnresolvedModel = Exclude<ModelResolution, { kind: "resolved" }>;
 

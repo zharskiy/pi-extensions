@@ -1,6 +1,6 @@
 import { basename } from "node:path";
-import type { Host, UsageTotals } from "../../../pi-adapter/index.ts";
-import { parseUsageReport, type SpendingTotals } from "../../../shared/index.ts";
+import type { Host, UsageTotals } from "../../../platform/pi-adapter/index.ts";
+import { parseUsageReport, type SpendingTotals } from "../../../platform/shared/index.ts";
 import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 
 const MAIN_OFFSET_ENTRY = "pi-spending:main-offset";

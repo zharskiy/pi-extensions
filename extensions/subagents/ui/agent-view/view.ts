@@ -4,9 +4,9 @@ import {
   PAD,
   type ThemeLike,
   type ViewComponent,
-} from "../../../../pi-adapter/index.ts";
-import { DOT, errorText } from "../../../../shared/index.ts";
-import { countLine, type KeyHint, keyHints, preview, wrapChild } from "../../../../ui-kit/index.ts";
+} from "../../../../platform/pi-adapter/index.ts";
+import { DOT, errorText } from "../../../../platform/shared/index.ts";
+import { countLine, type KeyHint, keyHints, preview, wrapChild } from "../../../../platform/ui-kit/index.ts";
 import type { ViewData } from "../../core/agent-view/source.ts";
 import { agentReceipt, formatCtx, type ReceiptSegment, singleLine } from "../../core/components/receipt.ts";
 import { tickFor } from "../../core/components/refresh.ts";

@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
 import { outputLines, previewRows, shellResult } from "./output.ts";
 import {
   bold,

@@ -6,7 +6,7 @@ import {
   projectSettingsPath,
   readText,
   userSettingsPath,
-} from "../../../shared/index.ts";
+} from "../../../platform/shared/index.ts";
 import type { Scope, Source } from "./args.ts";
 import { type Plan, planImport, type Skipped } from "./plan.ts";
 import { type Found, findServers } from "./sources.ts";

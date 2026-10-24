@@ -4,8 +4,8 @@ import {
   type ToolCallView,
   type ToolRow,
   type ToolRows,
-} from "../../../pi-adapter/index.ts";
-import { shortPath } from "../../../shared/index.ts";
+} from "../../../platform/pi-adapter/index.ts";
+import { shortPath } from "../../../platform/shared/index.ts";
 import {
   expandHint,
   failureSuffix,
@@ -14,7 +14,7 @@ import {
   row,
   rowChildren,
   type TitleParts,
-} from "../../../ui-kit/index.ts";
+} from "../../../platform/ui-kit/index.ts";
 import { argsOf, diffText, isMissingFile, listedCount, readRange, slowDuration } from "../core/tool-kinds.ts";
 import { codemodeLook } from "./codemode.ts";
 import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";

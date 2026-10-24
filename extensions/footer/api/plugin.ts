@@ -1,5 +1,5 @@
-import type { WidgetHandle } from "../../../pi-adapter/index.ts";
-import type { Plugin } from "../../../shared/index.ts";
+import type { WidgetHandle } from "../../../platform/pi-adapter/index.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
 import { footerState } from "../core/segments.ts";
 import { watchTotals } from "../core/status.ts";
 import { renderFooter } from "../ui/render.ts";

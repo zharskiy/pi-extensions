@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
-import type { ThemeLike, ThemeToken } from "../../../pi-adapter/index.ts";
-import { countLine, preview } from "../../../ui-kit/index.ts";
+import type { ThemeLike, ThemeToken } from "../../../platform/pi-adapter/index.ts";
+import { countLine, preview } from "../../../platform/ui-kit/index.ts";
 
 const TAB = "   ";
 

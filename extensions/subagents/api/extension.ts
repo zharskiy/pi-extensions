@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
-import { createManagedExtension } from "../../../extension-manager/index.ts";
-import { errorText } from "../../../shared/index.ts";
+import { createManagedExtension } from "../../../platform/extension-manager/index.ts";
+import { errorText } from "../../../platform/shared/index.ts";
 import { NAMESPACE } from "../core/model/paths.ts";
 import { defaultSettings, disabledPlugins, reloadSettings } from "../core/model/settings.ts";
 import { plugins } from "./plugins.ts";

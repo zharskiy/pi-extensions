@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFakeHost, plainTheme } from "../../../test-framework/index.ts";
+import { createFakeHost, plainTheme } from "../../../test/framework/index.ts";
 import { createTranscript } from "../api/plugin.ts";
 
 describe("transcript", () => {

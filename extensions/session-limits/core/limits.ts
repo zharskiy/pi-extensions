@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ContextSnapshot, Host, SessionControl, ThemeToken } from "../../../pi-adapter/index.ts";
-import { BUSY_CHANNEL, errorText, parseBusySignal } from "../../../shared/index.ts";
+import type {
+  ContextSnapshot,
+  Host,
+  SessionControl,
+  ThemeToken,
+} from "../../../platform/pi-adapter/index.ts";
+import { BUSY_CHANNEL, errorText, parseBusySignal } from "../../../platform/shared/index.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
 import {
   type ContextTokens,

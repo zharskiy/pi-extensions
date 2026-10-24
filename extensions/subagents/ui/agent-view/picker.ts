@@ -1,5 +1,5 @@
-import type { FormFactory } from "../../../../pi-adapter/index.ts";
-import { type SelectOption, selectForm } from "../../../../ui-kit/index.ts";
+import type { FormFactory } from "../../../../platform/pi-adapter/index.ts";
+import { type SelectOption, selectForm } from "../../../../platform/ui-kit/index.ts";
 
 export const SUBCOMMANDS = ["view", "create", "setup"] as const;
 

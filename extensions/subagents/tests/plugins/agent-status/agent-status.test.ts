@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { flushMicrotasks, usageTotals } from "../../../../../test-framework/index.ts";
+import { flushMicrotasks, usageTotals } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";

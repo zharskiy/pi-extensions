@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { TOTALS_CHANNEL } from "../../../shared/index.ts";
+import { TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
   FAKE_FOOTER_KEY,
   plainTheme,
   startExtension,
-} from "../../../test-framework/index.ts";
+} from "../../../test/framework/index.ts";
 import footer from "../api/extension.ts";
 
 const setup = () => {

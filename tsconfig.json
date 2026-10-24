@@ -12,15 +12,5 @@
     "types": ["node"],
     "lib": ["ES2023"]
   },
-  "include": [
-    "pi-adapter",
-    "extension-manager",
-    "ui-kit",
-    "shared",
-    "extensions",
-    "test-framework",
-    "evals",
-    "test",
-    "vitest.config.ts"
-  ]
+  "include": ["platform", "extensions", "test", "vitest.config.ts"]
 }

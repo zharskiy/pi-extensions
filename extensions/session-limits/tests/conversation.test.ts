@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RunMode } from "../../../pi-adapter/index.ts";
-import { createFakeHost } from "../../../test-framework/index.ts";
+import type { RunMode } from "../../../platform/pi-adapter/index.ts";
+import { createFakeHost } from "../../../test/framework/index.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
 
 const setup = (mode: RunMode) => {

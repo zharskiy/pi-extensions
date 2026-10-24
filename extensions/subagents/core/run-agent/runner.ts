@@ -12,8 +12,8 @@ import {
   settleWithin,
   splitModelRequest,
   type UsageTotals,
-} from "../../../../pi-adapter/index.ts";
-import { errorText, readText } from "../../../../shared/index.ts";
+} from "../../../../platform/pi-adapter/index.ts";
+import { errorText, readText } from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,

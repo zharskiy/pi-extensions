@@ -1,4 +1,4 @@
-import { DOT, formatDuration, formatTokens } from "../../../../shared/index.ts";
+import { DOT, formatDuration, formatTokens } from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, formatCalls, formatCtx, singleLine } from "../components/receipt.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../model/agent-record.ts";
 

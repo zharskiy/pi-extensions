@@ -1,5 +1,5 @@
-import type { Host, RunMode, ToolSpec } from "../../../pi-adapter/index.ts";
-import { AWAITING_INPUT_CHANNEL } from "../../../shared/index.ts";
+import type { Host, RunMode, ToolSpec } from "../../../platform/pi-adapter/index.ts";
+import { AWAITING_INPUT_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   errorResult,
   normalizeQuestions,

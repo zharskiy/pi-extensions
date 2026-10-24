@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ThemeLike } from "../../../pi-adapter/index.ts";
-import { plainTheme, tokenTaggingTheme, visibleWidth } from "../../../test-framework/index.ts";
+import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
+import { plainTheme, tokenTaggingTheme, visibleWidth } from "../../../test/framework/index.ts";
 import { createFrame } from "../ui/frame.ts";
 
 const ESC = String.fromCharCode(27);

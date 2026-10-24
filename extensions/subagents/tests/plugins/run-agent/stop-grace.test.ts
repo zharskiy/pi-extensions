@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
+import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";

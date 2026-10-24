@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../../../../../pi-adapter/index.ts";
-import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test-framework/index.ts";
-import { parseSessionLines } from "../../../../../test-framework/pi/index.ts";
+import { formatRoutedMessage } from "../../../../../platform/pi-adapter/index.ts";
+import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test/framework/index.ts";
+import { parseSessionLines } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";

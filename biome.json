@@ -42,7 +42,7 @@
       }
     },
     {
-      "includes": ["pi-adapter/**"],
+      "includes": ["platform/pi-adapter/**"],
       "linter": {
         "rules": {
           "style": {
@@ -67,7 +67,7 @@
                     "message": "pi-adapter imports nothing from the repo (R3)."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -78,7 +78,7 @@
       }
     },
     {
-      "includes": ["pi-adapter/types/**"],
+      "includes": ["platform/pi-adapter/types/**"],
       "linter": {
         "rules": {
           "style": {
@@ -103,7 +103,7 @@
                     "message": "pi-adapter imports nothing from the repo (R3)."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -118,7 +118,7 @@
       }
     },
     {
-      "includes": ["pi-adapter/tests/**"],
+      "includes": ["platform/pi-adapter/tests/**"],
       "linter": {
         "rules": {
           "style": {
@@ -132,19 +132,19 @@
                   },
                   {
                     "group": ["**/extension-manager/**"],
-                    "message": "Adapter tests use test-framework and the adapter only."
+                    "message": "Adapter tests use test/framework and the adapter only."
                   },
                   {
                     "group": ["**/ui-kit/**"],
-                    "message": "Adapter tests use test-framework and the adapter only."
+                    "message": "Adapter tests use test/framework and the adapter only."
                   },
                   {
                     "group": ["**/shared/**"],
-                    "message": "Adapter tests use test-framework and the adapter only."
+                    "message": "Adapter tests use test/framework and the adapter only."
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -154,7 +154,7 @@
       }
     },
     {
-      "includes": ["shared/**"],
+      "includes": ["platform/shared/**"],
       "linter": {
         "rules": {
           "style": {
@@ -164,7 +164,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -183,7 +183,7 @@
                     "message": "This layer must not import extensions."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -194,7 +194,7 @@
       }
     },
     {
-      "includes": ["shared/tests/**"],
+      "includes": ["platform/shared/tests/**"],
       "linter": {
         "rules": {
           "style": {
@@ -204,7 +204,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -224,7 +224,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -234,7 +234,7 @@
       }
     },
     {
-      "includes": ["ui-kit/**"],
+      "includes": ["platform/ui-kit/**"],
       "linter": {
         "rules": {
           "style": {
@@ -244,7 +244,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -263,7 +263,7 @@
                     "message": "This layer must not import extensions."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -274,7 +274,7 @@
       }
     },
     {
-      "includes": ["ui-kit/tests/**"],
+      "includes": ["platform/ui-kit/tests/**"],
       "linter": {
         "rules": {
           "style": {
@@ -284,7 +284,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -304,7 +304,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -314,7 +314,7 @@
       }
     },
     {
-      "includes": ["extension-manager/**"],
+      "includes": ["platform/extension-manager/**"],
       "linter": {
         "rules": {
           "style": {
@@ -324,7 +324,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -343,7 +343,7 @@
                     "message": "This layer must not import extensions."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -354,7 +354,7 @@
       }
     },
     {
-      "includes": ["extension-manager/tests/**"],
+      "includes": ["platform/extension-manager/tests/**"],
       "linter": {
         "rules": {
           "style": {
@@ -364,7 +364,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -384,7 +384,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -404,7 +404,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -427,7 +427,7 @@
                     "message": "Import another extension only through extensions/<name>/index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -448,7 +448,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -471,7 +471,7 @@
                     "message": "Import another extension only through extensions/<name>/index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -492,7 +492,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -515,7 +515,7 @@
                     "message": "Import another extension only through extensions/<name>/index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -536,7 +536,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -559,7 +559,7 @@
                     "message": "Import another extension only through extensions/<name>/index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   }
                 ]
@@ -580,7 +580,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -603,7 +603,7 @@
                     "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -628,7 +628,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -651,7 +651,7 @@
                     "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -676,7 +676,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -699,7 +699,7 @@
                     "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -730,7 +730,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -753,7 +753,7 @@
                     "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -778,7 +778,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -801,7 +801,7 @@
                     "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -826,7 +826,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -849,7 +849,7 @@
                     "message": "core/ and ui/ never import another extension; only api/ may, through its index.ts."
                   },
                   {
-                    "group": ["**/test-framework/**", "**/evals/**", "**/test/**"],
+                    "group": ["**/test/framework/**", "**/evals/**", "**/test/**"],
                     "message": "Shipped code never imports test code."
                   },
                   {
@@ -874,7 +874,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -898,7 +898,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -918,7 +918,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -942,7 +942,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -962,7 +962,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -986,7 +986,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -996,7 +996,7 @@
       }
     },
     {
-      "includes": ["test-framework/**"],
+      "includes": ["test/framework/**"],
       "linter": {
         "rules": {
           "style": {
@@ -1006,7 +1006,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -1030,7 +1030,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -1040,7 +1040,7 @@
       }
     },
     {
-      "includes": ["test-framework/*.ts", "test-framework/live/**", "test-framework/eval-runs/**"],
+      "includes": ["test/framework/*.ts", "test/framework/live/**", "test/framework/eval-runs/**"],
       "linter": {
         "rules": {
           "style": {
@@ -1050,7 +1050,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -1074,11 +1074,11 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   },
                   {
                     "group": ["./pi/**", "../pi/**"],
-                    "message": "Pi-free test-framework modules never import test-framework/pi/** (R12)."
+                    "message": "Pi-free test/framework modules never import test/framework/pi/** (R12)."
                   }
                 ]
               }
@@ -1088,7 +1088,7 @@
       }
     },
     {
-      "includes": ["test-framework/pi/**"],
+      "includes": ["test/framework/pi/**"],
       "linter": {
         "rules": {
           "style": {
@@ -1114,7 +1114,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }
@@ -1124,7 +1124,7 @@
       }
     },
     {
-      "includes": ["evals/**"],
+      "includes": ["test/evals/**"],
       "linter": {
         "rules": {
           "style": {
@@ -1134,7 +1134,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -1168,7 +1168,7 @@
       }
     },
     {
-      "includes": ["test/**"],
+      "includes": ["test/*.ts"],
       "linter": {
         "rules": {
           "style": {
@@ -1178,7 +1178,7 @@
                 "patterns": [
                   {
                     "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
-                    "message": "Only pi-adapter/** and test-framework/pi/** may import pi packages."
+                    "message": "Only platform/pi-adapter/** and test/framework/pi/** may import pi packages."
                   },
                   {
                     "group": ["**/pi-adapter/**", "!**/pi-adapter/index.ts"],
@@ -1202,7 +1202,7 @@
                   },
                   {
                     "group": ["**/evals/**"],
-                    "message": "Nothing imports evals/."
+                    "message": "Nothing imports test/evals/."
                   }
                 ]
               }

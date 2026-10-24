@@ -160,8 +160,8 @@ A team can commit `.pi/mcp.json`, `.pi/agents/`, `.pi/pi-subagents.json` and `.a
 
 ## Architecture
 
-- `pi-adapter/` is the only shipped code that imports pi. Everything else sees pi through its `index.ts`.
-- `shared/`, `ui-kit/` and `extension-manager/` hold pi-free helpers, themed components and the plugin and settings runtime.
+- `platform/pi-adapter/` is the only shipped code that imports pi. Everything else sees pi through its `index.ts`.
+- `platform/shared/`, `platform/ui-kit/` and `platform/extension-manager/` hold pi-free helpers, themed components and the plugin and settings runtime.
 - Each `extensions/<name>/` splits into `core/` (logic), `ui/` (rendering) and `api/` (wiring), with `index.ts` as the entry.
 - Layers point one way, `pi-adapter ← shared ← ui-kit ← extension-manager ← extensions`. Extensions talk over pi's event bus.
 - Biome, knip and `test/architecture.test.ts` enforce the rules in `npm run check`.
@@ -178,14 +178,14 @@ PI_LIVE_MODEL=provider/id:low npm run test:live   # live tests with real agents,
 PI_LIVE_MODEL=provider/id:low npm run evals       # prompt-quality evals with real agents, local only, costs money
 ```
 
-`npm run check` is what CI runs. Live tests and evals never run in CI. Rules for coding agents are in [AGENTS.md](AGENTS.md); the evals are described in [evals/README.md](evals/README.md).
+`npm run check` is what CI runs. Live tests and evals never run in CI. Rules for coding agents are in [AGENTS.md](AGENTS.md); the evals are described in [test/evals/README.md](test/evals/README.md).
 
 <details>
 <summary>How live tests and evals use your credentials</summary>
 
 Both need `PI_LIVE_MODEL=provider/id[:thinking]` set to a model you have pi credentials for (in pi's agent dir, `~/.pi/agent/auth.json`, or the dir in `PI_CODING_AGENT_DIR`). The optional `PI_LIVE_CHORE_MODEL` puts the chore agents on a second model. Without it, or without credentials, they fail at once with a message saying what is missing.
 
-Each suite links your `auth.json` (and copies `models.json`, if present) into a temporary agent dir and points pi at it. Your `AGENTS.md`, skills, extensions and MCP config stay out. A token pi refreshes during a run goes through the link into the real file, so it is not lost. Everything they create lives in temporary directories, except the evals' results in the gitignored `evals/.results/`.
+Each suite links your `auth.json` (and copies `models.json`, if present) into a temporary agent dir and points pi at it. Your `AGENTS.md`, skills, extensions and MCP config stay out. A token pi refreshes during a run goes through the link into the real file, so it is not lost. Everything they create lives in temporary directories, except the evals' results in the gitignored `test/evals/.results/`.
 
 </details>
 

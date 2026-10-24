@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionInfo } from "../../../../pi-adapter/index.ts";
+import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
 
 export const NAMESPACE = "pi-subagents";
 

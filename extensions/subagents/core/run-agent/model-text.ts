@@ -1,5 +1,5 @@
-import type { ModelChoice } from "../../../../pi-adapter/index.ts";
-import { formatTokens } from "../../../../shared/index.ts";
+import type { ModelChoice } from "../../../../platform/pi-adapter/index.ts";
+import { formatTokens } from "../../../../platform/shared/index.ts";
 import { resolutionProblem, type UnresolvedModel } from "../model/model-resolution.ts";
 
 const choiceLine = (choice: ModelChoice) =>

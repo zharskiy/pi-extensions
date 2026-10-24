@@ -1,6 +1,6 @@
-import type { Host } from "../../../pi-adapter/index.ts";
-import { counted, DOT, ELLIPSIS } from "../../../shared/index.ts";
-import { multiSelectForm, selectForm } from "../../../ui-kit/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
+import { counted, DOT, ELLIPSIS } from "../../../platform/shared/index.ts";
+import { multiSelectForm, selectForm } from "../../../platform/ui-kit/index.ts";
 import type { Scope, Source } from "../core/args.ts";
 import { needsSignIn } from "../core/convert.ts";
 import type { Pair } from "../core/import-flow.ts";

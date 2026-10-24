@@ -1,4 +1,4 @@
-import type { AgentRuntime, CodemodeShortfall } from "../../../../pi-adapter/index.ts";
+import type { AgentRuntime, CodemodeShortfall } from "../../../../platform/pi-adapter/index.ts";
 import {
   isPlainObject,
   type ObjectParse,
@@ -7,7 +7,7 @@ import {
   type SettingsParse,
   type SettingsSchema,
   userSettingsPath,
-} from "../../../../shared/index.ts";
+} from "../../../../platform/shared/index.ts";
 import {
   OVERRIDE_FIELDS,
   type OverrideField,

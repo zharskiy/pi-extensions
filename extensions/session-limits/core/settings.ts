@@ -1,4 +1,4 @@
-import type { SettingsSchema } from "../../../shared/index.ts";
+import type { SettingsSchema } from "../../../platform/shared/index.ts";
 import type { Limits } from "./thresholds.ts";
 
 export const SETTINGS_FILE = "pi-session-limits.json";

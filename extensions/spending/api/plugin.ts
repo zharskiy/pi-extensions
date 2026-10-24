@@ -1,4 +1,9 @@
-import { type Plugin, SPENDING_STATUS_KEY, TOTALS_CHANNEL, USAGE_CHANNEL } from "../../../shared/index.ts";
+import {
+  type Plugin,
+  SPENDING_STATUS_KEY,
+  TOTALS_CHANNEL,
+  USAGE_CHANNEL,
+} from "../../../platform/shared/index.ts";
 import { createSpending } from "../core/spending.ts";
 import { footerText } from "../ui/footer-text.ts";
 

@@ -1,5 +1,5 @@
-import type { Host } from "../../../pi-adapter/index.ts";
-import { selectForm } from "../../../ui-kit/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
+import { selectForm } from "../../../platform/ui-kit/index.ts";
 import { NORMAL, NORMAL_DESCRIPTION, type Style } from "../core/styles.ts";
 
 export const pickStyle = (host: Host, styles: ReadonlyMap<string, Style>, current: string) => {

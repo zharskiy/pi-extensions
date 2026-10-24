@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../../../pi-adapter/index.ts";
+import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
 import { outputLines, previewRows, wrappedRows } from "./output.ts";
 import { bold, type Context, firstLineFailure, type Look, orError, resultText } from "./tool-look.ts";
 

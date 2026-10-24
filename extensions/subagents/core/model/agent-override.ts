@@ -1,4 +1,8 @@
-import { isThinkingLevel, splitModelRequest, THINKING_LEVELS } from "../../../../pi-adapter/index.ts";
+import {
+  isThinkingLevel,
+  splitModelRequest,
+  THINKING_LEVELS,
+} from "../../../../platform/pi-adapter/index.ts";
 import { AGENT_SCOPE_ALL, type AgentOverride, INHERIT_MODEL } from "./agent-schema.ts";
 
 export type OverrideField = { patch: AgentOverride; error?: string };

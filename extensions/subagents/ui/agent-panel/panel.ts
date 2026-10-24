@@ -1,4 +1,4 @@
-import type { Host, RowLines, WidgetHandle } from "../../../../pi-adapter/index.ts";
+import type { Host, RowLines, WidgetHandle } from "../../../../platform/pi-adapter/index.ts";
 
 const WIDGET_KEY = "pi-subagents-agents";
 

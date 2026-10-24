@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { fixtureMcpServerPath, hiddenMessageTexts } from "../../../../test-framework/index.ts";
-import { sessionFacts } from "../../../../test-framework/pi/index.ts";
-import { describeLive, realContextMarkers } from "../../../../test-framework/pi/live/index.ts";
+import { fixtureMcpServerPath, hiddenMessageTexts } from "../../../../test/framework/index.ts";
+import { sessionFacts } from "../../../../test/framework/pi/index.ts";
+import { describeLive, realContextMarkers } from "../../../../test/framework/pi/live/index.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
 
 const code = () => randomUUID().slice(0, 8);

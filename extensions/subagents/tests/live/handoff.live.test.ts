@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { hiddenMessageTexts, pause } from "../../../../test-framework/index.ts";
-import { describeLive, LIVE_TIMEOUT_MS } from "../../../../test-framework/pi/live/index.ts";
+import { hiddenMessageTexts, pause } from "../../../../test/framework/index.ts";
+import { describeLive, LIVE_TIMEOUT_MS } from "../../../../test/framework/pi/live/index.ts";
 import type { AgentRecord } from "../../core/model/agent-record.ts";
 import { createHandoff } from "../../core/run-agent/handoff.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";

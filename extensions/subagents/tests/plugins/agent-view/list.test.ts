@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ThemeLike } from "../../../../../pi-adapter/index.ts";
+import type { ThemeLike } from "../../../../../platform/pi-adapter/index.ts";
 import {
   char,
   flushMicrotasks,
@@ -7,12 +7,12 @@ import {
   plainLines,
   plainTheme,
   tokenTaggingTheme,
-} from "../../../../../test-framework/index.ts";
+} from "../../../../../test/framework/index.ts";
 import {
   disposeOverlays,
   initPiRenderTheme,
   openLastOverlay,
-} from "../../../../../test-framework/pi/index.ts";
+} from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";

@@ -1,5 +1,5 @@
-import type { OverlayApi } from "../../../../pi-adapter/index.ts";
-import { DOT, errorText } from "../../../../shared/index.ts";
+import type { OverlayApi } from "../../../../platform/pi-adapter/index.ts";
+import { DOT, errorText } from "../../../../platform/shared/index.ts";
 import { countsText, listCounts, listedTerminals, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { createAgentSource } from "../../core/agent-view/source.ts";
 import { cutChars } from "../../core/components/receipt.ts";

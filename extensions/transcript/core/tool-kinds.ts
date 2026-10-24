@@ -1,5 +1,5 @@
-import type { ToolCallView } from "../../../pi-adapter/index.ts";
-import { formatDuration, isPlainObject } from "../../../shared/index.ts";
+import type { ToolCallView } from "../../../platform/pi-adapter/index.ts";
+import { formatDuration, isPlainObject } from "../../../platform/shared/index.ts";
 
 const SLOW_MS = 5000;
 

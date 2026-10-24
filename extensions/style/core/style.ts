@@ -1,4 +1,4 @@
-import type { Host } from "../../../pi-adapter/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
 import { NORMAL, type Style } from "./styles.ts";
 
 export const SECTION = "output_style";

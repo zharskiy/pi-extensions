@@ -1,5 +1,5 @@
-import { PAD, type ThemeLike } from "../../../pi-adapter/index.ts";
-import { padded } from "../../../shared/index.ts";
+import { PAD, type ThemeLike } from "../../../platform/pi-adapter/index.ts";
+import { padded } from "../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
   framed,
@@ -8,7 +8,7 @@ import {
   SELECT_HINTS,
   TAB_SWITCH_HINT,
   tabBar,
-} from "../../../ui-kit/index.ts";
+} from "../../../platform/ui-kit/index.ts";
 import {
   allAnswered,
   answerOf,

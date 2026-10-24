@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { reportSettingsErrors } from "../../../extension-manager/index.ts";
-import type { Host, SessionInfo } from "../../../pi-adapter/index.ts";
-import type { Plugin } from "../../../shared/index.ts";
+import { reportSettingsErrors } from "../../../platform/extension-manager/index.ts";
+import type { Host, SessionInfo } from "../../../platform/pi-adapter/index.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
 import { readStyleSettings, SETTINGS_FILE, saveStyle } from "../core/settings.ts";
 import { createStyleSection } from "../core/style.ts";
 import { loadStyles, NORMAL, type Style } from "../core/styles.ts";

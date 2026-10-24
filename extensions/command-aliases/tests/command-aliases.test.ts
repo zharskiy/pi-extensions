@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFakeHost } from "../../../test-framework/index.ts";
+import { createFakeHost } from "../../../test/framework/index.ts";
 import { createCommandAliases } from "../api/plugin.ts";
 
 const setup = () => {

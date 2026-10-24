@@ -1,4 +1,4 @@
-import type { ToolSpec } from "../../../../pi-adapter/index.ts";
+import type { ToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import {
   type AgentInternals,
   type AgentRegistry,

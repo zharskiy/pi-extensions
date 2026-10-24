@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme } from "../../../test-framework/index.ts";
+import { plainTheme } from "../../../test/framework/index.ts";
 import { apportion } from "../core/breakdown.ts";
 import { renderSnapshot } from "../ui/render.ts";
 import { breakdown, snapshot, usage } from "./support/context-snapshots.ts";

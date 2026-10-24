@@ -1,4 +1,4 @@
-import type { FormApi, KeyPress, ViewComponent } from "../../../pi-adapter/index.ts";
+import type { FormApi, KeyPress, ViewComponent } from "../../../platform/pi-adapter/index.ts";
 import type { Question, QuestionnaireDetails } from "../core/questions.ts";
 import {
   answerOf,

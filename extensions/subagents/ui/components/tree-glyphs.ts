@@ -1,4 +1,4 @@
-import { MARKS } from "../../../../ui-kit/index.ts";
+import { MARKS } from "../../../../platform/ui-kit/index.ts";
 import type { TreeRow } from "../../core/components/tree.ts";
 
 export const nestPrefix = (row: Pick<TreeRow, "depth" | "first">): string =>

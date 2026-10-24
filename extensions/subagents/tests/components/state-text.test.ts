@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme, tokenTaggingTheme } from "../../../../test-framework/index.ts";
+import { plainTheme, tokenTaggingTheme } from "../../../../test/framework/index.ts";
 import { displayWord } from "../../core/components/receipt.ts";
 import type { AgentState } from "../../core/model/agent-record.ts";
 import {
