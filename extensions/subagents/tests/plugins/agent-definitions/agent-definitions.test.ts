@@ -660,9 +660,9 @@ describe("definition loading", () => {
       });
   });
 
-  it("documents the frontmatter schema in the README table, row by row", () => {
-    const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
-    const table = readme.slice(readme.indexOf("| Field |")).split("\n\n")[0];
+  it("documents the frontmatter schema in the ARCHITECTURE.md table, row by row", () => {
+    const architecture = readFileSync(join(PACKAGE_ROOT, "ARCHITECTURE.md"), "utf8");
+    const table = architecture.slice(architecture.indexOf("| Field |")).split("\n\n")[0];
 
     const rows = Array.from(table.matchAll(/^\| `(\w+)` \| (.*) \| (.*) \| (.*) \|$/gm), (match) => ({
       key: match[1],

@@ -11,32 +11,9 @@ Thirteen extensions in one pi package (`pi-extensions-mz`), built on one small s
 [![pi](https://img.shields.io/badge/pi-%E2%89%A51.2.0-8a63d2.svg)](https://pi.dev)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](package.json)
 
-[Quick start](#quick-start) · [Extensions](#extensions) · [Architecture](#architecture) · [Development](#development)
+[Quick start](#quick-start) · [Development](#development) · [Contributing and licence](#contributing-and-licence)
 
 </div>
-
-```mermaid
-flowchart BT
-    pi(["pi coding agent"])
-    adapter["pi-adapter<br/>the only code that imports pi"]
-    shared["shared<br/>pi-free helpers and formats"]
-    uikit["ui-kit<br/>themed rows, lists, forms"]
-    manager["extension-manager<br/>plugins, bus, settings"]
-
-    subgraph ext["13 extensions"]
-        direction LR
-        agents["Agents and tools<br/>subagents · questionnaire · style · mcp-import"]
-        session["Session awareness<br/>session-limits · spending · context · notifications"]
-        look["Look and feel<br/>footer · transcript · composer · working-indicator · command-aliases"]
-    end
-
-    adapter --> pi
-    shared --> adapter
-    uikit --> shared
-    manager --> shared
-    ext --> uikit
-    ext --> manager
-```
 
 ## Why
 
@@ -68,105 +45,52 @@ Tool rows from [transcript](extensions/transcript/README.md), an agent batch fro
 Version 0.4.0, for pi 1.2.0 or later within pi 1 (developed and tested against pi 1.3.0).
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions
+pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install ./pi-extensions                         # from a local checkout; add -l for the current project only
+pi -e ./pi-extensions/extensions/<name>/index.ts   # one extension for a single run, from a checkout
+pi update --extensions                             # update a git install; for a checkout, git pull, then /reload in pi
 ```
 
-Or from a local checkout:
+The package installs thirteen extensions:
 
-```bash
-pi install ./pi-extensions                      # local checkout; add -l for the current project only
-```
+**Agents and tools**
 
-Either installs all 13 extensions; they are listed under `pi.extensions` in [package.json](package.json). Start pi and try:
+- **[subagents](extensions/subagents/README.md)**: background agents you run, watch, message and stop from the main session, optionally in their own git worktree, with MCP tools. A panel below the editor and an `/agents` overlay.
+- **[questionnaire](extensions/questionnaire/README.md)**: a tool the model uses to ask you a batch of multiple-choice questions in one inline form.
+- **[style](extensions/style/README.md)**: `/style concise` for short, result-first replies everywhere; `/style normal` turns it off.
+- **[mcp-import](extensions/mcp-import/README.md)**: `/mcp-import <claude|cursor>` copies MCP servers into pi's `mcp.json`. A dry run unless you add `apply`.
 
-| Command | What happens |
+**Session awareness**
+
+- **[session-limits](extensions/session-limits/README.md)**: hands the main session over to a new session before its context fills up.
+- **[spending](extensions/spending/README.md)**: the session's total spend in the footer, subagents at every depth included.
+- **[context](extensions/context/README.md)**: `/context` shows what fills the context window, per category, with cache hit rates.
+- **[notifications](extensions/notifications/README.md)**: one terminal notification when pi waits for your input or a dialog waits unanswered.
+
+**Look and feel**
+
+- **[footer](extensions/footer/README.md)**: a multi-line status block: context, cache, cost, model, session total, folder, branch, thinking level.
+- **[transcript](extensions/transcript/README.md)**: tool calls as state rows: a glyph, a title and a one-line outcome you expand with `ctrl+o`.
+- **[composer](extensions/composer/README.md)**: the input drawn between two full-width rules, with pi's `›` cursor as the prompt.
+- **[working-indicator](extensions/working-indicator/README.md)**: a rotating verb and the elapsed time next to pi's spinner (`Pondering · 12s`).
+- **[command-aliases](extensions/command-aliases/README.md)**: friendlier names for built-in commands: `/continue`, `/clear`, `/exit`.
+
+Start pi and try:
+
+| Try | What you see |
 |---|---|
-| `/agents` | Opens the agents menu: view running and finished agents, set up models, create a new agent. |
-| `/context` | Prints what fills the context window, with cache hit rates. |
+| `/agents` | The agents menu: view running and finished agents, set up models, create a new agent. |
+| `/context` | What fills the context window, with cache hit rates. |
 | `/style concise` | Short, result-first replies from the main session and every agent. |
-
-<details>
-<summary>Try one extension for a single run without installing</summary>
-
-```bash
-pi -e ./pi-extensions/extensions/subagents/index.ts
-pi -e ./pi-extensions/extensions/session-limits/index.ts
-pi -e ./pi-extensions/extensions/spending/index.ts
-pi -e ./pi-extensions/extensions/working-indicator/index.ts
-pi -e ./pi-extensions/extensions/notifications/index.ts
-pi -e ./pi-extensions/extensions/command-aliases/index.ts
-pi -e ./pi-extensions/extensions/composer/index.ts
-pi -e ./pi-extensions/extensions/questionnaire/index.ts
-pi -e ./pi-extensions/extensions/style/index.ts
-pi -e ./pi-extensions/extensions/context/index.ts
-pi -e ./pi-extensions/extensions/footer/index.ts
-pi -e ./pi-extensions/extensions/mcp-import/index.ts
-pi -e ./pi-extensions/extensions/transcript/index.ts
-```
-
-</details>
-
-<details>
-<summary>Update</summary>
-
-```bash
-pi update --extensions              # git install
-git -C pi-extensions pull           # local checkout; then /reload in pi
-```
-
-</details>
-
-## Extensions
-
-### Agents and tools
-
-| Extension | What it does |
-|---|---|
-| [subagents](extensions/subagents/README.md) | Background agents you run, watch, message and stop from the main session, optionally in their own git worktree, with MCP tools. A panel below the editor and an `/agents` overlay. |
-| [questionnaire](extensions/questionnaire/README.md) | A tool the model uses to ask you a batch of multiple-choice questions in one inline form. |
-| [style](extensions/style/README.md) | `/style concise` for short, result-first replies everywhere; `/style normal` turns it off. |
-| [mcp-import](extensions/mcp-import/README.md) | `/mcp-import <claude\|cursor>` copies MCP servers into pi's `mcp.json`. A dry run unless you add `apply`. |
-
-### Session awareness
-
-| Extension | What it does |
-|---|---|
-| [session-limits](extensions/session-limits/README.md) | Hands the main session over to a new session before its context fills up. |
-| [spending](extensions/spending/README.md) | The session's total spend in the footer, subagents at every depth included. |
-| [context](extensions/context/README.md) | `/context` shows what fills the context window, per category, with cache hit rates. |
-| [notifications](extensions/notifications/README.md) | One terminal notification when pi waits for your input or a dialog waits unanswered. |
-
-### Look and feel
-
-| Extension | What it does |
-|---|---|
-| [footer](extensions/footer/README.md) | A multi-line status block: context, cache, cost, model, session total, folder, branch, thinking level. |
-| [transcript](extensions/transcript/README.md) | Tool calls as state rows: a glyph, a title and a one-line outcome you expand with `ctrl+o`. |
-| [composer](extensions/composer/README.md) | The input drawn between two full-width rules, with pi's `›` cursor as the prompt. |
-| [working-indicator](extensions/working-indicator/README.md) | A rotating verb and the elapsed time next to pi's spinner (`Pondering · 12s`). |
-| [command-aliases](extensions/command-aliases/README.md) | Friendlier names for built-in commands: `/continue`, `/clear`, `/exit`. |
 
 <details>
 <summary>Coming from another tool</summary>
 
 - **Skills:** nothing to do when they live in `.agents/skills`. Pi reads `~/.agents/skills` and `.agents/skills` as well as its own `~/.pi/agent/skills` and `.pi/skills`.
-- **Agent definitions and instruction files:** rewrite them by hand. Pi reads `AGENTS.md` and `CLAUDE.md` as they are. Start an agent with `/agents create <name>`, which writes a documented template, and copy the old prompt into its body (see [subagents](extensions/subagents/README.md#agents)).
+- **Agent definitions and instruction files:** pi reads `AGENTS.md` and `CLAUDE.md` as they are. Rewrite agents by hand: `/agents create <name>` sets up a new agent (see [subagents](extensions/subagents/README.md)), then copy the old prompt into its body.
 - **MCP servers:** `/mcp-import claude` or `/mcp-import cursor` (add `project` for the project's servers) shows what it would copy; add `apply` to write it, then `/reload`. OAuth sign-ins do not transfer: sign in again with `/mcp`.
-- **Afterwards** pi manages the servers itself: `/mcp` in a session, or `pi mcp add|remove|list|login|logout` from the shell.
-
-A team can commit `.pi/mcp.json`, `.pi/agents/`, `.pi/pi-subagents.json` and `.agents/skills`. A colleague who trusts the project gets the same setup.
 
 </details>
-
-## Architecture
-
-- `platform/pi-adapter/` is the only shipped code that imports pi. Everything else sees pi through its `index.ts`.
-- `platform/shared/`, `platform/ui-kit/` and `platform/extension-manager/` hold pi-free helpers, themed components and the plugin and settings runtime.
-- Each `extensions/<name>/` splits into `core/` (logic), `ui/` (rendering) and `api/` (wiring), with `index.ts` as the entry.
-- Layers point one way, `pi-adapter ← shared ← ui-kit ← extension-manager ← extensions`. Extensions talk over pi's event bus.
-- Biome, knip and `test/architecture.test.ts` enforce the rules in `npm run check`, and `test/docs-sync.test.ts` makes extension code changes come with doc changes.
-
-How it works: [ARCHITECTURE.md](ARCHITECTURE.md). Where things are: [STRUCTURE.md](STRUCTURE.md).
 
 ## Development
 
@@ -191,4 +115,4 @@ Each suite links your `auth.json` (and copies `models.json`, if present) into a 
 
 ## Contributing and licence
 
-Issues and pull requests are welcome. Run `npm run check` before you open one. Released under the [MIT licence](LICENSE).
+Issues and pull requests are welcome. Run `npm run check` before you open one. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are. Released under the [MIT licence](LICENSE).
