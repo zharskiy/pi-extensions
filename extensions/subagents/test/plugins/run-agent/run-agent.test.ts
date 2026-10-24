@@ -60,7 +60,6 @@ describe("run_agent batches", () => {
       message: { customType: "pi-subagents:wake" },
       delivery: "run",
     });
-    expect(host.sent).toEqual([]);
     expect(registry.list().every((record) => record.state === "done")).toBe(true);
 
     await flush();
@@ -209,7 +208,6 @@ describe("run_agent batches", () => {
     expect(wakeTexts(host)).toHaveLength(1);
     expect(wakeTexts(host)[0]).toContain("done while busy");
     expect(host.hidden[0].delivery).toBe("followUp");
-    expect(host.sent).toEqual([]);
 
     host.settle();
 

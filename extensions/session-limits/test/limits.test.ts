@@ -147,7 +147,6 @@ describe("session limits", () => {
     expect(requests()[0]).not.toContain("next session is for");
     expect(requests()[0]).not.toContain("/session-handoff");
     expect(host.hidden[0].message.customType).toBe("pi-session-limits-request");
-    expect(host.sent).toEqual([]);
     expect(host.notices).toEqual([
       {
         message: `Context is nearly full; writing a session handoff to ${handoffPath}, then switching to a new session.`,
@@ -557,7 +556,6 @@ describe("/session-handoff on demand", () => {
     expect(requests()[0]).toContain("[redacted]");
     expect(requests()[0]).toContain("Skills:");
     expect(requests()[0]).not.toContain("{{");
-    expect(host.sent).toEqual([]);
     expect(host.notices).toEqual([
       {
         message: `Writing a session handoff to ${handoffPath}; the session switches to a new one when it is ready.`,

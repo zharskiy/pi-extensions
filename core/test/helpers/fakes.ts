@@ -70,7 +70,6 @@ export type FakeHost = Host & {
   promptSections: Map<string, string>;
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
-  sent: string[];
   hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
@@ -217,7 +216,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     promptSections: new Map(),
     entries: [],
     files: new Map(),
-    sent: [],
     hidden: [],
     dispatched: [],
     published: [],
@@ -461,13 +459,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       compactHandlers.push(handler);
     },
     isIdle: () => started && host.idle,
-    sendUserMessage: (text) => {
-      if (stale) {
-        return;
-      }
-
-      host.sent.push(text);
-    },
     sendHiddenMessage: (message) => {
       if (!started) {
         return;

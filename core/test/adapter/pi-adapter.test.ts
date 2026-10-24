@@ -293,36 +293,30 @@ describe("pi adapter", () => {
     expect(host.session().subscription).toBe(false);
   });
 
-  it("queues user messages and commands as follow-ups while busy", async () => {
+  it("queues commands as follow-ups while busy", async () => {
     const { pi, fire, sent } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
 
     host.dispatchCommand("ignored");
 
     await fire("session_start", fakeCtx("tui", false));
-    host.sendUserMessage("write it");
     host.dispatchCommand("session-handoff");
     host.dispatchCommand("agents", "a1");
 
     expect(sent).toEqual([
-      { text: "write it", options: { deliverAs: "followUp" } },
       { text: "/session-handoff", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
       { text: "/agents a1", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
     ]);
   });
 
-  it("sends user messages and commands as prompts while idle", async () => {
+  it("sends commands as prompts while idle", async () => {
     const { pi, fire, sent } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
-    host.sendUserMessage("write it");
     host.dispatchCommand("skill:review", "src");
 
-    expect(sent).toEqual([
-      { text: "write it", options: undefined },
-      { text: "/skill:review src", options: { expandPromptTemplates: true } },
-    ]);
+    expect(sent).toEqual([{ text: "/skill:review src", options: { expandPromptTemplates: true } }]);
   });
 
   it("seeds the new session with a displayed message that triggers no turn", async () => {

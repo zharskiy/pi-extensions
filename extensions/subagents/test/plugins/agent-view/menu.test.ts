@@ -105,7 +105,6 @@ describe("/agents menu", () => {
     await second;
 
     expect(host.overlays).toHaveLength(2);
-    expect(host.sent).toEqual([]);
   });
 
   it("opens the setup form on 2 and sends the create brief on 3", async () => {
@@ -140,7 +139,6 @@ describe("/agents menu", () => {
 
     expect(host.overlays).toHaveLength(0);
     expect(host.notices).toEqual([]);
-    expect(host.sent).toEqual([]);
   });
 
   it("opens the list directly when agent-setup is disabled", async () => {

@@ -314,7 +314,6 @@ export type Host = {
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   onCompact(handler: () => void): void;
   isIdle(): boolean;
-  sendUserMessage(text: string): void;
   sendHiddenMessage(message: HiddenMessage): void;
   dispatchCommand(name: string, args?: string): void;
   publish(channel: string, data: unknown): void;

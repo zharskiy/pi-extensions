@@ -69,7 +69,6 @@ describe("/agents create", () => {
     expect(brief).toContain("tools: [read, grep, find, ls]\n");
     expect(brief).toContain("mcp: false");
     expect(brief).toContain("subagents: [scout]");
-    expect(host.sent).toEqual([]);
     expect(brief).not.toContain("{{");
     expect(existsSync(userDir)).toBe(false);
     expect(host.notices.at(-1)).toEqual({
