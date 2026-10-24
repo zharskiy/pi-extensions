@@ -3,9 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakeHost } from "../../../test-framework/index.ts";
-import { SETTINGS_FILE } from "../src/settings.ts";
-import { createStyle, SECTION } from "../src/style.ts";
-import { loadStyles, parseStyle, type Style } from "../src/styles.ts";
+import { createStyle } from "../api/plugin.ts";
+import { SETTINGS_FILE } from "../core/settings.ts";
+import { SECTION } from "../core/style.ts";
+import { loadStyles, parseStyle, type Style } from "../core/styles.ts";
 
 const TERSE = "Answer tersely.";
 

@@ -1,2 +1,2 @@
 /** @public */
-export { default } from "./src/index.ts";
+export { default } from "./api/extension.ts";

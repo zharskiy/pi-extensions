@@ -1,21 +1,16 @@
+import { join } from "node:path";
 import { reportSettingsErrors } from "../../../extension-manager/index.ts";
 import type { Host, SessionInfo } from "../../../pi-adapter/index.ts";
-import { pickStyle } from "./pick.ts";
-import { readStyleSettings, SETTINGS_FILE, saveStyle } from "./settings.ts";
-import { NORMAL, type Style } from "./styles.ts";
-
-export const SECTION = "output_style";
+import type { Plugin } from "../../../shared/index.ts";
+import { readStyleSettings, SETTINGS_FILE, saveStyle } from "../core/settings.ts";
+import { createStyleSection } from "../core/style.ts";
+import { loadStyles, NORMAL, type Style } from "../core/styles.ts";
+import { pickStyle } from "../ui/pick.ts";
 
 export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
-  const names = [...styles.keys(), NORMAL];
-  let current = NORMAL;
+  const { names, current, apply } = createStyleSection(host, styles);
   let projectStyle: string | undefined;
   let session: SessionInfo | undefined;
-
-  const apply = (name: string) => {
-    current = name;
-    host.setPromptSection(SECTION, styles.get(name)?.prompt);
-  };
 
   const report = reportSettingsErrors(host, "pi-style");
 
@@ -53,11 +48,11 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
 
   const pick = async () => {
     if (host.session().mode !== "tui") {
-      host.ui.notify(`Style: ${current} (${available()})`, "info");
+      host.ui.notify(`Style: ${current()} (${available()})`, "info");
       return;
     }
 
-    const picked = await pickStyle(host, styles, current);
+    const picked = await pickStyle(host, styles, current());
 
     if (picked !== undefined) {
       choose(picked);
@@ -84,4 +79,13 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
       choose(name);
     },
   });
+};
+
+export const stylePlugin: Plugin<never, never, undefined> = {
+  id: "style",
+  enable({ host, paths }) {
+    createStyle(host, loadStyles(join(paths.root, "prompts")));
+
+    return undefined;
+  },
 };
