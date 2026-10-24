@@ -12,7 +12,6 @@ pi-extensions/
 ├── test-framework/      fakes, harnesses, pi/ (real pi), live/, eval-runs/
 ├── evals/               prompt-quality evals, local only
 ├── test/                architecture.test.ts
-├── docs/                research/ and plans/
 ├── future-plans/        research and specs for work not started
 ├── .github/workflows/   ci.yml
 ├── README.md  AGENTS.md  ARCHITECTURE.md  STRUCTURE.md  LICENSE
@@ -29,7 +28,6 @@ pi-extensions/
 - [test-framework/](test-framework/STRUCTURE.md): root fakes, `live/`, `eval-runs/`, `pi/`, `pi/live/`, `tests/`.
 - [evals/](evals/README.md): `subagents/<subject>/` with `*-cases.ts` and `*.eval.ts`, shared helpers in `subagents/support/` and their tests in `subagents/tests/`; results go to the gitignored `evals/.results/`.
 - `test/architecture.test.ts`: the structure rules Biome cannot express.
-- `docs/research/`: background notes (pi's rendering surface, another agent's transcript); `docs/plans/`: the restructure plans.
 
 ## Config files
 
@@ -46,4 +44,4 @@ pi-extensions/
 ## Published vs development-only
 
 - Published (`files` in `package.json`): `pi-adapter/`, `extension-manager/`, `ui-kit/`, `shared/`, each extension's `index.ts`, `api/`, `core/`, `ui/`, `prompts/`, `README.md` and the subagents `agents/`, plus the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md` and `AGENTS.md`; every `tests/` folder is excluded.
-- Development-only: `test-framework/`, `evals/`, `test/`, every `tests/`, `docs/`, `future-plans/`, `.github/` and the config files.
+- Development-only: `test-framework/`, `evals/`, `test/`, every `tests/`, `future-plans/`, `.github/` and the config files.
