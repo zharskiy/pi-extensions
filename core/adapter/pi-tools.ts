@@ -37,6 +37,7 @@ export const fitLines = (lines: string[], width: number) =>
 
 const PI_COLORS = {
   accent: "accent",
+  border: "border",
   muted: "muted",
   dim: "dim",
   success: "success",

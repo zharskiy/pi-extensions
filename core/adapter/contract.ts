@@ -9,6 +9,7 @@ export type UsageTotals = {
 
 export type ThemeToken =
   | "accent"
+  | "border"
   | "muted"
   | "dim"
   | "success"
