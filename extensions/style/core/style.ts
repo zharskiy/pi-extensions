@@ -1,5 +1,5 @@
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import { NORMAL, type Style } from "./styles.ts";
+import { DEFAULT_STYLE, NORMAL, type Style } from "./styles.ts";
 
 export const SECTION = "output_style";
 
@@ -12,5 +12,7 @@ export const createStyleSection = (host: Host, styles: ReadonlyMap<string, Style
     host.setPromptSection(SECTION, styles.get(name)?.prompt);
   };
 
-  return { names, current: () => current, apply };
+  const fallback = styles.has(DEFAULT_STYLE) ? DEFAULT_STYLE : NORMAL;
+
+  return { names, fallback, current: () => current, apply };
 };
