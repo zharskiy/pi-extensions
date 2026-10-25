@@ -2,7 +2,7 @@
 
 # style
 
-**Switches the output style of the main session and of every subagent with one command.**
+**Switches the output style of the main session with one command.**
 
 Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-This extension switches the output style of the main session and of every subagent at once. The shipped `concise` style asks for short, result-first replies, while the engineering work stays as thorough as usual. The style is its own section of the system prompt, so pi's prompt and your own additions stay as they are. Your choice survives new sessions.
+This extension switches the output style of the main session. Subagents are unaffected: they keep the prompt their agent file gives them. The shipped `concise` style is on by default. It asks for short, result-first replies in Simplified Technical English (ASD-STE100): short sentences, simple words, active voice, and no future-tense announcements of the next step. The engineering work stays as thorough as usual. The style is its own section of the system prompt, so pi's prompt and your own additions stay as they are. Your choice survives new sessions.
 
 ## What it looks like
 
@@ -38,9 +38,10 @@ Pick a style in the interactive TUI:
 
 | Try | What you see |
 |---|---|
+| Start pi | The main session answers in `concise` style until you pick another. Subagents are unaffected. |
 | `/style` | The list of styles in place of the editor. |
-| Pick `concise` | The main session and every agent answer in short, result-first replies from their next run. |
-| `/style normal` | The style is removed and pi's default replies return. |
+| `/style normal` | The style is removed and pi's default replies return, in this and later sessions. |
+| `/style concise` | The short, result-first replies return from the next run. |
 
 ## Development
 

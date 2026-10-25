@@ -22,7 +22,7 @@
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run), `formatRoutedMessage`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
 - `child/child-runtime.ts`: the runtime that starts child agent sessions.
-- `child/child-extension.ts`: the hidden child extension (no compaction, prompt sections, prompt record), `ParentSource`.
+- `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource`.
 - `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery.
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
@@ -53,7 +53,6 @@
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `prompt/sections.ts`: prompt sections shared by every adapter copy, each with its owner.
 - `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
 - `tests/contract-types.test.ts`: type-level checks of the contract unions (theme tokens, keys, thinking levels, host capabilities).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.

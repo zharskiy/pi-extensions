@@ -4,11 +4,11 @@ import type { Host, SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import type { Plugin } from "../../../platform/shared/index.ts";
 import { readStyleSettings, SETTINGS_FILE, saveStyle } from "../core/settings.ts";
 import { createStyleSection } from "../core/style.ts";
-import { loadStyles, NORMAL, type Style } from "../core/styles.ts";
+import { loadStyles, type Style } from "../core/styles.ts";
 import { pickStyle } from "../ui/pick.ts";
 
 export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
-  const { names, current, apply } = createStyleSection(host, styles);
+  const { names, fallback, current, apply } = createStyleSection(host, styles);
   let projectStyle: string | undefined;
   let session: SessionInfo | undefined;
 
@@ -20,7 +20,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
     session = info;
     projectStyle = stored.project;
     report(stored.errors);
-    apply(projectStyle ?? stored.user ?? NORMAL);
+    apply(projectStyle ?? stored.user ?? fallback);
   });
 
   const choose = (name: string) => {
@@ -60,7 +60,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   };
 
   host.registerCommand("style", {
-    description: `Pick the output style of the main session and every agent from a list, or set it directly: /style [${names.join("|")}]`,
+    description: `Pick the output style of the main session from a list, or set it directly: /style [${names.join("|")}]`,
     complete: (prefix) =>
       names.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
     run: async (args) => {

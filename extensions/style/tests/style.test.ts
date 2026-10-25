@@ -23,9 +23,17 @@ type Files = {
   projectTrusted?: boolean;
   mode?: "tui" | "print";
   blocked?: boolean;
+  styles?: ReadonlyMap<string, Style>;
 };
 
-const setup = ({ user, project, projectTrusted = true, mode = "tui", blocked = false }: Files = {}) => {
+const setup = ({
+  user,
+  project,
+  projectTrusted = true,
+  mode = "tui",
+  blocked = false,
+  styles = STYLES,
+}: Files = {}) => {
   const root = temp();
   const agentDir = blocked ? join(root, "blocked", "agent") : join(root, "agent");
   const cwd = join(root, "project");
@@ -48,7 +56,7 @@ const setup = ({ user, project, projectTrusted = true, mode = "tui", blocked = f
 
   const host = createFakeHost({ agentDir, cwd, projectTrusted, mode });
 
-  createStyle(host, STYLES);
+  createStyle(host, styles);
   host.start();
 
   return { host, userFile: join(agentDir, SETTINGS_FILE) };
@@ -95,8 +103,14 @@ describe("style files", () => {
 });
 
 describe("style", () => {
-  it("applies no style without a settings file", () => {
+  it("applies concise without a settings file", () => {
     const { host } = setup();
+
+    expect(host.promptSections.get(SECTION)).toBe(TERSE);
+  });
+
+  it("falls back to normal without a settings file when no concise style ships", () => {
+    const { host } = setup({ styles: new Map([["plain", { prompt: "Be plain." }]]) });
 
     expect(host.promptSections.size).toBe(0);
   });
@@ -128,15 +142,19 @@ describe("style", () => {
   });
 
   it("ignores the project file of an untrusted project", () => {
-    const { host } = setup({ project: { style: "concise" }, projectTrusted: false });
+    const { host } = setup({
+      user: { style: "normal" },
+      project: { style: "concise" },
+      projectTrusted: false,
+    });
 
     expect(host.promptSections.size).toBe(0);
   });
 
-  it("warns about an unknown stored style and applies none", () => {
+  it("warns about an unknown stored style and applies the default", () => {
     const { host } = setup({ user: { style: "verbose" } });
 
-    expect(host.promptSections.size).toBe(0);
+    expect(host.promptSections.get(SECTION)).toBe(TERSE);
     expect(host.notices).toEqual([
       {
         message: expect.stringMatching(/^pi-style settings: .*style must be one of "concise", "normal"$/),
@@ -171,9 +189,9 @@ describe("style", () => {
   it("warns when the choice cannot be saved and still applies the style", async () => {
     const { host } = setup({ blocked: true });
 
-    await host.runCommand("style", "concise");
+    await host.runCommand("style", "normal");
 
-    expect(host.promptSections.get(SECTION)).toBe(TERSE);
+    expect(host.promptSections.size).toBe(0);
     expect(host.notices).toContainEqual({
       message: expect.stringMatching(/^pi-style: cannot save .*pi-style\.json: /),
       level: "warning",
@@ -204,17 +222,17 @@ describe("style", () => {
 
     const running = host.runCommand("style");
     const form = host.form();
-    const normal = form.render(60).find((line) => line.includes("normal"));
+    const concise = form.render(60).find((line) => line.includes("concise"));
 
-    expect(normal).toContain("✓");
-    expect(normal).toContain("›");
+    expect(concise).toContain("✓");
+    expect(concise).toContain("›");
 
-    form.press({ name: "up" }, { name: "enter" });
+    form.press({ name: "down" }, { name: "enter" });
     await running;
 
-    expect(host.promptSections.get(SECTION)).toBe(TERSE);
-    expect(readUser(userFile)).toEqual({ style: "concise" });
-    expect(host.notices).toEqual([{ message: "Style: concise from the next run.", level: "info" }]);
+    expect(host.promptSections.size).toBe(0);
+    expect(readUser(userFile)).toEqual({ style: "normal" });
+    expect(host.notices).toEqual([{ message: "Style: normal from the next run.", level: "info" }]);
   });
 
   it("changes nothing when the list is cancelled", async () => {
