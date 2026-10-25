@@ -20,6 +20,6 @@ The hint grammar is pi's (`key-hints.ts`). `expandHint(key)` is the dim `(ctrl+o
 
 - `list.ts`: the selectable list, `listLines` with descriptions `below` or `beside` the label, `listKey`, and the shared `SELECT_HINTS`/`CANCEL_HINT`; used by the questionnaire form, the `/style` picker and the subagents forms.
 - `select.ts`: `selectForm`, a single-choice `FormFactory` for `HostUi.showForm` over the list.
-- `tabs.ts`: the tab bar `← □ A  ■ B  ✓ Submit →` and `tabStep` for Tab/→ and Shift+Tab/←; used by the questionnaire and `/agents setup`.
+- `tabs.ts`: the tab bar `← □ A  ■ B  ✓ Submit →`, the grouped tab bar (one labelled row per non-empty group, wrapped under its label, no arrows, Submit closing the last row, `current` a global index across groups) and `tabStep` for Tab/→ and Shift+Tab/←; used by the questionnaire and `/agents setup`.
 - `multi-select.ts`: checkbox rows over a scroll window (Space toggles, `a` all, `n` none): `initialMulti`, `multiKey`, `multiLines`, which cuts each description to one row, `descriptionFits`, whether a description fits the room it leaves, `scrolledLines`, the rows of a scroll window, and `multiSelectForm`, a `FormFactory` that returns the checked values on Enter and `undefined` on Esc (used by `/mcp-import`).
 - `cache-tone.ts`: the cache rate's colour thresholds and `cachePercentText`, the rounded percentage in its colour; shared by context and the footer. The rate itself is `platform/shared/cache-hit.ts`.

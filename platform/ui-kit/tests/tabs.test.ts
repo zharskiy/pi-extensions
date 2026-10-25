@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { key, plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { keyHints } from "../key-hints.ts";
-import { TAB_SWITCH_HINT, tabBar, tabStep } from "../tabs.ts";
+import { groupedTabBar, TAB_SWITCH_HINT, tabBar, tabStep } from "../tabs.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
 
@@ -39,6 +39,51 @@ describe("tabBar", () => {
     expect(bar).toContain("<success>✓ Submit</>");
     expect(tabBar(tagged, TABS, 0, false)).toContain("<dim>✓ Submit</>");
     expect(tabBar(tagged, TABS, 2, false)).toContain("<accent>✓ Submit</>");
+  });
+});
+
+const GROUPS = [
+  { label: "Leads", tabs: TABS },
+  { label: "Chores", tabs: [{ label: "Three", done: false }] },
+];
+
+describe("groupedTabBar", () => {
+  it("renders one labelled row per group with submit closing the last row", () => {
+    expect(groupedTabBar(plainTheme, GROUPS, 0, false, 80)).toEqual([
+      "Leads   ■ One  □ Two",
+      "Chores  □ Three  ✓ Submit",
+    ]);
+  });
+
+  it("highlights the current tab by its global index across groups", () => {
+    const [leads, chores] = groupedTabBar(tagged, GROUPS, 2, false, 80);
+
+    expect(leads).not.toContain("<accent>");
+    expect(chores).toContain("<accent>□ Three</>");
+    expect(chores).toContain("<dim>✓ Submit</>");
+  });
+
+  it("highlights submit when the current index is past the last tab", () => {
+    const [leads, chores] = groupedTabBar(tagged, GROUPS, 3, true, 80);
+
+    expect(leads).not.toContain("<accent>");
+    expect(chores).toContain("<accent>✓ Submit</>");
+  });
+
+  it("skips a group without tabs", () => {
+    const groups = [{ label: "Leads", tabs: [] }, ...GROUPS.slice(1)];
+
+    expect(groupedTabBar(plainTheme, groups, 1, true, 80)).toEqual(["Chores  □ Three  ✓ Submit"]);
+  });
+
+  it("wraps a long row under its own label", () => {
+    const tabs = ["Alpha", "Bravo", "Charlie", "Delta"].map((label) => ({ label, done: false }));
+    const lines = groupedTabBar(plainTheme, [{ label: "Leads", tabs }], 0, false, 30);
+
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[0]).toMatch(/^Leads {3}□ Alpha/);
+    expect(lines.slice(1).every((line) => line.startsWith(" ".repeat(8)) && line.trim() !== "")).toBe(true);
+    expect(lines.every((line) => line.length <= 30)).toBe(true);
   });
 });
 

@@ -42,4 +42,4 @@ export {
   wrapChild,
 } from "./row.ts";
 export { type SelectOption, selectForm } from "./select.ts";
-export { TAB_SWITCH_HINT, tabBar, tabStep } from "./tabs.ts";
+export { groupedTabBar, TAB_SWITCH_HINT, tabBar, tabStep } from "./tabs.ts";
