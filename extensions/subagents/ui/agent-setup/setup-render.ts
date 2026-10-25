@@ -74,7 +74,10 @@ const CHORE_SKILLS_NOTE = "fixed for chores";
 const UNTRUSTED_NOTE = "Project not trusted: only the user file applies, to every project.";
 
 const fitted = (theme: ThemeLike, first: string, text: string, suffix: string, width: number) =>
-  `${first}${theme.truncate(text, Math.max(1, width - theme.width(first) - theme.width(suffix)))}${suffix}`;
+  theme.truncate(
+    `${first}${theme.truncate(text, Math.max(1, width - theme.width(first) - theme.width(suffix)))}${suffix}`,
+    width,
+  );
 
 const line = (theme: ThemeLike, text: string, width: number) => fitted(theme, PAD, text, "", width);
 
@@ -140,8 +143,13 @@ const fieldText = (field: Field, draft: Draft) => {
   return field === "thinking" ? (draft.thinking ?? "default") : grantOrNone(draft.skills);
 };
 
+const presetOrder = (fields: readonly Field[]): readonly Field[] =>
+  fields.includes("skills") ? ["skills", ...fields.filter((field) => field !== "skills")] : fields;
+
 const presetText = (fields: readonly Field[], draft: Draft) =>
-  fields.map((field) => fieldText(field, draft)).join(DOT);
+  presetOrder(fields)
+    .map((field) => fieldText(field, draft))
+    .join(DOT);
 
 const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
   const agent = context.agents[state.tab];
@@ -292,7 +300,13 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
   ];
 };
 
-const changeLines = (context: SetupContext, state: SetupState, change: SetupChange, theme: ThemeLike) => {
+const changeLines = (
+  context: SetupContext,
+  state: SetupState,
+  change: SetupChange,
+  theme: ThemeLike,
+  width: number,
+) => {
   const index = context.agents.findIndex((agent) => agent.name === change.name);
   const agent = context.agents[index];
   const draft = state.drafts[index];
@@ -305,21 +319,19 @@ const changeLines = (context: SetupContext, state: SetupState, change: SetupChan
     .filter((field) => field in change.patch)
     .map((field) => {
       const suggested = agent.proposed && sameField(field, agent.proposed, draft) ? " (suggested)" : "";
-      const text = `${field} ${fieldText(field, draft)}${suggested} (was ${fieldText(field, agent.initial)})`;
+      const first = `${PAD}${theme.fg("muted", `${agent.name}:`)} `;
+      const suffix = theme.fg("text", `${suggested} (was ${fieldText(field, agent.initial)})`);
 
-      return `${theme.fg("muted", `${agent.name}:`)} ${theme.fg("text", text)}`;
+      return fitted(theme, first, theme.fg("text", `${field} ${fieldText(field, draft)}`), suffix, width);
     });
 };
 
 const changeWindow = (theme: ThemeLike, texts: string[], rows: number, width: number) => {
   if (texts.length <= rows) {
-    return padRows(
-      texts.map((text) => line(theme, text, width)),
-      rows,
-    );
+    return padRows(texts, rows);
   }
 
-  const kept = texts.slice(0, Math.max(0, rows - 1)).map((text) => line(theme, text, width));
+  const kept = texts.slice(0, Math.max(0, rows - 1));
   const more = countLine(
     { hidden: texts.length - kept.length, end: "more", noun: "item" },
     width - PAD.length,
@@ -338,7 +350,7 @@ const submitLines = (
   width: number,
 ) => {
   const title = changes.length > 0 ? "Changes" : "No changes";
-  const texts = changes.flatMap((change) => changeLines(context, state, change, theme));
+  const texts = changes.flatMap((change) => changeLines(context, state, change, theme, width));
   const project = context.project ? labelLine(theme, "Project", context.project, width) : "";
   const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
@@ -371,18 +383,18 @@ const SELECT_HINT: KeyHint = ["↑↓", "to select"];
 
 const hints = (context: SetupContext, state: SetupState, ready: boolean): readonly KeyHint[] => {
   if (state.picker?.field === "skills") {
-    return [SELECT_HINT, ["space", "to toggle"], ["enter", "to confirm"], BACK_HINT];
+    return [BACK_HINT, SELECT_HINT, ["space", "to toggle"], ["enter", "to confirm"]];
   }
 
   if (state.picker) {
-    return [SELECT_HINT, ["enter", "to choose"], BACK_HINT];
+    return [BACK_HINT, SELECT_HINT, ["enter", "to choose"]];
   }
 
   if (onSubmitTab(context, state)) {
-    return [SELECT_HINT, ["enter", ready ? "to save" : "to close"], TAB_SWITCH_HINT, CANCEL_HINT];
+    return [CANCEL_HINT, SELECT_HINT, ["enter", ready ? "to save" : "to close"], TAB_SWITCH_HINT];
   }
 
-  return [SELECT_HINT, ["enter", "to change or apply"], TAB_SWITCH_HINT, CANCEL_HINT];
+  return [CANCEL_HINT, SELECT_HINT, ["enter", "to change or apply"], TAB_SWITCH_HINT];
 };
 
 export const renderSetup = (

@@ -34,8 +34,8 @@ describe("agent setup form", () => {
       " Chores  □ chore  ✓ Submit",
     ]);
     expect(render(ctx, state)).toContain("   Skills    search, docs (changed)");
-    expect(render(ctx, state)).toContain("   Previous  acme/big · high · all");
-    expect(render(ctx, state)).toContain("   Suggested acme/big · high · search, docs (in use)");
+    expect(render(ctx, state)).toContain("   Previous  all · acme/big · high");
+    expect(render(ctx, state)).toContain("   Suggested search, docs · acme/big · high (in use)");
   });
 
   it("applies the previous settings with Enter, then the suggested ones, and edits either afterwards", () => {
@@ -44,8 +44,8 @@ describe("agent setup form", () => {
 
     expect(previous.state.picker).toBeUndefined();
     expect(setupChanges(ctx, previous.state)).toEqual([]);
-    expect(render(ctx, previous.state)).toContain(" › Previous  acme/big · high · all (in use)");
-    expect(render(ctx, previous.state)).toContain("   Suggested acme/big · high · search, docs");
+    expect(render(ctx, previous.state)).toContain(" › Previous  all · acme/big · high (in use)");
+    expect(render(ctx, previous.state)).toContain("   Suggested search, docs · acme/big · high");
 
     const suggested = press(ctx, previous.state, key("down"), key("enter"));
 
@@ -53,7 +53,7 @@ describe("agent setup form", () => {
     expect(setupChanges(ctx, suggested.state)).toEqual([
       { name: "lead", patch: { skills: ["search", "docs"] } },
     ]);
-    expect(render(ctx, suggested.state)).toContain(" › Suggested acme/big · high · search, docs (in use)");
+    expect(render(ctx, suggested.state)).toContain(" › Suggested search, docs · acme/big · high (in use)");
 
     const edited = press(
       ctx,

@@ -44,9 +44,11 @@ export const scrolledLines = (
   { slots = false }: ListLayout = {},
 ) => {
   const { start, end } = scrollWindow(count, cursor, height);
-  const rows = Array.from({ length: end - start }, (_, offset) => start + offset).flatMap((index) =>
-    row(index, index === cursor),
-  );
+  const rows = Array.from({ length: end - start }, (_, offset) => start + offset).flatMap((index) => {
+    const lines = row(index, index === cursor);
+
+    return slots ? lines.slice(0, 1) : lines;
+  });
   const up = `↑ ${start} more`;
   const down = `↓ ${count - end} more`;
 

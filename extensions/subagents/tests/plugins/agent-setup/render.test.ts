@@ -15,7 +15,7 @@ describe("agent setup rendering", () => {
     expect(lines).toContain(" › Model     acme/big");
     expect(lines).toContain("   Thinking  high");
     expect(lines).toContain("   Skills    all (every skill of the agent's caller)");
-    expect(lines).toContain("   Previous  acme/big · high · all (in use)");
+    expect(lines).toContain("   Previous  all · acme/big · high (in use)");
     expect(lines.some((line) => line.includes("Suggested"))).toBe(false);
     expect(lines.some((line) => line === " Tools: all; fixed per agent; /agents create makes your own")).toBe(
       true,
@@ -81,7 +81,7 @@ describe("agent setup rendering", () => {
       "",
       " › [x] all  every skill of the agent's caller",
     ]);
-    expect(lines.at(-2)).toBe(" ↑↓ to select · space to toggle · enter to confirm · esc to clear/back");
+    expect(lines.at(-2)).toBe(" esc to clear/back · ↑↓ to select · space to toggle · enter to confirm");
     expect(typed("do")).toContain(`${" / do▏".padEnd(194)}1 of 2`);
     expect(typed("zzq")).toContain(' no skill matches "zzq"');
     expect(typed("zzq").some((line) => line.includes("[ ]") || line.includes("[x]"))).toBe(false);
@@ -208,7 +208,7 @@ describe("agent setup layout", () => {
     const narrow = at80(ctx, press(ctx, initialSetup(ctx), key("down"), key("down"), key("enter")).state, 40);
 
     expect(narrow.at(-3)).toBe("");
-    expect(narrow.at(-2)).toBe(" ↑↓ to select · space to toggle · ent...");
+    expect(narrow.at(-2)).toBe(" esc to clear/back · ↑↓ to select · s...");
     expect(narrow.at(-1)).toBe("─".repeat(40));
   });
 
