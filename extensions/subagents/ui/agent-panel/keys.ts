@@ -1,6 +1,6 @@
 import type { EditorKeyHandler, KeyPress } from "../../../../platform/pi-adapter/index.ts";
-import { type PanelState, panelView, selectedIndex } from "../../core/agent-panel/panel-state.ts";
-import { carrySelection, type TreeRow } from "../../core/components/tree.ts";
+import { type PanelState, panelView, reconcile, selectedIndex } from "../../core/agent-panel/panel-state.ts";
+import type { TreeRow } from "../../core/components/tree.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
 
 export type PanelActions = {
@@ -34,7 +34,13 @@ const move = ({ actions, rows, index }: Press, step: 1 | -1): Outcome => {
   return "consumed";
 };
 
-const shownRows = (actions: PanelActions) => panelView(actions.rows(), actions.state).shown;
+const shownRows = (actions: PanelActions) => {
+  const rows = actions.rows();
+
+  reconcile(rows, actions.state);
+
+  return panelView(rows, actions.state).shown;
+};
 
 const ids = (rows: TreeRow[]) => rows.map((row) => row.record.id);
 
@@ -48,7 +54,12 @@ const stopOrClear = ({ actions, rows, index }: Press): Outcome => {
 
   actions.state.cleared.add(record.id);
 
-  const next = carrySelection(ids(rows), ids(shownRows(actions)), record.id);
+  const fresh = ids(shownRows(actions));
+  const kept = new Set(fresh);
+  const next =
+    ids(rows)
+      .slice(index + 1)
+      .find((id) => kept.has(id)) ?? fresh[Math.min(index, fresh.length - 1)];
 
   if (!next) {
     deselect(actions);

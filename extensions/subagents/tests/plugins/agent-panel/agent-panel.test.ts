@@ -282,7 +282,89 @@ describe("agent panel", () => {
       "task 2",
     ]);
     expect(selectedRow(lines)).toBe(lines[4]);
-    expect(lines[6]?.endsWith(" · 2 more, ← to list agents")).toBe(true);
+    expect(lines.at(-2)?.endsWith(" · 2 more, ← to list agents")).toBe(true);
+  });
+
+  it("moves a selected child to its lead when the tree collapses and keeps every lead drawn", () => {
+    const panel = setup();
+    const lead = panel.newAgent({ agent: "reviewer" });
+
+    panel.running(lead.id);
+    Array.from({ length: 4 }, (_, index) =>
+      panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: `child ${index}` }).id),
+    );
+    panel.host.pressEmptyDown();
+    Array.from({ length: 4 }, () => panel.key("down"));
+
+    expect(selectedRow(panel.lines())).toContain("child 3");
+
+    panel.running(panel.newAgent({ agent: "planner" }).id);
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toContain("reviewer (+4)");
+    expect(lines[1]).toContain("planner");
+    expect(selectedRow(lines)).toBe(lines[0]);
+    expect(lines.at(-2)).toBe(HINT_MORE(4));
+  });
+
+  it("draws a collapsed selected child as its lead, not nested under another lead", () => {
+    const panel = setup();
+    const lead = panel.newAgent({ agent: "reviewer" });
+
+    panel.running(lead.id);
+    panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: "nested" }).id);
+    panel.host.pressEmptyDown();
+    panel.key("down");
+    Array.from({ length: 5 }, () => panel.running(panel.newAgent().id));
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+    const selected = selectedRow(lines);
+
+    expect(selected).toBe(lines[0]);
+    expect(selected).toContain("reviewer (+1)");
+    expect(lines.join("\n")).not.toContain("↳");
+  });
+
+  it("ranks a closed lead with a running child as open", () => {
+    const panel = setup();
+    const lead = panel.newAgent({ agent: "reviewer" });
+
+    panel.running(lead.id);
+    panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: "nested" }).id);
+    panel.registry.close(lead.id, { state: "done" });
+    Array.from({ length: 5 }, () => panel.running(panel.newAgent().id));
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+
+    expect(lines[0]).toContain("reviewer (+1)");
+    expect(lines.at(-2)).toBe(IDLE_MORE(2));
+  });
+
+  it("keeps the cleared row's slot selected when the pinned row had no successor", () => {
+    const panel = setup();
+    const records = Array.from({ length: 7 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+
+    records.forEach((record) => {
+      panel.running(record.id);
+    });
+    panel.host.pressEmptyDown();
+    Array.from({ length: 4 }, () => panel.key("down"));
+    panel.registry.close(records[4].id, { state: "done" });
+    vi.advanceTimersByTime(1_000);
+
+    expect(selectedRow(panel.lines())).toContain("task 4");
+
+    panel.type("x");
+
+    const lines = panel.lines();
+
+    expect(selectedRow(lines)).toBe(lines[4]);
+    expect(lines[4]).toContain("task 5");
   });
 
   it("enter opens the agent view from the panel and deselects", () => {

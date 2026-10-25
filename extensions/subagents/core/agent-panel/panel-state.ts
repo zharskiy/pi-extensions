@@ -46,20 +46,32 @@ export const panelRows = (
 export const selectedIndex = (rows: TreeRow[], state: PanelState): number =>
   state.selectedId === undefined ? -1 : rows.findIndex((row) => row.record.id === state.selectedId);
 
+const leadOf = (rows: TreeRow[], index: number) =>
+  rows
+    .slice(0, index + 1)
+    .reverse()
+    .find((row) => row.depth === 0);
+
 export const reconcile = (rows: TreeRow[], state: PanelState): boolean => {
-  const deselected = state.selectedId !== undefined && selectedIndex(rows, state) < 0;
+  const index = selectedIndex(rows, state);
+  const deselected = state.selectedId !== undefined && index < 0;
 
   if (deselected) {
     state.selectedId = undefined;
   }
 
+  const lead = rows.length > PANEL_ROWS && index >= 0 ? leadOf(rows, index) : undefined;
+
+  if (lead) {
+    state.selectedId = lead.record.id;
+  }
+
   return deselected;
 };
 
-const openFirst = (rows: TreeRow[]) => [
-  ...rows.filter((row) => !isClosed(row.record.state)),
-  ...rows.filter((row) => isClosed(row.record.state)),
-];
+const isOpen = (row: TreeRow) => !isClosed(row.record.state) || row.openDescendants > 0;
+
+const openFirst = (rows: TreeRow[]) => [...rows.filter(isOpen), ...rows.filter((row) => !isOpen(row))];
 
 const fitted = (rows: TreeRow[]) => {
   if (rows.length <= PANEL_ROWS) {
@@ -78,7 +90,9 @@ const pinned = (shown: TreeRow[], rows: TreeRow[], selectedId: string | undefine
     return shown;
   }
 
-  return [...shown.slice(0, -1), selected];
+  const kept = shown.length < PANEL_ROWS ? shown : shown.slice(0, -1);
+
+  return [...kept, selected];
 };
 
 export const panelView = (rows: TreeRow[], state: PanelState) => {

@@ -75,7 +75,7 @@ extensions/subagents/
 │   ├── limits/
 │   │   └── context-step.ts                # contextStep, softWarning
 │   ├── agent-panel/
-│   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile, panelView (shown rows and hidden count, PANEL_ROWS private)
+│   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
