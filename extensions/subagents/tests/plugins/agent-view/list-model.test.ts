@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { listSections, MAX_CLOSED_ROOTS, visibleRecords } from "../../../core/agent-view/list-model.ts";
+import {
+  listCounts,
+  listSections,
+  MAX_CLOSED_ROOTS,
+  visibleRecords,
+} from "../../../core/agent-view/list-model.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import { agentRecord } from "../../support/agent-records.ts";
 
@@ -56,12 +61,29 @@ describe("list model", () => {
     expect(rows.map((row) => row.first)).toEqual([true, true, false, true, false]);
   });
 
-  it("orders Finished roots by newest endedAt first with their descendants under them and counts roots", () => {
+  it("orders Finished roots by newest endedAt first with their descendants under them and counts every agent", () => {
     const records = [done("r", NOW - 20), done("s", NOW - 10), done("r1", NOW - 30, { callerId: "r" })];
     const sections = listSections(visible(records));
 
-    expect(sections.map((section) => section.title)).toEqual(["Finished (2)"]);
+    expect(sections.map((section) => section.title)).toEqual(["Finished (3)"]);
     expect(sections[0]?.rows.map((row) => `${row.depth}:${row.record.id}`)).toEqual(["0:s", "0:r", "1:r1"]);
+  });
+
+  it("counts agents at every depth of a main, lead and child tree", () => {
+    const tree = (state: "running" | "done") => [
+      agentRecord({ id: "lead", state, endedAt: NOW - 30, createdAt: 1 }),
+      agentRecord({ id: "child", callerId: "lead", state, endedAt: NOW - 20, createdAt: 2 }),
+      agentRecord({ id: "grandchild", callerId: "child", state, endedAt: NOW - 10, createdAt: 3 }),
+    ];
+
+    expect(sectionRows(visible(tree("done")))).toEqual([
+      { title: "Finished (3)", rows: ["0:lead", "1:child", "2:grandchild"] },
+    ]);
+    expect(listCounts(visible(tree("done")))).toEqual({ running: 0, finished: 3 });
+    expect(sectionRows(visible(tree("running")))).toEqual([
+      { title: "Running", rows: ["0:lead", "1:child", "2:grandchild"] },
+    ]);
+    expect(listCounts(visible(tree("running")))).toEqual({ running: 3, finished: 0 });
   });
 
   it("keeps closed agents however long ago they ended", () => {
@@ -69,7 +91,7 @@ describe("list model", () => {
 
     expect(sectionRows(visible(records))).toEqual([
       { title: "Running", rows: ["0:a"] },
-      { title: "Finished (1)", rows: ["0:r", "1:r1"] },
+      { title: "Finished (2)", rows: ["0:r", "1:r1"] },
     ]);
   });
 
@@ -151,7 +173,10 @@ describe("list model", () => {
     const sections = listSections(visibleRecords(records, new Set()));
 
     expect(records.length).toBeGreaterThan(4_000);
-    expect(sections.map((section) => section.title)).toEqual(["Running", `Finished (${MAX_CLOSED_ROOTS})`]);
+    expect(sections.map((section) => section.title)).toEqual([
+      "Running",
+      `Finished (${MAX_CLOSED_ROOTS * 10})`,
+    ]);
     expect(sections[1]?.rows).toHaveLength(MAX_CLOSED_ROOTS * 10);
     expect(reads.predecessorId).toBeLessThanOrEqual(records.length * 4);
     expect(reads.successorId).toBeLessThanOrEqual(records.length * 4);

@@ -125,11 +125,11 @@ export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] => {
 };
 
 export const listCounts = (visible: AgentRecord[]): { running: number; finished: number } => {
-  const { terminals, isListRoot } = forestOf(visible);
+  const { terminals, rootOf } = forestOf(visible);
 
   return {
     running: terminals.filter((record) => !isClosed(record.state)).length,
-    finished: terminals.filter((record) => isListRoot(record) && isClosed(record.state)).length,
+    finished: terminals.filter((record) => isClosed(rootOf(record).state)).length,
   };
 };
 
@@ -140,21 +140,16 @@ export const countsText = (running: number, finished: number): string =>
 
 export const listSections = (visible: AgentRecord[]): ListSection[] => {
   const { byId, terminals, isListRoot, rootOf } = forestOf(visible);
+  const running = terminals.filter((record) => !isClosed(rootOf(record).state));
+  const finished = terminals.filter((record) => isClosed(rootOf(record).state));
   const subtrees = new Map<string, AgentRecord[]>();
-  const running: AgentRecord[] = [];
 
-  terminals.forEach((record) => {
-    const root = rootOf(record);
-
-    if (!isClosed(root.state)) {
-      running.push(record);
-      return;
-    }
-
-    const subtree = subtrees.get(root.id) ?? [];
+  finished.forEach((record) => {
+    const id = rootOf(record).id;
+    const subtree = subtrees.get(id) ?? [];
 
     subtree.push(record);
-    subtrees.set(root.id, subtree);
+    subtrees.set(id, subtree);
   });
 
   const completedRoots = terminals
@@ -167,7 +162,7 @@ export const listSections = (visible: AgentRecord[]): ListSection[] => {
 
   const sections: ListSection[] = [
     { title: "Running", rows: treeOrder(withLinks(running, byId), isListRoot) },
-    { title: `Finished (${completedRoots.length})`, rows: completed },
+    { title: `Finished (${finished.length})`, rows: completed },
   ];
 
   return sections.filter((section) => section.rows.length > 0);

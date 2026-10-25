@@ -114,12 +114,12 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
     const body = lines().slice(0, 12);
 
-    expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 1 finished", "", " Running"]);
+    expect(body.slice(0, 4)).toEqual(["", " Agents · 2 running · 2 finished", "", " Running"]);
     expect(body[4]).toMatch(/^ › ⠋ explorer \(\+1\) +map the auth module/);
     expect(body[5]).toMatch(/^ {3}↳ ⠋ explorer +find callers/);
     expect(body[6]).toMatch(/^ {5}✓ explorer +find parseDate +\d+m? ?\d+s$/);
     expect(body[7]).toBe("");
-    expect(body[8]).toBe(" Finished (1)");
+    expect(body[8]).toBe(" Finished (2)");
     expect(body[9]).toMatch(/^ {3}✓ reviewer +review the diff +\d/);
     expect(body[10]).toMatch(/^ {3}↳ ✓ explorer +collect files +\d/);
     expect(
@@ -581,6 +581,28 @@ describe("agents list", () => {
     expect(text).not.toContain("Finished");
   });
 
+  it("counts a finished grandchild of the main session in the title and the subtitle", async () => {
+    const harness = setup();
+    const lead = harness.create({ description: "lead", createdAt: 1 });
+    const child = harness.create({ callerId: lead.id, description: "child", createdAt: 2 });
+    const grandchild = harness.create({ callerId: child.id, description: "grandchild", createdAt: 3 });
+
+    harness.finish(grandchild.id, NOW - 30_000);
+    harness.finish(child.id, NOW - 20_000);
+    harness.finish(lead.id, NOW - 10_000);
+
+    const { lines } = await harness.openList();
+
+    expect(lines().slice(1, 7)).toEqual([
+      " Agents · 3 finished",
+      "",
+      " Finished (3)",
+      expect.stringMatching(/^ › ✓ explorer +lead/),
+      expect.stringMatching(/^ {3}↳ ✓ explorer +child/),
+      expect.stringMatching(/^ {5}↳ ✓ explorer +grandchild/),
+    ]);
+  });
+
   it("moves a closed subtree to Completed and keeps it there", async () => {
     const harness = setup();
     const root = harness.create({ description: "done root", createdAt: 1 });
@@ -592,7 +614,7 @@ describe("agents list", () => {
     const { lines } = await harness.openList();
 
     expect(lines().slice(3, 6)).toEqual([
-      " Finished (1)",
+      " Finished (2)",
       expect.stringMatching(/^ › ✓ explorer +done root/),
       expect.stringMatching(/^ {3}↳ ✓ explorer +early child/),
     ]);
@@ -600,7 +622,7 @@ describe("agents list", () => {
     vi.advanceTimersByTime(600_000);
 
     expect(lines().slice(3, 6)).toEqual([
-      " Finished (1)",
+      " Finished (2)",
       expect.stringMatching(/^ › ✓ explorer +done root/),
       expect.stringMatching(/^ {3}↳ ✓ explorer +early child/),
     ]);
