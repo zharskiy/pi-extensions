@@ -33,13 +33,7 @@ About 25 lines, 4 tests.
 
 ### ui-kit: `selectForm` without preselection
 
-Today `selected = clampIndex(spec.selected ?? 0, …)` (`platform/ui-kit/select.ts:31`) and Enter picks `selected` (`list.ts:64-66` via `select.ts:49-51`). Smallest mode: `SelectSpec.unfocused?: boolean`.
-
-- `let selected = spec.unfocused ? -1 : clampIndex(spec.selected ?? 0, spec.options.length);`
-- In `handleKey`, ignore a pick at `-1`: `if (step.pick && step.index < 0) return;`.
-- Nothing else: `listLines` marks a row by `index === selected` (`list.ts:32`), so `-1` draws no pointer; `listKey` moves `-1` to `0` on ↓/↑/Home (`clampIndex`, `list.ts:55,68-76`) and digits pick directly (60-62); Esc stays `undefined` (`select.ts:36-39`).
-
-About 4 lines, 4 tests in `platform/ui-kit/tests/select.test.ts`.
+Not needed: Yes is preselected, so the select is used as it is. The design below was dropped.
 
 ### `api/plugins/agent-setup.ts`
 
@@ -48,7 +42,7 @@ The tool must live in this file: every file under `api/plugins/` is a plugin to 
 1. **Entry in `runForm`**, after the tui check (91), before `showForm` (93):
    ```ts
    if (!hasSkillsOverride(settings.agents)) return startAutosetup();
-   const choice = await host.ui.showForm(selectForm({ title: PROPOSE_TITLE, options: YES_NO, unfocused: true }));
+   const choice = await host.ui.showForm(selectForm({ title: PROPOSE_TITLE, options: YES_NO }));
    if (choice === undefined) return;          // Esc: nothing
    if (choice === "yes") return startAutosetup();
    // "no": the plain form, as today
@@ -143,13 +137,12 @@ About 30 lines. A test asserts it names `PROPOSAL_TOOL` and leaves no `{{`.
 ### Tests
 
 - `platform/pi-adapter/tests/skills.test.ts`: discovered scope from the resource (`.agents/skills` → project, agent dir → user), fallback by path, loaded skills' scope from `sourceInfo`. `child-runtime.test.ts:279`: catalogue with `scope` and `path`.
-- `platform/ui-kit/tests/select.test.ts`: `unfocused`: no pointer drawn, Enter does nothing, ↓ then Enter picks the first, digit picks, Esc → `undefined`.
 - `tests/plugins/agent-setup/autosetup.test.ts` (new): `isChore`/`isLead` on relative paths: `chores/scout.md` (chore), `leads/reviewer.md` (lead), `mine.md` at the top of the user dir (lead), `chores/mine.md` in the user dir (chore), `chores\\mine.md` (chore), `chores.md` (not a chore), `skills: all` (not a lead); `agentsDirOf` + `relative` for each source, including an agents dir that itself sits under a folder named `chores` (its agents are leads); `hasSkillsOverride`; interactive filter (each term, case-insensitive, body only so a term in the frontmatter alone does not count, unreadable kept, report); brief: leads only, no chore or `general` name in the text, `[project]` mark, empty description, cut at 200, no `{{`; `projectListing` on a temp dir.
 - `tests/plugins/agent-setup/proposal.test.ts` (new): each refusal and all at once; four skills refused; a chore-path agent and `general` → "not set up here", with no word about chores; filtered skill refused; order kept, duplicates dropped; `proposalChanges`; `noteFor`.
 - `form.test.ts` / `render.test.ts` (extend; `proposedContext()` in `setup-context.ts`): proposed draft marked changed, `setupChanges` patch; picker opens with the list's order first (`["search","docs"]` stays in that order), fixed while toggling, Enter maps back to names in display order, `all` in inventory order; untrusted: one scope `user`, Enter saves `user`, the every-project line, no `This project` row (replaces `form.test.ts:125-134`, adjusts 13-16, `render.test.ts:19-26`); `Proposed:` and `Project:` lines.
 - `tests/plugins/agent-setup/agent-setup.test.ts` (extend; harness with registry, definitions, setup, view plugins):
   - no override → `/agents setup` sends one hidden message (`pi-subagents-autosetup`), opens no form, notice names left-out interactive skills (fake runtime with paths to temp SKILL.md files);
-  - override in the user file → the Yes/No form opens with no pointer; Enter does nothing; No → the plain setup form; Esc → no hidden message, no form; Yes → the brief;
+  - override in the user file → the Yes/No form opens with Yes selected; Enter → the brief; 2 or ↓ then Enter → the plain setup form; Esc → no hidden message, no form;
   - project override in an untrusted project is not counted (only the user file is);
   - `rpc` → error notice, nothing sent;
   - tool: not pending → error; non-lead, unknown or filtered skill, four skills → error, mark kept, corrected call opens the form; valid call → form with the proposal marked, Submit writes only the leads' `skills` in proposal order, `definitions.get(...)` updated, `published` awaiting true/false;
@@ -161,7 +154,7 @@ About 40 new or changed tests, 500 test lines.
 
 ## 4. Docs and rules
 
-- `test/docs-sync.test.ts:8,46-66`: only `extensions/<name>/` code triggers it; a subagents change needs `extensions/subagents/{README,ARCHITECTURE,STRUCTURE}.md` and root `ARCHITECTURE.md`, `STRUCTURE.md`. Platform changes are not checked, but the convention (`STRUCTURE.md` header: every code folder documents its files) asks for `platform/pi-adapter/ARCHITECTURE.md:24` (catalogue now `{name, description, scope, path}`, scope from the resolved resource) and `platform/ui-kit/STRUCTURE.md:8` (`selectForm` `unfocused`), plus `platform/ui-kit/ARCHITECTURE.md` if it describes the select.
+- `test/docs-sync.test.ts:8,46-66`: only `extensions/<name>/` code triggers it; a subagents change needs `extensions/subagents/{README,ARCHITECTURE,STRUCTURE}.md` and root `ARCHITECTURE.md`, `STRUCTURE.md`. Platform changes are not checked, but the convention (`STRUCTURE.md` header: every code folder documents its files) asks for `platform/pi-adapter/ARCHITECTURE.md:24` (catalogue now `{name, description, scope, path}`, scope from the resolved resource).
 - `test/architecture.test.ts`: template in `prompts/` (127-134); files at depth 2 (144); tests in `tests/` (154); tool in `agent-setup.ts` (86-96, 177-183). `biome.json:621`: `core/` cannot import `ui/`, `api/` or ui-kit, so `proposal.ts` returns data and api builds the `SetupContext` and the select.
 - `AGENTS.md:18` and root `ARCHITECTURE.md:48`: "`.pi/pi-subagents.json` (`/agents setup`, whose write may follow a model tool call once the user confirms the form)".
 - `extensions/subagents/README.md:40`: the `/agents setup` row: proposes skills for the lead agents when none is set, otherwise asks first; you confirm in the form; then `/new`.
@@ -172,7 +165,7 @@ About 40 new or changed tests, 500 test lines.
 ## 5. Sequence and size
 
 1. **Adapter `scope`/`path`** (types, `skills.ts`, `extension.ts`, `child-runtime.ts`, fake runtime, adapter tests and docs). About 25 lines, 4 tests. Independent; verification of the scope source is part of it.
-2. **ui-kit unfocused select** (`select.ts`, `select.test.ts`, ui-kit docs). About 4 lines, 4 tests. Independent.
+2. **ui-kit select without preselection**: dropped, Yes is preselected.
 3. **Setup form** (proposal draft, note, project line, picker order, untrusted scope; form, render and the untrusted plugin test; subagents and root docs). About 45 lines, 14 tests. Independent; ships value for the plain form alone.
 4. **Core autosetup** (`autosetup.ts`, `proposal.ts`, template, two test files, docs). About 190 lines plus 30 template lines, 25 tests. Needs 1 for the `SkillInfo` fields.
 5. **Wiring** (`agent-setup.ts`: entry step, `startAutosetup`, `save` outcome and `/new` suffix, mark, tool; `agent-setup.test.ts` incl. the fixture change for existing form tests; AGENTS.md, root ARCHITECTURE.md, docs). About 110 lines, 15 tests. Needs 1 to 4.

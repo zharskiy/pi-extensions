@@ -9,7 +9,6 @@ export type SelectSpec<T> = {
   title: string;
   options: readonly SelectOption<T>[];
   selected?: number;
-  unfocused?: boolean;
 };
 
 const HINTS: readonly KeyHint[] = [...SELECT_HINTS, ["enter", "to choose"], CANCEL_HINT];
@@ -29,17 +28,13 @@ const renderSelect = <T>(spec: SelectSpec<T>, selected: number, theme: ThemeLike
 export const selectForm =
   <T>(spec: SelectSpec<T>): FormFactory<T | undefined> =>
   (api) => {
-    let selected = spec.unfocused ? -1 : clampIndex(spec.selected ?? 0, spec.options.length);
+    let selected = clampIndex(spec.selected ?? 0, spec.options.length);
 
     return {
       render: (width) => renderSelect(spec, selected, api.theme, width),
       handleKey: (key) => {
         if (key.name === "escape") {
           api.done(undefined);
-          return;
-        }
-
-        if (key.name === "enter" && selected < 0) {
           return;
         }
 

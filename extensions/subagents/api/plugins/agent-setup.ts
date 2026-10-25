@@ -191,9 +191,7 @@ export const agentSetupPlugin: Plugin = {
         return;
       }
 
-      const choice = await host.ui.showForm(
-        selectForm({ title: PROPOSE_TITLE, options: PROPOSE_OPTIONS, unfocused: true }),
-      );
+      const choice = await host.ui.showForm(selectForm({ title: PROPOSE_TITLE, options: PROPOSE_OPTIONS }));
 
       if (choice === undefined) {
         return;

@@ -8,7 +8,7 @@ Research date: 2026-10-22, revised 2026-10-25. Question: how to give each lead a
 
 ## Summary
 
-1. **Release 1 is `/agents setup`, made smart.** There is one setup feature, not two. When the user runs `/agents setup` and no agent on this machine has a skills override yet, the command asks the main session for a proposal straight away and opens the setup form with it filled in. When some agent already has an override, the command first asks "Propose skills automatically? Yes / No" with no answer preselected, and opens the plain form on No. The user runs it whenever they want. Nothing runs on its own.
+1. **Release 1 is `/agents setup`, made smart.** There is one setup feature, not two. When the user runs `/agents setup` and no agent on this machine has a skills override yet, the command asks the main session for a proposal straight away and opens the setup form with it filled in. When some agent already has an override, the command first asks "Propose skills automatically? Yes / No" with Yes preselected, and opens the plain form on No. The user runs it whenever they want. Nothing runs on its own.
 2. **Leads only, and the model never hears of chores.** The folder decides: the shipped agents live in `agents/leads/` and `agents/chores/`, the loader walks subfolders of every agents dir, and each definition keeps its file path. An agent whose path, relative to the agents dir it was loaded from, has a `chores` directory segment is a chore; every other agent is a lead. The brief lists leads only, the tool accepts leads only. `general` has `skills: all` and is left alone. The main session's own skills are not touched.
 3. **Skills are taken as they are, minus the ones agents cannot use.** The inputs are the inventory pi already builds at session start (name, description, scope, path of every skill on the machine) and a glance at the project. No frontmatter keys, no catalogue conventions. Skills whose body names an interactive tool (AskUserQuestion, questionnaire and the like) are filtered out before the brief, because agents cannot ask anyone anything. Project-level skills are marked and preferred.
 4. **The model judges, the user decides, the extension writes.** The brief tells the main session to say what kind of project this is first, then to pick at most five skills per lead, most useful first. It answers through a model-only tool. The tool validates, opens the setup form with the proposal in place and marked against the current lists, and on confirm writes through the path the form uses today: `.pi/pi-subagents.json` in a trusted project, then `definitions.reload()`, then one notice. The model never writes the file.
@@ -30,7 +30,7 @@ The one-line form `/agents setup <agent> model=… skills=…` is unchanged. The
 
 1. Reads whether any agent has a `skills` override by this extension on this machine: `agents.<name>.skills` present in `<cwd>/.pi/pi-subagents.json` (trusted project only, as pi reads it) or in `<agentDir>/pi-subagents.json`. Nothing checks this today; the merged settings the extension already loads carry it (project file only when trusted), with a direct file read as the alternative.
 2. **No override anywhere** → runs autosetup (R2) without asking.
-3. **An override exists** → a single-choice step "Propose skills automatically for this project? Yes / No", rendered over the ui-kit select with no option focused, so Enter does nothing until the user moves or presses a digit. Yes → autosetup. No → the plain form, as today. Esc → cancel, nothing happens. The select gains a "no preselection" mode for this; today it always focuses the first option.
+3. **An override exists** → a single-choice step "Propose skills automatically for this project? Yes / No", rendered over the ui-kit select with Yes preselected, so Enter starts autosetup; a digit or a move then Enter picks the other. Yes → autosetup. No → the plain form, as today. Esc → cancel, nothing happens.
 
 ### R2. Autosetup: gathering and the brief
 
@@ -107,7 +107,7 @@ The full version is this README as committed on 2026-10-22 (`git log -- future-p
 
 All settled on 2026-10-25:
 
-- One feature under `/agents setup`; autosetup runs unasked when no agent has a skills override on this machine, otherwise a Yes/No step with nothing preselected.
+- One feature under `/agents setup`; autosetup runs unasked when no agent has a skills override on this machine, otherwise a Yes/No step with Yes preselected.
 - Chores are the agents under a `chores` folder and never reach the model. The segment is checked on the path relative to the agents dir the file was loaded from, so an agents dir that itself sits under a directory named `chores` does not turn every agent into a chore.
 - At most five skills per lead, ordered most useful first, project-level skills preferred, the model classifies the project first.
 - Project signals: the top-level listing only; the main session reads manifests and the tree itself. No manifest parsing in the extension.
@@ -119,7 +119,7 @@ All settled on 2026-10-25:
 
 ## Delivery order
 
-1. **Release 1.** Adapter: `scope` on the inventory entries. Subagents: the override check and the Yes/No step in `/agents setup`, the select's no-preselection mode, the lead filter, the interactive filter, the template, the project listing helper, the form's proposal draft and picker order, the untrusted-scope wording, the tool, the plugin wiring, tests (unit for the lead and interactive filters, the brief, the validation, the form draft and the picker order; a plugin test through the harness with a fake form for both entry paths), README/ARCHITECTURE/STRUCTURE of the extension, the adapter and the root, the AGENTS.md clause, `npm run check` green. Details in implementation.md.
+1. **Release 1.** Adapter: `scope` on the inventory entries. Subagents: the override check and the Yes/No step in `/agents setup`, the lead filter, the interactive filter, the template, the project listing helper, the form's proposal draft and picker order, the untrusted-scope wording, the tool, the plugin wiring, tests (unit for the lead and interactive filters, the brief, the validation, the form draft and the picker order; a plugin test through the harness with a fake form for both entry paths), README/ARCHITECTURE/STRUCTURE of the extension, the adapter and the root, the AGENTS.md clause, `npm run check` green. Details in implementation.md.
 2. **Release 2, if ever.** Automatic re-runs as sketched above, only on request.
 
 ## Not verified

@@ -307,7 +307,7 @@ describe("/agents setup autosetup", () => {
     expect(noticesOf("info")).toEqual([]);
   });
 
-  it("asks first when an override exists, with nothing focused", async () => {
+  it("asks first when an override exists, with Yes selected so Enter starts autosetup", async () => {
     const { host } = autosetup({ seeded: true });
     const run = host.runCommand("agents", "setup");
 
@@ -316,16 +316,34 @@ describe("/agents setup autosetup", () => {
     const choice = host.form();
 
     expect(choice.render(80).some((line) => line.includes("Propose skills automatically"))).toBe(true);
-    expect(choice.render(80).some((line) => line.includes("›"))).toBe(false);
+    expect(choice.render(80).some((line) => line.includes("› 1. Yes"))).toBe(true);
 
     choice.press(key("enter"));
-    expect(choice.closed).toBe(false);
-
-    choice.press(key("down"), key("enter"));
     await run;
 
     expect(host.hidden).toHaveLength(1);
     expect(host.forms).toHaveLength(1);
+  });
+
+  it("opens the plain form on 2 or on moving down and Enter", async () => {
+    const digit = autosetup({ seeded: true });
+    const moved = autosetup({ seeded: true });
+    const digitRun = digit.host.runCommand("agents", "setup");
+    const movedRun = moved.host.runCommand("agents", "setup");
+
+    await flushMicrotasks();
+    digit.host.form().press(char("2"));
+    moved.host.form().press(key("down"), key("enter"));
+    await flushMicrotasks();
+
+    expect(digit.host.hidden).toEqual([]);
+    expect(digit.host.forms).toHaveLength(2);
+    expect(moved.host.hidden).toEqual([]);
+    expect(moved.host.forms).toHaveLength(2);
+
+    digit.host.form().press(key("escape"));
+    moved.host.form().press(key("escape"));
+    await Promise.all([digitRun, movedRun]);
   });
 
   it("does nothing on Escape at the question", async () => {
