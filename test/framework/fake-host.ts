@@ -50,6 +50,7 @@ export type FakeHost = Host & {
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
   terminalNotices: { message: string; channel: NotifyChannel }[];
+  copied: string[];
   statuses: Map<string, string | undefined>;
   editorNotices: Map<string, string | undefined>;
   statusCalls: { key: string; text: string | undefined }[];
@@ -194,6 +195,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     published: [],
     notices: [],
     terminalNotices: [],
+    copied: [],
     statuses: new Map(),
     editorNotices: new Map(),
     statusCalls: [],
@@ -305,6 +307,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (message, channel) => {
         host.terminalNotices.push({ message, channel });
+      },
+      copyText: async (text) => {
+        host.copied.push(text);
       },
       setWorkingMessage: (text) => {
         host.workingMessages.push(text);

@@ -165,6 +165,7 @@ describe("pi adapter conformance", () => {
       "getMarkdownTheme",
       "initTheme",
       "keyText",
+      "copyToClipboard",
       "getDocsPath",
       "getExamplesPath",
       "getReadmePath",

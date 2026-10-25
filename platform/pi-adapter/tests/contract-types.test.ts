@@ -113,6 +113,7 @@ type FormerHostUiMember =
   | "captureEditorKeys"
   | "setFooter"
   | "keyText"
+  | "copyText"
   | "onKeyPress"
   | "setHiddenThinkingLabel";
 

@@ -117,8 +117,8 @@ extensions/subagents/
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
 │       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
 │       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
-│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved)
-│       └── request-block.ts               # requestLines: the collapsed Request block
+│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved, copy dep, c key)
+│       └── request-block.ts               # requestLines, requestText: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/

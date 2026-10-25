@@ -17,6 +17,7 @@ export type NoticeUi = {
   setNotice(key: string, text: string | undefined): void;
   confirm(title: string, message: string): Promise<boolean>;
   terminalNotify(message: string, channel: NotifyChannel): void;
+  copyText(text: string): Promise<void>;
 };
 
 export type OverlayUi = {

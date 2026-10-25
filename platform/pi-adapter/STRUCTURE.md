@@ -2,7 +2,7 @@
 
 - `index.ts`: the public surface; contract types, `createPiExtension`, `settleWithin`, `resolveModel`, `textMetrics`, the row geometry.
 - `types/host-capabilities.ts`: `Host` = `ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }`.
-- `types/host-ui.ts`: `HostUi` = `NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
+- `types/host-ui.ts`: `HostUi` (including `copyText`) = `NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
 - `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `SyntaxToken`, `ThinkingToken`), `BgToken`, `ThemeLike`.
 - `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`), `isNavigationKey`.
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
@@ -27,7 +27,7 @@
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
 - `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.
-- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, key observation, thinking label, columns.
+- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
 - `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.

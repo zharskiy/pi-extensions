@@ -1,4 +1,4 @@
-import { type ExtensionContext, keyText } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, type ExtensionContext, keyText } from "@earendil-works/pi-coding-agent";
 import {
   isKeyRelease,
   type Keybinding,
@@ -245,6 +245,7 @@ export const createUi = (
 
       stdout.write(sequence);
     },
+    copyText: (text) => copyToClipboard(text),
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
     setEditorFrame: editor.setEditorFrame,
