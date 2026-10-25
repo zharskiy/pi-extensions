@@ -160,11 +160,12 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
+    const parentRow = lines.findIndex((line) => line.includes("reviewer (+1)"));
+
     expect(lines).toHaveLength(9);
-    expect(lines[0]).toBe("");
-    expect(lines[1]).toContain("reviewer (+1)");
-    expect(lines[2].startsWith("   ↳ ⠋ explorer")).toBe(true);
-    expect(lines[2]).toContain("nested");
+    expect(lines.slice(0, parentRow)).toEqual([""]);
+    expect(lines[parentRow + 1]?.startsWith("   ↳ ⠋ explorer")).toBe(true);
+    expect(lines[parentRow + 1]).toContain("nested");
     expect(lines.slice(6)).toEqual(["   ↓ 3 more", IDLE, ""]);
   });
 

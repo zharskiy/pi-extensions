@@ -17,22 +17,29 @@ const MULTI_SELECT_HINTS: readonly KeyHint[] = [
 
 const DEFAULT_HEIGHT = 10;
 
-export const initialMulti = (count: number, checked: readonly boolean[] = []): MultiState => ({
+const initialMulti = (count: number, checked: readonly boolean[] = []): MultiState => ({
   cursor: 0,
   checked: Array.from({ length: count }, (_, index) => checked[index] === true),
 });
 
-export const scrollWindow = (count: number, cursor: number, height: number) => {
+const scrollWindow = (count: number, cursor: number, height: number) => {
   const size = Math.max(1, height);
   const start = Math.max(0, Math.min(cursor - Math.floor(size / 2), count - size));
 
   return { start, end: Math.min(count, start + size) };
 };
 
-type ListLayout = { slots?: boolean };
+type ListLayout = { slots?: boolean; empty?: string };
 
-const slotLine = (theme: ThemeLike, text: string, width: number) =>
-  `${PAD}${theme.fg("dim", theme.truncate(text, Math.max(1, width - PAD.length)))}`;
+const NONE_AVAILABLE = "(none available)";
+
+export const moreRow = (theme: ThemeLike, arrow: "↑" | "↓", hidden: number, width: number, prefix = PAD) =>
+  hidden > 0
+    ? `${prefix}${theme.fg("dim", theme.truncate(`${arrow} ${hidden} more`, Math.max(1, width - theme.width(prefix))))}`
+    : "";
+
+const emptyRow = (theme: ThemeLike, text: string, width: number) =>
+  `${PAD}${theme.fg("muted", theme.truncate(text, Math.max(1, width - PAD.length)))}`;
 
 export const scrolledLines = (
   theme: ThemeLike,
@@ -41,27 +48,26 @@ export const scrolledLines = (
   height: number,
   width: number,
   row: (index: number, chosen: boolean) => string[],
-  { slots = false }: ListLayout = {},
+  { slots = false, empty = NONE_AVAILABLE }: ListLayout = {},
 ) => {
   const { start, end } = scrollWindow(count, cursor, height);
-  const rows = Array.from({ length: end - start }, (_, offset) => start + offset).flatMap((index) => {
-    const lines = row(index, index === cursor);
-
-    return slots ? lines.slice(0, 1) : lines;
-  });
-  const up = `↑ ${start} more`;
-  const down = `↓ ${count - end} more`;
+  const rows = Array.from({ length: end - start }, (_, offset) => start + offset).flatMap((index) =>
+    row(index, index === cursor),
+  );
 
   if (slots) {
-    const above = start > 0 ? slotLine(theme, up, width) : "";
-    const below = end < count ? slotLine(theme, down, width) : "";
+    const shown = count === 0 ? [emptyRow(theme, empty, width)] : rows;
 
-    return [above, ...padRows(rows, Math.max(1, height)), below];
+    return [
+      moreRow(theme, "↑", start, width),
+      ...padRows(shown, Math.max(1, height)),
+      moreRow(theme, "↓", count - end, width),
+    ];
   }
 
   const more = (text: string) => padded(theme, theme.fg("dim", text), width);
-  const above = start > 0 ? more(up) : [];
-  const below = end < count ? more(down) : [];
+  const above = start > 0 ? more(`↑ ${start} more`) : [];
+  const below = end < count ? more(`↓ ${count - end} more`) : [];
 
   return [...above, ...rows, ...below];
 };
@@ -102,21 +108,10 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
   return undefined;
 };
 
-export const checkedIndexes = (state: MultiState) =>
-  state.checked.flatMap((value, index) => (value ? [index] : []));
-
 const ROW_MARKS = "› [ ] ";
 
 const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
   width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
-
-const NONE_AVAILABLE = "(none available)";
-
-export const emptySlots = (theme: ThemeLike, width: number, height: number, text = NONE_AVAILABLE) =>
-  padRows(
-    ["", `${PAD}${theme.fg("muted", theme.truncate(text, Math.max(1, width - PAD.length)))}`],
-    Math.max(1, height) + 2,
-  );
 
 export const multiLines = (
   theme: ThemeLike,
@@ -124,13 +119,9 @@ export const multiLines = (
   state: MultiState,
   width: number,
   height = DEFAULT_HEIGHT,
-  { slots = false }: ListLayout = {},
+  layout: ListLayout = {},
 ) => {
-  if (options.length === 0 && slots) {
-    return emptySlots(theme, width, height);
-  }
-
-  if (options.length === 0) {
+  if (options.length === 0 && !layout.slots) {
     return padded(theme, theme.fg("muted", NONE_AVAILABLE), width);
   }
 
@@ -146,12 +137,12 @@ export const multiLines = (
         ? `  ${theme.fg("muted", theme.truncate(option.description, room))}`
         : "";
 
-    return slots
+    return layout.slots
       ? [`${first}${theme.truncate(`${label}${description}`, Math.max(1, width - theme.width(first)))}`]
       : prefixed(theme, first, `${label}${description}`, width);
   };
 
-  return scrolledLines(theme, options.length, state.cursor, height, width, row, { slots });
+  return scrolledLines(theme, options.length, state.cursor, height, width, row, layout);
 };
 
 export type MultiSelectSpec<T> = {

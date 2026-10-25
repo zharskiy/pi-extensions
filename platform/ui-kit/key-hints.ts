@@ -62,7 +62,7 @@ export const keyHints = (pairs: readonly KeyHint[], theme: ThemeLike) =>
     .map(([key, words]) => `${theme.fg("dim", key)} ${theme.fg("muted", words)}`)
     .join(theme.fg("dim", DOT));
 
-export const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: number) => {
+const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: number) => {
   const room = Math.max(1, width - PAD.length);
   const fits = (pairs: readonly KeyHint[]) => theme.width(keyHints(pairs, theme)) <= room;
   const groups = hints.reduce<KeyHint[][]>((lines, hint) => {
@@ -84,7 +84,7 @@ export const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: nu
 
 export const rule = (theme: ThemeLike, width: number) => theme.fg("accent", "─".repeat(Math.max(1, width)));
 
-const hintRow = (theme: ThemeLike, hints: readonly KeyHint[], width: number) =>
+export const hintRow = (theme: ThemeLike, hints: readonly KeyHint[], width: number) =>
   `${PAD}${theme.truncate(keyHints(hints, theme), Math.max(1, width - PAD.length))}`;
 
 export const framed = (

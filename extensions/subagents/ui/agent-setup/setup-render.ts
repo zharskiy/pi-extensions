@@ -3,7 +3,6 @@ import { cutStart, DOT, fixedBlock, padRows } from "../../../../platform/shared/
 import {
   CANCEL_HINT,
   countLine,
-  emptySlots,
   framed,
   groupedTabBar,
   type KeyHint,
@@ -54,8 +53,6 @@ const LABEL_WIDTH = 10;
 const DESCRIPTION_ROWS = 2;
 
 const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + BLOCK_ROWS;
-
-const WIDE = 10_000;
 
 const TITLES: Record<Field, string> = {
   model: "Model (models with credentials)",
@@ -185,6 +182,7 @@ const windowLines = (
   cursor: number,
   width: number,
   height: number,
+  empty: string | undefined,
   label: (option: string) => string = (option) => option,
 ) =>
   scrolledLines(
@@ -198,7 +196,7 @@ const windowLines = (
 
       return [fitted(theme, `${PAD}${pointerMark(theme, chosen)} `, text, "", width)];
     },
-    { slots: true },
+    { slots: true, empty },
   );
 
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
@@ -231,13 +229,11 @@ const pickerLines = (
 ) => {
   const height = listHeight(picker.field);
   const head = (shown: number, total: number) => headLine(theme, picker, shown, total, width);
+  const empty = picker.query ? noMatch(picker) : undefined;
 
   if (picker.field === "skills") {
     const { rows, options, multi, total } = skillsView(context, picker);
-    const list =
-      options.length === 0 && picker.query
-        ? emptySlots(theme, width, height, noMatch(picker))
-        : multiLines(theme, options, multi, width, height, { slots: true });
+    const list = multiLines(theme, options, multi, width, height, { slots: true, empty });
     const detail = rows[multi.cursor] === ALL_ROW ? "" : (options[multi.cursor]?.description ?? "");
 
     return [head(options.length, total), ...list, ...block(theme, detail, width, DETAIL_LINES)];
@@ -245,10 +241,7 @@ const pickerLines = (
 
   const { shown, total } = listView(context, state, picker);
   const label = picker.field === "model" ? modelText : undefined;
-  const list =
-    shown.length === 0
-      ? emptySlots(theme, width, height, picker.query ? noMatch(picker) : undefined)
-      : windowLines(theme, shown, picker.cursor, width, height, label);
+  const list = windowLines(theme, shown, picker.cursor, width, height, empty, label);
 
   return [head(shown.length, total), ...list];
 };
@@ -361,9 +354,7 @@ const submitLines = (
   const bottom = [
     "",
     line(theme, theme.fg("muted", "Save to:"), width),
-    ...listLines(theme, scopes, state.scope, WIDE, { layout: "beside" }).map((row) =>
-      theme.truncate(row, width),
-    ),
+    ...listLines(theme, scopes, state.scope, width, { layout: "beside", cut: true }),
     context.trusted ? "" : line(theme, theme.fg("dim", UNTRUSTED_NOTE), width),
   ];
   const window = changeWindow(theme, texts, BODY_ROWS - top.length - bottom.length, width);

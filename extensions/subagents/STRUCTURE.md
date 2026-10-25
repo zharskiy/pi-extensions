@@ -75,7 +75,7 @@ extensions/subagents/
 │   ├── limits/
 │   │   └── context-step.ts                # contextStep, softWarning
 │   ├── agent-panel/
-│   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile, panelWindow (start, end, below, and scrolls: whether the list is longer than the window)
+│   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile, panelWindow (start, end and below)
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
@@ -104,7 +104,7 @@ extensions/subagents/
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
-│   │   ├── panel-lines.ts                 # panelLines: the agent rows, the two always-reserved more-slots when the list scrolls, the always-present hint row and the closing blank line
+│   │   ├── panel-lines.ts                 # panelLines: the agent rows, the two always-reserved more-slots (ui-kit moreRow) once the window starts below the top or ends above the bottom, the always-present hint row and the closing blank line
 │   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/

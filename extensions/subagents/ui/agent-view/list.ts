@@ -5,7 +5,7 @@ import {
   type ThemeToken,
 } from "../../../../platform/pi-adapter/index.ts";
 import { errorText } from "../../../../platform/shared/index.ts";
-import { keyHints } from "../../../../platform/ui-kit/index.ts";
+import { hintRow } from "../../../../platform/ui-kit/index.ts";
 import { clearTargets, listSections, subtitle, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { tickFor } from "../../core/components/refresh.ts";
 import { carrySelection, stoppableAgents, type TreeRow } from "../../core/components/tree.ts";
@@ -29,6 +29,8 @@ const STOP_ALL_CONFIRM_MS = 3_000;
 const NO_AGENTS_MS = 2_000;
 
 const STOP_FAILED_MS = 3_000;
+
+const CHROME_ROWS = 7;
 
 type Feedback = { text: string; token: ThemeToken };
 
@@ -167,12 +169,12 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
 
   const footerLines = (inner: number) => {
     const theme = api.theme;
-    const hint = theme.truncate(PAD + keyHints(listHint(selected()), theme), inner + PAD.length);
+    const hint = hintRow(theme, listHint(selected()), inner + PAD.length);
 
     return [feedback ? padLine(theme, feedback.token, feedback.text, inner) : "", hint];
   };
 
-  const bodyHeight = () => Math.max(1, api.rows() - 7);
+  const bodyHeight = () => Math.max(1, api.rows() - CHROME_ROWS);
 
   const render = (width: number) => {
     const inner = innerWidth(width);

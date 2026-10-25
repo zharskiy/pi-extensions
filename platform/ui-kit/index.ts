@@ -5,6 +5,7 @@ export {
   EXPAND_BINDING,
   expandHint,
   framed,
+  hintRow,
   type KeyHint,
   keyHints,
 } from "./key-hints.ts";
@@ -16,8 +17,8 @@ export {
   SELECT_HINTS,
 } from "./list.ts";
 export {
-  emptySlots,
   type MultiState,
+  moreRow,
   multiKey,
   multiLines,
   multiSelectForm,

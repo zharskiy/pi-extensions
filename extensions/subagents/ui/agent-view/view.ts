@@ -30,6 +30,8 @@ const RELOAD_TICK_MS = 1_000;
 
 const GAP = "  ";
 
+const CHROME_ROWS = 5;
+
 const ctxPercent = (data: ViewData, reserveTokens: number) => {
   const { record } = data;
   const tokens = record.context?.tokens ?? data.session?.contextTokens;
@@ -253,7 +255,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const inner = innerWidth(width);
     const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
     const footer = notice ? padLine(theme, "warning", notice, inner) : "";
-    const height = Math.max(3, api.rows() - header.length - 5);
+    const height = Math.max(3, api.rows() - header.length - CHROME_ROWS);
     const { request, lines, clickable } = bodyLines(width);
     const body = request.concat(lines);
     let window = scroll.window(body, height);

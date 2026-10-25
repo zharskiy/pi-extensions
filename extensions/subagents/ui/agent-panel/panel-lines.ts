@@ -1,5 +1,5 @@
 import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
-import { type KeyHint, keyHints } from "../../../../platform/ui-kit/index.ts";
+import { hintRow, type KeyHint, moreRow } from "../../../../platform/ui-kit/index.ts";
 import {
   type PanelActionsAvailable,
   type PanelState,
@@ -38,18 +38,18 @@ export const panelLines = (
     return [""];
   }
 
-  const { start, end, below, scrolls } = panelWindow(rows, state);
-  const marker = (text: string) => `${PAD}${POINTER_BLANK}${theme.fg("dim", text)}`;
+  const { start, end, below } = panelWindow(rows, state);
   const selected = rows.find((entry) => entry.record.id === state.selectedId);
   const layout = rowLayout(rows, now, width, theme);
-  const slot = (arrow: string, hidden: number) => (hidden > 0 ? marker(`${arrow} ${hidden} more`) : "");
+  const slot = (arrow: "↑" | "↓", hidden: number) =>
+    moreRow(theme, arrow, hidden, width, `${PAD}${POINTER_BLANK}`);
   const window = rows
     .slice(start, end)
     .map((entry) =>
       renderRow({ ...entry, selected: entry.record.id === state.selectedId }, width, theme, layout),
     );
-  const list = scrolls ? [slot("↑", start), ...window, slot("↓", below)] : window;
-  const hint = theme.truncate(PAD + keyHints(hintPairs(selected?.record, actions), theme), width);
+  const list = start > 0 || below > 0 ? [slot("↑", start), ...window, slot("↓", below)] : window;
+  const hint = hintRow(theme, hintPairs(selected?.record, actions), width);
 
   return [...list, hint, ""];
 };
