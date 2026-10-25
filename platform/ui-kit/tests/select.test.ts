@@ -13,16 +13,18 @@ const OPTIONS = [
 
 const open = ({
   selected,
+  unfocused,
   options = OPTIONS,
   theme = plainTheme,
 }: {
   selected?: number;
+  unfocused?: boolean;
   options?: SelectOption<string>[];
   theme?: ThemeLike;
 } = {}) => {
   const results: (string | undefined)[] = [];
 
-  const view = selectForm({ title: "Pick", options, selected })({
+  const view = selectForm({ title: "Pick", options, selected, unfocused })({
     theme,
     requestRender: () => {},
     done: (result) => {
@@ -125,5 +127,41 @@ describe("selectForm", () => {
     const form = open({ options: [{ value: "x", label: "A rather long option label" }] });
 
     expect(form.view.render(14).slice(3, 6)).toEqual([" › 1. A rather", "   long option", "   label"]);
+  });
+
+  it("opens unfocused with no pointer drawn", () => {
+    expect(open({ unfocused: true, selected: 1 }).pointer()).toBeUndefined();
+  });
+
+  it("ignores Enter while unfocused", () => {
+    const form = open({ unfocused: true });
+
+    form.press(key("enter"));
+
+    expect(form.results).toEqual([]);
+    expect(form.pointer()).toBeUndefined();
+  });
+
+  it("moves an unfocused pointer onto the first row and picks it with Enter, and still picks a digit", () => {
+    const moved = open({ unfocused: true });
+    const digit = open({ unfocused: true });
+
+    moved.press(key("down"));
+
+    expect(moved.pointer()).toBe(" › 1. Alpha  first one");
+
+    moved.press(key("enter"));
+    digit.press(char("3"));
+
+    expect(moved.results).toEqual(["a"]);
+    expect(digit.results).toEqual(["c"]);
+  });
+
+  it("returns nothing on Escape while unfocused", () => {
+    const form = open({ unfocused: true });
+
+    form.press(key("escape"));
+
+    expect(form.results).toEqual([undefined]);
   });
 });
