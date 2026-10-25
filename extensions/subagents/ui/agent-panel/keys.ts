@@ -1,5 +1,5 @@
 import type { EditorKeyHandler, KeyPress } from "../../../../platform/pi-adapter/index.ts";
-import { type PanelState, selectedIndex } from "../../core/agent-panel/panel-state.ts";
+import { type PanelState, panelView, selectedIndex } from "../../core/agent-panel/panel-state.ts";
 import { carrySelection, type TreeRow } from "../../core/components/tree.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
 
@@ -34,6 +34,8 @@ const move = ({ actions, rows, index }: Press, step: 1 | -1): Outcome => {
   return "consumed";
 };
 
+const shownRows = (actions: PanelActions) => panelView(actions.rows(), actions.state).shown;
+
 const ids = (rows: TreeRow[]) => rows.map((row) => row.record.id);
 
 const stopOrClear = ({ actions, rows, index }: Press): Outcome => {
@@ -46,7 +48,7 @@ const stopOrClear = ({ actions, rows, index }: Press): Outcome => {
 
   actions.state.cleared.add(record.id);
 
-  const next = carrySelection(ids(rows), ids(actions.rows()), record.id);
+  const next = carrySelection(ids(rows), ids(shownRows(actions)), record.id);
 
   if (!next) {
     deselect(actions);
@@ -78,7 +80,7 @@ const chars: Record<string, (press: Press) => Outcome> = { x: stopOrClear };
 export const panelKeyHandler =
   (actions: PanelActions): EditorKeyHandler =>
   (key) => {
-    const rows = actions.rows();
+    const rows = shownRows(actions);
     const index = selectedIndex(rows, actions.state);
     const binding = key.name === "other" && key.char ? chars[key.char] : names[key.name];
 
@@ -91,14 +93,13 @@ export const panelKeyHandler =
   };
 
 export const selectFirst = (actions: PanelActions): boolean => {
-  const first = actions.rows()[0];
+  const first = shownRows(actions)[0];
 
   if (!first) {
     return false;
   }
 
   actions.state.selectedId = first.record.id;
-  actions.state.top = 0;
   actions.refresh();
 
   return true;

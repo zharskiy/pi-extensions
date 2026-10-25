@@ -22,6 +22,8 @@ const IDLE = " ↓ to select";
 
 const HINT = " esc to deselect · enter to view · x to stop";
 
+const SUMMARY = (hidden: number) => `   ${hidden} more · ← to list agents`;
+
 const stubPlugin = <K extends keyof ServiceMap>(id: string, key: K, value: ServiceMap[K]): Plugin => ({
   id,
   enable: ({ services }) => {
@@ -129,7 +131,7 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
   });
 
-  it("draws the running rows, the more marker and the key hints as one table", () => {
+  it("draws the running rows, the summary row and the key hints as one table", () => {
     const panel = setup();
     const scout = panel.newAgent({ agent: "scout", description: "Map the auth module" });
     const worker = panel.newAgent({ agent: "worker", description: "Fix the login redirect" });
@@ -142,31 +144,49 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
     panel.key("down");
 
-    expect(panel.lines().slice(0, 3)).toEqual([
-      "",
+    expect(panel.lines().slice(0, 2)).toEqual([
       "   ⠋ scout     Map the auth module     Elapsed 1m 5s · 4 calls · 12.3k tokens",
       " › ⠋ worker    Fix the login redirect  Elapsed 2m 3s · 18 calls · 30.1k tokens",
     ]);
-    expect(panel.lines().slice(-3)).toEqual(["   ↓ 3 more", HINT, ""]);
+    expect(panel.lines().slice(-3)).toEqual([SUMMARY(4), HINT, ""]);
   });
 
-  it("renders seven agents in tree order with markers and (+N)", () => {
+  it("draws a lead with three children nested when they fit", () => {
     const panel = setup();
-    const parent = panel.newAgent({ agent: "reviewer" });
+    const lead = panel.newAgent({ agent: "reviewer" });
 
-    panel.running(parent.id);
-    panel.running(panel.newAgent({ callerId: parent.id, depth: 3, description: "nested" }).id);
-    Array.from({ length: 6 }, () => panel.running(panel.newAgent().id));
+    panel.running(lead.id);
+    Array.from({ length: 3 }, (_, index) =>
+      panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: `child ${index}` }).id),
+    );
 
     const lines = panel.lines();
 
-    const parentRow = lines.findIndex((line) => line.includes("reviewer (+1)"));
+    expect(lines).toHaveLength(6);
+    expect(lines[0]).toContain("reviewer (+3)");
+    expect(lines[1]?.startsWith("   ↳ ⠋ explorer")).toBe(true);
+    expect(lines.slice(1, 4).every((line) => line.includes("child"))).toBe(true);
+    expect(lines.slice(-2)).toEqual([IDLE, ""]);
+  });
 
-    expect(lines).toHaveLength(9);
-    expect(lines.slice(0, parentRow)).toEqual([""]);
-    expect(lines[parentRow + 1]?.startsWith("   ↳ ⠋ explorer")).toBe(true);
-    expect(lines[parentRow + 1]).toContain("nested");
-    expect(lines.slice(6)).toEqual(["   ↓ 3 more", IDLE, ""]);
+  it("collapses an overflowing tree to its leads and counts the children in the summary", () => {
+    const panel = setup();
+    const leads = ["reviewer", "planner"].map((agent) => panel.newAgent({ agent }));
+
+    leads.forEach((lead) => {
+      panel.running(lead.id);
+      Array.from({ length: 3 }, () =>
+        panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: "child" }).id),
+      );
+    });
+
+    const lines = panel.lines();
+
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toContain("reviewer (+3)");
+    expect(lines[1]).toContain("planner (+3)");
+    expect(lines.join("\n")).not.toContain("child");
+    expect(lines.slice(2)).toEqual([SUMMARY(6), IDLE, ""]);
   });
 
   it("down on an empty editor selects the first row and installs a capture", () => {
@@ -201,31 +221,64 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
   });
 
-  it("moves the selection and scrolls the window", () => {
-    const panel = setup();
-
-    Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
-    panel.host.pressEmptyDown();
-    Array.from({ length: 5 }, () => panel.key("down"));
-
-    const lines = panel.lines();
-
-    expect(lines[0]).toBe("   ↑ 1 more");
-    expect(selectedRow(lines)).toBe(lines[5]);
-  });
-
-  it("scrolls the window up to keep the selection visible", () => {
+  it("moves the selection and stops on the last shown row", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
     panel.host.pressEmptyDown();
     Array.from({ length: 6 }, () => panel.key("down"));
-    Array.from({ length: 5 }, () => panel.key("up"));
 
     const lines = panel.lines();
 
-    expect(lines[0]).toBe("   ↑ 1 more");
-    expect(selectedRow(lines)).toBe(lines[1]);
+    expect(lines[0]).not.toBe("");
+    expect(selectedRow(lines)).toBe(lines[3]);
+    expect(lines[4]).toBe(SUMMARY(3));
+  });
+
+  it("keeps open agents before closed ones when they overflow", () => {
+    const panel = setup();
+    const records = Array.from({ length: 6 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+
+    records.forEach((record) => {
+      panel.running(record.id);
+    });
+    records.slice(0, 2).forEach((record) => {
+      panel.registry.close(record.id, { state: "done" });
+    });
+
+    const lines = panel.lines();
+
+    expect(lines.slice(0, 4).map((line) => line.match(/task \d/)?.[0])).toEqual([
+      "task 2",
+      "task 3",
+      "task 4",
+      "task 5",
+    ]);
+    expect(lines[4]).toBe(SUMMARY(2));
+  });
+
+  it("keeps the selected agent shown when it would be cut", () => {
+    const panel = setup();
+    const records = Array.from({ length: 6 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+
+    records.forEach((record) => {
+      panel.running(record.id);
+    });
+    panel.host.pressEmptyDown();
+    Array.from({ length: 2 }, () => panel.key("down"));
+    panel.registry.close(records[2].id, { state: "done" });
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+
+    expect(lines.slice(0, 4).map((line) => line.match(/task \d/)?.[0])).toEqual([
+      "task 0",
+      "task 1",
+      "task 3",
+      "task 2",
+    ]);
+    expect(selectedRow(lines)).toBe(lines[3]);
+    expect(lines[4]).toBe(SUMMARY(2));
   });
 
   it("enter opens the agent view from the panel and deselects", () => {
@@ -442,65 +495,52 @@ describe("agent panel", () => {
     expect(panel.lines().join("\n")).toContain("second");
   });
 
-  it("keeps the window in place when the selection clears", () => {
+  it("keeps the rows in place when the selection clears", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
     panel.host.pressEmptyDown();
-    Array.from({ length: 6 }, () => panel.key("down"));
+    Array.from({ length: 3 }, () => panel.key("down"));
 
-    expect(panel.lines()[0]).toBe("   ↑ 2 more");
+    const selected = panel.lines();
 
     panel.key("escape");
 
     const after = panel.lines();
 
     expect(selectedRow(after)).toBeUndefined();
-    expect(after).not.toContain(HINT);
     expect(after.at(-2)).toBe(IDLE);
-    expect(after[0]).toBe("   ↑ 2 more");
-
-    panel.host.pressEmptyDown();
-
-    const reselected = panel.lines();
-
-    expect(selectedRow(reselected)).toBe(reselected[1]);
-
-    panel.type("a");
-
-    expect(panel.lines()[1]).toMatch(/^ {3}/);
-    expect(panel.lines()[1]).not.toContain("›");
-    expect(panel.lines().slice(-3)).toEqual(["   ↓ 2 more", IDLE, ""]);
+    expect(after.slice(0, 5)).toEqual([...selected.slice(0, 3), selected[3].replace("›", " "), SUMMARY(3)]);
   });
 
-  it("keeps the panel height while scrolling and selecting a long list", () => {
-    const panel = setup();
+  it("is seven lines from six agents up and two more than the count below, never starting blank", () => {
+    const heights = [1, 2, 5, 6, 7, 10].map((count) => {
+      const panel = setup();
 
-    Array.from({ length: 8 }, () => panel.running(panel.newAgent().id));
+      Array.from({ length: count }, () => panel.running(panel.newAgent().id));
 
-    const idle = panel.lines();
+      const idle = panel.lines();
 
-    panel.host.pressEmptyDown();
+      panel.host.pressEmptyDown();
+      Array.from({ length: 9 }, () => panel.key("down"));
 
-    const top = panel.lines();
+      const selected = panel.lines();
 
-    Array.from({ length: 5 }, () => panel.key("down"));
+      expect([idle[0], selected[0]]).not.toContain("");
+      expect([idle.at(-2), selected.at(-2)]).toEqual([IDLE, HINT]);
+      expect(idle.join("\n")).not.toContain(" 1 more");
 
-    const middle = panel.lines();
+      return [idle.length, selected.length, idle.find((line) => line.includes("more"))];
+    });
 
-    Array.from({ length: 2 }, () => panel.key("down"));
-
-    const end = panel.lines();
-
-    panel.key("escape");
-
-    const scrolled = panel.lines();
-
-    expect(new Set([idle, top, middle, end, scrolled].map((lines) => lines.length))).toEqual(new Set([9]));
-    expect([idle[0], top[0], end.at(-3)]).toEqual(["", "", ""]);
-    expect([middle[0], middle.at(-3)]).toEqual(["   ↑ 1 more", "   ↓ 2 more"]);
-    expect(end[0]).toBe("   ↑ 3 more");
-    expect([idle.at(-2), top.at(-2), scrolled.at(-2)]).toEqual([IDLE, HINT, IDLE]);
+    expect(heights).toEqual([
+      [3, 3, undefined],
+      [4, 4, undefined],
+      [7, 7, undefined],
+      [7, 7, SUMMARY(2)],
+      [7, 7, SUMMARY(3)],
+      [7, 7, SUMMARY(6)],
+    ]);
   });
 
   it("keeps the panel height when selecting a short list", () => {
@@ -621,7 +661,7 @@ describe("agent panel", () => {
     expect(panel.lines().at(-2)).toBe(hint);
   });
 
-  it("aligns the info column across the window and keeps it when the window scrolls", () => {
+  it("aligns the info column over the shown rows and keeps it while the selection moves", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, (_, index) =>
@@ -637,24 +677,22 @@ describe("agent panel", () => {
 
     const bottom = infoColumns(panel.lines(120));
 
-    expect(top).toHaveLength(5);
+    expect(top).toHaveLength(4);
     expect(new Set([...top, ...bottom]).size).toBe(1);
-    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 28 + 2);
+    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 19 + 2);
   });
 
-  it("puts the scroll markers in the glyph column and keeps every line within the width", () => {
+  it("puts the summary in the glyph column and keeps every line within the width", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
     panel.host.pressEmptyDown();
-    Array.from({ length: 5 }, () => panel.key("down"));
 
     const lines = panel.lines();
-    const glyphColumn = lines[1].indexOf("⠋");
+    const glyphColumn = lines[0].indexOf("⠋");
 
     expect(glyphColumn).toBe(3);
-    expect(lines[0].indexOf("↑")).toBe(glyphColumn);
-    expect(lines[6].indexOf("↓")).toBe(glyphColumn);
+    expect(lines[4].indexOf("3 more")).toBe(glyphColumn);
 
     [80, 30].forEach((width) => {
       const drawn = panel.lines(width);

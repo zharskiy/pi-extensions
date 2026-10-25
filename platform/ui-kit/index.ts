@@ -18,7 +18,6 @@ export {
 } from "./list.ts";
 export {
   type MultiState,
-  moreRow,
   multiKey,
   multiLines,
   multiSelectForm,
