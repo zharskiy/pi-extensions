@@ -13,6 +13,7 @@ import {
   TAB_SWITCH_HINT,
 } from "../../../../platform/ui-kit/index.ts";
 import type { AgentKind } from "../../core/agent-setup/agent-template.ts";
+import { SCOPES } from "../../core/agent-setup/scope.ts";
 import { grantOrNone } from "../../core/model/agent-record.ts";
 import { AGENT_SCOPE_ALL, ALL_SKILLS_TEXT, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import { alignRight } from "../components/format.ts";
@@ -315,29 +316,29 @@ const submitLines = (
   width: number,
 ) => {
   const texts = changeLines(context, state, theme, width);
-  const title = texts.length > 0 ? "Changes" : "No changes";
-  const project = context.project ? labelLine(theme, "Project", context.project, width) : "";
   const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
     description: paths[scope],
   }));
   const top = [
     line(theme, theme.fg("accent", theme.bold("Submit")), width),
-    ...padRows([], DESCRIPTION_ROWS),
-    "",
-    project,
-    "",
-    line(theme, theme.fg("accent", theme.bold(title)), width),
+    context.project ? labelLine(theme, "Project", context.project, width) : "",
+    line(theme, theme.fg("accent", theme.bold(texts.length > 0 ? "Changes" : "No changes")), width),
   ];
   const bottom = [
     "",
     line(theme, theme.fg("muted", "Save to:"), width),
-    ...listLines(theme, scopes, state.scope, width, { layout: "beside", cut: true }),
-    context.trusted ? "" : line(theme, theme.fg("dim", UNTRUSTED_NOTE), width),
+    ...padRows(
+      [
+        ...listLines(theme, scopes, state.scope, width, { layout: "beside", cut: true }),
+        ...(context.trusted ? [] : [line(theme, theme.fg("dim", UNTRUSTED_NOTE), width)]),
+      ],
+      SCOPES.length + 1,
+    ),
   ];
   const window = changeWindow(theme, texts, BODY_ROWS - top.length - bottom.length, width);
 
-  return padRows([...top, ...window, ...bottom], BODY_ROWS);
+  return [...top, ...window, ...bottom];
 };
 
 const BACK_HINT: KeyHint = ["esc", "to clear/back"];

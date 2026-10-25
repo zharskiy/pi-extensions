@@ -142,12 +142,57 @@ describe("agent setup layout", () => {
   const heights = (ctx: SetupContext, states: SetupState[], width = 80) =>
     new Set(states.map((state) => at80(ctx, state, width).length));
 
+  const tabbed = (ctx: SetupContext, count: number, state = initialSetup(ctx)) =>
+    press(ctx, state, ...Array.from({ length: count }, () => key("tab"))).state;
+
   it("renders every agent tab and the submit tab with the same number of lines", () => {
     [true, false].forEach((trusted) => {
       const ctx = wide(trusted);
       const tabs = Array.from({ length: ctx.agents.length + 1 }, (_, tab) => ({ ...initialSetup(ctx), tab }));
 
       expect(heights(ctx, tabs)).toEqual(new Set([21]));
+    });
+  });
+
+  it("shows every change on the submit tab and counts the rest on its last row", () => {
+    [true, false].forEach((trusted) => {
+      const ctx = context(trusted);
+      const pick = [key("enter"), key("end"), key("enter")];
+      const lead = press(
+        ctx,
+        initialSetup(ctx),
+        ...pick,
+        key("down"),
+        key("down"),
+        key("enter"),
+        key("space"),
+        key("enter"),
+      );
+      const helper = press(ctx, tabbed(ctx, 1, lead.state), ...pick, key("down"), key("enter"), key("enter"));
+      const chore = press(ctx, tabbed(ctx, 1, helper.state), ...pick);
+      const submit = tabbed(ctx, 1, chore.state);
+      const lines = at80(ctx, submit);
+      const rows = [
+        "lead: model",
+        "lead: thinking",
+        "lead: skills",
+        "helper: model",
+        "helper: thinking",
+        "chore: model",
+      ];
+
+      expect(rows.every((row) => lines.some((line) => line.startsWith(` ${row} `)))).toBe(true);
+      expect(lines.some((line) => line.includes("more items"))).toBe(false);
+      expect(lines).toHaveLength(at80(ctx, chore.state).length);
+
+      const more = press(ctx, chore.state, key("down"), key("enter"), key("end"), key("enter"), key("tab"));
+      const crowded = at80(ctx, more.state);
+      const count = crowded.findIndex((line) => line.includes("more items"));
+
+      expect(crowded[count]).toBe(" ... (2 more items)");
+      expect(crowded.slice(crowded.indexOf(" Changes") + 1, count)).toHaveLength(5);
+      expect(crowded[count + 2]).toBe(" Save to:");
+      expect(crowded).toHaveLength(lines.length);
     });
   });
 

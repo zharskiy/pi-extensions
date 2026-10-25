@@ -109,7 +109,7 @@ extensions/subagents/
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
 │   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, fieldValue, the Previous/Suggested PRESETS (presetsOf, presetFieldsOf), selectedRow, changeRows for the Submit tab, FIELD_ROWS and INFO_ROWS, pickers with the all row and the filter, BLOCK_ROWS, DETAIL_LINES and the per-picker listHeight, scopes and keys
-│   │   ├── setup-render.ts                # renderSetup: the form (agent block, preset rows and info view, or an open picker fitted into their rows; Submit change window padded to the agent-tab height), the Leads/Chores tab bar, the locked chore skills row and the picker title row with its query
+│   │   ├── setup-render.ts                # renderSetup: the form (agent block, preset rows and info view, or an open picker fitted into their rows; each section padded to its rows; Submit's change window takes every row the agent-tab body leaves above Save to), the Leads/Chores tab bar, the locked chore skills row and the picker title row with its query
 │   │   └── setup-overlay.ts               # setupForm: the HostUi.showForm factory
 │   └── agent-view/
 │       ├── picker.ts                      # the /agents subcommands and the menu picker
