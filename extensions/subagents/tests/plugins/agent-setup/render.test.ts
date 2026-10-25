@@ -146,35 +146,56 @@ describe("agent setup layout", () => {
       const ctx = wide(trusted);
       const tabs = Array.from({ length: ctx.agents.length + 1 }, (_, tab) => ({ ...initialSetup(ctx), tab }));
 
-      expect(heights(ctx, tabs)).toEqual(new Set([34]));
+      expect(heights(ctx, tabs)).toEqual(new Set([21]));
     });
   });
 
-  it("keeps the height while a picker opens, scrolls, filters and closes", () => {
+  it("keeps one height with every picker closed and another with any picker open", () => {
     const ctx = wide(true);
     const start = initialSetup(ctx);
     const model = press(ctx, start, key("enter")).state;
     const skills = press(ctx, start, key("down"), key("down"), key("enter")).state;
-    const states = [
+    const closed = [
       start,
+      press(ctx, model, key("escape")).state,
+      press(ctx, skills, key("enter")).state,
+      { ...start, tab: 2 },
+      press(ctx, { ...start, tab: 1 }, key("end"), key("enter")).state,
+    ];
+    const open = [
       model,
       press(ctx, model, ...Array.from({ length: 10 }, () => key("down"))).state,
       press(ctx, model, key("end")).state,
       press(ctx, model, char("1")).state,
       press(ctx, model, char("z"), char("z")).state,
-      press(ctx, model, key("escape")).state,
       press(ctx, start, key("down"), key("enter")).state,
       skills,
       press(ctx, skills, key("end")).state,
       press(ctx, skills, key("down")).state,
       press(ctx, skills, char("r"), char("e")).state,
       press(ctx, skills, char("z"), char("z")).state,
-      press(ctx, { ...start, tab: 1 }, key("end"), key("enter")).state,
     ];
 
-    expect(heights(ctx, states)).toEqual(new Set([34]));
-    expect(heights(ctx, states, 40).size).toBe(1);
-    expect(heights(ctx, states, 200).size).toBe(1);
+    expect(heights(ctx, closed)).toEqual(new Set([21]));
+    expect(heights(ctx, open)).toEqual(new Set([27]));
+    [40, 200].forEach((width) => {
+      expect(heights(ctx, closed, width).size).toBe(1);
+      expect(heights(ctx, open, width).size).toBe(1);
+    });
+  });
+
+  it("puts an open picker under the heading in place of the fields, presets and info", () => {
+    const ctx = wide(true);
+    const lines = at80(ctx, press(ctx, initialSetup(ctx), key("enter")).state);
+
+    expect(lines.slice(4, 9)).toEqual([
+      " lead",
+      " Leads things.",
+      "",
+      "",
+      " Model (models with credentials)",
+    ]);
+    expect(lines.some((text) => text.includes("Thinking ") || text.includes("Tools:"))).toBe(false);
   });
 
   it("shows the scroll counts in fixed rows around the model list", () => {
@@ -218,7 +239,7 @@ describe("agent setup layout", () => {
       [" ↑ 2 more", " ↓ 3 more"],
       [" ↑ 5 more", ""],
     ]);
-    expect(heights(ctx, ends)).toEqual(new Set([34]));
+    expect(heights(ctx, ends)).toEqual(new Set([27]));
   });
 
   it("cuts the description to two rows under the name and the footer to one row", () => {

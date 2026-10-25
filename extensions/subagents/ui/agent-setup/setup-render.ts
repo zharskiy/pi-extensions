@@ -55,9 +55,9 @@ const DETAIL_LINES = 3;
 
 const FIELD_ROWS = 3;
 
-const PANEL_ROWS = 1 + 1 + (LIST_HEIGHT + 2) + 1 + DETAIL_LINES;
+const INFO_ROWS = 3;
 
-const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + FIELD_ROWS + 1 + PRESETS.length + 1 + PANEL_ROWS;
+const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + FIELD_ROWS + 1 + PRESETS.length + 1 + INFO_ROWS;
 
 const WIDE = 10_000;
 
@@ -201,7 +201,7 @@ const windowLines = (
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
   line(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
 
-const skillDetail = (description: string | undefined, theme: ThemeLike, width: number) =>
+const detailLines = (description: string | undefined, theme: ThemeLike, width: number) =>
   block(theme, description ?? "", width, DETAIL_LINES);
 
 const queryLine = (theme: ThemeLike, query: string, shown: number, total: number, width: number) => {
@@ -242,7 +242,7 @@ const pickerLines = (
       queryLine(theme, picker.query, options.length, total, width),
       ...list,
       "",
-      ...skillDetail(detail, theme, width),
+      ...detailLines(detail, theme, width),
     ];
   }
 
@@ -257,6 +257,8 @@ const pickerLines = (
     title(picker.field === "model" ? "Model (models with credentials)" : "Thinking level"),
     queryLine(theme, picker.query, shown.length, total, width),
     ...list,
+    "",
+    ...detailLines(undefined, theme, width),
   ];
 };
 
@@ -281,19 +283,23 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
     return [];
   }
 
-  const below = state.picker
-    ? pickerLines(context, state, state.picker, theme, width)
-    : infoLines(context, state, theme, width);
-
-  return [
+  const heading = [
     line(theme, theme.fg("accent", theme.bold(agent.name)), width),
     ...block(theme, agent.description, width, DESCRIPTION_ROWS),
     "",
+  ];
+
+  if (state.picker) {
+    return [...heading, ...pickerLines(context, state, state.picker, theme, width)];
+  }
+
+  return [
+    ...heading,
     ...fieldLines(context, state, theme, width),
     "",
     ...presetLines(context, state, theme, width),
     "",
-    ...padRows(below, PANEL_ROWS),
+    ...infoLines(context, state, theme, width),
   ];
 };
 
