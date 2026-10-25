@@ -18,7 +18,9 @@ import { createHarness, startPlugins, tempDir } from "../../support/subagents-ha
 
 const WIDGET = "pi-subagents-agents";
 
-const HINT = " enter to view · x to stop · esc to deselect";
+const IDLE = " ↓ to select";
+
+const HINT = " esc to deselect · enter to view · x to stop";
 
 const stubPlugin = <K extends keyof ServiceMap>(id: string, key: K, value: ServiceMap[K]): Plugin => ({
   id,
@@ -97,7 +99,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", ""]);
+    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", IDLE, ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });
@@ -140,7 +142,8 @@ describe("agent panel", () => {
     panel.host.pressEmptyDown();
     panel.key("down");
 
-    expect(panel.lines().slice(0, 2)).toEqual([
+    expect(panel.lines().slice(0, 3)).toEqual([
+      "",
       "   ⠋ scout     Map the auth module     Elapsed 1m 5s · 4 calls · 12.3k tokens",
       " › ⠋ worker    Fix the login redirect  Elapsed 2m 3s · 18 calls · 30.1k tokens",
     ]);
@@ -157,11 +160,12 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines).toHaveLength(7);
-    expect(lines[0]).toContain("reviewer (+1)");
-    expect(lines[1].startsWith("   ↳ ⠋ explorer")).toBe(true);
-    expect(lines[1]).toContain("nested");
-    expect(lines.slice(5)).toEqual(["   ↓ 3 more", ""]);
+    expect(lines).toHaveLength(9);
+    expect(lines[0]).toBe("");
+    expect(lines[1]).toContain("reviewer (+1)");
+    expect(lines[2].startsWith("   ↳ ⠋ explorer")).toBe(true);
+    expect(lines[2]).toContain("nested");
+    expect(lines.slice(6)).toEqual(["   ↓ 3 more", IDLE, ""]);
   });
 
   it("down on an empty editor selects the first row and installs a capture", () => {
@@ -279,7 +283,7 @@ describe("agent panel", () => {
     panel.registry.update(record.id, { state: "grace" });
     panel.host.pressEmptyDown();
 
-    expect(panel.lines().at(-2)).toBe(" enter to view · x to close now · esc to deselect");
+    expect(panel.lines().at(-2)).toBe(" esc to deselect · enter to view · x to close now");
     expect(panel.type("x")).toBe("consumed");
     expect(panel.stop).toHaveBeenCalledWith(record.id);
     expect(selectedRow(panel.lines())).toBeDefined();
@@ -452,19 +456,65 @@ describe("agent panel", () => {
 
     expect(selectedRow(after)).toBeUndefined();
     expect(after).not.toContain(HINT);
+    expect(after.at(-2)).toBe(IDLE);
     expect(after[0]).toBe("   ↑ 2 more");
 
     panel.host.pressEmptyDown();
 
     const reselected = panel.lines();
 
-    expect(selectedRow(reselected)).toBe(reselected[0]);
+    expect(selectedRow(reselected)).toBe(reselected[1]);
 
     panel.type("a");
 
-    expect(panel.lines()[0]).toMatch(/^ {3}/);
-    expect(panel.lines()[0]).not.toContain("›");
-    expect(panel.lines().at(-2)).toBe("   ↓ 2 more");
+    expect(panel.lines()[1]).toMatch(/^ {3}/);
+    expect(panel.lines()[1]).not.toContain("›");
+    expect(panel.lines().slice(-3)).toEqual(["   ↓ 2 more", IDLE, ""]);
+  });
+
+  it("keeps the panel height while scrolling and selecting a long list", () => {
+    const panel = setup();
+
+    Array.from({ length: 8 }, () => panel.running(panel.newAgent().id));
+
+    const idle = panel.lines();
+
+    panel.host.pressEmptyDown();
+
+    const top = panel.lines();
+
+    Array.from({ length: 5 }, () => panel.key("down"));
+
+    const middle = panel.lines();
+
+    Array.from({ length: 2 }, () => panel.key("down"));
+
+    const end = panel.lines();
+
+    panel.key("escape");
+
+    const scrolled = panel.lines();
+
+    expect(new Set([idle, top, middle, end, scrolled].map((lines) => lines.length))).toEqual(new Set([9]));
+    expect([idle[0], top[0], end.at(-3)]).toEqual(["", "", ""]);
+    expect([middle[0], middle.at(-3)]).toEqual(["   ↑ 1 more", "   ↓ 2 more"]);
+    expect(end[0]).toBe("   ↑ 3 more");
+    expect([idle.at(-2), top.at(-2), scrolled.at(-2)]).toEqual([IDLE, HINT, IDLE]);
+  });
+
+  it("keeps the panel height when selecting a short list", () => {
+    const panel = setup();
+
+    Array.from({ length: 3 }, () => panel.running(panel.newAgent().id));
+
+    const idle = panel.lines();
+
+    panel.host.pressEmptyDown();
+
+    const selected = panel.lines();
+
+    expect([idle.length, selected.length]).toEqual([5, 5]);
+    expect([idle.at(-2), selected.at(-2)]).toEqual([IDLE, HINT]);
   });
 
   it("ticks every 100 ms while a row runs, every second with only queued rows, and never when empty", () => {
@@ -551,10 +601,10 @@ describe("agent panel", () => {
   });
 
   it.each([
-    ["queued", " enter to view · x to stop · esc to deselect"],
-    ["running", " enter to view · x to stop · esc to deselect"],
-    ["grace", " enter to view · x to close now · esc to deselect"],
-    ["done", " enter to view · x to clear · esc to deselect"],
+    ["queued", " esc to deselect · enter to view · x to stop"],
+    ["running", " esc to deselect · enter to view · x to stop"],
+    ["grace", " esc to deselect · enter to view · x to close now"],
+    ["done", " esc to deselect · enter to view · x to clear"],
   ] as [AgentState, string][])("hints the actions for a selected %s row", (state, hint) => {
     const panel = setup();
     const record = panel.newAgent();
@@ -615,7 +665,7 @@ describe("agent panel", () => {
       expect(drawn.at(-1)).toBe("");
     });
 
-    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop ...");
+    expect(panel.lines(30).at(-2)).toBe(" esc to deselect · enter to...");
   });
 
   it("degrades without agent-view and run-agent", () => {
@@ -637,7 +687,7 @@ describe("agent panel", () => {
 
     panel.key("down");
 
-    expect(panel.lines().at(-2)).toBe(" x to clear · esc to deselect");
+    expect(panel.lines().at(-2)).toBe(" esc to deselect · x to clear");
 
     panel.type("x");
 
@@ -662,7 +712,7 @@ describe("agent panel", () => {
     services.require("registry").create(newAgentInput(join(root, "agents")));
 
     expect(host.pressEmptyDown()).toBe(false);
-    expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(2);
+    expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(3);
   });
 
   it("removes the widget and the capture on disable", async () => {

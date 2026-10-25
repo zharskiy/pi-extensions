@@ -75,5 +75,5 @@ export const panelWindow = (rows: TreeRow[], state: PanelState) => {
   const start = state.top;
   const end = Math.min(rows.length, state.top + WINDOW);
 
-  return { start, end, below: rows.length - end };
+  return { start, end, below: rows.length - end, scrolls: rows.length > WINDOW };
 };
