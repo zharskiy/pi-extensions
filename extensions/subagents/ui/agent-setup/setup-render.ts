@@ -302,18 +302,11 @@ export const renderSetup = (
   });
   const changes = setupChanges(context, state);
   const ready = changes.length > 0;
+  const groups = [group("Leads", "lead"), group("Chores", "chore")];
+  const bar = groupedTabBar(theme, groups, state.tab, ready, width - PAD.length).map((row) => `${PAD}${row}`);
   const body = onSubmitTab(context, state)
     ? submitLines(context, state, changes, paths, theme, width)
     : agentLines(context, state, theme, width);
 
-  return framed(
-    theme,
-    width,
-    [
-      ...groupedTabBar(theme, [group("Leads", "lead"), group("Chores", "chore")], state.tab, ready, width),
-      "",
-      ...body,
-    ],
-    hints(context, state, ready),
-  );
+  return framed(theme, width, [...bar, "", ...body], hints(context, state, ready));
 };

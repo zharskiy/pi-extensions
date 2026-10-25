@@ -10,7 +10,7 @@ describe("agent setup rendering", () => {
   it("renders the agent tab with its fields, tools note and MCP line", () => {
     const lines = render(context(), initialSetup(context()));
 
-    expect(lines.slice(1, 3)).toEqual(["Leads   □ lead  □ helper", "Chores  □ chore  ✓ Submit"]);
+    expect(lines.slice(1, 3)).toEqual([" Leads   □ lead  □ helper", " Chores  □ chore  ✓ Submit"]);
     expect(lines).toContain(" lead Leads things.");
     expect(lines).toContain(" › Model     acme/big");
     expect(lines).toContain("   Thinking  high");
@@ -23,7 +23,7 @@ describe("agent setup rendering", () => {
     const ctx = context();
     const lines = render(ctx, press(ctx, initialSetup(ctx), key("tab"), key("tab")).state);
 
-    expect(lines[2]).toBe("Chores  □ chore  ✓ Submit");
+    expect(lines[2]).toBe(" Chores  □ chore  ✓ Submit");
     expect(lines.slice(lines.indexOf(" chore Does chores.") + 2).slice(0, 3)).toEqual([
       " › Model     gone/old",
       "   Thinking  default",

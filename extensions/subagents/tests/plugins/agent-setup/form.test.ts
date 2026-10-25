@@ -29,7 +29,10 @@ describe("agent setup form", () => {
 
     expect(state.drafts[0]?.skills).toEqual(["search", "docs"]);
     expect(setupChanges(ctx, state)).toEqual([{ name: "lead", patch: { skills: ["search", "docs"] } }]);
-    expect(render(ctx, state).slice(1, 3)).toEqual(["Leads   ■ lead  □ helper", "Chores  □ chore  ✓ Submit"]);
+    expect(render(ctx, state).slice(1, 3)).toEqual([
+      " Leads   ■ lead  □ helper",
+      " Chores  □ chore  ✓ Submit",
+    ]);
     expect(render(ctx, state)).toContain("   Skills    search, docs (changed)");
   });
 
@@ -171,7 +174,7 @@ describe("agent setup form", () => {
     expect(setupChanges(ctx, state)).toEqual([
       { name: "lead", patch: { model: "acme/small", thinking: "off", skills: ["search"] } },
     ]);
-    expect(render(ctx, state)[1]).toBe("Leads   ■ lead  □ helper");
+    expect(render(ctx, state)[1]).toBe(" Leads   ■ lead  □ helper");
     expect(render(ctx, state)).toContain(" › Skills    search (changed)");
   });
 

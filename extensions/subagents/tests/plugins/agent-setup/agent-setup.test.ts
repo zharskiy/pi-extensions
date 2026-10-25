@@ -175,9 +175,9 @@ describe("/agents setup form", () => {
     const { form } = await openForm();
     const bar = form.render(400).slice(1, 3);
 
-    expect(bar[0]).toBe("Leads   □ general  □ implementer  □ planner  □ reviewer  □ aardvark");
+    expect(bar[0]).toBe(" Leads   □ general  □ implementer  □ planner  □ reviewer  □ aardvark");
     expect(bar[1]).toBe(
-      "Chores  □ editor  □ fetch  □ image  □ scout  □ shell  □ verifier  □ abacus  ✓ Submit",
+      " Chores  □ editor  □ fetch  □ image  □ scout  □ shell  □ verifier  □ abacus  ✓ Submit",
     );
   });
 
