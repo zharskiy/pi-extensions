@@ -10,7 +10,6 @@ import {
   INTERACTIVE_TERMS,
   isChore,
   isLead,
-  leftOutText,
   projectListing,
 } from "../../../core/agent-setup/autosetup.ts";
 import type { AgentDefinition } from "../../../core/model/agent-record.ts";
@@ -111,10 +110,6 @@ describe("candidateSkills", () => {
     const catalog = INTERACTIVE_TERMS.map((term, index) => skillFile(dir, `s${index}`, `Then ${term}.`));
 
     expect(candidateSkills(catalog).candidates).toEqual([]);
-  });
-
-  it("names the left-out skills for the notice", () => {
-    expect(leftOutText(["a", "c"])).toBe("left out as interactive: a, c");
   });
 });
 

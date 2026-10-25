@@ -3,18 +3,21 @@
     "implementer": {
       "skills": [
         "new-extension",
-        "readme"
+        "readme",
+        "codebase-design",
+        "tdd"
       ]
     },
     "planner": {
       "skills": [
-        "codebase-design",
         "new-extension",
-        "readme"
+        "readme",
+        "codebase-design"
       ]
     },
     "reviewer": {
       "skills": [
+        "readme",
         "codebase-design"
       ]
     }

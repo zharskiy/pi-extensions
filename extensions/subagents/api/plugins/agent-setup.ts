@@ -9,7 +9,6 @@ import {
   candidateSkills,
   hasSkillsOverride,
   isLead,
-  leftOutText,
   projectListing,
 } from "../../core/agent-setup/autosetup.ts";
 import { CREATE_USAGE, createAgentCommand } from "../../core/agent-setup/create.ts";
@@ -152,7 +151,7 @@ export const agentSetupPlugin: Plugin = {
       const { candidates, interactive } = candidateSkills(runtime.skillCatalog());
 
       if (candidates.length === 0) {
-        notify(`no skills to propose${leftOutText(interactive)}`, "info");
+        notify("no skills to propose", "info");
         return;
       }
 
@@ -168,10 +167,6 @@ export const agentSetupPlugin: Plugin = {
       });
 
       pending = { candidates: candidates.map((skill) => skill.name), interactive };
-
-      if (interactive.length > 0) {
-        notify(leftOutText(interactive), "info");
-      }
     };
 
     const runForm = async () => {

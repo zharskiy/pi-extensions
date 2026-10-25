@@ -37,7 +37,7 @@ The one-line form `/agents setup <agent> model=… skills=…` is unchanged. The
 In the extension, with no model call:
 
 - **Leads** from `definitions.list()`: agents whose `path` has no `chores` directory segment and whose `skills` grant is a list. Each with name, description, tools, current skills. Chores and `all`-grant agents are not mentioned anywhere in the brief. A user or project agent put under a `chores/` subfolder of its agents dir is a chore too; one placed at the top level is a lead.
-- **Candidate skills** from `runtime.skillCatalog()`, which gains `scope` (`project`, `user` or `temporary`, taken from the resolved resource's metadata, not from pi's `sourceInfo.scope`, which marks most discovered skills `temporary`) and `path`. Then the interactive filter: the extension reads each SKILL.md body and drops a skill that names an interactive tool or a user prompt. The term list is one constant in the extension (`AskUserQuestion`, `questionnaire`, `ask the user`, `ask_user`, and whatever the owner adds); a match is reported in a notice, "left out as interactive: a, b", never silently. A skill with an empty description is listed by name alone and said to be so.
+- **Candidate skills** from `runtime.skillCatalog()`, which gains `scope` (`project`, `user` or `temporary`, taken from the resolved resource's metadata, not from pi's `sourceInfo.scope`, which marks most discovered skills `temporary`) and `path`. Then the interactive filter: the extension reads each SKILL.md body and drops a skill that names an interactive tool or a user prompt. The term list is one constant in the extension (`AskUserQuestion`, `questionnaire`, `ask the user`, `ask_user`, and whatever the owner adds); a match is dropped silently. A skill with an empty description is listed by name alone and said to be so.
 - **The project**: cwd basename and its top-level entries (names only, bounded). The main session has `read` and `ls` and is invited to look at manifests and the tree itself.
 
 The template `prompts/autosetup-skills.md` carries everything, because the main-session prompt says nothing about hidden briefs:
@@ -48,7 +48,7 @@ The template `prompts/autosetup-skills.md` carries everything, because the main-
 - the rules, in this order: (1) decide what kind of project this is (frontend, backend, QA automation, devops, library, mixed…) and say so in one line; (2) for each lead pick the skills that fit its job in this kind of project, at most five, ordered from most to least likely to be useful; (3) prefer project-level skills; prefer fewer; a skill fits when its description names the lead's job or this project's stack; keep a current skill only if it still fits; (4) propose full lists, not deltas; (5) a skill whose description implies asking the user is never picked;
 - the answer: call `agent_skills_proposal` once with `{ project: "<one line>", assignments: { <lead>: [<skill>, …] }, reasons: { <skill>: "<why, one line>" } }`; include a lead only when its list should change; do not write any file; do not run `/agents setup`; tell the user afterwards what was saved, from the tool's result.
 
-The command sends the filled template with `host.sendHiddenMessage`, and sets the in-memory pending mark. It notifies only when a skill was left out as interactive.
+The command sends the filled template with `host.sendHiddenMessage`, and sets the in-memory pending mark. It shows no notice.
 
 ### R3. The tool
 
@@ -66,7 +66,7 @@ The command sends the filled template with `host.sendHiddenMessage`, and sets th
 
 First time in a project, nothing overridden:
 
-1. `/agents setup` → no notice, except "left out as interactive: ask-the-user" when a skill was filtered.
+1. `/agents setup` → no notice.
 2. The main session's turn: it may read a manifest, says "This is a Kotlin backend service", calls the tool.
 3. The setup form opens, proposal in place, changed fields marked, checked skills first, one agent per tab, Submit tab with the scope and the project line.
 4. Confirm → no notice; the file is written.

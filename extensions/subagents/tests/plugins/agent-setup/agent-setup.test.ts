@@ -245,15 +245,15 @@ describe("/agents setup form", () => {
   });
 });
 
-const autosetup = ({ plain, ...options }: { trusted?: boolean; seeded?: boolean; plain?: boolean } = {}) => {
+const autosetup = (options: { trusted?: boolean; seeded?: boolean } = {}) => {
   const harness = setup({ seeded: false, ...options });
   const { host, runtime } = harness;
   const skillsDir = tempDir();
   const asker = join(skillsDir, "asker", "SKILL.md");
 
   writeJson(asker, "---\nname: asker\ndescription: Plans\n---\nUse AskUserQuestion before planning.\n");
-  runtime.skills = plain ? ["docs", "search"] : ["docs", "search", "asker"];
-  runtime.skillPaths = plain ? {} : { asker };
+  runtime.skills = ["docs", "search", "asker"];
+  runtime.skillPaths = { asker };
 
   const propose = (params: ProposalParams) =>
     host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, { update: () => {} });
@@ -277,7 +277,7 @@ const REVIEWER_PROPOSAL: ProposalParams = {
 
 describe("/agents setup autosetup", () => {
   it("briefs the main session about the leads at once when no agent has a skills override", async () => {
-    const { host, noticesOf } = autosetup();
+    const { host } = autosetup();
 
     await host.runCommand("agents", "setup");
 
@@ -294,17 +294,7 @@ describe("/agents setup autosetup", () => {
     expect(brief).toContain("- docs (no description)");
     expect(brief).not.toContain("asker");
     expect(brief).not.toContain("{{");
-    expect(noticesOf("info")).toEqual(["pi-subagents: left out as interactive: asker"]);
-  });
-
-  it("sends the brief without a notice when no skill is left out", async () => {
-    const { host, noticesOf } = autosetup({ plain: true });
-
-    await host.runCommand("agents", "setup");
-
-    expect(host.hidden).toHaveLength(1);
     expect(host.notices).toEqual([]);
-    expect(noticesOf("info")).toEqual([]);
   });
 
   it("asks first when an override exists, with Yes selected so Enter starts autosetup", async () => {

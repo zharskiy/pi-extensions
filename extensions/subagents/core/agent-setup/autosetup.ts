@@ -60,8 +60,6 @@ export const candidateSkills = (catalog: SkillInfo[]) => {
   };
 };
 
-export const leftOutText = (interactive: string[]) => `left out as interactive: ${interactive.join(", ")}`;
-
 export const projectListing = (cwd: string, limit = LISTING_LIMIT) => {
   try {
     const entries = readdirSync(cwd, { withFileTypes: true })
