@@ -9,6 +9,7 @@ export {
   hintRow,
   type KeyHint,
   keyHints,
+  labelledRule,
 } from "./key-hints.ts";
 export {
   CANCEL_HINT,

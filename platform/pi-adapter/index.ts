@@ -40,6 +40,7 @@ export type {
   StopReason,
 } from "./types/runtime.ts";
 export type {
+  AssistantEnd,
   DialogEvent,
   DialogKind,
   IdleInfo,

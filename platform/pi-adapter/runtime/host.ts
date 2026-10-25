@@ -16,6 +16,7 @@ import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
 import type { CommandSpec } from "../types/messages.ts";
 import type {
+  AssistantEnd,
   DialogEvent,
   IdleInfo,
   Phase,
@@ -28,6 +29,7 @@ import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
+import { messageText, toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
 
@@ -84,6 +86,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
@@ -270,6 +273,16 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
+    const info = {
+      toolCalls: toolCallCount(event.message.content),
+      stopReason: event.message.stopReason,
+      text: messageText(event.message.content).trim() !== "",
+    };
+
+    assistantEndHandlers.forEach((handler) => {
+      handler(info);
+    });
+
     applyPhase({ type: "message_end" });
   });
 
@@ -452,6 +465,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     session: () => sessionInfo(liveCtx(state)),
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
+    },
+    onAssistantEnd: (handler) => {
+      assistantEndHandlers.push(handler);
     },
     onPhase: (handler) => {
       phaseHandlers.push(handler);

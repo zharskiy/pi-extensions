@@ -17,26 +17,24 @@ This extension draws each tool call as one row: a glyph that says how it went, a
 A turn in the main session's transcript:
 
 ```
- Thinking (ctrl+t to expand)
+ ∴ Thinking (ctrl+t to expand)
 
  ✓ read src/stats.py:5-14
    ↳ 10 lines
 
  [skill] tdd (ctrl+o to expand)
 
- ✓ edit src/stats.py
-   ↳ Added 1 line, removed 1 line (ctrl+o to expand)
+ ✓ bash npm test · 9s
+   ↳ Tests  2 passed (2)
 
- ✗ bash npm test -- --run · exit 1 · 9s
-   ↳ ... (52 earlier lines, ctrl+o to expand)
-     FAIL src/stats.test.ts > mean > counts the first value
-     AssertionError: expected 2 to be 3
-     Test Files  1 failed | 1 passed (2)
+ ── worked 42s ────────────────────────────────────────────
+
+ ∴ Thinking (ctrl+t to expand)
 
  The mean skipped the first value; both tests pass now.
 ```
 
-A skill read keeps pi's `[skill]` look.
+`ctrl+t` folds or shows the thinking, and pi remembers the choice. A run that called at least one tool gets the dim rule above its final answer, with the run's duration; a run that only answers gets none. A skill read keeps pi's `[skill]` look.
 
 ## Quick start
 

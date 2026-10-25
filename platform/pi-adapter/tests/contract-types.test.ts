@@ -90,6 +90,7 @@ type FormerHostMember =
   | "sessionUsage"
   | "session"
   | "onAgentStart"
+  | "onAssistantEnd"
   | "onPhase"
   | "onDialog"
   | "context"

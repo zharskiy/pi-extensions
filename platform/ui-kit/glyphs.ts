@@ -8,6 +8,7 @@ export const MARKS = {
   info: "»",
   child: CHILD_MARK,
   pointer: "›",
+  thinking: "∴",
 } as const;
 
 export type Mark = "pending" | "success" | "error" | "stopped" | "info";

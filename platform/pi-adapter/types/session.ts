@@ -1,3 +1,5 @@
+import type { StopReason } from "./runtime.ts";
+
 export type RunMode = "tui" | "rpc" | "print" | "json";
 
 export type SessionInfo = {
@@ -25,3 +27,5 @@ export type DialogKind = "select" | "confirm" | "input" | "editor" | "custom";
 export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: string };
 
 export type IdleInfo = { aborted: boolean };
+
+export type AssistantEnd = { toolCalls: number; stopReason: StopReason; text: boolean };

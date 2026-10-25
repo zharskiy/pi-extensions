@@ -1,4 +1,5 @@
 import {
+  type AssistantEnd,
   type CommandSpec,
   type ContextFacts,
   type ContextSnapshot,
@@ -95,6 +96,7 @@ export type FakeHost = Host & {
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
   agentStart(): void;
+  assistantEnd(info: AssistantEnd): void;
   setPhase(phase: Phase): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
@@ -135,6 +137,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   const emptyDownHandlers = new Set<() => void>();
@@ -595,6 +598,14 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       });
 
       host.setPhase("waiting");
+    },
+    onAssistantEnd: (handler) => {
+      assistantEndHandlers.push(handler);
+    },
+    assistantEnd: (info) => {
+      assistantEndHandlers.forEach((handler) => {
+        handler(info);
+      });
     },
     onPhase: (handler) => {
       phaseHandlers.push(handler);

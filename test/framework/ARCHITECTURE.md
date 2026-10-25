@@ -17,7 +17,7 @@ The pi-free parts never import `pi/`; `test/architecture.test.ts` checks that. `
 
 Unit tests run against fakes with no network and no pi session (`npm run check`, also what CI runs).
 
-- `createFakeHost` (`fake-host.ts`) implements `Host` in memory: it records notices, widgets, entries, published messages and registered tools, and lets a test fire session, turn and idle events (`createTurnScope`, `hiddenMessageTexts`).
+- `createFakeHost` (`fake-host.ts`) implements `Host` in memory: it records notices, widgets, entries, published messages and registered tools, and lets a test fire session, turn and idle events and assistant message ends (`FakeHost.assistantEnd`) (`createTurnScope`, `hiddenMessageTexts`).
 - `createFakeAgentRuntime` (`fake-agent-runtime.ts`) spawns `FakeChildSession`s a test drives by hand; `catalogModel` builds catalogue entries with invented refs, so no fixture names a real model.
 - The fake `showForm` (`fake-form.ts`) keeps each form (`host.forms`, `host.form()`) so tests render it, press keys (`key-presses.ts`) and type into a fake text input (`backspace` deletes); it honours the abort signal.
 - The fake themes (`themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`) measure, cut and wrap with the adapter's `textMetrics`, so fixtures are measured as pi would measure them.

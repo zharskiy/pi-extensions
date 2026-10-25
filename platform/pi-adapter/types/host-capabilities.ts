@@ -2,7 +2,7 @@ import type { ContextFacts, ContextSnapshot, PromptTokens } from "./context.ts";
 import type { HostUi } from "./host-ui.ts";
 import type { CommandSpec, HiddenMessage } from "./messages.ts";
 import type { ModelInfo } from "./model.ts";
-import type { DialogEvent, IdleInfo, Phase, SessionInfo, ShutdownReason } from "./session.ts";
+import type { AssistantEnd, DialogEvent, IdleInfo, Phase, SessionInfo, ShutdownReason } from "./session.ts";
 import type { ToolRows, ToolSpec } from "./tools.ts";
 import type { UsageTotals } from "./usage.ts";
 import type { EntryRender, MessageRender } from "./view.ts";
@@ -25,6 +25,7 @@ export type LifecycleHost = {
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   onCompact(handler: () => void): void;
   onAgentStart(handler: () => void): void;
+  onAssistantEnd(handler: (info: AssistantEnd) => void): void;
   onPhase(handler: (phase: Phase) => void): void;
   onDialog(handler: (event: DialogEvent) => void): void;
   isIdle(): boolean;

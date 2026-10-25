@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxToolCall,
+  getSupportedThinkingLevels,
+} from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -1259,6 +1265,96 @@ describe("pi adapter conformance", () => {
 
         return codes.includes("23") || codes.includes("0") || codes.includes("") ? false : italic;
       }, false);
+
+    it("emits an entry appended in an extension's message_end before that message_end reaches session listeners", async () => {
+      const dir = temp.make("pi-conformance-");
+      const order: string[] = [];
+      let fileOrder: string[] = [];
+
+      writeFileSync(join(dir, "notes.txt"), "one\n");
+
+      try {
+        vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+        const settingsManager = pi.SettingsManager.inMemory({});
+
+        const loader = new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager,
+          extensionFactories: [
+            {
+              name: "marker",
+              factory: (api) => {
+                api.on("message_end", (event) => {
+                  if (event.message.role !== "assistant") {
+                    return;
+                  }
+
+                  if (event.message.content.some((part) => part.type === "toolCall")) {
+                    return;
+                  }
+
+                  api.appendEntry("conformance:mark", {});
+                });
+              },
+            },
+          ],
+        });
+
+        await loader.reload();
+
+        const faux = fauxProvider();
+        const modelRuntime = await pi.ModelRuntime.create();
+
+        modelRuntime.registerNativeProvider(faux.provider);
+        faux.setResponses([
+          fauxAssistantMessage(fauxToolCall("read", { path: "notes.txt" }), { stopReason: "toolUse" }),
+          fauxAssistantMessage(fauxText("done")),
+        ]);
+
+        const { session } = await pi.createAgentSession({
+          cwd: dir,
+          agentDir: dir,
+          modelRuntime,
+          model: faux.getModel() as never,
+          resourceLoader: loader,
+          settingsManager,
+          sessionManager: pi.SessionManager.inMemory(dir),
+        });
+
+        await session.bindExtensions({ mode: "print", uiContext: {} as unknown as pi.ExtensionUIContext });
+
+        session.subscribe((event) => {
+          const seen = event as {
+            type: string;
+            entry?: { customType?: string };
+            message?: { role?: string };
+          };
+
+          if (seen.type === "message_end" && seen.message?.role === "assistant") {
+            order.push("assistant message_end");
+          }
+
+          if (seen.type === "entry_appended" && seen.entry?.customType === "conformance:mark") {
+            order.push("mark");
+          }
+        });
+
+        await session.prompt("read the notes");
+        fileOrder = session.sessionManager.getEntries().map((entry) => {
+          const message = entry.type === "message" ? entry.message.role : undefined;
+
+          return entry.type === "custom" ? entry.customType : (message ?? entry.type);
+        });
+        session.dispose();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(order).toEqual(["assistant message_end", "mark", "assistant message_end"]);
+      expect(fileOrder.slice(-3)).toEqual(["toolResult", "conformance:mark", "assistant"]);
+    });
 
     it("draws the user message between prompt marks the transcript pane takes off", () => {
       initPiRenderTheme();

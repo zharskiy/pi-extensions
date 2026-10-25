@@ -199,6 +199,38 @@ describe("pi adapter", () => {
     expect(seen).toEqual(["waiting", "writing", "waiting", "tool", "waiting", "idle handler", "idle"]);
   });
 
+  it("reports the tool calls and stop reason of an assistant message end, not of other messages", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: unknown[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onAssistantEnd((info) => seen.push(info));
+
+    await fire("session_start", ctx);
+    await fire("message_end", ctx, { message: { role: "user", content: "hi" } });
+    await fire("message_end", ctx, {
+      message: {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "text", text: "looking" },
+          { type: "toolCall", id: "a", name: "read", arguments: {} },
+          { type: "toolCall", id: "b", name: "grep", arguments: {} },
+        ],
+      },
+    });
+    await fire("message_end", ctx, {
+      message: { role: "assistant", stopReason: "stop", content: [{ type: "thinking", thinking: "hm" }] },
+    });
+    await fire("message_end", ctx, { message: { role: "toolResult", content: [] } });
+
+    expect(seen).toEqual([
+      { toolCalls: 2, stopReason: "toolUse", text: true },
+      { toolCalls: 0, stopReason: "stop", text: false },
+    ]);
+  });
+
   it("stays in the tool phase until the last parallel tool ends", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
