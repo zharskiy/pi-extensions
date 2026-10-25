@@ -303,7 +303,7 @@ describe("agent overrides", () => {
     ...extra,
   });
 
-  it("applies the override field by field on whichever file won", () => {
+  it("applies the override field by field on whichever file won, skills included on b, a chore by its empty subagents grant", () => {
     const { list, user } = dirs();
 
     writeAgent(user, "a.md", agentFile("a", "user", "subagents: []\nmodel: acme/two:high\nskills: [git]"));

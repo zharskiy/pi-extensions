@@ -11,7 +11,12 @@ describe("agent setup rendering", () => {
     const lines = render(context(), initialSetup(context()));
 
     expect(lines.slice(1, 3)).toEqual([" Leads   □ lead  □ helper", " Chores  □ chore  ✓ Submit"]);
-    expect(lines.slice(4, 8)).toEqual([" lead", " Leads things.", "", ""]);
+    expect(lines.slice(lines.indexOf(" lead"), lines.indexOf(" lead") + 4)).toEqual([
+      " lead",
+      " Leads things.",
+      "",
+      "",
+    ]);
     expect(lines).toContain(" › Model     acme/big");
     expect(lines).toContain("   Thinking  high");
     expect(lines).toContain("   Skills    all (every skill of the agent's caller)");
@@ -83,7 +88,10 @@ describe("agent setup rendering", () => {
       " › [x] all  every skill of the agent's caller",
     ]);
     expect(lines.at(-2)).toBe(" esc to clear/back · ↑↓ to select · space to toggle · enter to confirm");
-    expect(typed("do")).toContain(`${" Skills  / do▏".padEnd(194)}1 of 2`);
+    const filtered = typed("do").find((line) => line.startsWith(" Skills  / do▏"));
+
+    expect(filtered?.endsWith("  1 of 2")).toBe(true);
+    expect(filtered).toHaveLength(200);
     expect(typed("zzq")).toContain(' no skill matches "zzq"');
     expect(typed("zzq").some((line) => line.includes("[ ]") || line.includes("[x]"))).toBe(false);
     expect(render(ctx, press(ctx, initialSetup(ctx), key("enter"), char("q")).state)).toContain(
@@ -145,12 +153,16 @@ describe("agent setup layout", () => {
   const tabbed = (ctx: SetupContext, count: number, state = initialSetup(ctx)) =>
     press(ctx, state, ...Array.from({ length: count }, () => key("tab"))).state;
 
+  it("renders the first agent tab in 21 lines at 80 columns", () => {
+    expect(at80(wide(true), initialSetup(wide(true)))).toHaveLength(21);
+  });
+
   it("renders every agent tab and the submit tab with the same number of lines", () => {
     [true, false].forEach((trusted) => {
       const ctx = wide(trusted);
-      const tabs = Array.from({ length: ctx.agents.length + 1 }, (_, tab) => ({ ...initialSetup(ctx), tab }));
+      const tabs = Array.from({ length: ctx.agents.length + 1 }, (_, count) => tabbed(ctx, count));
 
-      expect(heights(ctx, tabs)).toEqual(new Set([21]));
+      expect(heights(ctx, tabs).size).toBe(1);
     });
   });
 
@@ -205,8 +217,8 @@ describe("agent setup layout", () => {
       start,
       press(ctx, model, key("escape")).state,
       press(ctx, skills, key("enter")).state,
-      { ...start, tab: 2 },
-      press(ctx, { ...start, tab: 1 }, key("end"), key("enter")).state,
+      tabbed(ctx, 2),
+      press(ctx, tabbed(ctx, 1), key("end"), key("enter")).state,
     ];
     const open = [
       model,
@@ -222,8 +234,7 @@ describe("agent setup layout", () => {
       press(ctx, skills, char("z"), char("z")).state,
     ];
 
-    expect(heights(ctx, [...closed, ...open])).toEqual(new Set([21]));
-    [40, 200].forEach((width) => {
+    [80, 40, 200].forEach((width) => {
       expect(heights(ctx, [...closed, ...open], width).size).toBe(1);
     });
   });
@@ -231,8 +242,9 @@ describe("agent setup layout", () => {
   it("fits an open picker into the rows of the fields, presets and info", () => {
     const ctx = wide(true);
     const lines = at80(ctx, press(ctx, initialSetup(ctx), key("enter")).state);
+    const name = lines.indexOf(" lead");
 
-    expect(lines.slice(4, 9)).toEqual([
+    expect(lines.slice(name, name + 5)).toEqual([
       " lead",
       " Leads things.",
       "",
@@ -283,14 +295,15 @@ describe("agent setup layout", () => {
       [" ↑ 4 more", " ↓ 4 more"],
       [" ↑ 8 more", ""],
     ]);
-    expect(heights(ctx, ends)).toEqual(new Set([21]));
+    expect(heights(ctx, ends).size).toBe(1);
   });
 
   it("cuts the description to two rows under the name and the footer to one row", () => {
     const ctx = wide(true);
-    const lines = at80(ctx, { ...initialSetup(ctx), tab: 1 });
+    const lines = at80(ctx, tabbed(ctx, 1));
+    const name = lines.indexOf(" helper");
 
-    expect(lines.slice(4, 8)).toEqual([
+    expect(lines.slice(name, name + 4)).toEqual([
       " helper",
       " Reviews diffs for correctness, missing tests, risky changes and unclear naming,",
       " then reports every finding grouped by severity with file and line, and sugge...",
@@ -329,7 +342,7 @@ describe("agent setup layout", () => {
     };
     const start = initialSetup(ctx);
     const applied = press(ctx, start, key("down"), key("down"), key("down"), key("enter")).state;
-    const submit = { ...start, tab: ctx.agents.length };
+    const submit = tabbed(ctx, ctx.agents.length);
     const picker = press(ctx, start, key("enter")).state;
     const narrow = (state: SetupState) => at80(ctx, state, 40);
 

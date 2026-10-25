@@ -58,8 +58,6 @@ const setup = ({ trusted = false, seeded = true } = {}) => {
   return { ...harness, projectFile, userFile, noticesOf, definition, openForm };
 };
 
-const LIST_ROWS = 7;
-
 const skillsTop = (lines: string[]) => lines.findIndex((line) => line.startsWith(" Skills  "));
 
 const showsAgent = (form: FakeForm, name: string) => form.render(400).includes(` ${name}`);
@@ -142,22 +140,30 @@ describe("/agents setup form", () => {
       "   [ ] search  Searches the we...",
     ]);
 
-    const detail = (rendered: string[]) => {
-      const start = skillsTop(rendered) + 1 + LIST_ROWS;
+    const height = lines.length;
+    const details = [
+      " Reviews diffs for correctness,",
+      " missing tests, risky changes ...",
+      " Writes docs",
+      " Searches the web and cites",
+      " sources",
+    ];
+    const shown = (rendered: string[]) => {
+      expect(rendered).toHaveLength(height);
 
-      return rendered.slice(start, start + 2);
+      return details.filter((text) => rendered.includes(text));
     };
 
-    expect(detail(lines)).toEqual([" Reviews diffs for correctness,", " missing tests, risky changes ..."]);
+    expect(shown(lines)).toEqual(details.slice(0, 2));
 
     form.press(key("down"));
-    expect(detail(form.render(33))).toEqual([" Writes docs", ""]);
+    expect(shown(form.render(33))).toEqual([" Writes docs"]);
 
     form.press(key("down"));
-    expect(detail(form.render(33))).toEqual([" Searches the web and cites", " sources"]);
+    expect(shown(form.render(33))).toEqual(details.slice(3));
 
     form.press(key("home"));
-    expect(detail(form.render(33))).toEqual(["", ""]);
+    expect(shown(form.render(33))).toEqual([]);
 
     form.press(key("end"));
     form.press(key("space"), key("enter"));

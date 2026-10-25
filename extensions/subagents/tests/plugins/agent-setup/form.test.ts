@@ -9,7 +9,11 @@ const skillRows = (lines: string[]) => lines.filter((line) => line.includes("[x]
 
 const typed = (text: string) => [...text].map((letter) => char(letter));
 
+const pickerTitle = (lines: string[]) => lines.find((line) => / {2}\/ /.test(line));
+
 const optionRows = (lines: string[]) => lines.filter((line) => /^ [› ] \S/.test(line));
+
+const ALL_SKILLS = "all (every skill of the agent's caller)";
 
 describe("agent setup form", () => {
   it("starts on the first agent and the first scope: the project when trusted, the user file otherwise", () => {
@@ -23,7 +27,6 @@ describe("agent setup form", () => {
     const ctx = proposedContext();
     const state = initialSetup(ctx);
 
-    expect(state.drafts[0]?.skills).toEqual(["search", "docs"]);
     expect(setupChanges(ctx, state)).toEqual([{ name: "lead", patch: { skills: ["search", "docs"] } }]);
     expect(render(ctx, state).slice(1, 3)).toEqual([
       " Leads   ■ lead  □ helper",
@@ -138,7 +141,9 @@ describe("agent setup form", () => {
       "   [x] docs  Writes docs",
       " › [x] lint  Checks style",
     ]);
-    expect(press(ctx, toggled.state, key("enter")).state.drafts[0]?.skills).toEqual(["docs", "lint"]);
+    expect(setupChanges(ctx, press(ctx, toggled.state, key("enter")).state)).toEqual([
+      { name: "lead", patch: { skills: ["docs", "lint"] } },
+    ]);
   });
 
   it("writes the confirmed skills in the order shown", () => {
@@ -163,24 +168,30 @@ describe("agent setup form", () => {
 
     const cleared = press(ctx, widened.state, key("escape"));
 
-    expect(cleared.state.picker?.query).toBe("");
+    expect(pickerTitle(render(ctx, cleared.state))).toBe(" Skills  / type to filter");
     expect(skillRows(render(ctx, cleared.state))).toHaveLength(4);
-    expect(press(ctx, cleared.state, key("escape")).state.picker).toBeUndefined();
+    expect(pickerTitle(render(ctx, press(ctx, cleared.state, key("escape")).state))).toBeUndefined();
   });
 
   it("types a and n into the filter instead of checking all or none", () => {
     const ctx = context();
     const { state } = press(ctx, initialSetup(ctx), ...toSkills, char("n"), key("escape"), char("a"));
 
-    expect(state.picker?.query).toBe("a");
-    expect(press(ctx, state, key("escape"), key("enter")).state.drafts[0]?.skills).toBe("all");
+    expect(pickerTitle(render(ctx, state))?.trimEnd()).toMatch(/^ Skills {2}\/ a▏ +\d+ of 2$/);
+
+    const confirmed = press(ctx, state, key("escape"), key("enter")).state;
+
+    expect(render(ctx, confirmed)).toContain(` › Skills    ${ALL_SKILLS}`);
+    expect(setupChanges(ctx, confirmed)).toEqual([]);
   });
 
   it("keeps hidden checked skills and confirms in the order shown without a filter", () => {
     const ctx = proposedContext();
     const { state } = press(ctx, initialSetup(ctx), ...toSkills, ...typed("li"), key("space"), key("enter"));
 
-    expect(state.drafts[0]?.skills).toEqual(["search", "docs", "lint"]);
+    expect(setupChanges(ctx, state)).toEqual([
+      { name: "lead", patch: { skills: ["search", "docs", "lint"] } },
+    ]);
   });
 
   it("confirms the current selection on Enter while the filter matches nothing", () => {
@@ -191,8 +202,8 @@ describe("agent setup form", () => {
 
     const confirmed = press(ctx, opened.state, key("enter"));
 
-    expect(confirmed.state.picker).toBeUndefined();
-    expect(confirmed.state.drafts[0]?.skills).toBe("all");
+    expect(render(ctx, confirmed.state)).toContain(` › Skills    ${ALL_SKILLS}`);
+    expect(setupChanges(ctx, confirmed.state)).toEqual([]);
   });
 
   it("shows none available without an all row and keeps the draft when there are no skills", () => {
@@ -204,15 +215,15 @@ describe("agent setup form", () => {
 
     const confirmed = press(ctx, opened.state, key("space"), key("enter"));
 
-    expect(confirmed.state.picker).toBeUndefined();
-    expect(confirmed.state.drafts).toEqual(opened.state.drafts);
+    expect(render(ctx, confirmed.state)).toContain(` › Skills    ${ALL_SKILLS}`);
+    expect(setupChanges(ctx, confirmed.state)).toEqual([]);
   });
 
   it("ignores control characters and multi-character input in the filter", () => {
     const ctx = context();
     const { state } = press(ctx, initialSetup(ctx), key("enter"), char("\x01"), char("ab"));
 
-    expect(state.picker?.query).toBe("");
+    expect(pickerTitle(render(ctx, state))).toBe(" Model (models with credentials)  / type to filter");
   });
 
   it("clears a model query with Escape before closing the picker", () => {
@@ -220,20 +231,27 @@ describe("agent setup form", () => {
     const typedQuery = press(ctx, initialSetup(ctx), key("enter"), ...typed("sm"));
     const cleared = press(ctx, typedQuery.state, key("escape"));
 
-    expect(cleared.state.picker).toEqual({ field: "model", cursor: 0, query: "" });
-    expect(press(ctx, cleared.state, key("escape")).state.picker).toBeUndefined();
+    expect(pickerTitle(render(ctx, cleared.state))).toBe(
+      " Model (models with credentials)  / type to filter",
+    );
+    expect(optionRows(render(ctx, cleared.state))[0]).toBe(" › inherit (the main session's model)");
+    expect(render(ctx, press(ctx, cleared.state, key("escape")).state)).toContain(" › Model     acme/big");
   });
 
   it("filters the models and picks only a visible one", () => {
     const ctx = context();
     const opened = press(ctx, initialSetup(ctx), key("enter"), ...typed("small"));
 
-    expect(press(ctx, opened.state, key("enter")).state.drafts[0]?.model).toBe("acme/small");
+    expect(setupChanges(ctx, press(ctx, opened.state, key("enter")).state)).toEqual([
+      { name: "lead", patch: { model: "acme/small", thinking: undefined } },
+    ]);
 
     const missing = press(ctx, opened.state, ...typed("zzq"), key("enter"));
 
-    expect(missing.state.picker?.query).toBe("smallzzq");
-    expect(missing.state.drafts[0]?.model).toBe("acme/big");
+    expect(pickerTitle(render(ctx, missing.state))).toMatch(
+      /^ Model \(models with credentials\) {2}\/ smallzzq▏/,
+    );
+    expect(setupChanges(ctx, missing.state)).toEqual([]);
   });
 
   it("lists inherit, an initial model without credentials, then the models with credentials", () => {
@@ -277,14 +295,17 @@ describe("agent setup form", () => {
     const ctx = context();
     const small = press(ctx, initialSetup(ctx), key("enter"), key("end"), key("enter"));
 
-    expect(small.state.drafts[0]).toEqual({ model: "acme/small", thinking: undefined, skills: "all" });
+    expect(render(ctx, small.state)).toEqual(
+      expect.arrayContaining([" › Model     acme/small (changed)", "   Thinking  default (changed)"]),
+    );
     expect(setupChanges(ctx, small.state)).toEqual([
       { name: "lead", patch: { model: "acme/small", thinking: undefined } },
     ]);
 
     const inherit = press(ctx, initialSetup(ctx), key("enter"), key("home"), key("enter"));
 
-    expect(inherit.state.drafts[0]).toEqual({ model: "inherit", thinking: "high", skills: "all" });
+    expect(render(ctx, inherit.state)).toContain("   Thinking  high");
+    expect(setupChanges(ctx, inherit.state)).toEqual([{ name: "lead", patch: { model: "inherit" } }]);
   });
 
   it("picks a model, a thinking level and skills, and marks the changed fields and tab", () => {
@@ -357,7 +378,9 @@ describe("agent setup form", () => {
       "   [x] docs  Writes docs",
       "   [ ] search",
     ]);
-    expect(press(ctx, opened.state, key("space"), key("enter")).state.drafts[1]?.skills).toBe("all");
+    expect(setupChanges(ctx, press(ctx, opened.state, key("space"), key("enter")).state)).toEqual([
+      { name: "helper", patch: { skills: "all" } },
+    ]);
   });
 
   it("never changes a chore's skills: the cursor skips the fixed Skills row and offers only Previous", () => {
@@ -365,12 +388,13 @@ describe("agent setup form", () => {
     const thinking = press(ctx, initialSetup(ctx), key("tab"), key("tab"), key("down"));
     const chore = press(ctx, thinking.state, key("down"), key("down"));
 
-    expect(press(ctx, thinking.state, key("enter")).state.picker?.field).toBe("thinking");
-    expect(chore.state.field).toBe(2);
+    expect(pickerTitle(render(ctx, press(ctx, thinking.state, key("enter")).state))).toBe(
+      " Thinking level  / type to filter",
+    );
     expect(render(ctx, chore.state)).toContain("   Skills    none · fixed for chores");
     expect(render(ctx, chore.state)).toContain(" › Previous  gone/old · default (in use)");
     expect(render(ctx, chore.state).some((line) => line.includes("Suggested"))).toBe(false);
-    expect(press(ctx, chore.state, key("enter")).state.picker).toBeUndefined();
+    expect(pickerTitle(render(ctx, press(ctx, chore.state, key("enter")).state))).toBeUndefined();
     expect(setupChanges(ctx, chore.state)).toEqual([]);
   });
 
@@ -378,8 +402,8 @@ describe("agent setup form", () => {
     const ctx = context();
     const back = press(ctx, initialSetup(ctx), key("left"));
 
-    expect(back.state.tab).toBe(3);
-    expect(press(ctx, back.state, key("right")).state.tab).toBe(0);
+    expect(render(ctx, back.state)).toContain(" Save to:");
+    expect(render(ctx, press(ctx, back.state, key("right")).state)).toContain(" › Model     acme/big");
     expect(press(ctx, back.state, key("escape")).done).toBe("cancel");
   });
 
@@ -418,8 +442,6 @@ describe("agent setup form", () => {
     const submit = press(ctx, edited.state, key("left"), key("up"), key("down"));
     const lines = render(ctx, submit.state);
 
-    expect(submit.state.scope).toBe(0);
-    expect(scopeOptions(ctx)[submit.state.scope]).toBe("user");
     expect(lines).toContain(` › 1. User  ${PATHS.user}`);
     expect(lines.some((line) => line.includes("This project  "))).toBe(false);
     expect(press(ctx, submit.state, key("enter")).done).toBe("save");
