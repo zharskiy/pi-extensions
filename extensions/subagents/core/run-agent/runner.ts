@@ -5,6 +5,7 @@ import {
   type AgentRuntime,
   type AnyToolSpec,
   type ChildEvent,
+  type ChildSeed,
   type ChildSession,
   type RoutedMessage,
   type SessionInfo,
@@ -13,7 +14,13 @@ import {
   splitModelRequest,
   type UsageTotals,
 } from "../../../../platform/pi-adapter/index.ts";
-import { errorText, readText } from "../../../../platform/shared/index.ts";
+import {
+  errorText,
+  HANDOFF_SEED_TYPE,
+  readText,
+  seedText,
+  successorPreface,
+} from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,
@@ -82,7 +89,13 @@ type Batch = {
   resolve: (records: AgentRecord[]) => void;
 };
 
-type LaunchSlot = { item: BatchItem; definition: AgentDefinition; plan: ModelPlan; undelivered?: string[] };
+type LaunchSlot = {
+  item: BatchItem;
+  definition: AgentDefinition;
+  plan: ModelPlan;
+  undelivered?: string[];
+  seed?: ChildSeed;
+};
 
 type Live = {
   child?: ChildSession;
@@ -405,7 +418,18 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       worktree: record.worktree,
     });
 
-    launches.set(successor.id, slot);
+    const link = { id: record.id, link: successor.chainIndex };
+
+    const successorSlot: LaunchSlot = {
+      ...slot,
+      seed: {
+        customType: HANDOFF_SEED_TYPE,
+        text: seedText(successorPreface({ kind: "agent", ...link, path: record.handoffPath }), text),
+        details: { from: "agent", ...link },
+      },
+    };
+
+    launches.set(successor.id, successorSlot);
 
     batch.ids.push(successor.id);
 
@@ -415,7 +439,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       successorId: successor.id,
     });
 
-    void launch(successor, slot);
+    void launch(successor, successorSlot);
 
     return closed;
   };
@@ -686,7 +710,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.turn = "running";
 
     try {
-      child.start(composeTask(record, slot.item, predecessor, slot.undelivered));
+      child.start(composeTask(record, slot.item, predecessor, slot.undelivered), slot.seed);
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });

@@ -36,11 +36,31 @@ const handoffText = (status: string) =>
     "none",
   ].join("\n");
 
+const BLIND_AGENT = [
+  "---",
+  "name: blind",
+  "description: Test agent that cannot read files.",
+  "limit: 100000",
+  "tools: [grep]",
+  "skills: all",
+  "subagents: []",
+  "---",
+  "Search without reading.",
+].join("\n");
+
 const setup = async (overrides = {}, agent = "scout") => {
   const harness = createHarness(
     [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin, agentStatusPlugin],
     { overrides },
   );
+
+  if (agent === "blind") {
+    const userAgentsDir = join(harness.host.info.agentDir, "agents");
+
+    mkdirSync(userAgentsDir, { recursive: true });
+    writeFileSync(join(userAgentsDir, "blind.md"), BLIND_AGENT);
+    harness.host.start();
+  }
 
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;
@@ -102,17 +122,26 @@ describe("successor chain", () => {
     expect(hiddenMessageTexts(host)).toEqual([]);
 
     const task = runtime.child(second).task ?? "";
+    const seed = runtime.child(second).seed;
 
-    expect(task).toContain(`continue the work of agent ${first.id} as link 2`);
-    expect(task).toContain(`Read the handoff file at ${first.handoffPath} first`);
+    expect(seed).toMatchObject({
+      customType: "pi-handoff-seed",
+      details: { from: "agent", id: first.id, link: 2 },
+    });
+    expect(seed?.text).toContain(`continue the work of agent ${first.id} as link 2`);
+    expect(seed?.text).toContain(first.handoffPath);
+    expect(seed?.text).toContain("- trace token refresh");
     expect(task).toContain("Original task:\nmap the auth flow");
-    expect(task).toContain(`Input files:\n- ${first.handoffPath}`);
+    expect(task).not.toContain("Input files");
+    expect(task).not.toContain(first.handoffPath);
 
     runtime.child(second).emit({ type: "tool_start", toolName: "read" });
 
     const third = (await handOff(second)) as string;
 
     expect(current(third)).toMatchObject({ state: "running", chainIndex: 3, predecessorId: second });
+    expect(runtime.child(third).seed?.details).toEqual({ from: "agent", id: second, link: 3 });
+    expect(runtime.child(third).seed?.text).toContain(`agent ${second} as link 3`);
     expect(runtime.child(third).messages).toEqual([]);
     expect(hiddenMessageTexts(host)).toEqual([]);
 
@@ -170,7 +199,8 @@ describe("successor chain", () => {
     expect(current(first.id)).toMatchObject({ state: "handoff", resultText: handoffText("partial") });
     expect(current(second)).toMatchObject({ state: "running", chainIndex: 2, predecessorId: first.id });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
-    expect(runtime.child(second).task).toContain(`Read the handoff file at ${first.handoffPath} first`);
+    expect(runtime.child(second).seed?.text).toContain("- trace token refresh");
+    expect(runtime.child(second).task).not.toContain("Input files");
     expect(registry.list()).toHaveLength(2);
   });
 
@@ -212,8 +242,17 @@ describe("successor chain", () => {
 
     expect(current(first.id)).toMatchObject({ state: "handoff", resultText: `${handoffText("partial")}\n` });
     expect(current(second)).toMatchObject({ state: "running", chainIndex: 2, predecessorId: first.id });
-    expect(runtime.child(second).task).toContain(`Read the handoff file at ${first.handoffPath} first`);
+    expect(runtime.child(second).seed?.text).toContain("- trace token refresh");
+    expect(runtime.child(second).task).not.toContain("Input files");
     expect(registry.list()).toHaveLength(2);
+  });
+
+  it("hands a successor of an agent without the read tool its predecessor's handoff inline", async () => {
+    const { first, handOff, runtime } = await setup({ maxChainLength: 3 }, "blind");
+    const second = (await handOff(first.id)) as string;
+
+    expect(runtime.child(first.id).spec.tools).not.toContain("read");
+    expect(runtime.child(second).seed?.text).toContain("- trace token refresh");
   });
 
   it("saves an invalid handoff from the tool and returns its errors", async () => {
