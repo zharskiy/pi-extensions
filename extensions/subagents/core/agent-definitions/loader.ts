@@ -75,6 +75,7 @@ export const parseDefinition = (
       source: dir.source,
       path,
       relativePath: relative(dir.path, path),
+      fileSkills: frontmatter.skills,
     },
   };
 };

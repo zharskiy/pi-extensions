@@ -349,6 +349,33 @@ describe("/agents setup autosetup", () => {
     expect(noticesOf("info")).toEqual([]);
   });
 
+  it("briefs at once when the only skills override is on a chore", async () => {
+    const { host, userFile, services } = autosetup();
+
+    writeJson(userFile, { agents: { scout: { skills: ["docs"] } } });
+    services.require("definitions").reload();
+    await host.runCommand("agents", "setup");
+
+    expect(host.forms).toEqual([]);
+    expect(host.hidden).toHaveLength(1);
+  });
+
+  it("never briefs about general, even with a skills list override", async () => {
+    const { host, userFile, services } = autosetup();
+
+    writeJson(userFile, { agents: { general: { skills: ["docs"] } } });
+    services.require("definitions").reload();
+
+    const run = host.runCommand("agents", "setup");
+
+    await flushMicrotasks();
+    host.form().press(key("enter"));
+    await run;
+
+    expect(host.hidden).toHaveLength(1);
+    expect(host.hidden[0]?.message.text).not.toContain("- general: ");
+  });
+
   it("does not count an override in an untrusted project's file", async () => {
     const { host, projectFile, services } = autosetup();
 
@@ -483,10 +510,10 @@ describe("/agents setup one-line form", () => {
   it("sets fields of one agent in the user file and applies them", async () => {
     const { host, userFile, definition } = setup();
 
-    await host.runCommand("agents", "setup scout thinking=high skills=none scope=user");
+    await host.runCommand("agents", "setup reviewer thinking=high skills=none scope=user");
 
-    expect(readJson(userFile)).toEqual({ agents: { scout: { thinking: "high", skills: [] } } });
-    expect(definition("scout")?.thinking).toBe("high");
+    expect(readJson(userFile)).toEqual({ agents: { reviewer: { thinking: "high", skills: [] } } });
+    expect(definition("reviewer")?.thinking).toBe("high");
   });
 
   it("writes the user file by default in an untrusted project", async () => {
@@ -501,12 +528,12 @@ describe("/agents setup one-line form", () => {
   it("writes the trusted project's file by default with the model and its thinking suffix", async () => {
     const { host, projectFile, definition } = setup({ trusted: true });
 
-    await host.runCommand("agents", "setup scout model=fake/model:low skills=docs,search");
+    await host.runCommand("agents", "setup reviewer model=fake/model:low skills=docs,search");
 
     expect(readJson(projectFile)).toEqual({
-      agents: { scout: { model: "fake/model", thinking: "low", skills: ["docs", "search"] } },
+      agents: { reviewer: { model: "fake/model", thinking: "low", skills: ["docs", "search"] } },
     });
-    expect(definition("scout")).toMatchObject({ model: "fake/model", thinking: "low" });
+    expect(definition("reviewer")).toMatchObject({ model: "fake/model", thinking: "low" });
   });
 
   it("reports bad requests and writes nothing", async () => {
@@ -519,6 +546,7 @@ describe("/agents setup one-line form", () => {
       "setup scout color=blue scope=user",
       "setup scout",
       "setup scout thinking=high scope=project",
+      "setup scout skills=docs scope=user",
     ];
 
     await requests.reduce<Promise<void>>(
@@ -527,7 +555,10 @@ describe("/agents setup one-line form", () => {
     );
 
     expect(noticesOf("error")).toHaveLength(requests.length);
-    expect(noticesOf("error").at(-1)).toContain("not trusted");
+    expect(noticesOf("error").at(-2)).toContain("not trusted");
+    expect(noticesOf("error").at(-1)).toBe(
+      "pi-subagents: scout is a chore; /agents setup changes only its model and thinking",
+    );
     expect(existsSync(projectFile) || existsSync(userFile)).toBe(false);
   });
 });

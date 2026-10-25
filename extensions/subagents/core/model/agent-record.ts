@@ -104,7 +104,10 @@ export type AgentInternals = {
   source: AgentSource;
   path: string;
   relativePath: string;
+  fileSkills: Grant;
 };
+
+export const isChore = (relativePath: string) => relativePath.split(/[\\/]/).slice(0, -1).includes("chores");
 
 export type AgentDefinition = AgentFrontmatter & AgentInternals;
 

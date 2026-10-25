@@ -28,7 +28,7 @@ import {
 } from "../../core/agent-setup/proposal.ts";
 import type { Scope, SetupChange } from "../../core/agent-setup/scope.ts";
 import { overriddenFields, writeChanges } from "../../core/agent-setup/write.ts";
-import type { AgentDefinition } from "../../core/model/agent-record.ts";
+import { type AgentDefinition, isChore } from "../../core/model/agent-record.ts";
 import { INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import { resolutionProblem } from "../../core/model/model-resolution.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
@@ -140,6 +140,12 @@ export const agentSetupPlugin: Plugin = {
 
     const leads = () => definitions.list().filter(isLead);
 
+    const chores = () =>
+      definitions
+        .list()
+        .filter((definition) => isChore(definition.relativePath))
+        .map((definition) => definition.name);
+
     const startAutosetup = (info: SessionInfo) => {
       const leadAgents = leads();
 
@@ -181,7 +187,7 @@ export const agentSetupPlugin: Plugin = {
         return;
       }
 
-      if (!hasSkillsOverride(settings.agents)) {
+      if (!hasSkillsOverride(settings.agents, (name) => chores().includes(name))) {
         startAutosetup(info);
         return;
       }
@@ -214,6 +220,7 @@ export const agentSetupPlugin: Plugin = {
     const runLine = (args: string) => {
       const request = parseSetupLine(args, {
         agents: definitions.list().map((definition) => definition.name),
+        chores: chores(),
         skills: runtime.skillNames(),
         defaultScope: host.session().projectTrusted ? "project" : "user",
         resolveModel: (model) => {

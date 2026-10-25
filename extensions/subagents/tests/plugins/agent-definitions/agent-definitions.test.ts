@@ -158,6 +158,7 @@ describe("agent definition parsing", () => {
         "source",
         "path",
         "relativePath",
+        "fileSkills",
       ].sort(),
     );
     expect(parsed.definition).toMatchObject({
@@ -328,6 +329,22 @@ describe("agent overrides", () => {
       model: "acme/one",
       thinking: "low",
       skills: ["git"],
+    });
+  });
+
+  it("applies a skills override on a chore and keeps the file's grant", () => {
+    const { list } = dirs();
+    const chores = join(list[0]?.path ?? "", "chores");
+
+    writeAgent(chores, "c.md", agentFile("c", "chore", "subagents: []\nskills: [docs]"));
+
+    const result = loadDefinitions(list, check({ c: { skills: ["git"] } }));
+
+    expect(result.notices).toEqual([]);
+    expect(result.definitions.get("c")).toMatchObject({
+      relativePath: join("chores", "c.md"),
+      skills: ["git"],
+      fileSkills: ["docs"],
     });
   });
 

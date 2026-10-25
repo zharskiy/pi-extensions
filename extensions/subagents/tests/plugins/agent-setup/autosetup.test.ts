@@ -8,15 +8,15 @@ import {
   candidateSkills,
   hasSkillsOverride,
   INTERACTIVE_TERMS,
-  isChore,
   isLead,
   projectListing,
 } from "../../../core/agent-setup/autosetup.ts";
-import type { AgentDefinition } from "../../../core/model/agent-record.ts";
+import { type AgentDefinition, isChore } from "../../../core/model/agent-record.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
 const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
   ({
+    fileSkills: patch.fileSkills ?? patch.skills ?? [],
     description: `${patch.name} does its job`,
     limit: 100_000,
     tools: ["read", "bash"],
@@ -72,13 +72,26 @@ describe("isLead", () => {
   it("leaves out an agent with every skill", () => {
     expect(isLead(definition({ name: "general", skills: "all" }))).toBe(false);
   });
+
+  it("judges the grant of the agent file, not the overridden one", () => {
+    expect(isLead(definition({ name: "general", fileSkills: "all", skills: ["docs"] }))).toBe(false);
+    expect(isLead(definition({ name: "reviewer", fileSkills: [], skills: "all" }))).toBe(true);
+  });
 });
 
 describe("hasSkillsOverride", () => {
   it("is true only when some agent overrides its skills", () => {
-    expect(hasSkillsOverride({})).toBe(false);
-    expect(hasSkillsOverride({ scout: { thinking: "low" } })).toBe(false);
-    expect(hasSkillsOverride({ scout: { thinking: "low" }, reviewer: { skills: [] } })).toBe(true);
+    const isChoreName = (name: string) => name === "scout";
+
+    expect(hasSkillsOverride({}, isChoreName)).toBe(false);
+    expect(hasSkillsOverride({ reviewer: { thinking: "low" } }, isChoreName)).toBe(false);
+    expect(hasSkillsOverride({ scout: { thinking: "low" }, reviewer: { skills: [] } }, isChoreName)).toBe(
+      true,
+    );
+  });
+
+  it("ignores a skills override on a chore", () => {
+    expect(hasSkillsOverride({ scout: { skills: ["docs"] } }, (name) => name === "scout")).toBe(false);
   });
 });
 

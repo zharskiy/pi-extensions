@@ -3,6 +3,7 @@ import { type LineCheck, parseSetupLine } from "../../../core/agent-setup/line.t
 
 const check = (extra: Partial<LineCheck> = {}): LineCheck => ({
   agents: ["scout"],
+  chores: [],
   skills: ["docs"],
   defaultScope: "project",
   resolveModel: (model) =>
@@ -42,6 +43,16 @@ describe("/agents setup one-line parser", () => {
     expect(parseSetupLine("scout", check())).toHaveProperty("error");
     expect(parseSetupLine("ghost thinking=low", check())).toEqual({
       error: 'no agent named "ghost" (agents: scout)',
+    });
+  });
+
+  it("refuses skills for a chore and accepts its model and thinking", () => {
+    expect(parseSetupLine("scout skills=docs thinking=low", check({ chores: ["scout"] }))).toEqual({
+      error: "scout is a chore; /agents setup changes only its model and thinking",
+    });
+    expect(parseSetupLine("scout thinking=low", check({ chores: ["scout"] }))).toEqual({
+      change: { name: "scout", patch: { thinking: "low" } },
+      scope: "project",
     });
   });
 });

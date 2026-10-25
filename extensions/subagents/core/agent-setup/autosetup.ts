@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import type { SkillInfo } from "../../../../platform/pi-adapter/index.ts";
 import { errorText, readText } from "../../../../platform/shared/index.ts";
 import { cutChars } from "../components/receipt.ts";
-import { type AgentDefinition, grantOrNone } from "../model/agent-record.ts";
+import { type AgentDefinition, grantOrNone, isChore } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL, type AgentOverrides } from "../model/agent-schema.ts";
 import { fillTemplate } from "./template.ts";
 
@@ -33,13 +33,11 @@ type BriefInput = {
   candidates: SkillInfo[];
 };
 
-export const isChore = (relativePath: string) => relativePath.split(/[\\/]/).slice(0, -1).includes("chores");
-
 export const isLead = (definition: AgentDefinition) =>
-  definition.skills !== AGENT_SCOPE_ALL && !isChore(definition.relativePath);
+  definition.fileSkills !== AGENT_SCOPE_ALL && !isChore(definition.relativePath);
 
-export const hasSkillsOverride = (agents: AgentOverrides) =>
-  Object.values(agents).some((override) => override.skills !== undefined);
+export const hasSkillsOverride = (agents: AgentOverrides, isChoreName: (name: string) => boolean) =>
+  Object.entries(agents).some(([name, override]) => override.skills !== undefined && !isChoreName(name));
 
 const isInteractive = (text: string) => {
   const lower = text.toLowerCase();
