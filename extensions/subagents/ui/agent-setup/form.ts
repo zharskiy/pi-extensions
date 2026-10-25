@@ -85,7 +85,15 @@ export type SetupState = {
 
 type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
 
-export const LIST_HEIGHT = 8;
+const INFO_ROWS = 3;
+
+export const BLOCK_ROWS = FIELDS.length + 1 + PRESETS.length + 1 + INFO_ROWS;
+
+export const DETAIL_LINES = 2;
+
+const FRAME_ROWS = 3;
+
+export const listHeight = (field: Field) => BLOCK_ROWS - FRAME_ROWS - (field === "skills" ? DETAIL_LINES : 0);
 
 export const scopeOptions = (context: SetupContext): readonly Scope[] =>
   context.trusted ? SCOPES : ["user"];
@@ -242,21 +250,19 @@ const modelPatch = (context: SetupContext, state: SetupState, model: string): Pa
   return accepted ? { model } : { model, thinking: undefined };
 };
 
-const PAGE = LIST_HEIGHT;
-
-const STEPS: Partial<Record<KeyPress["name"], (cursor: number, count: number) => number>> = {
+const STEPS: Partial<Record<KeyPress["name"], (cursor: number, count: number, page: number) => number>> = {
   up: (cursor) => cursor - 1,
   down: (cursor) => cursor + 1,
-  pageUp: (cursor) => cursor - PAGE,
-  pageDown: (cursor) => cursor + PAGE,
+  pageUp: (cursor, _, page) => cursor - page,
+  pageDown: (cursor, _, page) => cursor + page,
   home: () => 0,
   end: (_, count) => count - 1,
 };
 
-const listStep = (key: KeyPress, cursor: number, count: number) => {
+const listStep = (key: KeyPress, cursor: number, count: number, page = count) => {
   const step = STEPS[key.name];
 
-  return step ? clampIndex(step(cursor, count), count) : undefined;
+  return step ? clampIndex(step(cursor, count, page), count) : undefined;
 };
 
 const chooseFromList = (
@@ -280,7 +286,7 @@ const chooseFromList = (
     );
   }
 
-  const cursor = listStep(key, picker.cursor, shown.length);
+  const cursor = listStep(key, picker.cursor, shown.length, listHeight(picker.field));
 
   return cursor === undefined ? state : { ...state, picker: { ...picker, cursor } };
 };

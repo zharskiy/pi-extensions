@@ -58,7 +58,9 @@ const setup = ({ trusted = false, seeded = true } = {}) => {
   return { ...harness, projectFile, userFile, noticesOf, definition, openForm };
 };
 
-const LIST_ROWS = 10;
+const LIST_ROWS = 7;
+
+const skillsTop = (lines: string[]) => lines.findIndex((line) => line.startsWith(" Skills  "));
 
 const showsAgent = (form: FakeForm, name: string) => form.render(400).includes(` ${name}`);
 
@@ -113,7 +115,7 @@ describe("/agents setup form", () => {
     ]);
   });
 
-  it("shows each skill's description on its row and the full text of the one under the cursor", async () => {
+  it("shows each skill's description on its row and two rows of the one under the cursor", async () => {
     const { runtime, userFile, openForm } = setup();
 
     runtime.skills = ["review", "docs", "search"];
@@ -130,7 +132,7 @@ describe("/agents setup form", () => {
     form.press(key("down"), key("down"), key("enter"), key("down"));
 
     const lines = form.render(33);
-    const list = lines.slice(lines.indexOf(" Skills") + 2);
+    const list = lines.slice(skillsTop(lines) + 1);
 
     expect(list.slice(0, 5)).toEqual([
       "",
@@ -141,26 +143,21 @@ describe("/agents setup form", () => {
     ]);
 
     const detail = (rendered: string[]) => {
-      const start = rendered.indexOf(" Skills") + 2 + LIST_ROWS + 1;
+      const start = skillsTop(rendered) + 1 + LIST_ROWS;
 
-      return rendered.slice(start, start + 3);
+      return rendered.slice(start, start + 2);
     };
 
-    expect(lines[lines.indexOf(" Skills") + 2 + LIST_ROWS]).toBe("");
-    expect(detail(lines)).toEqual([
-      " Reviews diffs for correctness,",
-      " missing tests, risky changes and",
-      " unclear naming, then reports...",
-    ]);
+    expect(detail(lines)).toEqual([" Reviews diffs for correctness,", " missing tests, risky changes ..."]);
 
     form.press(key("down"));
-    expect(detail(form.render(33))).toEqual([" Writes docs", "", ""]);
+    expect(detail(form.render(33))).toEqual([" Writes docs", ""]);
 
     form.press(key("down"));
-    expect(detail(form.render(33))).toEqual([" Searches the web and cites", " sources", ""]);
+    expect(detail(form.render(33))).toEqual([" Searches the web and cites", " sources"]);
 
     form.press(key("home"));
-    expect(detail(form.render(33))).toEqual(["", "", ""]);
+    expect(detail(form.render(33))).toEqual(["", ""]);
 
     form.press(key("end"));
     form.press(key("space"), key("enter"));

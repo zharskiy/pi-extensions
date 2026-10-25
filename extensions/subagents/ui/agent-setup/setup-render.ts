@@ -20,11 +20,13 @@ import { alignRight } from "../components/format.ts";
 import {
   ALL_ROW,
   ALL_SKILLS_TEXT,
+  BLOCK_ROWS,
+  DETAIL_LINES,
   type Draft,
   type Field,
   fieldChanged,
   fieldsOf,
-  LIST_HEIGHT,
+  listHeight,
   listView,
   onSubmitTab,
   type Picker,
@@ -51,15 +53,15 @@ const LABEL_WIDTH = 10;
 
 const DESCRIPTION_ROWS = 2;
 
-const DETAIL_LINES = 3;
-
-const FIELD_ROWS = 3;
-
-const INFO_ROWS = 3;
-
-const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + FIELD_ROWS + 1 + PRESETS.length + 1 + INFO_ROWS;
+const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + BLOCK_ROWS;
 
 const WIDE = 10_000;
+
+const TITLES: Record<Field, string> = {
+  model: "Model (models with credentials)",
+  thinking: "Thinking level",
+  skills: "Skills",
+};
 
 const NOUNS: Record<Field, string> = { model: "model", thinking: "level", skills: "skill" };
 
@@ -182,13 +184,14 @@ const windowLines = (
   options: string[],
   cursor: number,
   width: number,
+  height: number,
   label: (option: string) => string = (option) => option,
 ) =>
   scrolledLines(
     theme,
     options.length,
     cursor,
-    LIST_HEIGHT,
+    height,
     width,
     (index, chosen) => {
       const text = theme.fg(chosen ? "accent" : "text", label(options[index] ?? ""));
@@ -201,18 +204,17 @@ const windowLines = (
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
   line(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
 
-const detailLines = (description: string | undefined, theme: ThemeLike, width: number) =>
-  block(theme, description ?? "", width, DETAIL_LINES);
+const headLine = (theme: ThemeLike, picker: Picker, shown: number, total: number, width: number) => {
+  const name = `${theme.fg("accent", theme.bold(TITLES[picker.field]))}  `;
 
-const queryLine = (theme: ThemeLike, query: string, shown: number, total: number, width: number) => {
-  if (!query) {
-    return line(theme, theme.fg("dim", "/ type to filter"), width);
+  if (!picker.query) {
+    return line(theme, `${name}${theme.fg("dim", "/ type to filter")}`, width);
   }
 
   const count = `${shown} of ${total}`;
   const cols = Math.max(1, width - PAD.length);
-  const room = Math.max(1, cols - count.length - 2 - "/ ▏".length);
-  const left = `${theme.fg("dim", "/")} ${theme.fg("text", `${cutStart(query, room, theme)}▏`)}`;
+  const room = Math.max(1, cols - theme.width(name) - count.length - 2 - "/ ▏".length);
+  const left = `${name}${theme.fg("dim", "/")} ${theme.fg("text", `${cutStart(picker.query, room, theme)}▏`)}`;
   const right = theme.fg("dim", count);
 
   return `${PAD}${alignRight(theme, left, right, cols) ?? theme.truncate(left, cols)}`;
@@ -227,39 +229,28 @@ const pickerLines = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const title = (text: string) => line(theme, theme.fg("accent", theme.bold(text)), width);
+  const height = listHeight(picker.field);
+  const head = (shown: number, total: number) => headLine(theme, picker, shown, total, width);
 
   if (picker.field === "skills") {
     const { rows, options, multi, total } = skillsView(context, picker);
     const list =
       options.length === 0 && picker.query
-        ? emptySlots(theme, width, LIST_HEIGHT, noMatch(picker))
-        : multiLines(theme, options, multi, width, LIST_HEIGHT, { slots: true });
-    const detail = rows[multi.cursor] === ALL_ROW ? undefined : options[multi.cursor]?.description;
+        ? emptySlots(theme, width, height, noMatch(picker))
+        : multiLines(theme, options, multi, width, height, { slots: true });
+    const detail = rows[multi.cursor] === ALL_ROW ? "" : (options[multi.cursor]?.description ?? "");
 
-    return [
-      title("Skills"),
-      queryLine(theme, picker.query, options.length, total, width),
-      ...list,
-      "",
-      ...detailLines(detail, theme, width),
-    ];
+    return [head(options.length, total), ...list, ...block(theme, detail, width, DETAIL_LINES)];
   }
 
   const { shown, total } = listView(context, state, picker);
   const label = picker.field === "model" ? modelText : undefined;
   const list =
     shown.length === 0
-      ? emptySlots(theme, width, LIST_HEIGHT, picker.query ? noMatch(picker) : undefined)
-      : windowLines(theme, shown, picker.cursor, width, label);
+      ? emptySlots(theme, width, height, picker.query ? noMatch(picker) : undefined)
+      : windowLines(theme, shown, picker.cursor, width, height, label);
 
-  return [
-    title(picker.field === "model" ? "Model (models with credentials)" : "Thinking level"),
-    queryLine(theme, picker.query, shown.length, total, width),
-    ...list,
-    "",
-    ...detailLines(undefined, theme, width),
-  ];
+  return [head(shown.length, total), ...list];
 };
 
 const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {

@@ -69,20 +69,21 @@ describe("agent setup rendering", () => {
     );
   });
 
-  it("shows the filter under the picker title with a placeholder, a count and a no-match line", () => {
+  it("shows the filter beside the picker title with a placeholder, a count and a no-match line", () => {
     const ctx = context();
     const opened = press(ctx, initialSetup(ctx), key("down"), key("down"), key("enter"));
     const lines = render(ctx, opened.state);
     const typed = (text: string) => render(ctx, press(ctx, opened.state, ...[...text].map(char)).state);
 
-    expect(lines.slice(lines.indexOf(" Skills"), lines.indexOf(" Skills") + 4)).toEqual([
-      " Skills",
-      " / type to filter",
+    const top = lines.indexOf(" Skills  / type to filter");
+
+    expect(lines.slice(top, top + 3)).toEqual([
+      " Skills  / type to filter",
       "",
       " › [x] all  every skill of the agent's caller",
     ]);
     expect(lines.at(-2)).toBe(" esc to clear/back · ↑↓ to select · space to toggle · enter to confirm");
-    expect(typed("do")).toContain(`${" / do▏".padEnd(194)}1 of 2`);
+    expect(typed("do")).toContain(`${" Skills  / do▏".padEnd(194)}1 of 2`);
     expect(typed("zzq")).toContain(' no skill matches "zzq"');
     expect(typed("zzq").some((line) => line.includes("[ ]") || line.includes("[x]"))).toBe(false);
     expect(render(ctx, press(ctx, initialSetup(ctx), key("enter"), char("q")).state)).toContain(
@@ -150,7 +151,7 @@ describe("agent setup layout", () => {
     });
   });
 
-  it("keeps one height with every picker closed and another with any picker open", () => {
+  it("keeps one height with every picker closed or open", () => {
     const ctx = wide(true);
     const start = initialSetup(ctx);
     const model = press(ctx, start, key("enter")).state;
@@ -176,15 +177,13 @@ describe("agent setup layout", () => {
       press(ctx, skills, char("z"), char("z")).state,
     ];
 
-    expect(heights(ctx, closed)).toEqual(new Set([21]));
-    expect(heights(ctx, open)).toEqual(new Set([27]));
+    expect(heights(ctx, [...closed, ...open])).toEqual(new Set([21]));
     [40, 200].forEach((width) => {
-      expect(heights(ctx, closed, width).size).toBe(1);
-      expect(heights(ctx, open, width).size).toBe(1);
+      expect(heights(ctx, [...closed, ...open], width).size).toBe(1);
     });
   });
 
-  it("puts an open picker under the heading in place of the fields, presets and info", () => {
+  it("fits an open picker into the rows of the fields, presets and info", () => {
     const ctx = wide(true);
     const lines = at80(ctx, press(ctx, initialSetup(ctx), key("enter")).state);
 
@@ -193,7 +192,7 @@ describe("agent setup layout", () => {
       " Leads things.",
       "",
       "",
-      " Model (models with credentials)",
+      " Model (models with credentials)  / type to filter",
     ]);
     expect(lines.some((text) => text.includes("Thinking ") || text.includes("Tools:"))).toBe(false);
   });
@@ -203,15 +202,15 @@ describe("agent setup layout", () => {
     const model = press(ctx, initialSetup(ctx), key("enter")).state;
     const list = (state: SetupState) => {
       const lines = at80(ctx, state);
-      const start = lines.indexOf(" Model (models with credentials)") + 2;
+      const start = lines.findIndex((line) => line.startsWith(" Model (models with credentials)  ")) + 1;
 
-      return lines.slice(start, start + 10);
+      return lines.slice(start, start + 9);
     };
 
     expect(list(model)[0]).toBe("");
-    expect(list(model)[9]).toBe(" ↓ 14 more");
-    expect(list(press(ctx, model, key("end")).state)[0]).toBe(" ↑ 14 more");
-    expect(list(press(ctx, model, key("end")).state)[9]).toBe("");
+    expect(list(model)[8]).toBe(" ↓ 15 more");
+    expect(list(press(ctx, model, key("end")).state)[0]).toBe(" ↑ 15 more");
+    expect(list(press(ctx, model, key("end")).state)[8]).toBe("");
     expect(list(press(ctx, model, char("z")).state).slice(0, 3)).toEqual(["", ' no model matches "z"', ""]);
   });
 
@@ -229,17 +228,17 @@ describe("agent setup layout", () => {
     const ends = [...states, press(ctx, skills, key("end")).state];
     const list = (state: SetupState) => {
       const lines = at80(ctx, state);
-      const start = lines.indexOf(" Skills") + 2;
+      const start = lines.indexOf(" Skills  / type to filter") + 1;
 
-      return lines.slice(start, start + 10);
+      return lines.slice(start, start + 7);
     };
 
-    expect(ends.map((state) => [list(state)[0], list(state)[9]])).toEqual([
-      ["", " ↓ 5 more"],
-      [" ↑ 2 more", " ↓ 3 more"],
-      [" ↑ 5 more", ""],
+    expect(ends.map((state) => [list(state)[0], list(state)[6]])).toEqual([
+      ["", " ↓ 8 more"],
+      [" ↑ 4 more", " ↓ 4 more"],
+      [" ↑ 8 more", ""],
     ]);
-    expect(heights(ctx, ends)).toEqual(new Set([27]));
+    expect(heights(ctx, ends)).toEqual(new Set([21]));
   });
 
   it("cuts the description to two rows under the name and the footer to one row", () => {
