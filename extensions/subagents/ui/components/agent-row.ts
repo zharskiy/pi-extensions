@@ -25,7 +25,7 @@ const POINTER_COLS = 2;
 
 const GLYPH_COLS = 2;
 
-export const POINTER_BLANK = " ".repeat(POINTER_COLS);
+const POINTER_BLANK = " ".repeat(POINTER_COLS);
 
 type RowRecord = Pick<
   AgentRecord,

@@ -1,6 +1,6 @@
 import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
 import { DOT } from "../../../../platform/shared/index.ts";
-import { hintRow, type KeyHint, keyHints } from "../../../../platform/ui-kit/index.ts";
+import { type KeyHint, keyHints } from "../../../../platform/ui-kit/index.ts";
 import {
   type PanelActionsAvailable,
   type PanelState,
@@ -8,18 +8,21 @@ import {
 } from "../../core/agent-panel/panel-state.ts";
 import type { TreeRow } from "../../core/components/tree.ts";
 import { type AgentRecord, isClosed } from "../../core/model/agent-record.ts";
-import { POINTER_BLANK, renderRow, rowLayout } from "../components/agent-row.ts";
+import { renderRow, rowLayout } from "../components/agent-row.ts";
 import { stopWords } from "../components/state-text.ts";
 
 const IDLE_HINT: KeyHint[] = [["↓", "to select"]];
 
-const LIST_HINT: KeyHint[] = [["←", "to list agents"]];
+const listHint = (hidden: number, selected: boolean, theme: ThemeLike) => {
+  const words = selected ? "to list" : "to list agents";
 
-const summaryRow = (hidden: number, width: number, theme: ThemeLike) => {
-  const prefix = `${PAD}${POINTER_BLANK}`;
-  const text = `${theme.fg("muted", `${hidden} more`)}${theme.fg("dim", DOT)}${keyHints(LIST_HINT, theme)}`;
+  return `${theme.fg("dim", DOT)}${theme.fg("muted", `${hidden} more, `)}${keyHints([["←", words]], theme)}`;
+};
 
-  return `${prefix}${theme.truncate(text, Math.max(1, width - theme.width(prefix)))}`;
+const hintLine = (pairs: KeyHint[], hidden: number, selected: boolean, width: number, theme: ThemeLike) => {
+  const summary = hidden > 0 ? listHint(hidden, selected, theme) : "";
+
+  return `${PAD}${theme.truncate(`${keyHints(pairs, theme)}${summary}`, Math.max(1, width - PAD.length))}`;
 };
 
 const hintPairs = (record: AgentRecord | undefined, actions: PanelActionsAvailable): KeyHint[] => {
@@ -54,8 +57,7 @@ export const panelLines = (
   const drawn = shown.map((entry) =>
     renderRow({ ...entry, selected: entry.record.id === state.selectedId }, width, theme, layout),
   );
-  const list = hidden > 0 ? [...drawn, summaryRow(hidden, width, theme)] : drawn;
-  const hint = hintRow(theme, hintPairs(selected?.record, actions), width);
+  const hint = hintLine(hintPairs(selected?.record, actions), hidden, selected !== undefined, width, theme);
 
-  return [...list, hint, ""];
+  return [...drawn, hint, ""];
 };

@@ -22,7 +22,9 @@ const IDLE = " ↓ to select";
 
 const HINT = " esc to deselect · enter to view · x to stop";
 
-const SUMMARY = (hidden: number) => `   ${hidden} more · ← to list agents`;
+const IDLE_MORE = (hidden: number) => `${IDLE} · ${hidden} more, ← to list agents`;
+
+const HINT_MORE = (hidden: number) => `${HINT} · ${hidden} more, ← to list`;
 
 const stubPlugin = <K extends keyof ServiceMap>(id: string, key: K, value: ServiceMap[K]): Plugin => ({
   id,
@@ -131,7 +133,7 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
   });
 
-  it("draws the running rows, the summary row and the key hints as one table", () => {
+  it("draws the running rows, the key hints and the hidden count as one table", () => {
     const panel = setup();
     const scout = panel.newAgent({ agent: "scout", description: "Map the auth module" });
     const worker = panel.newAgent({ agent: "worker", description: "Fix the login redirect" });
@@ -148,7 +150,7 @@ describe("agent panel", () => {
       "   ⠋ scout     Map the auth module     Elapsed 1m 5s · 4 calls · 12.3k tokens",
       " › ⠋ worker    Fix the login redirect  Elapsed 2m 3s · 18 calls · 30.1k tokens",
     ]);
-    expect(panel.lines().slice(-3)).toEqual([SUMMARY(4), HINT, ""]);
+    expect(panel.lines().slice(-2)).toEqual([HINT_MORE(3), ""]);
   });
 
   it("draws a lead with three children nested when they fit", () => {
@@ -169,7 +171,7 @@ describe("agent panel", () => {
     expect(lines.slice(-2)).toEqual([IDLE, ""]);
   });
 
-  it("collapses an overflowing tree to its leads and counts the children in the summary", () => {
+  it("collapses an overflowing tree to its leads and counts the children in the hint", () => {
     const panel = setup();
     const leads = ["reviewer", "planner"].map((agent) => panel.newAgent({ agent }));
 
@@ -182,11 +184,11 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toContain("reviewer (+3)");
     expect(lines[1]).toContain("planner (+3)");
     expect(lines.join("\n")).not.toContain("child");
-    expect(lines.slice(2)).toEqual([SUMMARY(6), IDLE, ""]);
+    expect(lines.slice(2)).toEqual([IDLE_MORE(6), ""]);
   });
 
   it("down on an empty editor selects the first row and installs a capture", () => {
@@ -231,13 +233,13 @@ describe("agent panel", () => {
     const lines = panel.lines();
 
     expect(lines[0]).not.toBe("");
-    expect(selectedRow(lines)).toBe(lines[3]);
-    expect(lines[4]).toBe(SUMMARY(3));
+    expect(selectedRow(lines)).toBe(lines[4]);
+    expect(lines[5]).toBe(HINT_MORE(2));
   });
 
   it("keeps open agents before closed ones when they overflow", () => {
     const panel = setup();
-    const records = Array.from({ length: 6 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+    const records = Array.from({ length: 7 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
 
     records.forEach((record) => {
       panel.running(record.id);
@@ -248,18 +250,19 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines.slice(0, 4).map((line) => line.match(/task \d/)?.[0])).toEqual([
+    expect(lines.slice(0, 5).map((line) => line.match(/task \d/)?.[0])).toEqual([
       "task 2",
       "task 3",
       "task 4",
       "task 5",
+      "task 6",
     ]);
-    expect(lines[4]).toBe(SUMMARY(2));
+    expect(lines[5]).toBe(IDLE_MORE(2));
   });
 
   it("keeps the selected agent shown when it would be cut", () => {
     const panel = setup();
-    const records = Array.from({ length: 6 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+    const records = Array.from({ length: 7 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
 
     records.forEach((record) => {
       panel.running(record.id);
@@ -271,14 +274,15 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines.slice(0, 4).map((line) => line.match(/task \d/)?.[0])).toEqual([
+    expect(lines.slice(0, 5).map((line) => line.match(/task \d/)?.[0])).toEqual([
       "task 0",
       "task 1",
       "task 3",
+      "task 4",
       "task 2",
     ]);
-    expect(selectedRow(lines)).toBe(lines[3]);
-    expect(lines[4]).toBe(SUMMARY(2));
+    expect(selectedRow(lines)).toBe(lines[4]);
+    expect(lines[5]?.endsWith(" · 2 more, ← to list")).toBe(true);
   });
 
   it("enter opens the agent view from the panel and deselects", () => {
@@ -509,8 +513,9 @@ describe("agent panel", () => {
     const after = panel.lines();
 
     expect(selectedRow(after)).toBeUndefined();
-    expect(after.at(-2)).toBe(IDLE);
-    expect(after.slice(0, 5)).toEqual([...selected.slice(0, 3), selected[3].replace("›", " "), SUMMARY(3)]);
+    expect(selected.at(-2)).toBe(HINT_MORE(2));
+    expect(after.at(-2)).toBe(IDLE_MORE(2));
+    expect(after.slice(0, 5)).toEqual([...selected.slice(0, 3), selected[3].replace("›", " "), selected[4]]);
   });
 
   it("is seven lines from six agents up and two more than the count below, never starting blank", () => {
@@ -527,19 +532,17 @@ describe("agent panel", () => {
       const selected = panel.lines();
 
       expect([idle[0], selected[0]]).not.toContain("");
-      expect([idle.at(-2), selected.at(-2)]).toEqual([IDLE, HINT]);
-      expect(idle.join("\n")).not.toContain(" 1 more");
 
-      return [idle.length, selected.length, idle.find((line) => line.includes("more"))];
+      return [idle.length, selected.length, idle.at(-2), selected.at(-2)];
     });
 
     expect(heights).toEqual([
-      [3, 3, undefined],
-      [4, 4, undefined],
-      [7, 7, undefined],
-      [7, 7, SUMMARY(2)],
-      [7, 7, SUMMARY(3)],
-      [7, 7, SUMMARY(6)],
+      [3, 3, IDLE, HINT],
+      [4, 4, IDLE, HINT],
+      [7, 7, IDLE, HINT],
+      [7, 7, IDLE_MORE(1), HINT_MORE(1)],
+      [7, 7, IDLE_MORE(2), HINT_MORE(2)],
+      [7, 7, IDLE_MORE(5), HINT_MORE(5)],
     ]);
   });
 
@@ -677,12 +680,12 @@ describe("agent panel", () => {
 
     const bottom = infoColumns(panel.lines(120));
 
-    expect(top).toHaveLength(4);
+    expect(top).toHaveLength(5);
     expect(new Set([...top, ...bottom]).size).toBe(1);
-    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 19 + 2);
+    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 22 + 2);
   });
 
-  it("puts the summary in the glyph column and keeps every line within the width", () => {
+  it("keeps the rows in the glyph column and every line within the width", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
@@ -692,7 +695,6 @@ describe("agent panel", () => {
     const glyphColumn = lines[0].indexOf("⠋");
 
     expect(glyphColumn).toBe(3);
-    expect(lines[4].indexOf("3 more")).toBe(glyphColumn);
 
     [80, 30].forEach((width) => {
       const drawn = panel.lines(width);

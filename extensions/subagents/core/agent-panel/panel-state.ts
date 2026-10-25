@@ -66,10 +66,9 @@ const fitted = (rows: TreeRow[]) => {
     return rows;
   }
 
-  const room = PANEL_ROWS - 1;
   const leads = rows.filter((row) => row.depth === 0);
 
-  return leads.length <= room ? leads : openFirst(leads).slice(0, room);
+  return leads.length <= PANEL_ROWS ? leads : openFirst(leads).slice(0, PANEL_ROWS);
 };
 
 const pinned = (shown: TreeRow[], rows: TreeRow[], selectedId: string | undefined) => {
