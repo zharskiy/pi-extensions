@@ -116,6 +116,47 @@ describe("agent setup form", () => {
     expect(state.drafts[0]?.skills).toEqual(["search", "docs", "lint"]);
   });
 
+  it("confirms the current selection on Enter while the filter matches nothing", () => {
+    const ctx = proposedContext();
+    const opened = press(ctx, initialSetup(ctx), ...toSkills, key("space"), ...typed("zzq"));
+
+    expect(render(ctx, opened.state)).toContain(' no skill matches "zzq"');
+
+    const confirmed = press(ctx, opened.state, key("enter"));
+
+    expect(confirmed.state.picker).toBeUndefined();
+    expect(confirmed.state.drafts[0]?.skills).toBe("all");
+  });
+
+  it("shows none available without an all row and keeps the draft when there are no skills", () => {
+    const ctx = { ...context(), skills: [] };
+    const opened = press(ctx, initialSetup(ctx), ...toSkills);
+
+    expect(skillRows(render(ctx, opened.state))).toEqual([]);
+    expect(render(ctx, opened.state)).toContain(" (none available)");
+
+    const confirmed = press(ctx, opened.state, key("space"), key("enter"));
+
+    expect(confirmed.state.picker).toBeUndefined();
+    expect(confirmed.state.drafts).toEqual(opened.state.drafts);
+  });
+
+  it("ignores control characters and multi-character input in the filter", () => {
+    const ctx = context();
+    const { state } = press(ctx, initialSetup(ctx), key("enter"), char("\x01"), char("ab"));
+
+    expect(state.picker?.query).toBe("");
+  });
+
+  it("clears a model query with Escape before closing the picker", () => {
+    const ctx = context();
+    const typedQuery = press(ctx, initialSetup(ctx), key("enter"), ...typed("sm"));
+    const cleared = press(ctx, typedQuery.state, key("escape"));
+
+    expect(cleared.state.picker).toEqual({ field: "model", cursor: 0, query: "" });
+    expect(press(ctx, cleared.state, key("escape")).state.picker).toBeUndefined();
+  });
+
   it("filters the models and picks only a visible one", () => {
     const ctx = context();
     const opened = press(ctx, initialSetup(ctx), key("enter"), ...typed("small"));
@@ -232,12 +273,7 @@ describe("agent setup form", () => {
     expect(chore.state.field).toBe(1);
     expect(render(ctx, chore.state)).toContain("   Skills    none · fixed for chores");
     expect(press(ctx, chore.state, key("enter")).state.picker?.field).toBe("thinking");
-
-    const drafts = chore.state.drafts.map((draft, index) =>
-      index === 2 ? { ...draft, skills: ["docs"] } : draft,
-    );
-
-    expect(setupChanges(ctx, { ...chore.state, drafts })).toEqual([]);
+    expect(setupChanges(ctx, chore.state)).toEqual([]);
   });
 
   it("switches tabs with Tab and ←, wrapping to the submit tab, and cancels with Escape", () => {

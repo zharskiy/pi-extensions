@@ -81,17 +81,13 @@ describe("isLead", () => {
 
 describe("hasSkillsOverride", () => {
   it("is true only when some agent overrides its skills", () => {
-    const isChoreName = (name: string) => name === "scout";
-
-    expect(hasSkillsOverride({}, isChoreName)).toBe(false);
-    expect(hasSkillsOverride({ reviewer: { thinking: "low" } }, isChoreName)).toBe(false);
-    expect(hasSkillsOverride({ scout: { thinking: "low" }, reviewer: { skills: [] } }, isChoreName)).toBe(
-      true,
-    );
+    expect(hasSkillsOverride({}, ["scout"])).toBe(false);
+    expect(hasSkillsOverride({ reviewer: { thinking: "low" } }, ["scout"])).toBe(false);
+    expect(hasSkillsOverride({ scout: { thinking: "low" }, reviewer: { skills: [] } }, ["scout"])).toBe(true);
   });
 
   it("ignores a skills override on a chore", () => {
-    expect(hasSkillsOverride({ scout: { skills: ["docs"] } }, (name) => name === "scout")).toBe(false);
+    expect(hasSkillsOverride({ scout: { skills: ["docs"] } }, ["scout"])).toBe(false);
   });
 });
 

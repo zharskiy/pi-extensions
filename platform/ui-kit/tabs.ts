@@ -51,16 +51,25 @@ export const groupedTabBar = (
   ready: boolean,
   width: number,
 ) => {
-  const total = groups.reduce((sum, group) => sum + group.tabs.length, 0);
   const shown = groups.filter((group) => group.tabs.length > 0);
-  const offsets = shown.map((_, index) =>
-    shown.slice(0, index).reduce((sum, group) => sum + group.tabs.length, 0),
+  const offsets = shown.reduce(
+    (starts, group) => {
+      starts.push((starts.at(-1) ?? 0) + group.tabs.length);
+
+      return starts;
+    },
+    [0],
   );
+  const total = offsets.at(-1) ?? 0;
   const submit = submitLabel(theme, current === total, ready);
+
+  if (shown.length === 0) {
+    return prefixed(theme, " ".repeat(GROUP_LABEL_WIDTH), submit, width);
+  }
 
   return shown.flatMap((group, index) => {
     const labels = group.tabs.map((tab, position) =>
-      tabLabel(theme, tab, offsets[index] + position === current),
+      tabLabel(theme, tab, (offsets[index] ?? 0) + position === current),
     );
     const row = index === shown.length - 1 ? [...labels, submit] : labels;
     const title = theme.fg("muted", group.label.padEnd(GROUP_LABEL_WIDTH));

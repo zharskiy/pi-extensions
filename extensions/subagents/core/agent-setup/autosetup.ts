@@ -36,8 +36,8 @@ type BriefInput = {
 export const isLead = (definition: AgentDefinition) =>
   definition.fileSkills !== AGENT_SCOPE_ALL && !isChore(definition.relativePath);
 
-export const hasSkillsOverride = (agents: AgentOverrides, isChoreName: (name: string) => boolean) =>
-  Object.entries(agents).some(([name, override]) => override.skills !== undefined && !isChoreName(name));
+export const hasSkillsOverride = (agents: AgentOverrides, chores: string[]) =>
+  Object.entries(agents).some(([name, override]) => override.skills !== undefined && !chores.includes(name));
 
 const isInteractive = (text: string) => {
   const lower = text.toLowerCase();

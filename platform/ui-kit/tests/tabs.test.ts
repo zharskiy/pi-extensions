@@ -76,6 +76,15 @@ describe("groupedTabBar", () => {
     expect(groupedTabBar(plainTheme, groups, 1, true, 80)).toEqual(["Chores  □ Three  ✓ Submit"]);
   });
 
+  it("keeps the submit row when every group is empty", () => {
+    const groups = [
+      { label: "Leads", tabs: [] },
+      { label: "Chores", tabs: [] },
+    ];
+
+    expect(groupedTabBar(plainTheme, groups, 0, false, 80)).toEqual([`${" ".repeat(8)}✓ Submit`]);
+  });
+
   it("wraps a long row under its own label", () => {
     const tabs = ["Alpha", "Bravo", "Charlie", "Delta"].map((label) => ({ label, done: false }));
     const lines = groupedTabBar(plainTheme, [{ label: "Leads", tabs }], 0, false, 30);

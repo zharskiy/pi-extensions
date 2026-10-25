@@ -189,7 +189,7 @@ export const agentSetupPlugin: Plugin = {
         return;
       }
 
-      if (!hasSkillsOverride(settings.agents, (name) => chores().includes(name))) {
+      if (!hasSkillsOverride(settings.agents, chores())) {
         startAutosetup(info);
         return;
       }

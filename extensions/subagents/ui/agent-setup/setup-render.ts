@@ -18,7 +18,6 @@ import { grantOrNone } from "../../core/model/agent-record.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {
   ALL_SKILLS_TEXT,
-  FIELDS,
   type Field,
   fieldChanged,
   fieldsOf,
@@ -169,7 +168,8 @@ const pickerLines = (
 
   if (picker.field === "skills") {
     const { options, multi, total } = skillsView(context, picker);
-    const rows = options.length > 0 ? multiLines(theme, options, multi, width, LIST_HEIGHT) : [];
+    const rows =
+      options.length > 0 || !picker.query ? multiLines(theme, options, multi, width, LIST_HEIGHT) : [];
 
     return [
       ...title("Skills"),
@@ -292,15 +292,15 @@ export const renderSetup = (
   theme: ThemeLike,
   width: number,
 ) => {
+  const changes = setupChanges(context, state);
   const group = (label: string, role: "lead" | "chore") => ({
     label,
-    tabs: context.agents.flatMap((agent, index) =>
+    tabs: context.agents.flatMap((agent) =>
       agent.role === role
-        ? [{ label: agent.name, done: FIELDS.some((field) => fieldChanged(context, state, index, field)) }]
+        ? [{ label: agent.name, done: changes.some((change) => change.name === agent.name) }]
         : [],
     ),
   });
-  const changes = setupChanges(context, state);
   const ready = changes.length > 0;
   const groups = [group("Leads", "lead"), group("Chores", "chore")];
   const bar = groupedTabBar(theme, groups, state.tab, ready, width - PAD.length).map((row) => `${PAD}${row}`);

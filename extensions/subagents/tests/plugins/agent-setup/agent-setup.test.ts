@@ -179,6 +179,20 @@ describe("/agents setup form", () => {
     expect(bar[1]).toBe(
       " Chores  □ editor  □ fetch  □ image  □ scout  □ shell  □ verifier  □ abacus  ✓ Submit",
     );
+
+    const order = [
+      ...["general", "implementer", "planner", "reviewer", "aardvark"],
+      ...["editor", "fetch", "image", "scout", "shell", "verifier", "abacus"],
+    ];
+    const visited = order.map(() => {
+      const shown = order.find((name) => showsAgent(form, name));
+
+      form.press(key("tab"));
+
+      return shown;
+    });
+
+    expect(visited).toEqual(order);
   });
 
   it("sets general to a subset of skills and back to all", async () => {

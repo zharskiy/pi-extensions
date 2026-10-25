@@ -35,11 +35,11 @@ export type SetupContext = {
   project?: string;
 };
 
-export const FIELDS = ["model", "thinking", "skills"] as const;
+const FIELDS = ["model", "thinking", "skills"] as const;
 
 export type Field = (typeof FIELDS)[number];
 
-const CHORE_FIELDS: readonly Field[] = ["model", "thinking"];
+const CHORE_FIELDS = FIELDS.filter((field) => field !== "skills");
 
 export const fieldsOf = (agent: SetupAgent | undefined): readonly Field[] =>
   agent?.role === "chore" ? CHORE_FIELDS : FIELDS;
@@ -169,7 +169,8 @@ const skillsPicker = (context: SetupContext, skills: Grant): SkillsPicker => {
 export const skillsView = (context: SetupContext, picker: SkillsPicker) => {
   const skills = pickerSkills(context, picker);
   const names = skills.map((skill) => skill.name);
-  const rows = picker.query ? matching(names, picker.query) : [ALL_ROW, ...picker.order.keys()];
+  const rows =
+    picker.query || names.length === 0 ? matching(names, picker.query) : [ALL_ROW, ...picker.order.keys()];
   const options = rows.map((row) =>
     row === ALL_ROW
       ? { label: AGENT_SCOPE_ALL, description: ALL_SKILLS_TEXT }
