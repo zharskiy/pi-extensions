@@ -18,7 +18,8 @@ extensions/subagents/
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
 │   ├── base-system-prompt.md              # shared agent rules and the result contract
 │   ├── handoff.md                         # the handoff instruction template ({{path}})
-│   └── create-agent.md                    # the /agents create brief
+│   ├── create-agent.md                    # the /agents create brief
+│   └── autosetup-skills.md                # the /agents setup skills brief
 ├── api/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
@@ -31,7 +32,7 @@ extensions/subagents/
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
 │       ├── agent-panel.ts                 # panel below the editor, selection keys, the `pi-subagents` status
 │       ├── interrupt.ts                   # Esc after an interrupted turn: confirm to stop running agents
-│       ├── agent-setup.ts                 # /agents setup and /agents create, the `agentSetup` service
+│       ├── agent-setup.ts                 # /agents setup, autosetup and the agent_skills_proposal tool, /agents create, the `agentSetup` service
 │       ├── agent-view.ts                  # /agents: menu, list and agent view, the `agentView` service
 │       └── fetch-tool.ts                  # the fetch tool as the `fetchTool` service
 ├── core/
@@ -45,7 +46,7 @@ extensions/subagents/
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore
-│   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, user and project agent dirs
+│   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
@@ -80,6 +81,8 @@ extensions/subagents/
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form, SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
+│   │   ├── autosetup.ts                   # isLead, hasSkillsOverride, candidateSkills (INTERACTIVE_TERMS), projectListing, autosetupBrief
+│   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
 │   │   └── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   ├── agent-view/
 │   │   ├── source.ts                      # createAgentSource: reads an agent's session file, re-parsing on change
@@ -130,7 +133,7 @@ extensions/subagents/
     │   ├── agent-definitions/             # agent-definitions.test.ts (plugin), fields.test.ts
     │   ├── agent-panel/                   # agent-panel.test.ts (plugin), model.test.ts (panel state)
     │   ├── agent-registry/                # agent-registry.test.ts (plugin), registry.test.ts
-    │   ├── agent-setup/                   # agent-setup.test.ts (plugin), agent-template, create, form, line, render, write tests
+    │   ├── agent-setup/                   # agent-setup.test.ts (plugin), agent-template, autosetup, create, form, line, proposal, render, write tests
     │   ├── agent-status/                  # agent-status.test.ts (plugin)
     │   ├── agent-view/                    # list, list-model, menu, overlay, request-block, view tests, fixtures/ and __snapshots__/
     │   ├── fetch-tool/                    # plugin.test.ts, fetch.test.ts, text.test.ts

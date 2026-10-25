@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { KeyPress } from "../../../../../platform/pi-adapter/index.ts";
-import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { openLastOverlay } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
@@ -107,26 +106,26 @@ describe("/agents menu", () => {
     expect(host.overlays).toHaveLength(2);
   });
 
-  it("opens the setup form on 2 and sends the create brief on 3", async () => {
-    const { host } = setup();
+  it("runs setup on 2 and sends the create brief on 3", async () => {
+    const { host, runtime } = setup();
+
+    runtime.skills = ["docs"];
+
     const setupRun = host.runCommand("agents");
 
     host.form().press(digit("2"));
-    await flushMicrotasks();
-
-    expect(host.forms).toHaveLength(2);
-    expect(host.form().render(120).join("\n")).toContain("Submit");
-
-    host.form().press({ name: "escape" });
     await setupRun;
+
+    expect(host.forms).toHaveLength(1);
+    expect(host.hidden[0]?.message.text).toContain("The user ran /agents setup");
 
     const createRun = host.runCommand("agents");
 
     host.form().press(digit("3"));
     await createRun;
 
-    expect(host.hidden).toHaveLength(1);
-    expect(host.hidden[0]?.message.text).toContain("The user ran /agents create and wants a new agent");
+    expect(host.hidden).toHaveLength(2);
+    expect(host.hidden[1]?.message.text).toContain("The user ran /agents create and wants a new agent");
     expect(host.overlays).toHaveLength(0);
   });
 

@@ -12,6 +12,8 @@ export const agentsDirFor = (info: SessionInfo) =>
 export const handoffPathFor = (info: SessionInfo, agentId: string) =>
   join(tmpdir(), NAMESPACE, info.id, `${agentId}-handoff.md`);
 
+export const builtinAgentsDir = (root: string) => join(root, "agents");
+
 export const userAgentsDir = (info: Pick<SessionInfo, "agentDir">) => join(info.agentDir, "agents");
 
 export const projectAgentsDir = (info: Pick<SessionInfo, "cwd">) => join(info.cwd, ".pi", "agents");

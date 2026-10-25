@@ -1,12 +1,22 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AWAITING_INPUT_CHANNEL } from "../../../../../platform/shared/index.ts";
 import { char, type FakeForm, flushMicrotasks, key } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentSetupPlugin } from "../../../api/plugins/agent-setup.ts";
 import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { AUTOSETUP_TYPE } from "../../../core/agent-setup/autosetup.ts";
+import {
+  CANCELLED,
+  NEW_SESSION_HINT,
+  NOT_PENDING,
+  NOTHING_TO_CHANGE,
+  PROPOSAL_TOOL,
+  type ProposalParams,
+} from "../../../core/agent-setup/proposal.ts";
+import { createHarness, tempDir } from "../../support/subagents-harness.ts";
 
 const APPLIES = "agents started from now on use it";
 
@@ -17,13 +27,13 @@ const writeJson = (path: string, value: unknown) => {
   writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value));
 };
 
-const setup = ({ trusted = false } = {}) => {
-  const harness = createHarness([
-    agentRegistryPlugin,
-    agentDefinitionsPlugin,
-    agentSetupPlugin,
-    agentViewPlugin,
-  ]);
+const SEEDED = { agents: { planner: { skills: [] } } };
+
+const setup = ({ trusted = false, seeded = true } = {}) => {
+  const harness = createHarness(
+    [agentRegistryPlugin, agentDefinitionsPlugin, agentSetupPlugin, agentViewPlugin],
+    { overrides: seeded ? SEEDED : {} },
+  );
   const { host, runtime, services } = harness;
 
   host.info.projectTrusted = trusted;
@@ -38,6 +48,8 @@ const setup = ({ trusted = false } = {}) => {
   const openForm = async () => {
     const run = host.runCommand("agents", "setup");
 
+    await flushMicrotasks();
+    host.form().press(char("2"));
     await flushMicrotasks();
 
     return { run, form: host.form() };
@@ -230,6 +242,223 @@ describe("/agents setup form", () => {
     expect(noticesOf("error")).toHaveLength(1);
     expect(noticesOf("error")[0]).toContain(projectFile);
     expect(noticesOf("error")[0]).toContain(userFile);
+  });
+});
+
+const autosetup = (options: { trusted?: boolean; seeded?: boolean } = {}) => {
+  const harness = setup({ seeded: false, ...options });
+  const { host, runtime } = harness;
+  const skillsDir = tempDir();
+  const asker = join(skillsDir, "asker", "SKILL.md");
+
+  writeJson(asker, "---\nname: asker\ndescription: Plans\n---\nUse AskUserQuestion before planning.\n");
+  runtime.skills = ["docs", "search", "asker"];
+  runtime.skillPaths = { asker };
+
+  const propose = (params: ProposalParams) =>
+    host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, { update: () => {} });
+
+  const awaiting = () =>
+    host.published
+      .filter((entry) => entry.channel === AWAITING_INPUT_CHANNEL)
+      .map((entry) => (entry.data as { waiting: boolean }).waiting);
+
+  return { ...harness, propose, awaiting };
+};
+
+const noticesWithHint = (notices: { message: string }[]) =>
+  notices.filter((notice) => notice.message.includes("/new"));
+
+const REVIEWER_PROPOSAL: ProposalParams = {
+  project: "A TypeScript library",
+  assignments: [{ lead: "reviewer", skills: ["search", "docs", "search"] }],
+  reasons: [{ skill: "search", why: "finds prior art" }],
+};
+
+describe("/agents setup autosetup", () => {
+  it("briefs the main session about the leads at once when no agent has a skills override", async () => {
+    const { host, noticesOf } = autosetup();
+
+    await host.runCommand("agents", "setup");
+
+    expect(host.forms).toEqual([]);
+    expect(host.hidden).toHaveLength(1);
+    expect(host.hidden[0]?.message.customType).toBe(AUTOSETUP_TYPE);
+
+    const brief = host.hidden[0]?.message.text ?? "";
+
+    expect(brief).toContain("- reviewer: ");
+    expect(brief).toContain("- implementer: ");
+    expect(brief).not.toContain("- general: ");
+    expect(brief).not.toContain("- scout: ");
+    expect(brief).toContain("- docs (no description)");
+    expect(brief).not.toContain("asker");
+    expect(brief).not.toContain("{{");
+    expect(noticesOf("info")).toEqual([
+      "pi-subagents: asked the main session to propose agent skills; the form opens when it answers; left out, interactive: asker",
+    ]);
+  });
+
+  it("asks first when an override exists, with nothing focused", async () => {
+    const { host } = autosetup({ seeded: true });
+    const run = host.runCommand("agents", "setup");
+
+    await flushMicrotasks();
+
+    const choice = host.form();
+
+    expect(choice.render(80).some((line) => line.includes("Propose skills automatically"))).toBe(true);
+    expect(choice.render(80).some((line) => line.includes("›"))).toBe(false);
+
+    choice.press(key("enter"));
+    expect(choice.closed).toBe(false);
+
+    choice.press(key("down"), key("enter"));
+    await run;
+
+    expect(host.hidden).toHaveLength(1);
+    expect(host.forms).toHaveLength(1);
+  });
+
+  it("does nothing on Escape at the question", async () => {
+    const { host, noticesOf } = autosetup({ seeded: true });
+    const run = host.runCommand("agents", "setup");
+
+    await flushMicrotasks();
+    host.form().press(key("escape"));
+    await run;
+
+    expect(host.hidden).toEqual([]);
+    expect(host.forms).toHaveLength(1);
+    expect(noticesOf("info")).toEqual([]);
+  });
+
+  it("does not count an override in an untrusted project's file", async () => {
+    const { host, projectFile, services } = autosetup();
+
+    writeJson(projectFile, { agents: { reviewer: { skills: ["docs"] } } });
+    services.require("definitions").reload();
+    await host.runCommand("agents", "setup");
+
+    expect(host.hidden).toHaveLength(1);
+  });
+
+  it("sends nothing outside the terminal UI", async () => {
+    const { host, noticesOf } = autosetup();
+
+    host.info.mode = "rpc";
+    await host.runCommand("agents", "setup");
+
+    expect(host.hidden).toEqual([]);
+    expect(noticesOf("error")).toHaveLength(1);
+  });
+});
+
+describe("agent_skills_proposal", () => {
+  it("refuses when no proposal is pending", async () => {
+    const { propose, host } = autosetup();
+    const result = await propose(REVIEWER_PROPOSAL);
+
+    expect(result).toEqual({ text: NOT_PENDING, isError: true });
+    expect(host.forms).toEqual([]);
+  });
+
+  it("refuses non-leads, unknown or interactive skills and long lists, keeping the proposal pending", async () => {
+    const { host, propose } = autosetup({ trusted: true });
+
+    await host.runCommand("agents", "setup");
+
+    const refused = await propose({
+      project: "x",
+      assignments: [
+        { lead: "general", skills: ["docs"] },
+        { lead: "scout", skills: ["docs"] },
+        { lead: "nobody", skills: [] },
+        { lead: "planner", skills: ["asker", "ghost"] },
+        { lead: "reviewer", skills: ["docs", "search", "a", "b"] },
+      ],
+    });
+
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain("general is not set up here");
+    expect(refused.text).toContain("scout is not set up here");
+    expect(refused.text).toContain('no agent named "nobody"');
+    expect(refused.text).toContain('no skill named "asker" here');
+    expect(refused.text).toContain("reviewer: at most three skills");
+    expect(refused.text).not.toContain("chore");
+    expect(host.forms).toEqual([]);
+
+    const corrected = propose(REVIEWER_PROPOSAL);
+
+    await flushMicrotasks();
+    expect(host.forms).toHaveLength(1);
+
+    host.form().press(key("escape"));
+
+    expect(await corrected).toEqual({ text: CANCELLED });
+    expect(await propose(REVIEWER_PROPOSAL)).toEqual({ text: NOT_PENDING, isError: true });
+  });
+
+  it("opens the form with the proposal and saves the leads' lists in the proposed order", async () => {
+    const { host, propose, projectFile, definition, noticesOf, awaiting } = autosetup({ trusted: true });
+
+    await host.runCommand("agents", "setup");
+
+    const result = propose(REVIEWER_PROPOSAL);
+
+    await flushMicrotasks();
+
+    const form = host.form();
+
+    goToAgent(form, "reviewer");
+    expect(
+      form.render(400).some((line) => line.includes("Proposed:") && line.includes("finds prior art")),
+    ).toBe(true);
+    expect(form.render(400).some((line) => line.includes("(changed)"))).toBe(true);
+    expect(awaiting()).toEqual([true]);
+
+    goToSubmit(form);
+    expect(
+      form.render(400).some((line) => line.includes("Project:") && line.includes("TypeScript library")),
+    ).toBe(true);
+    form.press(key("enter"));
+
+    const { text, isError } = await result;
+
+    expect(isError).toBeUndefined();
+    expect(text).toContain(`Saved to ${projectFile}: reviewer skills [search, docs].`);
+    expect(text).toContain(NEW_SESSION_HINT);
+    expect(readJson(projectFile)).toEqual({ agents: { reviewer: { skills: ["search", "docs"] } } });
+    expect(definition("reviewer")?.skills).toEqual(["search", "docs"]);
+    expect(awaiting()).toEqual([true, false]);
+    expect(noticesOf("info").at(-1)).toBe(
+      `pi-subagents: saved reviewer (skills) to ${projectFile}; ${APPLIES}; ${NEW_SESSION_HINT}`,
+    );
+  });
+
+  it("opens no form when the proposal changes nothing", async () => {
+    const { host, propose } = autosetup();
+
+    await host.runCommand("agents", "setup");
+
+    const result = await propose({
+      project: "x",
+      assignments: [{ lead: "reviewer", skills: [] }],
+      reasons: [],
+    });
+
+    expect(result).toEqual({ text: NOTHING_TO_CHANGE });
+    expect(host.forms).toEqual([]);
+    expect(noticesWithHint(host.notices)).toEqual([]);
+  });
+
+  it("forgets the pending proposal when the session starts again", async () => {
+    const { host, propose } = autosetup();
+
+    await host.runCommand("agents", "setup");
+    host.start();
+
+    expect(await propose(REVIEWER_PROPOSAL)).toEqual({ text: NOT_PENDING, isError: true });
   });
 });
 
