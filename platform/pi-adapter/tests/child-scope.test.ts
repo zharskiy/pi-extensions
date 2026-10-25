@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { createPiExtension } from "../index.ts";
 import { childScope, insideChildSession } from "../runtime/child-scope.ts";
 
 type ScopeModule = typeof import("../runtime/child-scope.ts");
+
+const fakePi = () => {
+  const events: string[] = [];
+  const pi = {
+    on: (event: string) => {
+      events.push(event);
+    },
+    getSettings: () => ({}),
+    getThinkingLevel: () => "off",
+    getCommands: () => [],
+    getActiveTools: () => [],
+    getAllTools: () => [],
+  };
+
+  return { pi: pi as never, events };
+};
 
 const loadCopy = async (tag: string): Promise<ScopeModule> =>
   import(new URL(`../runtime/child-scope.ts?copy=${tag}`, import.meta.url).href);
@@ -28,5 +45,28 @@ describe("child scope", () => {
 
     expect(seen).toEqual([true, "a2"]);
     expect(copy.insideChildSession()).toBe(false);
+  });
+
+  it("never boots an adapter extension inside a child session", async () => {
+    const boots: string[] = [];
+    const factory = createPiExtension(
+      () => {
+        boots.push("boot");
+      },
+      { root: "/ext", namespace: "test-ext" },
+    );
+    const child = fakePi();
+
+    await childScope.run({ agentId: "a" }, async () => factory(child.pi));
+
+    expect(boots).toEqual([]);
+    expect(child.events).toEqual([]);
+
+    const parent = fakePi();
+
+    await factory(parent.pi);
+
+    expect(boots).toEqual(["boot"]);
+    expect(parent.events).not.toEqual([]);
   });
 });

@@ -53,7 +53,7 @@ The package installs thirteen extensions:
 
 - **[subagents](extensions/subagents/README.md)**: background agents you run, watch, message and stop from the main session, optionally in their own git worktree, with MCP tools. A panel below the editor and an `/agents` overlay.
 - **[questionnaire](extensions/questionnaire/README.md)**: a tool the model uses to ask you a batch of multiple-choice questions in one inline form.
-- **[style](extensions/style/README.md)**: `/style concise` for short, result-first replies everywhere; `/style normal` turns it off.
+- **[style](extensions/style/README.md)**: `/style concise` for short, result-first replies from the main session; `/style normal` turns it off.
 - **[mcp-import](extensions/mcp-import/README.md)**: `/mcp-import <claude|cursor>` copies MCP servers into pi's `mcp.json`. A dry run unless you add `apply`.
 
 **Session awareness**
@@ -77,7 +77,7 @@ Start pi and try:
 |---|---|
 | `/agents` | The agents menu: view running and finished agents, set up models, create a new agent. |
 | `/context` | What fills the context window, with cache hit rates. |
-| `/style concise` | Short, result-first replies from the main session and every agent. |
+| `/style concise` | Short, result-first replies from the main session; subagents are unaffected. |
 
 <details>
 <summary>Coming from another tool</summary>

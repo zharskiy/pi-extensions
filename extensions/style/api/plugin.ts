@@ -60,7 +60,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   };
 
   host.registerCommand("style", {
-    description: `Pick the output style of the main session and every agent from a list, or set it directly: /style [${names.join("|")}]`,
+    description: `Pick the output style of the main session from a list, or set it directly: /style [${names.join("|")}]`,
     complete: (prefix) =>
       names.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
     run: async (args) => {

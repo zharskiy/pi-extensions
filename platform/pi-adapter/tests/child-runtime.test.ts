@@ -5,7 +5,6 @@ import { flushMicrotasks } from "../../../test/framework/index.ts";
 import type { ParentSource } from "../child/child-extension.ts";
 import { childToolNames, createPiRuntime } from "../child/child-runtime.ts";
 import type { SpawnSpec } from "../index.ts";
-import { createPromptSections } from "../prompt/sections.ts";
 
 type InlineEntry = {
   name: string;
@@ -445,55 +444,5 @@ describe("child prompting", () => {
 
     await expect(runtime.spawn(spec({ tools: [] }))).rejects.toThrow("bind failed");
     expect(scripted.calls).toEqual(["emit session_shutdown", "dispose"]);
-  });
-});
-
-describe("child prompt sections", () => {
-  beforeEach(() => {
-    captured.session = undefined;
-  });
-
-  it("gives every run of the child the prompt sections registered at that moment", async () => {
-    const before = captured.loaderOptions.length;
-
-    await runtime.spawn(spec({ tools: [] }));
-
-    const child = factoriesOf(before).find((entry) => entry.name === "test-ext-child") as InlineEntry;
-    const handlers: ((event: unknown) => void)[] = [];
-    const api = {
-      on: (event: string, handler: (event: unknown) => void) => {
-        if (event === "before_agent_start") {
-          handlers.push(handler);
-        }
-      },
-      appendEntry: () => {},
-    };
-
-    (child.factory as (pi: unknown) => void)(api);
-
-    const run = () => {
-      const systemPromptOptions = {
-        sections: { cwd: "/x" } as Record<string, string>,
-        skills: [],
-        promptGuidelines: [],
-        toolGuidelines: {},
-      };
-
-      handlers.forEach((handler) => {
-        handler({ systemPromptOptions });
-      });
-
-      return systemPromptOptions.sections;
-    };
-
-    const sections = createPromptSections();
-
-    sections.set("output_style", "Be brief.");
-
-    expect(run()).toEqual({ cwd: "/x", output_style: "Be brief." });
-
-    sections.release();
-
-    expect(run()).toEqual({ cwd: "/x" });
   });
 });
