@@ -18,9 +18,13 @@ export {
   type HandoffBudget,
 } from "./handoff-budget.ts";
 export {
+  HANDOFF_REQUEST_TYPE,
+  HANDOFF_SEED_TYPE,
+  type HandoffRequestDetails,
   type HandoffSeedDetails,
   type HandoffToolRows,
   type HandoffValidation,
+  handoffPath,
   validateHandoff,
 } from "./handoff-document.ts";
 export { type Limits, thresholdsFor } from "./handoff-limits.ts";

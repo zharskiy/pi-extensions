@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { paintRecordingTheme, plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../pi-adapter/index.ts";
 import { seedText, successorPreface } from "../../shared/index.ts";
-import { handoffSeedMessage, handoffToolRows } from "../handoff-rows.ts";
+import { handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "../handoff-rows.ts";
 
 const seed = seedText(
   successorPreface({ kind: "session", file: "/s/main.jsonl", manual: false }),
@@ -111,5 +111,35 @@ describe("handoff tool rows", () => {
     expect(drawn(rows.renderResult?.({ text: "Error: bad\nmore", isError: true }, state(), tagged))).toBe(
       ["  <dim>↳ <error>Error: bad", "    <error>more"].join("\n"),
     );
+  });
+});
+
+describe("handoff request message", () => {
+  const draw = (details: unknown, expanded = false, width = 200) =>
+    handoffRequestMessage(() => "ctrl+o")(
+      { text: "Save the handoff now.\nThen stop.", details },
+      width,
+      expanded,
+      plainTheme,
+    );
+
+  it("names the figures of a limit request and gives the expand hint", () => {
+    expect(draw({ reason: "limit", tokens: 176_000, request: 175_000 })).toEqual([
+      "» Handoff requested · 176k of 175k tokens (ctrl+o to expand)",
+    ]);
+  });
+
+  it("names /session-handoff for a manual request and nothing for unknown details", () => {
+    expect(draw({ reason: "manual" })[0]).toBe("» Handoff requested · /session-handoff (ctrl+o to expand)");
+    expect(draw(undefined)[0]).toBe("» Handoff requested (ctrl+o to expand)");
+    expect(draw({ reason: "limit" })[0]).toBe("» Handoff requested (ctrl+o to expand)");
+  });
+
+  it("shows the whole instruction wrapped at column 4 without a hint when expanded", () => {
+    const lines = draw({ reason: "manual" }, true, 40);
+
+    expect(lines[0]).toBe("» Handoff requested · /session-handoff");
+    expect(lines[1]).toBe("  ↳ Save the handoff now.");
+    expect(lines.at(-1)).toBe("    Then stop.");
   });
 });

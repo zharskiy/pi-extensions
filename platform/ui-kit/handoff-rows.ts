@@ -2,6 +2,8 @@ import { homedir } from "node:os";
 import { CHILD_COLUMN, type MessageRender, type ThemeLike } from "../pi-adapter/index.ts";
 import {
   DOT,
+  formatWindow,
+  type HandoffRequestDetails,
   type HandoffSeedDetails,
   type HandoffToolRows,
   homeRelative,
@@ -57,6 +59,45 @@ export const handoffSeedMessage =
   (keyText: (binding: string) => string): MessageRender =>
   (message, width, expanded, theme) =>
     seedRow(seedTitle(message.details), message.text, expanded, keyText(EXPAND_BINDING))(width, theme);
+
+const requestDetails = (details: unknown): HandoffRequestDetails | undefined => {
+  if (!isPlainObject(details) || (details.reason !== "limit" && details.reason !== "manual")) {
+    return undefined;
+  }
+
+  const { reason, tokens, request } = details;
+
+  return {
+    reason,
+    tokens: typeof tokens === "number" ? tokens : undefined,
+    request: typeof request === "number" ? request : undefined,
+  };
+};
+
+const REQUEST_TITLE = "Handoff requested";
+
+const requestTitle = (details: unknown) => {
+  const known = requestDetails(details);
+
+  if (known?.reason === "manual") {
+    return `${REQUEST_TITLE}${DOT}/session-handoff`;
+  }
+
+  return known?.tokens !== undefined && known.request !== undefined
+    ? `${REQUEST_TITLE}${DOT}${formatWindow(known.tokens)} of ${formatWindow(known.request)} tokens`
+    : REQUEST_TITLE;
+};
+
+export const handoffRequestMessage =
+  (keyText: (binding: string) => string): MessageRender =>
+  (message, width, expanded, theme) =>
+    row({
+      mark: "info",
+      title: theme.bold(requestTitle(message.details)),
+      children: expanded ? [wrapChild(message.text.trim(), width, CHILD_COLUMN, theme).join("\n")] : [],
+      hint: expanded ? undefined : expandHint(keyText(EXPAND_BINDING)),
+      hintCuts: true,
+    })(width, theme);
 
 export const handoffToolRows = (savedPath: () => string | undefined): HandoffToolRows => ({
   renderCall: (_params, theme, state) =>

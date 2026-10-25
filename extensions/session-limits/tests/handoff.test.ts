@@ -31,7 +31,7 @@ const complete = {
 describe("handoffPath", () => {
   it("sits under the OS temp dir, named after the session id", () => {
     expect(handoffPath(info({ file: "/sessions/main.jsonl" }))).toBe(
-      join(tmpdir(), "pi-session-limits", "s1-handoff.md"),
+      join(tmpdir(), "pi-handoff", "s1", "main-handoff.md"),
     );
   });
 });

@@ -1,5 +1,7 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { validateHandoff } from "../handoff-document.ts";
+import { handoffPath, validateHandoff } from "../handoff-document.ts";
 
 const STATUSES = ["done", "partial", "blocked"];
 
@@ -50,5 +52,16 @@ describe("validateHandoff", () => {
       ok: false,
       errors: ["Status must be one of partial, blocked"],
     });
+  });
+});
+
+describe("handoffPath", () => {
+  it("puts the main session and every agent under one root named after the session", () => {
+    const root = join(tmpdir(), "pi-handoff", "s1");
+
+    expect(handoffPath("s1", { main: true })).toBe(join(root, "main-handoff.md"));
+    expect(handoffPath("s1", { agentId: "scout-1a2b3c4d5e6f" })).toBe(
+      join(root, "scout-1a2b3c4d5e6f-handoff.md"),
+    );
   });
 });

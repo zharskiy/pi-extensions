@@ -44,7 +44,7 @@ An arrow points at what a layer may import. `extension-manager` sits after `ui-k
 
 Everything lives under pi's agent dir or session dir (`~/.pi/agent` by default; the `sessionDir` setting or `--session-dir` moves session data), except:
 
-- handoff documents, in the OS temp dir: `pi-session-limits/<session id>-handoff.md` for the main session and `pi-subagents/<session id>/<agent id>-handoff.md` for agents;
+- handoff documents, in the OS temp dir: `pi-handoff/<session id>/main-handoff.md` for the main session and `pi-handoff/<session id>/<agent id>-handoff.md` for agents;
 - `worktree: true` agents: a checkout under `<cwd>/.pi/worktrees/`, git's `pi-agents/…` branch and `.git/worktrees/` metadata;
 - two project files written on the user's command in a trusted project: `.pi/pi-subagents.json` (`/agents setup`, which offers only the user file in an untrusted project and whose write may follow a model tool call once the user confirms the form) and `.pi/mcp.json` (`/mcp-import … project apply`, or the interactive `/mcp-import` picker).
 

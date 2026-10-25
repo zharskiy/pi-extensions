@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
   ContextSnapshot,
+  HandoffDelivery,
   Host,
   SessionControl,
   ThemeToken,
@@ -9,6 +10,9 @@ import type {
 import {
   BUSY_CHANNEL,
   errorText,
+  HANDOFF_REQUEST_TYPE,
+  HANDOFF_SEED_TYPE,
+  type HandoffRequestDetails,
   handoffInstruction,
   handoffRetry,
   type Limits,
@@ -25,6 +29,7 @@ import {
   handoffStep,
   isPending,
   MAX_INSTRUCTIONS,
+  mainBudget,
   type Phase,
   shouldRequest,
 } from "./thresholds.ts";
@@ -33,9 +38,7 @@ const NOTICE_KEY = "pi-session-limits";
 
 const HANDOFF_COMMAND = "session-handoff";
 
-export const HANDOFF_TYPE = "pi-session-limits-handoff";
-
-const REQUEST_TYPE = "pi-session-limits-request";
+const MAIN_DELIVERY: HandoffDelivery = "afterRun";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
@@ -122,8 +125,18 @@ export const watchLimits = ({
   const currentInstruction = (path: string) =>
     instruction(path, state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON, state.focus);
 
+  const requestDetails = (): HandoffRequestDetails => {
+    const tokens = state.context?.tokens ?? undefined;
+    const request = mainBudget(state.context?.window ?? 0, limits())?.request;
+
+    return state.handedOff ? { reason: "manual" } : { reason: "limit", tokens, request };
+  };
+
   const sendInstruction = (text: string) => {
-    host.sendHiddenMessage({ customType: REQUEST_TYPE, text });
+    host.sendMessage(
+      { customType: HANDOFF_REQUEST_TYPE, text, display: true, details: requestDetails() },
+      { after: MAIN_DELIVERY },
+    );
   };
 
   const refresh = () => {
@@ -327,7 +340,8 @@ export const watchLimits = ({
       .newSession({
         parentSession: previous,
         seed: {
-          customType: HANDOFF_TYPE,
+          customType: HANDOFF_SEED_TYPE,
+          details: { from: "session" },
           text: seedText(
             successorPreface({
               kind: "session",

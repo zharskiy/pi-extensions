@@ -1,10 +1,14 @@
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL, handoffTemplate } from "../../../platform/shared/index.ts";
-import { createFakeHost, flushTimers as flush, useTempDirs } from "../../../test/framework/index.ts";
+import { BUSY_CHANNEL, handoffTemplate, handoffPath as pathFor } from "../../../platform/shared/index.ts";
+import {
+  createFakeHost,
+  flushTimers as flush,
+  requestTexts,
+  useTempDirs,
+} from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
 import { DEFAULT_LIMITS } from "../core/settings.ts";
@@ -14,7 +18,7 @@ const temp = useTempDirs();
 const tempRoot = () => {
   const root = temp.make("pi-session-limits-");
 
-  temp.track(join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`));
+  temp.track(pathFor(basename(root), { main: true }));
 
   return root;
 };
@@ -45,7 +49,7 @@ const VALID_HANDOFF = [
 
 const NOTICE_KEY = "pi-session-limits";
 const HANDOFF_COMMAND = "session-handoff";
-const HANDOFF_TYPE = "pi-session-limits-handoff";
+const HANDOFF_TYPE = "pi-handoff-seed";
 
 const RELEASE_MS = 1_000;
 
@@ -66,7 +70,7 @@ const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {
 
   host.start();
 
-  const handoffPath = join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`);
+  const handoffPath = pathFor(basename(root), { main: true });
 
   const writeHandoff = (text: string) => {
     mkdirSync(dirname(handoffPath), { recursive: true });
@@ -82,7 +86,7 @@ const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {
 
   const notice = () => host.editorNotices.get(NOTICE_KEY);
 
-  const requests = () => host.hidden.map((entry) => entry.message.text);
+  const requests = () => requestTexts(host);
 
   const warnings = () => host.notices.filter((notice) => notice.level === "warning");
 
@@ -142,7 +146,8 @@ describe("session limits", () => {
     expect(requests()[0]).not.toContain("{{");
     expect(requests()[0]).not.toContain("next session is for");
     expect(requests()[0]).not.toContain("/session-handoff");
-    expect(host.hidden[0].message.customType).toBe("pi-session-limits-request");
+    expect(host.messages[0].message.customType).toBe("pi-handoff-request");
+    expect(host.messages[0].message.display).toBe(true);
     expect(host.notices).toEqual([
       {
         message: `Context is nearly full; writing a session handoff to ${handoffPath}, then switching to a new session.`,
@@ -479,7 +484,7 @@ describe("session limits", () => {
 
     host.start();
     host.turnEnd({ tokens: 76_000, window: 100_000 });
-    const handoffPath = join(tmpdir(), "pi-session-limits", `${basename(root)}-handoff.md`);
+    const handoffPath = pathFor(basename(root), { main: true });
 
     mkdirSync(dirname(handoffPath), { recursive: true });
     writeFileSync(handoffPath, VALID_HANDOFF);
@@ -541,7 +546,8 @@ describe("/session-handoff on demand", () => {
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
 
     expect(requests()).toHaveLength(1);
-    expect(host.hidden[0].message.customType).toBe("pi-session-limits-request");
+    expect(host.messages[0].message.customType).toBe("pi-handoff-request");
+    expect(host.messages[0].message.display).toBe(true);
     expect(requests()[0]).toContain(handoffPath);
     expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
       true,
@@ -771,7 +777,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(1);
-    expect(host.hidden[0].delivery).toBe("run");
+    expect(host.messages[0].delivery).toBe("run");
     expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
       true,
     );
@@ -866,7 +872,7 @@ describe("/session-handoff during a turn", () => {
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
 
     expect(requests()).toHaveLength(1);
-    expect(host.hidden[0].delivery).toBe("run");
+    expect(host.messages[0].delivery).toBe("run");
     expect(host.notices.map((notice) => notice.message)).not.toContain(QUEUED);
   });
 
@@ -901,7 +907,7 @@ describe("/session-handoff during a turn", () => {
 
     expect(requests()).toHaveLength(1);
     expect(requests()[0]).toContain(FOCUS);
-    expect(host.hidden[0].delivery).toBe("run");
+    expect(host.messages[0].delivery).toBe("run");
   });
 
   it("keeps a handoff queued during a compaction for the run that follows it", async () => {
@@ -920,7 +926,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(1);
-    expect(host.hidden[0].delivery).toBe("run");
+    expect(host.messages[0].delivery).toBe("run");
   });
 
   const stuckSetup = async () => {
@@ -1146,9 +1152,84 @@ describe("handoff seed message", () => {
   it("draws the seed of a new session as a row with the expand key the host names", () => {
     const { host } = setup();
 
+    expect(host.renderMessage(HANDOFF_TYPE, { text: "Carry on. More." })).toEqual([
+      "» Handoff from the previous session",
+      "  ↳ Carry on. (<app.tools.expand> to expand)",
+    ]);
+  });
+
+  it("still draws a seed of the legacy type that older sessions hold", () => {
+    const { host } = setup();
+
     expect(host.renderMessage("pi-session-limits-handoff", { text: "Carry on. More." })).toEqual([
       "» Handoff from the previous session",
       "  ↳ Carry on. (<app.tools.expand> to expand)",
     ]);
+  });
+});
+
+describe("handoff request message", () => {
+  it("is displayed and delivered after the run while one is active", () => {
+    const { host, turn } = setup();
+
+    host.idle = false;
+    turn(76_000);
+
+    expect(host.messages).toHaveLength(1);
+    expect(host.messages[0]).toMatchObject({
+      message: { customType: "pi-handoff-request", display: true },
+      after: "afterRun",
+      delivery: "followUp",
+    });
+  });
+
+  it("carries the figures of a limit request and none for /session-handoff", async () => {
+    const limit = setup();
+
+    limit.turn(76_000);
+
+    expect(limit.host.messages[0].message.details).toEqual({
+      reason: "limit",
+      tokens: 76_000,
+      request: 60_000,
+    });
+
+    const manual = setup();
+
+    await manual.host.runCommand(HANDOFF_COMMAND, "");
+
+    expect(manual.host.messages[0].message.details).toEqual({ reason: "manual" });
+  });
+
+  it("sends a second displayed request on a resend", () => {
+    const { host, turn, writeHandoff } = setup();
+
+    turn(76_000);
+    writeHandoff("## Status\npartial\n");
+    host.settle();
+
+    expect(host.messages.map((entry) => entry.message.display)).toEqual([true, true]);
+  });
+
+  it("seeds the new session with details naming the session as the origin", async () => {
+    const { host, turn, writeHandoff } = setup();
+
+    turn(76_000);
+    writeHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.newSessions[0].seed?.details).toEqual({ from: "session" });
+  });
+
+  it("draws the request row with the figures and the expand key", () => {
+    const { host } = setup();
+
+    expect(
+      host.renderMessage("pi-handoff-request", {
+        text: "do it",
+        details: { reason: "limit", tokens: 176_000, request: 175_000 },
+      }),
+    ).toEqual(["» Handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)"]);
   });
 });

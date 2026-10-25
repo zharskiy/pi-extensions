@@ -5,7 +5,7 @@ Admission rule: a module lives here only if it imports nothing but node built-in
 - `index.ts`: the public surface.
 - `plugin-contract.ts`: the plugin, disable, bus, service registry, event map and extension paths types.
 - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`.
-- `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows` and `HandoffSeedDetails` (shared by session-limits and subagents).
+- `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details and types, `handoffPath` (shared by session-limits and subagents).
 - `handoff-budget.ts`: `HandoffBudget`, `budgetLevel`, `budgetStep`.
 - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template and its builder, retry text, successor preface and seed text.
 - `handoff-limits.ts`: `Limits`, `thresholdsFor`.

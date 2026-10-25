@@ -695,6 +695,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   return host;
 };
 
+export const requestTexts = (host: Pick<FakeHost, "messages">) =>
+  host.messages.map((entry) => entry.message.text);
+
 export const hiddenMessageTexts = (host: Pick<FakeHost, "hidden">) =>
   host.hidden.map((entry) => entry.message.text);
 

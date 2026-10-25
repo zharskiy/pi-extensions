@@ -1,7 +1,14 @@
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import { handoffTemplate, LIMITS_CHANNEL, type Limits, type Plugin } from "../../../platform/shared/index.ts";
-import { handoffSeedMessage } from "../../../platform/ui-kit/index.ts";
-import { HANDOFF_TYPE, watchLimits } from "../core/limits.ts";
+import {
+  HANDOFF_REQUEST_TYPE,
+  HANDOFF_SEED_TYPE,
+  handoffTemplate,
+  LIMITS_CHANNEL,
+  type Limits,
+  type Plugin,
+} from "../../../platform/shared/index.ts";
+import { handoffRequestMessage, handoffSeedMessage } from "../../../platform/ui-kit/index.ts";
+import { watchLimits } from "../core/limits.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 type LimitsOptions = {
@@ -11,11 +18,14 @@ type LimitsOptions = {
   releaseDelayMs?: number;
 };
 
+const LEGACY_SEED_TYPE = "pi-session-limits-handoff";
+
 export const createLimits = ({ host, template, limits, releaseDelayMs }: LimitsOptions) => {
-  host.registerMessageRenderer(
-    HANDOFF_TYPE,
-    handoffSeedMessage((binding) => host.ui.keyText(binding)),
-  );
+  const keyText = (binding: string) => host.ui.keyText(binding);
+
+  host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
+  host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
+  host.registerMessageRenderer(LEGACY_SEED_TYPE, handoffSeedMessage(keyText));
 
   watchLimits({ host, template, limits, segment: segmentFor, releaseDelayMs });
 };

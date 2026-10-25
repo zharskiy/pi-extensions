@@ -12,6 +12,7 @@ export {
   FAKE_FOOTER_KEY,
   type FakeHost,
   hiddenMessageTexts,
+  requestTexts,
 } from "./fake-host.ts";
 export { char, key } from "./key-presses.ts";
 export { reportCost, totalCost } from "./live/cost.ts";

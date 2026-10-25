@@ -15,7 +15,7 @@ export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
-const mainBudget = (window: number, limits: Limits): HandoffBudget | undefined => {
+export const mainBudget = (window: number, limits: Limits): HandoffBudget | undefined => {
   if (window <= 0) {
     return undefined;
   }

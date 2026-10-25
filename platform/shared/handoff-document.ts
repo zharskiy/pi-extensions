@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ToolSpec } from "../pi-adapter/index.ts";
 
 const HANDOFF_SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"] as const;
@@ -7,6 +9,20 @@ export type HandoffValidation = { ok: true; status: string } | { ok: false; erro
 export type HandoffToolRows = Pick<ToolSpec<{ content: string }, unknown>, "renderCall" | "renderResult">;
 
 export type HandoffSeedDetails = { from: "session" } | { from: "agent"; id: string; link: number };
+
+export const HANDOFF_REQUEST_TYPE = "pi-handoff-request";
+
+export const HANDOFF_SEED_TYPE = "pi-handoff-seed";
+
+export type HandoffRequestDetails = { reason: "limit" | "manual"; tokens?: number; request?: number };
+
+export const handoffPath = (sessionId: string, owner: { main: true } | { agentId: string }) =>
+  join(
+    tmpdir(),
+    "pi-handoff",
+    sessionId,
+    "main" in owner ? "main-handoff.md" : `${owner.agentId}-handoff.md`,
+  );
 
 type Heading = { title: string; line: number };
 

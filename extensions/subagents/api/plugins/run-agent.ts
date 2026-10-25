@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { EXPAND_BINDING, handoffToolRows } from "../../../../platform/ui-kit/index.ts";
+import { HANDOFF_REQUEST_TYPE, HANDOFF_SEED_TYPE } from "../../../../platform/shared/index.ts";
+import {
+  EXPAND_BINDING,
+  handoffRequestMessage,
+  handoffSeedMessage,
+  handoffToolRows,
+} from "../../../../platform/ui-kit/index.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
 import {
   type AgentDefinition,
@@ -98,6 +104,11 @@ export const runAgentPlugin: Plugin = {
     };
 
     const handoff = createHandoff();
+
+    const keyText = (binding: string) => host.ui.keyText(binding);
+
+    host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
+    host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
 
     const runner = createRunner({
       registry,

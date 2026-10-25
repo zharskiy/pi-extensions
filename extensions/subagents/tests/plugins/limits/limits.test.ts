@@ -76,7 +76,56 @@ describe("limits plugin", () => {
     expect(child.messages).toHaveLength(2);
     expect(child.messages[1].message.text).toContain(record.handoffPath);
     expect(child.messages[1].message.text).toContain("## Files touched");
+    expect(child.messages[1].message.sender).toBe("pi-subagents");
+    expect(child.messages[1].message.custom).toEqual({
+      customType: "pi-handoff-request",
+      details: { reason: "limit", tokens: 100_500, request: 100_000 },
+    });
+    expect(child.messages[1].message.after).toBe("afterTurn");
+    expect(child.messages[0].message.custom).toBeUndefined();
     expect(services.require("registry").get(record.id)?.handoffRequested).toBe(true);
+  });
+
+  it("delivers the handoff request as the same custom message to an agent that was held in the queue", async () => {
+    const { host, runtime, services } = await setup({ maxConcurrent: 1 });
+    const registry = services.require("registry");
+    const runner = services.require("runner");
+
+    await host
+      .tool<RunAgentParams, unknown>("run_agent")
+      .execute({ agents: [{ agent: "scout", task: "second" }] }, { update: () => {} });
+    await flushMicrotasks();
+
+    const queued = registry.list()[1];
+    const request = {
+      sender: "pi-subagents",
+      text: "hand off",
+      custom: { customType: "pi-handoff-request" },
+      after: "afterTurn",
+    } as const;
+
+    await runner.route(queued.id, request);
+
+    expect(runtime.children).toHaveLength(1);
+
+    runtime.child(registry.list()[0].id).finish("done");
+    await flushMicrotasks();
+
+    expect(runtime.child(queued.id).messages.map((entry) => entry.message)).toEqual([request]);
+  });
+
+  it("draws the request and seed rows with only the subagents extension booted", async () => {
+    const { host } = await setup();
+
+    expect(host.renderMessage("pi-handoff-request", { text: "x", details: { reason: "manual" } })[0]).toBe(
+      "» Handoff requested · /session-handoff (<app.tools.expand> to expand)",
+    );
+    expect(
+      host.renderMessage("pi-handoff-seed", {
+        text: "Carry on. More.",
+        details: { from: "agent", id: "a3", link: 2 },
+      })[0],
+    ).toBe("» Handoff from agent a3 · link 2");
   });
 
   it("closes the agent as handoff and wakes the caller with the file path when the handoff is valid", async () => {

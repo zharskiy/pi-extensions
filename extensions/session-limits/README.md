@@ -17,6 +17,8 @@ A long session eventually fills the model's context window. Before that happens,
 ```
  » Handoff at 175k tokens · 142.3k used
 
+ » Handoff requested · 175k of 175k tokens
+
  » Handoff from the previous session
    ↳ This session continues the previous session /s/main.j... (ctrl+o to expand)
 ```
