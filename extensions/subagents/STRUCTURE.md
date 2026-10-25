@@ -104,7 +104,7 @@ extensions/subagents/
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
-│   │   ├── panel-lines.ts                 # panelLines: the shown agent rows, the always-present hint row (ending in `N more, ← to list` when agents are hidden) and the closing blank line
+│   │   ├── panel-lines.ts                 # panelLines: the shown agent rows, a blank line, the always-present hint row (ending in `N more, ← to list agents` when agents are hidden) and the closing blank line
 │   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/

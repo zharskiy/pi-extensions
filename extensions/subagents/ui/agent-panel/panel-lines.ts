@@ -13,14 +13,13 @@ import { stopWords } from "../components/state-text.ts";
 
 const IDLE_HINT: KeyHint[] = [["↓", "to select"]];
 
-const listHint = (hidden: number, selected: boolean, theme: ThemeLike) => {
-  const words = selected ? "to list" : "to list agents";
+const LIST_HINT: KeyHint[] = [["←", "to list agents"]];
 
-  return `${theme.fg("dim", DOT)}${theme.fg("muted", `${hidden} more, `)}${keyHints([["←", words]], theme)}`;
-};
+const listHint = (hidden: number, theme: ThemeLike) =>
+  `${theme.fg("dim", DOT)}${theme.fg("muted", `${hidden} more, `)}${keyHints(LIST_HINT, theme)}`;
 
-const hintLine = (pairs: KeyHint[], hidden: number, selected: boolean, width: number, theme: ThemeLike) => {
-  const summary = hidden > 0 ? listHint(hidden, selected, theme) : "";
+const hintLine = (pairs: KeyHint[], hidden: number, width: number, theme: ThemeLike) => {
+  const summary = hidden > 0 ? listHint(hidden, theme) : "";
 
   return `${PAD}${theme.truncate(`${keyHints(pairs, theme)}${summary}`, Math.max(1, width - PAD.length))}`;
 };
@@ -57,7 +56,7 @@ export const panelLines = (
   const drawn = shown.map((entry) =>
     renderRow({ ...entry, selected: entry.record.id === state.selectedId }, width, theme, layout),
   );
-  const hint = hintLine(hintPairs(selected?.record, actions), hidden, selected !== undefined, width, theme);
+  const hint = hintLine(hintPairs(selected?.record, actions), hidden, width, theme);
 
-  return [...drawn, hint, ""];
+  return [...drawn, "", hint, ""];
 };

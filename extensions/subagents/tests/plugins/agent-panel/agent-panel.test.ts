@@ -24,7 +24,7 @@ const HINT = " esc to deselect · enter to view · x to stop";
 
 const IDLE_MORE = (hidden: number) => `${IDLE} · ${hidden} more, ← to list agents`;
 
-const HINT_MORE = (hidden: number) => `${HINT} · ${hidden} more, ← to list`;
+const HINT_MORE = (hidden: number) => `${HINT} · ${hidden} more, ← to list agents`;
 
 const stubPlugin = <K extends keyof ServiceMap>(id: string, key: K, value: ServiceMap[K]): Plugin => ({
   id,
@@ -103,7 +103,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", IDLE, ""]);
+    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", "", IDLE, ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });
@@ -164,7 +164,7 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines).toHaveLength(6);
+    expect(lines).toHaveLength(7);
     expect(lines[0]).toContain("reviewer (+3)");
     expect(lines[1]?.startsWith("   ↳ ⠋ explorer")).toBe(true);
     expect(lines.slice(1, 4).every((line) => line.includes("child"))).toBe(true);
@@ -184,11 +184,11 @@ describe("agent panel", () => {
 
     const lines = panel.lines();
 
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(5);
     expect(lines[0]).toContain("reviewer (+3)");
     expect(lines[1]).toContain("planner (+3)");
     expect(lines.join("\n")).not.toContain("child");
-    expect(lines.slice(2)).toEqual([IDLE_MORE(6), ""]);
+    expect(lines.slice(2)).toEqual(["", IDLE_MORE(6), ""]);
   });
 
   it("down on an empty editor selects the first row and installs a capture", () => {
@@ -234,7 +234,7 @@ describe("agent panel", () => {
 
     expect(lines[0]).not.toBe("");
     expect(selectedRow(lines)).toBe(lines[4]);
-    expect(lines[5]).toBe(HINT_MORE(2));
+    expect(lines.slice(5)).toEqual(["", HINT_MORE(2), ""]);
   });
 
   it("keeps open agents before closed ones when they overflow", () => {
@@ -257,7 +257,7 @@ describe("agent panel", () => {
       "task 5",
       "task 6",
     ]);
-    expect(lines[5]).toBe(IDLE_MORE(2));
+    expect(lines.slice(5)).toEqual(["", IDLE_MORE(2), ""]);
   });
 
   it("keeps the selected agent shown when it would be cut", () => {
@@ -282,7 +282,7 @@ describe("agent panel", () => {
       "task 2",
     ]);
     expect(selectedRow(lines)).toBe(lines[4]);
-    expect(lines[5]?.endsWith(" · 2 more, ← to list")).toBe(true);
+    expect(lines[6]?.endsWith(" · 2 more, ← to list agents")).toBe(true);
   });
 
   it("enter opens the agent view from the panel and deselects", () => {
@@ -518,7 +518,7 @@ describe("agent panel", () => {
     expect(after.slice(0, 5)).toEqual([...selected.slice(0, 3), selected[3].replace("›", " "), selected[4]]);
   });
 
-  it("is seven lines from six agents up and two more than the count below, never starting blank", () => {
+  it("is eight lines from six agents up and three more than the count below, never starting blank", () => {
     const heights = [1, 2, 5, 6, 7, 10].map((count) => {
       const panel = setup();
 
@@ -533,16 +533,18 @@ describe("agent panel", () => {
 
       expect([idle[0], selected[0]]).not.toContain("");
 
+      expect([idle.at(-3), selected.at(-3)]).toEqual(["", ""]);
+
       return [idle.length, selected.length, idle.at(-2), selected.at(-2)];
     });
 
     expect(heights).toEqual([
-      [3, 3, IDLE, HINT],
       [4, 4, IDLE, HINT],
-      [7, 7, IDLE, HINT],
-      [7, 7, IDLE_MORE(1), HINT_MORE(1)],
-      [7, 7, IDLE_MORE(2), HINT_MORE(2)],
-      [7, 7, IDLE_MORE(5), HINT_MORE(5)],
+      [5, 5, IDLE, HINT],
+      [8, 8, IDLE, HINT],
+      [8, 8, IDLE_MORE(1), HINT_MORE(1)],
+      [8, 8, IDLE_MORE(2), HINT_MORE(2)],
+      [8, 8, IDLE_MORE(5), HINT_MORE(5)],
     ]);
   });
 
@@ -557,7 +559,7 @@ describe("agent panel", () => {
 
     const selected = panel.lines();
 
-    expect([idle.length, selected.length]).toEqual([5, 5]);
+    expect([idle.length, selected.length]).toEqual([6, 6]);
     expect([idle.at(-2), selected.at(-2)]).toEqual([IDLE, HINT]);
   });
 
@@ -702,8 +704,9 @@ describe("agent panel", () => {
       drawn.forEach((line) => {
         expect(plainTheme.width(line)).toBeLessThanOrEqual(width);
       });
-      expect(drawn.slice(0, -1).every((line) => line.startsWith(" "))).toBe(true);
-      expect(drawn.at(-1)).toBe("");
+      expect(drawn.slice(0, -3).every((line) => line.startsWith(" "))).toBe(true);
+      expect(drawn.at(-2)?.startsWith(" ")).toBe(true);
+      expect([drawn.at(-3), drawn.at(-1)]).toEqual(["", ""]);
     });
 
     expect(panel.lines(30).at(-2)).toBe(" esc to deselect · enter to...");
@@ -753,7 +756,7 @@ describe("agent panel", () => {
     services.require("registry").create(newAgentInput(join(root, "agents")));
 
     expect(host.pressEmptyDown()).toBe(false);
-    expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(3);
+    expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(4);
   });
 
   it("removes the widget and the capture on disable", async () => {
