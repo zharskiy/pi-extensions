@@ -1,13 +1,13 @@
 import type { ThemeToken } from "../../../platform/pi-adapter/index.ts";
-import { DOT, formatTokens, formatWindow } from "../../../platform/shared/index.ts";
-import { MARKS } from "../../../platform/ui-kit/index.ts";
 import {
-  type ContextTokens,
-  contextLevel,
+  DOT,
+  formatTokens,
+  formatWindow,
   type Limits,
-  type Phase,
   thresholdsFor,
-} from "../core/thresholds.ts";
+} from "../../../platform/shared/index.ts";
+import { MARKS } from "../../../platform/ui-kit/index.ts";
+import { type ContextTokens, contextLevel, type Phase } from "../core/thresholds.ts";
 
 const pendingLabels: Record<Exclude<Phase, "watching" | "stuck">, string> = {
   queued: "Handoff after this turn",

@@ -5,11 +5,11 @@ extensions/session-limits/
 ├── index.ts                    entry: re-exports the default from api/extension.ts
 ├── api/
 │   ├── extension.ts            createManagedExtension: namespace pi-session-limits, host conversationOnly, settings, sessionLimitsPlugin
-│   └── plugin.ts               sessionLimitsPlugin, createLimits: reads the prompt, registers the seed renderer, starts watchLimits
+│   └── plugin.ts               sessionLimitsPlugin, createLimits: reads the prompt, registers the seed renderer, starts watchLimits, publishes the settings on session start
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events and commands to tui and rpc
 │   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch, busy channel
-│   ├── thresholds.ts           thresholds, context level, handoff step, retry instruction
+│   ├── thresholds.ts           context level, handoff step, retry instruction (`Limits` and `thresholdsFor` live in platform/shared)
 │   ├── handoff.ts              handoff path, seed text, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
@@ -22,6 +22,7 @@ extensions/session-limits/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── handoff.test.ts         path, seed and validation
 │   ├── limits.test.ts          the flow on a fake host
+│   ├── publish.test.ts         the limits published on session start
 │   ├── seed-row.test.ts        seed row
 │   ├── settings.test.ts        settings files
 │   └── thresholds.test.ts      decisions and notice text

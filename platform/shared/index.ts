@@ -12,12 +12,15 @@ export {
   shortPath,
 } from "./format.ts";
 export { type HandoffValidation, validateHandoff } from "./handoff-document.ts";
+export { type Limits, thresholdsFor } from "./handoff-limits.ts";
 export {
   AGENTS_HINT_KEY,
   AWAITING_INPUT_CHANNEL,
   BUSY_CHANNEL,
+  LIMITS_CHANNEL,
   parseAwaitingInput,
   parseBusySignal,
+  parseLimits,
   parseTotals,
   parseUsageReport,
   SPENDING_STATUS_KEY,

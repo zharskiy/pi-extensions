@@ -1,9 +1,11 @@
 import type { ContextSnapshot, Host, ModelInfo } from "../../../platform/pi-adapter/index.ts";
 import {
   AGENTS_HINT_KEY,
+  type Limits,
   SPENDING_STATUS_KEY,
   type SpendingTotals,
   sessionCacheHit,
+  thresholdsFor,
 } from "../../../platform/shared/index.ts";
 
 export type FooterState = {
@@ -15,6 +17,7 @@ export type FooterState = {
   sessionName: string | undefined;
   totals: SpendingTotals | undefined;
   cache: number | undefined;
+  limits: Limits | undefined;
 };
 
 export const footerState = (
@@ -22,6 +25,7 @@ export const footerState = (
   cwd: string,
   cycleKey: string,
   totals: SpendingTotals | undefined,
+  limits: Limits | undefined,
 ): FooterState => ({
   context: host.context(),
   model: host.model(),
@@ -31,6 +35,7 @@ export const footerState = (
   sessionName: host.sessionName(),
   totals,
   cache: sessionCacheHit(host.mainRequestUsage()),
+  limits,
 });
 
 export const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -59,8 +64,12 @@ export const agentsHint = (statuses: ReadonlyMap<string, string>): string | unde
 
 export type ContextBase = { base: number; warnAt: number; errorAt: number };
 
-export const contextBase = (state: FooterState): ContextBase => ({
-  base: state.context.window,
-  warnAt: state.context.window * 0.7,
-  errorAt: state.context.window * 0.9,
-});
+export const contextBase = ({ context, limits }: FooterState): ContextBase => {
+  if (limits) {
+    const { soft, hard } = thresholdsFor(context.window, limits);
+
+    return { base: hard, warnAt: soft, errorAt: hard };
+  }
+
+  return { base: context.window, warnAt: context.window * 0.7, errorAt: context.window * 0.9 };
+};

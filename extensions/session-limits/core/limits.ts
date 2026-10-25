@@ -6,7 +6,7 @@ import type {
   SessionControl,
   ThemeToken,
 } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL, errorText, parseBusySignal } from "../../../platform/shared/index.ts";
+import { BUSY_CHANNEL, errorText, type Limits, parseBusySignal } from "../../../platform/shared/index.ts";
 import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
 import {
   type ContextTokens,
@@ -14,7 +14,6 @@ import {
   type HandoffFile,
   handoffStep,
   isPending,
-  type Limits,
   MAX_INSTRUCTIONS,
   type Phase,
   retryInstruction,

@@ -28,6 +28,7 @@ const state = (patch: Partial<FooterState> = {}): FooterState => ({
   sessionName: undefined,
   totals: plainTotals,
   cache: undefined,
+  limits: undefined,
   ...patch,
 });
 
@@ -380,5 +381,46 @@ describe("renderFooter while working", () => {
     );
 
     expect(working).toHaveLength(idle.length);
+  });
+});
+
+describe("renderFooter with handoff limits", () => {
+  const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+  const window = 272_000;
+  const withLimits = (tokens: number): Partial<FooterState> => ({
+    context: { tokens, window, percent: (tokens / window) * 100 },
+    limits,
+  });
+
+  it("measures the context against the handoff point", () => {
+    const { painted } = paint(withLimits(120_000));
+
+    expect(painted).toContainEqual({ token: "text", text: "74%" });
+    expect(painted).toContainEqual({ token: "dim", text: "of 163k" });
+  });
+
+  it("warns at the soft threshold and errors in bold at the hard one", () => {
+    const warn = paint(withLimits(122_400));
+    const error = paint(withLimits(163_200));
+
+    expect(warn.painted).toContainEqual({ token: "warning", text: "75%" });
+    expect(warn.bolded).toEqual([]);
+    expect(error.painted).toContainEqual({ token: "error", text: "100%" });
+    expect(error.painted).toContainEqual({ token: "error", text: "of 163k" });
+    expect(error.bolded).toEqual(["100%"]);
+  });
+
+  it("lets the percentage pass 100", () => {
+    expect(render(withLimits(170_000))[2]).toContain("context 104% of 163k");
+  });
+
+  it("falls back to the window without limits", () => {
+    const patch = { context: { tokens: 120_000, window, percent: 44 } };
+
+    expect(render(patch)[2]).toContain("context 44% of 272k");
+    expect(paint({ context: { tokens: 190_400, window, percent: 70 } }).painted).toContainEqual({
+      token: "warning",
+      text: "70%",
+    });
   });
 });

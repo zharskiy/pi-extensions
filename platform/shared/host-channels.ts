@@ -1,4 +1,5 @@
 import type { UsageTotals } from "../pi-adapter/index.ts";
+import type { Limits } from "./handoff-limits.ts";
 import { isPlainObject } from "./plain-object.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
@@ -99,5 +100,31 @@ export const parseTotals = (data: unknown): SpendingTotals | undefined => {
     main: { cost: data.main.cost, tokens: data.main.tokens },
     sources: data.sources.map(({ source, cost, tokens }) => ({ source, cost, tokens })),
     subscription: data.subscription,
+  };
+};
+
+export const LIMITS_CHANNEL = "session-limits:limits";
+
+const isPositive = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0;
+
+const isRatio = (value: unknown): value is number => isPositive(value) && value <= 1;
+
+export const parseLimits = (data: unknown): Limits | undefined => {
+  if (
+    !isPlainObject(data) ||
+    !isRatio(data.softRatio) ||
+    !isRatio(data.hardRatio) ||
+    !isPositive(data.softTokens) ||
+    !isPositive(data.hardTokens)
+  ) {
+    return undefined;
+  }
+
+  return {
+    softRatio: data.softRatio,
+    hardRatio: data.hardRatio,
+    softTokens: data.softTokens,
+    hardTokens: data.hardTokens,
   };
 };

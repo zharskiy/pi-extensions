@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  contextLevel,
-  handoffStep,
-  retryInstruction,
-  shouldRequest,
-  thresholdsFor,
-} from "../core/thresholds.ts";
+import { contextLevel, handoffStep, retryInstruction, shouldRequest } from "../core/thresholds.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
@@ -34,7 +28,6 @@ describe("contextLevel", () => {
   it("caps the thresholds by tokens on a large window", () => {
     const large = (tokens: number) => at(tokens, 1_000_000);
 
-    expect(thresholdsFor(1_000_000, limits)).toEqual({ soft: 125_000, hard: 175_000 });
     expect(contextLevel(large(124_999), limits)).toBe("normal");
     expect(contextLevel(large(125_000), limits)).toBe("soft");
     expect(contextLevel(large(174_999), limits)).toBe("soft");
@@ -44,7 +37,6 @@ describe("contextLevel", () => {
   it("keeps the ratios when they are below the caps", () => {
     const medium = (tokens: number) => at(tokens, 200_000);
 
-    expect(thresholdsFor(200_000, limits)).toEqual({ soft: 90_000, hard: 120_000 });
     expect(contextLevel(medium(89_999), limits)).toBe("normal");
     expect(contextLevel(medium(90_000), limits)).toBe("soft");
     expect(contextLevel(medium(120_000), limits)).toBe("hard");

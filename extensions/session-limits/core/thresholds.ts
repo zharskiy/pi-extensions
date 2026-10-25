@@ -1,4 +1,5 @@
 import type { ContextSnapshot } from "../../../platform/pi-adapter/index.ts";
+import { type Limits, thresholdsFor } from "../../../platform/shared/index.ts";
 
 export type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
@@ -9,13 +10,6 @@ type ContextLevel = "unknown" | "normal" | "soft" | "hard";
 export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching" | "stuck";
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
-
-export type Limits = { softRatio: number; hardRatio: number; softTokens: number; hardTokens: number };
-
-export const thresholdsFor = (window: number, limits: Limits) => ({
-  soft: Math.min(window * limits.softRatio, limits.softTokens),
-  hard: Math.min(window * limits.hardRatio, limits.hardTokens),
-});
 
 export const contextLevel = (context: ContextTokens, limits: Limits): ContextLevel => {
   if (context.tokens === null || context.window <= 0) {

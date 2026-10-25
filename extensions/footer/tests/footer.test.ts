@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
+import { LIMITS_CHANNEL, TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
@@ -97,5 +97,30 @@ describe("footer", () => {
     expect(lines()[1]).toContain("my-project on main · refactor");
     expect(lines()[1]).toContain("test-model · thinking high");
     expect(lines()[2]).toBe(" context 95% of 200k");
+  });
+});
+
+describe("footer handoff limits", () => {
+  const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+
+  it("shows the context against the handoff point once session-limits publishes", () => {
+    const { host, lines } = setup();
+
+    expect(lines()[2]).toBe(" context 25% of 200k");
+
+    host.emit(LIMITS_CHANNEL, limits);
+
+    expect(host.footerRefreshes).toBe(1);
+    expect(lines()[2]).toBe(" context 42% of 120k");
+  });
+
+  it("ignores malformed limits", () => {
+    const { host, lines } = setup();
+
+    host.emit(LIMITS_CHANNEL, { ...limits, hardRatio: 2 });
+    host.emit(LIMITS_CHANNEL, null);
+
+    expect(host.footerRefreshes).toBe(0);
+    expect(lines()[2]).toBe(" context 25% of 200k");
   });
 });
