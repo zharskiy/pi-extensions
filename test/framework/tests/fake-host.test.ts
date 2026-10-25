@@ -83,3 +83,22 @@ describe("hiddenMessageTexts", () => {
     expect(hiddenMessageTexts(host)).toEqual(["first", "second"]);
   });
 });
+
+describe("sendMessage", () => {
+  it("records displayed messages with their timing and the delivery the host would use", () => {
+    const host = createFakeHost();
+
+    host.start();
+    host.sendMessage({ customType: "x", text: "idle", display: true }, { after: "afterRun" });
+    host.idle = false;
+    host.sendMessage({ customType: "x", text: "later", display: true }, { after: "afterRun" });
+    host.sendMessage({ customType: "x", text: "sooner", display: true }, { after: "afterTurn" });
+
+    expect(host.messages.map((entry) => [entry.message.text, entry.after, entry.delivery])).toEqual([
+      ["idle", "afterRun", "run"],
+      ["later", "afterRun", "followUp"],
+      ["sooner", "afterTurn", "steer"],
+    ]);
+    expect(host.hidden).toEqual([]);
+  });
+});

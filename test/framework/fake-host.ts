@@ -10,8 +10,10 @@ import {
   type EntryRender,
   emptyUsage,
   type FooterRender,
+  type HandoffDelivery,
   type HiddenMessage,
   type Host,
+  type HostMessage,
   type IdleInfo,
   type KeyPress,
   type MessageRender,
@@ -47,6 +49,7 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
+  messages: { message: HostMessage; after: HandoffDelivery; delivery: "followUp" | "steer" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
@@ -194,6 +197,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     entries: [],
     files: new Map(),
     hidden: [],
+    messages: [],
     dispatched: [],
     published: [],
     notices: [],
@@ -446,6 +450,16 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       host.hidden.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
+    },
+    sendMessage: (message, options) => {
+      if (!started) {
+        return;
+      }
+
+      const running = !host.idle;
+      const delivery = running ? (options.after === "afterRun" ? "followUp" : "steer") : "run";
+
+      host.messages.push({ message: structuredClone(message), after: options.after, delivery });
     },
     dispatchCommand: (name, args) => {
       host.dispatched.push(args ? `${name} ${args}` : name);

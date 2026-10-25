@@ -2,6 +2,7 @@ import {
   type AgentRuntime,
   type CatalogModel,
   type ChildEvent,
+  type ChildSeed,
   type ChildSession,
   type CodemodeShortfall,
   type ContextSnapshot,
@@ -21,6 +22,7 @@ import {
 export type FakeChildSession = ChildSession & {
   spec: SpawnSpec;
   task?: string;
+  seed?: ChildSeed;
   messages: { message: RoutedMessage; delivery: MessageDelivery }[];
   wakes: string[];
   aborted: boolean;
@@ -51,8 +53,9 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
     disposed: false,
     usage: emptyUsage(),
     text: "",
-    start: (task) => {
+    start: (task, seed) => {
       child.task = task;
+      child.seed = seed;
     },
     subscribe: (listener) => {
       listeners.add(listener);

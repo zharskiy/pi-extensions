@@ -14,7 +14,7 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec } from "../types/messages.ts";
+import type { CommandSpec, HandoffDelivery, HostMessage } from "../types/messages.ts";
 import type {
   AssistantEnd,
   DialogEvent,
@@ -55,7 +55,7 @@ const sessionControl = (ctx: ExtensionCommandContext): SessionControl => ({
       withSession: seed
         ? async (fresh) => {
             await fresh.sendMessage(
-              { customType: seed.customType, content: seed.text, display: true },
+              { customType: seed.customType, content: seed.text, display: true, details: seed.details },
               { triggerTurn: false },
             );
           }
@@ -74,9 +74,11 @@ export const liveCtx = (state: HostState) => {
   return state.ctx;
 };
 
-type HiddenCustom = { customType: string; content: string; display: false; details: unknown };
+type HeldCustom = { customType: string; content: string; display: boolean; details: unknown };
 
 const HELD_POLL_MS = 100;
+
+const DELIVERY = { afterRun: "followUp", afterTurn: "steer" } as const;
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
@@ -91,12 +93,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
-  const held: HiddenCustom[] = [];
+  const held: HeldCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
   const notices = createNotices(state);
   const sections = new Map<string, string>();
   const toolRows = toolRowsHost(pi);
+  const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
 
   const capture = (ctx: ExtensionContext) => {
@@ -133,7 +136,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     pi.sendUserMessage(text, { expandPromptTemplates: true, deliverAs: "followUp" });
   };
 
-  const startHidden = (customs: HiddenCustom[]) => {
+  const startHeld = (customs: HeldCustom[]) => {
     const [first, ...rest] = customs;
 
     rest.forEach((custom) => {
@@ -167,7 +170,38 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    startHidden(held.splice(0));
+    startHeld(held.splice(0));
+  };
+
+  const sendMessage = (message: HostMessage, options: { after: HandoffDelivery }) => {
+    const ctx = state.ctx;
+
+    if (!ctx) {
+      return;
+    }
+
+    const custom: HeldCustom = {
+      customType: message.customType,
+      content: message.text,
+      display: message.display,
+      details: message.details,
+    };
+
+    if (runActive) {
+      pi.sendMessage(custom, { deliverAs: DELIVERY[options.after], triggerTurn: true });
+      return;
+    }
+
+    held.push(custom);
+
+    if (ctx.isIdle()) {
+      queueMicrotask(deliverHeld);
+      return;
+    }
+
+    if (!heldTimer) {
+      pollHeld();
+    }
   };
 
   pi.on("session_start", (event, ctx) => {
@@ -214,6 +248,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     notices.release();
     sections.clear();
     toolRows.release();
+    entries.release();
     thinkingLabel.release();
     state.ctx = undefined;
 
@@ -413,35 +448,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {
-      const ctx = state.ctx;
-
-      if (!ctx) {
-        return;
-      }
-
-      const custom: HiddenCustom = {
-        customType: message.customType,
-        content: message.text,
-        display: false,
-        details: message.details,
-      };
-
-      if (runActive) {
-        pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
-        return;
-      }
-
-      held.push(custom);
-
-      if (ctx.isIdle()) {
-        queueMicrotask(deliverHeld);
-        return;
-      }
-
-      if (!heldTimer) {
-        pollHeld();
-      }
+      sendMessage({ ...message, display: false }, { after: "afterRun" });
     },
+    sendMessage,
     dispatchCommand: (name, args) => {
       sendCommand(args ? `/${name} ${args}` : `/${name}`);
     },
@@ -477,7 +486,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     ...footerHost(pi, state),
     ...contextHost(pi, state),
-    ...entryHost(pi),
+    registerEntryRenderer: entries.registerEntryRenderer,
+    registerMessageRenderer: entries.registerMessageRenderer,
     registerToolRows: toolRows.registerToolRows,
   };
 };

@@ -14,7 +14,10 @@ export type SessionInfo = {
 
 export type ShutdownReason = "quit" | "reload" | "new" | "resume" | "fork";
 
-export type NewSessionOptions = { parentSession?: string; seed?: { customType: string; text: string } };
+export type NewSessionOptions = {
+  parentSession?: string;
+  seed?: { customType: string; text: string; details?: unknown };
+};
 
 export type SessionControl = {
   newSession(options: NewSessionOptions): Promise<boolean>;

@@ -37,6 +37,45 @@ describe("finalRunTexts", () => {
   });
 });
 
+describe("finalRunTexts with custom messages", () => {
+  const custom = (display?: boolean) => ({ type: "custom_message", customType: "req", display });
+
+  it("starts a run at a displayed custom message, so only its own texts return", () => {
+    const entries = [
+      message("user", "task"),
+      message("assistant", text("old answer")),
+      custom(true),
+      message("assistant", toolCall("working")),
+      message("toolResult", text("result")),
+      message("assistant", text("saved")),
+    ];
+
+    expect(finalRunTexts(entries)).toEqual(["working", "saved"]);
+  });
+
+  it("does not cut a run short for a custom message steered into a running turn", () => {
+    const entries = [
+      message("user", "task"),
+      message("assistant", toolCall("first")),
+      message("toolResult", text("result")),
+      custom(true),
+      message("assistant", text("done")),
+    ];
+
+    expect(finalRunTexts(entries)).toEqual(["first", "done"]);
+  });
+
+  it("ignores a hidden custom message as a run boundary", () => {
+    const entries = [
+      message("assistant", text("old answer")),
+      custom(false),
+      message("assistant", text("next")),
+    ];
+
+    expect(finalRunTexts(entries)).toEqual(["old answer", "next"]);
+  });
+});
+
 describe("routed messages", () => {
   it("puts the sender header on its own line before the text", () => {
     expect(formatRoutedMessage({ sender: "main", text: "focus on tests" })).toBe(

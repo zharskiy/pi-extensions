@@ -79,6 +79,7 @@ type FormerHostMember =
   | "onCompact"
   | "isIdle"
   | "sendHiddenMessage"
+  | "sendMessage"
   | "dispatchCommand"
   | "publish"
   | "subscribe"

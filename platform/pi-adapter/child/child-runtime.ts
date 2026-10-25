@@ -18,7 +18,7 @@ import { finalRunTexts, formatRoutedMessage, messageText, toolCallCount } from "
 import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
-import type { SkillInfo } from "../types/messages.ts";
+import type { ChildSeed, RoutedMessage, SkillInfo } from "../types/messages.ts";
 import type {
   AgentRuntime,
   ChildEvent,
@@ -33,6 +33,8 @@ import { reserveCodemodeWorkers } from "./codemode.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./model-catalog.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
+
+type QueuedCustom = { customType: string; content: string; details?: unknown };
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
@@ -124,6 +126,7 @@ export const createPiRuntime = (
     const listeners = new Set<(event: ChildEvent) => void>();
     let running = false;
     let disposed = false;
+    const queuedCustom: QueuedCustom[] = [];
 
     const emit = (event: ChildEvent) => {
       if (event.type === "settled") {
@@ -197,6 +200,7 @@ export const createPiRuntime = (
 
     const dispose = async () => {
       disposed = true;
+      queuedCustom.length = 0;
 
       await settleWithin(
         session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }),
@@ -214,7 +218,42 @@ export const createPiRuntime = (
       throw error;
     }
 
+    const forgetQueued = (message: { customType?: string; content?: unknown }) => {
+      const index = queuedCustom.findIndex(
+        (queued) => queued.customType === message.customType && queued.content === message.content,
+      );
+
+      if (index >= 0) {
+        queuedCustom.splice(index, 1);
+      }
+    };
+
+    const resumeWith = (texts: string, customs: QueuedCustom[]) => {
+      const queueNext = (custom: QueuedCustom) => {
+        void session.sendCustomMessage({ ...custom, display: true }, { deliverAs: "nextTurn" });
+      };
+
+      if (texts) {
+        customs.forEach(queueNext);
+        prompt(texts);
+        return;
+      }
+
+      const [first, ...rest] = customs;
+
+      rest.forEach(queueNext);
+
+      if (first) {
+        sendCustomNow(first);
+      }
+    };
+
     session.subscribe((event) => {
+      if (event.type === "message_start" && event.message.role === "custom") {
+        forgetQueued(event.message as { customType?: string; content?: unknown });
+        return;
+      }
+
       if (event.type === "turn_end") {
         emit({ type: "turn_end", context: contextOf(session) });
         return;
@@ -240,10 +279,12 @@ export const createPiRuntime = (
       }
 
       if (event.type === "agent_settled") {
-        if (!event.aborted && !disposed && session.pendingMessageCount > 0) {
+        const customs = queuedCustom.splice(0);
+
+        if (!event.aborted && !disposed && (session.pendingMessageCount > 0 || customs.length > 0)) {
           const { steering, followUp } = session.clearQueue();
 
-          prompt([...steering, ...followUp].join("\n\n"));
+          resumeWith([...steering, ...followUp].join("\n\n"), customs);
           return;
         }
 
@@ -271,6 +312,32 @@ export const createPiRuntime = (
       session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
     };
 
+    const sendCustomNow = (custom: QueuedCustom) => {
+      running = true;
+      session.sendCustomMessage({ ...custom, display: true }, { triggerTurn: true }).catch(failStart);
+    };
+
+    const start = (task: string, seed?: ChildSeed) => {
+      if (!seed) {
+        prompt(task);
+        return;
+      }
+
+      running = true;
+
+      void (async () => {
+        try {
+          await session.sendCustomMessage(
+            { customType: seed.customType, content: seed.text, details: seed.details, display: true },
+            { triggerTurn: false },
+          );
+          prompt(task);
+        } catch (error) {
+          failStart(error);
+        }
+      })();
+    };
+
     const deliver = async (text: string, delivery: MessageDelivery) => {
       if (disposed) {
         return;
@@ -289,12 +356,42 @@ export const createPiRuntime = (
       await session.followUp(text, undefined, { source: "extension" });
     };
 
+    const deliverCustom = async (message: RoutedMessage, delivery: MessageDelivery) => {
+      if (disposed || !message.custom) {
+        return;
+      }
+
+      const custom: QueuedCustom = {
+        customType: message.custom.customType,
+        content: message.text,
+        details: message.custom.details,
+      };
+
+      if (!running && !session.isStreaming) {
+        sendCustomNow(custom);
+        return;
+      }
+
+      queuedCustom.push(custom);
+
+      const options = session.isStreaming
+        ? ({ deliverAs: delivery, triggerTurn: true } as const)
+        : ({ deliverAs: "nextTurn" } as const);
+
+      try {
+        await session.sendCustomMessage({ ...custom, display: true }, options);
+      } catch (error) {
+        forgetQueued(custom);
+        throw error;
+      }
+    };
+
     return {
       id: spec.id,
       get sessionFile() {
         return session.sessionFile;
       },
-      start: prompt,
+      start,
       subscribe: (listener) => {
         listeners.add(listener);
 
@@ -302,7 +399,8 @@ export const createPiRuntime = (
           listeners.delete(listener);
         };
       },
-      send: (message, delivery) => deliver(formatRoutedMessage(message), delivery),
+      send: (message, delivery) =>
+        message.custom ? deliverCustom(message, delivery) : deliver(formatRoutedMessage(message), delivery),
       wake: (text) => deliver(text, "followUp"),
       abort: () => session.abort(),
       dispose,

@@ -363,7 +363,10 @@ describe("pi adapter", () => {
       description: "switch",
       run: async (args, control) => {
         received.push(args);
-        await control.newSession({ parentSession: "/old.jsonl", seed: { customType: "t", text: "hello" } });
+        await control.newSession({
+          parentSession: "/old.jsonl",
+          seed: { customType: "t", text: "hello", details: { from: "session" } },
+        });
       },
     });
 
@@ -389,7 +392,10 @@ describe("pi adapter", () => {
     expect(received).toEqual(["now"]);
     expect(calls).toEqual(["/old.jsonl"]);
     expect(seeded).toEqual([
-      { message: { customType: "t", content: "hello", display: true }, options: { triggerTurn: false } },
+      {
+        message: { customType: "t", content: "hello", display: true, details: { from: "session" } },
+        options: { triggerTurn: false },
+      },
     ]);
   });
 
@@ -407,6 +413,51 @@ describe("pi adapter", () => {
         call: "sendMessage",
         message: { customType: "wake", content: "results", display: false, details: { batch: 1 } },
         options: { deliverAs: "followUp", triggerTurn: true },
+      },
+    ]);
+  });
+
+  it("sends a displayed message after the run as a follow-up and after the turn as a steer", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+
+    await fire("session_start", fakeCtx("tui", false));
+    await fire("agent_start", fakeCtx("tui", false));
+
+    host.sendMessage(
+      { customType: "req", text: "later", display: true, details: { n: 1 } },
+      { after: "afterRun" },
+    );
+    host.sendMessage({ customType: "req", text: "sooner", display: true }, { after: "afterTurn" });
+
+    expect(
+      calls.map((call) => [(call.message as { content: string; display: boolean }).display, call.options]),
+    ).toEqual([
+      [true, { deliverAs: "followUp", triggerTurn: true }],
+      [true, { deliverAs: "steer", triggerTurn: true }],
+    ]);
+    expect(calls[0].message).toEqual({
+      customType: "req",
+      content: "later",
+      display: true,
+      details: { n: 1 },
+    });
+  });
+
+  it("starts a run with a displayed message when idle and keeps its display flag", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+
+    await fire("session_start", fakeCtx("tui", true));
+
+    host.sendMessage({ customType: "req", text: "now", display: true }, { after: "afterTurn" });
+    await Promise.resolve();
+
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: { customType: "req", content: "now", display: true, details: undefined },
+        options: { triggerTurn: true },
       },
     ]);
   });

@@ -481,6 +481,182 @@ describe("pi adapter conformance", () => {
     expect(finalRunTexts(session.getEntries())).toEqual(["Status: done\nreport", "bye"]);
   });
 
+  it("starts a run at a displayed custom entry and ignores a hidden one", () => {
+    const session = pi.SessionManager.inMemory(temp.make("pi-custom-runs-"));
+    const text = (value: string) => ({ type: "text" as const, text: value });
+    const assistant = (value: string) =>
+      ({ role: "assistant", content: [text(value)], stopReason: "stop" }) as never;
+
+    session.appendMessage({ role: "user", content: "task", timestamp: 0 });
+    session.appendMessage(assistant("old answer"));
+    session.appendCustomMessageEntry("req", "now", true);
+    session.appendMessage(assistant("new answer"));
+
+    expect(
+      session.getEntries().map((entry) => [entry.type, "display" in entry ? entry.display : undefined]),
+    ).toEqual([
+      ["message", undefined],
+      ["message", undefined],
+      ["custom_message", true],
+      ["message", undefined],
+    ]);
+    expect(finalRunTexts(session.getEntries())).toEqual(["new answer"]);
+  });
+
+  describe("custom messages in a session", () => {
+    const offlineSession = async () => {
+      const dir = temp.make("pi-custom-queue-");
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager: pi.SettingsManager.inMemory({}),
+        }),
+        settingsManager: pi.SettingsManager.inMemory({}),
+        sessionManager: pi.SessionManager.inMemory(dir),
+        tools: [],
+      });
+
+      return session;
+    };
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const fauxSession = async (responses: ReturnType<typeof fauxAssistantMessage>[]) => {
+      const dir = temp.make("pi-custom-faux-");
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+      writeFileSync(join(dir, "notes.txt"), "notes");
+
+      const faux = fauxProvider();
+      const modelRuntime = await pi.ModelRuntime.create();
+
+      modelRuntime.registerNativeProvider(faux.provider);
+      faux.setResponses(responses);
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime,
+        model: faux.getModel() as never,
+        resourceLoader: new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager: pi.SettingsManager.inMemory({}),
+        }),
+        settingsManager: pi.SettingsManager.inMemory({}),
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      return session;
+    };
+
+    it("emits message_start with the type and the string content of a custom message steered into a streaming turn", async () => {
+      const session = await fauxSession([
+        fauxAssistantMessage(fauxToolCall("read", { path: "notes.txt" }), { stopReason: "toolUse" }),
+        fauxAssistantMessage(fauxText("done")),
+        fauxAssistantMessage(fauxText("done")),
+      ]);
+
+      const started: unknown[] = [];
+      let steered: Promise<void> | undefined;
+
+      session.subscribe((event) => {
+        if (event.type === "tool_execution_start" && !steered) {
+          steered = session.sendCustomMessage(
+            { customType: "req", content: "x", display: true },
+            { deliverAs: "steer", triggerTurn: true },
+          );
+        }
+
+        if (event.type === "message_start" && event.message.role === "custom") {
+          started.push([event.message.customType, event.message.content]);
+        }
+      });
+
+      await session.prompt("read the notes");
+      await steered;
+
+      expect(started).toEqual([["req", "x"]]);
+
+      session.dispose();
+    });
+
+    it("starts a run for a custom message sent with triggerTurn to an idle session, whatever deliverAs says", async () => {
+      const session = await fauxSession([fauxAssistantMessage(fauxText("ok"))]);
+
+      await session.sendCustomMessage(
+        { customType: "req", content: "x", display: true },
+        { deliverAs: "steer", triggerTurn: true },
+      );
+
+      const roles = session.sessionManager
+        .getEntries()
+        .map((entry) => (entry.type === "message" ? entry.message.role : entry.type));
+
+      expect(roles).toContain("assistant");
+
+      session.dispose();
+    });
+
+    it("emits message_start with the sent type and content, appends the entry and queues next-turn messages apart", async () => {
+      const session = await offlineSession();
+      const started: unknown[] = [];
+
+      session.subscribe((event) => {
+        if (event.type === "message_start" && event.message.role === "custom") {
+          started.push([event.message.customType, event.message.content]);
+        }
+      });
+
+      await session.sendCustomMessage(
+        { customType: "req", content: "now", display: true },
+        { triggerTurn: false },
+      );
+      await session.sendCustomMessage(
+        { customType: "later", content: "queued", display: true },
+        { deliverAs: "nextTurn" },
+      );
+
+      expect(started).toEqual([["req", "now"]]);
+      expect(
+        session.sessionManager.getEntries().filter((entry) => entry.type === "custom_message"),
+      ).toHaveLength(1);
+
+      session.dispose();
+    });
+
+    it("drops the agent's queued custom messages on clearQueue and counts only text in pendingMessageCount", async () => {
+      const session = await offlineSession();
+      const custom = {
+        role: "custom",
+        customType: "req",
+        content: "now",
+        display: true,
+        timestamp: 0,
+      } as never;
+
+      session.agent.steer(custom);
+
+      expect(session.agent.hasQueuedMessages()).toBe(true);
+      expect(session.pendingMessageCount).toBe(0);
+
+      expect(session.clearQueue()).toEqual({ steering: [], followUp: [] });
+      expect(session.agent.hasQueuedMessages()).toBe(false);
+
+      session.dispose();
+    });
+  });
+
   it("records the first provider request once as the prompt record", () => {
     const { api, entries, fire } = fakeExtensionApi();
 

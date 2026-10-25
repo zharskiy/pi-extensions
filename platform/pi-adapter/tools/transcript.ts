@@ -22,6 +22,7 @@ import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
+import { messageRendererFor } from "./entry-renderers.ts";
 import { toPiResult, toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
 
@@ -201,7 +202,11 @@ export const createTranscriptPane = (
     }
 
     if ((item.raw as { display?: boolean }).display !== false) {
-      addExpandable(new CustomMessageComponent(item.raw as never, undefined, getMarkdownTheme()));
+      const { customType } = item.raw as { customType: string };
+
+      addExpandable(
+        new CustomMessageComponent(item.raw as never, messageRendererFor(customType), getMarkdownTheme()),
+      );
     }
   };
 

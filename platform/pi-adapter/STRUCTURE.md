@@ -19,9 +19,9 @@
 - `runtime/child-scope.ts`: the child scope in which no extension boots.
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts, context tokens.
-- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run), `formatRoutedMessage`.
+- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with displayed custom messages as run starts), `formatRoutedMessage`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
-- `child/child-runtime.ts`: the runtime that starts child agent sessions.
+- `child/child-runtime.ts`: the runtime that starts child agent sessions (custom routed messages, their re-queue at settle, the seeded start).
 - `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource`.
 - `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery, each with its scope and path.
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
@@ -46,7 +46,7 @@
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
-- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers.
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
 - `tools/transcript.ts`: the transcript pane and pi renderer capture.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
 - `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
