@@ -1,5 +1,5 @@
 import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
-import { padded, prefixed } from "../../../../platform/shared/index.ts";
+import { DOT, padded, prefixed } from "../../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
   descriptionFits,
@@ -18,6 +18,7 @@ import { grantOrNone } from "../../core/model/agent-record.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {
   ALL_SKILLS_TEXT,
+  type Draft,
   type Field,
   fieldChanged,
   fieldsOf,
@@ -25,8 +26,13 @@ import {
   listView,
   onSubmitTab,
   type Picker,
+  type Preset,
+  presetInUse,
+  presetOf,
+  rowsOf,
   type SetupContext,
   type SetupState,
+  sameField,
   scopeOptions,
   setupChanges,
   skillsView,
@@ -35,6 +41,10 @@ import {
 export type SetupPaths = { project: string; user: string };
 
 const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", skills: "Skills" };
+
+const PRESET_LABELS: Record<Preset, string> = { previous: "Previous", suggested: "Suggested" };
+
+const PRESETS: readonly Preset[] = ["previous", "suggested"];
 
 const LABEL_WIDTH = 10;
 
@@ -101,6 +111,45 @@ const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
   }),
   ...lockedSkillsLines(context, state, theme, width),
 ];
+
+const fieldText = (field: Field, draft: Draft) => {
+  if (field === "model") {
+    return draft.model;
+  }
+
+  return field === "thinking" ? (draft.thinking ?? "default") : grantOrNone(draft.skills);
+};
+
+const presetText = (fields: readonly Field[], draft: Draft) =>
+  fields.map((field) => fieldText(field, draft)).join(DOT);
+
+const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
+  const agent = context.agents[state.tab];
+
+  if (!agent) {
+    return [];
+  }
+
+  const rows = rowsOf(agent);
+
+  return PRESETS.map((preset) => {
+    const draft = presetOf(agent, preset);
+    const index = rows.indexOf(preset);
+
+    if (!draft || index < 0) {
+      return "";
+    }
+
+    const chosen = index === state.field && !state.picker;
+    const label = theme.fg(chosen ? "accent" : "muted", PRESET_LABELS[preset].padEnd(LABEL_WIDTH));
+    const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
+    const mark = presetInUse(context, state, preset) ? " (in use)" : "";
+    const room = Math.max(1, width - theme.width(first) - mark.length);
+    const text = theme.truncate(presetText(fieldsOf(agent), draft), room);
+
+    return `${first}${theme.fg("text", text)}${theme.fg("dim", mark)}`;
+  });
+};
 
 const windowLines = (
   theme: ThemeLike,
@@ -220,13 +269,34 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
     ? pickerLines(context, state, state.picker, theme, width)
     : infoLines(context, state, theme, width);
 
-  return [...padded(theme, heading, width), "", ...fieldLines(context, state, theme, width), ...below];
+  return [
+    ...padded(theme, heading, width),
+    "",
+    ...fieldLines(context, state, theme, width),
+    "",
+    ...presetLines(context, state, theme, width),
+    ...below,
+  ];
 };
 
-const changeText = (patch: Record<string, unknown>) =>
-  Object.entries(patch)
-    .map(([field, value]) => `${field} ${Array.isArray(value) ? grantOrNone(value) : String(value)}`)
-    .join(", ");
+const changeLines = (context: SetupContext, state: SetupState, change: SetupChange, theme: ThemeLike) => {
+  const index = context.agents.findIndex((agent) => agent.name === change.name);
+  const agent = context.agents[index];
+  const draft = state.drafts[index];
+
+  if (!agent || !draft) {
+    return [];
+  }
+
+  return fieldsOf(agent)
+    .filter((field) => field in change.patch)
+    .map((field) => {
+      const suggested = agent.proposed && sameField(field, agent.proposed, draft) ? " (suggested)" : "";
+      const text = `${field} ${fieldText(field, draft)}${suggested} (was ${fieldText(field, agent.initial)})`;
+
+      return `${theme.fg("muted", `${agent.name}:`)} ${theme.fg("text", text)}`;
+    });
+};
 
 const submitLines = (
   context: SetupContext,
@@ -237,11 +307,9 @@ const submitLines = (
   width: number,
 ) => {
   const title = changes.length > 0 ? "Changes" : "No changes";
-  const rows = changes.flatMap((change) => {
-    const text = `${theme.fg("muted", `${change.name}:`)} ${theme.fg("text", changeText(change.patch))}`;
-
-    return padded(theme, text, width);
-  });
+  const rows = changes
+    .flatMap((change) => changeLines(context, state, change, theme))
+    .flatMap((text) => padded(theme, text, width));
   const project = context.project ? [...labelLine(theme, "Project", context.project, width), ""] : [];
   const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
@@ -282,7 +350,7 @@ const hints = (context: SetupContext, state: SetupState, ready: boolean): readon
     return [...SELECT_HINTS, enter, TAB_SWITCH_HINT, CANCEL_HINT];
   }
 
-  return [["↑↓", "to select a field"], ["enter", "to change"], TAB_SWITCH_HINT, CANCEL_HINT];
+  return [["↑↓", "to select"], ["enter", "to change or apply"], TAB_SWITCH_HINT, CANCEL_HINT];
 };
 
 export const renderSetup = (

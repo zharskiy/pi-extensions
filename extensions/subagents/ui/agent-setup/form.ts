@@ -14,7 +14,7 @@ import {
   INHERIT_MODEL,
 } from "../../core/model/agent-schema.ts";
 
-type Draft = { model: string; thinking?: string; skills: Grant };
+export type Draft = { model: string; thinking?: string; skills: Grant };
 
 type SetupAgent = {
   name: string;
@@ -43,6 +43,19 @@ const CHORE_FIELDS = FIELDS.filter((field) => field !== "skills");
 
 export const fieldsOf = (agent: SetupAgent | undefined): readonly Field[] =>
   agent?.role === "chore" ? CHORE_FIELDS : FIELDS;
+
+export type Preset = "previous" | "suggested";
+
+type Row = Field | Preset;
+
+export const rowsOf = (agent: SetupAgent | undefined): readonly Row[] => [
+  ...fieldsOf(agent),
+  "previous",
+  ...(agent?.role === "lead" && agent.proposed ? (["suggested"] as const) : []),
+];
+
+export const presetOf = (agent: SetupAgent, preset: Preset) =>
+  preset === "previous" ? agent.initial : agent.proposed;
 
 export const ALL_SKILLS_TEXT = "every skill of the agent's caller";
 
@@ -85,18 +98,25 @@ export const initialSetup = (context: SetupContext): SetupState => ({
 
 export const onSubmitTab = (context: SetupContext, state: SetupState) => state.tab === context.agents.length;
 
-const changedFields = (agent: SetupAgent, draft: Draft) =>
-  fieldsOf(agent).filter((field) =>
-    field === "skills"
-      ? !sameGrant(agent.initial.skills, draft.skills)
-      : agent.initial[field] !== draft[field],
-  );
+export const sameField = (field: Field, left: Draft, right: Draft) =>
+  field === "skills" ? sameGrant(left.skills, right.skills) : left[field] === right[field];
+
+const changedFields = (agent: SetupAgent, draft: Draft, base: Draft = agent.initial) =>
+  fieldsOf(agent).filter((field) => !sameField(field, base, draft));
 
 export const fieldChanged = (context: SetupContext, state: SetupState, tab: number, field: Field) => {
   const agent = context.agents[tab];
   const draft = state.drafts[tab];
 
   return Boolean(agent && draft && changedFields(agent, draft).includes(field));
+};
+
+export const presetInUse = (context: SetupContext, state: SetupState, preset: Preset) => {
+  const agent = context.agents[state.tab];
+  const draft = state.drafts[state.tab];
+  const base = agent && presetOf(agent, preset);
+
+  return Boolean(agent && draft && base && changedFields(agent, draft, base).length === 0);
 };
 
 export const setupChanges = (context: SetupContext, state: SetupState): SetupChange[] =>
@@ -315,11 +335,21 @@ const submitKey = (context: SetupContext, state: SetupState, key: KeyPress): Set
 };
 
 const agentKey = (context: SetupContext, state: SetupState, key: KeyPress): SetupState => {
+  const agent = context.agents[state.tab];
+  const rows = rowsOf(agent);
+  const row = rows[state.field];
+
+  if (key.name === "enter" && (row === "previous" || row === "suggested")) {
+    const preset = agent && presetOf(agent, row);
+
+    return preset ? setDraft(state, { thinking: undefined, ...preset }) : state;
+  }
+
   if (key.name === "enter") {
     return openPicker(context, state);
   }
 
-  const field = listStep(key, state.field, fieldsOf(context.agents[state.tab]).length);
+  const field = listStep(key, state.field, rows.length);
 
   return field === undefined ? state : { ...state, field };
 };

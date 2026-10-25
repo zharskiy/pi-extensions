@@ -34,6 +34,65 @@ describe("agent setup form", () => {
       " Chores  □ chore  ✓ Submit",
     ]);
     expect(render(ctx, state)).toContain("   Skills    search, docs (changed)");
+    expect(render(ctx, state)).toContain("   Previous  acme/big · high · all");
+    expect(render(ctx, state)).toContain("   Suggested acme/big · high · search, docs (in use)");
+  });
+
+  it("applies the previous settings with Enter, then the suggested ones, and edits either afterwards", () => {
+    const ctx = proposedContext();
+    const previous = press(ctx, initialSetup(ctx), key("down"), key("down"), key("down"), key("enter"));
+
+    expect(previous.state.picker).toBeUndefined();
+    expect(setupChanges(ctx, previous.state)).toEqual([]);
+    expect(render(ctx, previous.state)).toContain(" › Previous  acme/big · high · all (in use)");
+    expect(render(ctx, previous.state)).toContain("   Suggested acme/big · high · search, docs");
+
+    const suggested = press(ctx, previous.state, key("down"), key("enter"));
+
+    expect(suggested.state.drafts[0]).toEqual(initialSetup(ctx).drafts[0]);
+    expect(setupChanges(ctx, suggested.state)).toEqual([
+      { name: "lead", patch: { skills: ["search", "docs"] } },
+    ]);
+    expect(render(ctx, suggested.state)).toContain(" › Suggested acme/big · high · search, docs (in use)");
+
+    const edited = press(
+      ctx,
+      suggested.state,
+      key("home"),
+      key("down"),
+      key("enter"),
+      key("home"),
+      key("enter"),
+    );
+
+    expect(setupChanges(ctx, edited.state)).toEqual([
+      { name: "lead", patch: { thinking: "off", skills: ["search", "docs"] } },
+    ]);
+    expect(render(ctx, edited.state).some((line) => line.includes("(in use)"))).toBe(false);
+
+    const restored = press(ctx, edited.state, key("end"), key("up"), key("enter"));
+
+    expect(setupChanges(ctx, restored.state)).toEqual([]);
+  });
+
+  it("applies a previous model without a thinking level as the default level", () => {
+    const ctx = context();
+    const edited = press(
+      ctx,
+      initialSetup(ctx),
+      key("tab"),
+      key("down"),
+      key("enter"),
+      key("end"),
+      key("enter"),
+    );
+
+    expect(edited.state.drafts[1]?.thinking).toBeDefined();
+
+    const previous = press(ctx, edited.state, key("end"), key("enter"));
+
+    expect(previous.state.drafts[1]).toEqual({ model: "inherit", thinking: undefined, skills: ["docs"] });
+    expect(setupChanges(ctx, previous.state)).toEqual([]);
   });
 
   it("counts a re-ordered skill list as a change", () => {
@@ -266,13 +325,17 @@ describe("agent setup form", () => {
     expect(press(ctx, opened.state, key("space"), key("enter")).state.drafts[1]?.skills).toBe("all");
   });
 
-  it("never changes a chore's skills: the cursor skips the fixed Skills row", () => {
+  it("never changes a chore's skills: the cursor skips the fixed Skills row and offers only Previous", () => {
     const ctx = context();
-    const chore = press(ctx, initialSetup(ctx), key("tab"), key("tab"), key("down"), key("down"));
+    const thinking = press(ctx, initialSetup(ctx), key("tab"), key("tab"), key("down"));
+    const chore = press(ctx, thinking.state, key("down"), key("down"));
 
-    expect(chore.state.field).toBe(1);
+    expect(press(ctx, thinking.state, key("enter")).state.picker?.field).toBe("thinking");
+    expect(chore.state.field).toBe(2);
     expect(render(ctx, chore.state)).toContain("   Skills    none · fixed for chores");
-    expect(press(ctx, chore.state, key("enter")).state.picker?.field).toBe("thinking");
+    expect(render(ctx, chore.state)).toContain(" › Previous  gone/old · default (in use)");
+    expect(render(ctx, chore.state).some((line) => line.includes("Suggested"))).toBe(false);
+    expect(press(ctx, chore.state, key("enter")).state.picker).toBeUndefined();
     expect(setupChanges(ctx, chore.state)).toEqual([]);
   });
 
@@ -299,10 +362,19 @@ describe("agent setup form", () => {
     const changed = press(ctx, state, key("enter"), key("tab"));
     const lines = render(ctx, changed.state);
 
-    expect(lines).toContain(" chore: thinking max");
+    expect(lines).toContain(" chore: thinking max (was default)");
     expect(lines).toContain(` › 1. This project  ${PATHS.project}`);
     expect(lines).toContain(`   2. User  ${PATHS.user}`);
     expect(press(ctx, changed.state, key("enter")).done).toBe("save");
+  });
+
+  it("lists one Submit row per changed field and marks the values that match the proposal", () => {
+    const ctx = proposedContext();
+    const { state } = press(ctx, initialSetup(ctx), key("down"), key("enter"), key("home"), key("enter"));
+    const lines = render(ctx, press(ctx, state, key("left")).state);
+
+    expect(lines).toContain(" lead: thinking off (was high)");
+    expect(lines).toContain(" lead: skills search, docs (suggested) (was all)");
   });
 
   it("offers only the user file in an untrusted project and saves to it with Enter", () => {

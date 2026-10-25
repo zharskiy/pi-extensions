@@ -521,9 +521,13 @@ describe("agent_skills_proposal", () => {
       form.render(400).some((line) => line.includes("Proposed:") && line.includes("finds prior art")),
     ).toBe(true);
     expect(form.render(400).some((line) => line.includes("(changed)"))).toBe(true);
+    expect(form.render(400).some((line) => line.includes("Suggested") && line.endsWith("(in use)"))).toBe(
+      true,
+    );
     expect(awaiting()).toEqual([true]);
 
     goToSubmit(form);
+    expect(form.render(400)).toContain(" reviewer: skills search, docs (suggested) (was none)");
     expect(
       form.render(400).some((line) => line.includes("Project:") && line.includes("TypeScript library")),
     ).toBe(true);

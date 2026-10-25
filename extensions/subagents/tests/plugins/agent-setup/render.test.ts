@@ -15,6 +15,8 @@ describe("agent setup rendering", () => {
     expect(lines).toContain(" › Model     acme/big");
     expect(lines).toContain("   Thinking  high");
     expect(lines).toContain("   Skills    all (every skill of the agent's caller)");
+    expect(lines).toContain("   Previous  acme/big · high · all (in use)");
+    expect(lines.some((line) => line.includes("Suggested"))).toBe(false);
     expect(lines.some((line) => line.includes("create your own agent with /agents create."))).toBe(true);
     expect(lines.some((line) => line.startsWith(" MCP: on"))).toBe(true);
   });
@@ -37,7 +39,7 @@ describe("agent setup rendering", () => {
     const lines = render(ctx, press(ctx, edited.state, key("left")).state);
 
     expect(lines).toContain(" Changes");
-    expect(lines).toContain(" lead: thinking off");
+    expect(lines).toContain(" lead: thinking off (was high)");
     expect(lines).toContain(` › 1. User  ${PATHS.user}`);
     expect(lines).toContain(EVERY_PROJECT);
     expect(lines.some((line) => line.includes(PATHS.project))).toBe(false);
