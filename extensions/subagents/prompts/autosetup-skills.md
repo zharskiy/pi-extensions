@@ -6,7 +6,7 @@ Read a manifest or look further into the tree with your own tools if the entries
 
 Rules, in this order:
 1. Decide what kind of project this is (frontend, backend, QA automation, devops, library, mixed, ...) and say so in one line.
-2. For each lead, pick the skills that fit its job in this kind of project: at most three, ordered from most to least useful.
+2. For each lead, pick the skills that fit its job in this kind of project: at most five, ordered from most to least useful.
 3. Prefer skills marked [project]. Prefer fewer. A skill fits when its description names the lead's job or this project's stack. Keep a current skill only if it still fits.
 4. Give full lists, not changes: the list you give replaces the lead's current one.
 5. Never pick a skill whose description implies asking the user something; agents cannot ask anyone.

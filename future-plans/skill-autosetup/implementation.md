@@ -112,17 +112,17 @@ About 90 lines.
 ### `core/agent-setup/proposal.ts` (tool definition, validation)
 
 - `PROPOSAL_TOOL = "agent_skills_proposal"`; `ProposalParams = {project: string; assignments: Record<string, string[]>; reasons?: Record<string, string>}`.
-- `proposalDefinition` (`Pick<ToolSpec, …>` as `extensions/questionnaire/core/questionnaire.ts:69-90`): label `Agent skills proposal`; description `Answer a skills brief from /agents setup: the project kind and up to three skills per lead agent, most useful first. Only valid right after that brief; opens a form the user confirms.`; no `promptSnippet`/`promptGuidelines`; `executionMode: "sequential"`; `modelOnly: true`; parameters (plain JSON schema as `api/plugins/fetch-tool.ts:33-38`):
+- `proposalDefinition` (`Pick<ToolSpec, …>` as `extensions/questionnaire/core/questionnaire.ts:69-90`): label `Agent skills proposal`; description `Answer a skills brief from /agents setup: the project kind and up to five skills per lead agent, most useful first. Only valid right after that brief; opens a form the user confirms.`; no `promptSnippet`/`promptGuidelines`; `executionMode: "sequential"`; `modelOnly: true`; parameters (plain JSON schema as `api/plugins/fetch-tool.ts:33-38`):
   ```ts
   { type: "object",
     properties: {
       project: { type: "string", description: "One line: what kind of project this is." },
-      assignments: { type: "object", description: "Lead name to its full list, most useful first, at most three; [] for none.",
+      assignments: { type: "object", description: "Lead name to its full list, most useful first, at most five; [] for none.",
         additionalProperties: { type: "array", items: { type: "string" }, maxItems: 3 } },
       reasons: { type: "object", description: "Skill name to one line saying why it fits.", additionalProperties: { type: "string" } } },
     required: ["project", "assignments"], additionalProperties: false }
   ```
-- `checkProposal(params, definitions, candidates)` → `{proposal: {project, lists, notes}} | {errors}`: empty `project`; empty `assignments`; unknown agent `no agent named "x"`; not a lead (`isChore` path or `skills: all`) `x is not set up here`; skill not a candidate (unknown or filtered) `no skill named "y" here`; more than three `x: at most three skills`. Duplicates dropped, order kept; reasons for skills not proposed ignored. Errors list every problem, then the lead names and candidate names once.
+- `checkProposal(params, definitions, candidates)` → `{proposal: {project, lists, notes}} | {errors}`: empty `project`; empty `assignments`; unknown agent `no agent named "x"`; not a lead (`isChore` path or `skills: all`) `x is not set up here`; skill not a candidate (unknown or filtered) `no skill named "y" here`; more than five `x: at most five skills`. Duplicates dropped, order kept; reasons for skills not proposed ignored. Errors list every problem, then the lead names and candidate names once.
 - `proposalChanges(lists, definitions)` (order-free, as `sameGrant`) for "nothing to change"; `noteFor(list, reasons)` cut at 200.
 - Result texts: success `Saved to <path>: implementer skills [a, b]; reviewer skills [c]. Agents started from now on use them. Tell the user, and suggest they start a new session with /new to release the tokens spent on the setup.` (plus the shadow warning); cancel and nothing-to-change carry no `/new` line.
 
@@ -134,7 +134,7 @@ Read once at enable next to `create-agent.md` (`agent-setup.ts:29`); placeholder
 
 1. The user ran `/agents setup`; do this yourself, do not start agents.
 2. Project `{{project}}`, entries `{{listing}}`; read a manifest or the tree with your own tools if needed.
-3. Rules in order: (1) say in one line what kind of project this is (frontend, backend, QA automation, devops, library, mixed…); (2) per lead pick the skills that fit its job here, at most three, most useful first; (3) prefer `[project]` skills; prefer fewer; a skill fits when its description names the lead's job or this stack; keep a current skill only if it still fits; (4) full lists, not deltas; (5) never a skill whose description implies asking the user.
+3. Rules in order: (1) say in one line what kind of project this is (frontend, backend, QA automation, devops, library, mixed…); (2) per lead pick the skills that fit its job here, at most five, most useful first; (3) prefer `[project]` skills; prefer fewer; a skill fits when its description names the lead's job or this stack; keep a current skill only if it still fits; (4) full lists, not deltas; (5) never a skill whose description implies asking the user.
 4. Answer: call `agent_skills_proposal` once with `{project, assignments, reasons}`, only leads whose list changes; no file writes; do not run `/agents setup`; on an error result fix the names and call again; afterwards tell the user what was saved, from the result.
 5. `Leads:` `{{leads}}`. 6. `Skills:` `{{skills}}`.
 

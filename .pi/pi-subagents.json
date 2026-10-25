@@ -1,0 +1,22 @@
+{
+  "agents": {
+    "implementer": {
+      "skills": [
+        "new-extension",
+        "readme"
+      ]
+    },
+    "planner": {
+      "skills": [
+        "codebase-design",
+        "new-extension"
+      ]
+    },
+    "reviewer": {
+      "skills": [
+        "codebase-design",
+        "readme"
+      ]
+    }
+  }
+}

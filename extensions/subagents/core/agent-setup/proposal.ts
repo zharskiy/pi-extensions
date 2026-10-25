@@ -5,7 +5,7 @@ import type { SetupChange } from "./scope.ts";
 
 export const PROPOSAL_TOOL = "agent_skills_proposal";
 
-const MAX_SKILLS = 3;
+const MAX_SKILLS = 5;
 
 export const NEW_SESSION_HINT = "start a new session with /new to free the tokens the setup took";
 

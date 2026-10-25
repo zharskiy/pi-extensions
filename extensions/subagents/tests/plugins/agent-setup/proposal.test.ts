@@ -14,7 +14,7 @@ import { PACKAGE_ROOT } from "../../support/subagents-harness.ts";
 const KNOWN = {
   agents: ["general", "planner", "reviewer", "scout"],
   leads: ["planner", "reviewer"],
-  skills: ["docs", "search", "lint", "tests"],
+  skills: ["docs", "search", "lint", "tests", "git", "ci"],
   interactive: ["asker"],
 };
 
@@ -82,7 +82,7 @@ describe("checkProposal", () => {
         assignments: [
           { lead: "nobody", skills: [] },
           { lead: "planner", skills: ["ghost"] },
-          { lead: "reviewer", skills: ["docs", "search", "lint", "tests"] },
+          { lead: "reviewer", skills: ["docs", "search", "lint", "tests", "git", "ci"] },
           { lead: "reviewer", skills: [] },
         ],
         reasons: [],
@@ -93,8 +93,8 @@ describe("checkProposal", () => {
     expect(result).toEqual({
       error:
         "Error: project: say in one line what kind of project this is; reviewer is listed more than once; " +
-        'no agent named "nobody"; no skill named "ghost" here; reviewer: at most 3 skills. ' +
-        "Lead agents: planner, reviewer. Skills: docs, search, lint, tests. Fix the call and call again.",
+        'no agent named "nobody"; no skill named "ghost" here; reviewer: at most 5 skills. ' +
+        "Lead agents: planner, reviewer. Skills: docs, search, lint, tests, git, ci. Fix the call and call again.",
     });
   });
 
