@@ -31,7 +31,7 @@ extensions/subagents/
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
 │       ├── agent-panel.ts                 # panel below the editor, selection keys, the `pi-subagents` status
-│       ├── interrupt.ts                   # Esc after an interrupted turn: confirm to stop running agents
+│       ├── interrupt.ts                   # Esc on an empty idle prompt: confirm to stop running agents
 │       ├── agent-setup.ts                 # /agents setup, autosetup and the agent_skills_proposal tool, /agents create, the `agentSetup` service
 │       ├── agent-view.ts                  # /agents: menu, list and agent view, the `agentView` service
 │       └── fetch-tool.ts                  # the fetch tool as the `fetchTool` service

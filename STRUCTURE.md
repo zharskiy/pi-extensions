@@ -23,7 +23,7 @@ pi-extensions/
 
 ## Folders
 
-- [platform/pi-adapter/](platform/pi-adapter/STRUCTURE.md): `index.ts` and `types/`, `runtime/`, `child/`, `ui/`, `editor/`, `tools/`, `context/`, `prompt/`, `tests/`.
+- [platform/pi-adapter/](platform/pi-adapter/STRUCTURE.md): `index.ts` and `types/`, `runtime/`, `child/`, `ui/`, `editor/`, `tools/`, `context/`, `prompt/`, `tests/`; `editor/` holds the editor subclass behind the empty-editor key hooks.
 - [platform/shared/](platform/shared/STRUCTURE.md): flat helper modules and `tests/`; its admission rule is at the top of that file.
 - [platform/ui-kit/](platform/ui-kit/STRUCTURE.md): flat component modules and `tests/`.
 - [platform/extension-manager/](platform/extension-manager/STRUCTURE.md): the manager, the managed-extension factory, the bus, the settings watcher and `tests/`.

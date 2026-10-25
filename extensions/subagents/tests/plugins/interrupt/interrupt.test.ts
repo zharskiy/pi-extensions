@@ -30,11 +30,9 @@ const setup = async (count: number, disabledPlugins: string[] = []) => {
   return { ...harness, ids: records.map((record) => record.id), states };
 };
 
-describe("Esc after an interrupted turn", () => {
-  it("asks to stop the running agents and stops them gracefully on Yes", async () => {
+describe("Esc on an empty idle editor", () => {
+  it("asks after a turn that ended on its own and stops the agents gracefully on Yes", async () => {
     const { host, ids, states } = await setup(2);
-
-    host.settle({ aborted: true });
 
     expect(host.pressEmptyEscape()).toBe(true);
     await flushMicrotasks();
@@ -46,10 +44,20 @@ describe("Esc after an interrupted turn", () => {
     expect(host.notices.at(-1)).toEqual({ message: "pi-subagents: stopping 2 agents", level: "info" });
   });
 
+  it("asks the same after an aborted run", async () => {
+    const { host, ids } = await setup(2);
+
+    host.settle({ aborted: true });
+
+    expect(host.pressEmptyEscape()).toBe(true);
+    await flushMicrotasks();
+
+    expect(host.confirmations[0]?.message).toBe(`2 agents are still running: ${ids.join(", ")}.`);
+  });
+
   it("names three agents and counts the rest", async () => {
     const { host, ids } = await setup(5);
 
-    host.settle({ aborted: true });
     host.pressEmptyEscape();
     await flushMicrotasks();
 
@@ -58,11 +66,10 @@ describe("Esc after an interrupted turn", () => {
     );
   });
 
-  it("leaves the agents on No and hands the next Esc back to pi", async () => {
+  it("leaves the agents on No and asks again on the next Esc", async () => {
     const { host, states } = await setup(1);
 
     host.confirmAnswer = false;
-    host.settle({ aborted: true });
 
     expect(host.pressEmptyEscape()).toBe(true);
     await flushMicrotasks();
@@ -70,33 +77,24 @@ describe("Esc after an interrupted turn", () => {
     expect(host.confirmations[0]?.message).toMatch(/^1 agent is still running: /);
     expect(states()).toEqual(["running"]);
     expect(host.notices).toEqual([]);
-    expect(host.pressEmptyEscape()).toBe(false);
-    expect(host.confirmations).toHaveLength(1);
-  });
-
-  it("leaves Esc to pi after a settle without abort", async () => {
-    const { host } = await setup(2);
-
-    host.settle();
-
-    expect(host.pressEmptyEscape()).toBe(false);
-    expect(host.confirmations).toEqual([]);
+    expect(host.pressEmptyEscape()).toBe(true);
+    expect(host.confirmations).toHaveLength(2);
   });
 
   it("leaves Esc to pi when no agent runs", async () => {
     const { host } = await setup(0);
 
-    host.settle({ aborted: true });
-
     expect(host.pressEmptyEscape()).toBe(false);
     expect(host.confirmations).toEqual([]);
   });
 
-  it("disarms when a later run settles normally", async () => {
-    const { host } = await setup(2);
+  it("leaves Esc to pi once every agent has finished", async () => {
+    const { host, runtime } = await setup(2);
 
-    host.settle({ aborted: true });
-    host.settle();
+    runtime.children.forEach((child) => {
+      child.finish("x");
+    });
+    await flushMicrotasks();
 
     expect(host.pressEmptyEscape()).toBe(false);
     expect(host.confirmations).toEqual([]);
@@ -105,7 +103,6 @@ describe("Esc after an interrupted turn", () => {
   it("does not ask while pi is busy", async () => {
     const { host } = await setup(2);
 
-    host.settle({ aborted: true });
     host.idle = false;
 
     expect(host.pressEmptyEscape()).toBe(false);
@@ -114,8 +111,6 @@ describe("Esc after an interrupted turn", () => {
 
   it("does nothing when the interrupt plugin is disabled", async () => {
     const { host } = await setup(2, ["interrupt"]);
-
-    host.settle({ aborted: true });
 
     expect(host.pressEmptyEscape()).toBe(false);
     expect(host.confirmations).toEqual([]);
