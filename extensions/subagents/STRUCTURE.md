@@ -98,8 +98,7 @@ extensions/subagents/
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
 │   ├── run-agent/
 │   │   ├── render.ts                      # renderBlock: the run_agent block, BlockHints
-│   │   ├── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
-│   │   └── handoff-row.ts                 # handoffRows: the handoff tool's call and result rows
+│   │   └── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/

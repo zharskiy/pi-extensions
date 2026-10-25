@@ -17,7 +17,12 @@ export {
   budgetStep,
   type HandoffBudget,
 } from "./handoff-budget.ts";
-export { type HandoffValidation, validateHandoff } from "./handoff-document.ts";
+export {
+  type HandoffSeedDetails,
+  type HandoffToolRows,
+  type HandoffValidation,
+  validateHandoff,
+} from "./handoff-document.ts";
 export { type Limits, thresholdsFor } from "./handoff-limits.ts";
 export {
   AGENT_AUDIENCE,

@@ -1,7 +1,7 @@
 import type { Host } from "../../../platform/pi-adapter/index.ts";
 import { handoffTemplate, LIMITS_CHANNEL, type Limits, type Plugin } from "../../../platform/shared/index.ts";
+import { handoffSeedMessage } from "../../../platform/ui-kit/index.ts";
 import { HANDOFF_TYPE, watchLimits } from "../core/limits.ts";
-import { seedMessage } from "../ui/limit-messages.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 type LimitsOptions = {
@@ -14,7 +14,7 @@ type LimitsOptions = {
 export const createLimits = ({ host, template, limits, releaseDelayMs }: LimitsOptions) => {
   host.registerMessageRenderer(
     HANDOFF_TYPE,
-    seedMessage((binding) => host.ui.keyText(binding)),
+    handoffSeedMessage((binding) => host.ui.keyText(binding)),
   );
 
   watchLimits({ host, template, limits, segment: segmentFor, releaseDelayMs });

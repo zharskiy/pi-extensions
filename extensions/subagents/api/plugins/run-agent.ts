@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { EXPAND_BINDING } from "../../../../platform/ui-kit/index.ts";
+import { EXPAND_BINDING, handoffToolRows } from "../../../../platform/ui-kit/index.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
 import {
   type AgentDefinition,
@@ -21,7 +21,6 @@ import {
   messageAgentTool,
   runAgentTool,
 } from "../../core/run-agent/tools.ts";
-import { handoffRows } from "../../ui/run-agent/handoff-row.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
@@ -68,7 +67,7 @@ export const runAgentPlugin: Plugin = {
 
       const granted = own && allowlist(own.tools)?.includes("fetch") && services.has("fetchTool");
       const extra: AnyToolSpec[] = [
-        handoffTool({ registry, handoff, rows: handoffRows }, record.id),
+        handoffTool({ registry, handoff, rows: handoffToolRows }, record.id),
         ...(granted ? [services.require("fetchTool").tool()] : []),
       ];
 

@@ -1,6 +1,12 @@
+import type { ToolSpec } from "../pi-adapter/index.ts";
+
 const HANDOFF_SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"] as const;
 
 export type HandoffValidation = { ok: true; status: string } | { ok: false; errors: string[] };
+
+export type HandoffToolRows = Pick<ToolSpec<{ content: string }, unknown>, "renderCall" | "renderResult">;
+
+export type HandoffSeedDetails = { from: "session" } | { from: "agent"; id: string; link: number };
 
 type Heading = { title: string; line: number };
 

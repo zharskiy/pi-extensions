@@ -1,17 +1,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { errorText } from "../../../../platform/shared/index.ts";
+import { errorText, type HandoffToolRows } from "../../../../platform/shared/index.ts";
 import type { AgentRegistry, HandoffService } from "../model/agent-record.ts";
 
 type HandoffParams = { content: string };
 
-export type HandoffRows = Pick<ToolSpec<HandoffParams, unknown>, "renderCall" | "renderResult">;
-
 type HandoffToolDeps = {
   registry: AgentRegistry;
   handoff: HandoffService;
-  rows: (savedPath: () => string | undefined) => HandoffRows;
+  rows: (savedPath: () => string | undefined) => HandoffToolRows;
 };
 
 const handoffParameters = {
