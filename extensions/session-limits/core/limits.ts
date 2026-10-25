@@ -6,8 +6,18 @@ import type {
   SessionControl,
   ThemeToken,
 } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL, errorText, type Limits, parseBusySignal } from "../../../platform/shared/index.ts";
-import { handoffPath, seedText, validateMainHandoff } from "./handoff.ts";
+import {
+  BUSY_CHANNEL,
+  errorText,
+  handoffInstruction,
+  handoffRetry,
+  type Limits,
+  MAIN_AUDIENCE,
+  parseBusySignal,
+  seedText,
+  successorPreface,
+} from "../../../platform/shared/index.ts";
+import { handoffPath, validateMainHandoff } from "./handoff.ts";
 import {
   type ContextTokens,
   contextLevel,
@@ -16,7 +26,6 @@ import {
   isPending,
   MAX_INSTRUCTIONS,
   type Phase,
-  retryInstruction,
   shouldRequest,
 } from "./thresholds.ts";
 
@@ -29,6 +38,8 @@ export const HANDOFF_TYPE = "pi-session-limits-handoff";
 const REQUEST_TYPE = "pi-session-limits-request";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
+
+const WRITE_SAVE_STEP = /Call the `handoff` tool[\s\S]*?call it again\./;
 
 const IDLE_POLL_MS = 250;
 
@@ -103,16 +114,10 @@ export const watchLimits = ({
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
 
   const instruction = (path: string, reason: string, focus: string | undefined) =>
-    template
-      .replaceAll("{{reason}}", reason)
-      .replace(
-        /\n*\{\{focus\}\}\n*/,
-        focus
-          ? `\n\nThe user says the next session is for: ${focus}. Shape Outcome and Next around that and leave out what it does not need.\n\n`
-          : "\n\n",
-      )
-      .replaceAll("{{path}}", path)
-      .trim();
+    handoffInstruction(template, { path, reason, focus, audience: MAIN_AUDIENCE }).replace(
+      WRITE_SAVE_STEP,
+      () => `Write the handoff file with your write tool to:\n\n${path}`,
+    );
 
   const currentInstruction = (path: string) =>
     instruction(path, state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON, state.focus);
@@ -203,7 +208,7 @@ export const watchLimits = ({
       userActive: false,
     };
 
-    sendInstruction(retryInstruction(currentInstruction(path), errorsOf(file, path)));
+    sendInstruction(handoffRetry(currentInstruction(path), errorsOf(file, path)));
   };
 
   const switchSession = () => {
@@ -323,7 +328,15 @@ export const watchLimits = ({
         parentSession: previous,
         seed: {
           customType: HANDOFF_TYPE,
-          text: seedText(previous, text, { manual: state.handedOff, focus: state.focus }),
+          text: seedText(
+            successorPreface({
+              kind: "session",
+              file: previous,
+              manual: state.handedOff,
+              focus: state.focus,
+            }),
+            text,
+          ),
         },
       })
       .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));

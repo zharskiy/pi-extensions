@@ -6,7 +6,6 @@ import { describeLive, LIVE_TIMEOUT_MS } from "../../../../test/framework/pi/liv
 import type { AgentRecord } from "../../core/model/agent-record.ts";
 import { createHandoff } from "../../core/run-agent/handoff.ts";
 import { createLiveHarness, type LiveHarness } from "../support/live-harness.ts";
-import { PACKAGE_ROOT } from "../support/subagents-harness.ts";
 
 const PARTS = 12;
 
@@ -61,7 +60,7 @@ describeLive("live context limit handoff", () => {
     const handoff = readFileSync(first?.handoffPath ?? "", "utf8");
 
     expect(first?.state).toBe("handoff");
-    expect(createHandoff(PACKAGE_ROOT).validate(handoff)).toEqual({ ok: true, status: "partial" });
+    expect(createHandoff().validate(handoff)).toEqual({ ok: true, status: "partial" });
     expect(chain.length).toBeGreaterThan(1);
     expect(["done", "handoff"]).toContain(last.state);
     expect(hiddenMessageTexts(live.host)).toHaveLength(1);

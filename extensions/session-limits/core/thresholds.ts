@@ -55,12 +55,3 @@ export const handoffStep = (input: HandoffInput) => {
 
   return input.instructions < MAX_INSTRUCTIONS ? "resend" : "give-up";
 };
-
-export const retryInstruction = (instruction: string, errors: string[]) =>
-  [
-    instruction,
-    "",
-    "The previous handoff file was not accepted:",
-    ...errors.map((error) => `- ${error}`),
-    "Write the whole file again with these problems fixed.",
-  ].join("\n");

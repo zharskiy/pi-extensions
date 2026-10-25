@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextLevel, handoffStep, retryInstruction, shouldRequest } from "../core/thresholds.ts";
+import { contextLevel, handoffStep, shouldRequest } from "../core/thresholds.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
@@ -149,14 +149,5 @@ describe("segmentFor", () => {
     phases.forEach((phase) => {
       expect(segmentFor(at(78_000), phase, limits, "session-handoff")?.text).not.toMatch(/ctx|%/);
     });
-  });
-});
-
-describe("retryInstruction", () => {
-  it("appends the validation errors to the instruction", () => {
-    const text = retryInstruction("write it", ["missing sections: Next"]);
-
-    expect(text.startsWith("write it")).toBe(true);
-    expect(text).toContain("- missing sections: Next");
   });
 });

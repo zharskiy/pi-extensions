@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { seedText, successorPreface } from "../../../platform/shared/index.ts";
 import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.ts";
-import { seedText } from "../core/handoff.ts";
 import { firstSentence, seedRow } from "../ui/seed-row.ts";
 
-const seed = seedText("/s/main.jsonl", "## Status\npartial\n\n## Outcome\nThe parser is fixed.");
+const seed = seedText(
+  successorPreface({ kind: "session", file: "/s/main.jsonl", manual: false }),
+  "## Status\npartial\n\n## Outcome\nThe parser is fixed.",
+);
 
 const padded = (lines: string[]) => lines.map((line) => (line === "" ? "" : ` ${line}`));
 

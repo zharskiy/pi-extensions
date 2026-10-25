@@ -20,6 +20,16 @@ export {
 export { type HandoffValidation, validateHandoff } from "./handoff-document.ts";
 export { type Limits, thresholdsFor } from "./handoff-limits.ts";
 export {
+  AGENT_AUDIENCE,
+  AGENT_REASON,
+  handoffInstruction,
+  handoffRetry,
+  handoffTemplate,
+  MAIN_AUDIENCE,
+  seedText,
+  successorPreface,
+} from "./handoff-prompt.ts";
+export {
   AGENTS_HINT_KEY,
   AWAITING_INPUT_CHANNEL,
   BUSY_CHANNEL,

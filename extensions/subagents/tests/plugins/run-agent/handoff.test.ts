@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { VALID_HANDOFF } from "../../../../../test/framework/index.ts";
 import { createHandoff } from "../../../core/run-agent/handoff.ts";
-import { PACKAGE_ROOT } from "../../support/subagents-harness.ts";
 
-const { instruction, validate: validateHandoff } = createHandoff(PACKAGE_ROOT);
+const { validate: validateHandoff } = createHandoff();
 
 describe("handoff schema", () => {
   it("accepts the documented schema", () => {
@@ -38,13 +37,5 @@ describe("handoff schema", () => {
       ok: true,
       status: "blocked",
     });
-  });
-
-  it("fills the handoff instruction with the target path", () => {
-    const text = instruction("/tmp/x/handoff.md");
-
-    expect(text).toContain("/tmp/x/handoff.md");
-    expect(text).not.toContain("{{path}}");
-    expect(text).toContain("Call the `handoff` tool");
   });
 });

@@ -1,9 +1,9 @@
-import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMode } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL } from "../../../platform/shared/index.ts";
+import { BUSY_CHANNEL, handoffTemplate } from "../../../platform/shared/index.ts";
 import { createFakeHost, flushTimers as flush, useTempDirs } from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
@@ -21,7 +21,7 @@ const tempRoot = () => {
 
 const LIMITS = DEFAULT_LIMITS;
 
-const TEMPLATE = readFileSync(resolve(import.meta.dirname, "..", "prompts", "handoff.md"), "utf8");
+const TEMPLATE = handoffTemplate();
 
 const VALID_HANDOFF = [
   "## Status",
@@ -135,6 +135,8 @@ describe("session limits", () => {
     });
     expect(requests()[0]).toContain("Do not start new work in this turn");
     expect(requests()[0]).toContain("write tool");
+    expect(requests()[0]).not.toContain("If it reports errors");
+    expect(requests()[0].endsWith("reply with one line: `handoff saved`.")).toBe(true);
     expect(requests()[0]).not.toMatch(/agent/i);
     expect(requests()[0].startsWith("Your context window is nearly full.")).toBe(true);
     expect(requests()[0]).not.toContain("{{");
@@ -566,7 +568,7 @@ describe("/session-handoff on demand", () => {
 
     expect(notice()).toBe("<warning>» Handoff writing the document");
     expect(requests()[0]).not.toContain("next session is for");
-    expect(requests()[0]).toMatch(/now, so this is your very next step\.\n\nWrite the handoff file/);
+    expect(requests()[0]).toMatch(/very next step\.\n\nWrite the handoff file/);
   });
 
   it("keeps the focus in its own paragraph", async () => {

@@ -98,7 +98,7 @@ export const runAgentPlugin: Plugin = {
       return tools;
     };
 
-    const handoff = createHandoff(root);
+    const handoff = createHandoff();
 
     const runner = createRunner({
       registry,

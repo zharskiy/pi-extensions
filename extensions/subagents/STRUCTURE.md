@@ -17,7 +17,6 @@ extensions/subagents/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
 │   ├── base-system-prompt.md              # shared agent rules and the result contract
-│   ├── handoff.md                         # the handoff instruction template ({{path}})
 │   ├── create-agent.md                    # the /agents create brief
 │   └── autosetup-skills.md                # the /agents setup skills brief
 ├── api/
@@ -62,7 +61,7 @@ extensions/subagents/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, createPendingCalls, describeRunAgent
 │   │   ├── handoff-tool.ts                # every child's handoff tool, HandoffRows
-│   │   ├── handoff.ts                     # createHandoff: the handoff template and schema service
+│   │   ├── handoff.ts                     # createHandoff: the handoff instruction (shared template) and schema service
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
