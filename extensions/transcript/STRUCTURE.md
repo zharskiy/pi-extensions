@@ -12,6 +12,7 @@ extensions/transcript/
 ├── ui/
 │   ├── tools.ts                    transcriptRows: look per tool, title, outcome and hint of every row
 │   ├── tool-look.ts                Look, Context, Outcome types and the shared look helpers
+│   ├── skill.ts                    collapsed skill-read row: [skill] label, name, range, one-line failure
 │   ├── shell.ts                    bash and powershell rows
 │   ├── codemode.ts                 codemode rows and their call list
 │   ├── generic.ts                  MCP and unknown-tool rows

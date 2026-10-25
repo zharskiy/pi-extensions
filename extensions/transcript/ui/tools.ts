@@ -15,18 +15,19 @@ import {
   rowChildren,
   type TitleParts,
 } from "../../../platform/ui-kit/index.ts";
-import { argsOf, diffText, isMissingFile, listedCount, readRange, slowDuration } from "../core/tool-kinds.ts";
+import { argsOf, diffText, listedCount, readRange, slowDuration } from "../core/tool-kinds.ts";
 import { codemodeLook } from "./codemode.ts";
 import { type DiffLine, diffCounts, diffRows, parseDiff } from "./diff.ts";
 import { genericLook } from "./generic.ts";
 import { outputLines } from "./output.ts";
 import { shellLook } from "./shell.ts";
+import { skillRow } from "./skill.ts";
 import {
   bold,
   type Context,
   counted,
-  type Failure,
   failed,
+  fileFailure,
   firstLineFailure,
   type Look,
   type Outcome,
@@ -58,9 +59,6 @@ const pathTitle =
       },
     };
   };
-
-const fileFailure = (context: Context): Failure | undefined =>
-  isMissingFile(resultText(context)) ? { text: "file not found" } : firstLineFailure(context);
 
 const summaryOnly = (line: (context: Context, theme: ThemeLike) => string) => ({
   outcome: orError((context, _room, theme) => ({ lines: [line(context, theme)] })),
@@ -236,6 +234,10 @@ export const transcriptRows =
   (view): ToolRow => {
     const look = lookFor(view);
     const context: Context = { view, args: argsOf(view), home, key: key() };
+
+    if (view.skill && !view.expanded) {
+      return skillRow(context, view.skill.name);
+    }
 
     return {
       call: (width, theme) => {

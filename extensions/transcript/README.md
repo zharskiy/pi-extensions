@@ -22,6 +22,8 @@ A turn in the main session's transcript:
  ✓ read src/stats.py:5-14
    ↳ 10 lines
 
+ [skill] tdd (ctrl+o to expand)
+
  ✓ edit src/stats.py
    ↳ Added 1 line, removed 1 line (ctrl+o to expand)
 
@@ -33,6 +35,8 @@ A turn in the main session's transcript:
 
  The mean skipped the first value; both tests pass now.
 ```
+
+A skill read keeps pi's `[skill]` look.
 
 ## Quick start
 

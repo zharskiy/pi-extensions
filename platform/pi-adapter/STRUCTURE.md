@@ -44,6 +44,7 @@
 - `editor/input.ts`: the editor submit key, command completion, re-submit.
 - `tools/tool-bridge.ts`: tool wrapping: `toPiTool`, `toPiResult`, `fromPiResult`.
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
+- `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
 - `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers.
 - `tools/transcript.ts`: the transcript pane and pi renderer capture.
@@ -76,6 +77,7 @@
 - `tests/input.test.ts`: `editor/input.ts`.
 - `tests/tool-bridge.test.ts`: `tools/tool-bridge.ts`.
 - `tests/tool-rows.test.ts`: `tools/tool-rows.ts` and `tools/row-component.ts`.
+- `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
 - `tests/transcript.test.ts`: `tools/transcript.ts`.
 - `tests/context-facts.test.ts`: the `context/` files.

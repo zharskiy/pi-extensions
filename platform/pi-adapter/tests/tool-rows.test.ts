@@ -548,3 +548,23 @@ describe("MCP labels", () => {
     expect(plainLines(lines)).toEqual([" ✓ notes/search"]);
   });
 });
+
+describe("skill reads", () => {
+  const seen: ToolRows = (view) => ({
+    call: () => [JSON.stringify(view.skill ?? null), String("skill" in view)],
+  });
+
+  const drawn = (path: string) => {
+    const renderers = rowRenderers(seen, "read", undefined);
+
+    return plainLines(renderers?.renderCall?.({}, theme(), context({ args: { path } })).render(60) ?? []);
+  };
+
+  it("hands the skill name to the rows for a SKILL.md read", () => {
+    expect(drawn("/repo/skills/tdd/SKILL.md")).toEqual([' {"name":"tdd"}', " true"]);
+  });
+
+  it("leaves the skill out for any other read", () => {
+    expect(drawn("/repo/a.ts")).toEqual([" null", " false"]);
+  });
+});

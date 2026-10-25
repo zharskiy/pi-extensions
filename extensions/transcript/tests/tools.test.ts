@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ThemeToken, ToolCallView } from "../../../platform/pi-adapter/index.ts";
 import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.ts";
 import { diffCounts, parseDiff } from "../ui/diff.ts";
+import { transcriptRows } from "../ui/tools.ts";
 import { numbered, rows } from "./support/transcript-rows.ts";
 
 const view = (name: string, args: unknown, patch: Partial<ToolCallView> = {}): ToolCallView => ({
@@ -552,6 +553,81 @@ describe("S10 unknown tools", () => {
 
     expect(failed.lines).toEqual([" ✗ lint_fix", "   ↳ first", "     second"]);
     expect(tokenOf(failed.painted, "second")).toBe("error");
+  });
+});
+
+describe("skill reads", () => {
+  const skill = (patch: Partial<ToolCallView> = {}, args: unknown = { path: "/repo/skills/tdd/SKILL.md" }) =>
+    view("read", args, { skill: { name: "tdd" }, ...patch });
+
+  it("draws a finished collapsed read as pi's glyph-free skill line with the hint", () => {
+    const drawn = draw(skill(done(numbered(112))));
+
+    expect(drawn.lines).toEqual([" [skill] tdd (ctrl+o to expand)"]);
+    expect(tokenOf(drawn.painted, "[skill]")).toBe("customMessageLabel");
+    expect(tokenOf(drawn.painted, "tdd")).toBe("customMessageText");
+    expect(drawn.bolded).toContain("[skill]");
+    expect(drawn.lines.join("")).not.toMatch(/[✓◌✗]/);
+  });
+
+  it("shows the line without a hint while the read is pending", () => {
+    expect(draw(skill({ isPartial: true })).lines).toEqual([" [skill] tdd"]);
+  });
+
+  it("shows the read range in the warning colour", () => {
+    const drawn = draw(
+      skill(done(numbered(10)), { path: "/repo/skills/tdd/SKILL.md", offset: 5, limit: 10 }),
+    );
+
+    expect(drawn.lines).toEqual([" [skill] tdd:5-14 (ctrl+o to expand)"]);
+    expect(tokenOf(drawn.painted, ":5-14")).toBe("warning");
+  });
+
+  it("drops the hint first on a narrow row and keeps the name", () => {
+    expect(draw(skill(done(numbered(3))), 20).lines).toEqual([" [skill] tdd"]);
+  });
+
+  it("keeps a missing file on the same line, the reason in the error colour", () => {
+    const drawn = draw(skill(done(enoent, { isError: true })));
+
+    expect(drawn.lines).toEqual([" [skill] tdd · file not found"]);
+    expect(tokenOf(drawn.painted, "file not found")).toBe("error");
+  });
+
+  it("cuts a long failure to one line", () => {
+    const drawn = draw(skill(done(`EACCES: ${"x".repeat(100)}`, { isError: true })), 40);
+
+    expect(drawn.lines).toHaveLength(1);
+    expect(drawn.lines[0]).toMatch(/\.\.\.$/);
+    expect(plainTheme.width(drawn.lines[0] ?? "")).toBeLessThanOrEqual(40);
+  });
+
+  it("marks a stopped read on the same line", () => {
+    const drawn = draw(skill(done("Operation aborted", { isError: true, aborted: true })));
+
+    expect(drawn.lines).toEqual([" [skill] tdd · stopped"]);
+    expect(tokenOf(drawn.painted, "stopped")).toBe("muted");
+  });
+
+  it("falls back to the normal read row when expanded, with pi's body", () => {
+    const drawn = draw(skill(done(numbered(3), { expanded: true })));
+
+    expect(drawn.lines).toEqual([" ✓ read skills/tdd/SKILL.md", "   ↳ 3 lines"]);
+    expect(drawn.piBody).toBe(true);
+  });
+
+  it("shows no hint when the expand key is unbound", () => {
+    const row = transcriptRows(() => "", "/home/me")(skill(done(numbered(3))));
+    const { theme } = paintRecordingTheme();
+
+    expect(row?.call(79, theme)).toEqual(["[skill] tdd"]);
+  });
+
+  it("leaves a read without a skill as today's row", () => {
+    expect(draw(view("read", { path: "src/a.ts" }, done(numbered(3)))).lines).toEqual([
+      " ✓ read src/a.ts",
+      "   ↳ 3 lines",
+    ]);
   });
 });
 

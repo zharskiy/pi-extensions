@@ -9,9 +9,11 @@ const MIN_SUMMARY = 20;
 export const expandHint = (key: string): Styled | undefined =>
   key === "" ? undefined : (theme) => theme.fg("dim", `(${key} to expand)`);
 
+export const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? text(theme) : text);
+
 export const appendHint = (
   line: string,
-  hint: string | undefined,
+  hint: Styled | undefined,
   width: number,
   theme: ThemeLike,
   options: { cuttable?: boolean } = {},
@@ -20,14 +22,15 @@ export const appendHint = (
     return theme.truncate(line, width);
   }
 
-  const room = width - 1 - theme.width(hint);
+  const painted = paint(hint, theme);
+  const room = width - 1 - theme.width(painted);
 
   if (theme.width(line) <= room) {
-    return `${line} ${hint}`;
+    return `${line} ${painted}`;
   }
 
   if (options.cuttable && theme.width(line) > width && room >= MIN_SUMMARY) {
-    return `${theme.truncate(line, room)} ${hint}`;
+    return `${theme.truncate(line, room)} ${painted}`;
   }
 
   return theme.truncate(line, width);

@@ -37,6 +37,8 @@ describe("themeLike colours", () => {
       thinkingHigh: true,
       thinkingXhigh: true,
       thinkingMax: true,
+      customMessageLabel: true,
+      customMessageText: true,
     } satisfies Record<ThemeToken, true>) as ThemeToken[];
 
     expect(tokens.map((token) => like.fg(token, "x"))).toEqual(tokens.map((token) => `<${token}>x`));

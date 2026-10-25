@@ -8,7 +8,9 @@ export type SyntaxToken = "syntaxString" | "syntaxVariable";
 
 export type ThinkingToken = `thinking${Capitalize<ThinkingLevel>}`;
 
-export type ThemeToken = PaintToken | StatusToken | SyntaxToken | ThinkingToken;
+export type MessageToken = "customMessageLabel" | "customMessageText";
+
+export type ThemeToken = PaintToken | StatusToken | SyntaxToken | ThinkingToken | MessageToken;
 
 export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
 

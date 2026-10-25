@@ -17,7 +17,14 @@ import {
   type NavigationKey,
 } from "../types/keys.ts";
 import { isThinkingLevel, THINKING_LEVELS, type ThinkingLevel } from "../types/model.ts";
-import type { PaintToken, StatusToken, SyntaxToken, ThemeToken, ThinkingToken } from "../types/theme.ts";
+import type {
+  MessageToken,
+  PaintToken,
+  StatusToken,
+  SyntaxToken,
+  ThemeToken,
+  ThinkingToken,
+} from "../types/theme.ts";
 
 type FormerThemeToken =
   | "accent"
@@ -37,7 +44,9 @@ type FormerThemeToken =
   | "thinkingMedium"
   | "thinkingHigh"
   | "thinkingXhigh"
-  | "thinkingMax";
+  | "thinkingMax"
+  | "customMessageLabel"
+  | "customMessageText";
 
 type FormerKeyName =
   | "up"
@@ -119,7 +128,9 @@ type FormerHostUiMember =
 
 describe("contract types", () => {
   it("compose back to the former member sets", () => {
-    expectTypeOf<PaintToken | StatusToken | SyntaxToken | ThinkingToken>().toEqualTypeOf<FormerThemeToken>();
+    expectTypeOf<
+      PaintToken | StatusToken | SyntaxToken | ThinkingToken | MessageToken
+    >().toEqualTypeOf<FormerThemeToken>();
     expectTypeOf<ThemeToken>().toEqualTypeOf<FormerThemeToken>();
     expectTypeOf<NavigationKey | EditKey | AppKey | "other">().toEqualTypeOf<FormerKeyName>();
     expectTypeOf<KeyName>().toEqualTypeOf<FormerKeyName>();

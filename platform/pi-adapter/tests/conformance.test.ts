@@ -1078,6 +1078,8 @@ describe("pi adapter conformance", () => {
         "toolDiffAdded",
         "toolDiffRemoved",
         "userMessageBg",
+        "customMessageLabel",
+        "customMessageText",
       ] as const;
       const mixed = tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
 
@@ -1085,6 +1087,7 @@ describe("pi adapter conformance", () => {
       expect(theme.style("x", { bg: "toolSuccessBg" })).toContain("\x1b[48;");
       expect(theme.style("x", { bg: mixed })).toContain("\x1b[48;");
       expect(tui.stripTerminalSequences(theme.style("x", { bg: mixed }))).toBe("x");
+      expect(stripVTControlCharacters(theme.fg("customMessageLabel", "x"))).toBe("x");
     });
 
     it("closes a foreground with its own reset only, so a surrounding background stays", async () => {

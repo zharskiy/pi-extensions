@@ -1,6 +1,7 @@
 export { cachePercentText } from "./cache-tone.ts";
 export { MARKS, type Mark, markGlyph, markOf, pointerMark } from "./glyphs.ts";
 export {
+  appendHint,
   countLine,
   EXPAND_BINDING,
   expandHint,
