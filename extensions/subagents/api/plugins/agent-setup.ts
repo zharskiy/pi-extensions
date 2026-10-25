@@ -37,7 +37,8 @@ import { settingsPaths } from "../../core/model/settings.ts";
 import type { SetupContext } from "../../ui/agent-setup/form.ts";
 import { setupForm } from "../../ui/agent-setup/setup-overlay.ts";
 
-const shippedFirst = (left: AgentDefinition, right: AgentDefinition) =>
+const setupOrder = (left: AgentDefinition, right: AgentDefinition) =>
+  Number(isChore(left.relativePath)) - Number(isChore(right.relativePath)) ||
   Number(left.source !== "builtin") - Number(right.source !== "builtin") ||
   left.name.localeCompare(right.name);
 
@@ -112,7 +113,7 @@ export const agentSetupPlugin: Plugin = {
     const context = (info: SessionInfo, proposal?: Proposal): SetupContext => ({
       agents: definitions
         .list()
-        .sort(shippedFirst)
+        .sort(setupOrder)
         .map((definition) => {
           const initial = {
             model: definition.model ?? INHERIT_MODEL,
@@ -122,6 +123,7 @@ export const agentSetupPlugin: Plugin = {
           const proposed = proposal?.lists[definition.name];
           const agent = {
             name: definition.name,
+            role: isChore(definition.relativePath) ? ("chore" as const) : ("lead" as const),
             description: definition.description,
             tools: definition.tools,
             mcp: definition.mcp !== false,

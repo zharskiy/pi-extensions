@@ -21,13 +21,23 @@ export const context = (trusted = true): SetupContext => ({
   agents: [
     {
       name: "lead",
+      role: "lead",
       description: "Leads things.",
       tools: "all",
       mcp: true,
       initial: { model: "acme/big", thinking: "high", skills: "all" },
     },
     {
+      name: "helper",
+      role: "lead",
+      description: "Helps out.",
+      tools: ["read"],
+      mcp: true,
+      initial: { model: "inherit", skills: ["docs"] },
+    },
+    {
       name: "chore",
+      role: "chore",
       description: "Does chores.",
       tools: ["read", "grep"],
       mcp: false,

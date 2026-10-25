@@ -4,14 +4,7 @@ import {
   type SkillInfo,
   THINKING_LEVELS,
 } from "../../../../platform/pi-adapter/index.ts";
-import {
-  checkedIndexes,
-  clampIndex,
-  initialMulti,
-  type MultiState,
-  multiKey,
-  tabStep,
-} from "../../../../platform/ui-kit/index.ts";
+import { clampIndex, type MultiState, multiKey, tabStep } from "../../../../platform/ui-kit/index.ts";
 import { SCOPES, type Scope, type SetupChange } from "../../core/agent-setup/scope.ts";
 import { sameGrant } from "../../core/model/agent-record.ts";
 import {
@@ -25,6 +18,7 @@ type Draft = { model: string; thinking?: string; skills: Grant };
 
 type SetupAgent = {
   name: string;
+  role: "lead" | "chore";
   description: string;
   tools: Grant;
   mcp: boolean;
@@ -45,7 +39,16 @@ export const FIELDS = ["model", "thinking", "skills"] as const;
 
 export type Field = (typeof FIELDS)[number];
 
-type SkillsPicker = { field: "skills"; multi: MultiState; order: number[]; touched?: boolean };
+const CHORE_FIELDS: readonly Field[] = ["model", "thinking"];
+
+export const fieldsOf = (agent: SetupAgent | undefined): readonly Field[] =>
+  agent?.role === "chore" ? CHORE_FIELDS : FIELDS;
+
+export const ALL_SKILLS_TEXT = "every skill of the agent's caller";
+
+const ALL_ROW = -1;
+
+type SkillsPicker = { field: "skills"; order: number[]; checked: boolean[]; all: boolean; cursor: number };
 
 export type Picker = { field: "model" | "thinking"; cursor: number } | SkillsPicker;
 
@@ -73,22 +76,24 @@ export const initialSetup = (context: SetupContext): SetupState => ({
 
 export const onSubmitTab = (context: SetupContext, state: SetupState) => state.tab === context.agents.length;
 
-const changedFields = (initial: Draft, draft: Draft): Field[] =>
-  FIELDS.filter((field) =>
-    field === "skills" ? !sameGrant(initial.skills, draft.skills) : initial[field] !== draft[field],
+const changedFields = (agent: SetupAgent, draft: Draft) =>
+  fieldsOf(agent).filter((field) =>
+    field === "skills"
+      ? !sameGrant(agent.initial.skills, draft.skills)
+      : agent.initial[field] !== draft[field],
   );
 
 export const fieldChanged = (context: SetupContext, state: SetupState, tab: number, field: Field) => {
   const agent = context.agents[tab];
   const draft = state.drafts[tab];
 
-  return Boolean(agent && draft && changedFields(agent.initial, draft).includes(field));
+  return Boolean(agent && draft && changedFields(agent, draft).includes(field));
 };
 
 export const setupChanges = (context: SetupContext, state: SetupState): SetupChange[] =>
   context.agents.flatMap((agent, index) => {
     const draft = state.drafts[index] ?? agent.initial;
-    const fields = changedFields(agent.initial, draft);
+    const fields = changedFields(agent, draft);
 
     if (fields.length === 0) {
       return [];
@@ -113,10 +118,11 @@ export const thinkingOptions = (context: SetupContext, draft: Draft | undefined)
 const pickerOptions = (context: SetupContext, state: SetupState, field: "model" | "thinking") =>
   field === "model" ? modelOptions(context, state.tab) : thinkingOptions(context, state.drafts[state.tab]);
 
-export const pickerSkills = (context: SetupContext, picker: SkillsPicker) =>
+const pickerSkills = (context: SetupContext, picker: SkillsPicker) =>
   picker.order.flatMap((index) => context.skills[index] ?? []);
 
-const skillsPicker = (context: SetupContext, named: readonly string[]): SkillsPicker => {
+const skillsPicker = (context: SetupContext, skills: Grant): SkillsPicker => {
+  const named = skills === AGENT_SCOPE_ALL ? [] : skills;
   const listed = named.flatMap((name) => {
     const index = context.skills.findIndex((skill) => skill.name === name);
 
@@ -125,17 +131,40 @@ const skillsPicker = (context: SetupContext, named: readonly string[]): SkillsPi
   const order = [...new Set([...listed, ...context.skills.keys()])];
   const checked = order.map((index) => named.includes(context.skills[index]?.name ?? ""));
 
-  return { field: "skills", multi: initialMulti(order.length, checked), order };
+  return { field: "skills", order, checked, all: skills === AGENT_SCOPE_ALL, cursor: 0 };
+};
+
+export const skillsView = (context: SetupContext, picker: SkillsPicker) => {
+  const skills = pickerSkills(context, picker);
+  const rows = [ALL_ROW, ...picker.order.keys()];
+  const options = rows.map((row) =>
+    row === ALL_ROW
+      ? { label: AGENT_SCOPE_ALL, description: ALL_SKILLS_TEXT }
+      : { label: skills[row]?.name ?? "", description: skills[row]?.description },
+  );
+  const checked = rows.map((row) => (row === ALL_ROW ? picker.all : picker.checked[row] === true));
+
+  return { rows, options, multi: { cursor: picker.cursor, checked } };
+};
+
+const ticked = (picker: SkillsPicker, rows: number[], multi: MultiState): SkillsPicker => {
+  const at = (row: number) => multi.checked[rows.indexOf(row)];
+  const checked = picker.checked.map((value, position) => at(position) ?? value);
+  const all = at(ALL_ROW) ?? picker.all;
+
+  if (all && !picker.all) {
+    return { ...picker, all, checked: checked.map(() => false), cursor: multi.cursor };
+  }
+
+  return { ...picker, all: all && !checked.some(Boolean), checked, cursor: multi.cursor };
 };
 
 const openPicker = (context: SetupContext, state: SetupState): SetupState => {
-  const field = FIELDS[state.field] ?? "model";
+  const field = fieldsOf(context.agents[state.tab])[state.field] ?? "model";
   const draft = state.drafts[state.tab];
 
   if (field === "skills") {
-    const named = draft?.skills === AGENT_SCOPE_ALL ? [] : (draft?.skills ?? []);
-
-    return { ...state, picker: skillsPicker(context, named) };
+    return { ...state, picker: skillsPicker(context, draft?.skills ?? []) };
   }
 
   const options = pickerOptions(context, state, field);
@@ -208,21 +237,21 @@ const chooseSkills = (
   key: KeyPress,
 ): SetupState => {
   if (key.name !== "enter") {
-    const multi = multiKey(key, picker.multi);
-    const touched = picker.touched || multi?.checked !== picker.multi.checked;
+    const view = skillsView(context, picker);
+    const multi = multiKey(key, view.multi);
 
-    return multi ? { ...state, picker: { ...picker, multi, touched } } : state;
+    return multi ? { ...state, picker: ticked(picker, view.rows, multi) } : state;
   }
 
   if (context.skills.length === 0) {
     return { ...state, picker: undefined };
   }
 
-  const shown = pickerSkills(context, picker);
-  const names = checkedIndexes(picker.multi).flatMap((position) => shown[position]?.name ?? []);
-  const keptAll = state.drafts[state.tab]?.skills === AGENT_SCOPE_ALL && !picker.touched;
+  const names = pickerSkills(context, picker)
+    .filter((_, position) => picker.checked[position])
+    .map((skill) => skill.name);
 
-  return setDraft(state, { skills: keptAll ? AGENT_SCOPE_ALL : names });
+  return setDraft(state, { skills: picker.all ? AGENT_SCOPE_ALL : names });
 };
 
 const pickerKey = (context: SetupContext, state: SetupState, picker: Picker, key: KeyPress): SetupState => {
@@ -250,7 +279,7 @@ const agentKey = (context: SetupContext, state: SetupState, key: KeyPress): Setu
     return openPicker(context, state);
   }
 
-  const field = listStep(key, state.field, FIELDS.length);
+  const field = listStep(key, state.field, fieldsOf(context.agents[state.tab]).length);
 
   return field === undefined ? state : { ...state, field };
 };

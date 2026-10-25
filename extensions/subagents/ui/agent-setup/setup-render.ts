@@ -1,9 +1,10 @@
-import { PAD, type SkillInfo, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
 import { padded, prefixed } from "../../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
   descriptionFits,
   framed,
+  groupedTabBar,
   type KeyHint,
   listLines,
   MULTI_SELECT_HINTS,
@@ -12,24 +13,25 @@ import {
   SELECT_HINTS,
   scrolledLines,
   TAB_SWITCH_HINT,
-  tabBar,
 } from "../../../../platform/ui-kit/index.ts";
 import type { SetupChange } from "../../core/agent-setup/scope.ts";
 import { grantOrNone } from "../../core/model/agent-record.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {
+  ALL_SKILLS_TEXT,
   FIELDS,
   type Field,
   fieldChanged,
+  fieldsOf,
   LIST_HEIGHT,
   modelOptions,
   onSubmitTab,
   type Picker,
-  pickerSkills,
   type SetupContext,
   type SetupState,
   scopeOptions,
   setupChanges,
+  skillsView,
   thinkingOptions,
 } from "./form.ts";
 
@@ -46,6 +48,8 @@ const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own 
 const MCP_ON = "on: the MCP servers configured in mcp.json, shared by every agent with mcp: true";
 
 const MCP_OFF = "off: this agent does not see MCP servers";
+
+const CHORE_SKILLS_NOTE = "fixed for chores";
 
 const UNTRUSTED_NOTE =
   "This project is not trusted, so pi does not read its .pi/pi-subagents.json; the user file applies to every project.";
@@ -68,21 +72,36 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
   }
 
   if (draft.skills === AGENT_SCOPE_ALL) {
-    return `${AGENT_SCOPE_ALL} (every skill of the agent's caller)`;
+    return `${AGENT_SCOPE_ALL} (${ALL_SKILLS_TEXT})`;
   }
 
   return context.skills.length === 0 ? "none (no skills available)" : grantOrNone(draft.skills);
 };
 
-const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>
-  FIELDS.flatMap((field, index) => {
+const lockedSkillsLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
+  const agent = context.agents[state.tab];
+
+  if (agent?.role !== "chore") {
+    return [];
+  }
+
+  const label = theme.fg("dim", LABELS.skills.padEnd(LABEL_WIDTH));
+  const value = theme.fg("dim", `${grantOrNone(agent.initial.skills)} · ${CHORE_SKILLS_NOTE}`);
+
+  return prefixed(theme, `${PAD}${pointerMark(theme, false)} ${label}`, value, width);
+};
+
+const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => [
+  ...fieldsOf(context.agents[state.tab]).flatMap((field, index) => {
     const chosen = index === state.field && !state.picker;
     const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
     const changed = fieldChanged(context, state, state.tab, field) ? theme.fg("warning", " (changed)") : "";
     const value = `${theme.fg("text", valueText(context, state, field))}${changed}`;
 
     return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${label}`, value, width);
-  });
+  }),
+  ...lockedSkillsLines(context, state, theme, width),
+];
 
 const windowLines = (
   theme: ThemeLike,
@@ -100,18 +119,20 @@ const windowLines = (
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
   padded(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
 
-const skillDetail = (skills: SkillInfo[], cursor: number, theme: ThemeLike, width: number) => {
-  const skill = skills[cursor];
+const skillDetail = (
+  options: { label: string; description?: string }[],
+  cursor: number,
+  theme: ThemeLike,
+  width: number,
+) => {
+  const option = options[cursor];
 
-  if (
-    !skill?.description ||
-    descriptionFits(theme, { label: skill.name, description: skill.description }, width)
-  ) {
+  if (!option?.description || descriptionFits(theme, option, width)) {
     return [];
   }
 
   const cols = Math.max(1, width - PAD.length);
-  const lines = theme.wrap(skill.description, cols);
+  const lines = theme.wrap(option.description, cols);
   const shown =
     lines.length > DETAIL_LINES
       ? [...lines.slice(0, DETAIL_LINES - 1), theme.truncate(lines.slice(DETAIL_LINES - 1).join(" "), cols)]
@@ -130,11 +151,10 @@ const pickerLines = (
   const title = (text: string) => ["", ...padded(theme, theme.fg("accent", theme.bold(text)), width)];
 
   if (picker.field === "skills") {
-    const skills = pickerSkills(context, picker);
-    const options = skills.map(({ name, description }) => ({ label: name, description }));
-    const rows = multiLines(theme, options, picker.multi, width, LIST_HEIGHT);
+    const { options, multi } = skillsView(context, picker);
+    const rows = multiLines(theme, options, multi, width, LIST_HEIGHT);
 
-    return [...title("Skills"), ...rows, ...skillDetail(skills, picker.multi.cursor, theme, width)];
+    return [...title("Skills"), ...rows, ...skillDetail(options, multi.cursor, theme, width)];
   }
 
   if (picker.field === "model") {
@@ -244,10 +264,14 @@ export const renderSetup = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const tabs = context.agents.map((agent, index) => ({
-    label: agent.name,
-    done: FIELDS.some((field) => fieldChanged(context, state, index, field)),
-  }));
+  const group = (label: string, role: "lead" | "chore") => ({
+    label,
+    tabs: context.agents.flatMap((agent, index) =>
+      agent.role === role
+        ? [{ label: agent.name, done: FIELDS.some((field) => fieldChanged(context, state, index, field)) }]
+        : [],
+    ),
+  });
   const changes = setupChanges(context, state);
   const ready = changes.length > 0;
   const body = onSubmitTab(context, state)
@@ -257,7 +281,11 @@ export const renderSetup = (
   return framed(
     theme,
     width,
-    [...padded(theme, tabBar(theme, tabs, state.tab, ready), width), "", ...body],
+    [
+      ...groupedTabBar(theme, [group("Leads", "lead"), group("Chores", "chore")], state.tab, ready, width),
+      "",
+      ...body,
+    ],
     hints(context, state, ready),
   );
 };

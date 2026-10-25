@@ -10,13 +10,25 @@ describe("agent setup rendering", () => {
   it("renders the agent tab with its fields, tools note and MCP line", () => {
     const lines = render(context(), initialSetup(context()));
 
-    expect(lines[1]).toBe(" ← □ lead  □ chore  ✓ Submit →");
+    expect(lines.slice(1, 3)).toEqual(["Leads   □ lead  □ helper", "Chores  □ chore  ✓ Submit"]);
     expect(lines).toContain(" lead Leads things.");
     expect(lines).toContain(" › Model     acme/big");
     expect(lines).toContain("   Thinking  high");
     expect(lines).toContain("   Skills    all (every skill of the agent's caller)");
     expect(lines.some((line) => line.includes("create your own agent with /agents create."))).toBe(true);
     expect(lines.some((line) => line.startsWith(" MCP: on"))).toBe(true);
+  });
+
+  it("renders a chore tab with its skills as a fixed row after model and thinking", () => {
+    const ctx = context();
+    const lines = render(ctx, press(ctx, initialSetup(ctx), key("tab"), key("tab")).state);
+
+    expect(lines[2]).toBe("Chores  □ chore  ✓ Submit");
+    expect(lines.slice(lines.indexOf(" chore Does chores.") + 2).slice(0, 3)).toEqual([
+      " › Model     gone/old",
+      "   Thinking  default",
+      "   Skills    none · fixed for chores",
+    ]);
   });
 
   it("lists the changes and only the user file on the submit tab when untrusted, saying it applies everywhere", () => {

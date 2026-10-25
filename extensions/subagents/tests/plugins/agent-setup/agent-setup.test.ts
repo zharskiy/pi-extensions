@@ -92,7 +92,7 @@ describe("/agents setup form", () => {
     goToAgent(form, "general");
     form.press(key("enter"), key("home"), key("enter"));
     form.press(key("down"), key("enter"), key("home"), key("enter"));
-    form.press(key("down"), key("enter"), char("n"), key("space"), key("enter"));
+    form.press(key("down"), key("enter"), key("down"), key("space"), key("enter"));
     goToSubmit(form);
     form.press(key("enter"));
     await run;
@@ -126,17 +126,18 @@ describe("/agents setup form", () => {
     const { run, form } = await openForm();
 
     goToAgent(form, "general");
-    form.press(key("down"), key("down"), key("enter"));
+    form.press(key("down"), key("down"), key("enter"), key("down"));
 
     const lines = form.render(33);
     const list = lines.slice(lines.indexOf(" Skills") + 1);
 
-    expect(list.slice(0, 3)).toEqual([
+    expect(list.slice(0, 4)).toEqual([
+      "   [x] all  every skill of the...",
       " › [ ] review  Reviews diffs f...",
       "   [ ] docs  Writes docs",
       "   [ ] search  Searches the we...",
     ]);
-    expect(list.slice(3, 8)).toEqual([
+    expect(list.slice(4, 9)).toEqual([
       "",
       " Reviews diffs for correctness,",
       " missing tests, risky changes and",
@@ -158,6 +159,51 @@ describe("/agents setup form", () => {
     await run;
 
     expect(readJson(userFile)).toEqual({ agents: { general: { skills: ["search"] } } });
+  });
+
+  it("groups leads before chores, shipped before own, each by name", async () => {
+    const { host, userFile, openForm, services } = setup();
+    const agents = join(host.info.agentDir, "agents");
+    const agentFile = (name: string) =>
+      `---\nname: ${name}\ndescription: Own ${name}.\nlimit: 100000\ntools: []\nskills: []\nsubagents: []\n---\nWork.\n`;
+
+    writeJson(join(agents, "aardvark.md"), agentFile("aardvark"));
+    writeJson(join(agents, "chores", "abacus.md"), agentFile("abacus"));
+    writeJson(userFile, SEEDED);
+    services.require("definitions").reload();
+
+    const { form } = await openForm();
+    const bar = form.render(400).slice(1, 3);
+
+    expect(bar[0]).toBe("Leads   □ general  □ implementer  □ planner  □ reviewer  □ aardvark");
+    expect(bar[1]).toBe(
+      "Chores  □ editor  □ fetch  □ image  □ scout  □ shell  □ verifier  □ abacus  ✓ Submit",
+    );
+  });
+
+  it("sets general to a subset of skills and back to all", async () => {
+    const { userFile, openForm, definition } = setup();
+    const first = await openForm();
+
+    goToAgent(first.form, "general");
+    first.form.press(key("down"), key("down"), key("enter"), key("down"), key("space"), key("enter"));
+    goToSubmit(first.form);
+    first.form.press(key("enter"));
+    await first.run;
+
+    expect(readJson(userFile)).toEqual({ agents: { general: { skills: ["docs"] } } });
+    expect(definition("general")?.skills).toEqual(["docs"]);
+
+    const second = await openForm();
+
+    goToAgent(second.form, "general");
+    second.form.press(key("down"), key("down"), key("enter"), key("space"), key("enter"));
+    goToSubmit(second.form);
+    second.form.press(key("enter"));
+    await second.run;
+
+    expect(readJson(userFile)).toEqual({ agents: { general: { skills: "all" } } });
+    expect(definition("general")?.skills).toBe("all");
   });
 
   it("offers only the user file in an untrusted project and writes it", async () => {

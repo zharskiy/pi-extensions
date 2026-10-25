@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { char, key } from "../../../../../test/framework/index.ts";
+import { key } from "../../../../../test/framework/index.ts";
 import {
   initialSetup,
   modelOptions,
@@ -27,7 +27,7 @@ describe("agent setup form", () => {
 
     expect(state.drafts[0]?.skills).toEqual(["search", "docs"]);
     expect(setupChanges(ctx, state)).toEqual([{ name: "lead", patch: { skills: ["search", "docs"] } }]);
-    expect(render(ctx, state)[1]).toBe(" ← ■ lead  □ chore  ✓ Submit →");
+    expect(render(ctx, state).slice(1, 3)).toEqual(["Leads   ■ lead  □ helper", "Chores  □ chore  ✓ Submit"]);
     expect(render(ctx, state)).toContain("   Skills    search, docs (changed)");
   });
 
@@ -52,14 +52,16 @@ describe("agent setup form", () => {
     const opened = press(ctx, initialSetup(ctx), ...toSkills);
 
     expect(skillRows(render(ctx, opened.state))).toEqual([
-      " › [x] search",
+      " › [ ] all  every skill of the agent's caller",
+      "   [x] search",
       "   [x] docs  Writes docs",
       "   [ ] lint  Checks style",
     ]);
 
-    const toggled = press(ctx, opened.state, key("space"), key("end"), key("space"));
+    const toggled = press(ctx, opened.state, key("down"), key("space"), key("end"), key("space"));
 
     expect(skillRows(render(ctx, toggled.state))).toEqual([
+      "   [ ] all  every skill of the agent's caller",
       "   [ ] search",
       "   [x] docs  Writes docs",
       " › [x] lint  Checks style",
@@ -78,7 +80,7 @@ describe("agent setup form", () => {
 
   it("lists inherit, an initial model without credentials, then the models with credentials", () => {
     expect(modelOptions(context(), 0)).toEqual(["inherit", "acme/big", "acme/small"]);
-    expect(modelOptions(context(), 1)).toEqual(["inherit", "gone/old", "acme/big", "acme/small"]);
+    expect(modelOptions(context(), 2)).toEqual(["inherit", "gone/old", "acme/big", "acme/small"]);
   });
 
   it("offers the thinking levels of the chosen model, and every level for an unknown model", () => {
@@ -113,7 +115,7 @@ describe("agent setup form", () => {
       key("enter"),
       key("down"),
       key("enter"),
-      char("n"),
+      key("down"),
       key("down"),
       key("space"),
       key("enter"),
@@ -122,56 +124,92 @@ describe("agent setup form", () => {
     expect(setupChanges(ctx, state)).toEqual([
       { name: "lead", patch: { model: "acme/small", thinking: "off", skills: ["search"] } },
     ]);
-    expect(render(ctx, state)[1]).toBe(" ← ■ lead  □ chore  ✓ Submit →");
+    expect(render(ctx, state)[1]).toBe("Leads   ■ lead  □ helper");
     expect(render(ctx, state)).toContain(" › Skills    search (changed)");
   });
 
-  it("opens all with no box ticked and keeps all unless a box is changed, even to none", () => {
+  it("opens all with its row ticked, and ticking a skill or all clears the other", () => {
     const ctx = context();
-    const kept = press(ctx, initialSetup(ctx), ...toSkills);
+    const opened = press(ctx, initialSetup(ctx), ...toSkills);
 
-    expect(skillRows(render(ctx, kept.state))).toEqual([" › [ ] docs  Writes docs", "   [ ] search"]);
-    expect(setupChanges(ctx, press(ctx, kept.state, key("down"), key("enter")).state)).toEqual([]);
-    expect(setupChanges(ctx, press(ctx, kept.state, char("a"), key("enter")).state)).toEqual([
-      { name: "lead", patch: { skills: ["docs", "search"] } },
+    expect(skillRows(render(ctx, opened.state))).toEqual([
+      " › [x] all  every skill of the agent's caller",
+      "   [ ] docs  Writes docs",
+      "   [ ] search",
     ]);
-    expect(setupChanges(ctx, press(ctx, kept.state, char("n"), key("enter")).state)).toEqual([
+    expect(setupChanges(ctx, press(ctx, opened.state, key("enter")).state)).toEqual([]);
+
+    const docs = press(ctx, opened.state, key("down"), key("space"));
+
+    expect(skillRows(render(ctx, docs.state))).toEqual([
+      "   [ ] all  every skill of the agent's caller",
+      " › [x] docs  Writes docs",
+      "   [ ] search",
+    ]);
+    expect(setupChanges(ctx, press(ctx, docs.state, key("enter")).state)).toEqual([
+      { name: "lead", patch: { skills: ["docs"] } },
+    ]);
+
+    const back = press(ctx, docs.state, key("up"), key("space"));
+
+    expect(skillRows(render(ctx, back.state))).toEqual([
+      " › [x] all  every skill of the agent's caller",
+      "   [ ] docs  Writes docs",
+      "   [ ] search",
+    ]);
+    expect(setupChanges(ctx, press(ctx, back.state, key("enter")).state)).toEqual([]);
+    expect(setupChanges(ctx, press(ctx, opened.state, key("space"), key("enter")).state)).toEqual([
       { name: "lead", patch: { skills: [] } },
     ]);
   });
 
-  it("stores every checked skill by name and leaves a field unchanged when its picker is left with Escape", () => {
+  it("opens a list grant with the all row unticked and confirms the ticked skills", () => {
     const ctx = context();
-    const { state } = press(
-      ctx,
-      initialSetup(ctx),
-      key("tab"),
-      key("down"),
-      key("down"),
-      key("enter"),
-      char("a"),
-      key("enter"),
-      key("up"),
-      key("enter"),
-      key("end"),
-      key("escape"),
+    const opened = press(ctx, initialSetup(ctx), key("tab"), ...toSkills);
+
+    expect(skillRows(render(ctx, opened.state))).toEqual([
+      " › [ ] all  every skill of the agent's caller",
+      "   [x] docs  Writes docs",
+      "   [ ] search",
+    ]);
+    expect(press(ctx, opened.state, key("space"), key("enter")).state.drafts[1]?.skills).toBe("all");
+  });
+
+  it("never changes a chore's skills: the cursor skips the fixed Skills row", () => {
+    const ctx = context();
+    const chore = press(ctx, initialSetup(ctx), key("tab"), key("tab"), key("down"), key("down"));
+
+    expect(chore.state.field).toBe(1);
+    expect(render(ctx, chore.state)).toContain("   Skills    none · fixed for chores");
+    expect(press(ctx, chore.state, key("enter")).state.picker?.field).toBe("thinking");
+
+    const drafts = chore.state.drafts.map((draft, index) =>
+      index === 2 ? { ...draft, skills: ["docs"] } : draft,
     );
 
-    expect(setupChanges(ctx, state)).toEqual([{ name: "chore", patch: { skills: ["docs", "search"] } }]);
+    expect(setupChanges(ctx, { ...chore.state, drafts })).toEqual([]);
   });
 
   it("switches tabs with Tab and ←, wrapping to the submit tab, and cancels with Escape", () => {
     const ctx = context();
     const back = press(ctx, initialSetup(ctx), key("left"));
 
-    expect(back.state.tab).toBe(2);
+    expect(back.state.tab).toBe(3);
     expect(press(ctx, back.state, key("right")).state.tab).toBe(0);
     expect(press(ctx, back.state, key("escape")).done).toBe("cancel");
   });
 
   it("shows the changes and both files on the submit tab and saves with Enter", () => {
     const ctx = context();
-    const { state } = press(ctx, initialSetup(ctx), key("tab"), key("down"), key("enter"), key("end"));
+    const { state } = press(
+      ctx,
+      initialSetup(ctx),
+      key("tab"),
+      key("tab"),
+      key("down"),
+      key("enter"),
+      key("end"),
+    );
     const changed = press(ctx, state, key("enter"), key("tab"));
     const lines = render(ctx, changed.state);
 
