@@ -58,8 +58,9 @@ const setup = ({ trusted = false, seeded = true } = {}) => {
   return { ...harness, projectFile, userFile, noticesOf, definition, openForm };
 };
 
-const showsAgent = (form: FakeForm, name: string) =>
-  form.render(400).some((line) => line.startsWith(` ${name} `));
+const LIST_ROWS = 10;
+
+const showsAgent = (form: FakeForm, name: string) => form.render(400).includes(` ${name}`);
 
 const goToAgent = (form: FakeForm, name: string) => {
   Array.from({ length: 20 }).forEach(() => {
@@ -131,28 +132,37 @@ describe("/agents setup form", () => {
     const lines = form.render(33);
     const list = lines.slice(lines.indexOf(" Skills") + 2);
 
-    expect(list.slice(0, 4)).toEqual([
+    expect(list.slice(0, 5)).toEqual([
+      "",
       "   [x] all  every skill of the...",
       " › [ ] review  Reviews diffs f...",
       "   [ ] docs  Writes docs",
       "   [ ] search  Searches the we...",
     ]);
-    expect(list.slice(4, 9)).toEqual([
-      "",
+
+    const detail = (rendered: string[]) => {
+      const start = rendered.indexOf(" Skills") + 2 + LIST_ROWS + 1;
+
+      return rendered.slice(start, start + 3);
+    };
+
+    expect(lines[lines.indexOf(" Skills") + 2 + LIST_ROWS]).toBe("");
+    expect(detail(lines)).toEqual([
       " Reviews diffs for correctness,",
       " missing tests, risky changes and",
-      " unclear naming, then reports ...",
-      "",
+      " unclear naming, then reports...",
     ]);
 
     form.press(key("down"));
-    expect(form.render(33).some((line) => line.startsWith(" Reviews diffs"))).toBe(false);
-    expect(form.render(33).some((line) => line.startsWith(" Searches"))).toBe(false);
+    expect(detail(form.render(33))).toEqual([" Writes docs", "", ""]);
 
     form.press(key("down"));
-    expect(form.render(33)).toContain(" Searches the web and cites");
-    expect(form.render(33)).toContain(" sources");
+    expect(detail(form.render(33))).toEqual([" Searches the web and cites", " sources", ""]);
 
+    form.press(key("home"));
+    expect(detail(form.render(33))).toEqual(["", "", ""]);
+
+    form.press(key("end"));
     form.press(key("space"), key("enter"));
     goToSubmit(form);
     form.press(key("enter"));
@@ -230,9 +240,9 @@ describe("/agents setup form", () => {
     form.press(key("up"));
 
     expect(form.render(400).some((line) => line.includes("This project  "))).toBe(false);
-    expect(form.render(400).some((line) => line.includes("the user file applies to every project"))).toBe(
-      true,
-    );
+    expect(
+      form.render(400).some((line) => line.includes("only the user file applies, to every project")),
+    ).toBe(true);
 
     form.press(key("enter"));
     await run;

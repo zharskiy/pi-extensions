@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { padded, prefixed } from "../../shared/index.ts";
-import { hintLines, keyHints, rule } from "../key-hints.ts";
+import { framed, hintLines, keyHints, rule } from "../key-hints.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
 
@@ -68,5 +68,35 @@ describe("keyHints", () => {
     expect(keyHints(pairs, tagged)).toBe(
       "<dim>enter</> <muted>to view</><dim> · </><dim>x</> <muted>to stop</>",
     );
+  });
+});
+
+describe("framed", () => {
+  const hints = [
+    ["↑↓", "to select"],
+    ["enter", "to confirm"],
+    ["esc", "to cancel"],
+  ] as const;
+
+  it("wraps the hints between rules by default", () => {
+    expect(framed(plainTheme, 20, ["body"], hints)).toEqual([
+      "─".repeat(20),
+      "body",
+      "",
+      " ↑↓ to select",
+      " enter to confirm",
+      " esc to cancel",
+      "─".repeat(20),
+    ]);
+  });
+
+  it("keeps the hints on one row cut with an ellipsis when asked for one row", () => {
+    expect(framed(plainTheme, 30, ["body"], hints, { hintRows: 1 })).toEqual([
+      "─".repeat(30),
+      "body",
+      "",
+      " ↑↓ to select · enter to co...",
+      "─".repeat(30),
+    ]);
   });
 });

@@ -59,7 +59,7 @@ export const presetOf = (agent: SetupAgent, preset: Preset) =>
 
 export const ALL_SKILLS_TEXT = "every skill of the agent's caller";
 
-const ALL_ROW = -1;
+export const ALL_ROW = -1;
 
 type SkillsPicker = {
   field: "skills";

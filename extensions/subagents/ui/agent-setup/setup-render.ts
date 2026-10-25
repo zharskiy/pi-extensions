@@ -1,22 +1,23 @@
 import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
-import { DOT, padded, prefixed } from "../../../../platform/shared/index.ts";
+import { cutStart, DOT, fixedBlock, padRows } from "../../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
-  descriptionFits,
+  countLine,
   framed,
   groupedTabBar,
   type KeyHint,
   listLines,
   multiLines,
   pointerMark,
-  SELECT_HINTS,
   scrolledLines,
   TAB_SWITCH_HINT,
 } from "../../../../platform/ui-kit/index.ts";
 import type { SetupChange } from "../../core/agent-setup/scope.ts";
 import { grantOrNone } from "../../core/model/agent-record.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
+import { alignRight } from "../components/format.ts";
 import {
+  ALL_ROW,
   ALL_SKILLS_TEXT,
   type Draft,
   type Field,
@@ -48,20 +49,39 @@ const PRESETS: readonly Preset[] = ["previous", "suggested"];
 
 const LABEL_WIDTH = 10;
 
+const DESCRIPTION_ROWS = 2;
+
 const DETAIL_LINES = 3;
+
+const FIELD_ROWS = 3;
+
+const PANEL_ROWS = 1 + 1 + (LIST_HEIGHT + 2) + 1 + DETAIL_LINES;
+
+const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + FIELD_ROWS + 1 + PRESETS.length + 1 + PANEL_ROWS;
+
+const WIDE = 10_000;
 
 const NOUNS: Record<Field, string> = { model: "model", thinking: "level", skills: "skill" };
 
-const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own agent with /agents create.";
+const TOOLS_NOTE = "fixed per agent; /agents create makes your own";
 
-const MCP_ON = "on: the MCP servers configured in mcp.json, shared by every agent with mcp: true";
+const MCP_ON = "on: the MCP servers in mcp.json, shared by every agent with mcp: true";
 
 const MCP_OFF = "off: this agent does not see MCP servers";
 
 const CHORE_SKILLS_NOTE = "fixed for chores";
 
-const UNTRUSTED_NOTE =
-  "This project is not trusted, so pi does not read its .pi/pi-subagents.json; the user file applies to every project.";
+const UNTRUSTED_NOTE = "Project not trusted: only the user file applies, to every project.";
+
+const fitted = (theme: ThemeLike, first: string, text: string, suffix: string, width: number) =>
+  `${first}${theme.truncate(text, Math.max(1, width - theme.width(first) - theme.width(suffix)))}${suffix}`;
+
+const line = (theme: ThemeLike, text: string, width: number) => fitted(theme, PAD, text, "", width);
+
+const block = (theme: ThemeLike, text: string, width: number, rows: number) =>
+  fixedBlock(theme, text, Math.max(1, width - PAD.length), rows).map((row) =>
+    row ? `${PAD}${theme.fg("muted", row)}` : "",
+  );
 
 const modelText = (model: string) => (model === INHERIT_MODEL ? "inherit (the main session's model)" : model);
 
@@ -97,17 +117,17 @@ const lockedSkillsLines = (context: SetupContext, state: SetupState, theme: Them
   const label = theme.fg("dim", LABELS.skills.padEnd(LABEL_WIDTH));
   const value = theme.fg("dim", `${grantOrNone(agent.initial.skills)} · ${CHORE_SKILLS_NOTE}`);
 
-  return prefixed(theme, `${PAD}${pointerMark(theme, false)} ${label}`, value, width);
+  return [fitted(theme, `${PAD}${pointerMark(theme, false)} ${label}`, value, "", width)];
 };
 
 const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => [
-  ...fieldsOf(context.agents[state.tab]).flatMap((field, index) => {
+  ...fieldsOf(context.agents[state.tab]).map((field, index) => {
     const chosen = index === state.field && !state.picker;
     const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
     const changed = fieldChanged(context, state, state.tab, field) ? theme.fg("warning", " (changed)") : "";
-    const value = `${theme.fg("text", valueText(context, state, field))}${changed}`;
+    const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
 
-    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${label}`, value, width);
+    return fitted(theme, first, theme.fg("text", valueText(context, state, field)), changed, width);
   }),
   ...lockedSkillsLines(context, state, theme, width),
 ];
@@ -143,11 +163,9 @@ const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike,
     const chosen = index === state.field && !state.picker;
     const label = theme.fg(chosen ? "accent" : "muted", PRESET_LABELS[preset].padEnd(LABEL_WIDTH));
     const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
-    const mark = presetInUse(context, state, preset) ? " (in use)" : "";
-    const room = Math.max(1, width - theme.width(first) - mark.length);
-    const text = theme.truncate(presetText(fieldsOf(agent), draft), room);
+    const mark = presetInUse(context, state, preset) ? theme.fg("dim", " (in use)") : "";
 
-    return `${first}${theme.fg("text", text)}${theme.fg("dim", mark)}`;
+    return fitted(theme, first, theme.fg("text", presetText(fieldsOf(agent), draft)), mark, width);
   });
 };
 
@@ -158,53 +176,44 @@ const windowLines = (
   width: number,
   label: (option: string) => string = (option) => option,
 ) =>
-  scrolledLines(theme, options.length, cursor, LIST_HEIGHT, width, (index, chosen) => {
-    const text = theme.fg(chosen ? "accent" : "text", label(options[index] ?? ""));
+  scrolledLines(
+    theme,
+    options.length,
+    cursor,
+    LIST_HEIGHT,
+    width,
+    (index, chosen) => {
+      const text = theme.fg(chosen ? "accent" : "text", label(options[index] ?? ""));
 
-    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} `, text, width);
-  });
+      return [fitted(theme, `${PAD}${pointerMark(theme, chosen)} `, text, "", width)];
+    },
+    { slots: true },
+  );
+
+const emptyList = (theme: ThemeLike, text: string, width: number) =>
+  padRows(["", line(theme, theme.fg("muted", text), width)], LIST_HEIGHT + 2);
 
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
-  padded(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
+  line(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
 
-const skillDetail = (
-  options: { label: string; description?: string }[],
-  cursor: number,
-  theme: ThemeLike,
-  width: number,
-) => {
-  const option = options[cursor];
-
-  if (!option?.description || descriptionFits(theme, option, width)) {
-    return [];
-  }
-
-  const cols = Math.max(1, width - PAD.length);
-  const lines = theme.wrap(option.description, cols);
-  const shown =
-    lines.length > DETAIL_LINES
-      ? [...lines.slice(0, DETAIL_LINES - 1), theme.truncate(lines.slice(DETAIL_LINES - 1).join(" "), cols)]
-      : lines;
-
-  return ["", ...shown.map((line) => `${PAD}${theme.fg("muted", line)}`)];
-};
+const skillDetail = (description: string | undefined, theme: ThemeLike, width: number) =>
+  block(theme, description ?? "", width, DETAIL_LINES);
 
 const queryLine = (theme: ThemeLike, query: string, shown: number, total: number, width: number) => {
   if (!query) {
-    return padded(theme, theme.fg("dim", "/ type to filter"), width);
+    return line(theme, theme.fg("dim", "/ type to filter"), width);
   }
 
-  return padded(
-    theme,
-    `${theme.fg("dim", "/")} ${theme.fg("text", `${query}▏`)}   ${theme.fg("dim", `${shown} of ${total}`)}`,
-    width,
-  );
+  const count = `${shown} of ${total}`;
+  const cols = Math.max(1, width - PAD.length);
+  const room = Math.max(1, cols - count.length - 2 - "/ ▏".length);
+  const left = `${theme.fg("dim", "/")} ${theme.fg("text", `${cutStart(query, room, theme)}▏`)}`;
+  const right = theme.fg("dim", count);
+
+  return `${PAD}${alignRight(theme, left, right, cols) ?? theme.truncate(left, cols)}`;
 };
 
-const noMatchLines = (theme: ThemeLike, picker: Picker, shown: number, width: number) =>
-  picker.query && shown === 0
-    ? padded(theme, theme.fg("muted", `no ${NOUNS[picker.field]} matches "${picker.query}"`), width)
-    : [];
+const noMatch = (picker: Picker) => `no ${NOUNS[picker.field]} matches "${picker.query}"`;
 
 const pickerLines = (
   context: SetupContext,
@@ -213,30 +222,36 @@ const pickerLines = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const title = (text: string) => ["", ...padded(theme, theme.fg("accent", theme.bold(text)), width)];
+  const title = (text: string) => line(theme, theme.fg("accent", theme.bold(text)), width);
 
   if (picker.field === "skills") {
-    const { options, multi, total } = skillsView(context, picker);
-    const rows =
-      options.length > 0 || !picker.query ? multiLines(theme, options, multi, width, LIST_HEIGHT) : [];
+    const { rows, options, multi, total } = skillsView(context, picker);
+    const list =
+      options.length === 0 && picker.query
+        ? emptyList(theme, noMatch(picker), width)
+        : multiLines(theme, options, multi, width, LIST_HEIGHT, { slots: true });
+    const detail = rows[multi.cursor] === ALL_ROW ? undefined : options[multi.cursor]?.description;
 
     return [
-      ...title("Skills"),
-      ...queryLine(theme, picker.query, options.length, total, width),
-      ...rows,
-      ...noMatchLines(theme, picker, options.length, width),
-      ...skillDetail(options, multi.cursor, theme, width),
+      title("Skills"),
+      queryLine(theme, picker.query, options.length, total, width),
+      ...list,
+      "",
+      ...skillDetail(detail, theme, width),
     ];
   }
 
   const { shown, total } = listView(context, state, picker);
   const label = picker.field === "model" ? modelText : undefined;
+  const list =
+    shown.length === 0
+      ? emptyList(theme, picker.query ? noMatch(picker) : "(none available)", width)
+      : windowLines(theme, shown, picker.cursor, width, label);
 
   return [
-    ...title(picker.field === "model" ? "Model (models with credentials)" : "Thinking level"),
-    ...queryLine(theme, picker.query, shown.length, total, width),
-    ...windowLines(theme, shown, picker.cursor, width, label),
-    ...noMatchLines(theme, picker, shown.length, width),
+    title(picker.field === "model" ? "Model (models with credentials)" : "Thinking level"),
+    queryLine(theme, picker.query, shown.length, total, width),
+    ...list,
   ];
 };
 
@@ -247,13 +262,10 @@ const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, w
     return [];
   }
 
-  const proposed = agent.note ? labelLine(theme, "Proposed", agent.note, width) : [];
-
   return [
-    "",
-    ...proposed,
-    ...labelLine(theme, "Tools", `${grantOrNone(agent.tools)}. ${TOOLS_NOTE}`, width),
-    ...labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
+    agent.note ? labelLine(theme, "Proposed", agent.note, width) : "",
+    labelLine(theme, "Tools", `${grantOrNone(agent.tools)}; ${TOOLS_NOTE}`, width),
+    labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
   ];
 };
 
@@ -264,18 +276,19 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
     return [];
   }
 
-  const heading = `${theme.fg("accent", theme.bold(agent.name))} ${theme.fg("muted", agent.description)}`;
   const below = state.picker
     ? pickerLines(context, state, state.picker, theme, width)
     : infoLines(context, state, theme, width);
 
   return [
-    ...padded(theme, heading, width),
+    line(theme, theme.fg("accent", theme.bold(agent.name)), width),
+    ...block(theme, agent.description, width, DESCRIPTION_ROWS),
     "",
     ...fieldLines(context, state, theme, width),
     "",
     ...presetLines(context, state, theme, width),
-    ...below,
+    "",
+    ...padRows(below, PANEL_ROWS),
   ];
 };
 
@@ -298,6 +311,24 @@ const changeLines = (context: SetupContext, state: SetupState, change: SetupChan
     });
 };
 
+const changeWindow = (theme: ThemeLike, texts: string[], rows: number, width: number) => {
+  if (texts.length <= rows) {
+    return padRows(
+      texts.map((text) => line(theme, text, width)),
+      rows,
+    );
+  }
+
+  const kept = texts.slice(0, Math.max(0, rows - 1)).map((text) => line(theme, text, width));
+  const more = countLine(
+    { hidden: texts.length - kept.length, end: "more", noun: "item" },
+    width - PAD.length,
+    theme,
+  );
+
+  return [...kept, `${PAD}${more}`];
+};
+
 const submitLines = (
   context: SetupContext,
   state: SetupState,
@@ -307,50 +338,51 @@ const submitLines = (
   width: number,
 ) => {
   const title = changes.length > 0 ? "Changes" : "No changes";
-  const rows = changes
-    .flatMap((change) => changeLines(context, state, change, theme))
-    .flatMap((text) => padded(theme, text, width));
-  const project = context.project ? [...labelLine(theme, "Project", context.project, width), ""] : [];
+  const texts = changes.flatMap((change) => changeLines(context, state, change, theme));
+  const project = context.project ? labelLine(theme, "Project", context.project, width) : "";
   const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
     description: paths[scope],
   }));
-  const untrusted = context.trusted ? [] : padded(theme, theme.fg("dim", UNTRUSTED_NOTE), width);
-
-  return [
-    ...project,
-    ...padded(theme, theme.fg("accent", theme.bold(title)), width),
-    ...(rows.length > 0 ? ["", ...rows] : []),
+  const top = [
+    line(theme, theme.fg("accent", theme.bold("Submit")), width),
+    ...padRows([], DESCRIPTION_ROWS),
     "",
-    ...padded(theme, theme.fg("muted", "Save to:"), width),
-    ...listLines(theme, scopes, state.scope, width, { layout: "beside" }),
-    ...untrusted,
+    project,
+    "",
+    line(theme, theme.fg("accent", theme.bold(title)), width),
   ];
-};
+  const bottom = [
+    "",
+    line(theme, theme.fg("muted", "Save to:"), width),
+    ...listLines(theme, scopes, state.scope, WIDE, { layout: "beside" }).map((row) =>
+      theme.truncate(row, width),
+    ),
+    context.trusted ? "" : line(theme, theme.fg("dim", UNTRUSTED_NOTE), width),
+  ];
+  const window = changeWindow(theme, texts, BODY_ROWS - top.length - bottom.length, width);
 
-const FILTER_HINTS: readonly KeyHint[] = [
-  ["type", "to filter"],
-  ["↑↓", "to select"],
-];
+  return padRows([...top, ...window, ...bottom], BODY_ROWS);
+};
 
 const BACK_HINT: KeyHint = ["esc", "to clear/back"];
 
+const SELECT_HINT: KeyHint = ["↑↓", "to select"];
+
 const hints = (context: SetupContext, state: SetupState, ready: boolean): readonly KeyHint[] => {
   if (state.picker?.field === "skills") {
-    return [...FILTER_HINTS, ["space", "to toggle"], ["enter", "to confirm"], BACK_HINT];
+    return [SELECT_HINT, ["space", "to toggle"], ["enter", "to confirm"], BACK_HINT];
   }
 
   if (state.picker) {
-    return [...FILTER_HINTS, ["enter", "to choose"], BACK_HINT];
+    return [SELECT_HINT, ["enter", "to choose"], BACK_HINT];
   }
 
   if (onSubmitTab(context, state)) {
-    const enter: KeyHint = ["enter", ready ? "to save" : "to close"];
-
-    return [...SELECT_HINTS, enter, TAB_SWITCH_HINT, CANCEL_HINT];
+    return [SELECT_HINT, ["enter", ready ? "to save" : "to close"], TAB_SWITCH_HINT, CANCEL_HINT];
   }
 
-  return [["↑↓", "to select"], ["enter", "to change or apply"], TAB_SWITCH_HINT, CANCEL_HINT];
+  return [SELECT_HINT, ["enter", "to change or apply"], TAB_SWITCH_HINT, CANCEL_HINT];
 };
 
 export const renderSetup = (
@@ -376,5 +408,5 @@ export const renderSetup = (
     ? submitLines(context, state, changes, paths, theme, width)
     : agentLines(context, state, theme, width);
 
-  return framed(theme, width, [...bar, "", ...body], hints(context, state, ready));
+  return framed(theme, width, [...bar, "", ...body], hints(context, state, ready), { hintRows: 1 });
 };

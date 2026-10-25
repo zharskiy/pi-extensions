@@ -84,10 +84,19 @@ export const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: nu
 
 export const rule = (theme: ThemeLike, width: number) => theme.fg("accent", "─".repeat(Math.max(1, width)));
 
-export const framed = (theme: ThemeLike, width: number, lines: string[], hints: readonly KeyHint[]) => [
+const hintRow = (theme: ThemeLike, hints: readonly KeyHint[], width: number) =>
+  `${PAD}${theme.truncate(keyHints(hints, theme), Math.max(1, width - PAD.length))}`;
+
+export const framed = (
+  theme: ThemeLike,
+  width: number,
+  lines: string[],
+  hints: readonly KeyHint[],
+  { hintRows }: { hintRows?: 1 } = {},
+) => [
   rule(theme, width),
   ...lines,
   "",
-  ...hintLines(theme, hints, width),
+  ...(hintRows === 1 ? [hintRow(theme, hints, width)] : hintLines(theme, hints, width)),
   rule(theme, width),
 ];

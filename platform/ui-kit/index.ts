@@ -16,7 +16,6 @@ export {
   SELECT_HINTS,
 } from "./list.ts";
 export {
-  descriptionFits,
   type MultiState,
   multiKey,
   multiLines,

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { char, key, plainTheme } from "../../../test/framework/index.ts";
-import { checkedIndexes, initialMulti, multiKey, multiLines, scrollWindow } from "../multi-select.ts";
+import {
+  checkedIndexes,
+  initialMulti,
+  multiKey,
+  multiLines,
+  scrolledLines,
+  scrollWindow,
+} from "../multi-select.ts";
 
 describe("multiKey", () => {
   it("keeps the pointer inside the list and leaves Enter, Escape and other keys to the caller", () => {
@@ -79,6 +86,75 @@ describe("multiLines", () => {
 
   it("says when there is nothing to choose", () => {
     expect(multiLines(plainTheme, [], initialMulti(0), 40)).toEqual([" (none available)"]);
+  });
+});
+
+describe("multiLines with slots", () => {
+  const many = Array.from({ length: 12 }, (_, index) => ({ label: `skill-${index + 1}` }));
+  const slotted = (cursor: number) =>
+    multiLines(plainTheme, many, { ...initialMulti(12), cursor }, 40, 4, { slots: true });
+
+  it("always keeps a row for each scroll count, blank when nothing is hidden there", () => {
+    expect(slotted(0)).toEqual([
+      "",
+      " › [ ] skill-1",
+      "   [ ] skill-2",
+      "   [ ] skill-3",
+      "   [ ] skill-4",
+      " ↓ 8 more",
+    ]);
+    expect(slotted(6)).toEqual([
+      " ↑ 4 more",
+      "   [ ] skill-5",
+      "   [ ] skill-6",
+      " › [ ] skill-7",
+      "   [ ] skill-8",
+      " ↓ 4 more",
+    ]);
+    expect(slotted(11)).toEqual([
+      " ↑ 8 more",
+      "   [ ] skill-9",
+      "   [ ] skill-10",
+      "   [ ] skill-11",
+      " › [ ] skill-12",
+      "",
+    ]);
+  });
+
+  it("pads a short list to the height and cuts a long name to one row", () => {
+    const options = [{ label: "a-very-long-skill-name-indeed", description: "never shown" }];
+
+    expect(multiLines(plainTheme, options, initialMulti(1), 20, 3, { slots: true })).toEqual([
+      "",
+      " › [ ] a-very-lon...",
+      "",
+      "",
+      "",
+    ]);
+  });
+
+  it("puts none available in the first option row", () => {
+    expect(multiLines(plainTheme, [], initialMulti(0), 40, 2, { slots: true })).toEqual([
+      "",
+      " (none available)",
+      "",
+      "",
+    ]);
+  });
+});
+
+describe("scrolledLines with slots", () => {
+  it("keeps the height when the rows fit without scrolling", () => {
+    const row = (index: number) => [`row ${index}`];
+
+    expect(scrolledLines(plainTheme, 2, 0, 3, 40, row, { slots: true })).toEqual([
+      "",
+      "row 0",
+      "row 1",
+      "",
+      "",
+    ]);
+    expect(scrolledLines(plainTheme, 2, 0, 3, 40, row)).toEqual(["row 0", "row 1"]);
   });
 });
 
