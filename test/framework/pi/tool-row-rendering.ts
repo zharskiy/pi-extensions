@@ -33,7 +33,12 @@ const APC = new RegExp(
   "g",
 );
 
-export const visible = (line: string) => line.replace(APC, "").replace(SGR, "");
+const OSC = new RegExp(
+  `${String.fromCharCode(27)}\\][^${String.fromCharCode(7)}${String.fromCharCode(27)}]*(?:${String.fromCharCode(7)}|${String.fromCharCode(27)}\\\\)`,
+  "g",
+);
+
+export const visible = (line: string) => line.replace(APC, "").replace(OSC, "").replace(SGR, "");
 
 type EditRender = { diff: string; outputPad: number; width: number };
 

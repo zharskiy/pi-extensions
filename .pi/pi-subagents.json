@@ -1,0 +1,25 @@
+{
+  "agents": {
+    "implementer": {
+      "skills": [
+        "new-extension",
+        "readme",
+        "codebase-design",
+        "tdd"
+      ]
+    },
+    "planner": {
+      "skills": [
+        "new-extension",
+        "readme",
+        "codebase-design"
+      ]
+    },
+    "reviewer": {
+      "skills": [
+        "readme",
+        "codebase-design"
+      ]
+    }
+  }
+}

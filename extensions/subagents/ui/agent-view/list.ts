@@ -5,7 +5,7 @@ import {
   type ThemeToken,
 } from "../../../../platform/pi-adapter/index.ts";
 import { errorText } from "../../../../platform/shared/index.ts";
-import { keyHints } from "../../../../platform/ui-kit/index.ts";
+import { hintRow } from "../../../../platform/ui-kit/index.ts";
 import { clearTargets, listSections, subtitle, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { tickFor } from "../../core/components/refresh.ts";
 import { carrySelection, stoppableAgents, type TreeRow } from "../../core/components/tree.ts";
@@ -29,6 +29,8 @@ const STOP_ALL_CONFIRM_MS = 3_000;
 const NO_AGENTS_MS = 2_000;
 
 const STOP_FAILED_MS = 3_000;
+
+const CHROME_ROWS = 7;
 
 type Feedback = { text: string; token: ThemeToken };
 
@@ -167,17 +169,17 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
 
   const footerLines = (inner: number) => {
     const theme = api.theme;
-    const hint = theme.truncate(PAD + keyHints(listHint(selected()), theme), inner + PAD.length);
+    const hint = hintRow(theme, listHint(selected()), inner + PAD.length);
 
-    return feedback ? [padLine(theme, feedback.token, feedback.text, inner), hint] : [hint];
+    return [feedback ? padLine(theme, feedback.token, feedback.text, inner) : "", hint];
   };
 
-  const bodyHeight = (footerLength: number) => Math.max(1, api.rows() - 5 - footerLength);
+  const bodyHeight = () => Math.max(1, api.rows() - CHROME_ROWS);
 
   const render = (width: number) => {
     const inner = innerWidth(width);
     const footer = footerLines(inner);
-    const height = bodyHeight(footer.length);
+    const height = bodyHeight();
     let window = scroll.window(placeholders, height);
     const top = scroll.state().top;
     const line = selectedId === undefined ? -1 : (lineOf.get(selectedId) ?? -1);
@@ -246,7 +248,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     run(stoppable.map((record) => deps.stop(record.id)));
   };
 
-  const page = () => Math.max(1, bodyHeight(feedback ? 2 : 1) - 1);
+  const page = () => Math.max(1, bodyHeight() - 1);
 
   const names: Partial<Record<KeyPress["name"], () => void>> = {
     up: () => move(-1),

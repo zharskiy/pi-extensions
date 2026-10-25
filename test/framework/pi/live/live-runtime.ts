@@ -1,11 +1,10 @@
 import { createPiRuntime } from "../../../../platform/pi-adapter/child/child-runtime.ts";
-import type { SkillFile } from "../../../../platform/pi-adapter/child/skills.ts";
-import type { AgentRuntime } from "../../../../platform/pi-adapter/index.ts";
+import type { AgentRuntime, SkillInfo } from "../../../../platform/pi-adapter/index.ts";
 import { liveModel } from "./live-model.ts";
 
 export const PI_DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 
-export type LiveParent = { trusted?: boolean; skillFiles?: SkillFile[] };
+export type LiveParent = { trusted?: boolean; skillFiles?: SkillInfo[] };
 
 export const createLiveAgentRuntime = (
   options: { namespace: string; exclude: string[] },

@@ -84,7 +84,16 @@ export const allowlist = (grant: Grant): string[] | undefined =>
 
 export const isNone = (grant: Grant) => grant !== AGENT_SCOPE_ALL && grant.length === 0;
 
+export const isLead = (definition: Pick<AgentDefinition, "subagents">) => !isNone(definition.subagents);
+
 export const grantText = (grant: Grant) => (grant === AGENT_SCOPE_ALL ? AGENT_SCOPE_ALL : grant.join(", "));
+
+export const grantOrNone = (grant: Grant) => grantText(grant) || "none";
+
+export const sameGrant = (left: Grant, right: Grant) =>
+  left === AGENT_SCOPE_ALL || right === AGENT_SCOPE_ALL
+    ? left === right
+    : left.length === right.length && left.every((name, index) => right[index] === name);
 
 export const subagentNames = (definition: Pick<AgentDefinition, "name" | "subagents">, names: string[]) =>
   definition.subagents === AGENT_SCOPE_ALL

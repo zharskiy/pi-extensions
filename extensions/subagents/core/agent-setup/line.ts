@@ -15,6 +15,7 @@ export const SETUP_USAGE = [
 
 export type LineCheck = {
   agents: string[];
+  chores: string[];
   skills: string[];
   defaultScope: Scope;
   resolveModel(request: string): { ref: string } | { error: string };
@@ -95,6 +96,10 @@ export const parseSetupLine = (args: string, check: LineCheck): LineRequest | { 
 
   if (!check.agents.includes(name)) {
     return { error: `no agent named "${name}" (agents: ${check.agents.join(", ")})` };
+  }
+
+  if (check.chores.includes(name) && pairs.some((pair) => pair.startsWith("skills="))) {
+    return { error: `${name} is a chore; /agents setup changes only its model and thinking` };
   }
 
   const parsed = pairs.map((pair) => parsePair(pair, check));

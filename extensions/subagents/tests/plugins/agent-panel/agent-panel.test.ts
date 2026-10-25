@@ -18,7 +18,13 @@ import { createHarness, startPlugins, tempDir } from "../../support/subagents-ha
 
 const WIDGET = "pi-subagents-agents";
 
-const HINT = " enter to view · x to stop · esc to deselect";
+const IDLE = " ↓ to select";
+
+const HINT = " esc to deselect · enter to view · x to stop";
+
+const IDLE_MORE = (hidden: number) => `${IDLE} · ${hidden} more, ← to list agents`;
+
+const HINT_MORE = (hidden: number) => `${HINT} · ${hidden} more, ← to list agents`;
 
 const stubPlugin = <K extends keyof ServiceMap>(id: string, key: K, value: ServiceMap[K]): Plugin => ({
   id,
@@ -97,7 +103,7 @@ describe("agent panel", () => {
     const panel = setup();
     const record = panel.newAgent();
 
-    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", ""]);
+    expect(panel.lines()).toEqual(["   ◌ explorer  look around  Queued", "", IDLE, ""]);
 
     panel.running(record.id);
     panel.registry.close(record.id, { state: "done" });
@@ -127,7 +133,7 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
   });
 
-  it("draws the running rows, the more marker and the key hints as one table", () => {
+  it("draws the running rows, the key hints and the hidden count as one table", () => {
     const panel = setup();
     const scout = panel.newAgent({ agent: "scout", description: "Map the auth module" });
     const worker = panel.newAgent({ agent: "worker", description: "Fix the login redirect" });
@@ -144,24 +150,45 @@ describe("agent panel", () => {
       "   ⠋ scout     Map the auth module     Elapsed 1m 5s · 4 calls · 12.3k tokens",
       " › ⠋ worker    Fix the login redirect  Elapsed 2m 3s · 18 calls · 30.1k tokens",
     ]);
-    expect(panel.lines().slice(-3)).toEqual(["   ↓ 3 more", HINT, ""]);
+    expect(panel.lines().slice(-2)).toEqual([HINT_MORE(3), ""]);
   });
 
-  it("renders seven agents in tree order with markers and (+N)", () => {
+  it("draws a lead with three children nested when they fit", () => {
     const panel = setup();
-    const parent = panel.newAgent({ agent: "reviewer" });
+    const lead = panel.newAgent({ agent: "reviewer" });
 
-    panel.running(parent.id);
-    panel.running(panel.newAgent({ callerId: parent.id, depth: 3, description: "nested" }).id);
-    Array.from({ length: 6 }, () => panel.running(panel.newAgent().id));
+    panel.running(lead.id);
+    Array.from({ length: 3 }, (_, index) =>
+      panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: `child ${index}` }).id),
+    );
 
     const lines = panel.lines();
 
     expect(lines).toHaveLength(7);
-    expect(lines[0]).toContain("reviewer (+1)");
-    expect(lines[1].startsWith("   ↳ ⠋ explorer")).toBe(true);
-    expect(lines[1]).toContain("nested");
-    expect(lines.slice(5)).toEqual(["   ↓ 3 more", ""]);
+    expect(lines[0]).toContain("reviewer (+3)");
+    expect(lines[1]?.startsWith("   ↳ ⠋ explorer")).toBe(true);
+    expect(lines.slice(1, 4).every((line) => line.includes("child"))).toBe(true);
+    expect(lines.slice(-2)).toEqual([IDLE, ""]);
+  });
+
+  it("collapses an overflowing tree to its leads and counts the children in the hint", () => {
+    const panel = setup();
+    const leads = ["reviewer", "planner"].map((agent) => panel.newAgent({ agent }));
+
+    leads.forEach((lead) => {
+      panel.running(lead.id);
+      Array.from({ length: 3 }, () =>
+        panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: "child" }).id),
+      );
+    });
+
+    const lines = panel.lines();
+
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toContain("reviewer (+3)");
+    expect(lines[1]).toContain("planner (+3)");
+    expect(lines.join("\n")).not.toContain("child");
+    expect(lines.slice(2)).toEqual(["", IDLE_MORE(6), ""]);
   });
 
   it("down on an empty editor selects the first row and installs a capture", () => {
@@ -196,31 +223,148 @@ describe("agent panel", () => {
     expect(panel.widget()).toBeUndefined();
   });
 
-  it("moves the selection and scrolls the window", () => {
-    const panel = setup();
-
-    Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
-    panel.host.pressEmptyDown();
-    Array.from({ length: 5 }, () => panel.key("down"));
-
-    const lines = panel.lines();
-
-    expect(lines[0]).toBe("   ↑ 1 more");
-    expect(selectedRow(lines)).toBe(lines[5]);
-  });
-
-  it("scrolls the window up to keep the selection visible", () => {
+  it("moves the selection and stops on the last shown row", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
     panel.host.pressEmptyDown();
     Array.from({ length: 6 }, () => panel.key("down"));
-    Array.from({ length: 5 }, () => panel.key("up"));
 
     const lines = panel.lines();
 
-    expect(lines[0]).toBe("   ↑ 1 more");
-    expect(selectedRow(lines)).toBe(lines[1]);
+    expect(lines[0]).not.toBe("");
+    expect(selectedRow(lines)).toBe(lines[4]);
+    expect(lines.slice(5)).toEqual(["", HINT_MORE(2), ""]);
+  });
+
+  it("keeps open agents before closed ones when they overflow", () => {
+    const panel = setup();
+    const records = Array.from({ length: 7 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+
+    records.forEach((record) => {
+      panel.running(record.id);
+    });
+    records.slice(0, 2).forEach((record) => {
+      panel.registry.close(record.id, { state: "done" });
+    });
+
+    const lines = panel.lines();
+
+    expect(lines.slice(0, 5).map((line) => line.match(/task \d/)?.[0])).toEqual([
+      "task 2",
+      "task 3",
+      "task 4",
+      "task 5",
+      "task 6",
+    ]);
+    expect(lines.slice(5)).toEqual(["", IDLE_MORE(2), ""]);
+  });
+
+  it("keeps the selected agent shown when it would be cut", () => {
+    const panel = setup();
+    const records = Array.from({ length: 7 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+
+    records.forEach((record) => {
+      panel.running(record.id);
+    });
+    panel.host.pressEmptyDown();
+    Array.from({ length: 2 }, () => panel.key("down"));
+    panel.registry.close(records[2].id, { state: "done" });
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+
+    expect(lines.slice(0, 5).map((line) => line.match(/task \d/)?.[0])).toEqual([
+      "task 0",
+      "task 1",
+      "task 3",
+      "task 4",
+      "task 2",
+    ]);
+    expect(selectedRow(lines)).toBe(lines[4]);
+    expect(lines.at(-2)?.endsWith(" · 2 more, ← to list agents")).toBe(true);
+  });
+
+  it("moves a selected child to its lead when the tree collapses and keeps every lead drawn", () => {
+    const panel = setup();
+    const lead = panel.newAgent({ agent: "reviewer" });
+
+    panel.running(lead.id);
+    Array.from({ length: 4 }, (_, index) =>
+      panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: `child ${index}` }).id),
+    );
+    panel.host.pressEmptyDown();
+    Array.from({ length: 4 }, () => panel.key("down"));
+
+    expect(selectedRow(panel.lines())).toContain("child 3");
+
+    panel.running(panel.newAgent({ agent: "planner" }).id);
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toContain("reviewer (+4)");
+    expect(lines[1]).toContain("planner");
+    expect(selectedRow(lines)).toBe(lines[0]);
+    expect(lines.at(-2)).toBe(HINT_MORE(4));
+  });
+
+  it("draws a collapsed selected child as its lead, not nested under another lead", () => {
+    const panel = setup();
+    const lead = panel.newAgent({ agent: "reviewer" });
+
+    panel.running(lead.id);
+    panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: "nested" }).id);
+    panel.host.pressEmptyDown();
+    panel.key("down");
+    Array.from({ length: 5 }, () => panel.running(panel.newAgent().id));
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+    const selected = selectedRow(lines);
+
+    expect(selected).toBe(lines[0]);
+    expect(selected).toContain("reviewer (+1)");
+    expect(lines.join("\n")).not.toContain("↳");
+  });
+
+  it("ranks a closed lead with a running child as open", () => {
+    const panel = setup();
+    const lead = panel.newAgent({ agent: "reviewer" });
+
+    panel.running(lead.id);
+    panel.running(panel.newAgent({ callerId: lead.id, depth: 1, description: "nested" }).id);
+    panel.registry.close(lead.id, { state: "done" });
+    Array.from({ length: 5 }, () => panel.running(panel.newAgent().id));
+    vi.advanceTimersByTime(1_000);
+
+    const lines = panel.lines();
+
+    expect(lines[0]).toContain("reviewer (+1)");
+    expect(lines.at(-2)).toBe(IDLE_MORE(2));
+  });
+
+  it("keeps the cleared row's slot selected when the pinned row had no successor", () => {
+    const panel = setup();
+    const records = Array.from({ length: 7 }, (_, index) => panel.newAgent({ description: `task ${index}` }));
+
+    records.forEach((record) => {
+      panel.running(record.id);
+    });
+    panel.host.pressEmptyDown();
+    Array.from({ length: 4 }, () => panel.key("down"));
+    panel.registry.close(records[4].id, { state: "done" });
+    vi.advanceTimersByTime(1_000);
+
+    expect(selectedRow(panel.lines())).toContain("task 4");
+
+    panel.type("x");
+
+    const lines = panel.lines();
+
+    expect(selectedRow(lines)).toBe(lines[4]);
+    expect(lines[4]).toContain("task 5");
   });
 
   it("enter opens the agent view from the panel and deselects", () => {
@@ -279,7 +423,7 @@ describe("agent panel", () => {
     panel.registry.update(record.id, { state: "grace" });
     panel.host.pressEmptyDown();
 
-    expect(panel.lines().at(-2)).toBe(" enter to view · x to close now · esc to deselect");
+    expect(panel.lines().at(-2)).toBe(" esc to deselect · enter to view · x to close now");
     expect(panel.type("x")).toBe("consumed");
     expect(panel.stop).toHaveBeenCalledWith(record.id);
     expect(selectedRow(panel.lines())).toBeDefined();
@@ -437,34 +581,68 @@ describe("agent panel", () => {
     expect(panel.lines().join("\n")).toContain("second");
   });
 
-  it("keeps the window in place when the selection clears", () => {
+  it("keeps the rows in place when the selection clears", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
     panel.host.pressEmptyDown();
-    Array.from({ length: 6 }, () => panel.key("down"));
+    Array.from({ length: 3 }, () => panel.key("down"));
 
-    expect(panel.lines()[0]).toBe("   ↑ 2 more");
+    const selected = panel.lines();
 
     panel.key("escape");
 
     const after = panel.lines();
 
     expect(selectedRow(after)).toBeUndefined();
-    expect(after).not.toContain(HINT);
-    expect(after[0]).toBe("   ↑ 2 more");
+    expect(selected.at(-2)).toBe(HINT_MORE(2));
+    expect(after.at(-2)).toBe(IDLE_MORE(2));
+    expect(after.slice(0, 5)).toEqual([...selected.slice(0, 3), selected[3].replace("›", " "), selected[4]]);
+  });
+
+  it("is eight lines from six agents up and three more than the count below, never starting blank", () => {
+    const heights = [1, 2, 5, 6, 7, 10].map((count) => {
+      const panel = setup();
+
+      Array.from({ length: count }, () => panel.running(panel.newAgent().id));
+
+      const idle = panel.lines();
+
+      panel.host.pressEmptyDown();
+      Array.from({ length: 9 }, () => panel.key("down"));
+
+      const selected = panel.lines();
+
+      expect([idle[0], selected[0]]).not.toContain("");
+
+      expect([idle.at(-3), selected.at(-3)]).toEqual(["", ""]);
+
+      return [idle.length, selected.length, idle.at(-2), selected.at(-2)];
+    });
+
+    expect(heights).toEqual([
+      [4, 4, IDLE, HINT],
+      [5, 5, IDLE, HINT],
+      [8, 8, IDLE, HINT],
+      [8, 8, IDLE_MORE(1), HINT_MORE(1)],
+      [8, 8, IDLE_MORE(2), HINT_MORE(2)],
+      [8, 8, IDLE_MORE(5), HINT_MORE(5)],
+    ]);
+  });
+
+  it("keeps the panel height when selecting a short list", () => {
+    const panel = setup();
+
+    Array.from({ length: 3 }, () => panel.running(panel.newAgent().id));
+
+    const idle = panel.lines();
 
     panel.host.pressEmptyDown();
 
-    const reselected = panel.lines();
+    const selected = panel.lines();
 
-    expect(selectedRow(reselected)).toBe(reselected[0]);
-
-    panel.type("a");
-
-    expect(panel.lines()[0]).toMatch(/^ {3}/);
-    expect(panel.lines()[0]).not.toContain("›");
-    expect(panel.lines().at(-2)).toBe("   ↓ 2 more");
+    expect([idle.length, selected.length]).toEqual([6, 6]);
+    expect([idle.at(-2), selected.at(-2)]).toEqual([IDLE, HINT]);
   });
 
   it("ticks every 100 ms while a row runs, every second with only queued rows, and never when empty", () => {
@@ -551,10 +729,10 @@ describe("agent panel", () => {
   });
 
   it.each([
-    ["queued", " enter to view · x to stop · esc to deselect"],
-    ["running", " enter to view · x to stop · esc to deselect"],
-    ["grace", " enter to view · x to close now · esc to deselect"],
-    ["done", " enter to view · x to clear · esc to deselect"],
+    ["queued", " esc to deselect · enter to view · x to stop"],
+    ["running", " esc to deselect · enter to view · x to stop"],
+    ["grace", " esc to deselect · enter to view · x to close now"],
+    ["done", " esc to deselect · enter to view · x to clear"],
   ] as [AgentState, string][])("hints the actions for a selected %s row", (state, hint) => {
     const panel = setup();
     const record = panel.newAgent();
@@ -570,7 +748,7 @@ describe("agent panel", () => {
     expect(panel.lines().at(-2)).toBe(hint);
   });
 
-  it("aligns the info column across the window and keeps it when the window scrolls", () => {
+  it("aligns the info column over the shown rows and keeps it while the selection moves", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, (_, index) =>
@@ -588,22 +766,19 @@ describe("agent panel", () => {
 
     expect(top).toHaveLength(5);
     expect(new Set([...top, ...bottom]).size).toBe(1);
-    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 28 + 2);
+    expect(top[0]).toBe("   ".length + 2 + plainTheme.width("explorer") + 2 + 22 + 2);
   });
 
-  it("puts the scroll markers in the glyph column and keeps every line within the width", () => {
+  it("keeps the rows in the glyph column and every line within the width", () => {
     const panel = setup();
 
     Array.from({ length: 7 }, () => panel.running(panel.newAgent().id));
     panel.host.pressEmptyDown();
-    Array.from({ length: 5 }, () => panel.key("down"));
 
     const lines = panel.lines();
-    const glyphColumn = lines[1].indexOf("⠋");
+    const glyphColumn = lines[0].indexOf("⠋");
 
     expect(glyphColumn).toBe(3);
-    expect(lines[0].indexOf("↑")).toBe(glyphColumn);
-    expect(lines[6].indexOf("↓")).toBe(glyphColumn);
 
     [80, 30].forEach((width) => {
       const drawn = panel.lines(width);
@@ -611,11 +786,12 @@ describe("agent panel", () => {
       drawn.forEach((line) => {
         expect(plainTheme.width(line)).toBeLessThanOrEqual(width);
       });
-      expect(drawn.slice(0, -1).every((line) => line.startsWith(" "))).toBe(true);
-      expect(drawn.at(-1)).toBe("");
+      expect(drawn.slice(0, -3).every((line) => line.startsWith(" "))).toBe(true);
+      expect(drawn.at(-2)?.startsWith(" ")).toBe(true);
+      expect([drawn.at(-3), drawn.at(-1)]).toEqual(["", ""]);
     });
 
-    expect(panel.lines(30).at(-2)).toBe(" enter to view · x to stop ...");
+    expect(panel.lines(30).at(-2)).toBe(" esc to deselect · enter to...");
   });
 
   it("degrades without agent-view and run-agent", () => {
@@ -637,7 +813,7 @@ describe("agent panel", () => {
 
     panel.key("down");
 
-    expect(panel.lines().at(-2)).toBe(" x to clear · esc to deselect");
+    expect(panel.lines().at(-2)).toBe(" esc to deselect · x to clear");
 
     panel.type("x");
 
@@ -662,7 +838,7 @@ describe("agent panel", () => {
     services.require("registry").create(newAgentInput(join(root, "agents")));
 
     expect(host.pressEmptyDown()).toBe(false);
-    expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(2);
+    expect(host.widgets.get(WIDGET)?.(80, plainTheme)).toHaveLength(4);
   });
 
   it("removes the widget and the capture on disable", async () => {

@@ -72,7 +72,7 @@ describe("agent definition parsing", () => {
     const parsed = parseDefinition(
       "---\nname: a\ndescription: d\ntools: read, ls\nskills: []\nworktree: true\nlimit: 60000\nsubagents: []\nmodel: acme/model-a:low\n---\nDo it.",
       "/x/a.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
     expect(parsed.errors).toEqual([]);
@@ -93,7 +93,7 @@ describe("agent definition parsing", () => {
     const parsed = parseDefinition(
       "---\nname: a\ndescription: d\nlimit: 50000\ntools: [read]\nskills: []\nsubagents: []\ncolor: blue\neffort: high\npermissionMode: plan\nprompt: Extra rule.\n---\nBody.",
       "/x/a.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
     expect(parsed.errors).toEqual([]);
@@ -111,7 +111,7 @@ describe("agent definition parsing", () => {
     const parsed = parseDefinition(
       "---\nname: bad name\nthinking: high\nlimit: 10\nsubagents: 3\nmodel: nova 6\nworktree: maybe\n---\n",
       "/x/bad.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
     expect(parsed.definition).toBeUndefined();
@@ -128,7 +128,10 @@ describe("agent definition parsing", () => {
   });
 
   it("requires limit and every list field", () => {
-    const parsed = parseDefinition("---\nname: a\ndescription: d\n---\n", "/x/a.md", "user");
+    const parsed = parseDefinition("---\nname: a\ndescription: d\n---\n", "/x/a.md", {
+      path: "/x",
+      source: "user",
+    });
 
     expect(parsed.definition).toBeUndefined();
     expect(parsed.errors).toEqual([
@@ -140,7 +143,10 @@ describe("agent definition parsing", () => {
   });
 
   it("builds the definition from the schema's fields plus the harness internals", () => {
-    const parsed = parseDefinition(agentFile("a", "d", "subagents: []", "Body."), "/x/a.md", "project");
+    const parsed = parseDefinition(agentFile("a", "d", "subagents: []", "Body."), "/x/a.md", {
+      path: "/x",
+      source: "project",
+    });
 
     expect(parsed.errors).toEqual([]);
     expect(parsed.warnings).toEqual([]);
@@ -159,7 +165,7 @@ describe("agent definition parsing", () => {
     const parsed = parseDefinition(
       "---\nname: a\ndescription: d\nlimit: 50000\ntools: []\nskills: [docs, docs]\nsubagents: []\n---\n",
       "/x/a.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
     expect(parsed.definition?.skills).toEqual(["docs"]);
@@ -170,7 +176,7 @@ describe("agent definition parsing", () => {
     const parsed = parseDefinition(
       "---\nname: lead\ndescription: d\nlimit: 80000\nmodel: inherit\ntools: all\nskills: all\nsubagents:\n  - scout\n  - reviewer\n---\n",
       "/x/lead.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
     expect(parsed.errors).toEqual([]);
@@ -184,7 +190,7 @@ describe("model field", () => {
     parseDefinition(
       `---\nname: a\ndescription: d\nlimit: 50000\n${lists(extra)}subagents: []\n${extra}\n---\n`,
       "/x/a.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
   it("loads a file without a model line with no warnings or errors", () => {
@@ -228,7 +234,10 @@ describe("model field", () => {
 
 describe("worktree field", () => {
   const parse = (extra: string) =>
-    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", "user");
+    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", {
+      path: "/x",
+      source: "user",
+    });
 
   it("is off by default and accepts a boolean", () => {
     expect(parse("").definition?.worktree).toBeUndefined();
@@ -246,7 +255,10 @@ describe("worktree field", () => {
 
 describe("mcp field", () => {
   const parse = (extra: string) =>
-    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", "user");
+    parseDefinition(agentFile("a", "d", `subagents: []\n${extra}`), "/x/a.md", {
+      path: "/x",
+      source: "user",
+    });
 
   it("is a known field, omitted by default, and accepts a boolean", () => {
     expect(parse("").definition?.mcp).toBeUndefined();
@@ -291,7 +303,7 @@ describe("agent overrides", () => {
     ...extra,
   });
 
-  it("applies the override field by field on whichever file won", () => {
+  it("applies the override field by field on whichever file won, skills included on b, a chore by its empty subagents grant", () => {
     const { list, user } = dirs();
 
     writeAgent(user, "a.md", agentFile("a", "user", "subagents: []\nmodel: acme/two:high\nskills: [git]"));
@@ -691,7 +703,10 @@ describe("list fields", () => {
       .join("\n");
 
   const parse = (lists: Record<string, string>) =>
-    parseDefinition(`---\nname: a\ndescription: d\nlimit: 50000\n${head(lists)}\n---\n`, "/x/a.md", "user");
+    parseDefinition(`---\nname: a\ndescription: d\nlimit: 50000\n${head(lists)}\n---\n`, "/x/a.md", {
+      path: "/x",
+      source: "user",
+    });
 
   it.each(["tools", "skills", "subagents"])("fails a file without %s and names the field", (key) => {
     const parsed = parse({ [key]: "" });
@@ -706,7 +721,7 @@ describe("list fields", () => {
     const bare = parseDefinition(
       `---\nname: a\ndescription: d\nlimit: 50000\n${head({ [key]: "" })}\n${key}:\n---\n`,
       "/x/a.md",
-      "user",
+      { path: "/x", source: "user" },
     );
     const blank = parse({ [key]: "\n" });
 
@@ -819,7 +834,7 @@ describe("prompt assembly", () => {
     const parsed = parseDefinition(
       "---\nname: scout\ndescription: d\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\nYou scout.",
       "/x/scout.md",
-      "user",
+      { path: "/x", source: "user" },
     );
 
     expect(
@@ -849,7 +864,7 @@ describe("prompt assembly", () => {
     const parsed = parseDefinition(
       "---\nname: scout\ndescription: d\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\nYou scout.",
       "/x/scout.md",
-      "user",
+      { path: "/x", source: "user" },
     );
     const [first] = assemblePromptAppend(base, parsed.definition as NonNullable<typeof parsed.definition>);
 

@@ -2,15 +2,15 @@ import { isTerminal, type TreeRow, treeOrder, withLinks } from "../components/tr
 import { type AgentRecord, isClosed } from "../model/agent-record.ts";
 import type { Settings } from "../model/settings.ts";
 
-const WINDOW = 5;
+const PANEL_ROWS = 5;
 
 type PanelSettings = Pick<Settings, "doneLingerMs" | "failedLingerMs">;
 
-export type PanelState = { selectedId?: string; top: number; cleared: Set<string> };
+export type PanelState = { selectedId?: string; cleared: Set<string> };
 
 export type PanelActionsAvailable = { view: boolean; stop: boolean };
 
-export const createPanelState = (): PanelState => ({ top: 0, cleared: new Set() });
+export const createPanelState = (): PanelState => ({ cleared: new Set() });
 
 const isVisible = (
   record: AgentRecord,
@@ -46,9 +46,11 @@ export const panelRows = (
 export const selectedIndex = (rows: TreeRow[], state: PanelState): number =>
   state.selectedId === undefined ? -1 : rows.findIndex((row) => row.record.id === state.selectedId);
 
-const clampTop = (rows: TreeRow[], state: PanelState) => {
-  state.top = Math.min(Math.max(0, state.top), Math.max(0, rows.length - WINDOW));
-};
+const leadOf = (rows: TreeRow[], index: number) =>
+  rows
+    .slice(0, index + 1)
+    .reverse()
+    .find((row) => row.depth === 0);
 
 export const reconcile = (rows: TreeRow[], state: PanelState): boolean => {
   const index = selectedIndex(rows, state);
@@ -58,22 +60,43 @@ export const reconcile = (rows: TreeRow[], state: PanelState): boolean => {
     state.selectedId = undefined;
   }
 
-  if (index >= 0 && index < state.top) {
-    state.top = index;
-  }
+  const lead = rows.length > PANEL_ROWS && index >= 0 ? leadOf(rows, index) : undefined;
 
-  if (index >= state.top + WINDOW) {
-    state.top = index - WINDOW + 1;
+  if (lead) {
+    state.selectedId = lead.record.id;
   }
-
-  clampTop(rows, state);
 
   return deselected;
 };
 
-export const panelWindow = (rows: TreeRow[], state: PanelState) => {
-  const start = state.top;
-  const end = Math.min(rows.length, state.top + WINDOW);
+const isOpen = (row: TreeRow) => !isClosed(row.record.state) || row.openDescendants > 0;
 
-  return { start, end, below: rows.length - end };
+const openFirst = (rows: TreeRow[]) => [...rows.filter(isOpen), ...rows.filter((row) => !isOpen(row))];
+
+const fitted = (rows: TreeRow[]) => {
+  if (rows.length <= PANEL_ROWS) {
+    return rows;
+  }
+
+  const leads = rows.filter((row) => row.depth === 0);
+
+  return leads.length <= PANEL_ROWS ? leads : openFirst(leads).slice(0, PANEL_ROWS);
+};
+
+const pinned = (shown: TreeRow[], rows: TreeRow[], selectedId: string | undefined) => {
+  const selected = rows.find((row) => row.record.id === selectedId);
+
+  if (!selected || shown.includes(selected)) {
+    return shown;
+  }
+
+  const kept = shown.length < PANEL_ROWS ? shown : shown.slice(0, -1);
+
+  return [...kept, selected];
+};
+
+export const panelView = (rows: TreeRow[], state: PanelState) => {
+  const shown = pinned(fitted(rows), rows, state.selectedId);
+
+  return { shown, hidden: rows.length - shown.length };
 };

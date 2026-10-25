@@ -1,6 +1,6 @@
 import type { FormFactory } from "../../../../platform/pi-adapter/index.ts";
-import { SCOPES, type Scope, type SetupChange } from "../../core/agent-setup/scope.ts";
-import { initialSetup, pressSetupKey, type SetupContext, setupChanges } from "./form.ts";
+import type { Scope, SetupChange } from "../../core/agent-setup/scope.ts";
+import { initialSetup, pressSetupKey, type SetupContext, scopeOptions, setupChanges } from "./form.ts";
 import { renderSetup, type SetupPaths } from "./setup-render.ts";
 
 export type SetupResult = { scope: Scope; changes: SetupChange[] };
@@ -23,7 +23,10 @@ export const setupForm =
         }
 
         if (outcome.done === "save") {
-          api.done({ scope: SCOPES[state.scope] ?? "user", changes: setupChanges(context, state) });
+          api.done({
+            scope: scopeOptions(context)[state.scope] ?? "user",
+            changes: setupChanges(context, state),
+          });
           return;
         }
 

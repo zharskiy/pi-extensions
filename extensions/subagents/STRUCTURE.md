@@ -11,14 +11,15 @@ extensions/subagents/
 ├── ARCHITECTURE.md                        # runtime behaviour
 ├── STRUCTURE.md                           # this file
 ├── agents/                                # shipped agent definitions
-│   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md
-│   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md
+│   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents)
+│   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
 │   ├── base-system-prompt.md              # shared agent rules and the result contract
 │   ├── handoff.md                         # the handoff instruction template ({{path}})
-│   └── create-agent.md                    # the /agents create brief
+│   ├── create-agent.md                    # the /agents create brief
+│   └── autosetup-skills.md                # the /agents setup skills brief
 ├── api/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
@@ -31,27 +32,27 @@ extensions/subagents/
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
 │       ├── agent-panel.ts                 # panel below the editor, selection keys, the `pi-subagents` status
 │       ├── interrupt.ts                   # Esc after an interrupted turn: confirm to stop running agents
-│       ├── agent-setup.ts                 # /agents setup and /agents create, the `agentSetup` service
+│       ├── agent-setup.ts                 # /agents setup, autosetup and the agent_skills_proposal tool, /agents create, the `agentSetup` service
 │       ├── agent-view.ts                  # /agents: menu, list and agent view, the `agentView` service
 │       └── fetch-tool.ts                  # the fetch tool as the `fetchTool` service
 ├── core/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore
-│   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, user and project agent dirs
+│   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
-│   │   ├── loader.ts                      # parseDefinition, loadDefinitions: files, then the agents.<name> overrides and their checks
+│   │   ├── loader.ts                      # parseDefinition (with the path relative to its agents dir), loadDefinitions: files, then the agents.<name> overrides and their checks
 │   │   ├── fields.ts                      # frontmatter field rules
 │   │   ├── yaml-lite.ts                   # the frontmatter parser
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
@@ -74,13 +75,16 @@ extensions/subagents/
 │   ├── limits/
 │   │   └── context-step.ts                # contextStep, softWarning
 │   ├── agent-panel/
-│   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile, panelWindow
+│   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
-│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form, SETUP_USAGE
+│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
-│   │   └── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
+│   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
+│   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
+│   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
+│   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
 │   │   ├── source.ts                      # createAgentSource: reads an agent's session file, re-parsing on change
 │   │   └── list-model.ts                  # list sections, listCounts, countsText, subtitle, clearTargets, MAX_CLOSED_ROOTS
@@ -100,23 +104,25 @@ extensions/subagents/
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
-│   │   ├── panel-lines.ts                 # panelLines: the panel rows with markers and hints
+│   │   ├── panel-lines.ts                 # panelLines: the shown agent rows, a blank line, the always-present hint row (ending in `N more, ← to list agents` when agents are hidden) and the closing blank line
 │   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
-│   │   ├── form.ts                        # setup form state, fields, pickers and keys
-│   │   ├── setup-render.ts                # renderSetup: the form lines
+│   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, fieldValue, the Previous/Suggested PRESETS (presetsOf, presetFieldsOf), selectedRow, changeRows for the Submit tab, FIELD_ROWS, pickers with the all row and the filter, BLOCK_ROWS from the field and preset counts, scopes and keys
+│   │   ├── setup-layout.ts                # the agent block's row counts: INFO_ROWS, GAP_ROWS (the blank rows between sections, drawn by setup-render), DETAIL_LINES, PICKER_CHROME_ROWS, blockRows and the per-picker listHeight
+│   │   ├── setup-render.ts                # renderSetup: the form (agent block, preset rows and info view, or an open picker fitted into their rows; each section padded to its rows; Submit's change window takes every row the agent-tab body leaves above Save to), the Leads/Chores tab bar, the locked chore skills row and the picker title row with its query
 │   │   └── setup-overlay.ts               # setupForm: the HostUi.showForm factory
 │   └── agent-view/
 │       ├── picker.ts                      # the /agents subcommands and the menu picker
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
-│       ├── list.ts                        # createAgentList: the agents list
-│       ├── list-hints.ts                  # listHint: the list's key hints
-│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript
+│       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
+│       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
+│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved)
 │       └── request-block.ts               # requestLines: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/
+    │   ├── agent-record.test.ts           # isLead, including the shipped general agent
     │   ├── context-limit.test.ts          # effectiveContextLimit
     │   ├── paths.test.ts                  # paths helpers
     │   └── settings.test.ts               # settings schema, overrides and files
@@ -130,7 +136,7 @@ extensions/subagents/
     │   ├── agent-definitions/             # agent-definitions.test.ts (plugin), fields.test.ts
     │   ├── agent-panel/                   # agent-panel.test.ts (plugin), model.test.ts (panel state)
     │   ├── agent-registry/                # agent-registry.test.ts (plugin), registry.test.ts
-    │   ├── agent-setup/                   # agent-setup.test.ts (plugin), agent-template, create, form, line, render, write tests
+    │   ├── agent-setup/                   # agent-setup.test.ts (plugin), agent-template, autosetup, create, form, line, proposal, render, write tests
     │   ├── agent-status/                  # agent-status.test.ts (plugin)
     │   ├── agent-view/                    # list, list-model, menu, overlay, request-block, view tests, fixtures/ and __snapshots__/
     │   ├── fetch-tool/                    # plugin.test.ts, fetch.test.ts, text.test.ts
@@ -149,5 +155,5 @@ extensions/subagents/
         ├── agent-patch.test.ts            # the agent file patcher
         ├── overlay-rows.ts                # selectedRow: the selected overlay row
         ├── recorded-grep-session.ts       # grepSession: a recorded grep agent session
-        └── setup-context.ts               # context, PATHS, press, render: the /agents setup form fixture
+        └── setup-context.ts               # context, proposedContext, PATHS, press, render: the /agents setup form fixture
 ```

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { padded, prefixed } from "../../shared/index.ts";
-import { hintLines, keyHints, rule } from "../key-hints.ts";
+import { framed, hintRow, keyHints, rule } from "../key-hints.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
 
@@ -30,7 +30,10 @@ describe("padded", () => {
   });
 });
 
-describe("hintLines", () => {
+describe("framed hint strip", () => {
+  const strip = (theme: ThemeLike, hints: readonly (readonly [string, string])[], width: number) =>
+    framed(theme, width, [], hints).slice(2, -1);
+
   it("wraps between hints, never inside one", () => {
     const hints = [
       ["↑↓", "to select"],
@@ -38,13 +41,13 @@ describe("hintLines", () => {
       ["esc", "to cancel"],
     ] as const;
 
-    expect(hintLines(plainTheme, hints, 34)).toEqual([" ↑↓ to select · enter to choose", " esc to cancel"]);
-    expect(hintLines(plainTheme, [["enter", "to save the whole thing"]], 12)).toEqual([" enter to..."]);
+    expect(strip(plainTheme, hints, 34)).toEqual([" ↑↓ to select · enter to choose", " esc to cancel"]);
+    expect(strip(plainTheme, [["enter", "to save the whole thing"]], 12)).toEqual([" enter to..."]);
   });
 
   it("joins the hints with a dot in the dim colour", () => {
     expect(
-      hintLines(
+      strip(
         plainTheme,
         [
           ["enter", "to save"],
@@ -53,7 +56,19 @@ describe("hintLines", () => {
         40,
       ),
     ).toEqual([" enter to save · esc to go back"]);
-    expect(hintLines(tagged, [["enter", "to save"]], 40)[0]).toBe(" <dim>enter</> <muted>to save</>");
+    expect(strip(tagged, [["enter", "to save"]], 40)[0]).toBe(" <dim>enter</> <muted>to save</>");
+  });
+});
+
+describe("hintRow", () => {
+  it("keeps the hints on one row after the pad, cut with an ellipsis", () => {
+    const hints = [
+      ["enter", "to view"],
+      ["x", "to stop"],
+    ] as const;
+
+    expect(hintRow(plainTheme, hints, 40)).toBe(" enter to view · x to stop");
+    expect(hintRow(plainTheme, hints, 16)).toBe(" enter to vie...");
   });
 });
 
@@ -68,5 +83,35 @@ describe("keyHints", () => {
     expect(keyHints(pairs, tagged)).toBe(
       "<dim>enter</> <muted>to view</><dim> · </><dim>x</> <muted>to stop</>",
     );
+  });
+});
+
+describe("framed", () => {
+  const hints = [
+    ["↑↓", "to select"],
+    ["enter", "to confirm"],
+    ["esc", "to cancel"],
+  ] as const;
+
+  it("wraps the hints between rules by default", () => {
+    expect(framed(plainTheme, 20, ["body"], hints)).toEqual([
+      "─".repeat(20),
+      "body",
+      "",
+      " ↑↓ to select",
+      " enter to confirm",
+      " esc to cancel",
+      "─".repeat(20),
+    ]);
+  });
+
+  it("keeps the hints on one row cut with an ellipsis when asked for one row", () => {
+    expect(framed(plainTheme, 30, ["body"], hints, { oneRow: true })).toEqual([
+      "─".repeat(30),
+      "body",
+      "",
+      " ↑↓ to select · enter to co...",
+      "─".repeat(30),
+    ]);
   });
 });

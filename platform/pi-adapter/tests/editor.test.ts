@@ -492,6 +492,29 @@ describe("createEditorHooks", () => {
     expect(fired).toBe(1);
   });
 
+  it("gives left to a capture first and to the empty-left hook once the capture releases it", () => {
+    const { ctx, ui } = fakeCtx();
+    const hooks = createEditorHooks(() => ctx);
+    let fired = 0;
+    let outcome: "consumed" | "release" = "consumed";
+
+    hooks.onEmptyEditorLeft(() => {
+      fired += 1;
+    });
+    hooks.captureEditorKeys(() => outcome);
+
+    const hooked = editor(ui.factory, piKeys());
+
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(0);
+
+    outcome = "release";
+    hooked.handleInput(LEFT);
+
+    expect(fired).toBe(1);
+  });
+
   it("consumes the interrupt key on an empty idle editor only when an escape hook takes it", () => {
     const { ctx, ui } = fakeCtx();
     const answers = [false, true];

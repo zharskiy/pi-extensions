@@ -26,7 +26,7 @@ export const listLines = (
   options: readonly ListOption[],
   selected: number,
   width: number,
-  { layout = "below" }: { layout?: ListLayout } = {},
+  { layout = "below", cut = false }: { layout?: ListLayout; cut?: boolean } = {},
 ) =>
   options.flatMap((option, index) => {
     const chosen = index === selected;
@@ -45,6 +45,10 @@ export const listLines = (
       layout === "below" && option.description
         ? prefixed(theme, DESCRIPTION_INDENT, theme.fg("muted", option.description), width)
         : [];
+
+    if (cut) {
+      return [theme.truncate(`${PAD}${pointer} ${label}${beside}`, width)];
+    }
 
     return [...prefixed(theme, `${PAD}${pointer} `, `${label}${beside}`, width), ...below];
   });

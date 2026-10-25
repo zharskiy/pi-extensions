@@ -45,7 +45,7 @@ Everything lives under pi's agent dir or session dir (`~/.pi/agent` by default; 
 
 - handoff documents, in the OS temp dir: `pi-session-limits/<session id>-handoff.md` for the main session and `pi-subagents/<session id>/<agent id>-handoff.md` for agents;
 - `worktree: true` agents: a checkout under `<cwd>/.pi/worktrees/`, git's `pi-agents/…` branch and `.git/worktrees/` metadata;
-- two project files written on the user's command in a trusted project: `.pi/pi-subagents.json` (`/agents setup`) and `.pi/mcp.json` (`/mcp-import … project apply`, or the interactive `/mcp-import` picker).
+- two project files written on the user's command in a trusted project: `.pi/pi-subagents.json` (`/agents setup`, which offers only the user file in an untrusted project and whose write may follow a model tool call once the user confirms the form) and `.pi/mcp.json` (`/mcp-import … project apply`, or the interactive `/mcp-import` picker).
 
 `/agents create` writes nothing itself: it briefs the main session, whose own write tool creates the agent file. Inside the agent and session dirs: settings files `<agentDir>/pi-<extension>.json` (and `<cwd>/.pi/pi-<extension>.json` in trusted projects), custom session entries named `<namespace>:<kind>` (such as `pi-spending:usage`, `pi-context:snapshot`), and the agents dir of each session, described in the [subagents architecture](extensions/subagents/ARCHITECTURE.md). Registries, ledgers and limit phases live in memory and are lost on reload.
 
@@ -53,7 +53,7 @@ Everything lives under pi's agent dir or session dir (`~/.pi/agent` by default; 
 
 - [pi-adapter](platform/pi-adapter/ARCHITECTURE.md): the only shipped code that imports pi; the host, the agent runtime and the UI bridge.
 - [shared](platform/shared/ARCHITECTURE.md): pi-free, theme-free, host-free helpers and the cross-extension formats.
-- [ui-kit](platform/ui-kit/ARCHITECTURE.md): theme-aware components: the row language, hints, lists, forms and tabs.
+- [ui-kit](platform/ui-kit/ARCHITECTURE.md): theme-aware components: the row language, hints, lists, fixed-height scroll windows, forms and tabs, flat or grouped in labelled rows.
 - [extension-manager](platform/extension-manager/ARCHITECTURE.md): `createManagedExtension`, plugins, the bus and settings.
 - Extensions, each with its own architecture: [command-aliases](extensions/command-aliases/ARCHITECTURE.md), [composer](extensions/composer/ARCHITECTURE.md), [context](extensions/context/ARCHITECTURE.md), [footer](extensions/footer/ARCHITECTURE.md), [mcp-import](extensions/mcp-import/ARCHITECTURE.md), [notifications](extensions/notifications/ARCHITECTURE.md), [questionnaire](extensions/questionnaire/ARCHITECTURE.md), [session-limits](extensions/session-limits/ARCHITECTURE.md), [spending](extensions/spending/ARCHITECTURE.md), [style](extensions/style/ARCHITECTURE.md), [subagents](extensions/subagents/ARCHITECTURE.md), [transcript](extensions/transcript/ARCHITECTURE.md), [working-indicator](extensions/working-indicator/ARCHITECTURE.md). `style` applies its `concise` prompt when no settings file names a style.
 - [test/framework](test/framework/ARCHITECTURE.md): fakes, harnesses, real-pi helpers, live and eval mechanics.

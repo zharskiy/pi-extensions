@@ -13,7 +13,12 @@ export type RoutedMessage = { sender: string; text: string };
 
 export type PromptTool = { name: string; description: string; parameters: unknown };
 
-export type SkillInfo = { name: string; description: string };
+export type SkillInfo = {
+  name: string;
+  description: string;
+  scope: "project" | "user" | "temporary";
+  path: string;
+};
 
 export type SessionRecord = {
   providerPayload?: unknown;

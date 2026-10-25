@@ -3,11 +3,11 @@
 - `index.ts`: the public surface.
 - `row.ts`: the pi-native row layout: the 0/2/4 grid, `row`/`rowChildren`, `titleLine`, `failureSuffix`, `wrapChild`, `preview`, `rowText`.
 - `glyphs.ts`: the state marks `MARKS` (`◌ ✓ ✗ ⊘ » ↳ ›`), `Mark`, `markGlyph`, `markOf`, `pointerMark`.
-- `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `expandHint`, `appendHint`, `countLine`, `keyHints` and `hintLines` (bottom strips), `framed` (rule, lines, hints, rule).
+- `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `expandHint`, `appendHint`, `countLine`, `keyHints`, `hintRow` (one hint row cut to the width) and the private `hintLines` (bottom strips), `framed` (rule, lines, hints, rule; `{ oneRow: true }` cuts the hints to one row).
 - `list.ts`: the selectable list: lines, keys, the shared hints.
 - `select.ts`: `selectForm`; a single-choice form over the list.
-- `tabs.ts`: the tab bar and Tab/←→ keys (questionnaire, `/agents setup`).
-- `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window) and `multiSelectForm`.
+- `tabs.ts`: the tab bar, the grouped tab bar and Tab/←→ keys (questionnaire, `/agents setup`).
+- `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window, `{ slots: true, empty }` for a fixed-height window with its `(none available)` or other empty text, `moreRow` for one `↑ N more`/`↓ N more` row) and `multiSelectForm`; `initialMulti`, `scrollWindow` and the hints are private to the file.
 - `cache-tone.ts`: the cache rate's colour thresholds and the coloured percentage.
 - `tests/row.test.ts`: `row.ts` and `glyphs.ts`.
 - `tests/layout.test.ts`: `key-hints.ts` and the `shared` text layout it builds on.

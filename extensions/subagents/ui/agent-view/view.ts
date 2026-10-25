@@ -30,6 +30,8 @@ const RELOAD_TICK_MS = 1_000;
 
 const GAP = "  ";
 
+const CHROME_ROWS = 5;
+
 const ctxPercent = (data: ViewData, reserveTokens: number) => {
   const { record } = data;
   const tokens = record.context?.tokens ?? data.session?.contextTokens;
@@ -252,8 +254,8 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const inner = innerWidth(width);
     const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
-    const footer = notice ? [padLine(theme, "warning", notice, inner)] : [];
-    const height = Math.max(3, api.rows() - header.length - 3 - (footer.length + 1));
+    const footer = notice ? padLine(theme, "warning", notice, inner) : "";
+    const height = Math.max(3, api.rows() - header.length - CHROME_ROWS);
     const { request, lines, clickable } = bodyLines(width);
     const body = request.concat(lines);
     let window = scroll.window(body, height);
@@ -274,7 +276,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
     const padding = Array.from({ length: height - window.length }, () => "");
 
-    return ["", ...header, ...window, ...padding, "", ...footer, hintLine(inner), ""];
+    return ["", ...header, ...window, ...padding, "", footer, hintLine(inner), ""];
   };
 
   const fail = (error: unknown) => {

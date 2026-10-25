@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { SkillFile } from "./skills.ts";
+import type { SkillInfo } from "../types/messages.ts";
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
@@ -7,8 +7,8 @@ export type ParentSource = {
   ctx(): ExtensionContext;
   settings(): Settings;
   thinking(): string;
-  inventorySkillFiles(): SkillFile[];
-  sessionSkillFiles(): SkillFile[];
+  inventorySkillFiles(): SkillInfo[];
+  sessionSkillFiles(): SkillInfo[];
   activeTools(): { name: string; path: string }[];
   mcpDisabled(): boolean;
 };

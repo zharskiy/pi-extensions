@@ -766,11 +766,15 @@ describe("agent view body", () => {
       stop: () => stops.shift()?.(),
     });
 
+    const quiet = lines();
+
     view.handleKey(char("x"));
     await flushMicrotasks();
 
     expect(lines().at(-3)).toBe(" Stop failed: runner gone");
     expect(lines().at(-4)).toBe("");
+    expect(lines()).toHaveLength(quiet.length);
+    expect(lines().slice(0, -3)).toEqual(quiet.slice(0, -3));
 
     view.handleKey(char("x"));
     view.dispose?.();
@@ -1531,10 +1535,10 @@ describe("agent view clicks", () => {
     const before = lines();
     const row = rowOf(before, "alpha 10");
 
-    expect(before.at(-2)).toMatch(/ 9-30\/47$/);
+    expect(before.at(-2)).toMatch(/ 9-29\/47$/);
     expect(row).toBeGreaterThan(0);
     expect(view.handleClick?.(5, row)).toBe(true);
-    expect(lines().at(-2)).toMatch(/ 9-30\/71$/);
+    expect(lines().at(-2)).toMatch(/ 9-29\/71$/);
     expect(lines()[row]).toBe(before[row]);
   });
 

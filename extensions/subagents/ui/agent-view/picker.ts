@@ -8,7 +8,7 @@ export type Subcommand = (typeof SUBCOMMANDS)[number];
 export const SUBCOMMAND_TEXT: Record<Subcommand, string> = {
   view: "agents list",
   create: "new agent",
-  setup: "model, thinking and skills per agent",
+  setup: "model and thinking per agent, skills per lead",
 };
 
 const MENU_TEXT: Record<Subcommand, string> = {

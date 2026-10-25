@@ -1,115 +1,183 @@
 import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
-import { padded, prefixed } from "../../../../platform/shared/index.ts";
+import { cutStart, DOT, fixedBlock, padRows } from "../../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
-  descriptionFits,
+  countLine,
   framed,
+  groupedTabBar,
   type KeyHint,
   listLines,
-  MULTI_SELECT_HINTS,
   multiLines,
   pointerMark,
-  SELECT_HINTS,
   scrolledLines,
   TAB_SWITCH_HINT,
-  tabBar,
 } from "../../../../platform/ui-kit/index.ts";
-import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
-import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
+import type { AgentKind } from "../../core/agent-setup/agent-template.ts";
+import { SCOPES } from "../../core/agent-setup/scope.ts";
+import { grantOrNone } from "../../core/model/agent-record.ts";
+import { AGENT_SCOPE_ALL, ALL_SKILLS_TEXT, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
+import { alignRight } from "../components/format.ts";
 import {
-  FIELDS,
+  BLOCK_ROWS,
+  changeRows,
+  FIELD_ROWS,
   type Field,
   fieldChanged,
-  grantText,
-  LIST_HEIGHT,
-  modelOptions,
+  fieldsOf,
+  fieldValue,
+  listView,
   onSubmitTab,
   type Picker,
+  PRESETS,
+  type Preset,
+  presetFieldsOf,
+  presetInUse,
+  presetsOf,
   type SetupContext,
   type SetupState,
+  scopeOptions,
+  selectedRow,
   setupChanges,
-  thinkingOptions,
+  skillsView,
 } from "./form.ts";
+import { DETAIL_LINES, GAP_ROWS, INFO_ROWS, listHeight } from "./setup-layout.ts";
 
 export type SetupPaths = { project: string; user: string };
 
+type SetupAgent = SetupContext["agents"][number];
+
+type Draft = SetupAgent["initial"];
+
 const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", skills: "Skills" };
+
+const PRESET_LABELS: Record<Preset, string> = { previous: "Previous", suggested: "Suggested" };
 
 const LABEL_WIDTH = 10;
 
-const DETAIL_LINES = 3;
+const DESCRIPTION_ROWS = 2;
 
-const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own agent with /agents create.";
+const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + BLOCK_ROWS;
 
-const MCP_ON = "on: the MCP servers configured in mcp.json, shared by every agent with mcp: true";
+const GAP = padRows([], GAP_ROWS);
+
+const TITLES: Record<Field, string> = {
+  model: "Model (models with credentials)",
+  thinking: "Thinking level",
+  skills: "Skills",
+};
+
+const NOUNS: Record<Field, string> = { model: "model", thinking: "level", skills: "skill" };
+
+const TOOLS_NOTE = "fixed per agent; /agents create makes your own";
+
+const MCP_ON = "on: the MCP servers in mcp.json, shared by every agent with mcp: true";
 
 const MCP_OFF = "off: this agent does not see MCP servers";
 
+const CHORE_SKILLS_NOTE = "fixed for chores";
+
+const UNTRUSTED_NOTE = "Project not trusted: only the user file applies, to every project.";
+
+const fitted = (theme: ThemeLike, first: string, text: string, suffix: string, width: number) =>
+  theme.truncate(
+    `${first}${theme.truncate(text, Math.max(1, width - theme.width(first) - theme.width(suffix)))}${suffix}`,
+    width,
+  );
+
+const line = (theme: ThemeLike, text: string, width: number) => fitted(theme, PAD, text, "", width);
+
+const block = (theme: ThemeLike, text: string, width: number, rows: number) =>
+  fixedBlock(theme, text, Math.max(1, width - PAD.length), rows).map((row) =>
+    row ? `${PAD}${theme.fg("muted", row)}` : "",
+  );
+
 const modelText = (model: string) => (model === INHERIT_MODEL ? "inherit (the main session's model)" : model);
 
-const valueText = (context: SetupContext, state: SetupState, field: Field) => {
-  const draft = state.drafts[state.tab];
-
-  if (!draft) {
-    return "";
-  }
-
+const valueText = (context: SetupContext, draft: Draft, field: Field) => {
   if (field === "model") {
     return modelText(draft.model);
   }
 
-  if (field === "thinking") {
-    return draft.thinking ?? "default";
+  if (field === "skills" && draft.skills === AGENT_SCOPE_ALL) {
+    return `${AGENT_SCOPE_ALL} (${ALL_SKILLS_TEXT})`;
   }
 
-  if (draft.skills === AGENT_SCOPE_ALL) {
-    return `${AGENT_SCOPE_ALL} (every skill of the agent's caller)`;
+  if (field === "skills" && context.skills.length === 0) {
+    return "none (no skills available)";
   }
 
-  return context.skills.length === 0 ? "none (no skills available)" : grantText(draft.skills);
+  return fieldValue(field, draft);
 };
 
-const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>
-  FIELDS.flatMap((field, index) => {
-    const chosen = index === state.field && !state.picker;
-    const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
-    const changed = fieldChanged(context, state, state.tab, field) ? theme.fg("warning", " (changed)") : "";
-    const value = `${theme.fg("text", valueText(context, state, field))}${changed}`;
-
-    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} ${label}`, value, width);
-  });
-
-const windowLines = (
-  theme: ThemeLike,
-  options: string[],
-  cursor: number,
-  width: number,
-  label: (option: string) => string = (option) => option,
-) =>
-  scrolledLines(theme, options.length, cursor, LIST_HEIGHT, width, (index, chosen) => {
-    const text = theme.fg(chosen ? "accent" : "text", label(options[index] ?? ""));
-
-    return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} `, text, width);
-  });
-
-const skillDetail = (context: SetupContext, cursor: number, theme: ThemeLike, width: number) => {
-  const skill = context.skills[cursor];
-  if (
-    !skill?.description ||
-    descriptionFits(theme, { label: skill.name, description: skill.description }, width)
-  ) {
+const lockedSkillsLines = (agent: SetupAgent, theme: ThemeLike, width: number) => {
+  if (agent.role !== "chore") {
     return [];
   }
 
-  const cols = Math.max(1, width - PAD.length);
-  const lines = theme.wrap(skill.description, cols);
-  const shown =
-    lines.length > DETAIL_LINES
-      ? [...lines.slice(0, DETAIL_LINES - 1), theme.truncate(lines.slice(DETAIL_LINES - 1).join(" "), cols)]
-      : lines;
+  const label = theme.fg("dim", LABELS.skills.padEnd(LABEL_WIDTH));
+  const value = theme.fg("dim", `${grantOrNone(agent.initial.skills)} · ${CHORE_SKILLS_NOTE}`);
 
-  return ["", ...shown.map((line) => `${PAD}${theme.fg("muted", line)}`)];
+  return [fitted(theme, `${PAD}${pointerMark(theme, false)} ${label}`, value, "", width)];
 };
+
+const fieldLines = (
+  context: SetupContext,
+  state: SetupState,
+  agent: SetupAgent,
+  draft: Draft,
+  theme: ThemeLike,
+  width: number,
+) => [
+  ...fieldsOf(agent).map((field) => {
+    const chosen = selectedRow(context, state) === field;
+    const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
+    const changed = fieldChanged(context, state, field) ? theme.fg("warning", " (changed)") : "";
+    const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
+
+    return fitted(theme, first, theme.fg("text", valueText(context, draft, field)), changed, width);
+  }),
+  ...lockedSkillsLines(agent, theme, width),
+];
+
+const presetLines = (
+  context: SetupContext,
+  state: SetupState,
+  agent: SetupAgent,
+  theme: ThemeLike,
+  width: number,
+) =>
+  presetsOf(agent).map(({ preset, draft }) => {
+    const chosen = selectedRow(context, state) === preset;
+    const label = theme.fg(chosen ? "accent" : "muted", PRESET_LABELS[preset].padEnd(LABEL_WIDTH));
+    const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
+    const text = presetFieldsOf(agent)
+      .map((field) => fieldValue(field, draft))
+      .join(DOT);
+    const mark = presetInUse(context, state, preset) ? theme.fg("dim", " (in use)") : "";
+
+    return fitted(theme, first, theme.fg("text", text), mark, width);
+  });
+
+const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
+  line(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
+
+const headLine = (theme: ThemeLike, picker: Picker, shown: number, total: number, width: number) => {
+  const name = `${theme.fg("accent", theme.bold(TITLES[picker.field]))}  `;
+
+  if (!picker.query) {
+    return line(theme, `${name}${theme.fg("dim", "/ type to filter")}`, width);
+  }
+
+  const count = `${shown} of ${total}`;
+  const cols = Math.max(1, width - PAD.length);
+  const room = Math.max(1, cols - theme.width(name) - count.length - 2 - "/ ▏".length);
+  const left = `${name}${theme.fg("dim", "/")} ${theme.fg("text", `${cutStart(picker.query, room, theme)}▏`)}`;
+  const right = theme.fg("dim", count);
+
+  return `${PAD}${alignRight(theme, left, right, cols) ?? theme.truncate(left, cols)}`;
+};
+
+const noMatch = (picker: Picker) => `no ${NOUNS[picker.field]} matches "${picker.query}"`;
 
 const pickerLines = (
   context: SetupContext,
@@ -118,111 +186,140 @@ const pickerLines = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const title = (text: string) => ["", ...padded(theme, theme.fg("accent", theme.bold(text)), width)];
+  const height = listHeight(BLOCK_ROWS, picker.field);
+  const empty = picker.query ? noMatch(picker) : undefined;
 
   if (picker.field === "skills") {
-    const options = context.skills.map(({ name, description }) => ({ label: name, description }));
-    const rows = multiLines(theme, options, picker.multi, width, LIST_HEIGHT);
+    const { options, multi, total, detail } = skillsView(context, picker);
 
-    return [...title("Skills"), ...rows, ...skillDetail(context, picker.multi.cursor, theme, width)];
+    return [
+      headLine(theme, picker, options.length, total, width),
+      ...multiLines(theme, options, multi, width, height, { slots: true, empty }),
+      ...block(theme, detail ?? "", width, DETAIL_LINES),
+    ];
   }
 
-  if (picker.field === "model") {
-    const rows = windowLines(theme, modelOptions(context, state.tab), picker.cursor, width, modelText);
+  const { shown, total } = listView(context, state, picker);
+  const label = picker.field === "model" ? modelText : (option: string) => option;
+  const row = (index: number, chosen: boolean) => {
+    const text = theme.fg(chosen ? "accent" : "text", label(shown[index] ?? ""));
 
-    return [...title("Model (models with credentials)"), ...rows];
-  }
-
-  const levels = thinkingOptions(context, state.drafts[state.tab]);
-
-  return [...title("Thinking level"), ...windowLines(theme, levels, picker.cursor, width)];
-};
-
-const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
-  const agent = context.agents[state.tab];
-
-  if (!agent) {
-    return [];
-  }
-
-  const line = (label: string, text: string) =>
-    padded(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
+    return [fitted(theme, `${PAD}${pointerMark(theme, chosen)} `, text, "", width)];
+  };
 
   return [
-    "",
-    ...line("Tools", `${grantText(agent.tools)}. ${TOOLS_NOTE}`),
-    ...line("MCP", agent.mcp ? MCP_ON : MCP_OFF),
+    headLine(theme, picker, shown.length, total, width),
+    ...scrolledLines(theme, shown.length, picker.cursor, height, width, row, { slots: true, empty }),
   ];
 };
 
+const infoLines = (agent: SetupAgent, theme: ThemeLike, width: number) => [
+  agent.note ? labelLine(theme, "Proposed", agent.note, width) : "",
+  labelLine(theme, "Tools", `${grantOrNone(agent.tools)}; ${TOOLS_NOTE}`, width),
+  labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
+];
+
 const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
   const agent = context.agents[state.tab];
+  const draft = state.drafts[state.tab];
 
-  if (!agent) {
+  if (!agent || !draft) {
     return [];
   }
 
-  const heading = `${theme.fg("accent", theme.bold(agent.name))} ${theme.fg("muted", agent.description)}`;
-  const below = state.picker
+  const heading = [
+    line(theme, theme.fg("accent", theme.bold(agent.name)), width),
+    ...block(theme, agent.description, width, DESCRIPTION_ROWS),
+    "",
+  ];
+  const rows = state.picker
     ? pickerLines(context, state, state.picker, theme, width)
-    : infoLines(context, state, theme, width);
+    : [
+        ...padRows(fieldLines(context, state, agent, draft, theme, width), FIELD_ROWS),
+        ...GAP,
+        ...padRows(presetLines(context, state, agent, theme, width), PRESETS.length),
+        ...GAP,
+        ...padRows(infoLines(agent, theme, width), INFO_ROWS),
+      ];
 
-  return [...padded(theme, heading, width), "", ...fieldLines(context, state, theme, width), ...below];
+  return padRows([...heading, ...rows], BODY_ROWS);
 };
 
-const changeText = (patch: Record<string, unknown>) =>
-  Object.entries(patch)
-    .map(([field, value]) => `${field} ${Array.isArray(value) ? grantText(value) : String(value)}`)
-    .join(", ");
+const changeLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>
+  changeRows(context, state).map((change) => {
+    const first = `${PAD}${theme.fg("muted", `${change.name}:`)} `;
+    const suggested = change.suggested ? " (suggested)" : "";
+    const suffix = theme.fg("text", `${suggested} (was ${change.was})`);
+
+    return fitted(theme, first, theme.fg("text", `${change.field} ${change.value}`), suffix, width);
+  });
+
+const changeWindow = (theme: ThemeLike, texts: string[], rows: number, width: number) => {
+  if (texts.length <= rows) {
+    return padRows(texts, rows);
+  }
+
+  const kept = texts.slice(0, Math.max(0, rows - 1));
+  const more = countLine(
+    { hidden: texts.length - kept.length, end: "more", noun: "item" },
+    width - PAD.length,
+    theme,
+  );
+
+  return [...kept, `${PAD}${more}`];
+};
 
 const submitLines = (
   context: SetupContext,
   state: SetupState,
-  changes: SetupChange[],
   paths: SetupPaths,
   theme: ThemeLike,
   width: number,
 ) => {
-  const title = changes.length > 0 ? "Changes" : "No changes";
-  const rows = changes.flatMap((change) => {
-    const text = `${theme.fg("muted", `${change.name}:`)} ${theme.fg("text", changeText(change.patch))}`;
-
-    return padded(theme, text, width);
-  });
-  const scopes = SCOPES.map((scope) => ({
+  const texts = changeLines(context, state, theme, width);
+  const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
-    description: context.trusted || scope === "user" ? paths[scope] : `${paths[scope]} (project not trusted)`,
+    description: paths[scope],
   }));
-  const refused = state.refused ? ["", ...padded(theme, theme.fg("warning", state.refused), width)] : [];
-
-  return [
-    ...padded(theme, theme.fg("accent", theme.bold(title)), width),
-    ...(rows.length > 0 ? ["", ...rows] : []),
-    "",
-    ...padded(theme, theme.fg("muted", "Save to:"), width),
-    ...listLines(theme, scopes, state.scope, width, { layout: "beside" }),
-    ...refused,
+  const top = [
+    line(theme, theme.fg("accent", theme.bold("Submit")), width),
+    context.project ? labelLine(theme, "Project", context.project, width) : "",
+    line(theme, theme.fg("accent", theme.bold(texts.length > 0 ? "Changes" : "No changes")), width),
   ];
+  const bottom = [
+    "",
+    line(theme, theme.fg("muted", "Save to:"), width),
+    ...padRows(
+      [
+        ...listLines(theme, scopes, state.scope, width, { layout: "beside", cut: true }),
+        ...(context.trusted ? [] : [line(theme, theme.fg("dim", UNTRUSTED_NOTE), width)]),
+      ],
+      SCOPES.length + 1,
+    ),
+  ];
+  const window = changeWindow(theme, texts, BODY_ROWS - top.length - bottom.length, width);
+
+  return [...top, ...window, ...bottom];
 };
 
-const BACK_HINT: KeyHint = ["esc", "to go back"];
+const BACK_HINT: KeyHint = ["esc", "to clear/back"];
+
+const SELECT_HINT: KeyHint = ["↑↓", "to select"];
 
 const hints = (context: SetupContext, state: SetupState, ready: boolean): readonly KeyHint[] => {
   if (state.picker?.field === "skills") {
-    return [...MULTI_SELECT_HINTS, ["enter", "to confirm"], BACK_HINT];
+    return [BACK_HINT, SELECT_HINT, ["space", "to toggle"], ["enter", "to confirm"]];
   }
 
   if (state.picker) {
-    return [["↑↓", "to select"], ["enter", "to choose"], BACK_HINT];
+    return [BACK_HINT, SELECT_HINT, ["enter", "to choose"]];
   }
 
   if (onSubmitTab(context, state)) {
-    const enter: KeyHint = ["enter", ready ? "to save" : "to close"];
-
-    return [...SELECT_HINTS, enter, TAB_SWITCH_HINT, CANCEL_HINT];
+    return [CANCEL_HINT, SELECT_HINT, ["enter", ready ? "to save" : "to close"], TAB_SWITCH_HINT];
   }
 
-  return [["↑↓", "to select a field"], ["enter", "to change"], TAB_SWITCH_HINT, CANCEL_HINT];
+  return [CANCEL_HINT, SELECT_HINT, ["enter", "to change or apply"], TAB_SWITCH_HINT];
 };
 
 export const renderSetup = (
@@ -232,20 +329,21 @@ export const renderSetup = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const tabs = context.agents.map((agent, index) => ({
-    label: agent.name,
-    done: FIELDS.some((field) => fieldChanged(context, state, index, field)),
-  }));
   const changes = setupChanges(context, state);
+  const group = (label: string, role: AgentKind) => ({
+    label,
+    tabs: context.agents.flatMap((agent) =>
+      agent.role === role
+        ? [{ label: agent.name, done: changes.some((change) => change.name === agent.name) }]
+        : [],
+    ),
+  });
   const ready = changes.length > 0;
+  const groups = [group("Leads", "lead"), group("Chores", "chore")];
+  const bar = groupedTabBar(theme, groups, state.tab, ready, width - PAD.length).map((row) => `${PAD}${row}`);
   const body = onSubmitTab(context, state)
-    ? submitLines(context, state, changes, paths, theme, width)
+    ? submitLines(context, state, paths, theme, width)
     : agentLines(context, state, theme, width);
 
-  return framed(
-    theme,
-    width,
-    [...padded(theme, tabBar(theme, tabs, state.tab, ready), width), "", ...body],
-    hints(context, state, ready),
-  );
+  return framed(theme, width, [...bar, "", ...body], hints(context, state, ready), { oneRow: true });
 };

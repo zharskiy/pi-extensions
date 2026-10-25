@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks } from "../../../test/framework/index.ts";
 import type { ParentSource } from "../child/child-extension.ts";
 import { childToolNames, createPiRuntime } from "../child/child-runtime.ts";
-import type { SpawnSpec } from "../index.ts";
+import type { SkillInfo, SpawnSpec } from "../index.ts";
 
 type InlineEntry = {
   name: string;
@@ -234,10 +234,10 @@ describe("child tool names", () => {
 });
 
 describe("child skills", () => {
-  const inventory = () => [
-    { name: "docs", description: "Writes docs", path: "/skills/docs/SKILL.md" },
-    { name: "git", description: "", path: "/skills/git/SKILL.md" },
-    { name: "style", description: "Checks style", path: "/skills/style/SKILL.md" },
+  const inventory = (): SkillInfo[] => [
+    { name: "docs", description: "Writes docs", scope: "project", path: "/skills/docs/SKILL.md" },
+    { name: "git", description: "", scope: "user", path: "/skills/git/SKILL.md" },
+    { name: "style", description: "Checks style", scope: "temporary", path: "/skills/style/SKILL.md" },
   ];
 
   const withSkills = runtimeWith({ inventorySkillFiles: inventory });
@@ -275,12 +275,8 @@ describe("child skills", () => {
     expect(keptNames(none)).toEqual([]);
   });
 
-  it("lists the inventory's skills with their descriptions, and their names alone", () => {
-    expect(withSkills.skillCatalog()).toEqual([
-      { name: "docs", description: "Writes docs" },
-      { name: "git", description: "" },
-      { name: "style", description: "Checks style" },
-    ]);
+  it("lists the inventory's skills with their descriptions, scopes and paths, and their names alone", () => {
+    expect(withSkills.skillCatalog()).toEqual(inventory());
     expect(withSkills.skillNames()).toEqual(["docs", "git", "style"]);
   });
 });

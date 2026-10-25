@@ -5,6 +5,7 @@ import type { AgentDefinitions } from "../model/agent-record.ts";
 import { PLAIN_NAME, PLAIN_NAME_TEXT } from "../model/agent-schema.ts";
 import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../model/paths.ts";
 import { type AgentKind, agentTemplate } from "./agent-template.ts";
+import { fillTemplate } from "./template.ts";
 
 const CREATE_TYPE = "pi-subagents-create";
 
@@ -97,7 +98,7 @@ const createBrief = (input: BriefInput): string => {
     chore: skeleton("chore"),
   };
 
-  return input.template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match);
+  return fillTemplate(input.template, values);
 };
 
 const targetProblem = (name: string, project: boolean, path: string, shipped: string[], trusted: boolean) => {

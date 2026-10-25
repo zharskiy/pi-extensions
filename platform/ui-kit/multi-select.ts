@@ -1,5 +1,5 @@
 import { type FormFactory, type KeyPress, PAD, type ThemeLike } from "../pi-adapter/index.ts";
-import { padded, prefixed } from "../shared/index.ts";
+import { padded, padRows, prefixed } from "../shared/index.ts";
 import { pointerMark } from "./glyphs.ts";
 import { framed, type KeyHint } from "./key-hints.ts";
 import { CANCEL_HINT, clampIndex } from "./list.ts";
@@ -8,7 +8,7 @@ export type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
-export const MULTI_SELECT_HINTS: readonly KeyHint[] = [
+const MULTI_SELECT_HINTS: readonly KeyHint[] = [
   ["↑↓", "to select"],
   ["space", "to toggle"],
   ["a", "to check all"],
@@ -17,17 +17,29 @@ export const MULTI_SELECT_HINTS: readonly KeyHint[] = [
 
 const DEFAULT_HEIGHT = 10;
 
-export const initialMulti = (count: number, checked: readonly boolean[] = []): MultiState => ({
+const initialMulti = (count: number, checked: readonly boolean[] = []): MultiState => ({
   cursor: 0,
   checked: Array.from({ length: count }, (_, index) => checked[index] === true),
 });
 
-export const scrollWindow = (count: number, cursor: number, height: number) => {
+const scrollWindow = (count: number, cursor: number, height: number) => {
   const size = Math.max(1, height);
   const start = Math.max(0, Math.min(cursor - Math.floor(size / 2), count - size));
 
   return { start, end: Math.min(count, start + size) };
 };
+
+type ListLayout = { slots?: boolean; empty?: string };
+
+const NONE_AVAILABLE = "(none available)";
+
+export const moreRow = (theme: ThemeLike, arrow: "↑" | "↓", hidden: number, width: number, prefix = PAD) =>
+  hidden > 0
+    ? `${prefix}${theme.fg("dim", theme.truncate(`${arrow} ${hidden} more`, Math.max(1, width - theme.width(prefix))))}`
+    : "";
+
+const emptyRow = (theme: ThemeLike, text: string, width: number) =>
+  `${PAD}${theme.fg("muted", theme.truncate(text, Math.max(1, width - PAD.length)))}`;
 
 export const scrolledLines = (
   theme: ThemeLike,
@@ -36,11 +48,23 @@ export const scrolledLines = (
   height: number,
   width: number,
   row: (index: number, chosen: boolean) => string[],
+  { slots = false, empty = NONE_AVAILABLE }: ListLayout = {},
 ) => {
   const { start, end } = scrollWindow(count, cursor, height);
   const rows = Array.from({ length: end - start }, (_, offset) => start + offset).flatMap((index) =>
     row(index, index === cursor),
   );
+
+  if (slots) {
+    const shown = count === 0 ? [emptyRow(theme, empty, width)] : rows;
+
+    return [
+      moreRow(theme, "↑", start, width),
+      ...padRows(shown, Math.max(1, height)),
+      moreRow(theme, "↓", count - end, width),
+    ];
+  }
+
   const more = (text: string) => padded(theme, theme.fg("dim", text), width);
   const above = start > 0 ? more(`↑ ${start} more`) : [];
   const below = end < count ? more(`↓ ${count - end} more`) : [];
@@ -84,16 +108,10 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
   return undefined;
 };
 
-export const checkedIndexes = (state: MultiState) =>
-  state.checked.flatMap((value, index) => (value ? [index] : []));
-
 const ROW_MARKS = "› [ ] ";
 
 const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
   width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
-
-export const descriptionFits = (theme: ThemeLike, option: MultiOption, width: number) =>
-  !option.description || theme.width(option.description) <= descriptionRoom(theme, option.label, width);
 
 export const multiLines = (
   theme: ThemeLike,
@@ -101,12 +119,13 @@ export const multiLines = (
   state: MultiState,
   width: number,
   height = DEFAULT_HEIGHT,
+  layout: ListLayout = {},
 ) => {
-  if (options.length === 0) {
-    return padded(theme, theme.fg("muted", "(none available)"), width);
+  if (options.length === 0 && !layout.slots) {
+    return padded(theme, theme.fg("muted", NONE_AVAILABLE), width);
   }
 
-  return scrolledLines(theme, options.length, state.cursor, height, width, (index, chosen) => {
+  const row = (index: number, chosen: boolean) => {
     const option = options[index];
     const box = state.checked[index] ? theme.fg("success", "[x]") : theme.fg("muted", "[ ]");
     const first = `${PAD}${pointerMark(theme, chosen)} ${box} `;
@@ -118,8 +137,12 @@ export const multiLines = (
         ? `  ${theme.fg("muted", theme.truncate(option.description, room))}`
         : "";
 
-    return prefixed(theme, first, `${label}${description}`, width);
-  });
+    return layout.slots
+      ? [`${first}${theme.truncate(`${label}${description}`, Math.max(1, width - theme.width(first)))}`]
+      : prefixed(theme, first, `${label}${description}`, width);
+  };
+
+  return scrolledLines(theme, options.length, state.cursor, height, width, row, layout);
 };
 
 export type MultiSelectSpec<T> = {

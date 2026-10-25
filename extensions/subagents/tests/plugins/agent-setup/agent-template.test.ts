@@ -6,7 +6,8 @@ import {
   DESCRIPTION_PLACEHOLDER,
 } from "../../../core/agent-setup/agent-template.ts";
 
-const parse = (template: AgentTemplate) => parseDefinition(agentTemplate(template), "x.md", "user");
+const parse = (template: AgentTemplate) =>
+  parseDefinition(agentTemplate(template), "x.md", { path: "", source: "user" });
 
 describe("agent template", () => {
   it("writes a lead that loads with the lead defaults", () => {
@@ -63,7 +64,7 @@ describe("agent template", () => {
       expect(head).toContain(`# ${field}:`);
     });
     expect(text).toContain("model: inherit");
-    expect(parseDefinition(text, "x.md", "user").definition?.prompt).not.toContain("#");
+    expect(parseDefinition(text, "x.md", { path: "", source: "user" }).definition?.prompt).not.toContain("#");
   });
 
   it("puts a placeholder in an empty description and quotes one YAML would misread", () => {

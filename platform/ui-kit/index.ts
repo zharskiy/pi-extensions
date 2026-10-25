@@ -5,6 +5,7 @@ export {
   EXPAND_BINDING,
   expandHint,
   framed,
+  hintRow,
   type KeyHint,
   keyHints,
 } from "./key-hints.ts";
@@ -16,10 +17,6 @@ export {
   SELECT_HINTS,
 } from "./list.ts";
 export {
-  checkedIndexes,
-  descriptionFits,
-  initialMulti,
-  MULTI_SELECT_HINTS,
   type MultiState,
   multiKey,
   multiLines,
@@ -42,4 +39,4 @@ export {
   wrapChild,
 } from "./row.ts";
 export { type SelectOption, selectForm } from "./select.ts";
-export { TAB_SWITCH_HINT, tabBar, tabStep } from "./tabs.ts";
+export { groupedTabBar, TAB_SWITCH_HINT, tabBar, tabStep } from "./tabs.ts";
