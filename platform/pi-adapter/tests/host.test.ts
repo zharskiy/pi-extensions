@@ -624,20 +624,22 @@ describe("pi adapter", () => {
       await style.fire("session_start", fakeCtx("tui"));
       await agents.fire("session_start", fakeCtx("tui"));
 
-      const run = async (copy: typeof style) => {
+      const run = async (...fired: (typeof style)[]) => {
         const options = promptOptions();
 
-        await copy.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: options });
+        await fired.reduce<Promise<unknown>>(
+          (previous, copy) =>
+            previous.then(() =>
+              copy.fire("before_agent_start", fakeCtx("tui"), { systemPromptOptions: options }),
+            ),
+          Promise.resolve(),
+        );
 
         return options.sections;
       };
 
       return { style, agents, styleHost, agentsHost, run };
     };
-
-    afterEach(() => {
-      delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-extensions.owned-prompt-sections")];
-    });
 
     it("applies a section to a run without a main prompt", async () => {
       const { style, styleHost, run } = await copies();
@@ -647,25 +649,16 @@ describe("pi adapter", () => {
       expect(await run(style)).toEqual({ output_style: "Be brief." });
     });
 
-    it("applies another copy's section to a run with a main prompt", async () => {
-      const { agents, styleHost, agentsHost, run } = await copies();
+    it("applies another copy's section alongside a copy's main prompt", async () => {
+      const { style, agents, styleHost, agentsHost, run } = await copies();
 
       styleHost.setPromptSection("output_style", "Be brief.");
       agentsHost.setMainPrompt("# Main");
 
-      const sections = await run(agents);
+      const sections = await run(style, agents);
 
       expect(sections.output_style).toBe("Be brief.");
       expect(sections.tools).toBeDefined();
-    });
-
-    it("keeps a section when another copy shuts down", async () => {
-      const { agents, styleHost, run } = await copies();
-
-      styleHost.setPromptSection("output_style", "Be brief.");
-      await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
-
-      expect((await run(agents)).output_style).toBe("Be brief.");
     });
 
     it("clears a section set to undefined", async () => {
@@ -677,27 +670,22 @@ describe("pi adapter", () => {
       expect(await run(style)).toEqual({});
     });
 
-    it("drops a section when its owner shuts down", async () => {
+    it("drops a copy's own section when that copy shuts down", async () => {
+      const { style, styleHost, run } = await copies();
+
+      styleHost.setPromptSection("output_style", "Be brief.");
+      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
+
+      expect(await run(style)).toEqual({});
+    });
+
+    it("keeps a copy's section when another copy shuts down", async () => {
       const { style, agents, styleHost, run } = await copies();
 
       styleHost.setPromptSection("output_style", "Be brief.");
-      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
-
-      expect((await run(agents)).output_style).toBeUndefined();
-    });
-
-    it("keeps a section another copy set to the same text when the first owner shuts down", async () => {
-      const { style, agents, styleHost, agentsHost, run } = await copies();
-
-      styleHost.setPromptSection("output_style", "Be brief.");
-      agentsHost.setPromptSection("output_style", "Be brief.");
-      await style.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
-
-      expect((await run(agents)).output_style).toBe("Be brief.");
-
       await agents.fire("session_shutdown", fakeCtx("tui"), { reason: "quit" });
 
-      expect((await run(agents)).output_style).toBeUndefined();
+      expect((await run(style, agents)).output_style).toBe("Be brief.");
     });
   });
 

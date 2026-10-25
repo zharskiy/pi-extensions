@@ -8,7 +8,6 @@ import { contextHost } from "../context/context-facts.ts";
 import { contextOf, sumUsage } from "../context/usage-math.ts";
 import { createEditorHooks } from "../editor/editor.ts";
 import { replaceMainPrompt } from "../prompt/main-prompt.ts";
-import { applyPromptSections, createPromptSections } from "../prompt/sections.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
 import { recordPad } from "../tools/row-component.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
@@ -93,7 +92,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
   const notices = createNotices(state);
-  const sections = createPromptSections();
+  const sections = new Map<string, string>();
   const toolRows = toolRowsHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
 
@@ -210,7 +209,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     editor.release();
     notices.release();
-    sections.release();
+    sections.clear();
     toolRows.release();
     thinkingLabel.release();
     state.ctx = undefined;
@@ -227,7 +226,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       replaceMainPrompt(event.systemPromptOptions, mainPrompt);
     }
 
-    applyPromptSections(event.systemPromptOptions);
+    Object.assign(event.systemPromptOptions.sections, Object.fromEntries(sections));
   });
 
   pi.on("agent_start", (_event, ctx) => {
@@ -377,6 +376,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       mainPrompt = text;
     },
     setPromptSection: (name, text) => {
+      if (text === undefined) {
+        sections.delete(name);
+        return;
+      }
+
       sections.set(name, text);
     },
     onSessionStart: (handler) => {

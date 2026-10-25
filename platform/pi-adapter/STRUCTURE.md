@@ -53,7 +53,6 @@
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `prompt/sections.ts`: prompt sections shared by every adapter copy, each with its owner.
 - `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
 - `tests/contract-types.test.ts`: type-level checks of the contract unions (theme tokens, keys, thinking levels, host capabilities).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
