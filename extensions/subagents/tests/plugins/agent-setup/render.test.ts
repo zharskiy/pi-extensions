@@ -194,6 +194,33 @@ describe("agent setup layout", () => {
     expect(list(press(ctx, model, char("z")).state).slice(0, 3)).toEqual(["", ' no model matches "z"', ""]);
   });
 
+  it("shows the scroll counts in fixed rows around the skills list", () => {
+    const base = wide(true);
+    const extra = Array.from({ length: 8 }, (_, index) => ({
+      name: `extra-${index}`,
+      description: `Extra skill ${index}`,
+      scope: "user" as const,
+      path: `/skills/extra-${index}/SKILL.md`,
+    }));
+    const ctx = { ...base, skills: [...base.skills, ...extra] };
+    const skills = press(ctx, initialSetup(ctx), key("down"), key("down"), key("enter")).state;
+    const states = [skills, press(ctx, skills, ...Array.from({ length: 6 }, () => key("down"))).state];
+    const ends = [...states, press(ctx, skills, key("end")).state];
+    const list = (state: SetupState) => {
+      const lines = at80(ctx, state);
+      const start = lines.indexOf(" Skills") + 2;
+
+      return lines.slice(start, start + 10);
+    };
+
+    expect(ends.map((state) => [list(state)[0], list(state)[9]])).toEqual([
+      ["", " ↓ 5 more"],
+      [" ↑ 2 more", " ↓ 3 more"],
+      [" ↑ 5 more", ""],
+    ]);
+    expect(heights(ctx, ends)).toEqual(new Set([34]));
+  });
+
   it("cuts the description to two rows under the name and the footer to one row", () => {
     const ctx = wide(true);
     const lines = at80(ctx, { ...initialSetup(ctx), tab: 1 });
@@ -220,5 +247,42 @@ describe("agent setup layout", () => {
     expect(lines.some((line) => line.startsWith("   Suggested ") && line.endsWith("... (in use)"))).toBe(
       true,
     );
+  });
+
+  it("fits every line to 40 columns and keeps the marks and the esc hint", () => {
+    const ref = "acme/an-extremely-long-model-reference-for-narrow-forms";
+    const base = wide(true);
+    const ctx = {
+      ...base,
+      agents: base.agents.map((agent) =>
+        agent.proposed ? { ...agent, proposed: { ...agent.proposed, model: ref } } : agent,
+      ),
+      models: [
+        ...base.models,
+        { ref, contextWindow: 100_000, cost: { input: 1, output: 2 }, thinking: ["high"] },
+      ],
+    };
+    const start = initialSetup(ctx);
+    const applied = press(ctx, start, key("down"), key("down"), key("down"), key("enter")).state;
+    const submit = { ...start, tab: ctx.agents.length };
+    const picker = press(ctx, start, key("enter")).state;
+    const narrow = (state: SetupState) => at80(ctx, state, 40);
+
+    [start, applied, submit, picker].forEach((state) => {
+      expect(narrow(state).every((line) => plainTheme.width(line) <= 40)).toBe(true);
+      expect(narrow(state).at(-2)).toMatch(/^ esc /);
+    });
+    expect(narrow(start).some((line) => line.startsWith(" › Model ") && line.endsWith("... (changed)"))).toBe(
+      true,
+    );
+    expect(
+      narrow(start).some((line) => line.startsWith("   Suggested ") && line.endsWith("... (in use)")),
+    ).toBe(true);
+    expect(narrow(applied)).toContain(" › Previous  all · acme/big ... (in use)");
+    expect(
+      narrow(submit).some(
+        (line) => line.startsWith(" lead: mo") && line.endsWith(" (suggested) (was acme/big)"),
+      ),
+    ).toBe(true);
   });
 });

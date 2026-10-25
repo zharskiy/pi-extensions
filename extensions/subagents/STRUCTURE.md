@@ -121,6 +121,7 @@ extensions/subagents/
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/
+    │   ├── agent-record.test.ts           # isLead, including the shipped general agent
     │   ├── context-limit.test.ts          # effectiveContextLimit
     │   ├── paths.test.ts                  # paths helpers
     │   └── settings.test.ts               # settings schema, overrides and files

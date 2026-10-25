@@ -2,7 +2,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SkillInfo } from "../../../../../platform/pi-adapter/index.ts";
-import { loadDefinitions } from "../../../core/agent-definitions/loader.ts";
 import {
   autosetupBrief,
   candidateSkills,
@@ -10,7 +9,7 @@ import {
   INTERACTIVE_TERMS,
   projectListing,
 } from "../../../core/agent-setup/autosetup.ts";
-import { type AgentDefinition, isLead } from "../../../core/model/agent-record.ts";
+import type { AgentDefinition } from "../../../core/model/agent-record.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
 const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
@@ -32,35 +31,6 @@ const skill = (name: string, patch: Partial<SkillInfo> = {}): SkillInfo => ({
   scope: "user",
   path: `/skills/${name}/SKILL.md`,
   ...patch,
-});
-
-describe("isLead", () => {
-  it("is true for an agent that may start subagents", () => {
-    expect(isLead(definition({ name: "reviewer", subagents: ["scout", "shell"] }))).toBe(true);
-    expect(isLead(definition({ name: "boss", subagents: "all" }))).toBe(true);
-    expect(isLead(definition({ name: "scout", subagents: [] }))).toBe(false);
-  });
-
-  it("counts an agent with every skill as a lead", () => {
-    expect(isLead(definition({ name: "general", skills: "all" }))).toBe(true);
-  });
-
-  it("ignores the folder the agent file sits in", () => {
-    const dir = tempDir();
-    const file = (name: string, subagents: string) =>
-      `---\nname: ${name}\ndescription: d\nlimit: 50000\ntools: []\nskills: []\nsubagents: ${subagents}\n---\n`;
-
-    mkdirSync(join(dir, "chores"), { recursive: true });
-    writeFileSync(join(dir, "chores", "mine.md"), file("mine", "[helper]"));
-    writeFileSync(join(dir, "helper.md"), file("helper", "[]"));
-
-    const loaded = loadDefinitions([{ path: dir, source: "project" }]).definitions;
-
-    expect([loaded.get("mine"), loaded.get("helper")].map((entry) => entry && isLead(entry))).toEqual([
-      true,
-      false,
-    ]);
-  });
 });
 
 describe("hasSkillsOverride", () => {

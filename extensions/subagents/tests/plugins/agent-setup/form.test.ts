@@ -42,14 +42,22 @@ describe("agent setup form", () => {
     const ctx = proposedContext();
     const previous = press(ctx, initialSetup(ctx), key("down"), key("down"), key("down"), key("enter"));
 
-    expect(previous.state.picker).toBeUndefined();
+    expect(render(ctx, previous.state)).toContain(
+      " Tools: all; fixed per agent; /agents create makes your own",
+    );
     expect(setupChanges(ctx, previous.state)).toEqual([]);
     expect(render(ctx, previous.state)).toContain(" › Previous  all · acme/big · high (in use)");
     expect(render(ctx, previous.state)).toContain("   Suggested search, docs · acme/big · high");
 
     const suggested = press(ctx, previous.state, key("down"), key("enter"));
 
-    expect(suggested.state.drafts[0]).toEqual(initialSetup(ctx).drafts[0]);
+    expect(render(ctx, suggested.state)).toEqual(
+      expect.arrayContaining([
+        "   Model     acme/big",
+        "   Thinking  high",
+        "   Skills    search, docs (changed)",
+      ]),
+    );
     expect(setupChanges(ctx, suggested.state)).toEqual([
       { name: "lead", patch: { skills: ["search", "docs"] } },
     ]);
@@ -87,11 +95,15 @@ describe("agent setup form", () => {
       key("enter"),
     );
 
-    expect(edited.state.drafts[1]?.thinking).toBeDefined();
+    expect(render(ctx, edited.state).some((line) => /^ › Thinking {2}\S+ \(changed\)$/.test(line))).toBe(
+      true,
+    );
 
     const previous = press(ctx, edited.state, key("end"), key("enter"));
 
-    expect(previous.state.drafts[1]).toEqual({ model: "inherit", thinking: undefined, skills: ["docs"] });
+    expect(render(ctx, previous.state)).toEqual(
+      expect.arrayContaining(["   Thinking  default", " › Previous  docs · inherit · default (in use)"]),
+    );
     expect(setupChanges(ctx, previous.state)).toEqual([]);
   });
 
