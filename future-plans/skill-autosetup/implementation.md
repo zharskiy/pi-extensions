@@ -1,221 +1,191 @@
 # Implementation: skill autosetup, release 1
 
-What it takes to build `/agents autosetup` as specified in README.md (R1 to R6). Evals are out of scope (README, Out of scope). Read on 2026-10-25 against the working tree of branch `feat/style-concise-default`. Paths are under `extensions/subagents/` unless they start with `platform/`, `test/`, `biome.json` or `AGENTS.md`. Facts already in research.md are cited, not repeated.
+What it takes to build release 1 as specified in README.md (R1 to R6): the bare `/agents setup` proposes each lead's skills. Read on 2026-10-25 against the working tree of branch `feat/style-concise-default`. Paths are under `extensions/subagents/` unless they start with `platform/`, `test/`, `node_modules/` (PCA = `node_modules/@earendil-works/pi-coding-agent/dist`), `biome.json` or `AGENTS.md`. Facts in research.md §1 are cited, not repeated. Evals are out of scope.
 
 ## 1. Reused as-is
 
-- **Routing** (`api/plugins/agent-view.ts`): the first word is checked with `isSubcommand` (`ui/agent-view/picker.ts:19-20`) and the rest joined as `args` (`agent-view.ts:218-225`); `runSubcommand` (175-176) sends every word but `view` to `runSetupWord` (161-173). `subcommands(prefix)` (136-150) completes the words and labels each non-`view` word with `service.usage[word]`; `setupCompletions` (201-205) completes agent names after `setup `. The description's usage is read once at enable (198-199). Reused, with the edits in section 2.
-- **`agentSetup` service** (`api/plugins/agent-setup.ts:131-147`; type `core/model/agent-record.ts:164-169`): `{usage: {setup, create}, run, create, complete}`. Gains an `autosetup` method and usage key (section 2); `run`, `create`, `complete` unchanged.
-- **`save(scope, changes)`** (`api/plugins/agent-setup.ts:34-59`): trust check, `writeChanges`, `definitions.reload()`, notice, shadow warning. Reused, with one change (its return value, section 2). Trap: it returns `void` today, so the tool cannot tell the model what was saved or why it failed.
-- **`context(info)`** (`agent-setup.ts:61-79`): the `SetupContext` the form needs, agents ordered shipped first (`shippedFirst`, 17-19). Reused with an optional proposal argument (section 2).
-- **`writeChanges`, `mergeChanges`, `overriddenFields`** (`core/agent-setup/write.ts:17-68`): per-agent field merge, keeps other keys, error string instead of throw. As-is.
-- **`settingsPaths(info)`** (`core/model/settings.ts:131-134`): the two files. As-is.
-- **`setupForm(context, paths)`** (`ui/agent-setup/setup-overlay.ts:8-33`): starts from `initialSetup(context)` (11), returns `{scope, changes}` or `undefined`. As-is once `initialSetup` reads the proposal.
-- **`setupChanges`, `changedFields`, `fieldChanged`, `sameGrant`** (`ui/agent-setup/form.ts:66-95`): diff each draft against `agent.initial`; `setupChanges` falls back to `agent.initial` when a draft is missing (85). As-is: they already diff against `initial`, so keeping `initial` as the baseline is enough for proposed skills to show `(changed)` (`setup-render.ts:76`) and the tab as done (`setup-render.ts:235-238`).
-- **`modelOptions`** (`form.ts:97-103`) reads `agent.initial.model`; the proposal never touches the model, so no effect.
-- **`host.sendHiddenMessage`** (`platform/pi-adapter/runtime/host.ts:402-430`): follow-up with `triggerTurn` while a run is active; otherwise held and started as its own turn when idle (`deliverHeld` 155-167, `startHidden` 141). As-is; same use as `createAgentCommand` (`core/agent-setup/create.ts:142-154`).
-- **Questionnaire as the UI-tool precedent** (`extensions/questionnaire/api/plugin.ts:9-49`, `core/questionnaire.ts:81-109`): definition object in core, `execute` in api, mode check before anything, `awaitingInput(host)(true)` around `host.ui.showForm(factory, {signal})`, `undefined` treated as cancel, result `{text, details}`. The adapter's `showForm` (`platform/pi-adapter/ui/form.ts:10-61`) waits for other overlays to clear, returns `undefined` on abort and wires the signal to close the form. A tool `execute` captures the live ctx first (`platform/pi-adapter/tools/tool-bridge.ts:125-132`, `onContext(ctx)`), so `host.ui.showForm` works from a tool in this extension exactly as in questionnaire; `host` is the same object for every plugin of the extension.
-- **`host.registerTool` / `ToolSpec`** (`platform/pi-adapter/runtime/host.ts:347-350`; `types/tools.ts:21-38`): `modelOnly` maps to pi's `exposure: "model-only"` (`tool-bridge.ts:121`), which pi documents as "declared to the model while active, never callable" from codemode, activated at registration (PCA `dist/core/extensions/types.d.ts:383-395`). Precedent in this extension: `agentStatusPlugin` registers its tool at enable (`api/plugins/agent-status.ts:70-82`).
-- **Child exclusion**: children get the parent's active tools minus anything registered from this extension's root (`api/extension.ts:20` `childExclude: [root]`; `platform/pi-adapter/child/child-runtime.ts:102-106`), so no agent, not even one with `tools: all`, sees `agent_skills_proposal`.
-- **No agent kinds**: definitions carry no lead/chore marker (research.md §1, Agent definitions), and nothing here adds one. `context()`, the tool's checks and the form treat every agent alike; only a `skills: all` grant is refused, because there is nothing to pick. The chore policy lives in the brief alone (README R2, R6).
-- **`cutChars`** (`core/components/receipt.ts:132`): shared core helper, not owned by a plugin (no `api/plugins/components.ts`), so `core/agent-setup/` may import it for cutting skill descriptions.
-- **Test fakes**: harness `tests/support/subagents-harness.ts` (`createHarness`); fake host `test/framework/fake-host.ts`: `tools` map and `host.tool(name).execute(params, {update})` (403, 548-556), `hidden` (440, delivery `run` when idle), `published` (452-457), `forms`/`form()` (204-206, 296-303; `showForm` returns `undefined` outside tui), `notices`, `settle()` fires idle handlers (512-518), `info.mode`; fake runtime `skills` and `skillDescriptions` (`test/framework/fake-agent-runtime.ts:137-177`); form fixture `tests/support/setup-context.ts` (`context`, `PATHS`, `press`, `render`).
+- **Routing**: `/agents setup` → `runSetupWord` (`api/plugins/agent-view.ts:161-173`) → `service.run(args)` (`api/plugins/agent-setup.ts:134-141`): empty args → `runForm`, else `runLine`. The menu's `setup` entry goes the same way (`agent-view.ts:185-196`). No change to `agent-view.ts`, `ui/agent-view/picker.ts`, the service type or `core/agent-setup/line.ts`.
+- **`runForm`** (`agent-setup.ts:81-105`): tui check (85-91), `showForm(setupForm(...))` (93), "nothing changed" (99-102), `save` (104). The new entry step goes between 91 and 93.
+- **`save(scope, changes)`** (`agent-setup.ts:34-59`): trust check, `writeChanges`, `definitions.reload()` (50), notice (51), shadow warning (53-58). Reused with a return value and an optional `/new` suffix (section 2).
+- **`context(info)`** (`agent-setup.ts:61-79`), **`settingsPaths`** (`core/model/settings.ts:131-134`), **`writeChanges`/`mergeChanges`** (`core/agent-setup/write.ts:17-46`), **`setupForm`** (`ui/agent-setup/setup-overlay.ts:8-33`), **`setupChanges`/`changedFields`/`fieldChanged`/`sameGrant`** (`ui/agent-setup/form.ts:66-95`): diff drafts against `agent.initial`, so a proposed draft with `initial` kept as baseline shows `(changed)` (`setup-render.ts:76`) and a done tab (`setup-render.ts:235-238`) with no render change.
+- **Loaded overrides**: the plugin context carries the live `settings` (`api/plugins/fetch-tool.ts:58`, `agent-definitions.ts:14,51`); `settings.agents` is the user file merged with the project file, the project only when trusted (`settings.ts:141-147,154-156`), refreshed in place by every `reloadSettings` (`settings.ts:173-177`), i.e. session start and `definitions.reload()`.
+- **`host.sendHiddenMessage`** (`platform/pi-adapter/runtime/host.ts:402-430`), as `createAgentCommand` uses it (`core/agent-setup/create.ts:142-154`).
+- **Two forms in a row**: `showForm` waits for open overlays to clear (`platform/pi-adapter/ui/form.ts:19`); `menu` already chains a picker and the next form (`agent-view.ts:191-195`).
+- **Tool that opens a form**: questionnaire (`extensions/questionnaire/api/plugin.ts:9-49`, `core/questionnaire.ts:81-109`): mode check, `AWAITING_INPUT_CHANNEL` published around `showForm(factory, {signal})`, `undefined` = cancel. A tool's `execute` captures the live ctx first (`platform/pi-adapter/tools/tool-bridge.ts:125-132`), so `host.ui.showForm` works from a tool here too.
+- **`registerTool` / `ToolSpec`** (`platform/pi-adapter/types/tools.ts:21-38`; `modelOnly` → `exposure: "model-only"`, `tool-bridge.ts:121`); this extension already registers a main-session tool at enable (`api/plugins/agent-status.ts:70-82`). Children never get it: `childExclude: [root]` (`api/extension.ts:20`, `platform/pi-adapter/child/child-runtime.ts:102-106`).
+- **Fresh instance per session**: pi builds a new extension instance on `/new`, `/resume`, `/fork`, `/reload` (`platform/pi-adapter/ARCHITECTURE.md:18`), so an in-memory mark is reset with the session; `onSessionStart` clearing is belt and braces (RPC fires it twice, same line).
+- **Helpers**: `cutChars` (`core/components/receipt.ts:132`, shared core, no plugin owns `components`); `readText` (`platform/shared/index.ts`, as `write.ts:3` uses it); `grantText` (`core/model/agent-record.ts:87`, renders `[]` as `""`).
+- **Fakes**: `createHarness` (`tests/support/subagents-harness.ts`); fake host `tools`/`tool(name)` (`test/framework/fake-host.ts:403,548-556`), `hidden` (440), `published` (452-457), `forms`/`form()` (204-206, 296-303), `notices`, `info.mode`, `settle()`; fake runtime `skills`, `skillDescriptions` (`test/framework/fake-agent-runtime.ts:171-174`); form fixture `tests/support/setup-context.ts`.
 
 ## 2. Changed
 
+### Adapter: `scope` and `path` on the inventory
+
+- `SkillInfo` (`platform/pi-adapter/types/messages.ts:16`) becomes `{name, description, scope: "project" | "user" | "temporary", path}`; `SkillFile` (`child/skills.ts:11`) gains `scope`. The runtime contract stays one method: `skillCatalog(): SkillInfo[]` (`types/runtime.ts:58`) now carries `path` instead of stripping it (`child/child-runtime.ts:315-316`); no new method needed.
+- Loaded skills: `sessionSkillFiles` (`runtime/extension.ts:14-22`) adds `scope: command.sourceInfo.scope`.
+- Discovered skills: do not use `skill.sourceInfo.scope` from `loadSkills`. With `includeDefaults: false` pi marks a skill `user` only under `<agentDir>/skills`, `project` only under `<cwd>/.pi/skills`, and everything else (`.agents/skills`, `~/.agents/skills`, packages, settings paths) `temporary` (PCA `core/skills.js:90-112,368-376`). The resolved resource carries the real scope (`PathMetadata.scope`, PCA `core/package-manager.d.ts:2-13`). `discoverSkills` (`child/skills.ts:56-73`) keeps `skillFilePath(resource) → resource.metadata.scope` and gives each loaded skill the scope of the resource whose path equals or contains `skill.filePath`; none found → `project` when the path is under the cwd, else `user`.
+- Verification step (before relying on `[project]`): an adapter test with a temp project holding `.agents/skills/x/SKILL.md` and `.pi/skills/y/SKILL.md`, a temp agent dir with `skills/z`, asserting `project, project, user`; plus one manual `/agents setup` in a real project with a package skill.
+- Breaks: `tests/child-runtime.test.ts:279-285` (`toEqual` on the catalogue), `tests/skills.test.ts` fixtures, `test/framework/fake-agent-runtime.ts:173` (add `skillScopes`/`skillPaths` maps, default `user` and `/skills/<name>/SKILL.md`), `test/framework/pi/live/live-runtime.ts` and `live-extension.ts` (SkillFile users). The create brief and the form ignore the new fields.
+
+About 25 lines, 4 tests.
+
+### ui-kit: `selectForm` without preselection
+
+Today `selected = clampIndex(spec.selected ?? 0, …)` (`platform/ui-kit/select.ts:31`) and Enter picks `selected` (`list.ts:64-66` via `select.ts:49-51`). Smallest mode: `SelectSpec.unfocused?: boolean`.
+
+- `let selected = spec.unfocused ? -1 : clampIndex(spec.selected ?? 0, spec.options.length);`
+- In `handleKey`, ignore a pick at `-1`: `if (step.pick && step.index < 0) return;`.
+- Nothing else: `listLines` marks a row by `index === selected` (`list.ts:32`), so `-1` draws no pointer; `listKey` moves `-1` to `0` on ↓/↑/Home (`clampIndex`, `list.ts:55,68-76`) and digits pick directly (60-62); Esc stays `undefined` (`select.ts:36-39`).
+
+About 4 lines, 4 tests in `platform/ui-kit/tests/select.test.ts`.
+
 ### `api/plugins/agent-setup.ts`
 
-The tool must live in this file. `test/architecture.test.ts:86-96` treats every file under `api/plugins/` as a plugin of its own name, so a separate `api/plugins/agent-skills-proposal.ts` importing `core/agent-setup/` would fail the cross-plugin rule (177-183).
+The tool must live in this file: every file under `api/plugins/` is a plugin to `test/architecture.test.ts:86-96`, so another file importing `core/agent-setup/` would fail the cross-plugin rule (177-183).
 
-1. **`save` returns an outcome.** `type SaveOutcome = {path: string; text: string} | {error: string}`; same notices as now. `runForm` and `runLine` ignore it. About 6 lines.
-2. **`context(info, proposal?)`.** With a validated proposal, each agent named in it gets `proposed: {...initial, skills}` and `note` (the reasons line); the others are unchanged. About 8 lines.
-3. **`autosetup` on the service.** `services.provide("agentSetup", {…, autosetup: runAutosetup})`. `runAutosetup(args)`: non-empty `args` → error notice `usage: /agents autosetup`; outside tui → error notice naming `/agents setup` and both files (the `runForm` advice, 86-89) and stop; else build the brief (`autosetupBrief`, section 3), `host.sendHiddenMessage({customType: AUTOSETUP_TYPE, text})`, set `pending = true`, notify `asked the main session to propose agent skills`. About 20 lines. `run`, `runLine` and `parseSetupLine` are untouched.
-4. **Usage.** `usage: {setup: SETUP_USAGE, create: CREATE_USAGE, autosetup: AUTOSETUP_USAGE}` with `AUTOSETUP_USAGE = "/agents autosetup"`. The `AgentSetupService` type (`agent-record.ts:164-169`) gains `autosetup(args): Promise<void>` and the `usage.autosetup` key. 4 lines.
-5. **Completion.** Nothing here: the word is completed by `subcommands` in agent-view (below); `complete(prefix)` still lists agent names after `setup `.
-6. **Pending mark.** `let pending = false` in the `enable` closure, in memory only, never written anywhere. Set by `runAutosetup`; cleared when the tool finishes (confirm, cancel, nothing to change, save failure) and on `host.onSessionStart`; not cleared on a validation refusal, so the model can correct and call again. Settled 2026-10-25 (option A below): no other clearing. About 6 lines.
-7. **The tool.** `host.registerTool({...proposalDefinition, execute})`, following questionnaire:
-   - `!pending` → error result `Error: no proposal is pending; the user must run /agents autosetup first.`
-   - `host.session().mode !== "tui"` → error result (cannot happen while pending, since `runAutosetup` refuses outside tui, but the spec asks for the check).
-   - `checkProposal(params, definitions.list(), runtime.skillCatalog())` (any agent with a list grant is accepted; no lead/chore check) → error list → error result with every problem on its own line, plus the valid names.
-   - No difference from the current lists → `nothing to change: the proposal matches the current lists`, pending cleared, no form.
-   - Publish `AWAITING_INPUT_CHANNEL` (`platform/shared/index.ts`; api may import it, as `api/extension.ts:3` does) with `source: "pi-subagents"`, `title: "agent skills"`, around `await host.ui.showForm(setupForm(context(info, proposal), settingsPaths(info)), {signal})`.
-   - `undefined` → `Cancelled by the user; nothing was saved.` (not `isError`, as questionnaire). Empty `changes` → `The user confirmed without changes; nothing was saved.` Otherwise `save(scope, changes)` → its `text` or `error` (error as `isError`).
-   - `executionMode: "sequential"`, so two calls in one turn never open two forms.
-   About 45 lines with the result texts.
+1. **Entry in `runForm`**, after the tui check (91), before `showForm` (93):
+   ```ts
+   if (!hasSkillsOverride(settings.agents)) return startAutosetup();
+   const choice = await host.ui.showForm(selectForm({ title: PROPOSE_TITLE, options: YES_NO, unfocused: true }));
+   if (choice === undefined) return;          // Esc: nothing
+   if (choice === "yes") return startAutosetup();
+   // "no": the plain form, as today
+   ```
+   `hasSkillsOverride(agents) = Object.values(agents).some((o) => o.skills !== undefined)` (core, section 3). It reads the loaded `settings.agents` instead of the files: same files, same trust rule, no new read. Trade-off: a hand edit since the last session start or save is not seen until `/reload`; the alternative is to export `readObject` (`write.ts:6-15`, unexported) or add `skillsOverridden(path)` next to `overriddenFields` (48-68) and read both paths. `api` may import `selectForm` from ui-kit (as `ui/agent-view/picker.ts:2` does; api is not restricted from ui-kit).
+2. **`startAutosetup()`**: `candidates = candidateSkills(runtime.skillCatalog())` (interactive filter, section 3); `leads = definitions.list().filter(isLead)`; no leads → notice `no lead agents to set up` and stop; brief `autosetupBrief(...)`; `host.sendHiddenMessage({customType: AUTOSETUP_TYPE, text})`; `pending = {candidates}` (the candidate names validated later); notice `asked the main session to propose agent skills; the form opens when it answers` plus `; left out, interactive: a, b` when any. About 25 lines.
+3. **`save` returns an outcome and takes a suffix**: `save(scope, changes, {fresh = false} = {}): {path, text} | {error}`. Notice 51 becomes `saved … to <path>; agents started from now on use it` + (`fresh` ? `; start a new session with /new to release the tokens spent on the setup` : ``). Only the tool passes `fresh: true`; the plain form and the line form keep today's text (R3 ties the line to the autosetup save). About 8 lines.
+4. **`context(info, proposal?)`**: each proposed lead gets `proposed: {...initial, skills: list}` and `note` (reasons line); `SetupContext.project = proposal.project`. About 8 lines.
+5. **Pending mark**: `let pending: {candidates: string[]} | undefined`; set in `startAutosetup`, cleared when the tool finishes (confirm, cancel, nothing to change, save failure) and in `host.onSessionStart`; kept across a validation refusal (R6). 4 lines.
+6. **The tool**: `host.registerTool({...proposalDefinition, execute})`:
+   - not pending → `Error: no proposal is pending; the user must run /agents setup first.`
+   - mode not tui → error (defensive; `runForm` already refuses outside tui).
+   - `checkProposal(params, definitions.list(), pending.candidates)` errors → error result, mark kept.
+   - no difference from current lists → `Nothing to change: the proposal matches the current lists.`, mark cleared, no form.
+   - publish `AWAITING_INPUT_CHANNEL` (`source: "pi-subagents"`, `title: "agent skills"`) around `showForm(setupForm(context(info, proposal), settingsPaths(info)), {signal})`.
+   - `undefined` → `Cancelled by the user; nothing was saved.`; empty changes → `The user confirmed without changes; nothing was saved.`; else `save(scope, changes, {fresh: true})` → success text (below) or `isError` with the error.
+   - `executionMode: "sequential"`.
+   About 45 lines.
 
-The plugin goes from 149 to about 240 lines. If that is too long, the result texts and the `SaveOutcome` text can move to `core/agent-setup/proposal.ts`; the `execute` body must stay here because it closes over `save`, `context` and `pending`.
+Plugin grows from 149 to about 260 lines; result texts can move to `core/agent-setup/proposal.ts` if needed, `execute` stays here (it closes over `save`, `context`, `pending`).
 
 ### `ui/agent-setup/form.ts`
 
-Smallest change: optional fields on the agent, not a second argument, so `setupForm`, `initialSetup` and every caller keep their signature.
-
-```ts
-type SetupAgent = {
-  name: string; description: string; tools: Grant; mcp: boolean;
-  initial: Draft;      // baseline for changedFields/setupChanges, as today
-  proposed?: Draft;    // opening draft when set
-  note?: string;       // one line shown on the agent tab
-};
-
-export const initialSetup = (context: SetupContext): SetupState => ({
-  drafts: context.agents.map((agent) => agent.proposed ?? agent.initial),
-  ...
-});
-```
-
-`Draft` stays file-private; the plugin builds `proposed` as `{...initial, skills}`. `openPicker` ticks the draft's names (119-128); `chooseSkills` keeps `all` only when the draft is `all` (212), which cannot happen for a proposed agent (refused upstream). Call sites of `initialSetup`: `setup-overlay.ts:11`, `form.test.ts` (10 uses), `render.test.ts` (3 uses); none needs editing for this part since the fields are optional.
-
-**Picker order (all uses of the form, README R3).** Today the skills picker is a `MultiState` whose positions are `context.skills` indexes: `openPicker` builds `checked` by mapping `context.skills` (125-127), `chooseSkills` maps `checkedIndexes(picker.multi)` straight to `context.skills[index]` (210), and the render lists `context.skills` and reads the detail line from `context.skills[cursor]` (`setup-render.ts:95-96,124`). Smallest change: an order held in the picker.
-
-```ts
-type SkillsPicker = { field: "skills"; multi: MultiState; order: number[]; touched?: boolean };
-
-// openPicker: checked first, then the rest, each in inventory order; fixed until the picker closes
-const ticked = context.skills.map((skill) => named.includes(skill.name));
-const order = [...ticked.keys()].sort((a, b) => Number(ticked[b]) - Number(ticked[a]) || a - b);
-// multi positions are positions in `order`
-initialMulti(order.length, order.map((index) => ticked[index]));
-
-// chooseSkills: position → inventory index → name
-checkedIndexes(picker.multi).flatMap((position) => context.skills[picker.order[position] ?? -1]?.name ?? []);
-
-export const pickerSkills = (context: SetupContext, picker: SkillsPicker) =>
-  picker.order.flatMap((index) => context.skills[index] ?? []);
-```
-
-`multiKey` only moves the cursor and flips `checked[position]` (`platform/ui-kit/multi-select.ts`), so toggling never reorders. The saved list comes out in display order (checked first); `sameGrant` compares as a set, so the change marks are unaffected. `setup-render.ts` uses `pickerSkills` for the rows (124) and for the detail line (`skillDetail` takes the picker instead of a cursor into `context.skills`). An `all` draft opens with nothing ticked, so in inventory order. About 12 lines in `form.ts`, 4 in `setup-render.ts`.
-
-**Scope per project (README R3).** Today `SetupState.scope` indexes `SCOPES = ["project", "user"]` (`core/agent-setup/scope.ts:5`); `initialSetup` starts at 1 when untrusted (61); `submitKey` refuses project with `UNTRUSTED` when untrusted and something changed (227-231, text at 55); the Submit tab lists both files, the project one suffixed `(project not trusted)` (`setup-render.ts:192-196`); `setupForm` returns `SCOPES[state.scope]` (`setup-overlay.ts:26`). Change:
-
-- `export const scopeOptions = (context: SetupContext): readonly Scope[] => context.trusted ? SCOPES : ["user"];` in `form.ts`; `initialSetup` scope `0` always (project in a trusted project, user otherwise, as today); `submitKey` steps over `scopeOptions(context).length`; `setup-overlay.ts:26` returns `scopeOptions(context)[state.scope] ?? "user"`.
-- The `UNTRUSTED` refusal and `refused` become unreachable: remove them (knip would flag the unused export). `save` keeps its own trust check (`agent-setup.ts:38-41`) as the backstop.
-- `submitLines` lists `scopeOptions(context)` and, when untrusted, adds a warning line under `Save to:`: `This project is not trusted, so pi does not read its .pi/pi-subagents.json; the user file applies to every project.`
-
-About 10 lines over `form.ts`, `setup-render.ts`, `setup-overlay.ts`. It changes the plain `/agents setup` form too, which the spec intends.
+- **Proposal draft**: `SetupAgent` gains `proposed?: Draft` and `note?: string`; `SetupContext` gains `project?: string`; `initialSetup` drafts `agent.proposed ?? agent.initial` (57-58). `initial` stays the baseline. Optional fields, so `setup-overlay.ts:11`, `form.test.ts` and `render.test.ts` callers compile unchanged.
+- **Picker order** (all uses of the form): today positions are `context.skills` indexes (`openPicker` 123-127, `chooseSkills` 210). Hold the order in the picker:
+  ```ts
+  type SkillsPicker = { field: "skills"; multi: MultiState; order: number[]; touched?: boolean };
+  // openPicker: the draft's names in list order, then the rest in inventory order
+  const listed = named.flatMap((name) => { const i = context.skills.findIndex((s) => s.name === name); return i < 0 ? [] : [i]; });
+  const order = [...listed, ...context.skills.keys()].filter((i, at, all) => all.indexOf(i) === at);
+  initialMulti(order.length, order.map((_, position) => position < listed.length));
+  // chooseSkills: position → inventory index → name; written in display order
+  checkedIndexes(picker.multi).flatMap((position) => context.skills[picker.order[position] ?? -1]?.name ?? []);
+  export const pickerSkills = (context, picker) => picker.order.flatMap((i) => context.skills[i] ?? []);
+  ```
+  `multiKey` only moves the cursor and flips `checked[position]`, so rows never move while open. The confirmed list is written in display order, i.e. the proposal's order (R3). An `all` draft opens with nothing ticked, in inventory order. About 12 lines.
+- **Scope**: `scopeOptions(context) = context.trusted ? SCOPES : ["user"]`; `initialSetup` scope `0` always (61); `submitKey` (227-238) steps over `scopeOptions(context).length` and loses the `UNTRUSTED` refusal (227-231, constant 55), now unreachable (remove it; `save` keeps its trust check, `agent-setup.ts:38-41`); `setup-overlay.ts:26` returns `scopeOptions(context)[state.scope] ?? "user"`. About 8 lines.
 
 ### `ui/agent-setup/setup-render.ts`
 
-`infoLines` (141-156) adds `...line("Proposed", agent.note)` when `agent.note` is set, under Tools and MCP; dim like them, wrapped by `padded`. About 3 lines. The note text (e.g. `docs: the repo has a docs/ site; tdd: build checks run the tests`) is built in core, so the ui stays generic.
-
-### `ui/agent-view/picker.ts`
-
-- `SUBCOMMANDS = ["view", "create", "setup", "autosetup"]` (4); `SUBCOMMAND_TEXT.autosetup = "the main session proposes skills per agent"` (8-12); `MENU_TEXT` gets it through the spread (14-17). Both are `Record<Subcommand, string>`, so the compiler forces the entries.
-- `subcommandPicker` (22-30) lists its options explicitly: add `{value: "autosetup", label: "autosetup", description: MENU_TEXT.autosetup}` after `setup`. The menu then runs `runSubcommand("autosetup", "")`. Leaving it out of the menu is possible, but the records already require the text.
-
-### `api/plugins/agent-view.ts`
-
-- `runSetupWord` (161-173): three-way dispatch, `create` → `service.create(args)`, `setup` → `service.run(args)`, `autosetup` → `service.autosetup(args)`. `SetupWord = Exclude<Subcommand, "view">` (29) picks up the new word with no edit; the disabled-plugin error already names the word.
-- `subcommands` (136-150) labels each word with `service.usage[word]`, so `usage.autosetup` is all it needs; `/agents a` completes `autosetup`.
-- Description (198-199, 208): `usageText` adds `| ${usage.autosetup}`, and `Agents: list, setup or create.` becomes `Agents: list, setup, autosetup or create.`. Pinned by `tests/plugins/agent-setup/create.test.ts:180-182`; the menu test `tests/plugins/agent-view/menu.test.ts:41-49` gains the `autosetup` row.
-
-`core/agent-setup/line.ts` is not touched.
+- Picker rows and detail line through `pickerSkills` (124, `skillDetail` 95-112 takes the picker).
+- `infoLines` (141-156): `Proposed:` line when `agent.note` is set.
+- `submitLines` (178-206): a `Project:` line when `context.project` is set; scopes from `scopeOptions`; when untrusted, a line under `Save to:`: `This project is not trusted, so pi does not read its .pi/pi-subagents.json; the user file applies to every project.` (replaces the `(project not trusted)` suffix, 194).
+About 12 lines.
 
 ## 3. New
 
+### `core/agent-setup/autosetup.ts` (entry facts, filters, brief; mirrors `create.ts`)
+
+- `AUTOSETUP_TYPE = "pi-subagents-autosetup"`.
+- `isLead(definition)`: `(subagents === "all" || subagents.length > 0) && skills !== "all"` (`Grant`, `core/model/agent-schema.ts:9,18`). Shipped: implementer, planner, reviewer are leads; general is out by `skills: all`; the six chores have `subagents: []` (each `agents/*/*.md:8`).
+- `hasSkillsOverride(agents: AgentOverrides)`.
+- `INTERACTIVE_TERMS = ["AskUserQuestion", "questionnaire", "ask the user", "ask_user", "confirm with the user"]`; `isInteractive(text)` case-insensitive substring; `candidateSkills(catalog, read = readText): {candidates: SkillInfo[], interactive: string[]}` reads each `path` (whole file; the frontmatter is the description, which is fair to match too). Unreadable file → kept (pi listed it). The read lives in core: core may use `node:fs` and `platform/shared` (`create.ts:1`, `write.ts:1-3`; `biome.json:621` limits core to the adapter and shared indexes, not fs); the reader is injected for tests.
+- `projectListing(cwd, limit = 60)`: `readdirSync` withFileTypes, sorted, dirs suffixed `/`, `.git` and `node_modules` skipped, `… and N more`, read error → `(cannot list: …)`. Stays in the plugin's core: one caller (`platform/shared/STRUCTURE.md:3` would admit it).
+- `leadLines(leads)`: `- name: description | tools: … | skills: … or none`. `skillLines(candidates)`: `- name [project]: description` (`[project]` only for `scope === "project"`), description cut at 200 with `cutChars`, empty → `- name (no description)`.
+- `autosetupBrief({template, cwd, trusted, listing, leads, candidates})`: fills placeholders; nothing about chores or `all` agents.
+
+About 90 lines.
+
+### `core/agent-setup/proposal.ts` (tool definition, validation)
+
+- `PROPOSAL_TOOL = "agent_skills_proposal"`; `ProposalParams = {project: string; assignments: Record<string, string[]>; reasons?: Record<string, string>}`.
+- `proposalDefinition` (`Pick<ToolSpec, …>` as `extensions/questionnaire/core/questionnaire.ts:69-90`): label `Agent skills proposal`; description `Answer a skills brief from /agents setup: the project kind and up to three skills per lead agent, most useful first. Only valid right after that brief; opens a form the user confirms.`; no `promptSnippet`/`promptGuidelines`; `executionMode: "sequential"`; `modelOnly: true`; parameters (plain JSON schema as `api/plugins/fetch-tool.ts:33-38`):
+  ```ts
+  { type: "object",
+    properties: {
+      project: { type: "string", description: "One line: what kind of project this is." },
+      assignments: { type: "object", description: "Lead name to its full list, most useful first, at most three; [] for none.",
+        additionalProperties: { type: "array", items: { type: "string" }, maxItems: 3 } },
+      reasons: { type: "object", description: "Skill name to one line saying why it fits.", additionalProperties: { type: "string" } } },
+    required: ["project", "assignments"], additionalProperties: false }
+  ```
+- `checkProposal(params, definitions, candidates)` → `{proposal: {project, lists, notes}} | {errors}`: empty `project`; empty `assignments`; unknown agent `no agent named "x"`; not a lead (chore or `all`) `x is not set up here`; skill not a candidate (unknown or filtered) `no skill named "y" here`; more than three `x: at most three skills`. Duplicates dropped, order kept; reasons for skills not proposed ignored. Errors list every problem, then the lead names and candidate names once.
+- `proposalChanges(lists, definitions)` (order-free, as `sameGrant`) for "nothing to change"; `noteFor(list, reasons)` cut at 200.
+- Result texts: success `Saved to <path>: implementer skills [a, b]; reviewer skills [c]. Agents started from now on use them. Tell the user, and suggest they start a new session with /new to release the tokens spent on the setup.` (plus the shadow warning); cancel and nothing-to-change carry no `/new` line.
+
+About 90 lines. No chore list, no lead/chore data in any text; the only distinction is `isLead`.
+
 ### `prompts/autosetup-skills.md`
 
-Read once at enable next to `create-agent.md` (`agent-setup.ts:29`). Placeholders in create-agent.md style, filled with the same `replace(/\{\{(\w+)\}\}/g, …)`: `{{project}}` (cwd basename and path), `{{listing}}`, `{{trusted}}` (which files the form will offer: project and user, or user only, applying to every project), `{{agents}}`, `{{skills}}`. The tool name is written literally, as `create-agent.md` names `run_agent`; a test asserts the template contains `PROPOSAL_TOOL`. Outline:
+Read once at enable next to `create-agent.md` (`agent-setup.ts:29`); placeholders filled as in `create.ts:100`: `{{project}}` (basename and path), `{{listing}}`, `{{scope}}` (project and user, or user only and that it applies to every project), `{{leads}}`, `{{skills}}`. Outline (README R2):
 
-1. One line: the user ran `/agents autosetup`; do this yourself in this conversation, do not delegate to an agent.
-2. Project: `{{project}}`, top-level entries `{{listing}}`; read a manifest or two (package.json, build files, README) with your own tools when the listing does not show the stack.
-3. Rules (README R2): a skill fits an agent when its description names that agent's job or stack; prefer fewer; keep what is already there unless it clearly does not belong here; agents marked `all` are not listed and get nothing; propose full lists, not deltas; a skill listed without a description is judged by its name alone, and only when the name is unambiguous.
-4. Chore policy, one sentence, the only place chores are treated differently (R2, R6): agents that do one mechanical job on instruction (run commands, fetch a page, describe an image, apply exact edits, find things in the code) get no skills in this release; propose only for agents that take a task needing judgement.
-5. Answer: call `agent_skills_proposal` once with `{assignments: {<agent>: [<skill>, …]}, reasons: {<skill>: "<why, one line>"}}`, only agents whose list should change; an empty list means no skills; do not write any file; do not run `/agents setup` or `/agents autosetup`; the user confirms in a form; afterwards tell the user what was saved, from the tool's result. If the tool returns an error, fix the names and call it again.
-6. `Agents:` `{{agents}}`, one line each: `- <name>: <description> | tools: <grant> | skills: <list or none>`.
-7. `Agents granted all skills (not proposed): <names or none>` (part of `{{agents}}`).
-8. `Skills:` `{{skills}}`, one line each `- <name>: <description cut to 200 characters>`, or `- <name> (no description)`.
+1. The user ran `/agents setup`; do this yourself, do not start agents.
+2. Project `{{project}}`, entries `{{listing}}`; read a manifest or the tree with your own tools if needed.
+3. Rules in order: (1) say in one line what kind of project this is (frontend, backend, QA automation, devops, library, mixed…); (2) per lead pick the skills that fit its job here, at most three, most useful first; (3) prefer `[project]` skills; prefer fewer; a skill fits when its description names the lead's job or this stack; keep a current skill only if it still fits; (4) full lists, not deltas; (5) never a skill whose description implies asking the user.
+4. Answer: call `agent_skills_proposal` once with `{project, assignments, reasons}`, only leads whose list changes; no file writes; do not run `/agents setup`; on an error result fix the names and call again; afterwards tell the user what was saved, from the result.
+5. `Leads:` `{{leads}}`. 6. `Skills:` `{{skills}}`.
 
-200 characters keeps a hundred skills near 6,000 tokens once per command; agentskills.io allows 1,024 (research.md §3), most real descriptions are under 200.
-
-### `core/agent-setup/autosetup.ts` (brief and project listing; mirrors `create.ts`)
-
-- `AUTOSETUP_TYPE = "pi-subagents-autosetup"`, `AUTOSETUP_USAGE = "/agents autosetup"`.
-- `projectListing(cwd, limit = 60): string[]`: `readdirSync(cwd, {withFileTypes: true})`, sorted, directories suffixed `/`, `.git` and `node_modules` skipped, cut at `limit` with `… and N more`; a read error gives `(cannot list: <errorText>)`. Lives here, not in `platform/shared/`: one caller, and `core/` may use node built-ins (`create.ts:1`, `write.ts`). `platform/shared/` would admit it (`platform/shared/STRUCTURE.md:3`) but nothing else needs it.
-- `agentLines(definitions)`, `skillLines(catalog)`: pure, using `grantText` from `core/model/agent-record.ts:87` (it renders `[]` as an empty string, so the lines write `none` themselves) and `cutChars`.
-- `autosetupBrief({template, cwd, trusted, listing, definitions, skills}): string`.
-
-About 60 lines. Deps are plain data, so tests need no host.
-
-### `core/agent-setup/proposal.ts` (tool definition, validation, drafts)
-
-- `PROPOSAL_TOOL = "agent_skills_proposal"`; `type ProposalParams = {assignments: Record<string, string[]>; reasons?: Record<string, string>}`.
-- `proposalDefinition` (a `Pick<ToolSpec, …>` like `extensions/questionnaire/core/questionnaire.ts:69-90`): `name`, `label: "Agent skills proposal"`, `description: "Answer a /agents autosetup brief: propose each agent's full skills list for this project. Only valid after the user ran /agents autosetup; opens a form the user confirms; never call it otherwise."`, no `promptSnippet` or `promptGuidelines` (keeps it out of the system prompt's tool list; the brief carries the instructions), `executionMode: "sequential"`, `modelOnly: true`, parameters in the repo's plain JSON-schema style (`api/plugins/fetch-tool.ts:33-38`):
-
-```ts
-parameters: {
-  type: "object",
-  properties: {
-    assignments: {
-      type: "object",
-      description: "Agent name to its full proposed skills list. Only agents whose list should change; [] for none.",
-      additionalProperties: { type: "array", items: { type: "string" } },
-    },
-    reasons: {
-      type: "object",
-      description: "Skill name to one line saying why it fits this project.",
-      additionalProperties: { type: "string" },
-    },
-  },
-  required: ["assignments"],
-  additionalProperties: false,
-}
-```
-
-- `checkProposal(params, definitions, catalog): {proposal: Record<string, string[]>; notes: Record<string, string>} | {errors: string[]}`: unknown agent (`no agent named "x"`), agent with `skills: "all"` (`x has all skills; it is not proposed for`), unknown skill (`no skill named "y" (for x)`), empty `assignments`; duplicates dropped; reasons for skills not proposed are ignored. Errors list every problem, then the valid agent and skill names once.
-- `proposalChanges(proposal, definitions)`: the agents whose set differs (`sameGrant` semantics: order-free), for the nothing-to-change case.
-- `noteFor(skills, reasons)`: `docs: …; tdd: …`, cut to 200 characters.
-
-About 90 lines. The definition stays in core, as questionnaire's does; `execute` is assembled in api. No lead/chore check, no list of chore names. If the brief alone proves unreliable for chores, the next cheapest place is an opt-out in the agent file (a frontmatter key its author sets), read by `checkProposal` and the brief; still not a chore flag in the platform (README R6).
-
-### Tool result shapes
-
-- Success: `Saved to <path>: implementer skills [a, b]; reviewer skills [c]. Agents started from now on use them.` plus the shadow warning when user scope is shadowed. `details: {scope, path, changes}`.
-- Cancel: `Cancelled by the user; nothing was saved.` `details: {cancelled: true}`.
-- Confirmed without changes / proposal equals current lists: `Nothing was saved: …`.
-- Refusal: `isError: true`, text starting `Error:`; `details` omitted.
+About 30 lines. A test asserts it names `PROPOSAL_TOOL` and leaves no `{{`.
 
 ### Tests
 
-- `tests/plugins/agent-setup/autosetup.test.ts` (new, pure): brief lists agents with tools and current skills; `all` agents only in the not-proposed line; a skill with `description: ""` renders as `(no description)`; descriptions cut at 200; no skills gives `none`; template placeholders all filled (no `{{` left) for the shipped template; template mentions `agent_skills_proposal`. `projectListing` on a `tempDir`: sorted, `/` on dirs, `.git`/`node_modules` skipped, the limit line, missing dir.
-- `tests/plugins/agent-setup/proposal.test.ts` (new, pure): unknown agent, `all` agent, unknown skill, empty assignments each give their error and all at once; duplicates dropped; reasons for unproposed skills ignored; `proposalChanges` ignores order; `noteFor` cut.
-- `tests/plugins/agent-setup/form.test.ts` (extend): with `proposed` on `chore` (fixture helper `proposedContext()` in `setup-context.ts`), `initialSetup` drafts the proposal, `fieldChanged(…, "skills")` is true, `setupChanges` returns `[{name: "chore", patch: {skills: ["docs"]}}]`; unticking back to the baseline gives no change. Picker order (fixture with three skills and `skills: ["search"]`): opens with `search` first, then the rest in inventory order; ticking and unticking keeps the order; Enter maps positions back to the right names; an `all` agent opens in inventory order with nothing ticked. Scope: untrusted `initialSetup` scope is 0 and `scopeOptions` is `["user"]`, Enter on Submit saves `user`; trusted unchanged. Replaces the test at 125-134 (the `UNTRUSTED` refusal) and adjusts 13-16.
-- `tests/plugins/agent-setup/render.test.ts` (extend): `(changed)` on Skills for the proposed agent, tab marked done, the `Proposed:` line when `note` is set and absent otherwise; picker rows in checked-first order and the detail line of the skill under the cursor through the order; untrusted Submit tab shows only `User` and the every-project line (replaces 19-26).
-- `tests/plugins/agent-setup/agent-setup.test.ts` (extend; harness with `agentRegistryPlugin`, `agentDefinitionsPlugin`, `agentSetupPlugin`, `agentViewPlugin`; fake host, runtime, form): `/agents autosetup` in tui sends one hidden message with `customType` `pi-subagents-autosetup` containing agent and skill lines, notifies, opens no form; with arguments → usage error; in `rpc` → error notice, no hidden message; tool before the command → error, no form; unknown agent or skill, or an `all` agent → error, pending kept, a corrected call opens the form; a chore-named agent with a list grant is accepted like any other; valid call in a trusted project → form opens with the proposal marked, Submit writes only the proposed agents' `skills` to the project file, `definitions.get(name).skills` is the new list, the tool text names the path and the agent, `published` has awaiting `true` then `false`; Escape → nothing written, `Cancelled…`, a later call refused; untrusted project → only the user file offered, written there; the test at 151-169 (untrusted refusal) rewritten for the single-scope form; pending clearing per the option chosen in section 6.
-- `tests/plugins/agent-setup/create.test.ts` (adjust): description string at 180-182.
-- `tests/plugins/agent-view/menu.test.ts` (adjust): the menu lists `autosetup`; completion `/agents a` offers `autosetup` with its usage label; the disabled-plugin error names `/agents autosetup`.
+- `platform/pi-adapter/tests/skills.test.ts`: discovered scope from the resource (`.agents/skills` → project, agent dir → user), fallback by path, loaded skills' scope from `sourceInfo`. `child-runtime.test.ts:279`: catalogue with `scope` and `path`.
+- `platform/ui-kit/tests/select.test.ts`: `unfocused`: no pointer drawn, Enter does nothing, ↓ then Enter picks the first, digit picks, Esc → `undefined`.
+- `tests/plugins/agent-setup/autosetup.test.ts` (new): `isLead` on shipped-like definitions (list `subagents`, `all` `subagents`, `[]`, `skills: all`); `hasSkillsOverride`; interactive filter (each term, case, unreadable kept, report); brief: leads only, no chore or `general` name in the text, `[project]` mark, empty description, cut at 200, no `{{`; `projectListing` on a temp dir.
+- `tests/plugins/agent-setup/proposal.test.ts` (new): each refusal and all at once; four skills refused; chore and `general` → "not set up here"; filtered skill refused; order kept, duplicates dropped; `proposalChanges`; `noteFor`.
+- `form.test.ts` / `render.test.ts` (extend; `proposedContext()` in `setup-context.ts`): proposed draft marked changed, `setupChanges` patch; picker opens with the list's order first (`["search","docs"]` stays in that order), fixed while toggling, Enter maps back to names in display order, `all` in inventory order; untrusted: one scope `user`, Enter saves `user`, the every-project line, no `This project` row (replaces `form.test.ts:125-134`, adjusts 13-16, `render.test.ts:19-26`); `Proposed:` and `Project:` lines.
+- `tests/plugins/agent-setup/agent-setup.test.ts` (extend; harness with registry, definitions, setup, view plugins):
+  - no override → `/agents setup` sends one hidden message (`pi-subagents-autosetup`), opens no form, notice names left-out interactive skills (fake runtime with paths to temp SKILL.md files);
+  - override in the user file → the Yes/No form opens with no pointer; Enter does nothing; No → the plain setup form; Esc → no hidden message, no form; Yes → the brief;
+  - project override in an untrusted project is not counted (only the user file is);
+  - `rpc` → error notice, nothing sent;
+  - tool: not pending → error; non-lead, unknown or filtered skill, four skills → error, mark kept, corrected call opens the form; valid call → form with the proposal marked, Submit writes only the leads' `skills` in proposal order, `definitions.get(...)` updated, `published` awaiting true/false;
+  - `/new`: after a save both the notice and the tool text end with the `/new` suggestion; after cancel and after nothing-to-change neither does; a plain-form save notice has no `/new` line;
+  - existing form tests (`openForm`, 37-44, and every suite using it) now need an override fixture or a No answer, since the bare command with no override starts autosetup; the one-line tests are unchanged.
+- `create.test.ts`, `menu.test.ts`: unchanged (no new word).
 
-About 30 new or changed tests, 400 test lines.
+About 40 new or changed tests, 500 test lines.
 
 ## 4. Docs and rules
 
-- `test/docs-sync.test.ts:46-66`: any changed or untracked file under `extensions/subagents/` other than its three docs requires changes to `extensions/subagents/README.md`, `ARCHITECTURE.md`, `STRUCTURE.md` and the root `ARCHITECTURE.md` and `STRUCTURE.md`, against the merge-base with `origin/main` (30-31). So every step that touches extension code must touch all five, or the steps share one branch and the docs land before `npm run check` is expected green.
-- `test/architecture.test.ts`: template in `prompts/` (127-134 allow it); new files at depth 2 (`core/agent-setup/`, 144); tests in `tests/` (154); no cross-plugin import (177-183, with `pluginOwner` 86-96: the tool must stay in `api/plugins/agent-setup.ts`); normalised imports (185). `biome.json:621` (`extensions/*/core/*/*.ts`) forbids `core/` importing `ui/`, `api/`, ui-kit or extension-manager: `proposal.ts` returns plain data, the `SetupContext` is built in api.
-- `AGENTS.md:18`, proposed wording of the parenthesis: "`.pi/pi-subagents.json` (`/agents setup`, or `/agents autosetup` once the user confirms its form)". Optionally after the `/agents create` sentence: "`/agents autosetup` also briefs the main session, but the extension writes, through the setup form's save, after the user confirms." Root `ARCHITECTURE.md:48` carries the same parenthesis and needs the same edit; `ARCHITECTURE.md:50` the optional sentence.
-- `extensions/subagents/README.md:36-41`: a table row `/agents autosetup` | "The main session proposes skills per agent for this project; you confirm or edit them in the setup form." The `/agents` row can mention the new menu entry; the `/agents setup` row that checked skills come first and that an untrusted project saves to the user file only.
-- `extensions/subagents/ARCHITECTURE.md`: line 9 (agent-setup plugin also registers the model-only `agent_skills_proposal` tool); line 79 (menu: `autosetup` entry); line 80 (`autosetup` is a fourth first word); a new bullet after 84 for `autosetup`: brief from `prompts/autosetup-skills.md` filled by `autosetupBrief`, hidden message type `pi-subagents-autosetup`, the pending mark and when it clears, the tool's checks, the form opened with `proposed` drafts against `initial`, save through the same path, the result text, tui only; line 81 (the form can open with proposed drafts and a Proposed line; checked skills first in the picker; an untrusted project offers the user file only, replacing "refused in an untrusted one").
-- `extensions/subagents/STRUCTURE.md`: line 21 (`autosetup-skills.md`), line 34 (agent-setup also the `agent_skills_proposal` tool), lines 78-80 (`autosetup.ts`, `proposal.ts`), line 107 (form: proposed drafts, picker order, `scopeOptions`), the `ui/agent-view/picker.ts` line (fourth word), line 133 (test list), line 152 (fixture helper).
-- Root `STRUCTURE.md`: nothing in it describes this change; docs-sync still requires a diff. Natural spot: line 30, after the `style` prompts sentence, "The subagents briefs (`create-agent.md`, `autosetup-skills.md`) live in `extensions/subagents/prompts/`."
+- `test/docs-sync.test.ts:8,46-66`: only `extensions/<name>/` code triggers it; a subagents change needs `extensions/subagents/{README,ARCHITECTURE,STRUCTURE}.md` and root `ARCHITECTURE.md`, `STRUCTURE.md`. Platform changes are not checked, but the convention (`STRUCTURE.md` header: every code folder documents its files) asks for `platform/pi-adapter/ARCHITECTURE.md:24` (catalogue now `{name, description, scope, path}`, scope from the resolved resource) and `platform/ui-kit/STRUCTURE.md:8` (`selectForm` `unfocused`), plus `platform/ui-kit/ARCHITECTURE.md` if it describes the select.
+- `test/architecture.test.ts`: template in `prompts/` (127-134); files at depth 2 (144); tests in `tests/` (154); tool in `agent-setup.ts` (86-96, 177-183). `biome.json:621`: `core/` cannot import `ui/`, `api/` or ui-kit, so `proposal.ts` returns data and api builds the `SetupContext` and the select.
+- `AGENTS.md:18` and root `ARCHITECTURE.md:48`: "`.pi/pi-subagents.json` (`/agents setup`, whose write may follow a model tool call once the user confirms the form)".
+- `extensions/subagents/README.md:40`: the `/agents setup` row: proposes skills for the lead agents when none is set, otherwise asks first; you confirm in the form; then `/new`.
+- `extensions/subagents/ARCHITECTURE.md`: line 9 (agent-setup registers `agent_skills_proposal`); line 81 (entry step, proposed drafts, checked-first picker, untrusted user-only scope, Proposed and Project lines); a bullet after 84 for autosetup (override check, Yes/No, `isLead`, interactive filter, brief, mark, tool checks, save with the `/new` suffix); line 83 (save outcome).
+- `extensions/subagents/STRUCTURE.md`: 21 (`autosetup-skills.md`), 34, 78-80 (`autosetup.ts`, `proposal.ts`), 107-109, 133, 152.
+- Root `STRUCTURE.md:30`: "The subagents briefs (`create-agent.md`, `autosetup-skills.md`) live in `extensions/subagents/prompts/`." (docs-sync needs a diff; nothing else there describes this).
 
 ## 5. Sequence and size
 
-1. **Setup form** (`form.ts`, `setup-render.ts`, `setup-overlay.ts`, `setup-context.ts`, `form.test.ts`, `render.test.ts`, the untrusted test in `agent-setup.test.ts`, docs): proposal draft and note, checked-first picker order, user scope only in an untrusted project. About 40 code lines, 12 tests. Independent, and useful on its own for `/agents setup`.
-2. **Core: brief, listing, validation, definition, template** (`autosetup.ts`, `proposal.ts`, `prompts/autosetup-skills.md`, two new test files, docs). About 150 code lines, 45 template lines, 15 tests. Independent of step 1. Knip counts the vitest test files as entries (`knip.json`: `vitest` plugin), so exports used only by the new tests until step 3 are not flagged.
-3. **Wiring** (`agent-setup.ts`: `SaveOutcome`, `autosetup` method and usage, pending mark, tool; `agent-record.ts` service type; `picker.ts` word and menu entry; `agent-view.ts` dispatch and description; `agent-setup.test.ts`, `create.test.ts`, `menu.test.ts`; AGENTS.md, root ARCHITECTURE.md, all docs). About 100 code lines, 12 tests. Needs 1 and 2.
+1. **Adapter `scope`/`path`** (types, `skills.ts`, `extension.ts`, `child-runtime.ts`, fake runtime, adapter tests and docs). About 25 lines, 4 tests. Independent; verification of the scope source is part of it.
+2. **ui-kit unfocused select** (`select.ts`, `select.test.ts`, ui-kit docs). About 4 lines, 4 tests. Independent.
+3. **Setup form** (proposal draft, note, project line, picker order, untrusted scope; form, render and the untrusted plugin test; subagents and root docs). About 45 lines, 14 tests. Independent; ships value for the plain form alone.
+4. **Core autosetup** (`autosetup.ts`, `proposal.ts`, template, two test files, docs). About 180 lines plus 30 template lines, 22 tests. Needs 1 for the `SkillInfo` fields.
+5. **Wiring** (`agent-setup.ts`: entry step, `startAutosetup`, `save` outcome and `/new` suffix, mark, tool; `agent-setup.test.ts` incl. the fixture change for existing form tests; AGENTS.md, root ARCHITECTURE.md, docs). About 110 lines, 15 tests. Needs 1 to 4.
 
-Total about 290 shipped lines plus the template, about 400 test lines. Steps 1 and 2 can run in parallel; 3 after both.
+Total about 365 shipped lines plus the template, about 500 test lines. Steps 1, 2 and 3 run in parallel; 4 after 1; 5 last.
 
 ## 6. Risks and open points
 
-- **The tool is declared in every main-session request**, pending or not (`modelOnly` tools are activated at registration, PCA `types.d.ts:392`). Cost: the description and schema, about 150 tokens per request. The adapter's `ToolSpec` has no `defaultActive` and the `Host` has no `setActiveTools`, though pi has both (`types.d.ts:491-497`, 1291). Release 1: keep it declared, no `promptSnippet`, description says to call it only after the command, refuse when not pending. Later, if the token cost matters: add `defaultActive: false` to `ToolSpec` and a `setToolActive(name, on)` to `Host` in the adapter, and activate it only while pending.
-- **When the pending mark clears (settled 2026-10-25: option A, clear when the tool finishes or the session ends; kept here for the record).** Every option also clears it when the tool finishes and on `onSessionStart`. Facts: a held brief starts its own run, an active run takes it as a follow-up (`host.ts:229-233`, 416-419); `onIdle` fires only on `agent_settled` (`host.ts:319-328`), after the tool returned; the `Host` has no user-input hook (`platform/pi-adapter/types/host-capabilities.ts:22-29`), though pi has an `input` event (PCA `types.d.ts:1227`).
-  - A. On the tool call or session end only. Cost: a brief the model ignored leaves the gate open for the session, so a later unprompted call opens the form (still behind the user's confirm). No new code.
-  - B. When the turn that received the brief ends (`host.onIdle`). Cost: if the model asks the user something before calling, the answer starts a new run and the call is refused; the user runs the command again. One line.
-  - C. On the next user prompt. Cost: needs an `onUserInput` hook in the adapter (pi's `input` event, about 10 lines, a test, the adapter docs), and a steering message during the brief's turn clears it too.
-  Recommendation was B; the owner chose A on 2026-10-25: a stale mark can at worst open a form the user cancels, and nothing is written without a confirm. C would need a new adapter hook on pi's `input` event and is not planned.
-- **Form opened mid-turn.** Works as in questionnaire: `execute` awaits the form while the turn waits on the tool result; the form takes keys while focused; Escape inside it means cancel (`form.ts:256-258`), not abort. If the run is aborted from outside, the signal closes the form with `undefined` (`ui/form.ts:31-33`), reported as cancel. pi does not emit `ui_prompt_start` for `ctx.ui.custom`, which is why questionnaire publishes `AWAITING_INPUT_CHANNEL` itself (`core/questionnaire.ts:104-109`) for the notifications extension (`extensions/notifications/api/plugin.ts:28`); the tool must do the same or the user is not pinged while the turn sits on the form.
-- **Map-shaped parameters.** `assignments` and `reasons` are objects with free keys (`additionalProperties` schemas). Most providers accept them; some strict tool-schema modes reject open maps, and the repo has no other open-map tool. If calls come back malformed in use, switch to arrays (`assignments: [{agent, skills}]`, `reasons: [{skill, why}]`); the README's shape would change with it.
-- **Untrusted project.** Handled by the single-scope Submit tab and its every-project line (section 2); the brief's `{{trusted}}` tells the model the same, and the tool result names the file.
-- **Saved order.** With the checked-first picker the saved list follows display order, not inventory order; harmless (`sameGrant` compares sets), but an agent's list in the file may reorder on its next save.
-- **After reload.** `save` calls `definitions.reload()` synchronously (`agent-setup.ts:50`; `agent-definitions.ts:70-77`), which re-reads the settings and replaces the loaded definitions; `list()` builds a fresh sorted array each call (80-81), so the next tool call, form or `run_agent` sees the new lists. The override check uses `runtime.skillNames()`, the same inventory `checkProposal` validated against, so a saved name is never dropped as unknown at load (`loader.ts:194-219`), unless the inventory changed through a `/reload` between brief and call, which also restarts the extension and clears pending.
-- **Model or thinking edits in the same form.** The user can change any field before confirming; `save` writes them all and the result text must report every field, not only skills (use `changeSummary`, `agent-setup.ts:21-22`).
-- **Main prompt is silent about briefs** (`prompts/main-session.md:29` tells it to delegate and to pass its own skills). The brief must say to answer itself and not to start agents, as `create-agent.md:1` does.
+- **Scope source** (README Not verified): `loadSkills` with explicit paths marks most discovered skills `temporary` (PCA `core/skills.js:368-376`); the design takes the scope from `ResolvedResource.metadata` instead, with the path-under-cwd fallback. The step-1 test settles it.
+- **Override detection reads loaded settings**, not the files: a hand edit not yet reloaded is missed; an override pi rejected at parse (invalid value) is not counted. Acceptable; the file-read alternative is in section 2.
+- **Existing tests change meaning**: with no override, bare `/agents setup` no longer opens the form; every current form test must seed an override or answer No.
+- **The tool is declared in every main-session request** (~150 tokens; `modelOnly` tools activate at registration, PCA `core/extensions/types.d.ts:392`; the adapter has no `defaultActive`/`setActiveTools`, though pi has both, 491-497, 1291). Gate plus no `promptSnippet` for release 1.
+- **Form opened mid-turn**: as questionnaire; Escape in the form is cancel (`form.ts:256-258`); an outside abort closes it via the signal (`platform/pi-adapter/ui/form.ts:31-33`); pi emits no `ui_prompt_start` for custom forms, hence the explicit `AWAITING_INPUT_CHANNEL` publish (`extensions/notifications/api/plugin.ts:28`).
+- **Pending mark**: settled: in memory, set by `startAutosetup`, cleared when the tool finishes or on session start (R6).
+- **`/new` is suggested, never run.** pi has a built-in `/new` (PCA `core/slash-commands.js:22`). The adapter's `dispatchCommand` sends `/<name>` as a user message (`platform/pi-adapter/runtime/host.ts:118-131,432-434`; extension commands run at once, `platform/pi-adapter/ARCHITECTURE.md:23`); whether pi runs a built-in like `/new` that way was not verified. We deliberately do not call it: closing the session is the user's call (R3), and it would cut off the model's closing message.
+- **Map-shaped parameters** (`additionalProperties` objects): some strict tool-schema modes reject open maps; fallback is arrays (`[{lead, skills}]`, `[{skill, why}]`), which changes the README shape.
+- **Interactive filter false positives**: a skill that merely mentions "questionnaire" is dropped; reported in the notice so the term list can be tuned (README decision 2).
+- **After reload**: `save` → `definitions.reload()` re-reads settings and definitions synchronously (`agent-definitions.ts:70-77`); `list()` is a fresh array (80-81); a saved candidate name is in `runtime.skillNames()` so the load does not drop it (`core/agent-definitions/loader.ts:194-219`).
+- **Main prompt is silent about briefs** (`prompts/main-session.md:29` says to delegate); the brief must say to answer itself, as `create-agent.md:1` does.

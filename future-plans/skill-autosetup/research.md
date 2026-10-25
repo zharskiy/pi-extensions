@@ -11,9 +11,32 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 - Command registered in `api/plugins/agent-view.ts:207` (`host.registerCommand("agents", { run })`): first word checked with `isSubcommand` (`ui/agent-view/picker.ts:4-20`, `SUBCOMMANDS = ["view","create","setup"]`), rest joined as `args` (`agent-view.ts:218-225`); no subcommand and an argument opens the agent with that id (227-230); no argument opens the menu (`menu`, 185-196, a `selectForm` picker, tui only).
 - `runSetupWord` (`agent-view.ts:161-173`): `create` goes to `service.create(args)`, `setup` goes to `service.run(args)` of the `agentSetup` service; the service is optional (`setup()`, 134: `services.has("agentSetup")`), a disabled `agent-setup` plugin gives an error notice naming the word.
 - `agentSetup` service (`api/plugins/agent-setup.ts:131-147`, type `core/model/agent-record.ts:164-169`): `{usage: {setup, create}, create, run(args), complete(prefix)}`. `run` (134-141): non-empty `args` goes to `runLine(args)` (the one-line form), empty `args` to `runForm()`.
-- A fourth word `autosetup` touches: `SUBCOMMANDS` and `SUBCOMMAND_TEXT` (`picker.ts:4-12`, both `Record<Subcommand, string>` with `MENU_TEXT` 14-17, so the compiler asks for the text), the explicit menu options in `subcommandPicker` (22-30), the dispatch in `runSetupWord` (`SetupWord = Exclude<Subcommand, "view">`, `agent-view.ts:29`, picks the word up by type), a new `autosetup` method and `usage.autosetup` key on the service, and the description (`agent-view.ts:198-199, 208`). `run`, `runLine` and `parseSetupLine` (`core/agent-setup/line.ts:89-114`) are not involved.
-- Completion: `subcommands(prefix)` (`agent-view.ts:136-150`) completes the first word and labels each non-`view` word with `service.usage[word]`, so the new word completes once `usage.autosetup` exists; `setupCompletions` (201-205) forwards `setup <prefix>` to `agentSetup.complete`, which lists agent names only (`agent-setup.ts:142-146`).
-- Usage strings: `SETUP_USAGE` (`line.ts:11-14`), `CREATE_USAGE` (`create.ts:11`).
+- Entry point for release 1: the bare `/agents setup` reaches `runForm` (`agent-setup.ts:81-105`): tui check 85-91, then `showForm(setupForm(...))` 93. The menu's `setup` entry takes the same path (`agent-view.ts:185-196`). No new word: `picker.ts`, `runSetupWord`, the service type and `line.ts` stay as they are.
+- Completion: `subcommands(prefix)` (`agent-view.ts:136-150`) completes the first word, labelled with `service.usage[word]`; `setupCompletions` (201-205) forwards `setup <prefix>` to `agentSetup.complete`, which lists agent names only (`agent-setup.ts:142-146`).
+- Usage strings: `SETUP_USAGE` (`line.ts:11-14`), `CREATE_USAGE` (`create.ts:11`); the description's usage is read once at enable (`agent-view.ts:198-199`).
+
+### Lead predicate
+
+- No lead/chore marker in code: the loader does not record the `agents/leads/` or `agents/chores/` folder (see Agent definitions below). The data that separates them is the `subagents` grant (`Grant = string[] | "all"`, `core/model/agent-schema.ts:9,18`).
+- Shipped grants (`agents/*/*.md:8`): implementer `[scout, shell, verifier]`, planner `[scout, shell, fetch]`, reviewer `[scout, shell]`, general all nine agents; editor, fetch, image, scout, shell, verifier `[]`. general has `skills: all` (`agents/leads/general.md:7`). So "subagents non-empty and skills a list" selects implementer, planner, reviewer.
+
+### Override detection
+
+- The plugin context has the live `settings` (`api/plugins/fetch-tool.ts:58`; `agent-definitions.ts:14,51`). `settings.agents` is user overrides merged with project overrides per agent and field, project only when trusted (`core/model/settings.ts:141-147,101-107,154-156`), refreshed in place by `reloadSettings` (173-177) at session start and on `definitions.reload()`.
+- File-level alternatives: `readObject` (`core/agent-setup/write.ts:6-15`) is not exported; `overriddenFields` (48-68) reads one file and answers which fields of given changes are set; `settingsPaths` (`core/model/settings.ts:131-134`).
+
+### Inventory scope
+
+- `SkillFile = {name, description, path}` (`platform/pi-adapter/child/skills.ts:11`); `discoverSkills` maps pi's skills to those three fields (72), dropping `sourceInfo`. Loaded skills come from `command.sourceInfo` (`runtime/extension.ts:14-22`), whose `scope` is available but not copied. `skillCatalog` strips to `{name, description}` (`child/child-runtime.ts:315-316`); `SkillInfo` (`types/messages.ts:16`), contract `skillCatalog(): SkillInfo[]` (`types/runtime.ts:58`); `tests/child-runtime.test.ts:279-285` asserts the two-field shape with `toEqual`.
+- Pi's `SourceScope = "user" | "project" | "temporary"` (PCA `core/source-info.d.ts:2`). With `includeDefaults: false`, as `discoverSkills` calls it, `loadSkills` sets a skill's scope by location only: `user` under `<agentDir>/skills`, `project` under `<cwd>/.pi/skills`, otherwise `path` → `temporary` (PCA `core/skills.js:90-112,368-376`). So `.agents/skills`, `~/.agents/skills`, package and settings-path skills come out `temporary`. The resolved resource from `DefaultPackageManager.resolve` carries `metadata.scope` (`PathMetadata`, PCA `core/package-manager.d.ts:2-13`), the better source. Not yet confirmed by a test.
+
+### Select preselection
+
+- `selectForm` focuses `clampIndex(spec.selected ?? 0, …)` (`platform/ui-kit/select.ts:31`); Enter picks the focused option (`list.ts:64-66`, `select.ts:49-51`); digits pick directly (`list.ts:60-62`); Esc returns `undefined` (`select.ts:36-39`). `listLines` marks the row with `index === selected` (`list.ts:32`), and moves clamp to `[0, count-1]` (`list.ts:55,68-76`), so a focus of `-1` would draw no pointer and move to row 0 on the first ↑/↓. Callers: `ui/agent-view/picker.ts`, `extensions/style/ui/pick.ts`, `extensions/mcp-import/ui/pick.ts`.
+
+### Two forms in a row
+
+- `showForm` awaits `overlaysCleared` before opening (`platform/pi-adapter/ui/form.ts:19`); `menu` already opens the subcommand picker and then the chosen form (`agent-view.ts:191-195`).
 
 ### The setup form
 
@@ -62,7 +85,7 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 - `extensions/questionnaire`: definition with `modelOnly: true`, `executionMode: "sequential"`, JSON-schema `PARAMETERS`, `promptSnippet`, `promptGuidelines` (`core/questionnaire.ts:81-90`, 28-67); tool built in `api/plugin.ts:9-49` as `{...questionnaireDefinition, execute}`. `execute` calls `checkCall(params, () => host.session().mode)` (`api/plugin.ts:15`): outside `tui` it returns the error result `Error: questionnaire needs the interactive terminal; pick a sensible default or ask in prose.` (`core/questionnaire.ts:25-26, 92-102`). It then runs `await host.ui.showForm(factory, {signal})` inside `execute` (`api/plugin.ts:28-37`), wrapped in `awaitingInput(host)(true/false)` which publishes `AWAITING_INPUT_CHANNEL` (`core/questionnaire.ts:104-109`) so other extensions know a dialog is open; returns `{text: resultText(details), details}`, with `cancelled: true` when the form returns undefined (39-41).
 - So a tool can open a form from inside `execute`; questionnaire is the only precedent. No tool in `extensions/subagents` opens UI: `showForm`/`openOverlay` appear only in `api/plugins/agent-view.ts` and `api/plugins/agent-setup.ts` (commands). Tools there: `run_agent`, `message_agent`, `handoff`, `agent_status` (`api/plugins/agent-status.ts:74`), `fetch`.
 - Session mode: `host.session().mode`, `RunMode = "tui" | "rpc" | "print" | "json"`, in `SessionInfo = {id, file?, cwd, agentDir, projectTrusted, subscription, mode}` (`types/session.ts:1-11`).
-- A model-only tool registered at plugin enable is listed in every model request's tool list, not only after the command; a v1 tool should say in `description` that it answers a `/agents autosetup` brief only, and refuse (error result) when no brief is pending.
+- A model-only tool registered at plugin enable is listed in every model request's tool list, not only after the command; a v1 tool should say in `description` that it answers a `/agents setup` skills brief only, and refuse (error result) when no brief is pending.
 
 ### Host surface
 
@@ -76,7 +99,7 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 
 ### Files rule (AGENTS.md)
 
-- `AGENTS.md:18`: every file the extensions write lives under pi's agent dir or session dir, except handoff documents, `worktree: true` checkouts, "and two project files written on the user's command in a trusted project: `.pi/pi-subagents.json` (`/agents setup`) and `.pi/mcp.json` (`/mcp-import ... project apply`, or the interactive `/mcp-import` picker)". A write that a model tool call performs after `/agents autosetup` and a form confirm is on the user's command in the sense that two explicit user acts precede it, but the parenthesis names `/agents setup` only; the rule's wording should name `/agents setup` and `/agents autosetup` (a docs change, `AGENTS.md` and root `ARCHITECTURE.md`). The save keeps the trust check (`agent-setup.ts:38-41`).
+- `AGENTS.md:18`: every file the extensions write lives under pi's agent dir or session dir, except handoff documents, `worktree: true` checkouts, "and two project files written on the user's command in a trusted project: `.pi/pi-subagents.json` (`/agents setup`) and `.pi/mcp.json` (`/mcp-import ... project apply`, or the interactive `/mcp-import` picker)". A write that a model tool call performs after `/agents setup` and a form confirm is on the user's command in the sense that two explicit user acts precede it; the parenthesis already names `/agents setup`, and one clause should say the write may follow a model tool call (a docs change, `AGENTS.md` and root `ARCHITECTURE.md`). The save keeps the trust check (`agent-setup.ts:38-41`).
 - `AGENTS.md:18` also says `/agents create` writes nothing and briefs the main session; `autosetup` differs in that the extension writes, not the main session's write tool.
 
 ### Docs and architecture rules
@@ -134,7 +157,7 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 ## 4. Dropped from scope
 
 - Catalogue metadata keys (`pi-agents`, `pi-match`, signals and globs in SKILL.md frontmatter): v1 uses skills exactly as pi finds them and lets the model judge from name and description.
-- Session-start reconcile with a record file, hashes and three-way merge: v1 runs only when the user invokes `/agents autosetup`; automatic re-runs are "v2, if ever".
+- Session-start reconcile with a record file, hashes and three-way merge: v1 runs only when the user invokes `/agents setup`; automatic re-runs are "v2, if ever".
 - Claude Code seeds (`.claude/skills`, `enabledPlugins`, `relevance` signals, plugin install records, auto-update): no Claude Code files are read.
 - Company catalogue and marketplace entries (Codex `policy.installation`, Cursor plugin groups, admin sync): no shared catalogue, only the user's own machine.
 - Pi packages and update detection (`pi update`, `checkForAvailableUpdates`, package filters, install dirs): the inventory already includes package skills through `discoverSkills`; nothing here needs to notice a change.
