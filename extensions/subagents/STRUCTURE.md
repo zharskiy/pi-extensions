@@ -108,15 +108,15 @@ extensions/subagents/
 │   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
-│   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, pickers with the all row and the filter, scopes and keys
-│   │   ├── setup-render.ts                # renderSetup: the form lines, the Leads/Chores tab bar, the locked chore skills row and the query line
+│   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, rowsOf and the Previous/Suggested presets, pickers with the all row and the filter, LIST_HEIGHT, scopes and keys
+│   │   ├── setup-render.ts                # renderSetup: the fixed-height form (agent block, preset rows, 16-row lower panel with the info view or a picker, Submit change window), the Leads/Chores tab bar, the locked chore skills row and the query line
 │   │   └── setup-overlay.ts               # setupForm: the HostUi.showForm factory
 │   └── agent-view/
 │       ├── picker.ts                      # the /agents subcommands and the menu picker
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
-│       ├── list.ts                        # createAgentList: the agents list
-│       ├── list-hints.ts                  # listHint: the list's key hints
-│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript
+│       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
+│       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
+│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved)
 │       └── request-block.ts               # requestLines: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order

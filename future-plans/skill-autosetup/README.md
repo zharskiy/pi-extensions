@@ -24,6 +24,8 @@ After release 1 the setup form changed on the same branch:
 - A lead is an agent whose `subagents` grant is not none (`isLead` in `core/model/agent-record.ts`), replacing the `chores` path segment and the file `skills` grant. Overrides carry no `subagents`, so they never change the role. `general` joins autosetup: its brief line reads `skills: all (every skill of its caller)` and the prompt says a lead with `all` keeps it when left out and gets a list only when a narrower one fits better.
 - The skills picker has an explicit, exclusive `all` row for every lead, ticked when the agent has `all`; it replaces "an `all` draft opens with nothing ticked and keeps `all` unless a box changed".
 - The model, thinking and skills pickers filter as you type; the `a`/`n` shortcuts are gone from the setup form.
+- Each agent tab has two preset rows under the fields: `Previous` (the effective settings) and, for a lead with a proposal, `Suggested`. Enter applies the preset; the one equal to the draft reads ` (in use)`. The Submit tab lists `name: field new (was old)` with `(suggested)` where the value is the proposal.
+- The form has a fixed layout: a name row, two description rows, three field rows, the presets and a 16-row lower panel for the info view (Proposed, Tools, MCP) or a picker with its 10-row list block and three rows for the cursor skill's description. The footer is one row, so the form is 34 lines at 80 columns in every state and nothing shifts. The `/agents` list and the agent view reserve their feedback and notice rows the same way.
 
 ## The problem, restated
 
