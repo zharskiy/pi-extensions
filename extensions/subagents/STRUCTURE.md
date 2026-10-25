@@ -44,7 +44,7 @@ extensions/subagents/
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
-│   │   ├── context-limit.ts               # effectiveContextLimit
+│   │   ├── context-limit.ts               # effectiveContextLimit, agentBudget
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
@@ -73,7 +73,7 @@ extensions/subagents/
 │   ├── agent-status/
 │   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf, snapshotLine, agent_status params and details, unknownText
 │   ├── limits/
-│   │   └── context-step.ts                # contextStep, softWarning
+│   │   └── warning.ts                     # softWarning
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
@@ -123,7 +123,7 @@ extensions/subagents/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/
     │   ├── agent-record.test.ts           # isLead, including the shipped general agent
-    │   ├── context-limit.test.ts          # effectiveContextLimit
+    │   ├── context-limit.test.ts          # effectiveContextLimit, agentBudget
     │   ├── paths.test.ts                  # paths helpers
     │   └── settings.test.ts               # settings schema, overrides and files
     ├── components/

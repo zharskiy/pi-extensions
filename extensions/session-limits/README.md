@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-A long session eventually fills the model's context window. Before that happens, this extension has the model write a handoff file, and pi continues in a new session seeded with it. You keep typing, and one notice says what is happening. When background work is still running, the switch waits for it instead of ending it.
+A long session eventually fills the model's context window. Before that happens, this extension has the model write a handoff file, and pi continues in a new session seeded with it. You keep typing, and one notice says what is happening. When background work is still running, the switch waits for it instead of ending it. The context limit logic is shared with subagents.
 
 ## What it looks like
 

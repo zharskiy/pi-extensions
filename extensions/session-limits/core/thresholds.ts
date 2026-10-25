@@ -1,31 +1,34 @@
 import type { ContextSnapshot } from "../../../platform/pi-adapter/index.ts";
-import { type Limits, thresholdsFor } from "../../../platform/shared/index.ts";
+import {
+  type BudgetLevel,
+  budgetLevel,
+  type HandoffBudget,
+  type Limits,
+  thresholdsFor,
+} from "../../../platform/shared/index.ts";
 
 export type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
 export const MAX_INSTRUCTIONS = 2;
 
-type ContextLevel = "unknown" | "normal" | "soft" | "hard";
-
 export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching" | "stuck";
 
 export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
-export const contextLevel = (context: ContextTokens, limits: Limits): ContextLevel => {
-  if (context.tokens === null || context.window <= 0) {
-    return "unknown";
+const mainBudget = (window: number, limits: Limits): HandoffBudget | undefined => {
+  if (window <= 0) {
+    return undefined;
   }
 
-  const { soft, hard } = thresholdsFor(context.window, limits);
+  const { soft, hard } = thresholdsFor(window, limits);
 
-  if (context.tokens >= hard) {
-    return "hard";
-  }
-
-  return context.tokens >= soft ? "soft" : "normal";
+  return { request: hard, warn: soft };
 };
 
-export const shouldRequest = (phase: Phase, level: ContextLevel) => phase === "watching" && level === "hard";
+export const contextLevel = (context: ContextTokens, limits: Limits): BudgetLevel =>
+  budgetLevel(context.tokens, mainBudget(context.window, limits));
+
+export const shouldRequest = (phase: Phase, level: BudgetLevel) => phase === "watching" && level === "hard";
 
 export const isPending = (phase: Phase) => phase === "requested" || phase === "waiting";
 

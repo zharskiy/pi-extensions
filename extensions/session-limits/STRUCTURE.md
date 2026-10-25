@@ -9,7 +9,7 @@ extensions/session-limits/
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events and commands to tui and rpc
 │   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch, busy channel
-│   ├── thresholds.ts           context level, handoff step, retry instruction (`Limits` and `thresholdsFor` live in platform/shared)
+│   ├── thresholds.ts           `mainBudget`, context level (through the shared `budgetLevel`), handoff step, retry instruction (`Limits` and `thresholdsFor` live in platform/shared)
 │   ├── handoff.ts              handoff path, seed text, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
