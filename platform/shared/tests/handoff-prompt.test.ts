@@ -67,7 +67,11 @@ describe("handoff retry", () => {
     const text = handoffRetry("write it", ["missing sections: Next", "empty sections: Blocker"]);
 
     expect(text.startsWith("write it\n")).toBe(true);
-    expect(text).toContain("- missing sections: Next\n- empty sections: Blocker");
+    expect(text).toContain(
+      "The handoff was not accepted:\n- missing sections: Next\n- empty sections: Blocker",
+    );
+    expect(text.endsWith("Call the `handoff` tool again with the whole handoff fixed.")).toBe(true);
+    expect(text).not.toContain("file");
   });
 });
 

@@ -3,11 +3,17 @@ import {
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   handoffTemplate,
+  handoffTool,
   LIMITS_CHANNEL,
   type Limits,
   type Plugin,
 } from "../../../platform/shared/index.ts";
-import { handoffRequestMessage, handoffSeedMessage } from "../../../platform/ui-kit/index.ts";
+import {
+  handoffRequestMessage,
+  handoffSeedMessage,
+  handoffToolRows,
+} from "../../../platform/ui-kit/index.ts";
+import { validateMainHandoff } from "../core/handoff.ts";
 import { watchLimits } from "../core/limits.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
@@ -27,7 +33,16 @@ export const createLimits = ({ host, template, limits, releaseDelayMs }: LimitsO
   host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
   host.registerMessageRenderer(LEGACY_SEED_TYPE, handoffSeedMessage(keyText));
 
-  watchLimits({ host, template, limits, segment: segmentFor, releaseDelayMs });
+  const saving = watchLimits({ host, template, limits, segment: segmentFor, releaseDelayMs });
+
+  host.registerTool(
+    handoffTool({
+      target: saving.target,
+      validate: validateMainHandoff,
+      rows: handoffToolRows(() => saving.target()?.path),
+      onSaved: saving.saved,
+    }),
+  );
 };
 
 export const sessionLimitsPlugin: Plugin<never, never, Limits> = {

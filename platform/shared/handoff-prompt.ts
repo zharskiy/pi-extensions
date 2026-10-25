@@ -75,9 +75,9 @@ export const handoffRetry = (instruction: string, errors: string[]) =>
   [
     instruction,
     "",
-    "The previous handoff file was not accepted:",
+    "The handoff was not accepted:",
     ...errors.map((error) => `- ${error}`),
-    "Write the whole file again with these problems fixed.",
+    "Call the `handoff` tool again with the whole handoff fixed.",
   ].join("\n");
 
 export type SuccessorSource =

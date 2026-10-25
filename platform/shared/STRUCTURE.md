@@ -8,6 +8,7 @@ Admission rule: a module lives here only if it imports nothing but node built-in
 - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details and types, `handoffPath` (shared by session-limits and subagents).
 - `handoff-budget.ts`: `HandoffBudget`, `budgetLevel`, `budgetStep`.
 - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template and its builder, retry text, successor preface and seed text.
+- `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `handoff-limits.ts`: `Limits`, `thresholdsFor`.
 - `host-channels.ts`: the busy, awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers, `SPENDING_STATUS_KEY`, `AGENTS_HINT_KEY`.
 - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
@@ -16,6 +17,7 @@ Admission rule: a module lives here only if it imports nothing but node built-in
 - `plain-object.ts`: `isPlainObject`.
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-budget.test.ts`: `budgetLevel` and `budgetStep`.
+- `tests/handoff-tool.test.ts`: `handoffTool`.
 - `tests/handoff-prompt.test.ts`: the instruction, retry, preface and seed text.
 - `tests/handoff-document.test.ts`: `validateHandoff`.
 - `tests/handoff-limits.test.ts`: `thresholdsFor`.

@@ -25,7 +25,7 @@ type LoaderOptions = {
 
 const captured = vi.hoisted(() => ({
   loaderOptions: [] as LoaderOptions[],
-  sessionOptions: [] as { tools?: string[] }[],
+  sessionOptions: [] as { tools?: string[]; customTools?: { name: string }[] }[],
   session: undefined as unknown,
 }));
 
@@ -51,7 +51,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
     DefaultResourceLoader: FakeLoader,
     ModelRuntime: { create: async () => ({}) },
     SessionManager: { create: () => ({}) },
-    createAgentSession: async (options: { tools?: string[] }) => {
+    createAgentSession: async (options: { tools?: string[]; customTools?: { name: string }[] }) => {
       captured.sessionOptions.push(options);
 
       return { session: captured.session ?? fakeSession };
@@ -163,6 +163,30 @@ describe("child session MCP", () => {
 
     expect(factoriesOf(0).map((entry) => entry.name)).toEqual(["test-ext-child", ...MCP_BUILTINS]);
     expect(captured.sessionOptions[0].tools).toEqual(["read", "grep", "web_fetch", ...EVERY_MCP]);
+  });
+
+  it("binds the agent's own handoff tool when another extension's tool of that name is active in the main session", async () => {
+    const withMain = runtimeWith({
+      activeTools: () => [
+        { name: "read", path: "builtin:read" },
+        { name: "handoff", path: "/ext/session-limits/index.ts" },
+      ],
+    });
+
+    const own = {
+      name: "handoff",
+      label: "Handoff",
+      description: "the agent's own",
+      parameters: {},
+      execute: async () => ({ text: "" }),
+    };
+
+    await withMain.spawn(spec({ customTools: [own] }));
+
+    const [options] = captured.sessionOptions;
+
+    expect(options.tools?.filter((name) => name === "handoff")).toHaveLength(1);
+    expect(options.customTools?.map((tool) => tool.name)).toEqual(["handoff"]);
   });
 
   it("ignores relative exclude entries instead of resolving them against the working directory", async () => {

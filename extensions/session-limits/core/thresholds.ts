@@ -3,6 +3,7 @@ import {
   type BudgetLevel,
   budgetLevel,
   type HandoffBudget,
+  type HandoffValidation,
   type Limits,
   thresholdsFor,
 } from "../../../platform/shared/index.ts";
@@ -12,8 +13,6 @@ export type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 export const MAX_INSTRUCTIONS = 2;
 
 export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching" | "stuck";
-
-export type HandoffFile = { kind: "missing" } | { kind: "invalid"; errors: string[] } | { kind: "valid" };
 
 export const mainBudget = (window: number, limits: Limits): HandoffBudget | undefined => {
   if (window <= 0) {
@@ -34,7 +33,7 @@ export const isPending = (phase: Phase) => phase === "requested" || phase === "w
 
 type HandoffInput = {
   phase: Phase;
-  file: HandoffFile;
+  saved: HandoffValidation | undefined;
   busy: boolean;
   settled: boolean;
   instructions: number;
@@ -45,7 +44,7 @@ export const handoffStep = (input: HandoffInput) => {
     return "none";
   }
 
-  if (input.file.kind === "valid") {
+  if (input.saved?.ok) {
     return input.busy ? "wait" : "switch";
   }
 

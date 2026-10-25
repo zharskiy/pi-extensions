@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-A long session eventually fills the model's context window. Before that happens, this extension has the model write a handoff file, and pi continues in a new session seeded with it. You keep typing, and one notice says what is happening. When background work is still running, the switch waits for it instead of ending it. The context limit logic and the handoff instruction are shared with subagents.
+A long session eventually fills the model's context window. Before that happens, this extension has the model save a handoff with a dedicated tool, and pi continues in a new session seeded with it. You keep typing, and one notice says what is happening. When background work is still running, the switch waits for it instead of ending it. The context limit logic and the handoff instruction are shared with subagents.
 
 ## What it looks like
 
@@ -18,6 +18,9 @@ A long session eventually fills the model's context window. Before that happens,
  » Handoff at 175k tokens · 142.3k used
 
  » Handoff requested · 175k of 175k tokens
+
+ ✓ handoff
+   ↳ Saved ~/…
 
  » Handoff from the previous session
    ↳ This session continues the previous session /s/main.j... (ctrl+o to expand)
@@ -37,6 +40,7 @@ Start pi and try:
 | Keep working until the context grows | A warning notice below the editor counts down to the handoff, then pi switches to a new session started from it. |
 | Watch the footer while the context grows | The `context N% of X` figure counts toward the handoff point (X, the hard threshold), so 100 % means a handoff is due. |
 | `/session-handoff` | The model writes a handoff now, then pi switches to a new session started from it. |
+| Ask the model to save a handoff on its own | The `handoff` tool refuses unless a handoff was requested. |
 | `/session-handoff finish the login tests` | The same, with the text folded into the instruction and repeated in the new session's preface. |
 
 ## Development

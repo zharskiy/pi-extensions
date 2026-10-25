@@ -60,7 +60,6 @@ extensions/subagents/
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, createPendingCalls, describeRunAgent
-│   │   ├── handoff-tool.ts                # every child's handoff tool, HandoffRows
 │   │   ├── handoff.ts                     # createHandoff: the handoff instruction (shared template) and schema service
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
@@ -140,7 +139,7 @@ extensions/subagents/
     │   ├── fetch-tool/                    # plugin.test.ts, fetch.test.ts, text.test.ts
     │   ├── interrupt/                     # interrupt.test.ts
     │   ├── limits/                        # limits.test.ts
-    │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, handoff-tool, nesting, skills, models,
+    │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, nesting, skills, models,
     │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant tests
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree

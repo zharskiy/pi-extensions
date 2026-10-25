@@ -1,5 +1,3 @@
-import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { dirname } from "node:path";
 import type {
   ContextSnapshot,
   HandoffDelivery,
@@ -9,10 +7,11 @@ import type {
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
-  errorText,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
+  type HandoffTarget,
+  type HandoffValidation,
   handoffInstruction,
   handoffRetry,
   type Limits,
@@ -21,11 +20,10 @@ import {
   seedText,
   successorPreface,
 } from "../../../platform/shared/index.ts";
-import { handoffPath, validateMainHandoff } from "./handoff.ts";
+import { handoffPath } from "./handoff.ts";
 import {
   type ContextTokens,
   contextLevel,
-  type HandoffFile,
   handoffStep,
   isPending,
   MAX_INSTRUCTIONS,
@@ -42,9 +40,9 @@ const MAIN_DELIVERY: HandoffDelivery = "afterRun";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
-const WRITE_SAVE_STEP = /Call the `handoff` tool[\s\S]*?call it again\./;
-
 const IDLE_POLL_MS = 250;
+
+const SAVING_PHASES: readonly Phase[] = ["requested", "waiting", "stuck"];
 
 const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
 
@@ -67,7 +65,7 @@ type LimitsState = {
   phase: Phase;
   instructions: number;
   path?: string;
-  staleMtime?: number;
+  saved?: { text: string; validation: HandoffValidation };
   context?: ContextSnapshot;
   settledSinceInstruction: boolean;
   userActive: boolean;
@@ -77,22 +75,6 @@ type LimitsState = {
 };
 
 type RequestOrigin = { manual: boolean; focus?: string };
-
-const mtimeOf = (path: string) => {
-  try {
-    return statSync(path).mtimeMs;
-  } catch {
-    return undefined;
-  }
-};
-
-const readHandoff = (path: string) => {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return undefined;
-  }
-};
 
 export const watchLimits = ({
   host,
@@ -117,10 +99,7 @@ export const watchLimits = ({
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
 
   const instruction = (path: string, reason: string, focus: string | undefined) =>
-    handoffInstruction(template, { path, reason, focus, audience: MAIN_AUDIENCE }).replace(
-      WRITE_SAVE_STEP,
-      () => `Write the handoff file with your write tool to:\n\n${path}`,
-    );
+    handoffInstruction(template, { path, reason, focus, audience: MAIN_AUDIENCE });
 
   const currentInstruction = (path: string) =>
     instruction(path, state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON, state.focus);
@@ -151,7 +130,7 @@ export const watchLimits = ({
       phase: "requested",
       instructions: 1,
       path,
-      staleMtime: mtimeOf(path),
+      saved: undefined,
       settledSinceInstruction: false,
       userActive: false,
       manual: origin.manual,
@@ -165,14 +144,6 @@ export const watchLimits = ({
   const request = (origin: RequestOrigin) => {
     const path = handoffPath(host.session());
 
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-    } catch (error) {
-      state = { ...state, phase: "stuck" };
-      host.ui.notify(`Session handoff cannot use ${path}: ${errorText(error)}.`, "warning");
-      return;
-    }
-
     sendRequest(path, origin);
 
     host.ui.notify(
@@ -183,37 +154,22 @@ export const watchLimits = ({
     );
   };
 
-  const inspect = (path: string): HandoffFile => {
-    const mtime = mtimeOf(path);
+  const errorsOf = () => {
+    const validation = state.saved?.validation;
 
-    if (mtime === undefined || mtime === state.staleMtime) {
-      return { kind: "missing" };
-    }
-
-    const text = readHandoff(path);
-
-    if (text === undefined) {
-      return { kind: "missing" };
-    }
-
-    const result = validateMainHandoff(text);
-
-    return result.ok ? { kind: "valid" } : { kind: "invalid", errors: result.errors };
+    return validation && !validation.ok ? validation.errors : ["no handoff was saved with the handoff tool"];
   };
 
-  const errorsOf = (file: HandoffFile, path: string) =>
-    file.kind === "invalid" ? file.errors : [`no new handoff file was written to ${path}`];
-
-  const giveUp = (path: string) => {
+  const giveUp = () => {
     state = { ...state, phase: "stuck" };
 
     host.ui.notify(
-      `Session handoff failed: no valid handoff file at ${path} after ${MAX_INSTRUCTIONS} requests. Ask the session to write it, then run /${HANDOFF_COMMAND}.`,
+      `Session handoff failed: no valid handoff after ${MAX_INSTRUCTIONS} requests. Ask the session to call the \`handoff\` tool, then run /${HANDOFF_COMMAND}.`,
       "warning",
     );
   };
 
-  const resend = (path: string, file: HandoffFile) => {
+  const resend = (path: string) => {
     state = {
       ...state,
       instructions: state.instructions + 1,
@@ -221,7 +177,7 @@ export const watchLimits = ({
       userActive: false,
     };
 
-    sendInstruction(handoffRetry(currentInstruction(path), errorsOf(file, path)));
+    sendInstruction(handoffRetry(currentInstruction(path), errorsOf()));
   };
 
   const switchSession = () => {
@@ -238,11 +194,9 @@ export const watchLimits = ({
       return;
     }
 
-    const file = inspect(path);
-
     const step = handoffStep({
       phase: state.phase,
-      file,
+      saved: state.saved?.validation,
       busy: sources.size > 0 && !state.manual,
       settled,
       instructions: state.instructions,
@@ -265,10 +219,10 @@ export const watchLimits = ({
         switchSession();
         return;
       case "resend":
-        resend(path, file);
+        resend(path);
         return;
       case "give-up":
-        giveUp(path);
+        giveUp();
         return;
       case "none":
         return;
@@ -313,17 +267,12 @@ export const watchLimits = ({
 
   const performSwitch = async (control: SessionControl) => {
     const path = state.path ?? handoffPath(host.session());
-    const text = readHandoff(path);
+    const { saved } = state;
 
-    if (text === undefined) {
-      failSwitch(`No session handoff file at ${path}.`);
-      return;
-    }
-
-    const validation = validateMainHandoff(text);
-
-    if (!validation.ok) {
-      failSwitch(`Session handoff at ${path} is invalid: ${validation.errors.join("; ")}.`);
+    if (!saved?.validation.ok) {
+      failSwitch(
+        `No valid handoff was saved; ask the session to call the \`handoff\` tool, then run /${HANDOFF_COMMAND}.`,
+      );
       return;
     }
 
@@ -349,7 +298,7 @@ export const watchLimits = ({
               manual: state.handedOff,
               focus: state.focus,
             }),
-            text,
+            saved.text,
           ),
         },
       })
@@ -469,7 +418,7 @@ export const watchLimits = ({
         requestManual(focus);
         break;
       case "stuck":
-        if (!focus && state.path && inspect(state.path).kind === "valid") {
+        if (!focus && state.saved?.validation.ok) {
           await switchNow(control);
           return;
         }
@@ -534,7 +483,7 @@ export const watchLimits = ({
       phase: "watching",
       instructions: 0,
       path: undefined,
-      staleMtime: undefined,
+      saved: undefined,
       settledSinceInstruction: false,
       userActive: false,
       manual: false,
@@ -612,4 +561,16 @@ export const watchLimits = ({
     cancelRelease();
     stopIdlePoll();
   });
+
+  const target = (): HandoffTarget | undefined =>
+    state.path ? { path: state.path, requested: SAVING_PHASES.includes(state.phase) } : undefined;
+
+  const saved = (text: string, validation: HandoffValidation) => {
+    state = { ...state, saved: { text, validation } };
+
+    check(false);
+    refresh();
+  };
+
+  return { target, saved };
 };

@@ -1,7 +1,7 @@
-import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RunMode } from "../../../platform/pi-adapter/index.ts";
+import type { RunMode, ToolSpec } from "../../../platform/pi-adapter/index.ts";
 import { BUSY_CHANNEL, handoffTemplate, handoffPath as pathFor } from "../../../platform/shared/index.ts";
 import {
   createFakeHost,
@@ -53,6 +53,12 @@ const HANDOFF_TYPE = "pi-handoff-seed";
 
 const RELEASE_MS = 1_000;
 
+const saveWith = (host: ReturnType<typeof createFakeHost>, text: string) =>
+  (host.tools.get("handoff") as unknown as ToolSpec<{ content: string }, unknown>).execute(
+    { content: text },
+    { update: () => {} },
+  );
+
 const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {
   const root = tempRoot();
   const file = join(root, "sessions", "main.jsonl");
@@ -72,14 +78,10 @@ const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {
 
   const handoffPath = pathFor(basename(root), { main: true });
 
-  const writeHandoff = (text: string) => {
-    mkdirSync(dirname(handoffPath), { recursive: true });
-    writeFileSync(handoffPath, text);
-  };
+  const saveHandoffResult = (text: string) => saveWith(host, text);
 
-  const writeNewerHandoff = (text: string) => {
-    writeHandoff(text);
-    utimesSync(handoffPath, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
+  const saveHandoff = (text: string) => {
+    void saveHandoffResult(text);
   };
 
   const turn = (tokens: number | null) => host.turnEnd({ tokens, window: 100_000 });
@@ -92,7 +94,7 @@ const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {
 
   const busy = (value: boolean, source = "pi-subagents") => host.emit(BUSY_CHANNEL, { source, busy: value });
 
-  return { host, handoffPath, writeHandoff, writeNewerHandoff, turn, notice, busy, requests, warnings };
+  return { host, handoffPath, saveHandoff, saveHandoffResult, turn, notice, busy, requests, warnings };
 };
 
 describe("session limits", () => {
@@ -125,7 +127,7 @@ describe("session limits", () => {
     expect(notice()).toBe("<warning>» Handoff writing the document");
   });
 
-  it("sends the handoff instruction once as a hidden message and says so once", () => {
+  it("sends the handoff instruction once as a displayed message and says so once", () => {
     const { host, requests, turn, handoffPath } = setup();
 
     turn(76_000);
@@ -138,8 +140,9 @@ describe("session limits", () => {
       expect(requests()[0]).toContain(`## ${section}`);
     });
     expect(requests()[0]).toContain("Do not start new work in this turn");
-    expect(requests()[0]).toContain("write tool");
-    expect(requests()[0]).not.toContain("If it reports errors");
+    expect(requests()[0]).toContain("Call the `handoff` tool");
+    expect(requests()[0]).toContain("If it reports errors, fix them and call it again.");
+    expect(requests()[0]).not.toContain("write tool");
     expect(requests()[0].endsWith("reply with one line: `handoff saved`.")).toBe(true);
     expect(requests()[0]).not.toMatch(/agent/i);
     expect(requests()[0].startsWith("Your context window is nearly full.")).toBe(true);
@@ -157,10 +160,10 @@ describe("session limits", () => {
   });
 
   it("switches to a new session seeded from a valid handoff on idle", async () => {
-    const { host, requests, turn, writeHandoff, notice } = setup();
+    const { host, requests, turn, saveHandoff, notice } = setup();
 
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -176,11 +179,11 @@ describe("session limits", () => {
   });
 
   it("waits while a source reports running work and switches once it is released", async () => {
-    const { host, requests, turn, writeHandoff, notice, busy } = setup();
+    const { host, requests, turn, saveHandoff, notice, busy } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -198,12 +201,12 @@ describe("session limits", () => {
   });
 
   it("keeps waiting until every source is released", async () => {
-    const { host, turn, writeHandoff, busy } = setup();
+    const { host, turn, saveHandoff, busy } = setup();
 
     busy(true, "a");
     busy(true, "b");
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     busy(false, "a");
     await flush();
@@ -220,11 +223,11 @@ describe("session limits", () => {
   });
 
   it("leaves the switch to the next settle when a turn follows the release", async () => {
-    const { host, requests, turn, writeHandoff, writeNewerHandoff, busy } = setup();
+    const { host, requests, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     busy(false);
     turn(77_000);
@@ -239,7 +242,7 @@ describe("session limits", () => {
     expect(host.dispatched).toEqual([]);
 
     turn(78_000);
-    writeNewerHandoff(VALID_HANDOFF.replace("write the test plan", "write the release notes"));
+    saveHandoff(VALID_HANDOFF.replace("write the test plan", "write the release notes"));
     host.settle();
     await flush();
 
@@ -248,11 +251,11 @@ describe("session limits", () => {
   });
 
   it("asks for a fresh handoff when the user spoke while the switch waited", async () => {
-    const { host, requests, turn, writeHandoff, writeNewerHandoff, busy } = setup();
+    const { host, requests, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     turn(78_000);
     host.settle();
@@ -264,7 +267,7 @@ describe("session limits", () => {
     expect(host.dispatched).toEqual([]);
 
     turn(80_000);
-    writeNewerHandoff(VALID_HANDOFF.replace("write the test plan", "write the release notes"));
+    saveHandoff(VALID_HANDOFF.replace("write the test plan", "write the release notes"));
     host.settle();
     await flush();
 
@@ -274,12 +277,12 @@ describe("session limits", () => {
   });
 
   it("switches without a fresh request when only the instruction produced turns", async () => {
-    const { host, requests, turn, writeHandoff, busy } = setup();
+    const { host, requests, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
     turn(78_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     busy(false);
     await flush();
@@ -290,16 +293,16 @@ describe("session limits", () => {
   });
 
   it("keeps the single resend after a fresh request", async () => {
-    const { host, requests, turn, writeHandoff, writeNewerHandoff, busy } = setup();
+    const { host, requests, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     turn(78_000);
     busy(false);
     host.settle();
-    writeNewerHandoff("## Status\npartial\n");
+    saveHandoff("## Status\npartial\n");
     host.settle();
     await flush();
 
@@ -310,16 +313,23 @@ describe("session limits", () => {
     expect(host.dispatched).toEqual([]);
   });
 
-  it("resends once with the validation errors, then warns and stops", async () => {
-    const { host, warnings, requests, turn, writeHandoff, handoffPath, notice } = setup();
+  it("returns an invalid save to the model at once, resends once at the settle, then warns and stops", async () => {
+    const { host, warnings, requests, turn, saveHandoffResult, handoffPath, notice } = setup();
 
     turn(76_000);
-    writeHandoff("## Status\npartial\n");
+
+    const result = await saveHandoffResult("## Status\npartial\n");
+
+    expect(result).toMatchObject({ isError: true });
+    expect(requests()).toHaveLength(1);
+
     host.settle();
 
     expect(requests()).toHaveLength(2);
     expect(requests()[1]).toContain(handoffPath);
-    expect(requests()[1]).toContain("missing sections");
+    expect(requests()[1]).toContain("The handoff was not accepted:");
+    expect(requests()[1]).toContain("- missing sections");
+    expect(requests()[1]).toContain("Call the `handoff` tool again with the whole handoff fixed.");
 
     host.settle();
     host.settle();
@@ -329,7 +339,7 @@ describe("session limits", () => {
     expect(requests()).toHaveLength(2);
     expect(warnings()).toHaveLength(1);
     expect(warnings()[0].level).toBe("warning");
-    expect(warnings()[0].message).toContain(handoffPath);
+    expect(warnings()[0].message).toContain("call the `handoff` tool");
     expect(warnings()[0].message).toContain(`/${HANDOFF_COMMAND}`);
     expect(host.dispatched).toEqual([]);
     expect(notice()).toBe(`<error>✗ Handoff failed · run /${HANDOFF_COMMAND}`);
@@ -345,37 +355,78 @@ describe("session limits", () => {
     expect(host.notices.some((notice) => notice.message === "Session handoff cancelled.")).toBe(false);
   });
 
-  it("ignores a stale handoff file left from before the request", () => {
-    const { host, requests, turn, writeHandoff } = setup();
+  it("refuses a save before any request and changes nothing", async () => {
+    const { host, requests, turn, saveHandoffResult, handoffPath } = setup();
 
-    writeHandoff(VALID_HANDOFF);
-    turn(76_000);
+    const result = await saveHandoffResult(VALID_HANDOFF);
+
+    expect(result).toMatchObject({ isError: true });
+    expect(existsSync(handoffPath)).toBe(false);
+
+    turn(30_000);
     host.settle();
 
     expect(host.dispatched).toEqual([]);
-    expect(requests()).toHaveLength(2);
-    expect(requests()[1]).toContain("no new handoff file");
+    expect(requests()).toEqual([]);
   });
 
-  it("accepts a rewritten handoff file even when the old one was valid", async () => {
-    const { host, turn, writeHandoff, handoffPath } = setup();
+  it("lets a second save in the same request replace the first, the last one deciding", async () => {
+    const { host, turn, saveHandoff } = setup();
 
-    writeHandoff(VALID_HANDOFF);
-    utimesSync(handoffPath, new Date(2020, 0, 1), new Date(2020, 0, 1));
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff("## Status\npartial\n");
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
     expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
+
+    const again = setup();
+
+    again.turn(76_000);
+    again.saveHandoff(VALID_HANDOFF);
+    again.saveHandoff("## Status\npartial\n");
+    again.host.settle();
+    await flush();
+
+    expect(again.host.newSessions).toEqual([]);
+    expect(again.requests()).toHaveLength(2);
+  });
+
+  it("refuses a save while the handoff is queued or the session is switching", async () => {
+    const queued = setup();
+
+    queued.host.agentStart();
+    await queued.host.runCommand(HANDOFF_COMMAND, "");
+
+    expect(await queued.saveHandoffResult(VALID_HANDOFF)).toMatchObject({ isError: true });
+
+    const switching = setup();
+
+    switching.turn(76_000);
+    switching.saveHandoff(VALID_HANDOFF);
+    switching.host.settle();
+
+    expect(await switching.saveHandoffResult(VALID_HANDOFF)).toMatchObject({ isError: true });
+  });
+
+  it("has a handoff tool that refuses in print mode, where no request is ever made", async () => {
+    const { host, saveHandoffResult } = setup(0, LIMITS, "print");
+
+    expect(host.tools.has("handoff")).toBe(true);
+    expect(await saveHandoffResult(VALID_HANDOFF)).toMatchObject({
+      text: "Error: no handoff was requested; continue your task.",
+      isError: true,
+    });
   });
 
   it("warns once and stays red when the new session is cancelled", async () => {
-    const { host, warnings, turn, writeHandoff, notice } = setup();
+    const { host, warnings, turn, saveHandoff, notice } = setup();
 
     host.newSessionResult = false;
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
     host.settle();
@@ -389,11 +440,11 @@ describe("session limits", () => {
   });
 
   it("warns and keeps the file when the new session fails", async () => {
-    const { host, warnings, turn, writeHandoff, handoffPath, notice } = setup();
+    const { host, warnings, turn, saveHandoff, handoffPath, notice } = setup();
 
     host.newSessionResult = new Error("disk full");
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -414,11 +465,11 @@ describe("session limits", () => {
   });
 
   it("leaves the switching phase when the dispatched command never runs", async () => {
-    const { host, turn, writeHandoff, notice } = setup();
+    const { host, turn, saveHandoff, notice } = setup();
 
     host.commands.set(HANDOFF_COMMAND, { description: "", run: () => undefined });
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -430,11 +481,11 @@ describe("session limits", () => {
   });
 
   it("ignores a second command while the first one waits for the confirmation", async () => {
-    const { host, turn, writeHandoff, busy } = setup();
+    const { host, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await Promise.all([host.runCommand(HANDOFF_COMMAND), host.runCommand(HANDOFF_COMMAND)]);
 
@@ -484,10 +535,8 @@ describe("session limits", () => {
 
     host.start();
     host.turnEnd({ tokens: 76_000, window: 100_000 });
-    const handoffPath = pathFor(basename(root), { main: true });
 
-    mkdirSync(dirname(handoffPath), { recursive: true });
-    writeFileSync(handoffPath, VALID_HANDOFF);
+    void saveWith(host, VALID_HANDOFF);
     host.settle();
 
     expect(host.dispatched).toEqual([]);
@@ -495,23 +544,23 @@ describe("session limits", () => {
   });
 
   it("ignores malformed busy signals", () => {
-    const { host, turn, writeHandoff } = setup();
+    const { host, turn, saveHandoff } = setup();
 
     host.emit(BUSY_CHANNEL, { busy: true });
     host.emit(BUSY_CHANNEL, "busy");
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
 
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
   });
 
   it("switches now behind the busy confirm when the command runs while the switch waits", async () => {
-    const { host, requests, turn, writeHandoff, busy, notice } = setup();
+    const { host, requests, turn, saveHandoff, busy, notice } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     host.confirmAnswer = false;
     await host.runCommand(HANDOFF_COMMAND);
@@ -574,7 +623,7 @@ describe("/session-handoff on demand", () => {
 
     expect(notice()).toBe("<warning>» Handoff writing the document");
     expect(requests()[0]).not.toContain("next session is for");
-    expect(requests()[0]).toMatch(/very next step\.\n\nWrite the handoff file/);
+    expect(requests()[0]).toMatch(/very next step\.\n\nCall the `handoff` tool/);
   });
 
   it("keeps the focus in its own paragraph", async () => {
@@ -583,12 +632,12 @@ describe("/session-handoff on demand", () => {
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
 
     expect(requests()[0]).toMatch(
-      /very next step\.\n\nThe user says the next session is for: [^\n]+\n\nWrite the handoff file/,
+      /very next step\.\n\nThe user says the next session is for: [^\n]+\n\nCall the `handoff` tool/,
     );
   });
 
   it("cancels on Esc during the writing turn and sends nothing more", async () => {
-    const { host, requests, notice, writeHandoff } = setup();
+    const { host, requests, notice, saveHandoff } = setup();
 
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
     host.settle({ aborted: true });
@@ -597,7 +646,7 @@ describe("/session-handoff on demand", () => {
     expect(host.notices.at(-1)).toEqual({ message: "Session handoff cancelled.", level: "info" });
     expect(notice()).toBeUndefined();
 
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -611,10 +660,10 @@ describe("/session-handoff on demand", () => {
   });
 
   it("switches after a valid file and seeds the new session with the focus", async () => {
-    const { host, writeHandoff } = setup();
+    const { host, saveHandoff } = setup();
 
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -626,10 +675,10 @@ describe("/session-handoff on demand", () => {
   });
 
   it("resends once with the errors, then warns and shows the failure", async () => {
-    const { host, requests, warnings, writeHandoff, notice } = setup();
+    const { host, requests, warnings, saveHandoff, notice } = setup();
 
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
-    writeHandoff("## Status\npartial\n");
+    saveHandoff("## Status\npartial\n");
     host.settle();
 
     expect(requests()).toHaveLength(2);
@@ -658,12 +707,12 @@ describe("/session-handoff on demand", () => {
   });
 
   it("confirms a manual switch while work runs, and waits for it on No", async () => {
-    const { host, writeHandoff, busy, notice } = setup();
+    const { host, saveHandoff, busy, notice } = setup();
 
     busy(true);
     host.confirmAnswer = false;
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -682,11 +731,11 @@ describe("/session-handoff on demand", () => {
   });
 
   it("switches at once after a cancelled switch when the file is still valid", async () => {
-    const { host, requests, writeHandoff, notice } = setup();
+    const { host, requests, saveHandoff, notice } = setup();
 
     host.newSessionResult = false;
     await host.runCommand(HANDOFF_COMMAND);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -700,11 +749,11 @@ describe("/session-handoff on demand", () => {
   });
 
   it("asks for a fresh handoff after a cancelled switch when a focus is given", async () => {
-    const { host, requests, writeHandoff, notice } = setup();
+    const { host, requests, saveHandoff, notice } = setup();
 
     host.newSessionResult = false;
     await host.runCommand(HANDOFF_COMMAND);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
@@ -727,12 +776,39 @@ describe("/session-handoff on demand", () => {
     expect(host.newSessions).toEqual([]);
   });
 
+  it("switches at once after a valid save made while stuck", async () => {
+    const { host, requests, saveHandoff } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND);
+    host.settle();
+    host.settle();
+    saveHandoff(VALID_HANDOFF);
+    await host.runCommand(HANDOFF_COMMAND);
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(requests()).toHaveLength(2);
+  });
+
+  it("does not accept a valid file written to the path by hand while stuck", async () => {
+    const { host, requests, handoffPath } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND);
+    host.settle();
+    host.settle();
+    mkdirSync(dirname(handoffPath), { recursive: true });
+    writeFileSync(handoffPath, VALID_HANDOFF);
+    await host.runCommand(HANDOFF_COMMAND);
+
+    expect(host.newSessions).toEqual([]);
+    expect(requests()).toHaveLength(3);
+  });
+
   it("asks for a fresh handoff when a focus is given while the switch waits", async () => {
-    const { host, requests, turn, writeHandoff, busy } = setup();
+    const { host, requests, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
 
@@ -790,7 +866,7 @@ describe("/session-handoff during a turn", () => {
   });
 
   it("drops a queued handoff on an aborted settle and sends nothing afterwards", async () => {
-    const { host, requests, notice, turn, writeHandoff } = setup();
+    const { host, requests, notice, turn, saveHandoff } = setup();
 
     host.agentStart();
     await host.runCommand(HANDOFF_COMMAND, FOCUS);
@@ -802,7 +878,7 @@ describe("/session-handoff during a turn", () => {
 
     host.agentStart();
     turn(34_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -968,7 +1044,7 @@ describe("/session-handoff during a turn", () => {
 
     context.busy(true);
     context.turn(76_000);
-    context.writeHandoff(VALID_HANDOFF);
+    context.saveHandoff(VALID_HANDOFF);
     context.host.settle();
     context.host.agentStart();
     await context.host.runCommand(HANDOFF_COMMAND, FOCUS);
@@ -1014,7 +1090,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(2);
-    expect(requests()[1]).toContain("no new handoff file was written");
+    expect(requests()[1]).toContain("no handoff was saved with the handoff tool");
 
     host.settle();
 
@@ -1026,7 +1102,7 @@ describe("/session-handoff during a turn", () => {
 
 describe("session limits around the dispatch window", () => {
   it("goes back to waiting when a source turns busy before the switch runs and the user declines", async () => {
-    const { host, turn, writeHandoff, notice, busy } = setup();
+    const { host, turn, saveHandoff, notice, busy } = setup();
     let announced = false;
 
     host.onIdle(() => {
@@ -1038,7 +1114,7 @@ describe("session limits around the dispatch window", () => {
 
     host.confirmAnswer = false;
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -1057,7 +1133,7 @@ describe("session limits around the dispatch window", () => {
   });
 
   it("runs a command dispatched during settle only after every settle handler", async () => {
-    const { host, turn, writeHandoff } = setup();
+    const { host, turn, saveHandoff } = setup();
     const order: string[] = [];
 
     host.onIdle(() => {
@@ -1065,7 +1141,7 @@ describe("session limits around the dispatch window", () => {
     });
 
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
@@ -1086,7 +1162,7 @@ describe("release timer", () => {
 
     context.busy(true);
     context.turn(76_000);
-    context.writeHandoff(VALID_HANDOFF);
+    context.saveHandoff(VALID_HANDOFF);
     context.host.settle();
 
     return context;
@@ -1202,20 +1278,20 @@ describe("handoff request message", () => {
   });
 
   it("sends a second displayed request on a resend", () => {
-    const { host, turn, writeHandoff } = setup();
+    const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
-    writeHandoff("## Status\npartial\n");
+    saveHandoff("## Status\npartial\n");
     host.settle();
 
     expect(host.messages.map((entry) => entry.message.display)).toEqual([true, true]);
   });
 
   it("seeds the new session with details naming the session as the origin", async () => {
-    const { host, turn, writeHandoff } = setup();
+    const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
-    writeHandoff(VALID_HANDOFF);
+    saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 

@@ -6,11 +6,13 @@ const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardToken
 
 const at = (tokens: number | null, window = 100_000) => ({ tokens, window });
 
+const VALID = { ok: true, status: "partial" } as const;
+
 type HandoffInput = Parameters<typeof handoffStep>[0];
 
 const input = (patch: Partial<HandoffInput>): HandoffInput => ({
   phase: "requested",
-  file: { kind: "missing" },
+  saved: undefined,
   busy: false,
   settled: true,
   instructions: 1,
@@ -68,22 +70,22 @@ describe("shouldRequest", () => {
 
 describe("handoffStep", () => {
   it("does nothing outside a pending request", () => {
-    expect(handoffStep(input({ phase: "watching", file: { kind: "valid" } }))).toBe("none");
-    expect(handoffStep(input({ phase: "switching", file: { kind: "valid" } }))).toBe("none");
+    expect(handoffStep(input({ phase: "watching", saved: VALID }))).toBe("none");
+    expect(handoffStep(input({ phase: "switching", saved: VALID }))).toBe("none");
     expect(handoffStep(input({ phase: "stuck" }))).toBe("none");
   });
 
   it("switches on a valid file and waits while work is reported running", () => {
-    expect(handoffStep(input({ file: { kind: "valid" } }))).toBe("switch");
-    expect(handoffStep(input({ file: { kind: "valid" }, busy: true }))).toBe("wait");
-    expect(handoffStep(input({ phase: "waiting", file: { kind: "valid" } }))).toBe("switch");
-    expect(handoffStep(input({ file: { kind: "valid" }, settled: false }))).toBe("switch");
+    expect(handoffStep(input({ saved: VALID }))).toBe("switch");
+    expect(handoffStep(input({ saved: VALID, busy: true }))).toBe("wait");
+    expect(handoffStep(input({ phase: "waiting", saved: VALID }))).toBe("switch");
+    expect(handoffStep(input({ saved: VALID, settled: false }))).toBe("switch");
   });
 
   it("judges a missing or invalid file only after the session settles", () => {
     expect(handoffStep(input({ settled: false }))).toBe("none");
     expect(handoffStep(input({}))).toBe("resend");
-    expect(handoffStep(input({ file: { kind: "invalid", errors: ["x"] } }))).toBe("resend");
+    expect(handoffStep(input({ saved: { ok: false, errors: ["x"] } }))).toBe("resend");
     expect(handoffStep(input({ instructions: 2 }))).toBe("give-up");
   });
 });

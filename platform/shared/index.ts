@@ -38,6 +38,7 @@ export {
   seedText,
   successorPreface,
 } from "./handoff-prompt.ts";
+export { type HandoffTarget, handoffTool } from "./handoff-tool.ts";
 export {
   AGENTS_HINT_KEY,
   AWAITING_INPUT_CHANNEL,

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { HANDOFF_REQUEST_TYPE, HANDOFF_SEED_TYPE } from "../../../../platform/shared/index.ts";
+import { HANDOFF_REQUEST_TYPE, HANDOFF_SEED_TYPE, handoffTool } from "../../../../platform/shared/index.ts";
 import {
   EXPAND_BINDING,
   handoffRequestMessage,
@@ -18,7 +18,6 @@ import {
 } from "../../core/model/agent-record.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { createHandoff } from "../../core/run-agent/handoff.ts";
-import { handoffTool } from "../../core/run-agent/handoff-tool.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
 import {
@@ -73,7 +72,15 @@ export const runAgentPlugin: Plugin = {
 
       const granted = own && allowlist(own.tools)?.includes("fetch") && services.has("fetchTool");
       const extra: AnyToolSpec[] = [
-        handoffTool({ registry, handoff, rows: handoffToolRows }, record.id),
+        handoffTool({
+          target: () => {
+            const live = registry.get(record.id);
+
+            return live && { path: live.handoffPath, requested: live.handoffRequested };
+          },
+          validate: handoff.validate,
+          rows: handoffToolRows(() => registry.get(record.id)?.handoffPath),
+        }),
         ...(granted ? [services.require("fetchTool").tool()] : []),
       ];
 
