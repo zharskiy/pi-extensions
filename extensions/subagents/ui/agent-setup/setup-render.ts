@@ -1,4 +1,4 @@
-import { PAD, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
+import { PAD, type SkillInfo, type ThemeLike } from "../../../../platform/pi-adapter/index.ts";
 import { padded, prefixed } from "../../../../platform/shared/index.ts";
 import {
   CANCEL_HINT,
@@ -14,7 +14,7 @@ import {
   TAB_SWITCH_HINT,
   tabBar,
 } from "../../../../platform/ui-kit/index.ts";
-import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
+import type { SetupChange } from "../../core/agent-setup/scope.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {
   FIELDS,
@@ -25,8 +25,10 @@ import {
   modelOptions,
   onSubmitTab,
   type Picker,
+  pickerSkills,
   type SetupContext,
   type SetupState,
+  scopeOptions,
   setupChanges,
   thinkingOptions,
 } from "./form.ts";
@@ -44,6 +46,9 @@ const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own 
 const MCP_ON = "on: the MCP servers configured in mcp.json, shared by every agent with mcp: true";
 
 const MCP_OFF = "off: this agent does not see MCP servers";
+
+const UNTRUSTED_NOTE =
+  "This project is not trusted, so pi does not read its .pi/pi-subagents.json; the user file applies to every project.";
 
 const modelText = (model: string) => (model === INHERIT_MODEL ? "inherit (the main session's model)" : model);
 
@@ -92,8 +97,12 @@ const windowLines = (
     return prefixed(theme, `${PAD}${pointerMark(theme, chosen)} `, text, width);
   });
 
-const skillDetail = (context: SetupContext, cursor: number, theme: ThemeLike, width: number) => {
-  const skill = context.skills[cursor];
+const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
+  padded(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
+
+const skillDetail = (skills: SkillInfo[], cursor: number, theme: ThemeLike, width: number) => {
+  const skill = skills[cursor];
+
   if (
     !skill?.description ||
     descriptionFits(theme, { label: skill.name, description: skill.description }, width)
@@ -121,10 +130,11 @@ const pickerLines = (
   const title = (text: string) => ["", ...padded(theme, theme.fg("accent", theme.bold(text)), width)];
 
   if (picker.field === "skills") {
-    const options = context.skills.map(({ name, description }) => ({ label: name, description }));
+    const skills = pickerSkills(context, picker);
+    const options = skills.map(({ name, description }) => ({ label: name, description }));
     const rows = multiLines(theme, options, picker.multi, width, LIST_HEIGHT);
 
-    return [...title("Skills"), ...rows, ...skillDetail(context, picker.multi.cursor, theme, width)];
+    return [...title("Skills"), ...rows, ...skillDetail(skills, picker.multi.cursor, theme, width)];
   }
 
   if (picker.field === "model") {
@@ -145,13 +155,13 @@ const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, w
     return [];
   }
 
-  const line = (label: string, text: string) =>
-    padded(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
+  const proposed = agent.note ? labelLine(theme, "Proposed", agent.note, width) : [];
 
   return [
     "",
-    ...line("Tools", `${grantText(agent.tools)}. ${TOOLS_NOTE}`),
-    ...line("MCP", agent.mcp ? MCP_ON : MCP_OFF),
+    ...proposed,
+    ...labelLine(theme, "Tools", `${grantText(agent.tools)}. ${TOOLS_NOTE}`, width),
+    ...labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
   ];
 };
 
@@ -189,19 +199,21 @@ const submitLines = (
 
     return padded(theme, text, width);
   });
-  const scopes = SCOPES.map((scope) => ({
+  const project = context.project ? [...labelLine(theme, "Project", context.project, width), ""] : [];
+  const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
-    description: context.trusted || scope === "user" ? paths[scope] : `${paths[scope]} (project not trusted)`,
+    description: paths[scope],
   }));
-  const refused = state.refused ? ["", ...padded(theme, theme.fg("warning", state.refused), width)] : [];
+  const untrusted = context.trusted ? [] : padded(theme, theme.fg("dim", UNTRUSTED_NOTE), width);
 
   return [
+    ...project,
     ...padded(theme, theme.fg("accent", theme.bold(title)), width),
     ...(rows.length > 0 ? ["", ...rows] : []),
     "",
     ...padded(theme, theme.fg("muted", "Save to:"), width),
     ...listLines(theme, scopes, state.scope, width, { layout: "beside" }),
-    ...refused,
+    ...untrusted,
   ];
 };
 

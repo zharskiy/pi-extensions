@@ -12,7 +12,7 @@ import {
   multiKey,
   tabStep,
 } from "../../../../platform/ui-kit/index.ts";
-import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
+import { SCOPES, type Scope, type SetupChange } from "../../core/agent-setup/scope.ts";
 import {
   AGENT_SCOPE_ALL,
   type AgentOverride,
@@ -22,20 +22,29 @@ import {
 
 type Draft = { model: string; thinking?: string; skills: Grant };
 
-type SetupAgent = { name: string; description: string; tools: Grant; mcp: boolean; initial: Draft };
+type SetupAgent = {
+  name: string;
+  description: string;
+  tools: Grant;
+  mcp: boolean;
+  initial: Draft;
+  proposed?: Draft;
+  note?: string;
+};
 
 export type SetupContext = {
   agents: SetupAgent[];
   models: AvailableModel[];
   skills: SkillInfo[];
   trusted: boolean;
+  project?: string;
 };
 
 export const FIELDS = ["model", "thinking", "skills"] as const;
 
 export type Field = (typeof FIELDS)[number];
 
-type SkillsPicker = { field: "skills"; multi: MultiState; touched?: boolean };
+type SkillsPicker = { field: "skills"; multi: MultiState; order: number[]; touched?: boolean };
 
 export type Picker = { field: "model" | "thinking"; cursor: number } | SkillsPicker;
 
@@ -45,20 +54,20 @@ export type SetupState = {
   field: number;
   picker?: Picker;
   scope: number;
-  refused?: string;
 };
 
 type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
 
 export const LIST_HEIGHT = 8;
 
-export const UNTRUSTED = "this project is not trusted; choose User or trust the project first";
+export const scopeOptions = (context: SetupContext): readonly Scope[] =>
+  context.trusted ? SCOPES : ["user"];
 
 export const initialSetup = (context: SetupContext): SetupState => ({
-  drafts: context.agents.map((agent) => agent.initial),
+  drafts: context.agents.map((agent) => agent.proposed ?? agent.initial),
   tab: 0,
   field: 0,
-  scope: context.trusted ? 0 : 1,
+  scope: 0,
 });
 
 export const onSubmitTab = (context: SetupContext, state: SetupState) => state.tab === context.agents.length;
@@ -116,15 +125,29 @@ export const grantText = (grant: Grant) => {
   return grant.length === 0 ? "none" : grant.join(", ");
 };
 
+export const pickerSkills = (context: SetupContext, picker: SkillsPicker) =>
+  picker.order.flatMap((index) => context.skills[index] ?? []);
+
+const skillsPicker = (context: SetupContext, named: readonly string[]): SkillsPicker => {
+  const listed = named.flatMap((name) => {
+    const index = context.skills.findIndex((skill) => skill.name === name);
+
+    return index < 0 ? [] : [index];
+  });
+  const order = [...new Set([...listed, ...context.skills.keys()])];
+  const checked = order.map((index) => named.includes(context.skills[index]?.name ?? ""));
+
+  return { field: "skills", multi: initialMulti(order.length, checked), order };
+};
+
 const openPicker = (context: SetupContext, state: SetupState): SetupState => {
   const field = FIELDS[state.field] ?? "model";
   const draft = state.drafts[state.tab];
 
   if (field === "skills") {
     const named = draft?.skills === AGENT_SCOPE_ALL ? [] : (draft?.skills ?? []);
-    const checked = context.skills.map((skill) => named.includes(skill.name));
 
-    return { ...state, picker: { field, multi: initialMulti(context.skills.length, checked) } };
+    return { ...state, picker: skillsPicker(context, named) };
   }
 
   const options = pickerOptions(context, state, field);
@@ -207,7 +230,9 @@ const chooseSkills = (
     return { ...state, picker: undefined };
   }
 
-  const names = checkedIndexes(picker.multi).flatMap((index) => context.skills[index]?.name ?? []);
+  const names = checkedIndexes(picker.multi).flatMap(
+    (position) => context.skills[picker.order[position] ?? -1]?.name ?? [],
+  );
 
   const keptAll = state.drafts[state.tab]?.skills === AGENT_SCOPE_ALL && !picker.touched;
 
@@ -226,16 +251,12 @@ const pickerKey = (context: SetupContext, state: SetupState, picker: Picker, key
 
 const submitKey = (context: SetupContext, state: SetupState, key: KeyPress): SetupOutcome => {
   if (key.name === "enter") {
-    if (SCOPES[state.scope] === "project" && !context.trusted && setupChanges(context, state).length > 0) {
-      return { state: { ...state, refused: UNTRUSTED } };
-    }
-
     return { state, done: "save" };
   }
 
-  const scope = listStep(key, state.scope, SCOPES.length);
+  const scope = listStep(key, state.scope, scopeOptions(context).length);
 
-  return { state: scope === undefined ? state : { ...state, scope, refused: undefined } };
+  return { state: scope === undefined ? state : { ...state, scope } };
 };
 
 const agentKey = (context: SetupContext, state: SetupState, key: KeyPress): SetupState => {
@@ -260,7 +281,7 @@ export const pressSetupKey = (context: SetupContext, state: SetupState, key: Key
   const tab = tabStep(key, state.tab, context.agents.length + 1);
 
   if (tab !== undefined) {
-    return { state: { ...state, tab, field: 0, refused: undefined } };
+    return { state: { ...state, tab, field: 0 } };
   }
 
   if (onSubmitTab(context, state)) {

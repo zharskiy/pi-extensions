@@ -10,6 +10,13 @@ const model = (ref: string, thinking: string[]) => ({
   thinking,
 });
 
+const skill = (name: string, description: string) => ({
+  name,
+  description,
+  scope: "user" as const,
+  path: `/skills/${name}/SKILL.md`,
+});
+
 export const context = (trusted = true): SetupContext => ({
   agents: [
     {
@@ -28,12 +35,24 @@ export const context = (trusted = true): SetupContext => ({
     },
   ],
   models: [model("acme/big", ["off", "low", "high"]), model("acme/small", ["off"])],
-  skills: [
-    { name: "docs", description: "Writes docs" },
-    { name: "search", description: "" },
-  ],
+  skills: [skill("docs", "Writes docs"), skill("search", "")],
   trusted,
 });
+
+export const proposedContext = (trusted = true): SetupContext => {
+  const base = context(trusted);
+
+  return {
+    ...base,
+    agents: base.agents.map((agent) =>
+      agent.name === "lead"
+        ? { ...agent, proposed: { ...agent.initial, skills: ["search", "docs"] }, note: "search finds code" }
+        : agent,
+    ),
+    skills: [...base.skills, skill("lint", "Checks style")],
+    project: "A TypeScript library",
+  };
+};
 
 export const PATHS = { project: "/repo/.pi/pi-subagents.json", user: "/home/.pi/agent/pi-subagents.json" };
 

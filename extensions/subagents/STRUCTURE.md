@@ -104,7 +104,7 @@ extensions/subagents/
 │   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
-│   │   ├── form.ts                        # setup form state, fields, pickers and keys
+│   │   ├── form.ts                        # setup form state, proposed drafts, fields, pickers, scopes and keys
 │   │   ├── setup-render.ts                # renderSetup: the form lines
 │   │   └── setup-overlay.ts               # setupForm: the HostUi.showForm factory
 │   └── agent-view/
@@ -149,5 +149,5 @@ extensions/subagents/
         ├── agent-patch.test.ts            # the agent file patcher
         ├── overlay-rows.ts                # selectedRow: the selected overlay row
         ├── recorded-grep-session.ts       # grepSession: a recorded grep agent session
-        └── setup-context.ts               # context, PATHS, press, render: the /agents setup form fixture
+        └── setup-context.ts               # context, proposedContext, PATHS, press, render: the /agents setup form fixture
 ```

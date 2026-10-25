@@ -37,7 +37,7 @@ Start pi and try:
 |---|---|
 | Ask for work that splits well, like "find every place we parse dates and review them" | The main session calls `run_agent`, ends its turn and is woken with every result once the batch is done. |
 | `/agents` | The agents menu: view running and finished agents, set up models and skills, create a new agent. |
-| `/agents setup` | A form with one tab per agent to change its model, thinking level and skills. |
+| `/agents setup` | A form with one tab per agent to change its model, thinking level and skills. In a project you have not trusted it saves to your user file, which applies to every project. |
 | `/agents create` | The main session asks what the new agent should do and writes its file. |
 
 <details>

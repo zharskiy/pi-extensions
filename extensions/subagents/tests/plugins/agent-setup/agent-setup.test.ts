@@ -148,19 +148,21 @@ describe("/agents setup form", () => {
     expect(readJson(userFile)).toEqual({ agents: { general: { skills: ["search"] } } });
   });
 
-  it("refuses the project file in an untrusted project and writes the user file instead", async () => {
+  it("offers only the user file in an untrusted project and writes it", async () => {
     const { projectFile, userFile, openForm, definition } = setup();
     const { run, form } = await openForm();
 
     goToAgent(form, "scout");
     form.press(key("down"), key("enter"), key("end"), key("enter"));
     goToSubmit(form);
-    form.press(key("up"), key("enter"));
+    form.press(key("up"));
 
-    expect(form.closed).toBe(false);
-    expect(form.render(400).some((line) => line.includes("this project is not trusted"))).toBe(true);
+    expect(form.render(400).some((line) => line.includes("This project  "))).toBe(false);
+    expect(form.render(400).some((line) => line.includes("the user file applies to every project"))).toBe(
+      true,
+    );
 
-    form.press(key("down"), key("enter"));
+    form.press(key("enter"));
     await run;
 
     expect(existsSync(projectFile)).toBe(false);
