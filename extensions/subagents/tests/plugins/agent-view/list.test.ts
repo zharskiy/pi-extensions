@@ -146,14 +146,14 @@ describe("agents list", () => {
 
     expect(selectedRow(lines())).toContain("first");
     expect(lines().at(-2)).toBe(
-      " ↑↓ to select · enter to view · x to stop · shift+x to stop all · esc to close · → to main session",
+      " esc to close · → to main session · ↑↓ to select · enter to view · x to stop · shift+x to stop all",
     );
 
     view.handleKey(key("down"));
 
     expect(selectedRow(lines())).toContain("closed one");
     expect(lines().at(-2)).toBe(
-      " ↑↓ to select · enter to view · x to clear · shift+x to stop all · esc to close · → to main session",
+      " esc to close · → to main session · ↑↓ to select · enter to view · x to clear · shift+x to stop all",
     );
 
     view.handleKey(key("down"));
@@ -380,10 +380,13 @@ describe("agents list", () => {
     });
 
     const { view, lines } = await harness.openList();
+    const quiet = lines();
 
     view.handleKey(char("X"));
 
     expect(lines().at(-3)).toBe(" No running agents");
+    expect(lines()).toHaveLength(quiet.length);
+    expect(lines().slice(0, -4)).toEqual(quiet.slice(0, -4));
 
     view.handleKey(char("X"));
     await flushMicrotasks();
@@ -473,7 +476,7 @@ describe("agents list", () => {
     });
 
     const { view, lines } = await harness.openList(12);
-    const height = 12 - 5 - 1;
+    const height = 12 - 5 - 2;
 
     view.handleKey(key("pageDown"));
 

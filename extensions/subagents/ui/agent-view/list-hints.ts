@@ -13,10 +13,10 @@ export const listHint = (selected: AgentRecord | undefined): KeyHint[] => {
   }
 
   return [
+    ...EXITS,
     ["↑↓", "to select"],
     ["enter", "to view"],
     ["x", stopWords(selected.state)],
     ["shift+x", "to stop all"],
-    ...EXITS,
   ];
 };

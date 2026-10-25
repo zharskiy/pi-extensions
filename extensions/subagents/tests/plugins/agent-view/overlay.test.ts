@@ -128,7 +128,7 @@ describe("agents overlay", () => {
 
     const { overlay, state, lines } = harness.openLast();
 
-    expect(lines().at(-2)?.endsWith("esc to close · → to main session")).toBe(true);
+    expect(lines().at(-2)?.startsWith(" esc to close · → to main session")).toBe(true);
 
     overlay.handleKey(key("right"));
 
