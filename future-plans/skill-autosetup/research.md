@@ -17,8 +17,8 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 
 ### Lead predicate
 
-- No lead/chore marker in code: the loader does not record the `agents/leads/` or `agents/chores/` folder (see Agent definitions below). The data that separates them is the `subagents` grant (`Grant = string[] | "all"`, `core/model/agent-schema.ts:9,18`).
-- Shipped grants (`agents/*/*.md:8`): implementer `[scout, shell, verifier]`, planner `[scout, shell, fetch]`, reviewer `[scout, shell]`, general all nine agents; editor, fetch, image, scout, shell, verifier `[]`. general has `skills: all` (`agents/leads/general.md:7`). So "subagents non-empty and skills a list" selects implementer, planner, reviewer.
+- No lead/chore field on the definition; the only data is `path` (`AgentDefinition`, `core/model/agent-record.ts:98`), the file the agent was loaded from. `markdownFiles` (`core/agent-definitions/loader.ts:163-178`) walks every agents dir recursively and joins paths with `node:path` `join` (171), so subfolders count and the separator is the OS one.
+- Shipped: `agents/chores/{editor,fetch,image,scout,shell,verifier}.md`, `agents/leads/{general,implementer,planner,reviewer}.md`; general has `skills: all` (`agents/leads/general.md:7`). A user or project agent under `<agents dir>/chores/` is found by the same walk, so a `chores` directory segment in the path relative to that agents dir marks it as a chore (each definition has `source`, `agent-record.ts:80`, and each source one dir: `agent-definitions.ts:16`, `core/model/paths.ts:15,17`); anything else with a list `skills` grant is a lead.
 
 ### Override detection
 
@@ -61,7 +61,7 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 - `AgentDefinition = AgentFrontmatter & {thinking?, prompt, source: "builtin"|"user"|"project", path}` (`core/model/agent-record.ts:88-101`); frontmatter carries `name`, `description`, `model?`, `limit`, `tools: Grant`, `skills: Grant`, `subagents: Grant`, `worktree?`, `mcp?` (`core/model/agent-schema.ts:11-21`). Service `{get, list, promptAppend, reload}` (`agent-record.ts:130-135`).
 - `list()` returns `description`, `source` and the effective `skills`: overrides are applied by `overridden` (`core/agent-definitions/loader.ts:231-240`, `skills: override.skills ?? definition.skills`, the override replaces the file's list, no union). The raw file list is not kept on the definition; `loadDefinitions` holds it in `fromFiles` (loader.ts:338) for warnings only.
 - Unknown-skill rule: `skillsNotice` (194-199) and `checkedOverride` (201-219) set the override's `skills` to undefined when any named skill is not in `runtime.skillNames()` (empty list and `all` are never checked), with warning `agents.<name>.skills names unknown skill(s) ... (available skills: ...); dropped`; the agent then keeps its file list. `loaded` is read once per load (`once`, 221-229; `loadDefinitions` 339-340); an agent file's own unknown skills only warn (`unknownFrontmatterSkills`, 280-296).
-- There is no lead-versus-chore marker on the definition. Shipped files live in `agents/leads/` and `agents/chores/` but the loader does not record the folder. A lead can be inferred from `tools` containing `edit`/`write` or a non-empty `subagents`, or from the name; the setup form shows read-only `tools` and `mcp` instead (`SetupAgent`). Nine shipped agents ship `skills: []`; only `general` ships `all`.
+- There is no lead-versus-chore field on the definition; the folder is visible only in `path` (see Lead predicate above); the setup form shows read-only `tools` and `mcp` instead (`SetupAgent`). Nine shipped agents ship `skills: []`; only `general` ships `all`.
 - `loadDefinitions` dirs (`api/plugins/agent-definitions.ts:42-49`): builtin, `<agentDir>/agents`, `<cwd>/.pi/agents` only when trusted.
 
 ### Skill inventory

@@ -9,7 +9,7 @@ Research date: 2026-10-22, revised 2026-10-25. Question: how to give each lead a
 ## Summary
 
 1. **Release 1 is `/agents setup`, made smart.** There is one setup feature, not two. When the user runs `/agents setup` and no agent on this machine has a skills override yet, the command asks the main session for a proposal straight away and opens the setup form with it filled in. When some agent already has an override, the command first asks "Propose skills automatically? Yes / No" with no answer preselected, and opens the plain form on No. The user runs it whenever they want. Nothing runs on its own.
-2. **Leads only, and the model never hears of chores.** A chore is an agent that runs no agents (`subagents: []`); a lead has a non-empty `subagents` grant. The brief lists leads only, the tool accepts leads only. `general` has `skills: all` and is left alone. The main session's own skills are not touched.
+2. **Leads only, and the model never hears of chores.** The folder decides: the shipped agents live in `agents/leads/` and `agents/chores/`, the loader walks subfolders of every agents dir, and each definition keeps its file path. An agent whose path, relative to the agents dir it was loaded from, has a `chores` directory segment is a chore; every other agent is a lead. The brief lists leads only, the tool accepts leads only. `general` has `skills: all` and is left alone. The main session's own skills are not touched.
 3. **Skills are taken as they are, minus the ones agents cannot use.** The inputs are the inventory pi already builds at session start (name, description, scope, path of every skill on the machine) and a glance at the project. No frontmatter keys, no catalogue conventions. Skills whose body names an interactive tool (AskUserQuestion, questionnaire and the like) are filtered out before the brief, because agents cannot ask anyone anything. Project-level skills are marked and preferred.
 4. **The model judges, the user decides, the extension writes.** The brief tells the main session to say what kind of project this is first, then to pick at most three skills per lead, most useful first. It answers through a model-only tool. The tool validates, opens the setup form with the proposal in place and marked against the current lists, and on confirm writes through the path the form uses today: `.pi/pi-subagents.json` in a trusted project, then `definitions.reload()`, then one notice. The model never writes the file.
 5. **Automatic re-runs are release 2, if ever.** The 2026-10-22 design (session-start reconcile, record, three-way merge, modes) is kept below as a sketch and in git history.
@@ -36,7 +36,7 @@ The one-line form `/agents setup <agent> model=… skills=…` is unchanged. The
 
 In the extension, with no model call:
 
-- **Leads** from `definitions.list()`: agents whose `subagents` grant is non-empty (`all` counts as non-empty) and whose `skills` grant is a list. Each with name, description, tools, current skills. Chores and `all`-grant agents are not mentioned anywhere in the brief.
+- **Leads** from `definitions.list()`: agents whose `path` has no `chores` directory segment and whose `skills` grant is a list. Each with name, description, tools, current skills. Chores and `all`-grant agents are not mentioned anywhere in the brief. A user or project agent put under a `chores/` subfolder of its agents dir is a chore too; one placed at the top level is a lead.
 - **Candidate skills** from `runtime.skillCatalog()`, which gains `scope` (`project`, `user` or `temporary`, taken from the resolved resource's metadata, not from pi's `sourceInfo.scope`, which marks most discovered skills `temporary`) and `path`. Then the interactive filter: the extension reads each SKILL.md body and drops a skill that names an interactive tool or a user prompt. The term list is one constant in the extension (`AskUserQuestion`, `questionnaire`, `ask the user`, `ask_user`, and whatever the owner adds); a match is reported in the notice as "left out, interactive: a, b", never silently. A skill with an empty description is listed by name alone and said to be so.
 - **The project**: cwd basename and its top-level entries (names only, bounded). The main session has `read` and `ls` and is invited to look at manifests and the tree itself.
 
@@ -96,21 +96,26 @@ The full version is this README as committed on 2026-10-22 (`git log -- future-p
 
 ## Out of scope
 
-- **Chores.** Never in the brief, never accepted by the tool, their tabs in the form unchanged. The lead test is `subagents` non-empty; a chore that one day wants skills is a release 2 question.
+- **Chores.** Never in the brief, never accepted by the tool, their tabs in the form unchanged. The chore test is the `chores` folder in the agent's path; a chore that one day wants skills is a release 2 question.
 - **The main session.** Its own skill list is pi's `<skills>` section and the skills-in-main-session folder. `general` (`skills: all`) is excluded by its grant.
 - **Claude Code files.** Not read. If pi ever discovers Claude Code skills, they enter the inventory like any other skill and release 1 handles them with no change here.
 - **Catalogue conventions.** No `pi-agents`, `pi-match` or `pi-replaces` metadata. Skills are judged by their descriptions.
 - **Project packages, `pi update`, marketplaces.** How skills arrive on the machine is pi's and the user's business.
 - **Evals.** No prompt-quality eval in release 1. Whether the model calls the tool once with full lists is learned by using it; the tool accepting a repeated call while the mark is pending is the fallback.
 
-## Decisions for the owner
+## Decisions
 
-1. **Project signals.** Top-level listing only, the model reads further itself (recommended: no manifest parsing in the extension), or parse `package.json` and friends in the extension to save the model a tool call.
-2. **The interactive term list.** Start with `AskUserQuestion`, `questionnaire`, `ask the user`, `ask_user`, `confirm with the user`, case-insensitive, over the SKILL.md body. Recommended: ship the list as one constant and report every exclusion in the notice, so a false positive is visible and the list can be tuned.
-3. **Reasons in the form.** A "Proposed" line per lead with the reasons and the project line on the Submit tab (recommended, small), or leave the form as it is and let the main session's message carry them.
-4. **Tool gating.** Accept the tool only while the mark is pending (recommended: ties every write to a user command). Lifting the gate later lets the user also ask in plain words.
+All settled on 2026-10-25:
 
-Settled on 2026-10-25: one feature under `/agents setup`; autosetup runs unasked when no agent has a skills override on this machine, otherwise a Yes/No step with nothing preselected; leads are agents with a non-empty `subagents` grant, chores never reach the model; at most three skills per lead, ordered most useful first, project-level skills preferred, the model classifies the project first; interactive skills filtered in the extension; the mark is in memory; after a save the user is asked to start a new session with `/new`; `general` and the main session untouched; no eval; checked skills first and no re-sorting in the picker.
+- One feature under `/agents setup`; autosetup runs unasked when no agent has a skills override on this machine, otherwise a Yes/No step with nothing preselected.
+- Chores are the agents under a `chores` folder and never reach the model. The segment is checked on the path relative to the agents dir the file was loaded from, so an agents dir that itself sits under a directory named `chores` does not turn every agent into a chore.
+- At most three skills per lead, ordered most useful first, project-level skills preferred, the model classifies the project first.
+- Project signals: the top-level listing only; the main session reads manifests and the tree itself. No manifest parsing in the extension.
+- Interactive filter: tool names plus common phrases (`AskUserQuestion`, `questionnaire`, `ask_user`, "ask the user", "confirm with the user"), case-insensitive, over the SKILL.md body, one constant; every exclusion is named in the notice.
+- Reasons in the form: a "Proposed" line per proposed lead and the project line on the Submit tab.
+- Tool gating: the tool is accepted only while the pending mark is set by `/agents setup`.
+- The mark is in memory; after a save the user is asked to start a new session with `/new`.
+- `general` and the main session untouched; no eval; checked skills first and no re-sorting in the picker.
 
 ## Delivery order
 
