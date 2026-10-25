@@ -114,8 +114,7 @@ describe("candidateSkills", () => {
   });
 
   it("names the left-out skills for the notice", () => {
-    expect(leftOutText([])).toBe("");
-    expect(leftOutText(["a", "c"])).toBe("; left out, interactive: a, c");
+    expect(leftOutText(["a", "c"])).toBe("left out as interactive: a, c");
   });
 });
 

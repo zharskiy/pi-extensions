@@ -9,13 +9,13 @@
     "planner": {
       "skills": [
         "codebase-design",
-        "new-extension"
+        "new-extension",
+        "readme"
       ]
     },
     "reviewer": {
       "skills": [
-        "codebase-design",
-        "readme"
+        "codebase-design"
       ]
     }
   }

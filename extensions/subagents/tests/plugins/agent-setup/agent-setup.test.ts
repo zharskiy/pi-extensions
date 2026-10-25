@@ -245,15 +245,15 @@ describe("/agents setup form", () => {
   });
 });
 
-const autosetup = (options: { trusted?: boolean; seeded?: boolean } = {}) => {
+const autosetup = ({ plain, ...options }: { trusted?: boolean; seeded?: boolean; plain?: boolean } = {}) => {
   const harness = setup({ seeded: false, ...options });
   const { host, runtime } = harness;
   const skillsDir = tempDir();
   const asker = join(skillsDir, "asker", "SKILL.md");
 
   writeJson(asker, "---\nname: asker\ndescription: Plans\n---\nUse AskUserQuestion before planning.\n");
-  runtime.skills = ["docs", "search", "asker"];
-  runtime.skillPaths = { asker };
+  runtime.skills = plain ? ["docs", "search"] : ["docs", "search", "asker"];
+  runtime.skillPaths = plain ? {} : { asker };
 
   const propose = (params: ProposalParams) =>
     host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, { update: () => {} });
@@ -294,9 +294,17 @@ describe("/agents setup autosetup", () => {
     expect(brief).toContain("- docs (no description)");
     expect(brief).not.toContain("asker");
     expect(brief).not.toContain("{{");
-    expect(noticesOf("info")).toEqual([
-      "pi-subagents: asked the main session to propose agent skills; the form opens when it answers; left out, interactive: asker",
-    ]);
+    expect(noticesOf("info")).toEqual(["pi-subagents: left out as interactive: asker"]);
+  });
+
+  it("sends the brief without a notice when no skill is left out", async () => {
+    const { host, noticesOf } = autosetup({ plain: true });
+
+    await host.runCommand("agents", "setup");
+
+    expect(host.hidden).toHaveLength(1);
+    expect(host.notices).toEqual([]);
+    expect(noticesOf("info")).toEqual([]);
   });
 
   it("asks first when an override exists, with nothing focused", async () => {
@@ -430,12 +438,11 @@ describe("agent_skills_proposal", () => {
     expect(isError).toBeUndefined();
     expect(text).toContain(`Saved to ${projectFile}: reviewer skills [search, docs].`);
     expect(text).toContain(NEW_SESSION_HINT);
+    expect(text).toContain("/new");
     expect(readJson(projectFile)).toEqual({ agents: { reviewer: { skills: ["search", "docs"] } } });
     expect(definition("reviewer")?.skills).toEqual(["search", "docs"]);
     expect(awaiting()).toEqual([true, false]);
-    expect(noticesOf("info").at(-1)).toBe(
-      `pi-subagents: saved reviewer (skills) to ${projectFile}; ${APPLIES}; ${NEW_SESSION_HINT}`,
-    );
+    expect(noticesOf("info").filter((message) => message.includes("saved"))).toEqual([]);
   });
 
   it("opens no form when the proposal changes nothing", async () => {

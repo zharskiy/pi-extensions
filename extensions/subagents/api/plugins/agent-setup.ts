@@ -18,7 +18,6 @@ import {
   CANCELLED,
   CONFIRMED_UNCHANGED,
   checkProposal,
-  NEW_SESSION_HINT,
   NOT_INTERACTIVE,
   NOT_PENDING,
   NOTHING_TO_CHANGE,
@@ -70,7 +69,7 @@ export const agentSetupPlugin: Plugin = {
     const notify = (message: string, level: "info" | "warning" | "error") =>
       host.ui.notify(`${NAMESPACE}: ${message}`, level);
 
-    const save = (scope: Scope, changes: SetupChange[], suffix = ""): SaveOutcome => {
+    const save = (scope: Scope, changes: SetupChange[], announce = true): SaveOutcome => {
       const info = host.session();
       const paths = settingsPaths(info);
 
@@ -89,10 +88,13 @@ export const agentSetupPlugin: Plugin = {
       }
 
       definitions.reload();
-      notify(
-        `saved ${changeSummary(changes)} to ${paths[scope]}; agents started from now on use it${suffix}`,
-        "info",
-      );
+
+      if (announce) {
+        notify(
+          `saved ${changeSummary(changes)} to ${paths[scope]}; agents started from now on use it`,
+          "info",
+        );
+      }
 
       const shadowed =
         scope === "user" && info.projectTrusted ? overriddenFields(paths.project, changes) : [];
@@ -167,10 +169,9 @@ export const agentSetupPlugin: Plugin = {
 
       pending = { candidates: candidates.map((skill) => skill.name), interactive };
 
-      notify(
-        `asked the main session to propose agent skills; the form opens when it answers${leftOutText(interactive)}`,
-        "info",
-      );
+      if (interactive.length > 0) {
+        notify(leftOutText(interactive), "info");
+      }
     };
 
     const runForm = async () => {
@@ -292,7 +293,7 @@ export const agentSetupPlugin: Plugin = {
           return { text: CONFIRMED_UNCHANGED };
         }
 
-        const outcome = save(result.scope, result.changes, `; ${NEW_SESSION_HINT}`);
+        const outcome = save(result.scope, result.changes, false);
 
         return "error" in outcome
           ? failed(`Not saved: ${outcome.error}.`)
