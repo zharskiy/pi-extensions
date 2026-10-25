@@ -164,11 +164,11 @@ describe("/agents setup form", () => {
   it("groups leads before chores, shipped before own, each by name", async () => {
     const { host, userFile, openForm, services } = setup();
     const agents = join(host.info.agentDir, "agents");
-    const agentFile = (name: string) =>
-      `---\nname: ${name}\ndescription: Own ${name}.\nlimit: 100000\ntools: []\nskills: []\nsubagents: []\n---\nWork.\n`;
+    const agentFile = (name: string, subagents: string) =>
+      `---\nname: ${name}\ndescription: Own ${name}.\nlimit: 100000\ntools: []\nskills: []\nsubagents: ${subagents}\n---\nWork.\n`;
 
-    writeJson(join(agents, "aardvark.md"), agentFile("aardvark"));
-    writeJson(join(agents, "chores", "abacus.md"), agentFile("abacus"));
+    writeJson(join(agents, "aardvark.md"), agentFile("aardvark", "[scout]"));
+    writeJson(join(agents, "abacus.md"), agentFile("abacus", "[]"));
     writeJson(userFile, SEEDED);
     services.require("definitions").reload();
 
@@ -349,7 +349,7 @@ describe("/agents setup autosetup", () => {
 
     expect(brief).toContain("- reviewer: ");
     expect(brief).toContain("- implementer: ");
-    expect(brief).not.toContain("- general: ");
+    expect(brief).toContain("- general: ");
     expect(brief).not.toContain("- scout: ");
     expect(brief).toContain("- docs (no description)");
     expect(brief).not.toContain("asker");
@@ -420,7 +420,7 @@ describe("/agents setup autosetup", () => {
     expect(host.hidden).toHaveLength(1);
   });
 
-  it("never briefs about general, even with a skills list override", async () => {
+  it("asks first when general has a skills override and briefs its overridden list", async () => {
     const { host, userFile, services } = autosetup();
 
     writeJson(userFile, { agents: { general: { skills: ["docs"] } } });
@@ -432,8 +432,9 @@ describe("/agents setup autosetup", () => {
     host.form().press(key("enter"));
     await run;
 
+    expect(host.forms).toHaveLength(1);
     expect(host.hidden).toHaveLength(1);
-    expect(host.hidden[0]?.message.text).not.toContain("- general: ");
+    expect(host.hidden[0]?.message.text).toMatch(/^- general: .* \| skills: docs$/m);
   });
 
   it("does not count an override in an untrusted project's file", async () => {
@@ -484,7 +485,7 @@ describe("agent_skills_proposal", () => {
     });
 
     expect(refused.isError).toBe(true);
-    expect(refused.text).toContain("general is not set up here");
+    expect(refused.text).not.toContain("general is not set up here");
     expect(refused.text).toContain("scout is not set up here");
     expect(refused.text).toContain('no agent named "nobody"');
     expect(refused.text).toContain('"asker" asks the user; agents cannot use it');

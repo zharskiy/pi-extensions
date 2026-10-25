@@ -9,7 +9,8 @@ Rules, in this order:
 2. For each lead, pick the skills that fit its job in this kind of project: at most five, ordered from most to least useful.
 3. Prefer skills marked [project]. Prefer fewer. A skill fits when its description names the lead's job or this project's stack. Keep a current skill only if it still fits.
 4. Give full lists, not changes: the list you give replaces the lead's current one.
-5. Never pick a skill whose description implies asking the user something; agents cannot ask anyone.
+5. A lead whose skills are `all` keeps every skill when you leave it out of the call; give it a list only when a narrower one fits its job better.
+6. Never pick a skill whose description implies asking the user something; agents cannot ask anyone.
 
 Answer by calling agent_skills_proposal once with the project line, one assignment per lead whose list should change, and one reason line per proposed skill. Use only the lead and skill names below. Do not write any file and do not run /agents setup; the tool opens a form the user confirms. If the tool refuses, fix the call as the message says and call it again. Afterwards tell the user what was saved, from the tool's result.
 

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { unknownSkillsProblem } from "../model/agent-override.ts";
 import {
   type AgentDefinition,
@@ -74,8 +74,6 @@ export const parseDefinition = (
       prompt: body,
       source: dir.source,
       path,
-      relativePath: relative(dir.path, path),
-      fileSkills: frontmatter.skills,
     },
   };
 };

@@ -11,8 +11,8 @@ extensions/subagents/
 ├── ARCHITECTURE.md                        # runtime behaviour
 ├── STRUCTURE.md                           # this file
 ├── agents/                                # shipped agent definitions
-│   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md
-│   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md
+│   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents)
+│   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
@@ -39,7 +39,7 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant, isChore
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
@@ -81,7 +81,7 @@ extensions/subagents/
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
-│   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, isLead, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
+│   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
 │   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs

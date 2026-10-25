@@ -151,15 +151,7 @@ describe("agent definition parsing", () => {
     expect(parsed.errors).toEqual([]);
     expect(parsed.warnings).toEqual([]);
     expect(Object.keys(parsed.definition ?? {}).sort()).toEqual(
-      [
-        ...FRONTMATTER_FIELDS.map((spec) => spec.key),
-        "thinking",
-        "prompt",
-        "source",
-        "path",
-        "relativePath",
-        "fileSkills",
-      ].sort(),
+      [...FRONTMATTER_FIELDS.map((spec) => spec.key), "thinking", "prompt", "source", "path"].sort(),
     );
     expect(parsed.definition).toMatchObject({
       model: undefined,
@@ -329,22 +321,6 @@ describe("agent overrides", () => {
       model: "acme/one",
       thinking: "low",
       skills: ["git"],
-    });
-  });
-
-  it("applies a skills override on a chore and keeps the file's grant", () => {
-    const { list } = dirs();
-    const chores = join(list[0]?.path ?? "", "chores");
-
-    writeAgent(chores, "c.md", agentFile("c", "chore", "subagents: []\nskills: [docs]"));
-
-    const result = loadDefinitions(list, check({ c: { skills: ["git"] } }));
-
-    expect(result.notices).toEqual([]);
-    expect(result.definitions.get("c")).toMatchObject({
-      relativePath: join("chores", "c.md"),
-      skills: ["git"],
-      fileSkills: ["docs"],
     });
   });
 
@@ -540,8 +516,6 @@ describe("definition loading", () => {
     expect([...result.definitions.keys()].sort()).toEqual(["helper", "scout", "twin"]);
     expect(result.definitions.get("scout")?.path).toBe(join(builtin, "chores", "scout.md"));
     expect(result.definitions.get("helper")?.path).toBe(join(user, "team", "nested", "helper.md"));
-    expect(result.definitions.get("scout")?.relativePath).toBe(join("chores", "scout.md"));
-    expect(result.definitions.get("helper")?.relativePath).toBe(join("team", "nested", "helper.md"));
     expect(result.definitions.get("twin")?.description).toBe("second twin");
     expect(result.warnings).toEqual([
       {

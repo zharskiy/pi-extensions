@@ -8,7 +8,6 @@ import {
   autosetupBrief,
   candidateSkills,
   hasSkillsOverride,
-  isLead,
   projectListing,
 } from "../../core/agent-setup/autosetup.ts";
 import { CREATE_USAGE, createAgentCommand } from "../../core/agent-setup/create.ts";
@@ -28,7 +27,7 @@ import {
 } from "../../core/agent-setup/proposal.ts";
 import type { Scope, SetupChange } from "../../core/agent-setup/scope.ts";
 import { overriddenFields, writeChanges } from "../../core/agent-setup/write.ts";
-import { type AgentDefinition, isChore } from "../../core/model/agent-record.ts";
+import { type AgentDefinition, isLead } from "../../core/model/agent-record.ts";
 import { INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import { resolutionProblem } from "../../core/model/model-resolution.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
@@ -38,7 +37,7 @@ import type { SetupContext } from "../../ui/agent-setup/form.ts";
 import { setupForm } from "../../ui/agent-setup/setup-overlay.ts";
 
 const setupOrder = (left: AgentDefinition, right: AgentDefinition) =>
-  Number(isChore(left.relativePath)) - Number(isChore(right.relativePath)) ||
+  Number(!isLead(left)) - Number(!isLead(right)) ||
   Number(left.source !== "builtin") - Number(right.source !== "builtin") ||
   left.name.localeCompare(right.name);
 
@@ -123,7 +122,7 @@ export const agentSetupPlugin: Plugin = {
           const proposed = proposal?.lists[definition.name];
           const agent = {
             name: definition.name,
-            role: isChore(definition.relativePath) ? ("chore" as const) : ("lead" as const),
+            role: isLead(definition) ? ("lead" as const) : ("chore" as const),
             description: definition.description,
             tools: definition.tools,
             mcp: definition.mcp !== false,
@@ -145,7 +144,7 @@ export const agentSetupPlugin: Plugin = {
     const chores = () =>
       definitions
         .list()
-        .filter((definition) => isChore(definition.relativePath))
+        .filter((definition) => !isLead(definition))
         .map((definition) => definition.name);
 
     const startAutosetup = (info: SessionInfo) => {

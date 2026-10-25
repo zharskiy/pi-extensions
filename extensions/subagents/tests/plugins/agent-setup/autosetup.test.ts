@@ -8,24 +8,21 @@ import {
   candidateSkills,
   hasSkillsOverride,
   INTERACTIVE_TERMS,
-  isLead,
   projectListing,
 } from "../../../core/agent-setup/autosetup.ts";
-import { type AgentDefinition, isChore } from "../../../core/model/agent-record.ts";
+import { type AgentDefinition, isLead } from "../../../core/model/agent-record.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
 const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
   ({
-    fileSkills: patch.fileSkills ?? patch.skills ?? [],
     description: `${patch.name} does its job`,
     limit: 100_000,
     tools: ["read", "bash"],
     skills: [],
-    subagents: [],
+    subagents: ["scout"],
     prompt: "",
     source: "builtin",
     path: `/pkg/agents/leads/${patch.name}.md`,
-    relativePath: `leads/${patch.name}.md`,
     ...patch,
   }) as AgentDefinition;
 
@@ -37,45 +34,32 @@ const skill = (name: string, patch: Partial<SkillInfo> = {}): SkillInfo => ({
   ...patch,
 });
 
-describe("isChore", () => {
-  it("is true only for a chores directory segment", () => {
-    expect(isChore(join("chores", "scout.md"))).toBe(true);
-    expect(isChore("chores\\mine.md")).toBe(true);
-    expect(isChore("team/chores/mine.md")).toBe(true);
-    expect(isChore(join("leads", "reviewer.md"))).toBe(false);
-    expect(isChore("mine.md")).toBe(false);
-    expect(isChore("chores.md")).toBe(false);
-  });
-});
-
 describe("isLead", () => {
-  it("leaves out agents under a chores folder of their agents dir", () => {
-    expect(isLead(definition({ name: "reviewer", relativePath: join("leads", "reviewer.md") }))).toBe(true);
-    expect(isLead(definition({ name: "mine", relativePath: "mine.md" }))).toBe(true);
-    expect(isLead(definition({ name: "scout", relativePath: join("chores", "scout.md") }))).toBe(false);
+  it("is true for an agent that may start subagents", () => {
+    expect(isLead(definition({ name: "reviewer", subagents: ["scout", "shell"] }))).toBe(true);
+    expect(isLead(definition({ name: "boss", subagents: "all" }))).toBe(true);
+    expect(isLead(definition({ name: "scout", subagents: [] }))).toBe(false);
   });
 
-  it("does not count a chores folder above the agents dir", () => {
-    const dir = join(tempDir(), "chores", "agents");
-
-    mkdirSync(join(dir, "leads"), { recursive: true });
-    writeFileSync(
-      join(dir, "leads", "mine.md"),
-      "---\nname: mine\ndescription: d\nlimit: 50000\ntools: []\nskills: []\nsubagents: []\n---\n",
-    );
-
-    const loaded = loadDefinitions([{ path: dir, source: "project" }]).definitions.get("mine");
-
-    expect(loaded && isLead(loaded)).toBe(true);
+  it("counts an agent with every skill as a lead", () => {
+    expect(isLead(definition({ name: "general", skills: "all" }))).toBe(true);
   });
 
-  it("leaves out an agent with every skill", () => {
-    expect(isLead(definition({ name: "general", skills: "all" }))).toBe(false);
-  });
+  it("ignores the folder the agent file sits in", () => {
+    const dir = tempDir();
+    const file = (name: string, subagents: string) =>
+      `---\nname: ${name}\ndescription: d\nlimit: 50000\ntools: []\nskills: []\nsubagents: ${subagents}\n---\n`;
 
-  it("judges the grant of the agent file, not the overridden one", () => {
-    expect(isLead(definition({ name: "general", fileSkills: "all", skills: ["docs"] }))).toBe(false);
-    expect(isLead(definition({ name: "reviewer", fileSkills: [], skills: "all" }))).toBe(true);
+    mkdirSync(join(dir, "chores"), { recursive: true });
+    writeFileSync(join(dir, "chores", "mine.md"), file("mine", "[helper]"));
+    writeFileSync(join(dir, "helper.md"), file("helper", "[]"));
+
+    const loaded = loadDefinitions([{ path: dir, source: "project" }]).definitions;
+
+    expect([loaded.get("mine"), loaded.get("helper")].map((entry) => entry && isLead(entry))).toEqual([
+      true,
+      false,
+    ]);
   });
 });
 
@@ -151,7 +135,10 @@ describe("autosetupBrief", () => {
     template: "{{project}}#{{listing}}#{{leads}}#{{skills}}#{{other}}",
     cwd: "/work/app",
     listing: "src/",
-    leads: [definition({ name: "reviewer", skills: ["docs"] })],
+    leads: [
+      definition({ name: "reviewer", skills: ["docs"] }),
+      definition({ name: "general", skills: "all" }),
+    ],
     candidates: [
       skill("docs", { scope: "project" }),
       skill("empty", { description: "" }),
@@ -164,7 +151,10 @@ describe("autosetupBrief", () => {
 
     expect(project).toBe("app (/work/app)");
     expect(listing).toBe("src/");
-    expect(leads).toBe("- reviewer: reviewer does its job | tools: read, bash | skills: docs");
+    expect(leads?.split("\n")).toEqual([
+      "- reviewer: reviewer does its job | tools: read, bash | skills: docs",
+      "- general: general does its job | tools: read, bash | skills: all (every skill of its caller)",
+    ]);
     expect(skills?.split("\n")).toEqual([
       "- docs [project]: docs helps",
       "- empty (no description)",

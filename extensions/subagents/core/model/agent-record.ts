@@ -84,6 +84,8 @@ export const allowlist = (grant: Grant): string[] | undefined =>
 
 export const isNone = (grant: Grant) => grant !== AGENT_SCOPE_ALL && grant.length === 0;
 
+export const isLead = (definition: Pick<AgentDefinition, "subagents">) => !isNone(definition.subagents);
+
 export const grantText = (grant: Grant) => (grant === AGENT_SCOPE_ALL ? AGENT_SCOPE_ALL : grant.join(", "));
 
 export const grantOrNone = (grant: Grant) => grantText(grant) || "none";
@@ -103,11 +105,7 @@ export type AgentInternals = {
   prompt: string;
   source: AgentSource;
   path: string;
-  relativePath: string;
-  fileSkills: Grant;
 };
-
-export const isChore = (relativePath: string) => relativePath.split(/[\\/]/).slice(0, -1).includes("chores");
 
 export type AgentDefinition = AgentFrontmatter & AgentInternals;
 

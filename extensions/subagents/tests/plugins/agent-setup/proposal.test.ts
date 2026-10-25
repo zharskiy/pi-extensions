@@ -12,7 +12,7 @@ import {
 import { PACKAGE_ROOT } from "../../support/subagents-harness.ts";
 
 const KNOWN = {
-  agents: ["general", "planner", "reviewer", "scout"],
+  agents: ["editor", "planner", "reviewer", "scout"],
   leads: ["planner", "reviewer"],
   skills: ["docs", "search", "lint", "tests", "git", "ci"],
   interactive: ["asker"],
@@ -64,13 +64,13 @@ describe("checkProposal", () => {
 
   it("refuses non-leads without saying why", () => {
     const result = proposal([
-      { lead: "general", skills: [] },
+      { lead: "editor", skills: [] },
       { lead: "scout", skills: [] },
     ]);
 
     expect(result).toHaveProperty("error");
     expect("error" in result && result.error).toContain(
-      "general is not set up here; scout is not set up here",
+      "editor is not set up here; scout is not set up here",
     );
     expect("error" in result && result.error).not.toContain("chore");
   });

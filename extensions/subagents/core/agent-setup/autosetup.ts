@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import type { SkillInfo } from "../../../../platform/pi-adapter/index.ts";
 import { errorText, readText } from "../../../../platform/shared/index.ts";
 import { cutChars } from "../components/receipt.ts";
-import { type AgentDefinition, grantOrNone, isChore } from "../model/agent-record.ts";
+import { type AgentDefinition, grantOrNone } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL, type AgentOverrides } from "../model/agent-schema.ts";
 import { fillTemplate } from "./template.ts";
 
@@ -32,9 +32,6 @@ type BriefInput = {
   leads: AgentDefinition[];
   candidates: SkillInfo[];
 };
-
-export const isLead = (definition: AgentDefinition) =>
-  definition.fileSkills !== AGENT_SCOPE_ALL && !isChore(definition.relativePath);
 
 export const hasSkillsOverride = (agents: AgentOverrides, chores: string[]) =>
   Object.entries(agents).some(([name, override]) => override.skills !== undefined && !chores.includes(name));
@@ -72,8 +69,13 @@ export const projectListing = (cwd: string, limit = LISTING_LIMIT) => {
   }
 };
 
+const skillsText = (lead: AgentDefinition) =>
+  lead.skills === AGENT_SCOPE_ALL
+    ? `${AGENT_SCOPE_ALL} (every skill of its caller)`
+    : grantOrNone(lead.skills);
+
 const leadLine = (lead: AgentDefinition) =>
-  `- ${lead.name}: ${lead.description} | tools: ${grantOrNone(lead.tools)} | skills: ${grantOrNone(lead.skills)}`;
+  `- ${lead.name}: ${lead.description} | tools: ${grantOrNone(lead.tools)} | skills: ${skillsText(lead)}`;
 
 const skillLine = (skill: SkillInfo) => {
   const name = skill.scope === "project" ? `${skill.name} [project]` : skill.name;

@@ -9,7 +9,7 @@ Research date: 2026-10-22, revised 2026-10-25. Question: how to give each lead a
 ## Summary
 
 1. **Release 1 is `/agents setup`, made smart.** There is one setup feature, not two. When the user runs `/agents setup` and no agent on this machine has a skills override yet, the command asks the main session for a proposal straight away and opens the setup form with it filled in. When some agent already has an override, the command first asks "Propose skills automatically? Yes / No" with Yes preselected, and opens the plain form on No. The user runs it whenever they want. Nothing runs on its own.
-2. **Leads only, and the model never hears of chores.** The folder decides: the shipped agents live in `agents/leads/` and `agents/chores/`, the loader walks subfolders of every agents dir, and each definition keeps its file path. An agent whose path, relative to the agents dir it was loaded from, has a `chores` directory segment is a chore; every other agent is a lead. The brief lists leads only, the tool accepts leads only. `general`'s file has `skills: all`, so it is never a lead here, whatever an override says. The main session's own skills are not touched.
+2. **Leads only, and the model never hears of chores.** The `subagents` grant decides: an agent that may start subagents (`subagents` not none, `all` included) is a lead, every other agent is a chore. Leads are the agents that delegate, so they are the ones whose skills shape the work; the folder an agent file sits in plays no part (release 1 used a `chores` path segment, which misclassified user-created agents). The brief lists leads only, the tool accepts leads only. `general` is a lead; its `skills: all` is kept unless the main session proposes a narrower list. The main session's own skills are not touched.
 3. **Skills are taken as they are, minus the ones agents cannot use.** The inputs are the inventory pi already builds at session start (name, description, scope, path of every skill on the machine) and a glance at the project. No frontmatter keys, no catalogue conventions. Skills whose body names an interactive tool (AskUserQuestion, questionnaire and the like) are filtered out before the brief, because agents cannot ask anyone anything. Project-level skills are marked and preferred.
 4. **The model judges, the user decides, the extension writes.** The brief tells the main session to say what kind of project this is first, then to pick at most five skills per lead, most useful first. It answers through a model-only tool. The tool validates, opens the setup form with the proposal in place and marked against the current lists, and on confirm writes through the path the form uses today: `.pi/pi-subagents.json` in a trusted project, then `definitions.reload()`, then one notice. The model never writes the file.
 5. **Automatic re-runs are release 2, if ever.** The 2026-10-22 design (session-start reconcile, record, three-way merge, modes) is kept below as a sketch and in git history.
@@ -21,7 +21,7 @@ After release 1 the setup form changed on the same branch:
 
 - The tab bar has a `Leads` row and a `Chores` row (ui-kit `groupedTabBar`), Submit closing the last; leads come first.
 - `/agents setup` never changes a chore's skills: a chore's tab edits model and thinking and shows its skills as a fixed row, the one-line form refuses `skills=` on a chore, and a chore's own skills override does not trigger the Yes/No question. Existing chore overrides keep applying.
-- Leads are judged by the agent file's grant (`fileSkills`), not the overridden one, so overriding `general` to a list never makes it a lead and overriding a lead to `all` never drops it.
+- A lead is an agent whose `subagents` grant is not none (`isLead` in `core/model/agent-record.ts`), replacing the `chores` path segment and the file `skills` grant. Overrides carry no `subagents`, so they never change the role. `general` joins autosetup: its brief line reads `skills: all (every skill of its caller)` and the prompt says a lead with `all` keeps it when left out and gets a list only when a narrower one fits better.
 - The skills picker has an explicit, exclusive `all` row for every lead, ticked when the agent has `all`; it replaces "an `all` draft opens with nothing ticked and keeps `all` unless a box changed".
 - The model, thinking and skills pickers filter as you type; the `a`/`n` shortcuts are gone from the setup form.
 
@@ -46,7 +46,7 @@ The one-line form `/agents setup <agent> model=… skills=…` is unchanged. The
 
 In the extension, with no model call:
 
-- **Leads** from `definitions.list()`: agents whose `path` has no `chores` directory segment and whose `skills` grant is a list. Each with name, description, tools, current skills. Chores and `all`-grant agents are not mentioned anywhere in the brief. A user or project agent put under a `chores/` subfolder of its agents dir is a chore too; one placed at the top level is a lead.
+- **Leads** from `definitions.list()`: agents whose `subagents` grant is not none. Each with name, description, tools, current skills (`all (every skill of its caller)` for an `all` grant). Chores are not mentioned anywhere in the brief. Where the agent file sits does not matter.
 - **Candidate skills** from `runtime.skillCatalog()`, which gains `scope` (`project`, `user` or `temporary`, taken from the resolved resource's metadata, not from pi's `sourceInfo.scope`, which marks most discovered skills `temporary`) and `path`. Then the interactive filter: the extension reads each SKILL.md body and drops a skill that names an interactive tool or a user prompt. The term list is one constant in the extension (`AskUserQuestion`, `questionnaire`, `ask the user`, `ask_user`, and whatever the owner adds); a match is dropped silently. A skill with an empty description is listed by name alone and said to be so.
 - **The project**: cwd basename and its top-level entries (names only, bounded). The main session has `read` and `ls` and is invited to look at manifests and the tree itself.
 
@@ -106,8 +106,8 @@ The full version is this README as committed on 2026-10-22 (`git log -- future-p
 
 ## Out of scope
 
-- **Chores.** Never in the brief, never accepted by the tool, their skills fixed in the form (model and thinking stay editable). The chore test is the `chores` folder in the agent's path; a chore that one day wants skills is a release 2 question.
-- **The main session.** Its own skill list is pi's `<skills>` section and the skills-in-main-session folder. `general` (`skills: all`) is excluded by its file grant; the form still lets the user tick a subset or `all` for it.
+- **Chores.** Never in the brief, never accepted by the tool, their skills fixed in the form (model and thinking stay editable). A chore is an agent with `subagents` none; a chore that one day wants skills is a release 2 question.
+- **The main session.** Its own skill list is pi's `<skills>` section and the skills-in-main-session folder. `general` is a lead like the others; it keeps `skills: all` unless a narrower list is proposed, and the form lets the user tick a subset or `all` for it.
 - **Claude Code files.** Not read. If pi ever discovers Claude Code skills, they enter the inventory like any other skill and release 1 handles them with no change here.
 - **Catalogue conventions.** No `pi-agents`, `pi-match` or `pi-replaces` metadata. Skills are judged by their descriptions.
 - **Project packages, `pi update`, marketplaces.** How skills arrive on the machine is pi's and the user's business.
@@ -118,14 +118,14 @@ The full version is this README as committed on 2026-10-22 (`git log -- future-p
 All settled on 2026-10-25:
 
 - One feature under `/agents setup`; autosetup runs unasked when no agent has a skills override on this machine, otherwise a Yes/No step with Yes preselected.
-- Chores are the agents under a `chores` folder and never reach the model. The segment is checked on the path relative to the agents dir the file was loaded from, so an agents dir that itself sits under a directory named `chores` does not turn every agent into a chore.
+- Chores are the agents whose `subagents` grant is none and never reach the model. The role comes from the grant, not the file's folder, so a user-created agent is classified by what it may do.
 - At most five skills per lead, ordered most useful first, project-level skills preferred, the model classifies the project first.
 - Project signals: the top-level listing only; the main session reads manifests and the tree itself. No manifest parsing in the extension.
 - Interactive filter: tool names plus common phrases (`AskUserQuestion`, `questionnaire`, `ask_user`, "ask the user", "confirm with the user"), case-insensitive, over the SKILL.md body, one constant; every exclusion is named in the notice.
 - Reasons in the form: a "Proposed" line per proposed lead and the project line on the Submit tab.
 - Tool gating: the tool is accepted only while the pending mark is set by `/agents setup`.
 - The mark is in memory; after a save the user is asked to start a new session with `/new`.
-- `general` and the main session untouched; no eval; checked skills first and no re-sorting in the picker.
+- The main session untouched; no eval; checked skills first and no re-sorting in the picker.
 
 ## Delivery order
 
