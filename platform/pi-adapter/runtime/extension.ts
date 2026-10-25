@@ -18,6 +18,7 @@ export const sessionSkillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillF
     .map((command) => ({
       name: command.name.replace(/^skill:/, ""),
       description: command.description ?? "",
+      scope: command.sourceInfo.scope,
       path: command.sourceInfo.path,
     }));
 

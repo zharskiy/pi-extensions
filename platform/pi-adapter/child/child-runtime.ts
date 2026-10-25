@@ -312,8 +312,7 @@ export const createPiRuntime = (
     };
   };
 
-  const skillCatalog = () =>
-    parent.inventorySkillFiles().map(({ name, description }) => ({ name, description }));
+  const skillCatalog = () => parent.inventorySkillFiles().map((file) => ({ ...file }));
 
   return {
     spawn,

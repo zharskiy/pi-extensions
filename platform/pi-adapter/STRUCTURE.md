@@ -23,7 +23,7 @@
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
 - `child/child-runtime.ts`: the runtime that starts child agent sessions.
 - `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource`.
-- `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery.
+- `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery, each with its scope and path.
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
 - `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.

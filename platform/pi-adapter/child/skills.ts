@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import {
   CONFIG_DIR_NAME,
   DefaultPackageManager,
@@ -7,8 +7,9 @@ import {
   type ResolvedResource,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type { SkillInfo } from "../types/messages.ts";
 
-export type SkillFile = { name: string; description: string; path: string };
+export type SkillFile = SkillInfo;
 
 export type SkillScope = { cwd: string; agentDir: string; projectTrusted: boolean };
 
@@ -53,6 +54,20 @@ const skillFilePath = (resource: ResolvedResource) => {
     : resource.path;
 };
 
+const contains = (root: string, path: string) => {
+  const inner = relative(root, path);
+
+  return inner !== ".." && !inner.startsWith(`..${sep}`) && !isAbsolute(inner);
+};
+
+export const resourceScope = (resources: ResolvedResource[], path: string, cwd: string) => {
+  const owner = resources
+    .filter((resource) => contains(resource.path, path))
+    .toSorted((left, right) => right.path.length - left.path.length)[0];
+
+  return owner?.metadata.scope ?? (contains(cwd, path) ? "project" : "user");
+};
+
 export const discoverSkills = async (scope: SkillScope): Promise<SkillFile[]> => {
   const packages = new DefaultPackageManager({
     cwd: scope.cwd,
@@ -63,13 +78,19 @@ export const discoverSkills = async (scope: SkillScope): Promise<SkillFile[]> =>
   });
 
   const resolved = await packages.resolve(async () => "skip");
+  const enabled = resolved.skills.filter((resource) => resource.enabled);
 
   return loadSkills({
     cwd: scope.cwd,
     agentDir: scope.agentDir,
-    skillPaths: resolved.skills.filter((resource) => resource.enabled).map(skillFilePath),
+    skillPaths: enabled.map(skillFilePath),
     includeDefaults: false,
-  }).skills.map((skill) => ({ name: skill.name, description: skill.description, path: skill.filePath }));
+  }).skills.map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    scope: resourceScope(enabled, skill.filePath, scope.cwd),
+    path: skill.filePath,
+  }));
 };
 
 const mergeSkills = (loaded: SkillFile[], discovered: SkillFile[]) => {

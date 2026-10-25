@@ -707,8 +707,8 @@ describe("pi adapter conformance", () => {
       session.dispose();
 
       expect(files.toSorted((left, right) => left.name.localeCompare(right.name))).toEqual([
-        { name: "docs", description: "Writes and fixes docs", path: docs },
-        { name: "review", description: "Reviews diffs for bugs", path: review },
+        { name: "docs", description: "Writes and fixes docs", scope: "user", path: docs },
+        { name: "review", description: "Reviews diffs for bugs", scope: "user", path: review },
       ]);
     });
   });
@@ -759,6 +759,46 @@ describe("pi adapter conformance", () => {
         "project-agents-skill": dirs.projectAgents,
         "user-skill": dirs.user,
         "user-agents-skill": dirs.userAgents,
+      });
+    });
+
+    const scopes = (files: { name: string; scope: string }[]) =>
+      Object.fromEntries(files.map((file) => [file.name, file.scope]));
+
+    it("marks the project's .agents and .pi skills project and the agent dir's skills user", async () => {
+      const dirs = layout();
+      const found = scopes(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(found).toEqual({
+        "project-skill": "project",
+        "project-agents-skill": "project",
+        "user-skill": "user",
+        "user-agents-skill": "user",
+      });
+    });
+
+    it("gives settings entries and packages the scope of the settings file that names them", async () => {
+      const dirs = layout();
+
+      skillAt(join(dirs.cwd, "team-skills"), "team-skill");
+      skillAt(join(dirs.cwd, "pkg", "skills"), "package-skill");
+      skillAt(join(dirs.agentDir, "shared-skills"), "shared-skill");
+      writeFileSync(
+        join(dirs.cwd, ".pi", "settings.json"),
+        JSON.stringify({ skills: ["../team-skills"], packages: ["../pkg"] }),
+      );
+      writeFileSync(join(dirs.agentDir, "settings.json"), JSON.stringify({ skills: ["shared-skills"] }));
+
+      const found = scopes(
+        await discoverSkills({ cwd: dirs.cwd, agentDir: dirs.agentDir, projectTrusted: true }),
+      );
+
+      expect(found).toMatchObject({
+        "team-skill": "project",
+        "package-skill": "project",
+        "shared-skill": "user",
       });
     });
 

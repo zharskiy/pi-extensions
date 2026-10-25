@@ -1,12 +1,11 @@
 import { basename, join } from "node:path";
 import type { ManagedExtension } from "../../../../platform/extension-manager/index.ts";
-import type { SkillFile } from "../../../../platform/pi-adapter/child/skills.ts";
 import type { EventMap, Plugin } from "../../../../platform/shared/index.ts";
 import { startExtension } from "../../extension-harness.ts";
 import { createFakeHost, createTurnScope } from "../../fake-host.ts";
-import { createLiveAgentRuntime } from "./live-runtime.ts";
+import { createLiveAgentRuntime, type LiveSkillFile } from "./live-runtime.ts";
 
-type LiveRun = { workDir: string; trusted?: boolean; skillFiles?: SkillFile[] };
+type LiveRun = { workDir: string; trusted?: boolean; skillFiles?: LiveSkillFile[] };
 
 type LivePlugins<E extends EventMap, S, C> = LiveRun & {
   plugins: Plugin<E, S, C>[];
