@@ -2,7 +2,7 @@
 
 # footer
 
-**A multi-line status block below the editor: context, cache, cost, model, session total, folder, branch, thinking level.**
+**A three-line status block below the editor: folder, branch, model, thinking level, context, cache, cost and a key-hint row.**
 
 Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
@@ -16,14 +16,15 @@ This extension replaces pi's footer with a status block right below the editor. 
 
 ```
 
- 150.1k · cache 91% · $4.00 · model-name (1M context)
- session total (agents included) 162.4k · $4.42
- my-project git:(feature-branch) • session-name
- thinking high (shift+tab to cycle)
+ my-project on main · session-name                    model-name · thinking high
+ context 8% of 163k · cache 73%                            851.3k tokens · $0.34
+ shift+tab to cycle thinking · ← to list agents
 
  <status text other extensions have set>
 
 ```
+
+Everything is neutral grey: folder, branch, session and model are `muted`, labels and separators `dim`, the context percentage and the total cost plain text. The thinking level carries the one accent, in the colour of its level. Colour otherwise marks state only: the context percentage turns warning at 70 % and error at 90 % of the window.
 
 ## Quick start
 
@@ -36,10 +37,11 @@ Start pi in a git checkout and read the block line by line:
 
 | Try | What you see |
 |---|---|
-| Line 1 | How full the context window is, the cache hit rate, the main session's cost and the model. |
-| Line 2 | Tokens and cost of the whole session, agents included. Hidden until spending reports. |
-| Line 3 | The folder name, the git branch and the session name when one is set. |
-| Press `shift+tab` | The thinking level on line 4 changes. |
+| Line 1 | The folder, the git branch and the session name when one is set, then the model and its thinking level on the right. |
+| Line 2 | How full the context window is and the cache hit rate, then the tokens and cost of the whole session, agents included, on the right (with the main and agents cost split when agents spent something). The right side is hidden until spending reports. |
+| Line 3 | Key hints: how to cycle the thinking level (hidden for a model without reasoning) and how to list agents. The row is left out when it would be empty. |
+| Narrow terminal | Each line drops its least important parts first: session name, thinking level, branch on line 1; token total, `on subscription` shortening to `on sub`, cache, the cost split, then `of <base>` on line 2. |
+| Press `shift+tab` | The thinking level on line 1 changes. |
 
 ## Development
 

@@ -6,7 +6,7 @@ Admission rule: a module lives here only if it imports nothing but node built-in
 - `plugin-contract.ts`: the plugin, disable, bus, service registry, event map and extension paths types.
 - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`.
 - `handoff-document.ts`: the handoff sections and `validateHandoff` (shared by session-limits and subagents).
-- `host-channels.ts`: the busy, awaiting-input, usage and totals channel names, payloads and parsers, `SPENDING_STATUS_KEY`.
+- `host-channels.ts`: the busy, awaiting-input, usage and totals channel names, payloads and parsers, `SPENDING_STATUS_KEY`, `AGENTS_HINT_KEY`.
 - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
 - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows` and the accent `rule`.

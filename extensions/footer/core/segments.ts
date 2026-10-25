@@ -1,5 +1,10 @@
 import type { ContextSnapshot, Host, ModelInfo } from "../../../platform/pi-adapter/index.ts";
-import { SPENDING_STATUS_KEY, type SpendingTotals, sessionCacheHit } from "../../../platform/shared/index.ts";
+import {
+  AGENTS_HINT_KEY,
+  SPENDING_STATUS_KEY,
+  type SpendingTotals,
+  sessionCacheHit,
+} from "../../../platform/shared/index.ts";
 
 export type FooterState = {
   context: ContextSnapshot;
@@ -41,7 +46,21 @@ export const sessionSpend = (totals: SpendingTotals) => {
 
 export const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
   Array.from(statuses)
-    .filter(([key]) => key !== SPENDING_STATUS_KEY)
+    .filter(([key]) => key !== SPENDING_STATUS_KEY && key !== AGENTS_HINT_KEY)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, text]) => text.replace(/\s+/g, " ").trim())
     .filter((text) => text.length > 0);
+
+export const agentsHint = (statuses: ReadonlyMap<string, string>): string | undefined => {
+  const text = statuses.get(AGENTS_HINT_KEY)?.trim();
+
+  return text || undefined;
+};
+
+export type ContextBase = { base: number; warnAt: number; errorAt: number };
+
+export const contextBase = (state: FooterState): ContextBase => ({
+  base: state.context.window,
+  warnAt: state.context.window * 0.7,
+  errorAt: state.context.window * 0.9,
+});

@@ -861,7 +861,7 @@ describe("agents hint status", () => {
   it("is set while the panel shows no rows and unset while it lists any", () => {
     const panel = setup();
 
-    expect(hint(panel)).toContain("← to list agents");
+    expect(hint(panel)).toBe("<dim>← <muted>to list agents");
 
     const record = panel.newAgent();
 
@@ -879,7 +879,7 @@ describe("agents hint status", () => {
 
     vi.advanceTimersByTime(1_002);
 
-    expect(hint(panel)).toContain("← to list agents");
+    expect(hint(panel)).toBe("<dim>← <muted>to list agents");
   });
 
   it("returns when x clears the last lingering failed row", () => {
@@ -894,7 +894,7 @@ describe("agents hint status", () => {
 
     panel.type("x");
 
-    expect(hint(panel)).toContain("← to list agents");
+    expect(hint(panel)).toBe("<dim>← <muted>to list agents");
   });
 
   it("is never set with agent-view disabled", () => {
@@ -953,7 +953,7 @@ describe("agents hint status", () => {
 
     panel.host.start();
 
-    expect(hint(panel)).toContain("← to list agents");
+    expect(hint(panel)).toBe("<dim>← <muted>to list agents");
   });
 
   it("is written only on change", () => {

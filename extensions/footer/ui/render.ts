@@ -13,8 +13,17 @@ import {
   formatWindow,
   type SpendingTotals,
 } from "../../../platform/shared/index.ts";
-import { cachePercentText } from "../../../platform/ui-kit/index.ts";
-import { type FooterState, folderName, sessionSpend, statusLines } from "../core/segments.ts";
+import { keyHints } from "../../../platform/ui-kit/index.ts";
+import {
+  agentsHint,
+  type ContextBase,
+  contextBase,
+  type FooterState,
+  folderName,
+  sessionSpend,
+  statusLines,
+} from "../core/segments.ts";
+import { type Segment, spread } from "./layout.ts";
 
 const LEVEL_TOKENS: Record<string, ThemeToken> = {
   off: "thinkingOff",
@@ -26,96 +35,106 @@ const LEVEL_TOKENS: Record<string, ThemeToken> = {
   max: "thinkingMax",
 };
 
-const looksLikeGauge = (theme: ThemeLike, token: ThemeToken) =>
-  theme.fg(token, "x") === theme.fg("success", "x");
+const NEVER = Number.POSITIVE_INFINITY;
 
-const branchToken = (theme: ThemeLike): ThemeToken =>
-  looksLikeGauge(theme, "syntaxString") ? "syntaxVariable" : "syntaxString";
+const SUBSCRIPTION = " on subscription";
 
-const SPEND: ThemeToken = "text";
+const SUBSCRIPTION_SHORT = " on sub";
 
-const PLACE: ThemeToken = "border";
+const placeSegments = (
+  theme: ThemeLike,
+  cwd: string,
+  branch: string | null,
+  sessionName: string | undefined,
+): Segment[] => [
+  { text: theme.fg("muted", folderName(cwd)), drop: NEVER },
+  ...(branch
+    ? [{ text: `${theme.fg("dim", "on ")}${theme.fg("muted", branch)}`, drop: 3, tight: true }]
+    : []),
+  ...(sessionName ? [{ text: theme.fg("muted", sessionName), drop: 1 }] : []),
+];
 
-const MODEL: ThemeToken = "borderAccent";
-
-const META: ThemeToken = "muted";
-
-const HINT: ThemeToken = "dim";
-
-const contextTokens = (theme: ThemeLike, context: ContextSnapshot) => {
-  if (context.tokens === null) {
-    return theme.fg(META, "?");
-  }
-
-  const text = formatTokens(context.tokens);
-  const percent = context.percent ?? 0;
-
-  if (percent > 90) {
-    return theme.fg("error", text);
-  }
-
-  if (percent > 70) {
-    return theme.fg("warning", text);
-  }
-
-  return theme.fg("success", text);
-};
-
-const modelText = (theme: ThemeLike, context: ContextSnapshot, model: ModelInfo | undefined) => {
-  if (!model) {
-    return theme.fg(META, "no model");
-  }
-
-  const window = `(${formatWindow(model.contextWindow || context.window)} context)`;
-
-  return `${theme.fg(MODEL, model.name)} ${theme.fg(META, window)}`;
-};
-
-const cacheSegment = (theme: ThemeLike, percent: number) =>
-  `${theme.fg(META, "cache ")}${cachePercentText(theme, percent)}`;
-
-const statsLine = (theme: ThemeLike, state: FooterState, width: number) => {
-  const join = (cache: number | undefined) =>
-    [
-      contextTokens(theme, state.context),
-      ...(cache === undefined ? [] : [cacheSegment(theme, cache)]),
-      ...(state.totals === undefined ? [] : [theme.fg(SPEND, formatMoney(state.totals.main.cost))]),
-      modelText(theme, state.context, state.model),
-    ].join(theme.fg(META, DOT));
-  const full = join(state.cache);
-
-  return theme.width(`${PAD}${full}`) > width ? join(undefined) : full;
-};
-
-const sessionLine = (theme: ThemeLike, totals: SpendingTotals) => {
-  const { tokens, cost } = sessionSpend(totals);
+const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string): Segment[] => {
+  const level = thinking || "off";
+  const levelText = () =>
+    `${theme.fg("dim", "thinking ")}${theme.fg(LEVEL_TOKENS[level] ?? "thinkingOff", level)}`;
 
   return [
-    theme.fg(META, "session total (agents included) "),
-    theme.fg(SPEND, formatTokens(tokens)),
-    theme.fg(META, DOT),
-    theme.fg(SPEND, formatMoney(cost)),
-    ...(totals.subscription ? [theme.fg(META, " (sub)")] : []),
-  ].join("");
+    { text: theme.fg("muted", model?.name ?? "no model"), drop: NEVER },
+    ...(model && model.reasoning !== false ? [{ text: levelText(), drop: 2 }] : []),
+  ];
 };
 
-const placeLine = (theme: ThemeLike, cwd: string, branch: string | null, sessionName: string | undefined) => {
-  const folder = theme.fg(PLACE, folderName(cwd));
-  const place = branch
-    ? `${folder}${theme.fg(META, " git:(")}${theme.fg(branchToken(theme), branch)}${theme.fg(META, ")")}`
-    : folder;
+const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: ContextBase): Segment[] => {
+  const label = theme.fg("dim", "context");
 
-  return sessionName ? `${place}${theme.fg(META, ` • ${sessionName}`)}` : place;
+  if (context.tokens === null || base.base <= 0) {
+    return [{ text: `${label} ${theme.fg("muted", "?")}`, drop: NEVER }];
+  }
+
+  const percent = `${Math.round((context.tokens / base.base) * 100)}%`;
+  const of = `of ${formatWindow(base.base)}`;
+
+  const tone =
+    context.tokens >= base.errorAt ? "error" : context.tokens >= base.warnAt ? "warning" : undefined;
+  const figure = theme.fg(tone ?? "text", percent);
+
+  return [
+    { text: `${label} ${tone === "error" ? theme.bold(figure) : figure}`, drop: NEVER },
+    { text: theme.fg(tone ?? "dim", of), drop: 5, tight: true },
+  ];
 };
 
-const modeLine = (theme: ThemeLike, model: ModelInfo | undefined, thinking: string, cycleKey: string) => {
-  const name = thinking || "off";
-  const level =
-    model?.reasoning === false
-      ? theme.fg(META, "thinking unavailable")
-      : theme.bold(theme.fg(LEVEL_TOKENS[name] ?? "thinkingOff", `thinking ${name}`));
+const cacheSegments = (theme: ThemeLike, cache: number | undefined): Segment[] =>
+  cache === undefined
+    ? []
+    : [{ text: `${theme.fg("dim", "cache ")}${theme.fg("muted", `${Math.round(cache)}%`)}`, drop: 3 }];
 
-  return `${level} ${theme.fg(HINT, `(${cycleKey} to cycle)`)}`;
+const totalSegment = (theme: ThemeLike, totals: SpendingTotals, labelled: boolean): Segment => {
+  const { subscription } = totals;
+  const figure = theme.fg(subscription ? "muted" : "text", formatMoney(sessionSpend(totals).cost));
+  const form = (label: boolean, suffix: string) =>
+    `${figure}${label ? theme.fg("dim", " total") : ""}${suffix ? theme.fg("dim", suffix) : ""}`;
+  const tail = subscription ? SUBSCRIPTION_SHORT : "";
+
+  const plain = { text: form(false, tail), drop: NEVER };
+  const labelledForm = labelled ? { text: form(true, tail), drop: 4, next: plain } : plain;
+
+  return subscription ? { text: form(labelled, SUBSCRIPTION), drop: 2, next: labelledForm } : labelledForm;
+};
+
+const moneySegments = (theme: ThemeLike, totals: SpendingTotals | undefined): Segment[] => {
+  if (!totals) {
+    return [];
+  }
+
+  const agentsCost = totals.sources.reduce((sum, spend) => sum + spend.cost, 0);
+  const tokens = {
+    text: `${theme.fg("muted", formatTokens(sessionSpend(totals).tokens))}${theme.fg("dim", " tokens")}`,
+    drop: 1,
+  };
+  const split = {
+    text: [
+      `${theme.fg("muted", formatMoney(totals.main.cost))}${theme.fg("dim", " main")}`,
+      `${theme.fg("muted", formatMoney(agentsCost))}${theme.fg("dim", " agents")}`,
+    ].join(theme.fg("dim", DOT)),
+    drop: 4,
+  };
+
+  return agentsCost > 0
+    ? [tokens, split, totalSegment(theme, totals, true)]
+    : [tokens, totalSegment(theme, totals, false)];
+};
+
+const hintRow = (theme: ThemeLike, state: FooterState, hint: string | undefined, width: number) => {
+  const cycle: Segment[] =
+    state.model && state.model.reasoning !== false
+      ? [{ text: keyHints([[state.cycleKey, "to cycle thinking"]], theme), drop: 1 }]
+      : [];
+  const agents: Segment[] = hint ? [{ text: hint, drop: 2 }] : [];
+  const row = [...cycle, ...agents];
+
+  return row.length === 0 ? [] : [spread(theme, row, [], width)];
 };
 
 export const renderFooter = (
@@ -124,12 +143,17 @@ export const renderFooter = (
   data: FooterData,
   width = Number.POSITIVE_INFINITY,
 ) => {
+  const room = width - PAD.length;
   const status = statusLines(data.statuses);
+  const place = placeSegments(theme, state.cwd, data.branch, state.sessionName);
+  const context = [
+    ...contextSegments(theme, state.context, contextBase(state)),
+    ...cacheSegments(theme, state.cache),
+  ];
   const lines = [
-    statsLine(theme, state, width),
-    ...(state.totals ? [sessionLine(theme, state.totals)] : []),
-    placeLine(theme, state.cwd, data.branch, state.sessionName),
-    modeLine(theme, state.model, state.thinking, state.cycleKey),
+    spread(theme, place, modelSegments(theme, state.model, state.thinking), room),
+    spread(theme, context, moneySegments(theme, state.totals), room),
+    ...hintRow(theme, state, agentsHint(data.statuses), room),
     ...(status.length > 0 ? ["", ...status] : []),
   ];
 

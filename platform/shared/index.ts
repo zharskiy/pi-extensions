@@ -13,6 +13,7 @@ export {
 } from "./format.ts";
 export { type HandoffValidation, validateHandoff } from "./handoff-document.ts";
 export {
+  AGENTS_HINT_KEY,
   AWAITING_INPUT_CHANNEL,
   BUSY_CHANNEL,
   parseAwaitingInput,

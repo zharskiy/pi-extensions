@@ -65,6 +65,8 @@ export const parseUsageReport = (data: unknown): UsageReport | undefined => {
 
 export const SPENDING_STATUS_KEY = "pi-spending";
 
+export const AGENTS_HINT_KEY = "pi-subagents";
+
 export const TOTALS_CHANNEL = "spending:totals";
 
 type Spend = { cost: number; tokens: number };
