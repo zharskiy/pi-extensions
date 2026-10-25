@@ -5,7 +5,6 @@ import { AWAITING_INPUT_CHANNEL } from "../../../../platform/shared/index.ts";
 import { type SelectOption, selectForm } from "../../../../platform/ui-kit/index.ts";
 import {
   AUTOSETUP_TYPE,
-  agentDirs,
   autosetupBrief,
   candidateSkills,
   hasSkillsOverride,
@@ -66,7 +65,7 @@ export const agentSetupPlugin: Plugin = {
     const createPrompt = readFileSync(join(root, "prompts", "create-agent.md"), "utf8").trim();
     const autosetupPrompt = readFileSync(join(root, "prompts", "autosetup-skills.md"), "utf8").trim();
 
-    let pending: { candidates: string[] } | undefined;
+    let pending: { candidates: string[]; interactive: string[] } | undefined;
 
     const notify = (message: string, level: "info" | "warning" | "error") =>
       host.ui.notify(`${NAMESPACE}: ${message}`, level);
@@ -138,14 +137,10 @@ export const agentSetupPlugin: Plugin = {
       project: proposal?.project,
     });
 
-    const leads = (info: SessionInfo) => {
-      const dirs = agentDirs(info, root);
-
-      return definitions.list().filter((definition) => isLead(definition, dirs));
-    };
+    const leads = () => definitions.list().filter(isLead);
 
     const startAutosetup = (info: SessionInfo) => {
-      const leadAgents = leads(info);
+      const leadAgents = leads();
 
       if (leadAgents.length === 0) {
         notify("no lead agents to set up", "info");
@@ -170,7 +165,7 @@ export const agentSetupPlugin: Plugin = {
         }),
       });
 
-      pending = { candidates: candidates.map((skill) => skill.name) };
+      pending = { candidates: candidates.map((skill) => skill.name), interactive };
 
       notify(
         `asked the main session to propose agent skills; the form opens when it answers${leftOutText(interactive)}`,
@@ -247,9 +242,7 @@ export const agentSetupPlugin: Plugin = {
     const awaitingInput = (waiting: boolean) =>
       host.publish(AWAITING_INPUT_CHANNEL, { source: NAMESPACE, waiting, title: "agent skills" });
 
-    const reviewProposal = async (proposal: Proposal, signal?: AbortSignal) => {
-      const info = host.session();
-
+    const reviewProposal = async (info: SessionInfo, proposal: Proposal, signal?: AbortSignal) => {
       awaitingInput(true);
 
       try {
@@ -274,8 +267,9 @@ export const agentSetupPlugin: Plugin = {
 
         const proposal = checkProposal(params, {
           agents: definitions.list().map((definition) => definition.name),
-          leads: leads(info).map((definition) => definition.name),
+          leads: leads().map((definition) => definition.name),
           skills: pending.candidates,
+          interactive: pending.interactive,
         });
 
         if ("error" in proposal) {
@@ -288,7 +282,7 @@ export const agentSetupPlugin: Plugin = {
           return { text: NOTHING_TO_CHANGE };
         }
 
-        const result = await reviewProposal(proposal, signal);
+        const result = await reviewProposal(info, proposal, signal);
 
         if (!result) {
           return { text: CANCELLED };

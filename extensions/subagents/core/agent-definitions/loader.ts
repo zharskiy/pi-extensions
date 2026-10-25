@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { unknownSkillsProblem } from "../model/agent-override.ts";
 import {
   type AgentDefinition,
@@ -43,7 +43,7 @@ const definedText = (values: (string | undefined)[]) =>
 export const parseDefinition = (
   source: string,
   path: string,
-  origin: AgentSource,
+  dir: DefinitionDir,
 ): { definition?: AgentDefinition; errors: string[]; warnings: string[] } => {
   const { data, body } = parseFrontmatter(source);
   const results = FRONTMATTER_FIELDS.map((spec) => ({ spec, result: readField(spec, data[spec.key]) }));
@@ -65,7 +65,18 @@ export const parseDefinition = (
   ) as AgentFrontmatter;
   const thinking = results.find(({ spec }) => spec.kind === "model")?.result.thinking;
 
-  return { errors, warnings, definition: { ...frontmatter, thinking, prompt: body, source: origin, path } };
+  return {
+    errors,
+    warnings,
+    definition: {
+      ...frontmatter,
+      thinking,
+      prompt: body,
+      source: dir.source,
+      path,
+      relativePath: relative(dir.path, path),
+    },
+  };
 };
 
 const referenceErrors = (definitions: Map<string, AgentDefinition>): DefinitionError[] => {
@@ -305,7 +316,7 @@ export const loadDefinitions = (dirs: DefinitionDir[], check?: OverrideCheck): L
     const seen = new Map<string, string>();
 
     markdownFiles(dir.path).forEach((path) => {
-      const parsed = parseDefinition(readFileSync(path, "utf8"), path, dir.source);
+      const parsed = parseDefinition(readFileSync(path, "utf8"), path, dir);
 
       if (!parsed.definition) {
         errors.push({ path, message: parsed.errors.join("; ") });

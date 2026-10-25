@@ -31,6 +31,22 @@ describe("agent setup form", () => {
     expect(render(ctx, state)).toContain("   Skills    search, docs (changed)");
   });
 
+  it("counts a re-ordered skill list as a change", () => {
+    const base = proposedContext();
+    const ctx = {
+      ...base,
+      agents: base.agents.map((agent) =>
+        agent.name === "lead"
+          ? { ...agent, initial: { ...agent.initial, skills: ["docs", "search"] } }
+          : agent,
+      ),
+    };
+    const state = initialSetup(ctx);
+
+    expect(setupChanges(ctx, state)).toEqual([{ name: "lead", patch: { skills: ["search", "docs"] } }]);
+    expect(render(ctx, state)).toContain("   Skills    search, docs (changed)");
+  });
+
   it("lists the draft's skills first in its order, then the rest, and keeps the rows while toggling", () => {
     const ctx = proposedContext();
     const opened = press(ctx, initialSetup(ctx), ...toSkills);

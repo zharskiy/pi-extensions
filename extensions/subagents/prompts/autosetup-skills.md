@@ -11,7 +11,7 @@ Rules, in this order:
 4. Give full lists, not changes: the list you give replaces the lead's current one.
 5. Never pick a skill whose description implies asking the user something; agents cannot ask anyone.
 
-Answer by calling agent_skills_proposal once with the project line, one assignment per lead whose list should change, and one reason line per proposed skill. Use only the lead and skill names below. Do not write any file and do not run /agents setup; the tool opens a form the user confirms. If the tool returns an error, fix the names and call it again. Afterwards tell the user what was saved, from the tool's result.
+Answer by calling agent_skills_proposal once with the project line, one assignment per lead whose list should change, and one reason line per proposed skill. Use only the lead and skill names below. Do not write any file and do not run /agents setup; the tool opens a form the user confirms. If the tool refuses, fix the call as the message says and call it again. Afterwards tell the user what was saved, from the tool's result.
 
 Leads:
 {{leads}}

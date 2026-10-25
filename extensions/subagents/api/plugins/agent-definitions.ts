@@ -5,7 +5,7 @@ import { type DefinitionDir, loadDefinitions } from "../../core/agent-definition
 import { assemblePromptAppend } from "../../core/agent-definitions/prompt.ts";
 import type { AgentDefinitions } from "../../core/model/agent-record.ts";
 import { resolutionProblem } from "../../core/model/model-resolution.ts";
-import { builtinAgentsDir, NAMESPACE, projectAgentsDir, userAgentsDir } from "../../core/model/paths.ts";
+import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { reloadSettings, settingsWarning } from "../../core/model/settings.ts";
 
@@ -13,7 +13,7 @@ export const agentDefinitionsPlugin: Plugin = {
   id: "agent-definitions",
   enable: ({ host, runtime, services, settings, root }) => {
     const basePrompt = readFileSync(join(root, "prompts", "base-system-prompt.md"), "utf8");
-    const builtin: DefinitionDir = { path: builtinAgentsDir(root), source: "builtin" };
+    const builtin: DefinitionDir = { path: join(root, "agents"), source: "builtin" };
     const reported = new Set<string>();
 
     let loaded = loadDefinitions([builtin]);

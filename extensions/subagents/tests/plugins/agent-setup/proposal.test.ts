@@ -15,6 +15,7 @@ const KNOWN = {
   agents: ["general", "planner", "reviewer", "scout"],
   leads: ["planner", "reviewer"],
   skills: ["docs", "search", "lint", "tests"],
+  interactive: ["asker"],
 };
 
 const proposal = (assignments: ProposalParams["assignments"], reasons: ProposalParams["reasons"] = []) =>
@@ -84,6 +85,7 @@ describe("checkProposal", () => {
           { lead: "reviewer", skills: ["docs", "search", "lint", "tests"] },
           { lead: "reviewer", skills: [] },
         ],
+        reasons: [],
       },
       KNOWN,
     );
@@ -91,29 +93,30 @@ describe("checkProposal", () => {
     expect(result).toEqual({
       error:
         "Error: project: say in one line what kind of project this is; reviewer is listed more than once; " +
-        'no agent named "nobody"; no skill named "ghost" here; reviewer: at most three skills. ' +
+        'no agent named "nobody"; no skill named "ghost" here; reviewer: at most 3 skills. ' +
         "Lead agents: planner, reviewer. Skills: docs, search, lint, tests. Fix the call and call again.",
     });
   });
 
-  it("refuses a skill left out of the candidates", () => {
-    const result = checkProposal(
-      { project: "x", assignments: [{ lead: "planner", skills: ["asker"] }] },
-      { ...KNOWN, skills: ["docs"] },
-    );
+  it("refuses a skill left out as interactive with its own reason", () => {
+    const result = proposal([{ lead: "planner", skills: ["asker", "ghost"] }]);
 
-    expect("error" in result && result.error).toContain('no skill named "asker" here');
+    expect("error" in result && result.error).toContain(
+      '"asker" asks the user; agents cannot use it; no skill named "ghost" here',
+    );
   });
 });
 
 describe("proposalUnchanged", () => {
-  it("compares the lists as sets", () => {
+  it("compares the lists in order", () => {
     const current = { planner: ["docs", "search"], reviewer: [] } as Record<string, string[]>;
     const read = (lead: string) => current[lead];
-    const same = proposal([{ lead: "planner", skills: ["search", "docs"] }]);
+    const same = proposal([{ lead: "planner", skills: ["docs", "search"] }]);
+    const reordered = proposal([{ lead: "planner", skills: ["search", "docs"] }]);
     const changed = proposal([{ lead: "reviewer", skills: ["docs"] }]);
 
     expect("error" in same || proposalUnchanged(same, read)).toBe(true);
+    expect("error" in reordered || proposalUnchanged(reordered, read)).toBe(false);
     expect("error" in changed || proposalUnchanged(changed, read)).toBe(false);
     expect("error" in changed || proposalUnchanged(changed, () => "all")).toBe(false);
   });

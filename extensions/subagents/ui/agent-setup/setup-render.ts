@@ -15,12 +15,12 @@ import {
   tabBar,
 } from "../../../../platform/ui-kit/index.ts";
 import type { SetupChange } from "../../core/agent-setup/scope.ts";
+import { grantOrNone } from "../../core/model/agent-record.ts";
 import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import {
   FIELDS,
   type Field,
   fieldChanged,
-  grantText,
   LIST_HEIGHT,
   modelOptions,
   onSubmitTab,
@@ -71,7 +71,7 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
     return `${AGENT_SCOPE_ALL} (every skill of the agent's caller)`;
   }
 
-  return context.skills.length === 0 ? "none (no skills available)" : grantText(draft.skills);
+  return context.skills.length === 0 ? "none (no skills available)" : grantOrNone(draft.skills);
 };
 
 const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>
@@ -160,7 +160,7 @@ const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, w
   return [
     "",
     ...proposed,
-    ...labelLine(theme, "Tools", `${grantText(agent.tools)}. ${TOOLS_NOTE}`, width),
+    ...labelLine(theme, "Tools", `${grantOrNone(agent.tools)}. ${TOOLS_NOTE}`, width),
     ...labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
   ];
 };
@@ -182,7 +182,7 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
 
 const changeText = (patch: Record<string, unknown>) =>
   Object.entries(patch)
-    .map(([field, value]) => `${field} ${Array.isArray(value) ? grantText(value) : String(value)}`)
+    .map(([field, value]) => `${field} ${Array.isArray(value) ? grantOrNone(value) : String(value)}`)
     .join(", ");
 
 const submitLines = (

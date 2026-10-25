@@ -377,14 +377,16 @@ describe("agent_skills_proposal", () => {
         { lead: "planner", skills: ["asker", "ghost"] },
         { lead: "reviewer", skills: ["docs", "search", "a", "b"] },
       ],
+      reasons: [],
     });
 
     expect(refused.isError).toBe(true);
     expect(refused.text).toContain("general is not set up here");
     expect(refused.text).toContain("scout is not set up here");
     expect(refused.text).toContain('no agent named "nobody"');
-    expect(refused.text).toContain('no skill named "asker" here');
-    expect(refused.text).toContain("reviewer: at most three skills");
+    expect(refused.text).toContain('"asker" asks the user; agents cannot use it');
+    expect(refused.text).toContain('no skill named "ghost" here');
+    expect(refused.text).toContain("reviewer: at most 3 skills");
     expect(refused.text).not.toContain("chore");
     expect(host.forms).toEqual([]);
 

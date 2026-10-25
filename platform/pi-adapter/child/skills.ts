@@ -9,8 +9,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { SkillInfo } from "../types/messages.ts";
 
-export type SkillFile = SkillInfo;
-
 export type SkillScope = { cwd: string; agentDir: string; projectTrusted: boolean };
 
 type SettingsStorage = Parameters<typeof SettingsManager.fromStorage>[0];
@@ -68,7 +66,7 @@ export const resourceScope = (resources: ResolvedResource[], path: string, cwd: 
   return owner?.metadata.scope ?? (contains(cwd, path) ? "project" : "user");
 };
 
-export const discoverSkills = async (scope: SkillScope): Promise<SkillFile[]> => {
+export const discoverSkills = async (scope: SkillScope): Promise<SkillInfo[]> => {
   const packages = new DefaultPackageManager({
     cwd: scope.cwd,
     agentDir: scope.agentDir,
@@ -93,17 +91,17 @@ export const discoverSkills = async (scope: SkillScope): Promise<SkillFile[]> =>
   }));
 };
 
-const mergeSkills = (loaded: SkillFile[], discovered: SkillFile[]) => {
+const mergeSkills = (loaded: SkillInfo[], discovered: SkillInfo[]) => {
   const names = new Set(loaded.map((skill) => skill.name));
 
   return [...loaded, ...discovered.filter((skill) => !names.has(skill.name))];
 };
 
 export const createSkillInventory = (
-  loaded: () => SkillFile[],
-  discover: (scope: SkillScope) => Promise<SkillFile[]> = discoverSkills,
+  loaded: () => SkillInfo[],
+  discover: (scope: SkillScope) => Promise<SkillInfo[]> = discoverSkills,
 ) => {
-  let discovered: SkillFile[] = [];
+  let discovered: SkillInfo[] = [];
 
   return {
     files: () => mergeSkills(loaded(), discovered),

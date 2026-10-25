@@ -2,8 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SkillInfo } from "../../../../../platform/pi-adapter/index.ts";
+import { loadDefinitions } from "../../../core/agent-definitions/loader.ts";
 import {
-  agentDirs,
   autosetupBrief,
   candidateSkills,
   hasSkillsOverride,
@@ -16,11 +16,7 @@ import {
 import type { AgentDefinition } from "../../../core/model/agent-record.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
-const INFO = { cwd: "/work/app", agentDir: "/home/me/.pi/agent" };
-
-const DIRS = agentDirs(INFO, "/pkg");
-
-const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name" | "path">) =>
+const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
   ({
     description: `${patch.name} does its job`,
     limit: 100_000,
@@ -29,6 +25,8 @@ const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "nam
     subagents: [],
     prompt: "",
     source: "builtin",
+    path: `/pkg/agents/leads/${patch.name}.md`,
+    relativePath: `leads/${patch.name}.md`,
     ...patch,
   }) as AgentDefinition;
 
@@ -52,41 +50,28 @@ describe("isChore", () => {
 });
 
 describe("isLead", () => {
-  it("takes the path relative to the agents dir the file came from", () => {
-    expect(isLead(definition({ name: "reviewer", path: "/pkg/agents/leads/reviewer.md" }), DIRS)).toBe(true);
-    expect(isLead(definition({ name: "scout", path: "/pkg/agents/chores/scout.md" }), DIRS)).toBe(false);
-    expect(
-      isLead(definition({ name: "mine", source: "user", path: "/home/me/.pi/agent/agents/mine.md" }), DIRS),
-    ).toBe(true);
-    expect(
-      isLead(
-        definition({ name: "mine", source: "user", path: "/home/me/.pi/agent/agents/chores/mine.md" }),
-        DIRS,
-      ),
-    ).toBe(false);
-    expect(
-      isLead(
-        definition({ name: "mine", source: "project", path: "/work/app/.pi/agents/chores/mine.md" }),
-        DIRS,
-      ),
-    ).toBe(false);
+  it("leaves out agents under a chores folder of their agents dir", () => {
+    expect(isLead(definition({ name: "reviewer", relativePath: join("leads", "reviewer.md") }))).toBe(true);
+    expect(isLead(definition({ name: "mine", relativePath: "mine.md" }))).toBe(true);
+    expect(isLead(definition({ name: "scout", relativePath: join("chores", "scout.md") }))).toBe(false);
   });
 
   it("does not count a chores folder above the agents dir", () => {
-    const dirs = agentDirs({ cwd: "/chores/app", agentDir: "/chores/agent" }, "/chores/pkg");
+    const dir = join(tempDir(), "chores", "agents");
 
-    expect(isLead(definition({ name: "reviewer", path: "/chores/pkg/agents/leads/reviewer.md" }), dirs)).toBe(
-      true,
+    mkdirSync(join(dir, "leads"), { recursive: true });
+    writeFileSync(
+      join(dir, "leads", "mine.md"),
+      "---\nname: mine\ndescription: d\nlimit: 50000\ntools: []\nskills: []\nsubagents: []\n---\n",
     );
-    expect(
-      isLead(definition({ name: "mine", source: "project", path: "/chores/app/.pi/agents/mine.md" }), dirs),
-    ).toBe(true);
+
+    const loaded = loadDefinitions([{ path: dir, source: "project" }]).definitions.get("mine");
+
+    expect(loaded && isLead(loaded)).toBe(true);
   });
 
   it("leaves out an agent with every skill", () => {
-    expect(
-      isLead(definition({ name: "general", path: "/pkg/agents/leads/general.md", skills: "all" }), DIRS),
-    ).toBe(false);
+    expect(isLead(definition({ name: "general", skills: "all" }))).toBe(false);
   });
 });
 
@@ -99,37 +84,34 @@ describe("hasSkillsOverride", () => {
 });
 
 describe("candidateSkills", () => {
-  const files: Record<string, string> = {
-    "/a": "---\nname: a\ndescription: Asks\n---\nFirst ASK THE USER which branch to use.",
-    "/b": "---\nname: b\ndescription: Uses the questionnaire tool\n---\nReads the diff.",
-    "/c": "No frontmatter, calls askuserquestion.",
-  };
-  const read = (path: string) => {
-    if (path === "/broken") {
-      throw new Error("EACCES");
-    }
+  const skillFile = (dir: string, name: string, text: string) => {
+    const path = join(dir, `${name}.md`);
 
-    return files[path];
+    writeFileSync(path, text);
+
+    return skill(name, { path });
   };
 
   it("leaves out skills whose body names an interactive term, in any case", () => {
+    const dir = tempDir();
     const catalog = [
-      skill("a", { path: "/a" }),
-      skill("b", { path: "/b" }),
-      skill("c", { path: "/c" }),
-      skill("gone", { path: "/gone" }),
-      skill("broken", { path: "/broken" }),
+      skillFile(dir, "a", "---\nname: a\ndescription: Asks\n---\nFirst ASK THE USER which branch to use."),
+      skillFile(dir, "b", "---\nname: b\ndescription: Uses the questionnaire tool\n---\nReads the diff."),
+      skillFile(dir, "c", "No frontmatter, calls askuserquestion."),
+      skill("gone", { path: join(dir, "gone.md") }),
+      skill("broken", { path: dir }),
     ];
-    const { candidates, interactive } = candidateSkills(catalog, read);
+    const { candidates, interactive } = candidateSkills(catalog);
 
     expect(interactive).toEqual(["a", "c"]);
     expect(candidates.map((entry) => entry.name)).toEqual(["b", "gone", "broken"]);
   });
 
   it("matches every listed term", () => {
-    const catalog = INTERACTIVE_TERMS.map((term, index) => skill(`s${index}`, { path: term }));
+    const dir = tempDir();
+    const catalog = INTERACTIVE_TERMS.map((term, index) => skillFile(dir, `s${index}`, `Then ${term}.`));
 
-    expect(candidateSkills(catalog, (path) => `Then ${path}.`).candidates).toEqual([]);
+    expect(candidateSkills(catalog).candidates).toEqual([]);
   });
 
   it("names the left-out skills for the notice", () => {
@@ -167,7 +149,7 @@ describe("autosetupBrief", () => {
     template: "{{project}}#{{listing}}#{{leads}}#{{skills}}#{{other}}",
     cwd: "/work/app",
     listing: "src/",
-    leads: [definition({ name: "reviewer", path: "/pkg/agents/leads/reviewer.md", skills: ["docs"] })],
+    leads: [definition({ name: "reviewer", skills: ["docs"] })],
     candidates: [
       skill("docs", { scope: "project" }),
       skill("empty", { description: "" }),

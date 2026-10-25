@@ -4,8 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks } from "../../../test/framework/index.ts";
 import type { ParentSource } from "../child/child-extension.ts";
 import { childToolNames, createPiRuntime } from "../child/child-runtime.ts";
-import type { SkillFile } from "../child/skills.ts";
-import type { SpawnSpec } from "../index.ts";
+import type { SkillInfo, SpawnSpec } from "../index.ts";
 
 type InlineEntry = {
   name: string;
@@ -235,7 +234,7 @@ describe("child tool names", () => {
 });
 
 describe("child skills", () => {
-  const inventory = (): SkillFile[] => [
+  const inventory = (): SkillInfo[] => [
     { name: "docs", description: "Writes docs", scope: "project", path: "/skills/docs/SKILL.md" },
     { name: "git", description: "", scope: "user", path: "/skills/git/SKILL.md" },
     { name: "style", description: "Checks style", scope: "temporary", path: "/skills/style/SKILL.md" },

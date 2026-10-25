@@ -1,11 +1,11 @@
 import { readdirSync } from "node:fs";
-import { basename, relative } from "node:path";
-import type { SessionInfo, SkillInfo } from "../../../../platform/pi-adapter/index.ts";
+import { basename } from "node:path";
+import type { SkillInfo } from "../../../../platform/pi-adapter/index.ts";
 import { errorText, readText } from "../../../../platform/shared/index.ts";
 import { cutChars } from "../components/receipt.ts";
-import { type AgentDefinition, type AgentSource, grantText } from "../model/agent-record.ts";
+import { type AgentDefinition, grantOrNone } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL, type AgentOverrides } from "../model/agent-schema.ts";
-import { builtinAgentsDir, projectAgentsDir, userAgentsDir } from "../model/paths.ts";
+import { fillTemplate } from "./template.ts";
 
 export const AUTOSETUP_TYPE = "pi-subagents-autosetup";
 
@@ -17,15 +17,13 @@ export const INTERACTIVE_TERMS = [
   "confirm with the user",
 ];
 
-export const DESCRIPTION_LIMIT = 200;
+const DESCRIPTION_LIMIT = 200;
 
 const LISTING_LIMIT = 60;
 
 const SKIPPED_ENTRIES = [".git", "node_modules"];
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
-
-export type AgentDirs = Record<AgentSource, string>;
 
 type BriefInput = {
   template: string;
@@ -35,16 +33,10 @@ type BriefInput = {
   candidates: SkillInfo[];
 };
 
-export const agentDirs = (info: Pick<SessionInfo, "cwd" | "agentDir">, root: string): AgentDirs => ({
-  builtin: builtinAgentsDir(root),
-  user: userAgentsDir(info),
-  project: projectAgentsDir(info),
-});
-
 export const isChore = (relativePath: string) => relativePath.split(/[\\/]/).slice(0, -1).includes("chores");
 
-export const isLead = (definition: AgentDefinition, dirs: AgentDirs) =>
-  definition.skills !== AGENT_SCOPE_ALL && !isChore(relative(dirs[definition.source], definition.path));
+export const isLead = (definition: AgentDefinition) =>
+  definition.skills !== AGENT_SCOPE_ALL && !isChore(definition.relativePath);
 
 export const hasSkillsOverride = (agents: AgentOverrides) =>
   Object.values(agents).some((override) => override.skills !== undefined);
@@ -55,22 +47,15 @@ const isInteractive = (text: string) => {
   return INTERACTIVE_TERMS.some((term) => lower.includes(term.toLowerCase()));
 };
 
-const readable = (read: (path: string) => string | undefined, path: string) => {
-  try {
-    return read(path);
-  } catch {
-    return undefined;
-  }
-};
-
-export const candidateSkills = (
-  catalog: SkillInfo[],
-  read: (path: string) => string | undefined = readText,
-) => {
+export const candidateSkills = (catalog: SkillInfo[]) => {
   const interactive = catalog.filter((skill) => {
-    const text = readable(read, skill.path);
+    try {
+      const text = readText(skill.path);
 
-    return text !== undefined && isInteractive(text.replace(FRONTMATTER, ""));
+      return text !== undefined && isInteractive(text.replace(FRONTMATTER, ""));
+    } catch {
+      return false;
+    }
   });
 
   return {
@@ -97,7 +82,7 @@ export const projectListing = (cwd: string, limit = LISTING_LIMIT) => {
 };
 
 const leadLine = (lead: AgentDefinition) =>
-  `- ${lead.name}: ${lead.description} | tools: ${grantText(lead.tools) || "none"} | skills: ${grantText(lead.skills) || "none"}`;
+  `- ${lead.name}: ${lead.description} | tools: ${grantOrNone(lead.tools)} | skills: ${grantOrNone(lead.skills)}`;
 
 const skillLine = (skill: SkillInfo) => {
   const name = skill.scope === "project" ? `${skill.name} [project]` : skill.name;
@@ -115,5 +100,5 @@ export const autosetupBrief = ({ template, cwd, listing, leads, candidates }: Br
     skills: candidates.map(skillLine).join("\n"),
   };
 
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match);
+  return fillTemplate(template, values);
 };

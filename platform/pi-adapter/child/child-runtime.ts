@@ -18,6 +18,7 @@ import { finalRunTexts, formatRoutedMessage, messageText, toolCallCount } from "
 import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
+import type { SkillInfo } from "../types/messages.ts";
 import type {
   AgentRuntime,
   ChildEvent,
@@ -30,7 +31,6 @@ import type { UsageTotals } from "../types/usage.ts";
 import { createChildExtension, type ParentSource } from "./child-extension.ts";
 import { reserveCodemodeWorkers } from "./codemode.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./model-catalog.ts";
-import type { SkillFile } from "./skills.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
@@ -89,7 +89,7 @@ const isExcluded = (exclude: readonly string[], path: string) =>
   isAbsolute(path) &&
   exclude.some((dir) => isAbsolute(dir) && resolve(path).startsWith(`${resolve(dir)}${sep}`));
 
-const pickSkillFiles = (available: SkillFile[], wanted: readonly string[]) =>
+const pickSkillFiles = (available: SkillInfo[], wanted: readonly string[]) =>
   available.filter((skill) => wanted.includes(skill.name)).map((skill) => skill.path);
 
 export const createPiRuntime = (

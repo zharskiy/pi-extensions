@@ -62,7 +62,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     mkdirSync(join(root, "skills", name), { recursive: true });
     writeFileSync(path, text);
 
-    return { name, description: "", path };
+    return { name, description: "", scope: "user" as const, path };
   });
 
   mkdirSync(project, { recursive: true });

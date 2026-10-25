@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createSkillInventory, resourceScope, type SkillFile } from "../child/skills.ts";
+import { createSkillInventory, resourceScope } from "../child/skills.ts";
+import type { SkillInfo } from "../index.ts";
 import { sessionSkillFiles } from "../runtime/extension.ts";
 
-const skill = (name: string, path = `/discovered/${name}/SKILL.md`): SkillFile => ({
+const skill = (name: string, path = `/discovered/${name}/SKILL.md`): SkillInfo => ({
   name,
   description: `${name} skill`,
   scope: "user",

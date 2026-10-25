@@ -86,6 +86,13 @@ export const isNone = (grant: Grant) => grant !== AGENT_SCOPE_ALL && grant.lengt
 
 export const grantText = (grant: Grant) => (grant === AGENT_SCOPE_ALL ? AGENT_SCOPE_ALL : grant.join(", "));
 
+export const grantOrNone = (grant: Grant) => grantText(grant) || "none";
+
+export const sameGrant = (left: Grant, right: Grant) =>
+  left === AGENT_SCOPE_ALL || right === AGENT_SCOPE_ALL
+    ? left === right
+    : left.length === right.length && left.every((name, index) => right[index] === name);
+
 export const subagentNames = (definition: Pick<AgentDefinition, "name" | "subagents">, names: string[]) =>
   definition.subagents === AGENT_SCOPE_ALL
     ? names.filter((name) => name !== definition.name)
@@ -96,6 +103,7 @@ export type AgentInternals = {
   prompt: string;
   source: AgentSource;
   path: string;
+  relativePath: string;
 };
 
 export type AgentDefinition = AgentFrontmatter & AgentInternals;

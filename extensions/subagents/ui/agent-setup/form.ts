@@ -13,6 +13,7 @@ import {
   tabStep,
 } from "../../../../platform/ui-kit/index.ts";
 import { SCOPES, type Scope, type SetupChange } from "../../core/agent-setup/scope.ts";
+import { sameGrant } from "../../core/model/agent-record.ts";
 import {
   AGENT_SCOPE_ALL,
   type AgentOverride,
@@ -72,11 +73,6 @@ export const initialSetup = (context: SetupContext): SetupState => ({
 
 export const onSubmitTab = (context: SetupContext, state: SetupState) => state.tab === context.agents.length;
 
-const sameGrant = (left: Grant, right: Grant) =>
-  left === AGENT_SCOPE_ALL || right === AGENT_SCOPE_ALL
-    ? left === right
-    : left.length === right.length && left.every((name) => right.includes(name));
-
 const changedFields = (initial: Draft, draft: Draft): Field[] =>
   FIELDS.filter((field) =>
     field === "skills" ? !sameGrant(initial.skills, draft.skills) : initial[field] !== draft[field],
@@ -116,14 +112,6 @@ export const thinkingOptions = (context: SetupContext, draft: Draft | undefined)
 
 const pickerOptions = (context: SetupContext, state: SetupState, field: "model" | "thinking") =>
   field === "model" ? modelOptions(context, state.tab) : thinkingOptions(context, state.drafts[state.tab]);
-
-export const grantText = (grant: Grant) => {
-  if (grant === AGENT_SCOPE_ALL) {
-    return AGENT_SCOPE_ALL;
-  }
-
-  return grant.length === 0 ? "none" : grant.join(", ");
-};
 
 export const pickerSkills = (context: SetupContext, picker: SkillsPicker) =>
   picker.order.flatMap((index) => context.skills[index] ?? []);
@@ -230,10 +218,8 @@ const chooseSkills = (
     return { ...state, picker: undefined };
   }
 
-  const names = checkedIndexes(picker.multi).flatMap(
-    (position) => context.skills[picker.order[position] ?? -1]?.name ?? [],
-  );
-
+  const shown = pickerSkills(context, picker);
+  const names = checkedIndexes(picker.multi).flatMap((position) => shown[position]?.name ?? []);
   const keptAll = state.drafts[state.tab]?.skills === AGENT_SCOPE_ALL && !picker.touched;
 
   return setDraft(state, { skills: keptAll ? AGENT_SCOPE_ALL : names });

@@ -39,7 +39,7 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
@@ -52,7 +52,7 @@ extensions/subagents/
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
-│   │   ├── loader.ts                      # parseDefinition, loadDefinitions: files, then the agents.<name> overrides and their checks
+│   │   ├── loader.ts                      # parseDefinition (with the path relative to its agents dir), loadDefinitions: files, then the agents.<name> overrides and their checks
 │   │   ├── fields.ts                      # frontmatter field rules
 │   │   ├── yaml-lite.ts                   # the frontmatter parser
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
@@ -83,7 +83,8 @@ extensions/subagents/
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
 │   │   ├── autosetup.ts                   # isLead, hasSkillsOverride, candidateSkills (INTERACTIVE_TERMS), projectListing, autosetupBrief
 │   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
-│   │   └── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
+│   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
+│   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
 │   │   ├── source.ts                      # createAgentSource: reads an agent's session file, re-parsing on change
 │   │   └── list-model.ts                  # list sections, listCounts, countsText, subtitle, clearTargets, MAX_CLOSED_ROOTS
