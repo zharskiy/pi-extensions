@@ -1,4 +1,4 @@
-import { INHERIT_MODEL } from "../model/agent-schema.ts";
+import { ALL_SKILLS_TEXT, INHERIT_MODEL } from "../model/agent-schema.ts";
 
 export type AgentKind = "lead" | "chore";
 
@@ -56,7 +56,7 @@ const frontmatter = ({ name, description, kind, model }: AgentTemplate) => {
     `limit: ${defaults.limit}`,
     "# tools: tool names, all for the tools active in the main session, or [] for none.",
     `tools: ${defaults.tools}`,
-    "# skills: skill names, all for every skill of the agent's caller, or [] for none.",
+    `# skills: skill names, all for ${ALL_SKILLS_TEXT}, or [] for none.`,
     "skills: []",
     "# subagents: agent names it may start, all for every other agent, or [] for none.",
     `subagents: ${defaults.subagents}`,

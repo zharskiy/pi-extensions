@@ -2,6 +2,7 @@ import { splitModelRequest } from "../../../../platform/pi-adapter/index.ts";
 import {
   AGENT_SCOPE_ALL,
   type AgentFrontmatter,
+  ALL_SKILLS_TEXT,
   INHERIT_MODEL,
   PLAIN_NAME,
   PLAIN_NAME_TEXT,
@@ -45,7 +46,7 @@ const RULES: { [K in FieldKey]: FieldRule } = {
     kind: "list",
     required: true,
     namesMeaning: "skill names",
-    allMeaning: "every skill of the agent's caller",
+    allMeaning: ALL_SKILLS_TEXT,
   },
   subagents: {
     kind: "list",

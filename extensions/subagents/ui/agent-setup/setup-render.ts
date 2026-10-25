@@ -12,32 +12,33 @@ import {
   scrolledLines,
   TAB_SWITCH_HINT,
 } from "../../../../platform/ui-kit/index.ts";
-import type { SetupChange } from "../../core/agent-setup/scope.ts";
+import type { AgentKind } from "../../core/agent-setup/agent-template.ts";
 import { grantOrNone } from "../../core/model/agent-record.ts";
-import { AGENT_SCOPE_ALL, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
+import { AGENT_SCOPE_ALL, ALL_SKILLS_TEXT, INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import { alignRight } from "../components/format.ts";
 import {
-  ALL_ROW,
-  ALL_SKILLS_TEXT,
   BLOCK_ROWS,
+  changeRows,
   DETAIL_LINES,
-  type Draft,
+  FIELD_ROWS,
   type Field,
   fieldChanged,
   fieldsOf,
+  fieldValue,
+  INFO_ROWS,
   listHeight,
   listView,
   onSubmitTab,
   type Picker,
   PRESETS,
   type Preset,
+  presetFieldsOf,
   presetInUse,
-  presetOf,
-  rowsOf,
+  presetsOf,
   type SetupContext,
   type SetupState,
-  sameField,
   scopeOptions,
+  selectedRow,
   setupChanges,
   skillsView,
 } from "./form.ts";
@@ -98,15 +99,15 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
     return modelText(draft.model);
   }
 
-  if (field === "thinking") {
-    return draft.thinking ?? "default";
-  }
-
-  if (draft.skills === AGENT_SCOPE_ALL) {
+  if (field === "skills" && draft.skills === AGENT_SCOPE_ALL) {
     return `${AGENT_SCOPE_ALL} (${ALL_SKILLS_TEXT})`;
   }
 
-  return context.skills.length === 0 ? "none (no skills available)" : grantOrNone(draft.skills);
+  if (field === "skills" && context.skills.length === 0) {
+    return "none (no skills available)";
+  }
+
+  return fieldValue(field, draft);
 };
 
 const lockedSkillsLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
@@ -123,32 +124,16 @@ const lockedSkillsLines = (context: SetupContext, state: SetupState, theme: Them
 };
 
 const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => [
-  ...fieldsOf(context.agents[state.tab]).map((field, index) => {
-    const chosen = index === state.field && !state.picker;
+  ...fieldsOf(context.agents[state.tab]).map((field) => {
+    const chosen = selectedRow(context, state) === field;
     const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
-    const changed = fieldChanged(context, state, state.tab, field) ? theme.fg("warning", " (changed)") : "";
+    const changed = fieldChanged(context, state, field) ? theme.fg("warning", " (changed)") : "";
     const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
 
     return fitted(theme, first, theme.fg("text", valueText(context, state, field)), changed, width);
   }),
   ...lockedSkillsLines(context, state, theme, width),
 ];
-
-const fieldText = (field: Field, draft: Draft) => {
-  if (field === "model") {
-    return draft.model;
-  }
-
-  return field === "thinking" ? (draft.thinking ?? "default") : grantOrNone(draft.skills);
-};
-
-const presetOrder = (fields: readonly Field[]): readonly Field[] =>
-  fields.includes("skills") ? ["skills", ...fields.filter((field) => field !== "skills")] : fields;
-
-const presetText = (fields: readonly Field[], draft: Draft) =>
-  presetOrder(fields)
-    .map((field) => fieldText(field, draft))
-    .join(DOT);
 
 const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
   const agent = context.agents[state.tab];
@@ -157,22 +142,16 @@ const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike,
     return [];
   }
 
-  const rows = rowsOf(agent);
-
-  return PRESETS.map((preset) => {
-    const draft = presetOf(agent, preset);
-    const index = rows.indexOf(preset);
-
-    if (!draft || index < 0) {
-      return "";
-    }
-
-    const chosen = index === state.field && !state.picker;
+  return presetsOf(agent).map(({ preset, draft }) => {
+    const chosen = selectedRow(context, state) === preset;
     const label = theme.fg(chosen ? "accent" : "muted", PRESET_LABELS[preset].padEnd(LABEL_WIDTH));
     const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
+    const text = presetFieldsOf(agent)
+      .map((field) => fieldValue(field, draft))
+      .join(DOT);
     const mark = presetInUse(context, state, preset) ? theme.fg("dim", " (in use)") : "";
 
-    return fitted(theme, first, theme.fg("text", presetText(fieldsOf(agent), draft)), mark, width);
+    return fitted(theme, first, theme.fg("text", text), mark, width);
   });
 };
 
@@ -220,7 +199,7 @@ const headLine = (theme: ThemeLike, picker: Picker, shown: number, total: number
 
 const noMatch = (picker: Picker) => `no ${NOUNS[picker.field]} matches "${picker.query}"`;
 
-const pickerLines = (
+const pickerList = (
   context: SetupContext,
   state: SetupState,
   picker: Picker,
@@ -228,22 +207,41 @@ const pickerLines = (
   width: number,
 ) => {
   const height = listHeight(picker.field);
-  const head = (shown: number, total: number) => headLine(theme, picker, shown, total, width);
   const empty = picker.query ? noMatch(picker) : undefined;
 
   if (picker.field === "skills") {
-    const { rows, options, multi, total } = skillsView(context, picker);
-    const list = multiLines(theme, options, multi, width, height, { slots: true, empty });
-    const detail = rows[multi.cursor] === ALL_ROW ? "" : (options[multi.cursor]?.description ?? "");
+    const { options, multi, total, detail } = skillsView(context, picker);
 
-    return [head(options.length, total), ...list, ...block(theme, detail, width, DETAIL_LINES)];
+    return {
+      shown: options.length,
+      total,
+      lines: [
+        ...multiLines(theme, options, multi, width, height, { slots: true, empty }),
+        ...block(theme, detail ?? "", width, DETAIL_LINES),
+      ],
+    };
   }
 
   const { shown, total } = listView(context, state, picker);
   const label = picker.field === "model" ? modelText : undefined;
-  const list = windowLines(theme, shown, picker.cursor, width, height, empty, label);
 
-  return [head(shown.length, total), ...list];
+  return {
+    shown: shown.length,
+    total,
+    lines: windowLines(theme, shown, picker.cursor, width, height, empty, label),
+  };
+};
+
+const pickerLines = (
+  context: SetupContext,
+  state: SetupState,
+  picker: Picker,
+  theme: ThemeLike,
+  width: number,
+) => {
+  const { shown, total, lines } = pickerList(context, state, picker, theme, width);
+
+  return [headLine(theme, picker, shown, total, width), ...lines];
 };
 
 const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
@@ -272,46 +270,27 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
     ...block(theme, agent.description, width, DESCRIPTION_ROWS),
     "",
   ];
+  const rows = state.picker
+    ? pickerLines(context, state, state.picker, theme, width)
+    : [
+        ...padRows(fieldLines(context, state, theme, width), FIELD_ROWS),
+        "",
+        ...padRows(presetLines(context, state, theme, width), PRESETS.length),
+        "",
+        ...padRows(infoLines(context, state, theme, width), INFO_ROWS),
+      ];
 
-  if (state.picker) {
-    return [...heading, ...pickerLines(context, state, state.picker, theme, width)];
-  }
-
-  return [
-    ...heading,
-    ...fieldLines(context, state, theme, width),
-    "",
-    ...presetLines(context, state, theme, width),
-    "",
-    ...infoLines(context, state, theme, width),
-  ];
+  return padRows([...heading, ...rows], BODY_ROWS);
 };
 
-const changeLines = (
-  context: SetupContext,
-  state: SetupState,
-  change: SetupChange,
-  theme: ThemeLike,
-  width: number,
-) => {
-  const index = context.agents.findIndex((agent) => agent.name === change.name);
-  const agent = context.agents[index];
-  const draft = state.drafts[index];
+const changeLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) =>
+  changeRows(context, state).map((change) => {
+    const first = `${PAD}${theme.fg("muted", `${change.name}:`)} `;
+    const suggested = change.suggested ? " (suggested)" : "";
+    const suffix = theme.fg("text", `${suggested} (was ${change.was})`);
 
-  if (!agent || !draft) {
-    return [];
-  }
-
-  return fieldsOf(agent)
-    .filter((field) => field in change.patch)
-    .map((field) => {
-      const suggested = agent.proposed && sameField(field, agent.proposed, draft) ? " (suggested)" : "";
-      const first = `${PAD}${theme.fg("muted", `${agent.name}:`)} `;
-      const suffix = theme.fg("text", `${suggested} (was ${fieldText(field, agent.initial)})`);
-
-      return fitted(theme, first, theme.fg("text", `${field} ${fieldText(field, draft)}`), suffix, width);
-    });
-};
+    return fitted(theme, first, theme.fg("text", `${change.field} ${change.value}`), suffix, width);
+  });
 
 const changeWindow = (theme: ThemeLike, texts: string[], rows: number, width: number) => {
   if (texts.length <= rows) {
@@ -331,13 +310,12 @@ const changeWindow = (theme: ThemeLike, texts: string[], rows: number, width: nu
 const submitLines = (
   context: SetupContext,
   state: SetupState,
-  changes: SetupChange[],
   paths: SetupPaths,
   theme: ThemeLike,
   width: number,
 ) => {
-  const title = changes.length > 0 ? "Changes" : "No changes";
-  const texts = changes.flatMap((change) => changeLines(context, state, change, theme, width));
+  const texts = changeLines(context, state, theme, width);
+  const title = texts.length > 0 ? "Changes" : "No changes";
   const project = context.project ? labelLine(theme, "Project", context.project, width) : "";
   const scopes = scopeOptions(context).map((scope) => ({
     label: scope === "project" ? "This project" : "User",
@@ -390,7 +368,7 @@ export const renderSetup = (
   width: number,
 ) => {
   const changes = setupChanges(context, state);
-  const group = (label: string, role: "lead" | "chore") => ({
+  const group = (label: string, role: AgentKind) => ({
     label,
     tabs: context.agents.flatMap((agent) =>
       agent.role === role
@@ -402,7 +380,7 @@ export const renderSetup = (
   const groups = [group("Leads", "lead"), group("Chores", "chore")];
   const bar = groupedTabBar(theme, groups, state.tab, ready, width - PAD.length).map((row) => `${PAD}${row}`);
   const body = onSubmitTab(context, state)
-    ? submitLines(context, state, changes, paths, theme, width)
+    ? submitLines(context, state, paths, theme, width)
     : agentLines(context, state, theme, width);
 
   return framed(theme, width, [...bar, "", ...body], hints(context, state, ready), { oneRow: true });

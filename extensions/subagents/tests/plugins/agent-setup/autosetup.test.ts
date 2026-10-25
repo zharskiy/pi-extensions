@@ -123,7 +123,7 @@ describe("autosetupBrief", () => {
     expect(listing).toBe("src/");
     expect(leads?.split("\n")).toEqual([
       "- reviewer: reviewer does its job | tools: read, bash | skills: docs",
-      "- general: general does its job | tools: read, bash | skills: all (every skill of its caller)",
+      "- general: general does its job | tools: read, bash | skills: all (every skill of the agent's caller)",
     ]);
     expect(skills?.split("\n")).toEqual([
       "- docs [project]: docs helps",

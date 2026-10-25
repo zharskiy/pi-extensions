@@ -21,7 +21,7 @@ After release 1 the setup form changed on the same branch:
 
 - The tab bar has a `Leads` row and a `Chores` row (ui-kit `groupedTabBar`), Submit closing the last; leads come first.
 - `/agents setup` never changes a chore's skills: a chore's tab edits model and thinking and shows its skills as a fixed row, the one-line form refuses `skills=` on a chore, and a chore's own skills override does not trigger the Yes/No question. Existing chore overrides keep applying.
-- A lead is an agent whose `subagents` grant is not none (`isLead` in `core/model/agent-record.ts`), replacing the `chores` path segment and the file `skills` grant. Overrides carry no `subagents`, so they never change the role. `general` joins autosetup: its brief line reads `skills: all (every skill of its caller)` and the prompt says a lead with `all` keeps it when left out and gets a list only when a narrower one fits better.
+- A lead is an agent whose `subagents` grant is not none (`isLead` in `core/model/agent-record.ts`), replacing the `chores` path segment and the file `skills` grant. Overrides carry no `subagents`, so they never change the role. `general` joins autosetup: its brief line reads `skills: all (every skill of the agent's caller)` and the prompt says a lead with `all` keeps it when left out and gets a list only when a narrower one fits better.
 - The skills picker has an explicit, exclusive `all` row for every lead, ticked when the agent has `all`; it replaces "an `all` draft opens with nothing ticked and keeps `all` unless a box changed".
 - The model, thinking and skills pickers filter as you type; the `a`/`n` shortcuts are gone from the setup form.
 - Each agent tab has two preset rows under the fields: `Previous` (the effective settings) and, for a lead with a proposal, `Suggested`. Enter applies the preset; the one equal to the draft reads ` (in use)`. The Submit tab lists `name: field new (was old)` with `(suggested)` where the value is the proposal.
@@ -49,7 +49,7 @@ The one-line form `/agents setup <agent> model=… skills=…` is unchanged. The
 
 In the extension, with no model call:
 
-- **Leads** from `definitions.list()`: agents whose `subagents` grant is not none. Each with name, description, tools, current skills (`all (every skill of its caller)` for an `all` grant). Chores are not mentioned anywhere in the brief. Where the agent file sits does not matter.
+- **Leads** from `definitions.list()`: agents whose `subagents` grant is not none. Each with name, description, tools, current skills (`all (every skill of the agent's caller)` for an `all` grant). Chores are not mentioned anywhere in the brief. Where the agent file sits does not matter.
 - **Candidate skills** from `runtime.skillCatalog()`, which gains `scope` (`project`, `user` or `temporary`, taken from the resolved resource's metadata, not from pi's `sourceInfo.scope`, which marks most discovered skills `temporary`) and `path`. Then the interactive filter: the extension reads each SKILL.md body and drops a skill that names an interactive tool or a user prompt. The term list is one constant in the extension (`AskUserQuestion`, `questionnaire`, `ask the user`, `ask_user`, and whatever the owner adds); a match is dropped silently. A skill with an empty description is listed by name alone and said to be so.
 - **The project**: cwd basename and its top-level entries (names only, bounded). The main session has `read` and `ls` and is invited to look at manifests and the tree itself.
 

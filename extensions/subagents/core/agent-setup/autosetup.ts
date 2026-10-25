@@ -4,7 +4,7 @@ import type { SkillInfo } from "../../../../platform/pi-adapter/index.ts";
 import { errorText, readText } from "../../../../platform/shared/index.ts";
 import { cutChars } from "../components/receipt.ts";
 import { type AgentDefinition, grantOrNone } from "../model/agent-record.ts";
-import { AGENT_SCOPE_ALL, type AgentOverrides } from "../model/agent-schema.ts";
+import { AGENT_SCOPE_ALL, type AgentOverrides, ALL_SKILLS_TEXT } from "../model/agent-schema.ts";
 import { fillTemplate } from "./template.ts";
 
 export const AUTOSETUP_TYPE = "pi-subagents-autosetup";
@@ -70,9 +70,7 @@ export const projectListing = (cwd: string, limit = LISTING_LIMIT) => {
 };
 
 const skillsText = (lead: AgentDefinition) =>
-  lead.skills === AGENT_SCOPE_ALL
-    ? `${AGENT_SCOPE_ALL} (every skill of its caller)`
-    : grantOrNone(lead.skills);
+  lead.skills === AGENT_SCOPE_ALL ? `${AGENT_SCOPE_ALL} (${ALL_SKILLS_TEXT})` : grantOrNone(lead.skills);
 
 const leadLine = (lead: AgentDefinition) =>
   `- ${lead.name}: ${lead.description} | tools: ${grantOrNone(lead.tools)} | skills: ${skillsText(lead)}`;

@@ -1,5 +1,7 @@
 export const AGENT_SCOPE_ALL = "all";
 
+export const ALL_SKILLS_TEXT = "every skill of the agent's caller";
+
 export const INHERIT_MODEL = "inherit";
 
 export const PLAIN_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;

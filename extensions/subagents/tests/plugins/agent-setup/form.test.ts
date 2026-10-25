@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { char, key } from "../../../../../test/framework/index.ts";
-import {
-  initialSetup,
-  modelOptions,
-  scopeOptions,
-  setupChanges,
-  thinkingOptions,
-} from "../../../ui/agent-setup/form.ts";
+import { initialSetup, scopeOptions, setupChanges } from "../../../ui/agent-setup/form.ts";
 import { context, PATHS, press, proposedContext, render } from "../../support/setup-context.ts";
 
 const toSkills = [key("down"), key("down"), key("enter")];
@@ -14,6 +8,8 @@ const toSkills = [key("down"), key("down"), key("enter")];
 const skillRows = (lines: string[]) => lines.filter((line) => line.includes("[x]") || line.includes("[ ]"));
 
 const typed = (text: string) => [...text].map((letter) => char(letter));
+
+const optionRows = (lines: string[]) => lines.filter((line) => /^ [› ] \S/.test(line));
 
 describe("agent setup form", () => {
   it("starts on the first agent and the first scope: the project when trusted, the user file otherwise", () => {
@@ -241,13 +237,40 @@ describe("agent setup form", () => {
   });
 
   it("lists inherit, an initial model without credentials, then the models with credentials", () => {
-    expect(modelOptions(context(), 0)).toEqual(["inherit", "acme/big", "acme/small"]);
-    expect(modelOptions(context(), 2)).toEqual(["inherit", "gone/old", "acme/big", "acme/small"]);
+    const ctx = context();
+    const lead = press(ctx, initialSetup(ctx), key("enter"));
+    const chore = press(ctx, initialSetup(ctx), key("tab"), key("tab"), key("enter"));
+
+    expect(optionRows(render(ctx, lead.state))).toEqual([
+      "   inherit (the main session's model)",
+      " › acme/big",
+      "   acme/small",
+    ]);
+    expect(optionRows(render(ctx, chore.state))).toEqual([
+      "   inherit (the main session's model)",
+      " › gone/old",
+      "   acme/big",
+      "   acme/small",
+    ]);
   });
 
   it("offers the thinking levels of the chosen model, and every level for an unknown model", () => {
-    expect(thinkingOptions(context(), { model: "acme/small", skills: [] })).toEqual(["off"]);
-    expect(thinkingOptions(context(), { model: "inherit", skills: [] })).toContain("medium");
+    const ctx = context();
+    const small = press(
+      ctx,
+      initialSetup(ctx),
+      key("enter"),
+      key("end"),
+      key("enter"),
+      key("down"),
+      key("enter"),
+    );
+    const inherit = press(ctx, initialSetup(ctx), key("enter"), key("home"), key("enter"), key("down"));
+    const levels = optionRows(render(ctx, press(ctx, inherit.state, key("enter")).state));
+
+    expect(optionRows(render(ctx, small.state))).toEqual([" › off"]);
+    expect(levels).toContain("   medium");
+    expect(levels.length).toBeGreaterThan(3);
   });
 
   it("drops a thinking level the newly chosen model does not accept and keeps one it does", () => {
