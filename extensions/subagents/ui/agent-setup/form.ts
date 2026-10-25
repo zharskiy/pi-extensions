@@ -48,9 +48,18 @@ export const ALL_SKILLS_TEXT = "every skill of the agent's caller";
 
 const ALL_ROW = -1;
 
-type SkillsPicker = { field: "skills"; order: number[]; checked: boolean[]; all: boolean; cursor: number };
+type SkillsPicker = {
+  field: "skills";
+  order: number[];
+  checked: boolean[];
+  all: boolean;
+  cursor: number;
+  query: string;
+};
 
-export type Picker = { field: "model" | "thinking"; cursor: number } | SkillsPicker;
+type ListPicker = { field: "model" | "thinking"; cursor: number; query: string };
+
+export type Picker = ListPicker | SkillsPicker;
 
 export type SetupState = {
   drafts: Draft[];
@@ -118,6 +127,29 @@ export const thinkingOptions = (context: SetupContext, draft: Draft | undefined)
 const pickerOptions = (context: SetupContext, state: SetupState, field: "model" | "thinking") =>
   field === "model" ? modelOptions(context, state.tab) : thinkingOptions(context, state.drafts[state.tab]);
 
+const matching = (labels: readonly string[], query: string) => {
+  const needle = query.toLowerCase();
+
+  return labels.flatMap((label, index) => (label.toLowerCase().includes(needle) ? [index] : []));
+};
+
+const queryKey = (key: KeyPress, query: string) => {
+  if (key.name === "other" && key.char !== undefined && /^\P{Cc}$/u.test(key.char)) {
+    return `${query}${key.char}`;
+  }
+
+  return key.name === "backspace" && query ? query.slice(0, -1) : undefined;
+};
+
+export const listView = (context: SetupContext, state: SetupState, picker: ListPicker) => {
+  const options = pickerOptions(context, state, picker.field);
+
+  return {
+    shown: matching(options, picker.query).flatMap((index) => options[index] ?? []),
+    total: options.length,
+  };
+};
+
 const pickerSkills = (context: SetupContext, picker: SkillsPicker) =>
   picker.order.flatMap((index) => context.skills[index] ?? []);
 
@@ -131,12 +163,13 @@ const skillsPicker = (context: SetupContext, skills: Grant): SkillsPicker => {
   const order = [...new Set([...listed, ...context.skills.keys()])];
   const checked = order.map((index) => named.includes(context.skills[index]?.name ?? ""));
 
-  return { field: "skills", order, checked, all: skills === AGENT_SCOPE_ALL, cursor: 0 };
+  return { field: "skills", order, checked, all: skills === AGENT_SCOPE_ALL, cursor: 0, query: "" };
 };
 
 export const skillsView = (context: SetupContext, picker: SkillsPicker) => {
   const skills = pickerSkills(context, picker);
-  const rows = [ALL_ROW, ...picker.order.keys()];
+  const names = skills.map((skill) => skill.name);
+  const rows = picker.query ? matching(names, picker.query) : [ALL_ROW, ...picker.order.keys()];
   const options = rows.map((row) =>
     row === ALL_ROW
       ? { label: AGENT_SCOPE_ALL, description: ALL_SKILLS_TEXT }
@@ -144,7 +177,7 @@ export const skillsView = (context: SetupContext, picker: SkillsPicker) => {
   );
   const checked = rows.map((row) => (row === ALL_ROW ? picker.all : picker.checked[row] === true));
 
-  return { rows, options, multi: { cursor: picker.cursor, checked } };
+  return { rows, options, multi: { cursor: picker.cursor, checked }, total: names.length };
 };
 
 const ticked = (picker: SkillsPicker, rows: number[], multi: MultiState): SkillsPicker => {
@@ -170,7 +203,7 @@ const openPicker = (context: SetupContext, state: SetupState): SetupState => {
   const options = pickerOptions(context, state, field);
   const value = field === "model" ? draft?.model : draft?.thinking;
 
-  return { ...state, picker: { field, cursor: Math.max(0, options.indexOf(value ?? "")) } };
+  return { ...state, picker: { field, cursor: Math.max(0, options.indexOf(value ?? "")), query: "" } };
 };
 
 const setDraft = (state: SetupState, patch: Partial<Draft>): SetupState => ({
@@ -207,16 +240,16 @@ const listStep = (key: KeyPress, cursor: number, count: number) => {
 const chooseFromList = (
   context: SetupContext,
   state: SetupState,
-  picker: { field: "model" | "thinking"; cursor: number },
+  picker: ListPicker,
   key: KeyPress,
 ): SetupState => {
-  const options = pickerOptions(context, state, picker.field);
+  const { shown } = listView(context, state, picker);
 
   if (key.name === "enter") {
-    const value = options[picker.cursor];
+    const value = shown[picker.cursor];
 
     if (value === undefined) {
-      return { ...state, picker: undefined };
+      return state;
     }
 
     return setDraft(
@@ -225,7 +258,7 @@ const chooseFromList = (
     );
   }
 
-  const cursor = listStep(key, picker.cursor, options.length);
+  const cursor = listStep(key, picker.cursor, shown.length);
 
   return cursor === undefined ? state : { ...state, picker: { ...picker, cursor } };
 };
@@ -255,8 +288,14 @@ const chooseSkills = (
 };
 
 const pickerKey = (context: SetupContext, state: SetupState, picker: Picker, key: KeyPress): SetupState => {
+  const query = queryKey(key, picker.query);
+
+  if (query !== undefined) {
+    return { ...state, picker: { ...picker, query, cursor: 0 } };
+  }
+
   if (key.name === "escape") {
-    return { ...state, picker: undefined };
+    return { ...state, picker: picker.query ? { ...picker, query: "", cursor: 0 } : undefined };
   }
 
   return picker.field === "skills"

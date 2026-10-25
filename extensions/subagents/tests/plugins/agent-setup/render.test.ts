@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { key } from "../../../../../test/framework/index.ts";
+import { char, key } from "../../../../../test/framework/index.ts";
 import { initialSetup } from "../../../ui/agent-setup/form.ts";
 import { context, PATHS, press, proposedContext, render } from "../../support/setup-context.ts";
 
@@ -62,6 +62,26 @@ describe("agent setup rendering", () => {
     );
     expect(render(ctx, press(ctx, initialSetup(ctx), key("left")).state)).toContain(
       " Project: A TypeScript library",
+    );
+  });
+
+  it("shows the filter under the picker title with a placeholder, a count and a no-match line", () => {
+    const ctx = context();
+    const opened = press(ctx, initialSetup(ctx), key("down"), key("down"), key("enter"));
+    const lines = render(ctx, opened.state);
+    const typed = (text: string) => render(ctx, press(ctx, opened.state, ...[...text].map(char)).state);
+
+    expect(lines.slice(lines.indexOf(" Skills"), lines.indexOf(" Skills") + 3)).toEqual([
+      " Skills",
+      " / type to filter",
+      " › [x] all  every skill of the agent's caller",
+    ]);
+    expect(lines.some((line) => line.includes("type to filter · ↑↓ to select · space to toggle"))).toBe(true);
+    expect(typed("do")).toContain(" / do▏   1 of 2");
+    expect(typed("zzq")).toContain(' no skill matches "zzq"');
+    expect(typed("zzq").some((line) => line.includes("[ ]") || line.includes("[x]"))).toBe(false);
+    expect(render(ctx, press(ctx, initialSetup(ctx), key("enter"), char("q")).state)).toContain(
+      ' no model matches "q"',
     );
   });
 

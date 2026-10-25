@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { key } from "../../../../../test/framework/index.ts";
+import { char, key } from "../../../../../test/framework/index.ts";
 import {
   initialSetup,
   modelOptions,
@@ -12,6 +12,8 @@ import { context, PATHS, press, proposedContext, render } from "../../support/se
 const toSkills = [key("down"), key("down"), key("enter")];
 
 const skillRows = (lines: string[]) => lines.filter((line) => line.includes("[x]") || line.includes("[ ]"));
+
+const typed = (text: string) => [...text].map((letter) => char(letter));
 
 describe("agent setup form", () => {
   it("starts on the first agent and the first scope: the project when trusted, the user file otherwise", () => {
@@ -76,6 +78,51 @@ describe("agent setup form", () => {
     expect(setupChanges(ctx, state)).toEqual([
       { name: "lead", patch: { skills: ["search", "docs", "lint"] } },
     ]);
+  });
+
+  it("narrows the skills by typing, hides the all row and clears with Backspace, then Escape", () => {
+    const ctx = proposedContext();
+    const opened = press(ctx, initialSetup(ctx), ...toSkills);
+    const narrowed = press(ctx, opened.state, ...typed("SE"));
+
+    expect(skillRows(render(ctx, narrowed.state))).toEqual([" › [x] search"]);
+
+    const widened = press(ctx, narrowed.state, key("backspace"));
+
+    expect(skillRows(render(ctx, widened.state))).toEqual([" › [x] search", "   [x] docs  Writes docs"]);
+
+    const cleared = press(ctx, widened.state, key("escape"));
+
+    expect(cleared.state.picker?.query).toBe("");
+    expect(skillRows(render(ctx, cleared.state))).toHaveLength(4);
+    expect(press(ctx, cleared.state, key("escape")).state.picker).toBeUndefined();
+  });
+
+  it("types a and n into the filter instead of checking all or none", () => {
+    const ctx = context();
+    const { state } = press(ctx, initialSetup(ctx), ...toSkills, char("n"), key("escape"), char("a"));
+
+    expect(state.picker?.query).toBe("a");
+    expect(press(ctx, state, key("escape"), key("enter")).state.drafts[0]?.skills).toBe("all");
+  });
+
+  it("keeps hidden checked skills and confirms in the order shown without a filter", () => {
+    const ctx = proposedContext();
+    const { state } = press(ctx, initialSetup(ctx), ...toSkills, ...typed("li"), key("space"), key("enter"));
+
+    expect(state.drafts[0]?.skills).toEqual(["search", "docs", "lint"]);
+  });
+
+  it("filters the models and picks only a visible one", () => {
+    const ctx = context();
+    const opened = press(ctx, initialSetup(ctx), key("enter"), ...typed("small"));
+
+    expect(press(ctx, opened.state, key("enter")).state.drafts[0]?.model).toBe("acme/small");
+
+    const missing = press(ctx, opened.state, ...typed("zzq"), key("enter"));
+
+    expect(missing.state.picker?.query).toBe("smallzzq");
+    expect(missing.state.drafts[0]?.model).toBe("acme/big");
   });
 
   it("lists inherit, an initial model without credentials, then the models with credentials", () => {

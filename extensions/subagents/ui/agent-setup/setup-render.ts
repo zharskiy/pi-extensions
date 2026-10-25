@@ -7,7 +7,6 @@ import {
   groupedTabBar,
   type KeyHint,
   listLines,
-  MULTI_SELECT_HINTS,
   multiLines,
   pointerMark,
   SELECT_HINTS,
@@ -24,7 +23,7 @@ import {
   fieldChanged,
   fieldsOf,
   LIST_HEIGHT,
-  modelOptions,
+  listView,
   onSubmitTab,
   type Picker,
   type SetupContext,
@@ -32,7 +31,6 @@ import {
   scopeOptions,
   setupChanges,
   skillsView,
-  thinkingOptions,
 } from "./form.ts";
 
 export type SetupPaths = { project: string; user: string };
@@ -42,6 +40,8 @@ const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", sk
 const LABEL_WIDTH = 10;
 
 const DETAIL_LINES = 3;
+
+const NOUNS: Record<Field, string> = { model: "model", thinking: "level", skills: "skill" };
 
 const TOOLS_NOTE = "Tools are fixed per agent. To change tools, create your own agent with /agents create.";
 
@@ -141,6 +141,23 @@ const skillDetail = (
   return ["", ...shown.map((line) => `${PAD}${theme.fg("muted", line)}`)];
 };
 
+const queryLine = (theme: ThemeLike, query: string, shown: number, total: number, width: number) => {
+  if (!query) {
+    return padded(theme, theme.fg("dim", "/ type to filter"), width);
+  }
+
+  return padded(
+    theme,
+    `${theme.fg("dim", "/")} ${theme.fg("text", `${query}▏`)}   ${theme.fg("dim", `${shown} of ${total}`)}`,
+    width,
+  );
+};
+
+const noMatchLines = (theme: ThemeLike, picker: Picker, shown: number, width: number) =>
+  picker.query && shown === 0
+    ? padded(theme, theme.fg("muted", `no ${NOUNS[picker.field]} matches "${picker.query}"`), width)
+    : [];
+
 const pickerLines = (
   context: SetupContext,
   state: SetupState,
@@ -151,21 +168,27 @@ const pickerLines = (
   const title = (text: string) => ["", ...padded(theme, theme.fg("accent", theme.bold(text)), width)];
 
   if (picker.field === "skills") {
-    const { options, multi } = skillsView(context, picker);
-    const rows = multiLines(theme, options, multi, width, LIST_HEIGHT);
+    const { options, multi, total } = skillsView(context, picker);
+    const rows = options.length > 0 ? multiLines(theme, options, multi, width, LIST_HEIGHT) : [];
 
-    return [...title("Skills"), ...rows, ...skillDetail(options, multi.cursor, theme, width)];
+    return [
+      ...title("Skills"),
+      ...queryLine(theme, picker.query, options.length, total, width),
+      ...rows,
+      ...noMatchLines(theme, picker, options.length, width),
+      ...skillDetail(options, multi.cursor, theme, width),
+    ];
   }
 
-  if (picker.field === "model") {
-    const rows = windowLines(theme, modelOptions(context, state.tab), picker.cursor, width, modelText);
+  const { shown, total } = listView(context, state, picker);
+  const label = picker.field === "model" ? modelText : undefined;
 
-    return [...title("Model (models with credentials)"), ...rows];
-  }
-
-  const levels = thinkingOptions(context, state.drafts[state.tab]);
-
-  return [...title("Thinking level"), ...windowLines(theme, levels, picker.cursor, width)];
+  return [
+    ...title(picker.field === "model" ? "Model (models with credentials)" : "Thinking level"),
+    ...queryLine(theme, picker.query, shown.length, total, width),
+    ...windowLines(theme, shown, picker.cursor, width, label),
+    ...noMatchLines(theme, picker, shown.length, width),
+  ];
 };
 
 const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
@@ -237,15 +260,20 @@ const submitLines = (
   ];
 };
 
-const BACK_HINT: KeyHint = ["esc", "to go back"];
+const FILTER_HINTS: readonly KeyHint[] = [
+  ["type", "to filter"],
+  ["↑↓", "to select"],
+];
+
+const BACK_HINT: KeyHint = ["esc", "to clear/back"];
 
 const hints = (context: SetupContext, state: SetupState, ready: boolean): readonly KeyHint[] => {
   if (state.picker?.field === "skills") {
-    return [...MULTI_SELECT_HINTS, ["enter", "to confirm"], BACK_HINT];
+    return [...FILTER_HINTS, ["space", "to toggle"], ["enter", "to confirm"], BACK_HINT];
   }
 
   if (state.picker) {
-    return [["↑↓", "to select"], ["enter", "to choose"], BACK_HINT];
+    return [...FILTER_HINTS, ["enter", "to choose"], BACK_HINT];
   }
 
   if (onSubmitTab(context, state)) {

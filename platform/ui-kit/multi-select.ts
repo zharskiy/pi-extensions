@@ -8,7 +8,7 @@ export type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
-export const MULTI_SELECT_HINTS: readonly KeyHint[] = [
+const MULTI_SELECT_HINTS: readonly KeyHint[] = [
   ["↑↓", "to select"],
   ["space", "to toggle"],
   ["a", "to check all"],

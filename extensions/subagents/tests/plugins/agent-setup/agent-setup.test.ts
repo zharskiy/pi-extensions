@@ -129,7 +129,7 @@ describe("/agents setup form", () => {
     form.press(key("down"), key("down"), key("enter"), key("down"));
 
     const lines = form.render(33);
-    const list = lines.slice(lines.indexOf(" Skills") + 1);
+    const list = lines.slice(lines.indexOf(" Skills") + 2);
 
     expect(list.slice(0, 4)).toEqual([
       "   [x] all  every skill of the...",
