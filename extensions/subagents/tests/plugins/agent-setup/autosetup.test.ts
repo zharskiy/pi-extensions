@@ -99,12 +99,11 @@ describe("candidateSkills", () => {
       skillFile(dir, "b", "---\nname: b\ndescription: Uses the questionnaire tool\n---\nReads the diff."),
       skillFile(dir, "c", "No frontmatter, calls askuserquestion."),
       skill("gone", { path: join(dir, "gone.md") }),
-      skill("broken", { path: dir }),
     ];
     const { candidates, interactive } = candidateSkills(catalog);
 
     expect(interactive).toEqual(["a", "c"]);
-    expect(candidates.map((entry) => entry.name)).toEqual(["b", "gone", "broken"]);
+    expect(candidates.map((entry) => entry.name)).toEqual(["b", "gone"]);
   });
 
   it("matches every listed term", () => {

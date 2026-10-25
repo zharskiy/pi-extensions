@@ -48,19 +48,15 @@ const isInteractive = (text: string) => {
 };
 
 export const candidateSkills = (catalog: SkillInfo[]) => {
-  const interactive = catalog.filter((skill) => {
-    try {
-      const text = readText(skill.path);
+  const classified = catalog.map((skill) => {
+    const text = readText(skill.path);
 
-      return text !== undefined && isInteractive(text.replace(FRONTMATTER, ""));
-    } catch {
-      return false;
-    }
+    return { skill, interactive: text !== undefined && isInteractive(text.replace(FRONTMATTER, "")) };
   });
 
   return {
-    candidates: catalog.filter((skill) => !interactive.includes(skill)),
-    interactive: interactive.map((skill) => skill.name),
+    candidates: classified.filter((entry) => !entry.interactive).map((entry) => entry.skill),
+    interactive: classified.filter((entry) => entry.interactive).map((entry) => entry.skill.name),
   };
 };
 

@@ -115,7 +115,8 @@ describe("proposalUnchanged", () => {
     const reordered = proposal([{ lead: "planner", skills: ["search", "docs"] }]);
     const changed = proposal([{ lead: "reviewer", skills: ["docs"] }]);
 
-    expect("error" in same || proposalUnchanged(same, read)).toBe(true);
+    expect("error" in same).toBe(false);
+    expect(!("error" in same) && proposalUnchanged(same, read)).toBe(true);
     expect("error" in reordered || proposalUnchanged(reordered, read)).toBe(false);
     expect("error" in changed || proposalUnchanged(changed, read)).toBe(false);
     expect("error" in changed || proposalUnchanged(changed, () => "all")).toBe(false);

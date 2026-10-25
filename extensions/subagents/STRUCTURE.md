@@ -81,7 +81,7 @@ extensions/subagents/
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form, SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
-│   │   ├── autosetup.ts                   # isLead, hasSkillsOverride, candidateSkills (INTERACTIVE_TERMS), projectListing, autosetupBrief
+│   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, isChore, isLead, hasSkillsOverride, candidateSkills, leftOutText, projectListing, autosetupBrief
 │   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
