@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-This extension switches the output style of the main session and of every subagent at once. The shipped `concise` style asks for short, result-first replies, while the engineering work stays as thorough as usual. The style is its own section of the system prompt, so pi's prompt and your own additions stay as they are. Your choice survives new sessions.
+This extension switches the output style of the main session and of every subagent at once. The shipped `concise` style asks for short, result-first replies in Simplified Technical English (ASD-STE100): short sentences, simple words, active voice, and no future-tense announcements of the next step. The engineering work stays as thorough as usual. The style is its own section of the system prompt, so pi's prompt and your own additions stay as they are. Your choice survives new sessions.
 
 ## What it looks like
 
