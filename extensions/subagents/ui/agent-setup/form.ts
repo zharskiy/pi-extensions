@@ -15,8 +15,9 @@ import {
   type Grant,
   INHERIT_MODEL,
 } from "../../core/model/agent-schema.ts";
+import { blockRows, listHeight } from "./setup-layout.ts";
 
-export type Draft = { model: string; thinking?: string; skills: Grant };
+type Draft = { model: string; thinking?: string; skills: Grant };
 
 type SetupAgent = {
   name: string;
@@ -109,15 +110,7 @@ export type SetupState = {
 
 type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
 
-export const INFO_ROWS = 3;
-
-export const BLOCK_ROWS = FIELD_ROWS + 1 + PRESETS.length + 1 + INFO_ROWS;
-
-export const DETAIL_LINES = 2;
-
-const FRAME_ROWS = 3;
-
-export const listHeight = (field: Field) => BLOCK_ROWS - FRAME_ROWS - (field === "skills" ? DETAIL_LINES : 0);
+export const BLOCK_ROWS = blockRows(FIELD_ROWS, PRESETS.length);
 
 export const scopeOptions = (context: SetupContext): readonly Scope[] =>
   context.trusted ? SCOPES : ["user"];
@@ -328,7 +321,7 @@ const chooseFromList = (
     );
   }
 
-  const cursor = listStep(key, picker.cursor, shown.length, listHeight(picker.field));
+  const cursor = listStep(key, picker.cursor, shown.length, listHeight(BLOCK_ROWS, picker.field));
 
   return cursor === undefined ? state : { ...state, picker: { ...picker, cursor } };
 };

@@ -20,14 +20,11 @@ import { alignRight } from "../components/format.ts";
 import {
   BLOCK_ROWS,
   changeRows,
-  DETAIL_LINES,
   FIELD_ROWS,
   type Field,
   fieldChanged,
   fieldsOf,
   fieldValue,
-  INFO_ROWS,
-  listHeight,
   listView,
   onSubmitTab,
   type Picker,
@@ -43,8 +40,13 @@ import {
   setupChanges,
   skillsView,
 } from "./form.ts";
+import { DETAIL_LINES, GAP_ROWS, INFO_ROWS, listHeight } from "./setup-layout.ts";
 
 export type SetupPaths = { project: string; user: string };
+
+type SetupAgent = SetupContext["agents"][number];
+
+type Draft = SetupAgent["initial"];
 
 const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", skills: "Skills" };
 
@@ -55,6 +57,8 @@ const LABEL_WIDTH = 10;
 const DESCRIPTION_ROWS = 2;
 
 const BODY_ROWS = 1 + DESCRIPTION_ROWS + 1 + BLOCK_ROWS;
+
+const GAP = padRows([], GAP_ROWS);
 
 const TITLES: Record<Field, string> = {
   model: "Model (models with credentials)",
@@ -89,13 +93,7 @@ const block = (theme: ThemeLike, text: string, width: number, rows: number) =>
 
 const modelText = (model: string) => (model === INHERIT_MODEL ? "inherit (the main session's model)" : model);
 
-const valueText = (context: SetupContext, state: SetupState, field: Field) => {
-  const draft = state.drafts[state.tab];
-
-  if (!draft) {
-    return "";
-  }
-
+const valueText = (context: SetupContext, draft: Draft, field: Field) => {
   if (field === "model") {
     return modelText(draft.model);
   }
@@ -111,10 +109,8 @@ const valueText = (context: SetupContext, state: SetupState, field: Field) => {
   return fieldValue(field, draft);
 };
 
-const lockedSkillsLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
-  const agent = context.agents[state.tab];
-
-  if (agent?.role !== "chore") {
+const lockedSkillsLines = (agent: SetupAgent, theme: ThemeLike, width: number) => {
+  if (agent.role !== "chore") {
     return [];
   }
 
@@ -124,26 +120,33 @@ const lockedSkillsLines = (context: SetupContext, state: SetupState, theme: Them
   return [fitted(theme, `${PAD}${pointerMark(theme, false)} ${label}`, value, "", width)];
 };
 
-const fieldLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => [
-  ...fieldsOf(context.agents[state.tab]).map((field) => {
+const fieldLines = (
+  context: SetupContext,
+  state: SetupState,
+  agent: SetupAgent,
+  draft: Draft,
+  theme: ThemeLike,
+  width: number,
+) => [
+  ...fieldsOf(agent).map((field) => {
     const chosen = selectedRow(context, state) === field;
     const label = theme.fg(chosen ? "accent" : "muted", LABELS[field].padEnd(LABEL_WIDTH));
     const changed = fieldChanged(context, state, field) ? theme.fg("warning", " (changed)") : "";
     const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
 
-    return fitted(theme, first, theme.fg("text", valueText(context, state, field)), changed, width);
+    return fitted(theme, first, theme.fg("text", valueText(context, draft, field)), changed, width);
   }),
-  ...lockedSkillsLines(context, state, theme, width),
+  ...lockedSkillsLines(agent, theme, width),
 ];
 
-const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
-  const agent = context.agents[state.tab];
-
-  if (!agent) {
-    return [];
-  }
-
-  return presetsOf(agent).map(({ preset, draft }) => {
+const presetLines = (
+  context: SetupContext,
+  state: SetupState,
+  agent: SetupAgent,
+  theme: ThemeLike,
+  width: number,
+) =>
+  presetsOf(agent).map(({ preset, draft }) => {
     const chosen = selectedRow(context, state) === preset;
     const label = theme.fg(chosen ? "accent" : "muted", PRESET_LABELS[preset].padEnd(LABEL_WIDTH));
     const first = `${PAD}${pointerMark(theme, chosen)} ${label}`;
@@ -154,30 +157,6 @@ const presetLines = (context: SetupContext, state: SetupState, theme: ThemeLike,
 
     return fitted(theme, first, theme.fg("text", text), mark, width);
   });
-};
-
-const windowLines = (
-  theme: ThemeLike,
-  options: string[],
-  cursor: number,
-  width: number,
-  height: number,
-  empty: string | undefined,
-  label: (option: string) => string = (option) => option,
-) =>
-  scrolledLines(
-    theme,
-    options.length,
-    cursor,
-    height,
-    width,
-    (index, chosen) => {
-      const text = theme.fg(chosen ? "accent" : "text", label(options[index] ?? ""));
-
-      return [fitted(theme, `${PAD}${pointerMark(theme, chosen)} `, text, "", width)];
-    },
-    { slots: true, empty },
-  );
 
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
   line(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
@@ -200,39 +179,6 @@ const headLine = (theme: ThemeLike, picker: Picker, shown: number, total: number
 
 const noMatch = (picker: Picker) => `no ${NOUNS[picker.field]} matches "${picker.query}"`;
 
-const pickerList = (
-  context: SetupContext,
-  state: SetupState,
-  picker: Picker,
-  theme: ThemeLike,
-  width: number,
-) => {
-  const height = listHeight(picker.field);
-  const empty = picker.query ? noMatch(picker) : undefined;
-
-  if (picker.field === "skills") {
-    const { options, multi, total, detail } = skillsView(context, picker);
-
-    return {
-      shown: options.length,
-      total,
-      lines: [
-        ...multiLines(theme, options, multi, width, height, { slots: true, empty }),
-        ...block(theme, detail ?? "", width, DETAIL_LINES),
-      ],
-    };
-  }
-
-  const { shown, total } = listView(context, state, picker);
-  const label = picker.field === "model" ? modelText : undefined;
-
-  return {
-    shown: shown.length,
-    total,
-    lines: windowLines(theme, shown, picker.cursor, width, height, empty, label),
-  };
-};
-
 const pickerLines = (
   context: SetupContext,
   state: SetupState,
@@ -240,29 +186,44 @@ const pickerLines = (
   theme: ThemeLike,
   width: number,
 ) => {
-  const { shown, total, lines } = pickerList(context, state, picker, theme, width);
+  const height = listHeight(BLOCK_ROWS, picker.field);
+  const empty = picker.query ? noMatch(picker) : undefined;
 
-  return [headLine(theme, picker, shown, total, width), ...lines];
-};
+  if (picker.field === "skills") {
+    const { options, multi, total, detail } = skillsView(context, picker);
 
-const infoLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
-  const agent = context.agents[state.tab];
-
-  if (!agent) {
-    return [];
+    return [
+      headLine(theme, picker, options.length, total, width),
+      ...multiLines(theme, options, multi, width, height, { slots: true, empty }),
+      ...block(theme, detail ?? "", width, DETAIL_LINES),
+    ];
   }
 
+  const { shown, total } = listView(context, state, picker);
+  const label = picker.field === "model" ? modelText : (option: string) => option;
+  const row = (index: number, chosen: boolean) => {
+    const text = theme.fg(chosen ? "accent" : "text", label(shown[index] ?? ""));
+
+    return [fitted(theme, `${PAD}${pointerMark(theme, chosen)} `, text, "", width)];
+  };
+
   return [
-    agent.note ? labelLine(theme, "Proposed", agent.note, width) : "",
-    labelLine(theme, "Tools", `${grantOrNone(agent.tools)}; ${TOOLS_NOTE}`, width),
-    labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
+    headLine(theme, picker, shown.length, total, width),
+    ...scrolledLines(theme, shown.length, picker.cursor, height, width, row, { slots: true, empty }),
   ];
 };
 
+const infoLines = (agent: SetupAgent, theme: ThemeLike, width: number) => [
+  agent.note ? labelLine(theme, "Proposed", agent.note, width) : "",
+  labelLine(theme, "Tools", `${grantOrNone(agent.tools)}; ${TOOLS_NOTE}`, width),
+  labelLine(theme, "MCP", agent.mcp ? MCP_ON : MCP_OFF, width),
+];
+
 const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, width: number) => {
   const agent = context.agents[state.tab];
+  const draft = state.drafts[state.tab];
 
-  if (!agent) {
+  if (!agent || !draft) {
     return [];
   }
 
@@ -274,11 +235,11 @@ const agentLines = (context: SetupContext, state: SetupState, theme: ThemeLike, 
   const rows = state.picker
     ? pickerLines(context, state, state.picker, theme, width)
     : [
-        ...padRows(fieldLines(context, state, theme, width), FIELD_ROWS),
-        "",
-        ...padRows(presetLines(context, state, theme, width), PRESETS.length),
-        "",
-        ...padRows(infoLines(context, state, theme, width), INFO_ROWS),
+        ...padRows(fieldLines(context, state, agent, draft, theme, width), FIELD_ROWS),
+        ...GAP,
+        ...padRows(presetLines(context, state, agent, theme, width), PRESETS.length),
+        ...GAP,
+        ...padRows(infoLines(agent, theme, width), INFO_ROWS),
       ];
 
   return padRows([...heading, ...rows], BODY_ROWS);
