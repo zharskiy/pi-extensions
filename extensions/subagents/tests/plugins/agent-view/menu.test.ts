@@ -44,7 +44,7 @@ describe("/agents menu", () => {
 
     expect(text).toContain("Agents");
     expect(text).toMatch(/view\s+agents list\n/);
-    expect(text).toMatch(/setup\s+model, thinking and skills per agent/);
+    expect(text).toMatch(/setup\s+model and thinking per agent, skills per lead/);
     expect(text).toMatch(/create\s+new agent; the main session asks what it is for and writes it/);
     expect(text).toContain("↑↓ to select · 1-9 to pick · enter to choose · esc to cancel");
 

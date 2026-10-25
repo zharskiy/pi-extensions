@@ -2,6 +2,8 @@
 
 Facts behind README.md. First gathered 2026-10-22, re-verified 2026-10-25 after the modular-architecture refactor (PR #18). Sources: this package's code (paths relative to the repo root, line numbers as read on 10-25), pi 1.4.0 as installed under `node_modules/@earendil-works/pi-coding-agent` (PCA below; `package.json` says 1.4.0), and vendor docs (links given; most carry no publication date). Pi claims marked "10-22" were not re-read on 10-25.
 
+The facts below predate release 1 and its follow-up (README.md, Follow-up shipped).
+
 ## 1. What this package has today
 
 All paths below are under `extensions/subagents/` unless they start with `platform/`, `test/` or `AGENTS.md`.

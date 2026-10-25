@@ -39,7 +39,7 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant, isChore
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
@@ -78,10 +78,10 @@ extensions/subagents/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile, panelWindow
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
-│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form, SETUP_USAGE
+│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
-│   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, isChore, isLead, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
+│   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, isLead, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
 │   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
@@ -108,8 +108,8 @@ extensions/subagents/
 │   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
-│   │   ├── form.ts                        # setup form state, proposed drafts, fields, pickers, scopes and keys
-│   │   ├── setup-render.ts                # renderSetup: the form lines
+│   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, pickers with the all row and the filter, scopes and keys
+│   │   ├── setup-render.ts                # renderSetup: the form lines, the Leads/Chores tab bar, the locked chore skills row and the query line
 │   │   └── setup-overlay.ts               # setupForm: the HostUi.showForm factory
 │   └── agent-view/
 │       ├── picker.ts                      # the /agents subcommands and the menu picker

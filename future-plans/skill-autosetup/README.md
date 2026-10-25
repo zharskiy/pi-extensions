@@ -9,11 +9,21 @@ Research date: 2026-10-22, revised 2026-10-25. Question: how to give each lead a
 ## Summary
 
 1. **Release 1 is `/agents setup`, made smart.** There is one setup feature, not two. When the user runs `/agents setup` and no agent on this machine has a skills override yet, the command asks the main session for a proposal straight away and opens the setup form with it filled in. When some agent already has an override, the command first asks "Propose skills automatically? Yes / No" with Yes preselected, and opens the plain form on No. The user runs it whenever they want. Nothing runs on its own.
-2. **Leads only, and the model never hears of chores.** The folder decides: the shipped agents live in `agents/leads/` and `agents/chores/`, the loader walks subfolders of every agents dir, and each definition keeps its file path. An agent whose path, relative to the agents dir it was loaded from, has a `chores` directory segment is a chore; every other agent is a lead. The brief lists leads only, the tool accepts leads only. `general` has `skills: all` and is left alone. The main session's own skills are not touched.
+2. **Leads only, and the model never hears of chores.** The folder decides: the shipped agents live in `agents/leads/` and `agents/chores/`, the loader walks subfolders of every agents dir, and each definition keeps its file path. An agent whose path, relative to the agents dir it was loaded from, has a `chores` directory segment is a chore; every other agent is a lead. The brief lists leads only, the tool accepts leads only. `general`'s file has `skills: all`, so it is never a lead here, whatever an override says. The main session's own skills are not touched.
 3. **Skills are taken as they are, minus the ones agents cannot use.** The inputs are the inventory pi already builds at session start (name, description, scope, path of every skill on the machine) and a glance at the project. No frontmatter keys, no catalogue conventions. Skills whose body names an interactive tool (AskUserQuestion, questionnaire and the like) are filtered out before the brief, because agents cannot ask anyone anything. Project-level skills are marked and preferred.
 4. **The model judges, the user decides, the extension writes.** The brief tells the main session to say what kind of project this is first, then to pick at most five skills per lead, most useful first. It answers through a model-only tool. The tool validates, opens the setup form with the proposal in place and marked against the current lists, and on confirm writes through the path the form uses today: `.pi/pi-subagents.json` in a trusted project, then `definitions.reload()`, then one notice. The model never writes the file.
 5. **Automatic re-runs are release 2, if ever.** The 2026-10-22 design (session-start reconcile, record, three-way merge, modes) is kept below as a sketch and in git history.
 6. **Out of scope.** Claude Code files, company catalogues, chores, the main session, evals.
+
+## Follow-up shipped
+
+After release 1 the setup form changed on the same branch:
+
+- The tab bar has a `Leads` row and a `Chores` row (ui-kit `groupedTabBar`), Submit closing the last; leads come first.
+- `/agents setup` never changes a chore's skills: a chore's tab edits model and thinking and shows its skills as a fixed row, the one-line form refuses `skills=` on a chore, and a chore's own skills override does not trigger the Yes/No question. Existing chore overrides keep applying.
+- Leads are judged by the agent file's grant (`fileSkills`), not the overridden one, so overriding `general` to a list never makes it a lead and overriding a lead to `all` never drops it.
+- The skills picker has an explicit, exclusive `all` row for every lead, ticked when the agent has `all`; it replaces "an `all` draft opens with nothing ticked and keeps `all` unless a box changed".
+- The model, thinking and skills pickers filter as you type; the `a`/`n` shortcuts are gone from the setup form.
 
 ## The problem, restated
 
@@ -55,7 +65,7 @@ The command sends the filled template with `host.sendHiddenMessage`, and sets th
 `agent_skills_proposal`, model-only, registered by the agent-setup plugin at enable. The questionnaire extension is the precedent for a tool that opens a form.
 
 - Refuses, with a message the model can relay, when no proposal is pending ("run /agents setup first"), when the session is not tui, when a lead is unknown or is not a lead (a chore or an `all`-grant agent is reported as "not set up here", nothing more), when a skill is not a candidate (unknown, or filtered as interactive), or when a list has more than five entries. Unknown names are an error, not a silent drop, so the model corrects and calls again. The mark stays set across a refusal.
-- Opens the setup form, built from the same `SetupContext` as today, with the proposal as the opening draft per lead while the baseline for the change marks stays the current list. Every agent still has its tab, as today; chores open unchanged. A "Proposed" line in each proposed lead's tab shows the model's reasons, and the Submit tab shows the project classification.
+- Opens the setup form, built from the same `SetupContext` as today, with the proposal as the opening draft per lead while the baseline for the change marks stays the current list. Every agent still has its tab, as today; chores open unchanged (see Follow-up shipped for the role rows and the fixed chore skills). A "Proposed" line in each proposed lead's tab shows the model's reasons, and the Submit tab shows the project classification.
 - **Picker order**, in the form generally: when the skills picker opens for an agent, checked skills come first in the order of the list (the proposal's order, most useful first), then the rest in inventory order. The order is fixed while the picker is open; ticking or unticking never moves a row. The list the user confirms is written in that order.
 - **Scope** is per project. In a trusted project the Submit tab offers project (default) and user, as today. In an untrusted project pi does not read the project file, so the form offers the user file only and says that the result applies to every project; the user is asked, never surprised.
 - On confirm calls the plugin's `save(scope, changes)`: trust check, `writeChanges`, `definitions.reload()`, the usual notice. `save` has to return what it did so the tool can report it. On cancel writes nothing.
@@ -96,8 +106,8 @@ The full version is this README as committed on 2026-10-22 (`git log -- future-p
 
 ## Out of scope
 
-- **Chores.** Never in the brief, never accepted by the tool, their tabs in the form unchanged. The chore test is the `chores` folder in the agent's path; a chore that one day wants skills is a release 2 question.
-- **The main session.** Its own skill list is pi's `<skills>` section and the skills-in-main-session folder. `general` (`skills: all`) is excluded by its grant.
+- **Chores.** Never in the brief, never accepted by the tool, their skills fixed in the form (model and thinking stay editable). The chore test is the `chores` folder in the agent's path; a chore that one day wants skills is a release 2 question.
+- **The main session.** Its own skill list is pi's `<skills>` section and the skills-in-main-session folder. `general` (`skills: all`) is excluded by its file grant; the form still lets the user tick a subset or `all` for it.
 - **Claude Code files.** Not read. If pi ever discovers Claude Code skills, they enter the inventory like any other skill and release 1 handles them with no change here.
 - **Catalogue conventions.** No `pi-agents`, `pi-match` or `pi-replaces` metadata. Skills are judged by their descriptions.
 - **Project packages, `pi update`, marketplaces.** How skills arrive on the machine is pi's and the user's business.

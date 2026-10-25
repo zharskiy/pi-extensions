@@ -7,7 +7,7 @@
 - `list.ts`: the selectable list: lines, keys, the shared hints.
 - `select.ts`: `selectForm`; a single-choice form over the list.
 - `tabs.ts`: the tab bar, the grouped tab bar and Tab/←→ keys (questionnaire, `/agents setup`).
-- `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window) and `multiSelectForm`.
+- `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window) and `multiSelectForm`; `initialMulti`, `checkedIndexes` and the hints stay out of the index.
 - `cache-tone.ts`: the cache rate's colour thresholds and the coloured percentage.
 - `tests/row.test.ts`: `row.ts` and `glyphs.ts`.
 - `tests/layout.test.ts`: `key-hints.ts` and the `shared` text layout it builds on.

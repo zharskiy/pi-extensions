@@ -1,5 +1,7 @@
 Shipped on branch `feat/agent-skill-autosetup`; the text below is the plan as built, corrected where the build differed.
 
+A follow-up on the same branch changed the form (README.md, Follow-up shipped): `isChore` lives in `core/model/agent-record.ts`, `isLead` reads the file grant `fileSkills`, `hasSkillsOverride` ignores chores, the picker's `touched` flag is gone in favour of an explicit `all` row, and the pickers filter by typing. The text below describes release 1.
+
 # Implementation: skill autosetup, release 1
 
 What it takes to build release 1 as specified in README.md (R1 to R6): the bare `/agents setup` proposes each lead's skills. Read on 2026-10-25 against the working tree of branch `feat/style-concise-default`. Paths are under `extensions/subagents/` unless they start with `platform/`, `test/`, `node_modules/` (PCA = `node_modules/@earendil-works/pi-coding-agent/dist`), `biome.json` or `AGENTS.md`. Facts in research.md §1 are cited, not repeated. Evals are out of scope.
