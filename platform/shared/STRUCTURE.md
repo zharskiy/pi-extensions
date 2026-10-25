@@ -9,8 +9,9 @@ Admission rule: a module lives here only if it imports nothing but node built-in
 - `host-channels.ts`: the busy, awaiting-input, usage and totals channel names, payloads and parsers, `SPENDING_STATUS_KEY`.
 - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
-- `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded` and the accent `rule`.
+- `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows` and the accent `rule`.
 - `plain-object.ts`: `isPlainObject`.
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-document.test.ts`: `validateHandoff`.
 - `tests/host-channels.test.ts`: the channel payload parsers.
+- `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.

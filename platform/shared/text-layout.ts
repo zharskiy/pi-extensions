@@ -36,3 +36,18 @@ export const prefixed = (theme: ThemeLike, first: string, text: string, width: n
 };
 
 export const padded = (theme: ThemeLike, text: string, width: number) => prefixed(theme, PAD, text, width);
+
+export const padRows = (lines: string[], rows: number) =>
+  Array.from({ length: rows }, (_, index) => lines[index] ?? "");
+
+export const fixedBlock = (theme: ThemeLike, text: string, width: number, rows: number) => {
+  const lines = theme.wrap(text, Math.max(1, width));
+  const kept = lines.slice(0, rows);
+  const last = kept.length - 1;
+  const cut =
+    lines.length > rows && last >= 0
+      ? [...kept.slice(0, last), theme.truncate(`${kept[last]}${ELLIPSIS}`, width)]
+      : kept;
+
+  return padRows(cut, rows);
+};
