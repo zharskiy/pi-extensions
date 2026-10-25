@@ -92,11 +92,11 @@ export const framed = (
   width: number,
   lines: string[],
   hints: readonly KeyHint[],
-  { hintRows }: { hintRows?: 1 } = {},
+  { oneRow = false }: { oneRow?: boolean } = {},
 ) => [
   rule(theme, width),
   ...lines,
   "",
-  ...(hintRows === 1 ? [hintRow(theme, hints, width)] : hintLines(theme, hints, width)),
+  ...(oneRow ? [hintRow(theme, hints, width)] : hintLines(theme, hints, width)),
   rule(theme, width),
 ];

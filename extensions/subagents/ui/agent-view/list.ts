@@ -172,12 +172,12 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     return [feedback ? padLine(theme, feedback.token, feedback.text, inner) : "", hint];
   };
 
-  const bodyHeight = (footerLength: number) => Math.max(1, api.rows() - 5 - footerLength);
+  const bodyHeight = () => Math.max(1, api.rows() - 7);
 
   const render = (width: number) => {
     const inner = innerWidth(width);
     const footer = footerLines(inner);
-    const height = bodyHeight(2);
+    const height = bodyHeight();
     let window = scroll.window(placeholders, height);
     const top = scroll.state().top;
     const line = selectedId === undefined ? -1 : (lineOf.get(selectedId) ?? -1);
@@ -246,7 +246,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
     run(stoppable.map((record) => deps.stop(record.id)));
   };
 
-  const page = () => Math.max(1, bodyHeight(2) - 1);
+  const page = () => Math.max(1, bodyHeight() - 1);
 
   const names: Partial<Record<KeyPress["name"], () => void>> = {
     up: () => move(-1),

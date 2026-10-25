@@ -91,7 +91,7 @@ describe("framed", () => {
   });
 
   it("keeps the hints on one row cut with an ellipsis when asked for one row", () => {
-    expect(framed(plainTheme, 30, ["body"], hints, { hintRows: 1 })).toEqual([
+    expect(framed(plainTheme, 30, ["body"], hints, { oneRow: true })).toEqual([
       "─".repeat(30),
       "body",
       "",

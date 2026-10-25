@@ -3,6 +3,7 @@ import { cutStart, DOT, fixedBlock, padRows } from "../../../../platform/shared/
 import {
   CANCEL_HINT,
   countLine,
+  emptySlots,
   framed,
   groupedTabBar,
   type KeyHint,
@@ -27,6 +28,7 @@ import {
   listView,
   onSubmitTab,
   type Picker,
+  PRESETS,
   type Preset,
   presetInUse,
   presetOf,
@@ -44,8 +46,6 @@ export type SetupPaths = { project: string; user: string };
 const LABELS: Record<Field, string> = { model: "Model", thinking: "Thinking", skills: "Skills" };
 
 const PRESET_LABELS: Record<Preset, string> = { previous: "Previous", suggested: "Suggested" };
-
-const PRESETS: readonly Preset[] = ["previous", "suggested"];
 
 const LABEL_WIDTH = 10;
 
@@ -198,9 +198,6 @@ const windowLines = (
     { slots: true },
   );
 
-const emptyList = (theme: ThemeLike, text: string, width: number) =>
-  padRows(["", line(theme, theme.fg("muted", text), width)], LIST_HEIGHT + 2);
-
 const labelLine = (theme: ThemeLike, label: string, text: string, width: number) =>
   line(theme, `${theme.fg("muted", `${label}:`)} ${theme.fg("dim", text)}`, width);
 
@@ -236,7 +233,7 @@ const pickerLines = (
     const { rows, options, multi, total } = skillsView(context, picker);
     const list =
       options.length === 0 && picker.query
-        ? emptyList(theme, noMatch(picker), width)
+        ? emptySlots(theme, width, LIST_HEIGHT, noMatch(picker))
         : multiLines(theme, options, multi, width, LIST_HEIGHT, { slots: true });
     const detail = rows[multi.cursor] === ALL_ROW ? undefined : options[multi.cursor]?.description;
 
@@ -253,7 +250,7 @@ const pickerLines = (
   const label = picker.field === "model" ? modelText : undefined;
   const list =
     shown.length === 0
-      ? emptyList(theme, picker.query ? noMatch(picker) : "(none available)", width)
+      ? emptySlots(theme, width, LIST_HEIGHT, picker.query ? noMatch(picker) : undefined)
       : windowLines(theme, shown, picker.cursor, width, label);
 
   return [
@@ -420,5 +417,5 @@ export const renderSetup = (
     ? submitLines(context, state, changes, paths, theme, width)
     : agentLines(context, state, theme, width);
 
-  return framed(theme, width, [...bar, "", ...body], hints(context, state, ready), { hintRows: 1 });
+  return framed(theme, width, [...bar, "", ...body], hints(context, state, ready), { oneRow: true });
 };

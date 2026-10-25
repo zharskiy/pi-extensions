@@ -44,14 +44,15 @@ const CHORE_FIELDS = FIELDS.filter((field) => field !== "skills");
 export const fieldsOf = (agent: SetupAgent | undefined): readonly Field[] =>
   agent?.role === "chore" ? CHORE_FIELDS : FIELDS;
 
-export type Preset = "previous" | "suggested";
+export const PRESETS = ["previous", "suggested"] as const;
+
+export type Preset = (typeof PRESETS)[number];
 
 type Row = Field | Preset;
 
 export const rowsOf = (agent: SetupAgent | undefined): readonly Row[] => [
   ...fieldsOf(agent),
-  "previous",
-  ...(agent?.role === "lead" && agent.proposed ? (["suggested"] as const) : []),
+  ...PRESETS.filter((preset) => preset === "previous" || (agent?.role === "lead" && agent.proposed)),
 ];
 
 export const presetOf = (agent: SetupAgent, preset: Preset) =>

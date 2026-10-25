@@ -16,6 +16,7 @@ export {
   SELECT_HINTS,
 } from "./list.ts";
 export {
+  emptySlots,
   type MultiState,
   multiKey,
   multiLines,

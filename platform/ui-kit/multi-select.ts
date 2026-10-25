@@ -112,6 +112,12 @@ const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
 
 const NONE_AVAILABLE = "(none available)";
 
+export const emptySlots = (theme: ThemeLike, width: number, height: number, text = NONE_AVAILABLE) =>
+  padRows(
+    ["", `${PAD}${theme.fg("muted", theme.truncate(text, Math.max(1, width - PAD.length)))}`],
+    Math.max(1, height) + 2,
+  );
+
 export const multiLines = (
   theme: ThemeLike,
   options: readonly MultiOption[],
@@ -121,9 +127,7 @@ export const multiLines = (
   { slots = false }: ListLayout = {},
 ) => {
   if (options.length === 0 && slots) {
-    const none = `${PAD}${theme.fg("muted", theme.truncate(NONE_AVAILABLE, Math.max(1, width - PAD.length)))}`;
-
-    return padRows(["", none], Math.max(1, height) + 2);
+    return emptySlots(theme, width, height);
   }
 
   if (options.length === 0) {
