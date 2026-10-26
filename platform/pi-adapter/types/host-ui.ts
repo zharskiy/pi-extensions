@@ -17,6 +17,9 @@ export type NoticeUi = {
   setNotice(key: string, text: string | undefined): void;
   confirm(title: string, message: string): Promise<boolean>;
   terminalNotify(message: string, channel: NotifyChannel): void;
+};
+
+export type ClipboardUi = {
   copyText(text: string): Promise<void>;
 };
 
@@ -50,6 +53,7 @@ type KeysUi = {
 };
 
 export type HostUi = NoticeUi &
+  ClipboardUi &
   OverlayUi &
   WidgetUi &
   EditorUi &

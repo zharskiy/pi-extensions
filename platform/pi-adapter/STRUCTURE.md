@@ -2,7 +2,7 @@
 
 - `index.ts`: the public surface; contract types, `createPiExtension`, `settleWithin`, `resolveModel`, `textMetrics`, the row geometry.
 - `types/host-capabilities.ts`: `Host` = `ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }`.
-- `types/host-ui.ts`: `HostUi` (including `copyText`) = `NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
+- `types/host-ui.ts`: `HostUi` = `NoticeUi & ClipboardUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
 - `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `ThinkingToken`, `MessageToken`), `BgToken`, `ThemeLike`.
 - `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`).
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.

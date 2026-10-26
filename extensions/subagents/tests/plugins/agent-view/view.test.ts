@@ -164,7 +164,7 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
         leave: () => {
           left.count += 1;
         },
-        copy: options.copy ?? (async () => {}),
+        clipboard: { copyText: options.copy ?? (async () => {}) },
       },
       api,
     ),

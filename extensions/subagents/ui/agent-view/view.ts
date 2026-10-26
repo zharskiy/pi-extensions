@@ -1,4 +1,5 @@
 import {
+  type ClipboardUi,
   type KeyPress,
   type OverlayApi,
   PAD,
@@ -25,7 +26,7 @@ type ViewDeps = {
   stop(): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void, onTick: () => void): () => void;
   leave(): void;
-  copy(text: string): Promise<void>;
+  clipboard: ClipboardUi;
 };
 
 const RELOAD_TICK_MS = 1_000;
@@ -298,7 +299,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       return;
     }
 
-    void deps.copy(requestText(payload())).then(
+    void deps.clipboard.copyText(requestText(payload())).then(
       () => show("Copied the request", "success"),
       (error) => show(`Copy failed: ${errorText(error)}`, "warning"),
     );

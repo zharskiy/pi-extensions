@@ -72,7 +72,7 @@ export const agentViewPlugin: Plugin = {
             stop: () => stop(id),
             watch: viewWatch(id),
             leave,
-            copy: (text) => host.ui.copyText(text),
+            clipboard: host.ui,
           },
           api,
         ),
