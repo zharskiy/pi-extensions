@@ -131,16 +131,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const request = (origin: RequestOrigin) => {
-    const path = handoffPath(host.session());
-
-    sendRequest(path, origin);
-
-    host.ui.notify(
-      origin.manual
-        ? `Writing a session handoff to ${path}; the session switches to a new one when it is ready.`
-        : `Context is nearly full; writing a session handoff to ${path}, then switching to a new session.`,
-      "info",
-    );
+    sendRequest(handoffPath(host.session()), origin);
   };
 
   const errorsOf = () => {

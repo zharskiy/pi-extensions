@@ -148,12 +148,7 @@ describe("session limits", () => {
     expect(requests()[0]).not.toContain("next session is for");
     expect(requests()[0]).not.toContain("/session-handoff");
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
-    expect(host.notices).toEqual([
-      {
-        message: `Context is nearly full; writing a session handoff to ${handoffPath}, then switching to a new session.`,
-        level: "info",
-      },
-    ]);
+    expect(host.notices).toEqual([]);
   });
 
   it("switches to a new session seeded from a valid handoff on idle", async () => {
@@ -306,7 +301,7 @@ describe("session limits", () => {
     expect(requests()).toHaveLength(3);
     expect(requests()[2]).toContain("missing sections");
     expect(host.notices.filter((notice) => notice.level === "warning")).toEqual([]);
-    expect(host.notices).toHaveLength(1);
+    expect(host.notices).toEqual([]);
     expect(host.dispatched).toEqual([]);
   });
 
@@ -603,12 +598,7 @@ describe("/session-handoff on demand", () => {
     expect(requests()[0]).toContain("[redacted]");
     expect(requests()[0]).toContain("Skills:");
     expect(requests()[0]).not.toContain("{{");
-    expect(host.notices).toEqual([
-      {
-        message: `Writing a session handoff to ${handoffPath}; the session switches to a new one when it is ready.`,
-        level: "info",
-      },
-    ]);
+    expect(host.notices).toEqual([]);
     expect(notice()).toBeUndefined();
   });
 
@@ -833,7 +823,7 @@ describe("/session-handoff during a turn", () => {
   });
 
   it("queues the handoff while a turn runs and sends it with the focus when the turn ends", async () => {
-    const { host, requests, handoffPath, turn, notice } = setup();
+    const { host, requests, turn, notice } = setup();
 
     host.agentStart();
     turn(34_000);
@@ -854,10 +844,7 @@ describe("/session-handoff during a turn", () => {
       true,
     );
     expect(requests()[0]).toContain(`The user says the next session is for: ${FOCUS}.`);
-    expect(host.notices.at(-1)).toEqual({
-      message: `Writing a session handoff to ${handoffPath}; the session switches to a new one when it is ready.`,
-      level: "info",
-    });
+    expect(host.notices).toEqual([{ message: QUEUED, level: "info" }]);
     expect(notice()).toBeUndefined();
   });
 
