@@ -29,7 +29,7 @@ import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
-import { messageText, toolCallCount } from "./message-text.ts";
+import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
 
@@ -309,11 +309,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    const info = {
-      toolCalls: toolCallCount(event.message.content),
-      stopReason: event.message.stopReason,
-      text: messageText(event.message.content).trim() !== "",
-    };
+    const info = { toolCalls: toolCallCount(event.message.content) };
 
     assistantEndHandlers.forEach((handler) => {
       handler(info);

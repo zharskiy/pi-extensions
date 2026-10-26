@@ -200,7 +200,7 @@ describe("pi adapter", () => {
     expect(seen).toEqual(["waiting", "writing", "waiting", "tool", "waiting", "idle handler", "idle"]);
   });
 
-  it("reports the tool calls and stop reason of an assistant message end, not of other messages", async () => {
+  it("reports the tool calls of an assistant message end, not of other messages", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
     const seen: unknown[] = [];
@@ -226,10 +226,7 @@ describe("pi adapter", () => {
     });
     await fire("message_end", ctx, { message: { role: "toolResult", content: [] } });
 
-    expect(seen).toEqual([
-      { toolCalls: 2, stopReason: "toolUse", text: true },
-      { toolCalls: 0, stopReason: "stop", text: false },
-    ]);
+    expect(seen).toEqual([{ toolCalls: 2 }, { toolCalls: 0 }]);
   });
 
   it("stays in the tool phase until the last parallel tool ends", async () => {

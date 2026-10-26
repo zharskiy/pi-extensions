@@ -34,7 +34,7 @@ A turn in the main session's transcript:
  ── worked 42s ────────────────────────────────────────────
 ```
 
-`ctrl+t` folds or shows the thinking, and pi remembers the choice. Once the work is done, a dim rule under the final answer says how long it took, if at least one tool ran; a turn that only answers gets none. Work you started in the background, such as subagents, belongs to the same turn: the rule waits until their results are in and the model has answered them, and a prompt you type meanwhile joins the turn. Stopping the run with Esc ends the turn without a rule. A skill read keeps pi's `[skill]` look.
+`ctrl+t` folds or shows the thinking, and pi remembers the choice. Once the work is done, a dim rule under the final answer says how long it took, if at least one tool ran; a turn that only answers gets none. Work you started in the background, such as subagents, belongs to the same turn: the rule waits until their results are in and the model has answered them, and a prompt you type meanwhile joins the turn. Stopping the run with Esc ends the turn without a rule; a turn that ends on an error still gets one. A skill read keeps pi's `[skill]` look.
 
 ## Quick start
 

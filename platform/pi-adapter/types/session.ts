@@ -1,5 +1,4 @@
 import type { CustomMessage } from "./messages.ts";
-import type { StopReason } from "./runtime.ts";
 
 export type RunMode = "tui" | "rpc" | "print" | "json";
 
@@ -34,4 +33,4 @@ export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: st
 
 export type IdleInfo = { aborted: boolean };
 
-export type AssistantEnd = { toolCalls: number; stopReason: StopReason; text: boolean };
+export type AssistantEnd = { toolCalls: number };

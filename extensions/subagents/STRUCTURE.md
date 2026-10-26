@@ -25,7 +25,7 @@ extensions/subagents/
 │   └── plugins/
 │       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
-│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count, main prompt, block invalidation
+│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count (answered at any assistant end), main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort

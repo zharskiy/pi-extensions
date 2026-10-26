@@ -90,9 +90,9 @@ describe("transcript", () => {
       const host = tuiHost();
 
       host.agentStart();
-      host.assistantEnd({ toolCalls: 2, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 2 });
       vi.advanceTimersByTime(42_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
 
       expect(answers(host)).toEqual([]);
 
@@ -111,7 +111,7 @@ describe("transcript", () => {
       const host = tuiHost();
 
       host.agentStart();
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(answers(host)).toEqual([]);
@@ -121,12 +121,12 @@ describe("transcript", () => {
       const host = tuiHost();
 
       host.agentStart();
-      host.assistantEnd({ toolCalls: 3, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 3 });
       vi.advanceTimersByTime(20_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "error", text: false });
+      host.assistantEnd({ toolCalls: 0 });
       host.agentStart();
       vi.advanceTimersByTime(22_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 42_000 }]);
@@ -137,8 +137,8 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 1 });
+      host.assistantEnd({ toolCalls: 0 });
       vi.advanceTimersByTime(10_000);
       host.settle();
 
@@ -147,7 +147,7 @@ describe("transcript", () => {
       vi.advanceTimersByTime(50_000);
       host.agentStart();
       vi.advanceTimersByTime(5_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       work(host, 0);
 
       expect(answers(host)).toEqual([]);
@@ -162,11 +162,11 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 1 });
       host.settle();
       host.agentStart();
       vi.advanceTimersByTime(30_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(answers(host)).toEqual([]);
@@ -182,7 +182,7 @@ describe("transcript", () => {
       host.agentStart();
       work(host, 1, "one");
       work(host, 2, "two");
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 1 });
       host.settle();
       work(host, 0, "one");
 
@@ -198,7 +198,7 @@ describe("transcript", () => {
 
       host.agentStart();
       host.emit(BACKGROUND_WORK_CHANNEL, { source: "pi-subagents", count: "1" });
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 1 });
       host.settle();
 
       expect(answers(host)).toHaveLength(1);
@@ -209,15 +209,15 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 1 });
       host.settle();
       vi.advanceTimersByTime(20_000);
       host.agentStart();
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
       vi.advanceTimersByTime(20_000);
       host.agentStart();
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       work(host, 0);
       host.settle();
 
@@ -229,11 +229,11 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
       host.agentStart();
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 1 });
+      host.assistantEnd({ toolCalls: 0 });
       work(host, 0);
       host.settle();
 
@@ -244,16 +244,16 @@ describe("transcript", () => {
       const host = tuiHost();
 
       host.agentStart();
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 1 });
+      host.assistantEnd({ toolCalls: 0 });
       vi.advanceTimersByTime(30_000);
       host.settle();
       vi.advanceTimersByTime(60_000);
       host.agentStart();
       vi.advanceTimersByTime(5_000);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 1 });
       vi.advanceTimersByTime(1_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 30_000 }, { ms: 6_000 }]);
@@ -264,8 +264,8 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 2, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "aborted", text: false });
+      host.assistantEnd({ toolCalls: 2 });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle({ aborted: true });
       work(host, 0);
 
@@ -274,22 +274,11 @@ describe("transcript", () => {
       vi.advanceTimersByTime(10_000);
       host.agentStart();
       vi.advanceTimersByTime(3_000);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 1 });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 3_000 }]);
-    });
-
-    it.each(["error", "length"] as const)("adds the rule when the turn ends with a %s stop", (stopReason) => {
-      const host = tuiHost();
-
-      host.agentStart();
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason, text: false });
-      host.settle();
-
-      expect(answers(host)).toHaveLength(1);
     });
 
     it("starts fresh in a new session", () => {
@@ -297,7 +286,7 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 3, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 3 });
       host.start();
       work(host, 0);
 
@@ -306,9 +295,9 @@ describe("transcript", () => {
       vi.advanceTimersByTime(90_000);
       host.agentStart();
       vi.advanceTimersByTime(4_000);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 1 });
       vi.advanceTimersByTime(2_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 6_000 }]);
@@ -320,8 +309,8 @@ describe("transcript", () => {
       createTranscript(host);
       host.start();
       host.agentStart();
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 1 });
+      host.assistantEnd({ toolCalls: 0 });
       host.settle();
 
       expect(answers(host)).toEqual([]);

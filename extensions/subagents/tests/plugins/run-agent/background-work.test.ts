@@ -30,7 +30,7 @@ const setup = () => {
 
   const answer = () => {
     harness.host.agentStart();
-    harness.host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+    harness.host.assistantEnd({ toolCalls: 0 });
   };
 
   harness.host.agentStart();
@@ -82,7 +82,7 @@ describe("background work", () => {
 
     expect(host.hidden[0].delivery).toBe("followUp");
 
-    host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+    host.assistantEnd({ toolCalls: 0 });
 
     expect(counts()).toEqual([0, 1]);
 
@@ -95,7 +95,7 @@ describe("background work", () => {
     const { run, runtime, host, counts, answer } = setup();
 
     await run(1);
-    host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+    host.assistantEnd({ toolCalls: 0 });
     runtime.children[0].finish("late result");
     await flushMicrotasks();
     host.settle();
@@ -112,7 +112,7 @@ describe("background work", () => {
     const { run, host, counts } = setup();
 
     await run(1);
-    host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+    host.assistantEnd({ toolCalls: 0 });
     host.settle();
 
     expect(counts()).toEqual([0, 1]);

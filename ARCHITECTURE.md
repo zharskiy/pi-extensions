@@ -53,7 +53,7 @@ Everything lives under pi's agent dir or session dir (`~/.pi/agent` by default; 
 
 ## Folders
 
-- [pi-adapter](platform/pi-adapter/ARCHITECTURE.md): the only shipped code that imports pi; the host, the agent runtime and the UI bridge.
+- [pi-adapter](platform/pi-adapter/ARCHITECTURE.md): the only shipped code that imports pi; the host, the agent runtime and the UI bridge; its events carry only the facts a reader uses.
 - [shared](platform/shared/ARCHITECTURE.md): pi-free, theme-free, host-free helpers and the cross-extension formats.
 - [ui-kit](platform/ui-kit/ARCHITECTURE.md): theme-aware components: the row language, hints, lists, fixed-height scroll windows, forms and tabs, flat or grouped in labelled rows.
 - [extension-manager](platform/extension-manager/ARCHITECTURE.md): `createManagedExtension`, plugins, the bus and settings.
