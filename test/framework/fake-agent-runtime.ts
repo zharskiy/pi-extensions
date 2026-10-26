@@ -12,7 +12,6 @@ import {
   type RoutedMessage,
   resolveModel,
   type SessionRecord,
-  type SkillInfo,
   type SpawnSpec,
   type StopReason,
   THINKING_LEVELS,
@@ -141,7 +140,6 @@ export type FakeAgentRuntime = AgentRuntime & {
   skills: string[];
   sessionSkills?: string[];
   skillDescriptions: Record<string, string>;
-  skillScopes: Record<string, SkillInfo["scope"]>;
   skillPaths: Record<string, string>;
   workerRequests: number[];
   codemodeShortfall: CodemodeShortfall | undefined;
@@ -176,13 +174,12 @@ export const createFakeAgentRuntime = (extraModels: CatalogModel[] = []): FakeAg
     defaultThinking: () => "medium",
     skills: [],
     skillDescriptions: {},
-    skillScopes: {},
     skillPaths: {},
     skillCatalog: () =>
       runtime.skills.map((name) => ({
         name,
         description: runtime.skillDescriptions[name] ?? "",
-        scope: runtime.skillScopes[name] ?? "user",
+        scope: "user",
         path: runtime.skillPaths[name] ?? `/skills/${name}/SKILL.md`,
       })),
     skillNames: () => runtime.skillCatalog().map((skill) => skill.name),

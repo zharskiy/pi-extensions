@@ -8,7 +8,7 @@ export type StepBudget = HandoffBudget & {
 
 export type BudgetState = { warned: boolean; requested: boolean; turnsSinceRequest: number };
 
-export type BudgetStep = "none" | "warn" | "request" | "abort";
+type BudgetStep = "none" | "warn" | "request" | "abort";
 
 export type BudgetLevel = "unknown" | "normal" | "soft" | "hard";
 

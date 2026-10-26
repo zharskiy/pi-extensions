@@ -141,12 +141,7 @@ const hintRow = (theme: ThemeLike, state: FooterState, hint: string | undefined,
   return row.length === 0 ? [] : [spread(theme, row, [], width)];
 };
 
-export const renderFooter = (
-  theme: ThemeLike,
-  state: FooterState,
-  data: FooterData,
-  width = Number.POSITIVE_INFINITY,
-) => {
+export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterData, width: number) => {
   const room = width - PAD.length;
   const status = statusLines(data.statuses);
   const place = placeSegments(theme, state.cwd, data.branch, state.sessionName);

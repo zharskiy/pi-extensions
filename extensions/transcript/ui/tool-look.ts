@@ -10,7 +10,7 @@ export type Context = { view: ToolCallView; args: Args; home: string; key: strin
 
 export type Title = Omit<TitleParts, "mark" | "verb" | "reason" | "duration">;
 
-export type Failure = { text: string; timedOut?: boolean };
+type Failure = { text: string; timedOut?: boolean };
 
 export type Outcome = { lines: string[]; hint?: boolean; body?: RowRender };
 

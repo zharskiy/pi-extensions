@@ -3,7 +3,7 @@ import { formatDuration } from "../../../platform/shared/index.ts";
 
 export type RunWork = { startedAt: number; tools: number };
 
-export type AnswerData = { ms: number };
+type AnswerData = { ms: number };
 
 export const startRun = (now: number): RunWork => ({ startedAt: now, tools: 0 });
 

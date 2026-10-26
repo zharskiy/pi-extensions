@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 type HandoffStatus = "done" | "partial" | "blocked";
 
-export type HandoffAudience = {
+type HandoffAudience = {
   statuses: readonly HandoffStatus[];
   statusHint: string;
   reader: string;
@@ -32,7 +32,7 @@ export const AGENT_AUDIENCE: HandoffAudience = {
 
 export const AGENT_REASON = "You have reached your context limit. Stop the current work now and hand it off.";
 
-export type HandoffRequest = { path: string; reason: string; focus?: string; audience: HandoffAudience };
+type HandoffRequest = { path: string; reason: string; focus?: string; audience: HandoffAudience };
 
 let cachedTemplate: string | undefined;
 
@@ -80,7 +80,7 @@ export const handoffRetry = (instruction: string, errors: string[]) =>
     "Call the `handoff` tool again with the whole handoff fixed.",
   ].join("\n");
 
-export type SuccessorSource =
+type SuccessorSource =
   | { kind: "session"; file?: string; manual: boolean; focus?: string }
   | { kind: "agent"; id: string; link: number; path: string };
 
