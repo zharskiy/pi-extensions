@@ -128,17 +128,18 @@ describe("segmentFor", () => {
     });
   });
 
-  it("uses one sentence pattern in warning for every phase in progress", () => {
+  it("keeps the threshold warning in every phase in progress and says nothing else", () => {
     const text = (phase: "queued" | "requested" | "waiting" | "switching") =>
       segmentFor(at(78_000), phase, limits, "session-handoff");
 
-    expect(text("queued")).toEqual({ token: "warning", text: "» Handoff after this turn" });
-    expect(text("waiting")).toEqual({ token: "warning", text: "» Handoff waiting for running work" });
-    expect(text("requested")).toEqual({ token: "warning", text: "» Handoff writing the document" });
-    expect(text("switching")).toEqual({ token: "warning", text: "» Handoff switching to a new session" });
-    expect(segmentFor(undefined, "requested", limits, "session-handoff")?.text).toBe(
-      "» Handoff writing the document",
-    );
+    const warning = { token: "warning", text: "» Handoff at 60k tokens · 78.0k used" };
+
+    expect(text("queued")).toEqual(warning);
+    expect(text("requested")).toEqual(warning);
+    expect(text("waiting")).toEqual(warning);
+    expect(text("switching")).toEqual(warning);
+    expect(segmentFor(at(40_000), "requested", limits, "session-handoff")).toBeUndefined();
+    expect(segmentFor(undefined, "requested", limits, "session-handoff")).toBeUndefined();
     expect(segmentFor(undefined, "watching", limits, "session-handoff")).toBeUndefined();
   });
 

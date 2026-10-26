@@ -13,7 +13,7 @@ extensions/session-limits/
 │   ├── handoff.ts              handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
-│   ├── threshold-text.ts       segmentFor: notice text and token per phase and level
+│   ├── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── handoff.test.ts         path and validation
