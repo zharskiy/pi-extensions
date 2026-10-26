@@ -23,7 +23,7 @@ extensions/subagents/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
 │   └── plugins/
-│       ├── agent-registry.ts              # in-memory records, manifest restore, the `registry` service
+│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
 │       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
@@ -45,7 +45,7 @@ extensions/subagents/
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentBudget
 │   │   ├── handoff.ts                     # handoffService: handoff instruction and validation for the agent audience, shared by the runner and the limits plugin
-│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore
+│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars

@@ -30,16 +30,22 @@ export const agentRegistryPlugin: Plugin = {
       }
     });
 
-    host.onSessionStart(() => {
+    host.onSessionStart((_info, parent) => {
       const session = host.session();
 
-      registry.restore(
-        pastRecords(host, agentsDirFor(session), (dir, manifest) => ({
+      const pastIn = (owner: typeof session) =>
+        pastRecords(host, agentsDirFor(owner), (dir, manifest) => ({
           dir,
           handoffPath: handoffPathFor(session, manifest.id as string),
           contextLimit: 0,
-        })),
-      );
+        }));
+
+      registry.restore(pastIn(session));
+
+      if (parent) {
+        registry.restore(pastIn({ ...session, file: parent }));
+      }
+
       publish(hasOpenAgents(registry));
     });
 

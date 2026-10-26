@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-A long task fills the main session's context with searches, edits and test output. This extension lets the main session delegate that work with `run_agent` to agents that run in the background, each with its own context. The main session is woken once per batch with all results, and can check on, message and stop any agent. Starter agents ship with the package (a scout, a planner, an implementer, a reviewer and more), and you can add your own as Markdown files. The context limit logic and the handoff instruction are shared with session-limits.
+A long task fills the main session's context with searches, edits and test output. This extension lets the main session delegate that work with `run_agent` to agents that run in the background, each with its own context. The main session is woken once per batch with all results, and can check on, message and stop any agent. Starter agents ship with the package (a scout, a planner, an implementer, a reviewer and more), and you can add your own as Markdown files. After a handoff, `/fork` or `/clone` the new session lists the previous session's agents too, as finished agents you can open and read. The context limit logic and the handoff instruction are shared with session-limits.
 
 ## What it looks like
 
