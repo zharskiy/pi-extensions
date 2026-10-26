@@ -1,6 +1,5 @@
 import type {
   ContextSnapshot,
-  HandoffDelivery,
   Host,
   SessionControl,
   ThemeToken,
@@ -35,8 +34,6 @@ import {
 const NOTICE_KEY = "pi-session-limits";
 
 const HANDOFF_COMMAND = "session-handoff";
-
-const MAIN_DELIVERY: HandoffDelivery = "afterRun";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
@@ -112,10 +109,7 @@ export const watchLimits = ({
   };
 
   const sendInstruction = (text: string) => {
-    host.sendMessage(
-      { customType: HANDOFF_REQUEST_TYPE, text, display: true, details: requestDetails() },
-      { after: MAIN_DELIVERY },
-    );
+    host.sendMessage({ customType: HANDOFF_REQUEST_TYPE, text, display: true, details: requestDetails() });
   };
 
   const refresh = () => {

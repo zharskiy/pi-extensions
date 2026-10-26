@@ -9,15 +9,12 @@ export type CommandSpec = {
 
 export type HiddenMessage = { customType: string; text: string; details?: unknown };
 
-export type HandoffDelivery = "afterRun" | "afterTurn";
-
 export type HostMessage = { customType: string; text: string; display: boolean; details?: unknown };
 
 export type RoutedMessage = {
   sender: string;
   text: string;
   custom?: { customType: string; details?: unknown };
-  after?: HandoffDelivery;
 };
 
 export type ChildSeed = { customType: string; text: string; details?: unknown };

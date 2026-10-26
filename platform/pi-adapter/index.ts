@@ -18,7 +18,6 @@ export type {
   ChildSeed,
   CodemodeShortfall,
   CommandSpec,
-  HandoffDelivery,
   HiddenMessage,
   HostMessage,
   RoutedMessage,

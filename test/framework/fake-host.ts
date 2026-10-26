@@ -10,7 +10,6 @@ import {
   type EntryRender,
   emptyUsage,
   type FooterRender,
-  type HandoffDelivery,
   type HiddenMessage,
   type Host,
   type HostMessage,
@@ -49,7 +48,7 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
-  messages: { message: HostMessage; after: HandoffDelivery; delivery: "followUp" | "steer" | "run" }[];
+  messages: { message: HostMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
@@ -189,6 +188,14 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
   const sessionFile = (file: string | undefined): FakeSessionFile =>
     file ? (host.files.get(file) as FakeSessionFile) : host;
+
+  const record = <M>(list: { message: M; delivery: "followUp" | "run" }[], message: M) => {
+    if (!started) {
+      return;
+    }
+
+    list.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
+  };
 
   const host: FakeHost = {
     tools: new Map(),
@@ -444,23 +451,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       compactHandlers.push(handler);
     },
     isIdle: () => started && host.idle,
-    sendHiddenMessage: (message) => {
-      if (!started) {
-        return;
-      }
-
-      host.hidden.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
-    },
-    sendMessage: (message, options) => {
-      if (!started) {
-        return;
-      }
-
-      const running = !host.idle;
-      const delivery = running ? (options.after === "afterRun" ? "followUp" : "steer") : "run";
-
-      host.messages.push({ message: structuredClone(message), after: options.after, delivery });
-    },
+    sendHiddenMessage: (message) => record(host.hidden, message),
+    sendMessage: (message) => record(host.messages, message),
     dispatchCommand: (name, args) => {
       host.dispatched.push(args ? `${name} ${args}` : name);
 

@@ -1254,7 +1254,6 @@ describe("handoff request message", () => {
     expect(host.messages).toHaveLength(1);
     expect(host.messages[0]).toMatchObject({
       message: { customType: "pi-handoff-request", display: true },
-      after: "afterRun",
       delivery: "followUp",
     });
   });

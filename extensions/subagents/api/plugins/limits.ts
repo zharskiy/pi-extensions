@@ -1,4 +1,3 @@
-import type { HandoffDelivery } from "../../../../platform/pi-adapter/index.ts";
 import { budgetStep, HANDOFF_REQUEST_TYPE } from "../../../../platform/shared/index.ts";
 import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
@@ -6,8 +5,6 @@ import { agentBudget } from "../../core/model/context-limit.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 
 const LIMITS_SENDER = "pi-subagents";
-
-const AGENT_DELIVERY: HandoffDelivery = "afterTurn";
 
 export const limitsPlugin: Plugin = {
   id: "limits",
@@ -54,7 +51,6 @@ export const limitsPlugin: Plugin = {
             customType: HANDOFF_REQUEST_TYPE,
             details: { reason: "limit", tokens, request: budget.request },
           },
-          after: AGENT_DELIVERY,
         });
         return;
       }

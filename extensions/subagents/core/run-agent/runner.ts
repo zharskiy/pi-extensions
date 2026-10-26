@@ -1028,10 +1028,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (live.turn === "running") {
-      const delivery = message.after === "afterRun" ? "followUp" : "steer";
-
-      await live.child.send(message, delivery);
-      return { ok: true, delivery };
+      await live.child.send(message, "steer");
+      return { ok: true, delivery: "steer" };
     }
 
     void resume(id, (child) => child.send(message, "followUp"));

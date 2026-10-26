@@ -89,15 +89,13 @@ describe("sendMessage", () => {
     const host = createFakeHost();
 
     host.start();
-    host.sendMessage({ customType: "x", text: "idle", display: true }, { after: "afterRun" });
+    host.sendMessage({ customType: "x", text: "idle", display: true });
     host.idle = false;
-    host.sendMessage({ customType: "x", text: "later", display: true }, { after: "afterRun" });
-    host.sendMessage({ customType: "x", text: "sooner", display: true }, { after: "afterTurn" });
+    host.sendMessage({ customType: "x", text: "later", display: true });
 
-    expect(host.messages.map((entry) => [entry.message.text, entry.after, entry.delivery])).toEqual([
-      ["idle", "afterRun", "run"],
-      ["later", "afterRun", "followUp"],
-      ["sooner", "afterTurn", "steer"],
+    expect(host.messages.map((entry) => [entry.message.text, entry.delivery])).toEqual([
+      ["idle", "run"],
+      ["later", "followUp"],
     ]);
     expect(host.hidden).toEqual([]);
   });

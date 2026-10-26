@@ -81,7 +81,7 @@ describe("limits plugin", () => {
       customType: "pi-handoff-request",
       details: { reason: "limit", tokens: 100_500, request: 100_000 },
     });
-    expect(child.messages[1].message.after).toBe("afterTurn");
+    expect(child.messages[1].delivery).toBe("steer");
     expect(child.messages[0].message.custom).toBeUndefined();
     expect(services.require("registry").get(record.id)?.handoffRequested).toBe(true);
   });
@@ -101,8 +101,7 @@ describe("limits plugin", () => {
       sender: "pi-subagents",
       text: "hand off",
       custom: { customType: "pi-handoff-request" },
-      after: "afterTurn",
-    } as const;
+    };
 
     await runner.route(queued.id, request);
 

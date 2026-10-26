@@ -14,7 +14,7 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec, HandoffDelivery, HostMessage } from "../types/messages.ts";
+import type { CommandSpec, HostMessage } from "../types/messages.ts";
 import type {
   AssistantEnd,
   DialogEvent,
@@ -77,8 +77,6 @@ export const liveCtx = (state: HostState) => {
 type HeldCustom = { customType: string; content: string; display: boolean; details: unknown };
 
 const HELD_POLL_MS = 100;
-
-const DELIVERY = { afterRun: "followUp", afterTurn: "steer" } as const;
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
@@ -173,7 +171,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     startHeld(held.splice(0));
   };
 
-  const sendMessage = (message: HostMessage, options: { after: HandoffDelivery }) => {
+  const sendMessage = (message: HostMessage) => {
     const ctx = state.ctx;
 
     if (!ctx) {
@@ -188,7 +186,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     };
 
     if (runActive) {
-      pi.sendMessage(custom, { deliverAs: DELIVERY[options.after], triggerTurn: true });
+      pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
       return;
     }
 
@@ -448,7 +446,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {
-      sendMessage({ ...message, display: false }, { after: "afterRun" });
+      sendMessage({ ...message, display: false });
     },
     sendMessage,
     dispatchCommand: (name, args) => {

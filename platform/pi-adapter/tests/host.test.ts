@@ -417,31 +417,22 @@ describe("pi adapter", () => {
     ]);
   });
 
-  it("sends a displayed message after the run as a follow-up and after the turn as a steer", async () => {
+  it("sends a displayed message during a run as a follow-up that triggers a turn", async () => {
     const { pi, fire, calls } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", false));
     await fire("agent_start", fakeCtx("tui", false));
 
-    host.sendMessage(
-      { customType: "req", text: "later", display: true, details: { n: 1 } },
-      { after: "afterRun" },
-    );
-    host.sendMessage({ customType: "req", text: "sooner", display: true }, { after: "afterTurn" });
+    host.sendMessage({ customType: "req", text: "later", display: true, details: { n: 1 } });
 
-    expect(
-      calls.map((call) => [(call.message as { content: string; display: boolean }).display, call.options]),
-    ).toEqual([
-      [true, { deliverAs: "followUp", triggerTurn: true }],
-      [true, { deliverAs: "steer", triggerTurn: true }],
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: { customType: "req", content: "later", display: true, details: { n: 1 } },
+        options: { deliverAs: "followUp", triggerTurn: true },
+      },
     ]);
-    expect(calls[0].message).toEqual({
-      customType: "req",
-      content: "later",
-      display: true,
-      details: { n: 1 },
-    });
   });
 
   it("starts a run with a displayed message when idle and keeps its display flag", async () => {
@@ -450,7 +441,7 @@ describe("pi adapter", () => {
 
     await fire("session_start", fakeCtx("tui", true));
 
-    host.sendMessage({ customType: "req", text: "now", display: true }, { after: "afterTurn" });
+    host.sendMessage({ customType: "req", text: "now", display: true });
     await Promise.resolve();
 
     expect(calls).toEqual([
