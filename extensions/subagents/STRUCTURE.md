@@ -23,7 +23,7 @@ extensions/subagents/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
 │   └── plugins/
-│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session), the `registry` service
+│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
 │       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count, main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel

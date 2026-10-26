@@ -35,14 +35,14 @@ export const spendingPlugin: Plugin<never, never, undefined> = {
       refresh();
     });
 
-    host.onSessionStart((_info, parent) => {
+    host.onSessionStart((info) => {
       if (started) {
         refresh();
         return;
       }
 
       started = true;
-      spending.restore(parent);
+      spending.restore(info.created ? info.parentSession : undefined);
       refresh();
     });
 

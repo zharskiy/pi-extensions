@@ -11,6 +11,7 @@ pi-adapter ← shared ← ui-kit ← extension-manager ← extensions (core ← 
 An arrow points at what a layer may import. `extension-manager` sits after `ui-kit` in the chain but imports only `pi-adapter` and `shared`. Each folder reaches the folders to its left only through their `index.ts`, never through an inner file.
 
 - `platform/pi-adapter/` imports nothing from the repo. Its `types/` imports only other `types/` files.
+- `SessionInfo` is the one session fact: `parentSession` on every start and `created` for a session pi just made by new or fork; start handlers take nothing else.
 - The adapter installs one editor subclass (`editor/`) for every empty-editor key hook; Esc reaches a hook only while pi is idle.
 - `platform/shared/` imports only `platform/pi-adapter/index.ts`. What may enter it is narrow: no host, no theme painting (the admission rule in [platform/shared/STRUCTURE.md](platform/shared/STRUCTURE.md)).
 - `platform/ui-kit/` imports `platform/pi-adapter/index.ts` and `platform/shared/index.ts`.

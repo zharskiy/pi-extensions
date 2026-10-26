@@ -19,7 +19,7 @@ type PromptHost = {
 };
 
 type LifecycleHost = {
-  onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
+  onSessionStart(handler: (info: SessionInfo) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: (info: IdleInfo) => void): void;
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;

@@ -291,17 +291,17 @@ describe("pi adapter", () => {
     expect(seen).toEqual(["/sessions/p.jsonl", undefined]);
   });
 
-  it("passes the parent session file to start handlers only for a session created from another one", async () => {
+  it("marks a session created only when pi starts it by new or fork", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
-    const seen: (string | undefined)[] = [];
+    const seen: [boolean, boolean][] = [];
     const withHeader = (parentSession?: string) => {
       const ctx = fakeCtx("tui");
 
       return { ...ctx, sessionManager: { ...ctx.sessionManager, getHeader: () => ({ parentSession }) } };
     };
 
-    host.onSessionStart((_info, parent) => seen.push(parent));
+    host.onSessionStart((info) => seen.push([info.created, host.session().created]));
 
     await fire("session_start", withHeader("/sessions/forked.jsonl"), { reason: "fork" });
     await fire("session_start", withHeader("/sessions/handoff.jsonl"), { reason: "new" });
@@ -311,12 +311,12 @@ describe("pi adapter", () => {
     await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "reload" });
 
     expect(seen).toEqual([
-      "/sessions/forked.jsonl",
-      "/sessions/handoff.jsonl",
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+      [true, true],
+      [true, true],
+      [true, true],
+      [false, false],
+      [false, false],
+      [false, false],
     ]);
   });
 

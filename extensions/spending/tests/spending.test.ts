@@ -10,6 +10,8 @@ import spending from "../api/extension.ts";
 import { USAGE_ENTRY } from "../core/ledger.ts";
 
 const STATUS_KEY = "mirror:spending";
+
+const createdFrom = (parentSession: string) => ({ parentSession, created: true });
 const MAIN_OFFSET_ENTRY = "pi-spending:main-offset";
 
 const bootSpending = (host: FakeHost) => {
@@ -163,16 +165,17 @@ describe("spending", () => {
     fork.entries.push(structuredClone(parent.entries[0]));
     fork.usage = usageTotals(0.5);
     bootSpending(fork);
-    fork.start("/sessions/parent.jsonl");
+    fork.start(createdFrom("/sessions/parent.jsonl"));
 
     expect(fork.statuses.get(STATUS_KEY)).toBe("main $2.00 · agents $0.50 · total $2.50");
 
     const resumed = createFakeHost();
 
+    resumed.files.set("/sessions/parent.jsonl", parent);
     resumed.entries.push(...fork.entries);
     resumed.usage = usageTotals(0.75);
     bootSpending(resumed);
-    resumed.start();
+    resumed.start({ parentSession: "/sessions/parent.jsonl" });
 
     expect(resumed.statuses.get(STATUS_KEY)).toBe("main $2.25 · agents $0.50 · total $2.75");
   });
@@ -189,7 +192,7 @@ describe("spending", () => {
 
     next.files.set("/sessions/previous.jsonl", previous);
     bootSpending(next);
-    next.start("/sessions/previous.jsonl");
+    next.start(createdFrom("/sessions/previous.jsonl"));
 
     expect(next.statuses.get(STATUS_KEY)).toBe("main $2.00 · agents $0.40 · total $2.40");
 
@@ -207,7 +210,7 @@ describe("spending", () => {
     grandchild.entries.push(...structuredClone(fork.entries));
     grandchild.usage = usageTotals(0.5);
     bootSpending(grandchild);
-    grandchild.start("/sessions/fork.jsonl");
+    grandchild.start(createdFrom("/sessions/fork.jsonl"));
     grandchild.emit(USAGE_CHANNEL, { source: "agents", id: "a3", usage: usageTotals(0.1) });
 
     expect(grandchild.statuses.get(STATUS_KEY)).toBe("main $2.25 · agents $0.10 · total $2.35");
@@ -223,7 +226,7 @@ describe("spending", () => {
     fork.files.set("/sessions/parent.jsonl", { entries: [parentEntry], usage: usageTotals(0) });
     fork.entries.push(structuredClone(parentEntry));
     bootSpending(fork);
-    fork.start("/sessions/parent.jsonl");
+    fork.start(createdFrom("/sessions/parent.jsonl"));
     fork.emit(USAGE_CHANNEL, { source: "agents", id: "a1", usage: usageTotals(0.1) });
     fork.settle();
 
@@ -297,7 +300,7 @@ describe("spending", () => {
 
     next.files.set("/sessions/previous.jsonl", previous);
     bootSpending(next);
-    next.start("/sessions/previous.jsonl");
+    next.start(createdFrom("/sessions/previous.jsonl"));
     next.usage = usageTotals(0.25, 100);
     next.settle();
 
@@ -333,8 +336,8 @@ describe("spending", () => {
 
     fork.files.set("/sessions/parent.jsonl", parent);
     bootSpending(fork);
-    fork.start("/sessions/parent.jsonl");
-    fork.start("/sessions/parent.jsonl");
+    fork.start(createdFrom("/sessions/parent.jsonl"));
+    fork.start(createdFrom("/sessions/parent.jsonl"));
 
     expect(fork.statuses.get(STATUS_KEY)).toBe("main $1.00 · agents $0.40 · total $1.40");
     expect(fork.entries.filter((entry) => entry.customType === MAIN_OFFSET_ENTRY)).toHaveLength(1);
@@ -356,7 +359,7 @@ describe("spending", () => {
       { customType: USAGE_ENTRY, data: { source: "agents", id: "a1", usage: usageTotals(0.2) } },
     );
     bootSpending(host);
-    host.start("/sessions/missing.jsonl");
+    host.start(createdFrom("/sessions/missing.jsonl"));
 
     expect(host.statuses.get(STATUS_KEY)).toBe("main $0.50 · agents $0.20 · total $0.70");
     expect(host.notices).toEqual([

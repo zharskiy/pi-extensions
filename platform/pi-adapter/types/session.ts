@@ -7,6 +7,7 @@ export type SessionInfo = {
   id: string;
   file?: string;
   parentSession?: string;
+  created: boolean;
   cwd: string;
   agentDir: string;
   projectTrusted: boolean;

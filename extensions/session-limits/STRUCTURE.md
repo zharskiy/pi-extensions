@@ -7,7 +7,7 @@ extensions/session-limits/
 │   ├── extension.ts            createManagedExtension: namespace pi-session-limits, host conversationOnly, settings, sessionLimitsPlugin
 │   └── plugin.ts               sessionLimitsPlugin, createLimits: registers the `handoff` tool, the request and seed renderers (from ui-kit), starts watchLimits, publishes the settings on session start
 ├── core/
-│   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events and commands to tui and rpc
+│   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events (session info passed as is) and commands to tui and rpc
 │   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch, busy channel (a request shows only the transcript row, no toast)
 │   ├── thresholds.ts           context level (the shared `budgetLevel` over the shared `mainBudget`), handoff step, retry decisions
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, handoff path, handoff validation

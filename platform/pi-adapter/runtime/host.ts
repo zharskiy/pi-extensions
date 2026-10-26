@@ -38,10 +38,11 @@ const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
   modelRegistry.isUsingOAuth(model) &&
   modelRegistry.getProvider(model.provider)?.auth.oauth?.isSubscription === true;
 
-const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
+const sessionInfo = (ctx: ExtensionContext, created: boolean): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
   file: ctx.sessionManager.getSessionFile(),
   parentSession: ctx.sessionManager.getHeader()?.parentSession,
+  created,
   cwd: ctx.cwd,
   agentDir: getAgentDir(),
   projectTrusted: ctx.isProjectTrusted(),
@@ -100,6 +101,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const toolRows = toolRowsHost(pi);
   const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
+  let created = false;
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -214,12 +216,12 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       recordPad(pi.getSettings().outputPad === 0 ? 0 : 1);
     }
 
-    const info = sessionInfo(ctx);
-    const created = event.reason === "new" || event.reason === "fork";
-    const parent = created ? ctx.sessionManager.getHeader()?.parentSession : undefined;
+    created = event.reason === "new" || event.reason === "fork";
+
+    const info = sessionInfo(ctx, created);
 
     startHandlers.forEach((handler) => {
-      handler(info, parent);
+      handler(info);
     });
   });
 
@@ -472,7 +474,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     readEntries,
     sessionUsage: (file) => sumUsage(entriesOf(file)),
-    session: () => sessionInfo(liveCtx(state)),
+    session: () => sessionInfo(liveCtx(state), created),
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
     },

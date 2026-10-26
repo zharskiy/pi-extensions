@@ -77,7 +77,7 @@ export type FakeHost = Host & {
   confirmAnswer: boolean | ((title: string, message: string) => boolean);
   newSessions: NewSessionOptions[];
   newSessionResult: boolean | Error;
-  start(parent?: string): void;
+  start(info?: Partial<SessionInfo>): void;
   turnEnd(context: { tokens: number | null; window: number; percent?: number | null }): void;
   compact(): void;
   settle(options?: { aborted?: boolean }): void;
@@ -132,7 +132,7 @@ export type FakeHost = Host & {
 export const FAKE_FOOTER_KEY = "footer";
 
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
-  const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
+  const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
@@ -267,6 +267,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     info: {
       id: "main-session",
       file: undefined,
+      created: false,
       cwd: "/tmp/pi-extensions-test",
       agentDir: "/tmp/pi-extensions-test/agent",
       projectTrusted: false,
@@ -499,12 +500,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       return host.info;
     },
-    start: (parent) => {
+    start: (patch = {}) => {
       started = true;
       stale = false;
+      host.info = { ...host.info, ...patch };
 
       startHandlers.forEach((handler) => {
-        handler(host.info, parent);
+        handler(host.info);
       });
     },
     turnEnd: (turn) => {

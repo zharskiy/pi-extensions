@@ -7,6 +7,7 @@ import { handoffPath, MAIN_AUDIENCE, sessionPreface, validateMainHandoff } from 
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",
+  created: false,
   cwd: "/project",
   agentDir: "/agent",
   projectTrusted: false,
