@@ -22,14 +22,11 @@ type LimitsOptions = {
   releaseDelayMs?: number;
 };
 
-const LEGACY_SEED_TYPE = "pi-session-limits-handoff";
-
 export const createLimits = ({ host, limits, releaseDelayMs }: LimitsOptions) => {
   const keyText = (binding: string) => host.ui.keyText(binding);
 
   host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
   host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
-  host.registerMessageRenderer(LEGACY_SEED_TYPE, handoffSeedMessage(keyText));
 
   const saving = watchLimits({ host, limits, segment: segmentFor, releaseDelayMs });
 

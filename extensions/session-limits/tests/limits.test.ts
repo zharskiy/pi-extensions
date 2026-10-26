@@ -1229,15 +1229,6 @@ describe("handoff seed message", () => {
       "  ↳ Carry on. (<app.tools.expand> to expand)",
     ]);
   });
-
-  it("still draws a seed of the legacy type that older sessions hold", () => {
-    const { host } = setup();
-
-    expect(host.renderMessage("pi-session-limits-handoff", { text: "Carry on. More." })).toEqual([
-      "» Handoff from the previous session",
-      "  ↳ Carry on. (<app.tools.expand> to expand)",
-    ]);
-  });
 });
 
 describe("handoff request message", () => {
