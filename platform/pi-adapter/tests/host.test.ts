@@ -20,6 +20,7 @@ const fakeCtx = (mode: string, idle = true) => ({
   sessionManager: {
     getSessionId: () => "s1",
     getSessionFile: () => "/sessions/s1.jsonl",
+    getHeader: () => undefined,
     buildContextEntries: () => [],
   },
   isProjectTrusted: () => true,
@@ -267,6 +268,27 @@ describe("pi adapter", () => {
     await fire("agent_start", ctx);
 
     expect(seen).toEqual(["waiting", "shutdown", "waiting"]);
+  });
+
+  it("exposes the header's parent session on the session info for every start reason", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: (string | undefined)[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onSessionStart((info) => seen.push(info.parentSession));
+
+    await fire(
+      "session_start",
+      {
+        ...ctx,
+        sessionManager: { ...ctx.sessionManager, getHeader: () => ({ parentSession: "/sessions/p.jsonl" }) },
+      },
+      { reason: "reload" },
+    );
+    await fire("session_start", ctx, { reason: "new" });
+
+    expect(seen).toEqual(["/sessions/p.jsonl", undefined]);
   });
 
   it("passes the parent session file to start handlers only for a session created from another one", async () => {

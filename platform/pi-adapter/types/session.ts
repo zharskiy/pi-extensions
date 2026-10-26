@@ -6,6 +6,7 @@ export type RunMode = "tui" | "rpc" | "print" | "json";
 export type SessionInfo = {
   id: string;
   file?: string;
+  parentSession?: string;
   cwd: string;
   agentDir: string;
   projectTrusted: boolean;

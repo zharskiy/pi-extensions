@@ -41,6 +41,7 @@ const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
 const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
   file: ctx.sessionManager.getSessionFile(),
+  parentSession: ctx.sessionManager.getHeader()?.parentSession,
   cwd: ctx.cwd,
   agentDir: getAgentDir(),
   projectTrusted: ctx.isProjectTrusted(),

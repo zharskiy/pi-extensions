@@ -30,7 +30,7 @@ export const agentRegistryPlugin: Plugin = {
       }
     });
 
-    host.onSessionStart((_info, parent) => {
+    host.onSessionStart((info) => {
       const session = host.session();
 
       const pastIn = (owner: typeof session) =>
@@ -42,8 +42,8 @@ export const agentRegistryPlugin: Plugin = {
 
       registry.restore(pastIn(session));
 
-      if (parent) {
-        registry.restore(pastIn({ ...session, file: parent }));
+      if (info.parentSession) {
+        registry.restore(pastIn({ ...session, file: info.parentSession }));
       }
 
       publish(hasOpenAgents(registry));

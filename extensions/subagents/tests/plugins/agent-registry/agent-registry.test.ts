@@ -226,18 +226,35 @@ describe("reload", () => {
       ...harness.host.info,
       id: "child-session",
       file: join(harness.root, "sessions", "child.jsonl"),
+      parentSession: harness.host.info.file,
     });
 
     const next = startPlugins(child, harness.runtime, plugins);
-
-    expect(next.services.require("registry").list()).toEqual([]);
-
-    child.start(harness.host.info.file);
 
     const inherited = next.services.require("registry").get(record.id);
 
     expect(inherited?.state).toBe("failed");
     expect(inherited?.description).toBe(record.description);
     expect(next.services.require("registry").list()).toHaveLength(1);
+  });
+
+  it("keeps the parent session's agents across a reload of the child session", async () => {
+    const harness = createHarness(plugins);
+    const [record] = await spawnAgents(harness, 1);
+
+    const child = createFakeHost({
+      ...harness.host.info,
+      id: "child-session",
+      file: join(harness.root, "sessions", "child.jsonl"),
+      parentSession: harness.host.info.file,
+    });
+
+    startPlugins(child, harness.runtime, plugins);
+
+    await child.shutdown("reload");
+
+    const reloaded = startPlugins(createFakeHost(child.info), harness.runtime, plugins);
+
+    expect(reloaded.services.require("registry").get(record.id)?.description).toBe(record.description);
   });
 });
