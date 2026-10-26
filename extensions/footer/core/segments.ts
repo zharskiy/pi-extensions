@@ -65,7 +65,7 @@ export const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
 export const hintTexts = (statuses: ReadonlyMap<string, string>): string[] =>
   statusTexts(statuses, (key) => key.startsWith(HINT_STATUS_PREFIX));
 
-export type ContextBase = { base: number; warnAt?: number; errorAt?: number };
+export type ContextBase = { base: number; warnAt: number; errorAt: number };
 
 export const contextBase = ({ context, limits }: FooterState): ContextBase => {
   if (limits) {
@@ -74,5 +74,5 @@ export const contextBase = ({ context, limits }: FooterState): ContextBase => {
     return { base: hard, warnAt: soft, errorAt: hard };
   }
 
-  return { base: context.window };
+  return { base: context.window, warnAt: Number.POSITIVE_INFINITY, errorAt: Number.POSITIVE_INFINITY };
 };

@@ -4,7 +4,7 @@
 - `api/extension.ts`: `createManagedExtension` with namespace `pi-footer` and `footerPlugin`.
 - `api/plugin.ts`: `footerPlugin`; sets the footer at session start and refreshes it on new totals, on a `session-limits:limits` payload and on idle.
 - `core/status.ts`: `watchChannel`; subscribes to a bus channel (`spending:totals`, `session-limits:limits`) and keeps the last valid payload.
-- `core/segments.ts`: `FooterState`, `footerState` (live host values and the session cache hit), `folderName`, `sessionSpend`, `statusLines` (statuses outside the hint and mirror prefixes), `hintTexts` (statuses under the hint prefix), `contextBase` (the window, untoned, or the handoff point with its soft and hard thresholds).
+- `core/segments.ts`: `FooterState`, `footerState` (live host values and the session cache hit), `folderName`, `sessionSpend`, `statusLines` (statuses outside the hint and mirror prefixes), `hintTexts` (statuses under the hint prefix), `contextBase` (the window with infinite thresholds, so untoned, or the handoff point with its soft and hard thresholds).
 - `ui/layout.ts`: `Segment` and `spread`; fit prioritised segments to a width, left and right aligned.
 - `ui/render.ts`: `renderFooter`; builds the place, model, context (compact token count of the base), cache, money and hint-row segments and the status lines.
 - `tests/footer.test.ts`: the extension booted on a fake host.
