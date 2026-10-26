@@ -114,27 +114,14 @@ describe("renderFooter colours", () => {
     expect(painted).toContainEqual({ token: "text", text: "$4.42" });
   });
 
-  it("colours the context by the window thresholds and nothing else", () => {
-    const base = paint(at(69));
-    const warn = paint(at(70));
-    const error = paint(at(90));
+  it("leaves the context plain without limits, however full the window", () => {
+    [69, 90, 99].forEach((percent) => {
+      const { painted, bolded } = paint(at(percent));
 
-    expect(base.painted).toContainEqual({ token: "text", text: "690" });
-    expect(base.painted).toContainEqual({ token: "dim", text: "of 1k" });
-    expect(warn.painted).toContainEqual({ token: "warning", text: "700" });
-    expect(warn.painted).toContainEqual({ token: "warning", text: "of 1k" });
-    expect(warn.bolded).toEqual([]);
-    expect(error.painted).toContainEqual({ token: "error", text: "of 1k" });
-    expect(error.painted).toContainEqual({ token: "error", text: "900" });
-    expect(warn.painted).toContainEqual({ token: "warning", text: "700" });
-    expect(base.painted).toContainEqual({ token: "text", text: "690" });
-    expect(error.bolded).toEqual(expect.arrayContaining(["900"]));
-
-    const rest = (spans: { token: string; text: string }[]) =>
-      spans.filter(({ text }) => !/^\d+$|^of /.test(text));
-
-    expect(rest(warn.painted)).toEqual(rest(base.painted));
-    expect(rest(error.painted)).toEqual(rest(base.painted));
+      expect(painted.filter(({ token }) => token === "warning" || token === "error")).toEqual([]);
+      expect(painted).toContainEqual({ token: "dim", text: "of 1k" });
+      expect(bolded).toEqual([]);
+    });
   });
 
   it("keeps the cache muted at every rate", () => {
@@ -146,19 +133,17 @@ describe("renderFooter colours", () => {
   });
 
   it("never colours the cost", () => {
-    const tokens = tokensOf(paint({ totals: withAgents, ...at(95) }).painted);
+    const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+    const { painted } = paint({
+      totals: withAgents,
+      limits,
+      context: { tokens: 190_000, window: 272_000, percent: 70 },
+    });
+    const errors = painted.filter(({ token }) => token === "error").map(({ text }) => text);
 
-    expect(tokens.has("success")).toBe(false);
-    expect(
-      paint(at(95))
-        .painted.filter(({ token }) => token === "error")
-        .map(({ text }) => text),
-    ).toEqual(expect.arrayContaining(["950", "of 1k"]));
-    expect(
-      paint(at(95))
-        .painted.filter(({ token }) => token === "error")
-        .map(({ text }) => text),
-    ).not.toContain("$4.42");
+    expect(tokensOf(painted).has("success")).toBe(false);
+    expect(errors).toEqual(expect.arrayContaining(["190.0k", "of 163k"]));
+    expect(errors).not.toContain("$4.42");
   });
 
   it("shows the compact token count of the window and drops the window first", () => {
@@ -433,13 +418,13 @@ describe("renderFooter with handoff limits", () => {
     expect(render(withLimits(170_000))[2]).toContain("context 170.0k of 163k");
   });
 
-  it("falls back to the window without limits", () => {
+  it("falls back to the plain window without limits", () => {
     const patch = { context: { tokens: 120_000, window, percent: 44 } };
 
     expect(render(patch)[2]).toContain("context 120.0k of 272k");
-    expect(paint({ context: { tokens: 190_400, window, percent: 70 } }).painted).toContainEqual({
-      token: "warning",
-      text: "190.4k",
+    expect(paint({ context: { tokens: 250_000, window, percent: 92 } }).painted).toContainEqual({
+      token: "text",
+      text: "250.0k",
     });
   });
 });

@@ -62,7 +62,7 @@ export const agentsHint = (statuses: ReadonlyMap<string, string>): string | unde
   return text || undefined;
 };
 
-export type ContextBase = { base: number; warnAt: number; errorAt: number };
+export type ContextBase = { base: number; warnAt?: number; errorAt?: number };
 
 export const contextBase = ({ context, limits }: FooterState): ContextBase => {
   if (limits) {
@@ -71,5 +71,5 @@ export const contextBase = ({ context, limits }: FooterState): ContextBase => {
     return { base: hard, warnAt: soft, errorAt: hard };
   }
 
-  return { base: context.window, warnAt: context.window * 0.7, errorAt: context.window * 0.9 };
+  return { base: context.window };
 };
