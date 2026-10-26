@@ -17,7 +17,7 @@ This extension replaces pi's footer with a status block right below the editor. 
 ```
 
  my-project on main · session-name                    model-name · thinking high
- context 13.0k of 163k · cache 73%                     851.3k tokens · $0.34
+ context 13.0k of 163k · cache 73%                         851.3k tokens · $0.34
  shift+tab to cycle thinking · ← to list agents
 
  <status text other extensions have set>

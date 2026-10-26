@@ -38,7 +38,7 @@ Start pi and try:
 | Try | What you see |
 |---|---|
 | Keep working until the context grows | A warning notice below the editor counts down to the handoff, then pi switches to a new session started from it. |
-| Watch the footer while the context grows | The `context N% of X` figure counts toward the handoff point (X, the hard threshold), so 100 % means a handoff is due. |
+| Watch the footer while the context grows | The `context N of X` figure counts toward the handoff point (X, the hard threshold), so a handoff is due when N reaches X. |
 | `/session-handoff` | The model writes a handoff now, then pi switches to a new session started from it. |
 | Ask the model to save a handoff on its own | The `handoff` tool refuses unless a handoff was requested. |
 | `/session-handoff finish the login tests` | The same, with the text folded into the instruction and repeated in the new session's preface. |

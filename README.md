@@ -32,7 +32,7 @@ Pi is a lean, extensible coding agent. This package adds what a long working day
  ── ⠹ Pondering · 12s (esc to interrupt) ─────────────────────────────
 
  my-project on main · session-name                    model-name · thinking high
- context 8% of 163k · cache 73%                            851.3k tokens · $0.34
+ context 13.0k of 163k · cache 73%                         851.3k tokens · $0.34
  shift+tab to cycle thinking · ← to list agents
 ```
 
