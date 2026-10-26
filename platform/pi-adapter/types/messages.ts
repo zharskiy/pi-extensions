@@ -9,12 +9,10 @@ export type CommandSpec = {
 
 export type CustomMessage = { customType: string; text: string; details?: unknown };
 
-export type HostMessage = CustomMessage & { display: boolean };
-
 export type RoutedMessage = {
   sender: string;
   text: string;
-  custom?: { customType: string; details?: unknown };
+  custom?: Omit<CustomMessage, "text">;
 };
 
 export type PromptTool = { name: string; description: string; parameters: unknown };

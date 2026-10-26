@@ -14,7 +14,7 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec, HostMessage } from "../types/messages.ts";
+import type { CommandSpec, CustomMessage } from "../types/messages.ts";
 import type {
   AssistantEnd,
   DialogEvent,
@@ -171,7 +171,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     startHeld(held.splice(0));
   };
 
-  const sendMessage = (message: HostMessage) => {
+  const deliver = (message: CustomMessage, display: boolean) => {
     const ctx = state.ctx;
 
     if (!ctx) {
@@ -181,7 +181,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     const custom: HeldCustom = {
       customType: message.customType,
       content: message.text,
-      display: message.display,
+      display,
       details: message.details,
     };
 
@@ -446,9 +446,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {
-      sendMessage({ ...message, display: false });
+      deliver(message, false);
     },
-    sendMessage,
+    sendMessage: (message) => {
+      deliver(message, true);
+    },
     dispatchCommand: (name, args) => {
       sendCommand(args ? `/${name} ${args}` : `/${name}`);
     },

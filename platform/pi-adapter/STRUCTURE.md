@@ -12,7 +12,7 @@
 - `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
 - `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.
-- `types/messages.ts`: `CommandSpec`, `CustomMessage` (hidden messages and seeds; `HostMessage` adds `display`), `RoutedMessage`, `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
+- `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `RoutedMessage`, `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
 - `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
 - `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages.
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).

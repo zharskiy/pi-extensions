@@ -148,7 +148,6 @@ describe("session limits", () => {
     expect(requests()[0]).not.toContain("next session is for");
     expect(requests()[0]).not.toContain("/session-handoff");
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
-    expect(host.messages[0].message.display).toBe(true);
     expect(host.notices).toEqual([
       {
         message: `Context is nearly full; writing a session handoff to ${handoffPath}, then switching to a new session.`,
@@ -594,7 +593,6 @@ describe("/session-handoff on demand", () => {
 
     expect(requests()).toHaveLength(1);
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
-    expect(host.messages[0].message.display).toBe(true);
     expect(requests()[0]).toContain(handoffPath);
     expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
       true,
@@ -1243,7 +1241,7 @@ describe("handoff seed message", () => {
 });
 
 describe("handoff request message", () => {
-  it("is displayed and delivered after the run while one is active", () => {
+  it("is delivered after the run while one is active", () => {
     const { host, turn } = setup();
 
     host.idle = false;
@@ -1251,7 +1249,7 @@ describe("handoff request message", () => {
 
     expect(host.messages).toHaveLength(1);
     expect(host.messages[0]).toMatchObject({
-      message: { customType: "pi-handoff-request", display: true },
+      message: { customType: "pi-handoff-request" },
       delivery: "followUp",
     });
   });
@@ -1272,16 +1270,6 @@ describe("handoff request message", () => {
     await manual.host.runCommand(HANDOFF_COMMAND, "");
 
     expect(manual.host.messages[0].message.details).toEqual({ reason: "manual" });
-  });
-
-  it("sends a second displayed request on a resend", () => {
-    const { host, turn, saveHandoff } = setup();
-
-    turn(76_000);
-    saveHandoff("## Status\npartial\n");
-    host.settle();
-
-    expect(host.messages.map((entry) => entry.message.display)).toEqual([true, true]);
   });
 
   it("seeds the new session with a handoff seed that names no agent origin", async () => {

@@ -102,7 +102,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const sendInstruction = (text: string) => {
-    host.sendMessage({ customType: HANDOFF_REQUEST_TYPE, text, display: true, details: requestDetails() });
+    host.sendMessage({ customType: HANDOFF_REQUEST_TYPE, text, details: requestDetails() });
   };
 
   const refresh = () => {

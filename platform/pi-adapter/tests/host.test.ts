@@ -424,7 +424,7 @@ describe("pi adapter", () => {
     await fire("session_start", fakeCtx("tui", false));
     await fire("agent_start", fakeCtx("tui", false));
 
-    host.sendMessage({ customType: "req", text: "later", display: true, details: { n: 1 } });
+    host.sendMessage({ customType: "req", text: "later", details: { n: 1 } });
 
     expect(calls).toEqual([
       {
@@ -435,13 +435,13 @@ describe("pi adapter", () => {
     ]);
   });
 
-  it("starts a run with a displayed message when idle and keeps its display flag", async () => {
+  it("starts a run with a displayed message when idle", async () => {
     const { pi, fire, calls } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
 
-    host.sendMessage({ customType: "req", text: "now", display: true });
+    host.sendMessage({ customType: "req", text: "now" });
     await Promise.resolve();
 
     expect(calls).toEqual([

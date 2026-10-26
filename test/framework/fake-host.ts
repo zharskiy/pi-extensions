@@ -12,7 +12,6 @@ import {
   emptyUsage,
   type FooterRender,
   type Host,
-  type HostMessage,
   type IdleInfo,
   type KeyPress,
   type MessageRender,
@@ -48,7 +47,7 @@ export type FakeHost = Host & {
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
   hidden: { message: CustomMessage; delivery: "followUp" | "run" }[];
-  messages: { message: HostMessage; delivery: "followUp" | "run" }[];
+  messages: { message: CustomMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];

@@ -18,7 +18,6 @@ export type {
   CodemodeShortfall,
   CommandSpec,
   CustomMessage,
-  HostMessage,
   RoutedMessage,
   SessionRecord,
   SkillInfo,

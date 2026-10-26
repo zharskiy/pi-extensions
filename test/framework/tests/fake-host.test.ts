@@ -89,9 +89,9 @@ describe("sendMessage", () => {
     const host = createFakeHost();
 
     host.start();
-    host.sendMessage({ customType: "x", text: "idle", display: true });
+    host.sendMessage({ customType: "x", text: "idle" });
     host.idle = false;
-    host.sendMessage({ customType: "x", text: "later", display: true });
+    host.sendMessage({ customType: "x", text: "later" });
 
     expect(host.messages.map((entry) => [entry.message.text, entry.delivery])).toEqual([
       ["idle", "run"],
