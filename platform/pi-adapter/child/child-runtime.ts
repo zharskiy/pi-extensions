@@ -126,7 +126,7 @@ export const createPiRuntime = (
     const listeners = new Set<(event: ChildEvent) => void>();
     let running = false;
     let disposed = false;
-    const queuedCustom: QueuedCustom[] = [];
+    const customsInPiQueue: QueuedCustom[] = [];
 
     const emit = (event: ChildEvent) => {
       if (event.type === "settled") {
@@ -200,7 +200,7 @@ export const createPiRuntime = (
 
     const dispose = async () => {
       disposed = true;
-      queuedCustom.length = 0;
+      customsInPiQueue.length = 0;
 
       await settleWithin(
         session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }),
@@ -218,13 +218,13 @@ export const createPiRuntime = (
       throw error;
     }
 
-    const forgetQueued = (message: { customType?: string; content?: unknown }) => {
-      const index = queuedCustom.findIndex(
+    const removeFromPiQueue = (message: { customType?: string; content?: unknown }) => {
+      const index = customsInPiQueue.findIndex(
         (queued) => queued.customType === message.customType && queued.content === message.content,
       );
 
       if (index >= 0) {
-        queuedCustom.splice(index, 1);
+        customsInPiQueue.splice(index, 1);
       }
     };
 
@@ -250,7 +250,7 @@ export const createPiRuntime = (
 
     session.subscribe((event) => {
       if (event.type === "message_start" && event.message.role === "custom") {
-        forgetQueued(event.message as { customType?: string; content?: unknown });
+        removeFromPiQueue(event.message as { customType?: string; content?: unknown });
         return;
       }
 
@@ -279,7 +279,7 @@ export const createPiRuntime = (
       }
 
       if (event.type === "agent_settled") {
-        const customs = queuedCustom.splice(0);
+        const customs = customsInPiQueue.splice(0);
 
         if (!event.aborted && !disposed && (session.pendingMessageCount > 0 || customs.length > 0)) {
           const { steering, followUp } = session.clearQueue();
@@ -317,6 +317,12 @@ export const createPiRuntime = (
       session.sendCustomMessage({ ...custom, display: true }, { triggerTurn: true }).catch(failStart);
     };
 
+    const appendSeed = (seed: CustomMessage) =>
+      session.sendCustomMessage(
+        { customType: seed.customType, content: seed.text, details: seed.details, display: true },
+        { triggerTurn: false },
+      );
+
     const start = (task: string, seed?: CustomMessage) => {
       if (!seed) {
         prompt(task);
@@ -325,17 +331,9 @@ export const createPiRuntime = (
 
       running = true;
 
-      void (async () => {
-        try {
-          await session.sendCustomMessage(
-            { customType: seed.customType, content: seed.text, details: seed.details, display: true },
-            { triggerTurn: false },
-          );
-          prompt(task);
-        } catch (error) {
-          failStart(error);
-        }
-      })();
+      appendSeed(seed)
+        .then(() => prompt(task))
+        .catch(failStart);
     };
 
     const deliver = async (text: string, delivery: MessageDelivery) => {
@@ -372,7 +370,7 @@ export const createPiRuntime = (
         return;
       }
 
-      queuedCustom.push(custom);
+      customsInPiQueue.push(custom);
 
       const options = session.isStreaming
         ? ({ deliverAs: delivery, triggerTurn: true } as const)
@@ -381,7 +379,7 @@ export const createPiRuntime = (
       try {
         await session.sendCustomMessage({ ...custom, display: true }, options);
       } catch (error) {
-        forgetQueued(custom);
+        removeFromPiQueue(custom);
         throw error;
       }
     };
