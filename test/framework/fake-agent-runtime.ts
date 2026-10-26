@@ -2,10 +2,10 @@ import {
   type AgentRuntime,
   type CatalogModel,
   type ChildEvent,
-  type ChildSeed,
   type ChildSession,
   type CodemodeShortfall,
   type ContextSnapshot,
+  type CustomMessage,
   emptyUsage,
   type MessageDelivery,
   type ModelPreferences,
@@ -22,7 +22,7 @@ import {
 export type FakeChildSession = ChildSession & {
   spec: SpawnSpec;
   task?: string;
-  seed?: ChildSeed;
+  seed?: CustomMessage;
   messages: { message: RoutedMessage; delivery: MessageDelivery }[];
   wakes: string[];
   aborted: boolean;

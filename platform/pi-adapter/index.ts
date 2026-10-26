@@ -15,10 +15,9 @@ export type { Host, SessionHost } from "./types/host-capabilities.ts";
 export type { NotifyChannel } from "./types/host-ui.ts";
 export type { KeyPress } from "./types/keys.ts";
 export type {
-  ChildSeed,
   CodemodeShortfall,
   CommandSpec,
-  HiddenMessage,
+  CustomMessage,
   HostMessage,
   RoutedMessage,
   SessionRecord,

@@ -154,7 +154,7 @@ export const footerHost = (
         return undefined;
       }
 
-      return { name: model.name, contextWindow: model.contextWindow, reasoning: model.reasoning };
+      return { name: model.name, reasoning: model.reasoning };
     },
     thinkingLevel: () => (state.ctx ? (state.ctx.thinkingLevel ?? pi.getThinkingLevel()) : "off"),
     sessionName: () => state.ctx?.sessionManager.getSessionName(),

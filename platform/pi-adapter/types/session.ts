@@ -1,3 +1,4 @@
+import type { CustomMessage } from "./messages.ts";
 import type { StopReason } from "./runtime.ts";
 
 export type RunMode = "tui" | "rpc" | "print" | "json";
@@ -16,7 +17,7 @@ export type ShutdownReason = "quit" | "reload" | "new" | "resume" | "fork";
 
 export type NewSessionOptions = {
   parentSession?: string;
-  seed?: { customType: string; text: string; details?: unknown };
+  seed?: CustomMessage;
 };
 
 export type SessionControl = {

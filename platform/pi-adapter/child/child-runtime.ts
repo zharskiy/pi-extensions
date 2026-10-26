@@ -18,7 +18,7 @@ import { finalRunTexts, formatRoutedMessage, messageText, toolCallCount } from "
 import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
-import type { ChildSeed, RoutedMessage, SkillInfo } from "../types/messages.ts";
+import type { CustomMessage, RoutedMessage, SkillInfo } from "../types/messages.ts";
 import type {
   AgentRuntime,
   ChildEvent,
@@ -317,7 +317,7 @@ export const createPiRuntime = (
       session.sendCustomMessage({ ...custom, display: true }, { triggerTurn: true }).catch(failStart);
     };
 
-    const start = (task: string, seed?: ChildSeed) => {
+    const start = (task: string, seed?: CustomMessage) => {
       if (!seed) {
         prompt(task);
         return;
@@ -356,16 +356,16 @@ export const createPiRuntime = (
       await session.followUp(text, undefined, { source: "extension" });
     };
 
-    const deliverCustom = async (message: RoutedMessage, delivery: MessageDelivery) => {
-      if (disposed || !message.custom) {
+    const deliverCustom = async (
+      text: string,
+      routed: NonNullable<RoutedMessage["custom"]>,
+      delivery: MessageDelivery,
+    ) => {
+      if (disposed) {
         return;
       }
 
-      const custom: QueuedCustom = {
-        customType: message.custom.customType,
-        content: message.text,
-        details: message.custom.details,
-      };
+      const custom: QueuedCustom = { customType: routed.customType, content: text, details: routed.details };
 
       if (!running && !session.isStreaming) {
         sendCustomNow(custom);
@@ -400,7 +400,9 @@ export const createPiRuntime = (
         };
       },
       send: (message, delivery) =>
-        message.custom ? deliverCustom(message, delivery) : deliver(formatRoutedMessage(message), delivery),
+        message.custom
+          ? deliverCustom(message.text, message.custom, delivery)
+          : deliver(formatRoutedMessage(message), delivery),
       wake: (text) => deliver(text, "followUp"),
       abort: () => session.abort(),
       dispose,

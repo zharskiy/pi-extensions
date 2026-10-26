@@ -12,7 +12,7 @@ import footer from "../api/extension.ts";
 const setup = () => {
   const host = createFakeHost({ cwd: "/work/my-project" });
 
-  host.activeModel = { name: "test-model", contextWindow: 200_000, reasoning: true };
+  host.activeModel = { name: "test-model", reasoning: true };
   host.thinking = "medium";
   host.contextUsage = { tokens: 50_000, window: 200_000, percent: 25 };
   startExtension({ extension: footer, runtime: createFakeAgentRuntime(), host });

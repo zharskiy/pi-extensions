@@ -3,6 +3,7 @@ import {
   type CommandSpec,
   type ContextFacts,
   type ContextSnapshot,
+  type CustomMessage,
   type DialogEvent,
   type DialogKind,
   type EditorFrame,
@@ -10,7 +11,6 @@ import {
   type EntryRender,
   emptyUsage,
   type FooterRender,
-  type HiddenMessage,
   type Host,
   type HostMessage,
   type IdleInfo,
@@ -47,7 +47,7 @@ export type FakeHost = Host & {
   promptSections: Map<string, string>;
   entries: { customType: string; data: unknown }[];
   files: Map<string, FakeSessionFile>;
-  hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
+  hidden: { message: CustomMessage; delivery: "followUp" | "run" }[];
   messages: { message: HostMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];

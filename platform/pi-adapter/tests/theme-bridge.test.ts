@@ -20,10 +20,6 @@ describe("themeLike colours", () => {
     const live = themeLike((await themeModule()).theme);
     const tokens = Object.keys({
       accent: true,
-      border: true,
-      borderAccent: true,
-      syntaxString: true,
-      syntaxVariable: true,
       muted: true,
       dim: true,
       success: true,

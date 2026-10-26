@@ -5,7 +5,7 @@ import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.t
 import type { FooterState } from "../core/segments.ts";
 import { renderFooter } from "../ui/render.ts";
 
-const model = { name: "test-model", contextWindow: 1_000_000, reasoning: true };
+const model = { name: "test-model", reasoning: true };
 
 const plainTotals: SpendingTotals = {
   main: { cost: 4.42, tokens: 162_400 },

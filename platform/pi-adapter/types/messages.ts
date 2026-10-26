@@ -7,17 +7,15 @@ export type CommandSpec = {
   run(args: string, control: SessionControl): Promise<void> | void;
 };
 
-export type HiddenMessage = { customType: string; text: string; details?: unknown };
+export type CustomMessage = { customType: string; text: string; details?: unknown };
 
-export type HostMessage = { customType: string; text: string; display: boolean; details?: unknown };
+export type HostMessage = CustomMessage & { display: boolean };
 
 export type RoutedMessage = {
   sender: string;
   text: string;
   custom?: { customType: string; details?: unknown };
 };
-
-export type ChildSeed = { customType: string; text: string; details?: unknown };
 
 export type PromptTool = { name: string; description: string; parameters: unknown };
 

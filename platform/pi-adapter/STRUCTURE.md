@@ -3,7 +3,7 @@
 - `index.ts`: the public surface; contract types, `createPiExtension`, `settleWithin`, `resolveModel`, `textMetrics`, the row geometry.
 - `types/host-capabilities.ts`: `Host` = `ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }`.
 - `types/host-ui.ts`: `HostUi` (including `copyText`) = `NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
-- `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `SyntaxToken`, `ThinkingToken`), `BgToken`, `ThemeLike`.
+- `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `ThinkingToken`, `MessageToken`), `BgToken`, `ThemeLike`.
 - `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`), `isNavigationKey`.
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
@@ -12,7 +12,7 @@
 - `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
 - `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.
-- `types/messages.ts`: `CommandSpec`, `HiddenMessage`, `RoutedMessage`, `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
+- `types/messages.ts`: `CommandSpec`, `CustomMessage` (hidden messages and seeds; `HostMessage` adds `display`), `RoutedMessage`, `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
 - `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
 - `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages.
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).

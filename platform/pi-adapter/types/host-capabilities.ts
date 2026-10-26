@@ -1,6 +1,6 @@
 import type { ContextFacts, ContextSnapshot, PromptTokens } from "./context.ts";
 import type { HostUi } from "./host-ui.ts";
-import type { CommandSpec, HiddenMessage, HostMessage } from "./messages.ts";
+import type { CommandSpec, CustomMessage, HostMessage } from "./messages.ts";
 import type { ModelInfo } from "./model.ts";
 import type { AssistantEnd, DialogEvent, IdleInfo, Phase, SessionInfo, ShutdownReason } from "./session.ts";
 import type { ToolRows, ToolSpec } from "./tools.ts";
@@ -32,7 +32,7 @@ export type LifecycleHost = {
 };
 
 export type MessagingHost = {
-  sendHiddenMessage(message: HiddenMessage): void;
+  sendHiddenMessage(message: CustomMessage): void;
   sendMessage(message: HostMessage): void;
   publish(channel: string, data: unknown): void;
   subscribe(channel: string, handler: (data: unknown) => void): () => void;

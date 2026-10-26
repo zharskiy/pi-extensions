@@ -475,7 +475,7 @@ describe("footerHost", () => {
     const host = footerHost({ getThinkingLevel: () => "high" }, state);
 
     expect(host.context()).toEqual({ tokens: 1_000, window: 200_000, percent: 0.5 });
-    expect(host.model()).toEqual({ name: "test-model", contextWindow: 200_000, reasoning: true });
+    expect(host.model()).toEqual({ name: "test-model", reasoning: true });
     expect(host.thinkingLevel()).toBe("high");
     expect(host.sessionName()).toBe("refactor");
 

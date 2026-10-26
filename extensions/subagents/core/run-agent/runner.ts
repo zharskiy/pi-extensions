@@ -5,8 +5,8 @@ import {
   type AgentRuntime,
   type AnyToolSpec,
   type ChildEvent,
-  type ChildSeed,
   type ChildSession,
+  type CustomMessage,
   type RoutedMessage,
   type SessionInfo,
   type StopReason,
@@ -94,7 +94,7 @@ type LaunchSlot = {
   definition: AgentDefinition;
   plan: ModelPlan;
   undelivered?: string[];
-  seed?: ChildSeed;
+  seed?: CustomMessage;
 };
 
 type Live = {
