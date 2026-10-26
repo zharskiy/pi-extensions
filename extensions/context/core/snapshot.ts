@@ -40,7 +40,12 @@ const isBreakdown = (value: unknown): value is Breakdown =>
   numbers(value.messages, MESSAGE_FIELDS);
 
 export const parseSnapshot = (data: unknown): Snapshot | undefined => {
-  if (!isPlainObject(data) || !isBreakdown(data.breakdown) || !isUsage(data.session)) {
+  if (
+    !isPlainObject(data) ||
+    typeof data.timestamp !== "number" ||
+    !isBreakdown(data.breakdown) ||
+    !isUsage(data.session)
+  ) {
     return undefined;
   }
 
@@ -48,7 +53,7 @@ export const parseSnapshot = (data: unknown): Snapshot | undefined => {
     breakdown: data.breakdown,
     lastRequest: isUsage(data.lastRequest) ? data.lastRequest : undefined,
     session: data.session,
-    timestamp: typeof data.timestamp === "number" ? data.timestamp : 0,
+    timestamp: data.timestamp,
     expandedByDefault: data.expandedByDefault === true,
   };
 };

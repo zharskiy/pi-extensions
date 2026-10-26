@@ -8,7 +8,7 @@ extensions/mcp-import/
 │   └── plugin.ts            mcpImportPlugin, createMcpImport: /mcp-import command, dry run, apply, interactive pick, notices
 ├── core/
 │   ├── args.ts              argument parsing, completion, usage
-│   ├── sources.ts           finds and reads Claude Code and Cursor files per scope
+│   ├── sources.ts           finds and reads Claude Code and Cursor files per scope (`findServers` only)
 │   ├── convert.ts           one entry to pi's shape, with notes and skip reasons
 │   ├── plan.ts              merges converted entries into the target text without overwriting
 │   └── import-flow.ts       prepare a pair, survey and scan all pairs, narrow to the picked servers, write the target

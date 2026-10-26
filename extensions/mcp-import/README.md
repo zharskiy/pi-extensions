@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-Pi reads MCP servers from its own `mcp.json`, not from Claude Code's or Cursor's files. This extension reads them from either tool, at user or project scope. It converts them to pi's shape and adds them. It never overwrites a server you already have.
+Pi reads MCP servers from its own `mcp.json`, not from Claude Code's or Cursor's files. This extension reads them from either tool, at user or project scope. It converts them to pi's shape and adds them. It never overwrites a server you already have. For Claude Code at project scope it also finds the project under its real path when the working directory is a symlink.
 
 ## What it looks like
 

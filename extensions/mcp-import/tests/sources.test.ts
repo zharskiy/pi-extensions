@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { claudeLocalServers, findServers, serversOf } from "../core/sources.ts";
+import { findServers } from "../core/sources.ts";
 
 const roots: string[] = [];
 
@@ -25,17 +25,41 @@ afterEach(() => {
 });
 
 describe("source files", () => {
-  it("reads mcpServers and reports a wrong shape", () => {
-    expect(serversOf({ mcpServers: { a: {} } })).toEqual({ a: {} });
-    expect(serversOf({})).toEqual({});
-    expect(serversOf({ mcpServers: [] })).toMatch(/"mcpServers"/);
+  it("reports a wrong mcpServers shape as a problem", () => {
+    const { home, cwd } = places();
+
+    writeFileSync(join(cwd, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: [] }));
+
+    const found = findServers("cursor", "project", { home, cwd });
+
+    expect(found.origins).toEqual([]);
+    expect(found.problems).toEqual([expect.stringMatching(/"mcpServers"/)]);
   });
 
-  it("reads Claude's local scope from the projects map", () => {
-    const data = { projects: { "/p": { mcpServers: { a: { command: "x" } } } } };
+  it("reads Claude's local scope under the real path of a symlinked project", () => {
+    const { home, cwd } = places();
+    const link = join(dirname(cwd), "link");
 
-    expect(claudeLocalServers(data, ["/q", "/p"])).toEqual({ a: { command: "x" } });
-    expect(claudeLocalServers(data, ["/q"])).toEqual({});
+    symlinkSync(cwd, link);
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ projects: { [realpathSync(cwd)]: { mcpServers: { a: { command: "x" } } } } }),
+    );
+
+    expect(findServers("claude", "project", { home, cwd: link }).origins[0].servers).toEqual({
+      a: { command: "x" },
+    });
+  });
+
+  it("finds nothing in Claude's local scope for another project", () => {
+    const { home, cwd } = places();
+
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ projects: { "/elsewhere": { mcpServers: { a: { command: "x" } } } } }),
+    );
+
+    expect(findServers("claude", "project", { home, cwd }).origins[0].servers).toEqual({});
   });
 
   it("reads Claude's user scope from the top level of ~/.claude.json", () => {

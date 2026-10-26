@@ -21,6 +21,8 @@ pi is waiting for your input
 pi needs your input: <dialog title>
 ```
 
+Without a dialog title the second text is just `pi needs your input`.
+
 ## Quick start
 
 ```bash

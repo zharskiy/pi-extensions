@@ -54,7 +54,7 @@ export const validName = (name: string) => SERVER_NAME.test(name);
 const AUTHORIZATION_FROM_JSON =
   'node -e \'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{const h=JSON.parse(s);const k=Object.keys(h).find((k)=>k.toLowerCase()==="authorization");process.stdout.write(k?String(h[k]):"")})\'';
 
-export const helperCommand = (helper: string) => `!(${helper}) | ${AUTHORIZATION_FROM_JSON}`;
+const helperCommand = (helper: string) => `!(${helper}) | ${AUTHORIZATION_FROM_JSON}`;
 
 const transportSkip = (type: unknown) => {
   if (type === "sse") {

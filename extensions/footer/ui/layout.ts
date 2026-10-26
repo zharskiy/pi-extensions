@@ -84,5 +84,5 @@ export const spread = (theme: ThemeLike, left: Segment[], right: Segment[], widt
 
   const padding = width - sideWidth(fittedLeft, dotWidth) - sideWidth(fittedRight, dotWidth);
 
-  return `${joinSide(theme, fittedLeft)}${" ".repeat(Math.max(0, padding))}${joinSide(theme, fittedRight)}`;
+  return `${joinSide(theme, fittedLeft)}${" ".repeat(padding)}${joinSide(theme, fittedRight)}`;
 };

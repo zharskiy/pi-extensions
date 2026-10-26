@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertServer, helperCommand, needsSignIn } from "../core/convert.ts";
+import { convertServer, needsSignIn } from "../core/convert.ts";
 
 const context = { home: "/home/me", sep: "/" };
 
@@ -64,10 +64,9 @@ describe("Claude Code entries", () => {
     const result = claude({ type: "http", url: "https://x.test/mcp", headersHelper: "get-headers.sh" });
 
     expect(result).toMatchObject({
-      server: { headers: { Authorization: helperCommand("get-headers.sh") } },
+      server: { headers: { Authorization: expect.stringMatching(/^!\(get-headers\.sh\) \| node -e /) } },
       notes: [expect.stringMatching(/^headersHelper became an Authorization header/)],
     });
-    expect(helperCommand("get-headers.sh")).toMatch(/^!\(get-headers\.sh\) \| node -e /);
   });
 
   it("keeps the oauth fields pi knows and drops the rest", () => {

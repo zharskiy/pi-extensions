@@ -66,7 +66,6 @@ export type EditorLayout = { bottom: number; scrolled: boolean };
 
 export type EditorFrame = {
   chrome: number;
-  left: number;
   minWidth: number;
   decorate(
     lines: string[],

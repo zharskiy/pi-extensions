@@ -45,7 +45,6 @@ const theme = { borderColor: (text: string) => `<${text}>`, selectList: {} } as 
 
 const frame: EditorFrame = {
   chrome: 6,
-  left: 4,
   minWidth: 14,
   decorate: (lines, { bottom, scrolled }, paint) =>
     lines.map((line, index) => {
@@ -230,7 +229,7 @@ describe("createEditorHooks", () => {
     framed.setText("abcdef");
     framed.render(30);
 
-    expect(framed.handleMouse(click(frame.left + 2, 1, 30))).toEqual({ handled: true, focus: true });
+    expect(framed.handleMouse(click(frame.chrome + 2, 1, 30))).toEqual({ handled: true, focus: true });
     expect(framed.getCursor()).toEqual({ line: 0, col: 2 });
   });
 

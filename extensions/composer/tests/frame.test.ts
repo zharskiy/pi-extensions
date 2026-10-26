@@ -18,7 +18,6 @@ describe("createFrame", () => {
     const frame = createFrame();
 
     expect(frame.chrome).toBe(3);
-    expect(frame.left).toBe(3);
     expect(frame.minWidth).toBe(11);
   });
 

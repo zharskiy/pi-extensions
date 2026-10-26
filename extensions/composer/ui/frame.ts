@@ -1,6 +1,6 @@
 import type { EditorFrame, EditorLayout, ThemeLike } from "../../../platform/pi-adapter/index.ts";
 
-export const CHEVRON = "›";
+const CHEVRON = "›";
 
 const RULE = "─";
 const MARGIN = 1;
@@ -43,5 +43,5 @@ export const createFrame = (): EditorFrame => {
     });
   };
 
-  return { chrome, left: chrome, minWidth: chrome + MIN_CONTENT, decorate };
+  return { chrome, minWidth: chrome + MIN_CONTENT, decorate };
 };

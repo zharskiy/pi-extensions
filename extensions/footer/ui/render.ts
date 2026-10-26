@@ -61,7 +61,7 @@ const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking:
 
   return [
     { text: theme.fg("muted", model?.name ?? "no model"), drop: NEVER },
-    ...(model && model.reasoning !== false ? [{ text: levelText(), drop: 2 }] : []),
+    ...(model?.reasoning ? [{ text: levelText(), drop: 2 }] : []),
   ];
 };
 
@@ -132,10 +132,9 @@ const moneySegments = (theme: ThemeLike, totals: SpendingTotals | undefined): Se
 };
 
 const hintRow = (theme: ThemeLike, state: FooterState, hints: string[], width: number) => {
-  const cycle: Segment[] =
-    state.model && state.model.reasoning !== false
-      ? [{ text: keyHints([[state.cycleKey, "to cycle thinking"]], theme), drop: 1 }]
-      : [];
+  const cycle: Segment[] = state.model?.reasoning
+    ? [{ text: keyHints([[state.cycleKey, "to cycle thinking"]], theme), drop: 1 }]
+    : [];
   const row = [...cycle, ...hints.map((text) => ({ text, drop: 2 }))];
 
   return row.length === 0 ? [] : [spread(theme, row, [], width)];

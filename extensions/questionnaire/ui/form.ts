@@ -114,10 +114,6 @@ const questionKey = (state: FormState, key: KeyPress, { armed = true }: KeyOptio
   return step.pick ? choose(state, step.index) : { state: { ...state, option: step.index } };
 };
 
-const submitKeys: Partial<Record<KeyPress["name"], (state: FormState) => FormOutcome>> = {
-  enter: (state) => (allAnswered(state) ? { state, done: "submit" } : { state }),
-};
-
 const stopTyping = (state: FormState): FormState => ({ ...state, typing: false });
 
 export const pressKey = (state: FormState, key: KeyPress, options: KeyOptions = {}): FormOutcome => {
@@ -136,9 +132,9 @@ export const pressKey = (state: FormState, key: KeyPress, options: KeyOptions = 
   }
 
   if (onSubmitTab(state)) {
-    const submit = options.armed === false ? undefined : submitKeys[key.name];
-
-    return submit?.(state) ?? { state };
+    return options.armed !== false && key.name === "enter" && allAnswered(state)
+      ? { state, done: "submit" }
+      : { state };
   }
 
   return questionKey(state, key, options);

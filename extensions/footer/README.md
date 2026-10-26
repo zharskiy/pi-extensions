@@ -39,7 +39,7 @@ Start pi in a git checkout and read the block line by line:
 |---|---|
 | Line 1 | The folder, the git branch and the session name when one is set, then the model and its thinking level on the right. |
 | Line 2 | How full the context window is and the cache hit rate, then the tokens and cost of the whole session, agents included, on the right (with the main and agents cost split when agents spent something). The right side is hidden until spending reports. |
-| Line 3 | Key hints: how to cycle the thinking level (hidden for a model without reasoning) and how to list agents. The row is left out when it would be empty. |
+| Line 3 | Key hints: how to cycle the thinking level (hidden when the model does not reason) and how to list agents. The row is left out when it would be empty. |
 | Narrow terminal | Each line drops its least important parts first: session name, thinking level, branch on line 1; token total, `on subscription` shortening to `on sub`, cache, the cost split, then `of <base>` on line 2. |
 | Press `shift+tab` | The thinking level on line 1 changes. |
 

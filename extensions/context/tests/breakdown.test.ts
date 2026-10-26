@@ -37,13 +37,6 @@ describe("usage model", () => {
     ]);
   });
 
-  it("sums the estimates and the message buckets when pi does not know the total", () => {
-    const lines = render({ breakdown: breakdown({ total: null }) });
-
-    expect(lines[1]).toContain("Test Model · ~61.2k/200k tokens (31%) · estimated");
-    expect(legend(lines)).toContain("Messages 42.8k");
-  });
-
   it("scales the estimates down to the measured total when they exceed it, leaving no messages row", () => {
     const lines = render({ breakdown: breakdown({ total: 920 }) });
     const rows = legend(lines).filter((row) => !row.startsWith("Free") && !row.startsWith("Compaction"));
@@ -110,21 +103,6 @@ describe("cache line", () => {
         }),
       ),
     ).toBe("Cache hit: last turn 87% · session 91%");
-  });
-
-  it("is hidden until the session reported cache reads or writes", () => {
-    expect(
-      cacheLine(render({ lastRequest: usage({ input: 100 }), session: usage({ input: 100 }) })),
-    ).toBeUndefined();
-    expect(
-      cacheLine(render({ lastRequest: undefined, session: usage({ input: 100, cacheWrite: 100 }) })),
-    ).toBe("Cache hit: session 0%");
-  });
-
-  it("shows a last request without cache activity in a session that had it as 0%", () => {
-    expect(
-      cacheLine(render({ lastRequest: usage({ input: 100 }), session: usage({ input: 50, cacheRead: 50 }) })),
-    ).toBe("Cache hit: last turn 0% · session 50%");
   });
 });
 

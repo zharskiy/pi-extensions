@@ -131,15 +131,15 @@ const countLines = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions
   return [countLine({ hidden, end: "more", noun: "item", key: options.expandKey }, room, theme)];
 };
 
-const titleLine = (theme: ThemeLike, stamp: string | undefined) =>
-  `${markGlyph("info", theme)} ${theme.bold("Context usage")}${stamp ? theme.fg("dim", `${DOT}${stamp}`) : ""}`;
+const titleLine = (theme: ThemeLike, stamp: string) =>
+  `${markGlyph("info", theme)} ${theme.bold("Context usage")}${theme.fg("dim", `${DOT}${stamp}`)}`;
 
 const indented = (line: string) => (line ? `${INDENT}${line}` : line);
 
 export const renderSnapshot = (theme: ThemeLike, snapshot: Snapshot, options: RenderOptions): string[] => {
   const model = usageModel(snapshot);
   const details = detailLines(theme, snapshot.breakdown, options.expanded || snapshot.expandedByDefault);
-  const stamp = snapshot.timestamp > 0 ? clockText(snapshot.timestamp) : undefined;
+  const stamp = clockText(snapshot.timestamp);
   const footer = details.length > 0 ? ["", ...details, ...countLines(theme, snapshot, options)] : [];
   const body = [...bodyLines(theme, model, options.width), ...overflowLines(theme, model), ...footer];
 
