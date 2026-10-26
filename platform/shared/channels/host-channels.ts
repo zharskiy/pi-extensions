@@ -48,13 +48,14 @@ export const parseBackgroundWork = (data: unknown): BackgroundWork | undefined =
   if (
     !isPlainObject(data) ||
     !isLabel(data.source) ||
+    typeof data.count !== "number" ||
     !Number.isInteger(data.count) ||
-    !isAmount(data.count)
+    data.count < 0
   ) {
     return undefined;
   }
 
-  return { source: data.source, count: data.count as number };
+  return { source: data.source, count: data.count };
 };
 
 export const parseAwaitingInput = (data: unknown): AwaitingInput | undefined => {

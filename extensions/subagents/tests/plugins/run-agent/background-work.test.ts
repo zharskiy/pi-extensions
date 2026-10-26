@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ToolSpec } from "../../../../../platform/pi-adapter/index.ts";
 import { BACKGROUND_WORK_CHANNEL } from "../../../../../platform/shared/index.ts";
 import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
@@ -139,5 +140,39 @@ describe("background work", () => {
     await result;
 
     expect(counts()).toEqual([0]);
+  });
+
+  it("counts only the main session's batches, not the ones an agent starts", async () => {
+    const { runtime, host, counts } = setup();
+    const result = await host
+      .tool<RunAgentParams, RunAgentDetails>("run_agent")
+      .execute({ agents: [{ agent: "general", task: "delegate" }], wait: false }, { update: () => {} });
+
+    await flushMicrotasks();
+
+    const nested = runtime.children[0].spec.customTools?.find(
+      (tool) => tool.name === "run_agent",
+    ) as unknown as ToolSpec<RunAgentParams, RunAgentDetails> | undefined;
+
+    await nested?.execute({ agents: [{ agent: "scout", task: "look" }], wait: false }, { update: () => {} });
+    await flushMicrotasks();
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.children).toHaveLength(2);
+    expect(counts()).toEqual([0, 1]);
+
+    runtime.children[1].finish("looked");
+    await flushMicrotasks();
+
+    expect(counts()).toEqual([0, 1]);
+  });
+
+  it("forgets pending work when a new session starts", async () => {
+    const { run, host, counts } = setup();
+
+    await run(1);
+    host.start();
+
+    expect(counts()).toEqual([0, 1, 0]);
   });
 });

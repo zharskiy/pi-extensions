@@ -303,11 +303,15 @@ describe("transcript", () => {
 
       expect(answers(host)).toEqual([]);
 
+      vi.advanceTimersByTime(90_000);
       host.agentStart();
+      vi.advanceTimersByTime(4_000);
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      vi.advanceTimersByTime(2_000);
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
       host.settle();
 
-      expect(answers(host)).toEqual([]);
+      expect(durations(host)).toEqual([{ ms: 6_000 }]);
     });
 
     it.each(["print", "rpc", "json"] as const)("adds nothing in %s mode", (mode) => {
