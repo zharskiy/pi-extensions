@@ -11,7 +11,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `handoff/`: the handoff format session-limits and subagents share.
   - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details and types, `handoffPath`.
   - `handoff-budget.ts`: `Limits`, `thresholdsFor`, `HandoffBudget` (request and warn lines), `StepBudget` (adds the abort policy), `budgetLevel`, `budgetStep`.
-  - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template and its builder, retry text, successor preface and seed text.
+  - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template, `HandoffAudience` and the builder, retry text and seed text.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `channels/`: how extensions talk without importing each other.
   - `host-channels.ts`: the busy, background-work, awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
@@ -24,7 +24,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-budget.test.ts`: `budgetLevel`, `budgetStep` and `thresholdsFor`.
 - `tests/handoff-tool.test.ts`: `handoffTool`.
-- `tests/handoff-prompt.test.ts`: the instruction, retry, preface and seed text.
+- `tests/handoff-prompt.test.ts`: the instruction over test audiences, retry and seed text.
 - `tests/handoff-document.test.ts`: `validateHandoff`.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.

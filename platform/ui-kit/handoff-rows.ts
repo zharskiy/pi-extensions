@@ -59,17 +59,23 @@ export const handoffSeedMessage =
     seedRow(seedTitle(message.details), message.text, expanded, keyText(EXPAND_BINDING))(width, theme);
 
 const requestDetails = (details: unknown): HandoffRequestDetails | undefined => {
-  if (!isPlainObject(details) || (details.reason !== "limit" && details.reason !== "manual")) {
+  if (!isPlainObject(details)) {
     return undefined;
   }
 
-  const { reason, tokens, request } = details;
+  const { reason, tokens, request, command } = details;
 
-  return {
-    reason,
-    tokens: typeof tokens === "number" ? tokens : undefined,
-    request: typeof request === "number" ? request : undefined,
-  };
+  if (reason === "manual") {
+    return typeof command === "string" ? { reason, command } : undefined;
+  }
+
+  return reason === "limit"
+    ? {
+        reason,
+        tokens: typeof tokens === "number" ? tokens : undefined,
+        request: typeof request === "number" ? request : undefined,
+      }
+    : undefined;
 };
 
 const REQUEST_TITLE = "Handoff requested";
@@ -78,7 +84,7 @@ const requestTitle = (details: unknown) => {
   const known = requestDetails(details);
 
   if (known?.reason === "manual") {
-    return `${REQUEST_TITLE}${DOT}/session-handoff`;
+    return `${REQUEST_TITLE}${DOT}${known.command}`;
   }
 
   return known?.tokens !== undefined && known.request !== undefined

@@ -3,13 +3,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { paintRecordingTheme, plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike, ToolRender, ToolRenderState } from "../../pi-adapter/index.ts";
-import { seedText, successorPreface } from "../../shared/index.ts";
 import { handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "../handoff-rows.ts";
 
-const seed = seedText(
-  successorPreface({ kind: "session", file: "/s/main.jsonl", manual: false }),
-  "## Status\npartial\n\n## Outcome\nThe parser is fixed.",
-);
+const seed = [
+  "This session continues the previous session /s/main.jsonl, which reached its context limit. Its handoff follows.",
+  "",
+  "## Status",
+  "partial",
+  "",
+  "## Outcome",
+  "The parser is fixed.",
+].join("\n");
 
 const padded = (lines: string[]) => lines.map((line) => (line === "" ? "" : ` ${line}`));
 
@@ -129,16 +133,19 @@ describe("handoff request message", () => {
     ]);
   });
 
-  it("names /session-handoff for a manual request and nothing for unknown details", () => {
-    expect(draw({ reason: "manual" })[0]).toBe("» Handoff requested · /session-handoff (ctrl+o to expand)");
+  it("names the command of a manual request and nothing for unknown details", () => {
+    expect(draw({ reason: "manual", command: "/hand-over" })[0]).toBe(
+      "» Handoff requested · /hand-over (ctrl+o to expand)",
+    );
+    expect(draw({ reason: "manual" })[0]).toBe("» Handoff requested (ctrl+o to expand)");
     expect(draw(undefined)[0]).toBe("» Handoff requested (ctrl+o to expand)");
     expect(draw({ reason: "limit" })[0]).toBe("» Handoff requested (ctrl+o to expand)");
   });
 
   it("shows the whole instruction wrapped at column 4 without a hint when expanded", () => {
-    const lines = draw({ reason: "manual" }, true, 40);
+    const lines = draw({ reason: "manual", command: "/hand-over" }, true, 40);
 
-    expect(lines[0]).toBe("» Handoff requested · /session-handoff");
+    expect(lines[0]).toBe("» Handoff requested · /hand-over");
     expect(lines[1]).toBe("  ↳ Save the handoff now.");
     expect(lines.at(-1)).toBe("    Then stop.");
   });

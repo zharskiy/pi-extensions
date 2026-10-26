@@ -116,9 +116,12 @@ describe("limits plugin", () => {
   it("draws the request and seed rows with only the subagents extension booted", async () => {
     const { host } = await setup();
 
-    expect(host.renderMessage("pi-handoff-request", { text: "x", details: { reason: "manual" } })[0]).toBe(
-      "» Handoff requested · /session-handoff (<app.tools.expand> to expand)",
-    );
+    expect(
+      host.renderMessage("pi-handoff-request", {
+        text: "x",
+        details: { reason: "limit", tokens: 176_000, request: 175_000 },
+      })[0],
+    ).toBe("» Handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)");
     expect(
       host.renderMessage("pi-handoff-seed", {
         text: "Carry on. More.",

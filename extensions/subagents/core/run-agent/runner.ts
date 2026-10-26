@@ -14,13 +14,7 @@ import {
   splitModelRequest,
   type UsageTotals,
 } from "../../../../platform/pi-adapter/index.ts";
-import {
-  errorText,
-  HANDOFF_SEED_TYPE,
-  readText,
-  seedText,
-  successorPreface,
-} from "../../../../platform/shared/index.ts";
+import { errorText, HANDOFF_SEED_TYPE, readText, seedText } from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,
@@ -423,7 +417,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       ...slot,
       seed: {
         customType: HANDOFF_SEED_TYPE,
-        text: seedText(successorPreface({ kind: "agent", ...link, path: record.handoffPath }), text),
+        text: seedText(handoffService.preface({ ...link, path: record.handoffPath }), text),
         details: { from: "agent", ...link },
       },
     };

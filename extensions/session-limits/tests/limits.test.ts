@@ -1232,7 +1232,7 @@ describe("handoff request message", () => {
     });
   });
 
-  it("carries the figures of a limit request and none for /session-handoff", async () => {
+  it("carries the figures of a limit request and the command of a manual one", async () => {
     const limit = setup();
 
     limit.turn(76_000);
@@ -1247,7 +1247,10 @@ describe("handoff request message", () => {
 
     await manual.host.runCommand(HANDOFF_COMMAND, "");
 
-    expect(manual.host.messages[0].message.details).toEqual({ reason: "manual" });
+    expect(manual.host.messages[0].message.details).toEqual({
+      reason: "manual",
+      command: "/session-handoff",
+    });
   });
 
   it("seeds the new session with a handoff seed that names no agent origin", async () => {

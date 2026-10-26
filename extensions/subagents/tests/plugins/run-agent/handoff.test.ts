@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { VALID_HANDOFF } from "../../../../../test/framework/index.ts";
 import { handoffService } from "../../../core/model/handoff.ts";
 
-const { validate: validateHandoff } = handoffService;
+const { validate: validateHandoff, instruction, preface } = handoffService;
 
 describe("handoff schema", () => {
   it("accepts the documented schema", () => {
@@ -37,5 +37,27 @@ describe("handoff schema", () => {
       ok: true,
       status: "blocked",
     });
+  });
+});
+
+describe("agent handoff instruction", () => {
+  const text = instruction("/tmp/a3-handoff.md");
+
+  it("starts from the context limit and offers only partial or blocked", () => {
+    expect(text.startsWith("You have reached your context limit.")).toBe(true);
+    expect(text).toContain("One word: partial or blocked.");
+    expect(text).not.toContain("done");
+    expect(text).not.toContain("Skills:");
+    expect(text).not.toContain("background keeps running");
+  });
+});
+
+describe("agent successor preface", () => {
+  it("names the agent, the link and the saved path", () => {
+    const text = preface({ id: "a3", link: 2, path: "/tmp/a3-handoff.md" });
+
+    expect(text).toContain("agent a3 as link 2");
+    expect(text).toContain("/tmp/a3-handoff.md");
+    expect(text).toContain("Next section");
   });
 });

@@ -44,7 +44,7 @@ extensions/subagents/
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentBudget
-│   │   ├── handoff.ts                     # handoffService: handoff instruction and validation for the agent audience, shared by the runner and the limits plugin
+│   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/

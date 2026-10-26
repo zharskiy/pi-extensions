@@ -1,27 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
-  AGENT_AUDIENCE,
-  AGENT_REASON,
+  type HandoffAudience,
   handoffInstruction,
   handoffRetry,
-  MAIN_AUDIENCE,
   seedText,
-  successorPreface,
 } from "../handoff/handoff-prompt.ts";
 
 const PATH = "/tmp/pi-handoff/s1/main-handoff.md";
 
 const SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"];
 
-const main = (focus?: string) =>
-  handoffInstruction({ path: PATH, reason: "Full.", focus, audience: MAIN_AUDIENCE });
+const RICH: HandoffAudience = {
+  statuses: ["done", "partial", "blocked"],
+  statusHint: "for the goal",
+  reader: "the reader",
+  extraRules: ["Keep it brief."],
+  nextHint: "End with the names.",
+};
 
-const agent = () => handoffInstruction({ path: PATH, reason: AGENT_REASON, audience: AGENT_AUDIENCE });
+const PLAIN: HandoffAudience = {
+  statuses: ["partial", "blocked"],
+  statusHint: "",
+  reader: "the successor",
+  extraRules: [],
+  nextHint: "",
+};
+
+const rich = (focus?: string) => handoffInstruction({ path: PATH, reason: "Full.", focus, audience: RICH });
+
+const plain = () => handoffInstruction({ path: PATH, reason: "Stop now.", audience: PLAIN });
 
 describe("handoff instruction", () => {
   it.each([
-    ["main", main()],
-    ["agent", agent()],
+    ["rich", rich()],
+    ["plain", plain()],
   ])("tells the %s audience to call the tool, lists the sections and ends with the reply line", (_, text) => {
     const positions = SECTIONS.map((section) => text.indexOf(`## ${section}`));
 
@@ -35,28 +47,29 @@ describe("handoff instruction", () => {
     expect(text.endsWith("reply with one line: `handoff saved`.")).toBe(true);
   });
 
-  it("offers done only to the main session", () => {
-    expect(main()).toContain("done, partial or blocked");
-    expect(main()).toContain("for the user's current goal");
-    expect(agent()).toContain("One word: partial or blocked.");
-    expect(agent()).not.toContain("done");
+  it("lists the audience's statuses with its hint", () => {
+    expect(rich()).toContain("One word for the goal: done, partial or blocked.");
+    expect(plain()).toContain("One word: partial or blocked.");
   });
 
-  it("starts from the reason and adds the main session's own rules", () => {
-    expect(main().startsWith("Full.")).toBe(true);
-    expect(main()).toContain("the switch to the new session waits for it");
-    expect(main()).toContain("`Skills: <names>`");
-    expect(agent().startsWith(AGENT_REASON)).toBe(true);
-    expect(agent()).not.toContain("Skills:");
-    expect(agent()).not.toContain("background keeps running");
+  it("starts from the reason and adds the audience's rules, reader and next hint", () => {
+    expect(rich().startsWith("Full.")).toBe(true);
+    expect(rich()).toContain("Do not start new work in this turn. Keep it brief.");
+    expect(rich()).toContain("all that the reader will see");
+    expect(rich()).toContain(
+      "Concrete next steps for the reader, starting with the answer the user is waiting for, if any. End with the names.",
+    );
+    expect(plain().startsWith("Stop now.")).toBe(true);
+    expect(plain()).toContain("Do not start new work in this turn.\n");
+    expect(plain()).toContain("starting with the answer the user is waiting for, if any.\n");
   });
 
   it("gives a focus its own paragraph and leaves no gap without one", () => {
-    expect(main("ship the release")).toContain(
+    expect(rich("ship the release")).toContain(
       "\n\nThe user says the next session is for: ship the release. Shape Outcome and Next around that and leave out what it does not need.\n\n",
     );
-    expect(main()).not.toContain("\n\n\n");
-    expect(main()).not.toContain("next session is for");
+    expect(rich()).not.toContain("\n\n\n");
+    expect(rich()).not.toContain("next session is for");
   });
 });
 
@@ -70,42 +83,6 @@ describe("handoff retry", () => {
     );
     expect(text.endsWith("Call the `handoff` tool again with the whole handoff fixed.")).toBe(true);
     expect(text).not.toContain("file");
-  });
-});
-
-describe("successor preface", () => {
-  it("names the previous session file or says the previous session", () => {
-    const named = successorPreface({ kind: "session", file: "/sessions/main.jsonl", manual: false });
-
-    expect(named).toContain("the previous session /sessions/main.jsonl, which reached its context limit");
-    expect(successorPreface({ kind: "session", manual: false })).toContain(
-      "continues the previous session, which",
-    );
-  });
-
-  it("names /session-handoff and repeats the focus only for a manual handoff", () => {
-    const manual = successorPreface({ kind: "session", manual: true, focus: "ship the release" });
-
-    expect(manual).toContain("which the user handed off with /session-handoff");
-    expect(manual).toContain("The user said this session is for: ship the release.");
-    expect(successorPreface({ kind: "session", manual: true })).not.toContain("this session is for");
-    expect(successorPreface({ kind: "session", manual: false, focus: "x" })).not.toContain(
-      "this session is for",
-    );
-  });
-
-  it("ends the first paragraph of a session preface with the Next-section sentence", () => {
-    const first = successorPreface({ kind: "session", manual: false }).split("\n")[0];
-
-    expect(first.endsWith("Continue from its Next section without asking the user to repeat.")).toBe(true);
-  });
-
-  it("names the agent, the link and the saved path", () => {
-    const text = successorPreface({ kind: "agent", id: "a3", link: 2, path: "/tmp/a3-handoff.md" });
-
-    expect(text).toContain("agent a3 as link 2");
-    expect(text).toContain("/tmp/a3-handoff.md");
-    expect(text).toContain("Next section");
   });
 });
 

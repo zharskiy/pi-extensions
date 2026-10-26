@@ -14,12 +14,10 @@ import {
   handoffInstruction,
   handoffRetry,
   type Limits,
-  MAIN_AUDIENCE,
   parseBusySignal,
   seedText,
-  successorPreface,
 } from "../../../platform/shared/index.ts";
-import { handoffPath } from "./handoff.ts";
+import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface } from "./handoff.ts";
 import {
   type ContextTokens,
   contextLevel,
@@ -32,8 +30,6 @@ import {
 } from "./thresholds.ts";
 
 const NOTICE_KEY = "pi-session-limits";
-
-const HANDOFF_COMMAND = "session-handoff";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
@@ -100,7 +96,9 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     const tokens = state.context?.tokens ?? undefined;
     const request = mainBudget(state.context?.window ?? 0, limits())?.request;
 
-    return state.handedOff ? { reason: "manual" } : { reason: "limit", tokens, request };
+    return state.handedOff
+      ? { reason: "manual", command: `/${HANDOFF_COMMAND}` }
+      : { reason: "limit", tokens, request };
   };
 
   const sendInstruction = (text: string) => {
@@ -270,8 +268,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         seed: {
           customType: HANDOFF_SEED_TYPE,
           text: seedText(
-            successorPreface({
-              kind: "session",
+            sessionPreface({
               file: previous,
               manual: state.handedOff,
               focus: state.focus,

@@ -36,13 +36,10 @@ export {
   validateHandoff,
 } from "./handoff/handoff-document.ts";
 export {
-  AGENT_AUDIENCE,
-  AGENT_REASON,
+  type HandoffAudience,
   handoffInstruction,
   handoffRetry,
-  MAIN_AUDIENCE,
   seedText,
-  successorPreface,
 } from "./handoff/handoff-prompt.ts";
 export { type HandoffTarget, handoffTool } from "./handoff/handoff-tool.ts";
 export { isPlainObject } from "./plain-object.ts";

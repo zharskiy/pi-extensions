@@ -14,7 +14,9 @@ export const HANDOFF_REQUEST_TYPE = "pi-handoff-request";
 
 export const HANDOFF_SEED_TYPE = "pi-handoff-seed";
 
-export type HandoffRequestDetails = { reason: "limit" | "manual"; tokens?: number; request?: number };
+export type HandoffRequestDetails =
+  | { reason: "limit"; tokens?: number; request?: number }
+  | { reason: "manual"; command: string };
 
 export const handoffPath = (sessionId: string, owner: { main: true } | { agentId: string }) =>
   join(

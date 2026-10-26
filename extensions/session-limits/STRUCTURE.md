@@ -10,13 +10,13 @@ extensions/session-limits/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events and commands to tui and rpc
 │   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch, busy channel (a request shows only the transcript row, no toast)
 │   ├── thresholds.ts           `mainBudget`, context level (through the shared `budgetLevel`), handoff step, retry decisions (`Limits` and `thresholdsFor` live in platform/shared)
-│   ├── handoff.ts              handoff path, handoff validation
+│   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
 │   ├── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
-│   ├── handoff.test.ts         path and validation
+│   ├── handoff.test.ts         path, validation, main audience and session preface
 │   ├── limits.test.ts          the flow on a fake host
 │   ├── publish.test.ts         the limits published on session start
 │   ├── settings.test.ts        settings files
