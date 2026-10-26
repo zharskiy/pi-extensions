@@ -19,11 +19,9 @@ export { HINT_STATUS_PREFIX, MIRROR_STATUS_PREFIX } from "./channels/status-keys
 export {
   type BudgetLevel,
   budgetLevel,
-  budgetStep,
   type HandoffBudget,
   type Limits,
-  type StepBudget,
-  thresholdsFor,
+  mainBudget,
 } from "./handoff/handoff-budget.ts";
 export {
   HANDOFF_REQUEST_TYPE,

@@ -75,8 +75,7 @@ const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: Conte
   const count = formatTokens(context.tokens);
   const of = `of ${formatWindow(base.base)}`;
 
-  const tone =
-    context.tokens >= base.errorAt ? "error" : context.tokens >= base.warnAt ? "warning" : undefined;
+  const tone = base.level === "hard" ? "error" : base.level === "soft" ? "warning" : undefined;
 
   const figure = (text: string) => {
     const painted = theme.fg(tone ?? "text", text);

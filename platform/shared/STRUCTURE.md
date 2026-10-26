@@ -10,7 +10,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`.
 - `handoff/`: the handoff format session-limits and subagents share.
   - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details and types, `handoffPath`.
-  - `handoff-budget.ts`: `Limits`, `thresholdsFor`, `HandoffBudget` (request and warn lines), `StepBudget` (adds the abort policy), `budgetLevel`, `budgetStep`.
+  - `handoff-budget.ts`: `Limits`, `thresholdsFor`, `HandoffBudget` (request and warn lines), `mainBudget`, `budgetLevel`.
   - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template, `HandoffAudience` and the builder, retry text and seed text.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `channels/`: how extensions talk without importing each other.
@@ -22,7 +22,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
 - `plain-object.ts`: `isPlainObject`.
 - `tests/format.test.ts`: `format.ts`.
-- `tests/handoff-budget.test.ts`: `budgetLevel`, `budgetStep` and `thresholdsFor`.
+- `tests/handoff-budget.test.ts`: `budgetLevel`, `thresholdsFor` and `mainBudget`.
 - `tests/handoff-tool.test.ts`: `handoffTool`.
 - `tests/handoff-prompt.test.ts`: the instruction over test audiences, retry and seed text.
 - `tests/handoff-document.test.ts`: `validateHandoff`.

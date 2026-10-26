@@ -43,7 +43,7 @@ extensions/subagents/
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
-│   │   ├── context-limit.ts               # effectiveContextLimit, agentBudget
+│   │   ├── context-limit.ts               # effectiveContextLimit, agentBudget, StepBudget, budgetStep (warn, request or abort)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
@@ -121,7 +121,7 @@ extensions/subagents/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/
     │   ├── agent-record.test.ts           # isLead, including the shipped general agent
-    │   ├── context-limit.test.ts          # effectiveContextLimit, agentBudget
+    │   ├── context-limit.test.ts          # effectiveContextLimit, agentBudget, budgetStep
     │   ├── paths.test.ts                  # paths helpers
     │   └── settings.test.ts               # settings schema, overrides and files
     ├── components/

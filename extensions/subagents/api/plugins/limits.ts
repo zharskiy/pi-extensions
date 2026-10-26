@@ -1,7 +1,7 @@
-import { budgetStep, HANDOFF_REQUEST_TYPE } from "../../../../platform/shared/index.ts";
+import { HANDOFF_REQUEST_TYPE } from "../../../../platform/shared/index.ts";
 import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
-import { agentBudget } from "../../core/model/context-limit.ts";
+import { agentBudget, budgetStep } from "../../core/model/context-limit.ts";
 import { handoffService } from "../../core/model/handoff.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 

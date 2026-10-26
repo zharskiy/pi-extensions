@@ -14,6 +14,7 @@ import {
   handoffInstruction,
   handoffRetry,
   type Limits,
+  mainBudget,
   parseBusySignal,
   seedText,
 } from "../../../platform/shared/index.ts";
@@ -24,7 +25,6 @@ import {
   handoffStep,
   isPending,
   MAX_INSTRUCTIONS,
-  mainBudget,
   type Phase,
   shouldRequest,
 } from "./thresholds.ts";
