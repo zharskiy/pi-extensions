@@ -1,3 +1,4 @@
+import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
 import { BUSY_CHANNEL } from "../../../../platform/shared/index.ts";
 import { createRegistry } from "../../core/agent-registry/registry.ts";
 import { type AgentRegistry, isClosed } from "../../core/model/agent-record.ts";
@@ -31,19 +32,17 @@ export const agentRegistryPlugin: Plugin = {
     });
 
     host.onSessionStart((info) => {
-      const session = host.session();
-
-      const pastIn = (owner: typeof session) =>
+      const pastIn = (owner: SessionInfo) =>
         pastRecords(host, agentsDirFor(owner), (dir, manifest) => ({
           dir,
-          handoffPath: handoffPathFor(session, manifest.id as string),
+          handoffPath: handoffPathFor(info, manifest.id as string),
           contextLimit: 0,
         }));
 
-      registry.restore(pastIn(session));
+      registry.restore(pastIn(info));
 
       if (info.parentSession) {
-        registry.restore(pastIn({ ...session, file: info.parentSession }));
+        registry.restore(pastIn({ ...info, file: info.parentSession }));
       }
 
       publish(hasOpenAgents(registry));

@@ -218,24 +218,20 @@ describe("reload", () => {
     expect(busySignals(next.host.published)).toEqual([{ source: "pi-subagents", busy: false }]);
   });
 
-  it("lists the parent session's agents when a session starts from it", async () => {
+  it("lists nothing from a parent when the session has none", async () => {
     const harness = createHarness(plugins);
-    const [record] = await spawnAgents(harness, 1);
+
+    await spawnAgents(harness, 1);
 
     const child = createFakeHost({
       ...harness.host.info,
       id: "child-session",
       file: join(harness.root, "sessions", "child.jsonl"),
-      parentSession: harness.host.info.file,
     });
 
     const next = startPlugins(child, harness.runtime, plugins);
 
-    const inherited = next.services.require("registry").get(record.id);
-
-    expect(inherited?.state).toBe("failed");
-    expect(inherited?.description).toBe(record.description);
-    expect(next.services.require("registry").list()).toHaveLength(1);
+    expect(next.services.require("registry").list()).toEqual([]);
   });
 
   it("keeps the parent session's agents across a reload of the child session", async () => {
@@ -249,12 +245,20 @@ describe("reload", () => {
       parentSession: harness.host.info.file,
     });
 
-    startPlugins(child, harness.runtime, plugins);
+    const first = startPlugins(child, harness.runtime, plugins);
+    const inherited = first.services.require("registry").get(record.id);
+
+    expect(inherited?.state).toBe("failed");
+    expect(inherited?.description).toBe(record.description);
+    expect(first.services.require("registry").list()).toHaveLength(1);
 
     await child.shutdown("reload");
 
     const reloaded = startPlugins(createFakeHost(child.info), harness.runtime, plugins);
+    const kept = reloaded.services.require("registry");
 
-    expect(reloaded.services.require("registry").get(record.id)?.description).toBe(record.description);
+    expect(kept.get(record.id)?.state).toBe("failed");
+    expect(kept.get(record.id)?.description).toBe(record.description);
+    expect(kept.list()).toHaveLength(1);
   });
 });
