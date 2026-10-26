@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextLevel, handoffStep, shouldRequest } from "../core/thresholds.ts";
+import { handoffStep, shouldRequest } from "../core/thresholds.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
@@ -17,46 +17,6 @@ const input = (patch: Partial<HandoffInput>): HandoffInput => ({
   settled: true,
   instructions: 1,
   ...patch,
-});
-
-describe("contextLevel", () => {
-  it("classifies tokens against the soft and hard ratios of a small window", () => {
-    expect(contextLevel(at(44_999), limits)).toBe("normal");
-    expect(contextLevel(at(45_000), limits)).toBe("soft");
-    expect(contextLevel(at(59_999), limits)).toBe("soft");
-    expect(contextLevel(at(60_000), limits)).toBe("hard");
-  });
-
-  it("caps the thresholds by tokens on a large window", () => {
-    const large = (tokens: number) => at(tokens, 1_000_000);
-
-    expect(contextLevel(large(124_999), limits)).toBe("normal");
-    expect(contextLevel(large(125_000), limits)).toBe("soft");
-    expect(contextLevel(large(174_999), limits)).toBe("soft");
-    expect(contextLevel(large(175_000), limits)).toBe("hard");
-  });
-
-  it("keeps the ratios when they are below the caps", () => {
-    const medium = (tokens: number) => at(tokens, 200_000);
-
-    expect(contextLevel(medium(89_999), limits)).toBe("normal");
-    expect(contextLevel(medium(90_000), limits)).toBe("soft");
-    expect(contextLevel(medium(120_000), limits)).toBe("hard");
-  });
-
-  it("is unknown without tokens or window", () => {
-    expect(contextLevel(at(null), limits)).toBe("unknown");
-    expect(contextLevel(at(80_000, 0), limits)).toBe("unknown");
-    expect(contextLevel(at(null, 1_000_000), limits)).toBe("unknown");
-  });
-
-  it("skips the soft stage when the soft threshold is above the hard one", () => {
-    const inverted = { ...limits, softRatio: 0.9, hardRatio: 0.75 };
-
-    expect(contextLevel(at(80_000), inverted)).toBe("hard");
-    expect(contextLevel(at(70_000), inverted)).toBe("normal");
-    expect(contextLevel(at(170_000, 1_000_000), { ...limits, softTokens: 250_000 })).toBe("normal");
-  });
 });
 
 describe("shouldRequest", () => {

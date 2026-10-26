@@ -1,10 +1,5 @@
 export type Limits = { softRatio: number; hardRatio: number; softTokens: number; hardTokens: number };
 
-export const thresholdsFor = (window: number, limits: Limits) => ({
-  soft: Math.min(window * limits.softRatio, limits.softTokens),
-  hard: Math.min(window * limits.hardRatio, limits.hardTokens),
-});
-
 export type HandoffBudget = { request: number; warn: number };
 
 export const mainBudget = (window: number, limits: Limits): HandoffBudget | undefined => {
@@ -12,9 +7,10 @@ export const mainBudget = (window: number, limits: Limits): HandoffBudget | unde
     return undefined;
   }
 
-  const { soft, hard } = thresholdsFor(window, limits);
-
-  return { request: hard, warn: soft };
+  return {
+    request: Math.min(window * limits.hardRatio, limits.hardTokens),
+    warn: Math.min(window * limits.softRatio, limits.softTokens),
+  };
 };
 
 export type BudgetLevel = "unknown" | "normal" | "soft" | "hard";

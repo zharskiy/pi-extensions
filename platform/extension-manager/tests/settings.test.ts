@@ -12,7 +12,7 @@ import {
   type SettingsSchema,
   userSettingsPath,
 } from "../../shared/index.ts";
-import { reportSettingsErrors } from "../watch-settings.ts";
+import { reportSettingsErrors } from "../settings-errors.ts";
 
 type Example = { count: number; ratio: number; names: string[] };
 

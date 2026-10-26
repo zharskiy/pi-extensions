@@ -1,5 +1,5 @@
 import { errorText } from "../../../../platform/shared/index.ts";
-import { assertSupported, pageText, supported } from "./text.ts";
+import { mediaType, pageText, supported } from "./text.ts";
 
 type FetchLimits = { timeoutSeconds: number; maxBytes: number; maxChars: number };
 
@@ -110,9 +110,9 @@ export const fetchPage = async (
 
     if (!supported(contentType)) {
       await response.body?.cancel();
-    }
 
-    assertSupported(contentType);
+      throw new Error(`unsupported content type ${mediaType(contentType)}`);
+    }
 
     const body = await readBody(response.body, limits.maxBytes);
     const page = pageText(decode(body.bytes, contentType), contentType);

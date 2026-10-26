@@ -220,7 +220,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const sendHeld = (live: Live, child: ChildSession) =>
     Promise.all(live.pending.splice(0).map((message) => deliver(child, message, "steer")));
 
-  const resume = async (id: string, deliver: (child: ChildSession) => Promise<void>) => {
+  const resume = async (id: string, send: (child: ChildSession) => Promise<void>) => {
     const live = lives.get(id);
 
     if (!live?.child) {
@@ -243,7 +243,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.turn = "running";
 
     try {
-      await deliver(child);
+      await send(child);
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(id, { state: "failed", error: `wake failed: ${errorText(error)}` });

@@ -82,7 +82,7 @@ const HELD_POLL_MS = 100;
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
-  const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
+  const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];

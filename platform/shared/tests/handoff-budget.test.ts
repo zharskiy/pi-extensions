@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { budgetLevel, mainBudget, thresholdsFor } from "../handoff/handoff-budget.ts";
+import { budgetLevel, mainBudget } from "../handoff/handoff-budget.ts";
 
 const budget = { request: 100_000, warn: 80_000 };
 
@@ -18,19 +18,24 @@ describe("budget level", () => {
 
 const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
 
-describe("thresholdsFor", () => {
-  it("caps the thresholds by tokens on a large window", () => {
-    expect(thresholdsFor(1_000_000, limits)).toEqual({ soft: 125_000, hard: 175_000 });
-  });
-
-  it("keeps the ratios when they are below the caps", () => {
-    expect(thresholdsFor(200_000, limits)).toEqual({ soft: 90_000, hard: 120_000 });
-  });
-});
-
 describe("mainBudget", () => {
   it("requests at the hard threshold and warns at the soft one", () => {
     expect(mainBudget(200_000, limits)).toEqual({ request: 120_000, warn: 90_000 });
+  });
+
+  it("caps the thresholds by tokens on a large window", () => {
+    expect(mainBudget(1_000_000, limits)).toEqual({ request: 175_000, warn: 125_000 });
+  });
+
+  it("keeps the ratios when they are below the caps", () => {
+    expect(mainBudget(100_000, limits)).toEqual({ request: 60_000, warn: 45_000 });
+  });
+
+  it("puts the warn line above the request line when the soft threshold is above the hard one", () => {
+    const inverted = { ...limits, softRatio: 0.9, hardRatio: 0.75 };
+
+    expect(budgetLevel(80_000, mainBudget(100_000, inverted))).toBe("hard");
+    expect(budgetLevel(70_000, mainBudget(100_000, inverted))).toBe("normal");
   });
 
   it("is undefined for an unknown window", () => {

@@ -6,6 +6,7 @@ import type {
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
+  budgetLevel,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
@@ -22,7 +23,6 @@ import {
 import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface } from "./handoff.ts";
 import {
   type ContextTokens,
-  contextLevel,
   handoffStep,
   isPending,
   MAX_INSTRUCTIONS,
@@ -442,7 +442,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       state = { ...state, userActive: true };
     }
 
-    const level = contextLevel(context, limits());
+    const level = budgetLevel(context.tokens, mainBudget(context.window, limits()));
 
     state = { ...state, context: level === "unknown" ? undefined : context };
 

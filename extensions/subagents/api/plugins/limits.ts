@@ -1,4 +1,4 @@
-import { HANDOFF_REQUEST_TYPE } from "../../../../platform/shared/index.ts";
+import { HANDOFF_REQUEST_TYPE, type HandoffRequestDetails } from "../../../../platform/shared/index.ts";
 import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
 import { agentBudget, budgetStep } from "../../core/model/context-limit.ts";
@@ -45,7 +45,7 @@ export const limitsPlugin: Plugin = {
         void runner.route(id, {
           customType: HANDOFF_REQUEST_TYPE,
           text: handoffService.instruction(record.handoffPath),
-          details: { reason: "limit", tokens, request: budget.request },
+          details: { reason: "limit", tokens, request: budget.request } satisfies HandoffRequestDetails,
         });
         return;
       }

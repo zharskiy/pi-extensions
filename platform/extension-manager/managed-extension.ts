@@ -8,7 +8,7 @@ import {
   type SettingsSchema,
 } from "../shared/index.ts";
 import { createExtensionManager, type ExtensionManager } from "./extension-manager.ts";
-import { reportSettingsErrors } from "./watch-settings.ts";
+import { reportSettingsErrors } from "./settings-errors.ts";
 
 type SettingsFiles<C> = { schema: SettingsSchema<C>; file: string };
 

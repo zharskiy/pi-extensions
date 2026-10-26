@@ -1,20 +1,11 @@
 import type { ContextSnapshot } from "../../../platform/pi-adapter/index.ts";
-import {
-  type BudgetLevel,
-  budgetLevel,
-  type HandoffValidation,
-  type Limits,
-  mainBudget,
-} from "../../../platform/shared/index.ts";
+import type { BudgetLevel, HandoffValidation } from "../../../platform/shared/index.ts";
 
 export type ContextTokens = Pick<ContextSnapshot, "tokens" | "window">;
 
 export const MAX_INSTRUCTIONS = 2;
 
 export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching" | "stuck";
-
-export const contextLevel = (context: ContextTokens, limits: Limits): BudgetLevel =>
-  budgetLevel(context.tokens, mainBudget(context.window, limits));
 
 export const shouldRequest = (phase: Phase, level: BudgetLevel) => phase === "watching" && level === "hard";
 
