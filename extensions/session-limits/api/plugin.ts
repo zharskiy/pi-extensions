@@ -2,7 +2,6 @@ import type { Host } from "../../../platform/pi-adapter/index.ts";
 import {
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
-  handoffTemplate,
   handoffTool,
   LIMITS_CHANNEL,
   type Limits,
@@ -19,21 +18,20 @@ import { segmentFor } from "../ui/threshold-text.ts";
 
 type LimitsOptions = {
   host: Host;
-  template: string;
   limits: () => Limits;
   releaseDelayMs?: number;
 };
 
 const LEGACY_SEED_TYPE = "pi-session-limits-handoff";
 
-export const createLimits = ({ host, template, limits, releaseDelayMs }: LimitsOptions) => {
+export const createLimits = ({ host, limits, releaseDelayMs }: LimitsOptions) => {
   const keyText = (binding: string) => host.ui.keyText(binding);
 
   host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
   host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
   host.registerMessageRenderer(LEGACY_SEED_TYPE, handoffSeedMessage(keyText));
 
-  const saving = watchLimits({ host, template, limits, segment: segmentFor, releaseDelayMs });
+  const saving = watchLimits({ host, limits, segment: segmentFor, releaseDelayMs });
 
   host.registerTool(
     handoffTool({
@@ -48,7 +46,7 @@ export const createLimits = ({ host, template, limits, releaseDelayMs }: LimitsO
 export const sessionLimitsPlugin: Plugin<never, never, Limits> = {
   id: "session-limits",
   enable({ host, settings }) {
-    createLimits({ host, template: handoffTemplate(), limits: () => settings });
+    createLimits({ host, limits: () => settings });
 
     host.onSessionStart(() => {
       host.publish(LIMITS_CHANNEL, { ...settings });

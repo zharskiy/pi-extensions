@@ -60,7 +60,7 @@ extensions/subagents/
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, createPendingCalls, describeRunAgent
-│   │   ├── handoff.ts                     # createHandoff: the handoff instruction (shared template) and schema service
+│   │   ├── handoff.ts                     # createHandoff: the handoff service, instruction and validation for the agent audience
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree

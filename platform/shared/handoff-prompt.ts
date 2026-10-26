@@ -36,7 +36,7 @@ export type HandoffRequest = { path: string; reason: string; focus?: string; aud
 
 let cachedTemplate: string | undefined;
 
-export const handoffTemplate = () => {
+const handoffTemplate = () => {
   cachedTemplate ??= readFileSync(join(import.meta.dirname, "handoff-prompt.md"), "utf8");
 
   return cachedTemplate;
@@ -52,7 +52,7 @@ const focusParagraph = (focus: string | undefined) =>
     ? `\n\nThe user says the next session is for: ${focus}. Shape Outcome and Next around that and leave out what it does not need.\n\n`
     : "\n\n";
 
-export const handoffInstruction = (template: string, request: HandoffRequest) => {
+export const handoffInstruction = (request: HandoffRequest) => {
   const { audience } = request;
 
   const values: Record<string, string> = {
@@ -65,7 +65,7 @@ export const handoffInstruction = (template: string, request: HandoffRequest) =>
     nextHint: withLead(audience.nextHint),
   };
 
-  return template
+  return handoffTemplate()
     .replace(/\n*\{\{focus\}\}\n*/, () => focusParagraph(request.focus))
     .replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match)
     .trim();

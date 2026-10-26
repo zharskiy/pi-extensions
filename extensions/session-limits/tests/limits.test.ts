@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMode, ToolSpec } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL, handoffTemplate, handoffPath as pathFor } from "../../../platform/shared/index.ts";
+import { BUSY_CHANNEL, handoffPath as pathFor } from "../../../platform/shared/index.ts";
 import {
   createFakeHost,
   flushTimers as flush,
@@ -24,8 +24,6 @@ const tempRoot = () => {
 };
 
 const LIMITS = DEFAULT_LIMITS;
-
-const TEMPLATE = handoffTemplate();
 
 const VALID_HANDOFF = [
   "## Status",
@@ -72,7 +70,7 @@ const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {
     mode,
   });
 
-  createLimits({ host: conversationOnly(host), template: TEMPLATE, limits: () => limits, releaseDelayMs });
+  createLimits({ host: conversationOnly(host), limits: () => limits, releaseDelayMs });
 
   host.start();
 
@@ -531,7 +529,7 @@ describe("session limits", () => {
 
     host.onSessionStart(() => host.emit(BUSY_CHANNEL, { source: "pi-subagents", busy: true }));
 
-    createLimits({ host, template: TEMPLATE, limits: () => LIMITS, releaseDelayMs: 0 });
+    createLimits({ host, limits: () => LIMITS, releaseDelayMs: 0 });
 
     host.start();
     host.turnEnd({ tokens: 76_000, window: 100_000 });

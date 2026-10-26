@@ -5,7 +5,7 @@ extensions/session-limits/
 ├── index.ts                    entry: re-exports the default from api/extension.ts
 ├── api/
 │   ├── extension.ts            createManagedExtension: namespace pi-session-limits, host conversationOnly, settings, sessionLimitsPlugin
-│   └── plugin.ts               sessionLimitsPlugin, createLimits: reads the shared prompt template, registers the `handoff` tool, the request and seed renderers (from ui-kit, the legacy seed type included), starts watchLimits, publishes the settings on session start
+│   └── plugin.ts               sessionLimitsPlugin, createLimits: registers the `handoff` tool, the request and seed renderers (from ui-kit, the legacy seed type included), starts watchLimits, publishes the settings on session start
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events and commands to tui and rpc
 │   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch, busy channel

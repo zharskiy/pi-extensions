@@ -47,7 +47,6 @@ type Segment = { token: ThemeToken; text: string };
 
 type LimitWatchOptions = {
   host: Host;
-  template: string;
   limits: () => Limits;
   segment: (
     context: ContextTokens | undefined,
@@ -73,13 +72,7 @@ type LimitsState = {
 
 type RequestOrigin = { manual: boolean; focus?: string };
 
-export const watchLimits = ({
-  host,
-  template,
-  limits,
-  segment,
-  releaseDelayMs = 1_000,
-}: LimitWatchOptions) => {
+export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
   const sources = new Set<string>();
   let state: LimitsState = {
     phase: "watching",
@@ -96,7 +89,7 @@ export const watchLimits = ({
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
 
   const instruction = (path: string, reason: string, focus: string | undefined) =>
-    handoffInstruction(template, { path, reason, focus, audience: MAIN_AUDIENCE });
+    handoffInstruction({ path, reason, focus, audience: MAIN_AUDIENCE });
 
   const currentInstruction = (path: string) =>
     instruction(path, state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON, state.focus);

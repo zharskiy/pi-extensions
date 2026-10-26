@@ -33,7 +33,6 @@ export {
   AGENT_REASON,
   handoffInstruction,
   handoffRetry,
-  handoffTemplate,
   MAIN_AUDIENCE,
   seedText,
   successorPreface,

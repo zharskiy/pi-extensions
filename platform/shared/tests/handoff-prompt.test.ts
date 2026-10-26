@@ -4,7 +4,6 @@ import {
   AGENT_REASON,
   handoffInstruction,
   handoffRetry,
-  handoffTemplate,
   MAIN_AUDIENCE,
   seedText,
   successorPreface,
@@ -15,10 +14,9 @@ const PATH = "/tmp/pi-handoff/s1/main-handoff.md";
 const SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"];
 
 const main = (focus?: string) =>
-  handoffInstruction(handoffTemplate(), { path: PATH, reason: "Full.", focus, audience: MAIN_AUDIENCE });
+  handoffInstruction({ path: PATH, reason: "Full.", focus, audience: MAIN_AUDIENCE });
 
-const agent = () =>
-  handoffInstruction(handoffTemplate(), { path: PATH, reason: AGENT_REASON, audience: AGENT_AUDIENCE });
+const agent = () => handoffInstruction({ path: PATH, reason: AGENT_REASON, audience: AGENT_AUDIENCE });
 
 describe("handoff instruction", () => {
   it.each([
