@@ -10,7 +10,8 @@ Admission rule: a module lives here only if it imports nothing but node built-in
 - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template and its builder, retry text, successor preface and seed text.
 - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `handoff-limits.ts`: `Limits`, `thresholdsFor`.
-- `host-channels.ts`: the busy, awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers, `SPENDING_STATUS_KEY`, `AGENTS_HINT_KEY`.
+- `host-channels.ts`: the busy, awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
+- `status-keys.ts`: `HINT_STATUS_PREFIX`, `MIRROR_STATUS_PREFIX`, the status-key roles the footer reads.
 - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
 - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows` and the accent `rule`.

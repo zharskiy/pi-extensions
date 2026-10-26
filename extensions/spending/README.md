@@ -30,7 +30,7 @@ Start pi and try:
 | Try | What you see |
 |---|---|
 | Work in the main session only | No segment yet: it stays hidden while no reporting source has spent anything. |
-| Run a background agent with [subagents](../subagents/README.md) | `main $x · agents $y · total $z` in the footer, refreshed as the agent works. |
+| Run a background agent with [subagents](../subagents/README.md) | `main $x · agents $y · total $z` in the footer, refreshed as the agent works. pi's default footer shows it as a status; the [footer](../footer/README.md) extension draws the same totals itself and hides that status. |
 | Quit and resume the session | The same totals as before you quit. |
 
 ## Development

@@ -15,11 +15,11 @@ import {
 } from "../../../platform/shared/index.ts";
 import { keyHints } from "../../../platform/ui-kit/index.ts";
 import {
-  agentsHint,
   type ContextBase,
   contextBase,
   type FooterState,
   folderName,
+  hintTexts,
   sessionSpend,
   statusLines,
 } from "../core/segments.ts";
@@ -134,13 +134,12 @@ const moneySegments = (theme: ThemeLike, totals: SpendingTotals | undefined): Se
     : [tokens, totalSegment(theme, totals, false)];
 };
 
-const hintRow = (theme: ThemeLike, state: FooterState, hint: string | undefined, width: number) => {
+const hintRow = (theme: ThemeLike, state: FooterState, hints: string[], width: number) => {
   const cycle: Segment[] =
     state.model && state.model.reasoning !== false
       ? [{ text: keyHints([[state.cycleKey, "to cycle thinking"]], theme), drop: 1 }]
       : [];
-  const agents: Segment[] = hint ? [{ text: hint, drop: 2 }] : [];
-  const row = [...cycle, ...agents];
+  const row = [...cycle, ...hints.map((text) => ({ text, drop: 2 }))];
 
   return row.length === 0 ? [] : [spread(theme, row, [], width)];
 };
@@ -156,7 +155,7 @@ export const renderFooter = (theme: ThemeLike, state: FooterState, data: FooterD
   const lines = [
     spread(theme, place, modelSegments(theme, state.model, state.thinking), room),
     spread(theme, context, moneySegments(theme, state.totals), room),
-    ...hintRow(theme, state, agentsHint(data.statuses), room),
+    ...hintRow(theme, state, hintTexts(data.statuses), room),
     ...(status.length > 0 ? ["", ...status] : []),
   ];
 

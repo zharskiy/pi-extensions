@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
-import { AGENTS_HINT_KEY, errorText } from "../../../../platform/shared/index.ts";
+import { errorText, HINT_STATUS_PREFIX } from "../../../../platform/shared/index.ts";
 import {
   createPanelState,
   type PanelActionsAvailable,
@@ -13,6 +13,8 @@ import type { Plugin } from "../../core/model/plugin.ts";
 import { type PanelActions, panelKeyHandler, selectFirst } from "../../ui/agent-panel/keys.ts";
 import { createPanelWidget } from "../../ui/agent-panel/panel.ts";
 import { panelLines } from "../../ui/agent-panel/panel-lines.ts";
+
+const HINT_KEY = `${HINT_STATUS_PREFIX}subagents`;
 
 export const agentPanelPlugin: Plugin = {
   id: "agent-panel",
@@ -57,7 +59,7 @@ export const agentPanelPlugin: Plugin = {
       }
 
       shown = value;
-      host.ui.setStatus(AGENTS_HINT_KEY, value);
+      host.ui.setStatus(HINT_KEY, value);
     };
 
     const refresh = () => {
@@ -136,7 +138,7 @@ export const agentPanelPlugin: Plugin = {
       enabled = false;
       if (shown !== undefined) {
         shown = undefined;
-        host.ui.setStatus(AGENTS_HINT_KEY, undefined);
+        host.ui.setStatus(HINT_KEY, undefined);
       }
 
       offDown();

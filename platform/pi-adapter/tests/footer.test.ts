@@ -158,7 +158,7 @@ describe("setFooter with pi's interactive layout", () => {
       footer: { render: () => ["pi footer"], invalidate: () => {} },
       footerDataProvider: {
         getGitBranch: () => "main",
-        getExtensionStatuses: () => new Map([["pi-subagents", "← to list agents"]]),
+        getExtensionStatuses: () => new Map([["agents", "← to list agents"]]),
         onBranchChange: () => () => {},
       },
       ui: { requestRender: () => {} },
@@ -189,7 +189,7 @@ describe("setFooter with pi's interactive layout", () => {
     );
     const setFooter = createFooterSetter(() => state.ctx);
     const footer = () =>
-      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("pi-subagents") ?? ""]);
+      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("agents") ?? ""]);
     const below = () => [...mode.widgetContainerBelow.render(40), ...mode.footerContainer.render(40)];
     const reset = () => {
       mode.setExtensionFooter(undefined);

@@ -9,7 +9,7 @@ import {
 import spending from "../api/extension.ts";
 import { USAGE_ENTRY } from "../core/ledger.ts";
 
-const STATUS_KEY = "pi-spending";
+const STATUS_KEY = "mirror:spending";
 const MAIN_OFFSET_ENTRY = "pi-spending:main-offset";
 
 const bootSpending = (host: FakeHost) => {

@@ -856,7 +856,7 @@ describe("agent panel", () => {
 });
 
 describe("agents hint status", () => {
-  const hint = (panel: ReturnType<typeof setup>) => panel.host.statuses.get("pi-subagents");
+  const hint = (panel: ReturnType<typeof setup>) => panel.host.statuses.get("hint:subagents");
 
   it("is set while the panel shows no rows and unset while it lists any", () => {
     const panel = setup();
@@ -906,7 +906,7 @@ describe("agents hint status", () => {
     vi.advanceTimersByTime(12_000);
 
     expect(hint(panel)).toBeUndefined();
-    expect(panel.host.statuses.get("pi-subagents")).toBeUndefined();
+    expect(panel.host.statuses.get("hint:subagents")).toBeUndefined();
   });
 
   it("is never set outside tui", () => {

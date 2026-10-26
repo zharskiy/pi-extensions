@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-This extension replaces pi's footer with a status block right below the editor. Besides the main session's figures, it shows the cost of the whole session, subagents at every depth included, as reported to the [spending](../spending/README.md) extension. The status texts other extensions set get a line each.
+This extension replaces pi's footer with a status block right below the editor. Besides the main session's figures, it shows the cost of the whole session, subagents at every depth included, as reported to the [spending](../spending/README.md) extension. The status texts other extensions set get a line each; a status keyed under `hint:` joins the hint row instead, and one keyed under `mirror:` (a figure the footer already shows, such as spending's totals) is left out.
 
 ## What it looks like
 

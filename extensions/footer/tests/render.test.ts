@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
-import { AGENTS_HINT_KEY, SPENDING_STATUS_KEY, type SpendingTotals } from "../../../platform/shared/index.ts";
+import {
+  HINT_STATUS_PREFIX,
+  MIRROR_STATUS_PREFIX,
+  type SpendingTotals,
+} from "../../../platform/shared/index.ts";
 import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.ts";
 import type { FooterState } from "../core/segments.ts";
 import { renderFooter } from "../ui/render.ts";
@@ -330,7 +334,7 @@ describe("renderFooter layout", () => {
 });
 
 describe("renderFooter hint row", () => {
-  const agents = new Map([[AGENTS_HINT_KEY, "← to list agents"]]);
+  const agents = new Map([[`${HINT_STATUS_PREFIX}agents`, "← to list agents"]]);
 
   it("holds the cycle pair alone without an agents status", () => {
     const lines = render();
@@ -363,16 +367,29 @@ describe("renderFooter hint row", () => {
     expect(render(noReasoning, { statuses: agents })[3]).toBe(" ← to list agents");
   });
 
-  it("lists one line per status by key, collapses whitespace and skips the spending status", () => {
+  it("draws every hint status in the hint row, ordered by key", () => {
+    const statuses = new Map([
+      [`${HINT_STATUS_PREFIX}zeta`, "z hint"],
+      [`${HINT_STATUS_PREFIX}alpha`, "a hint"],
+    ]);
+    const lines = render({}, { statuses });
+
+    expect(lines[3]).toMatch(/shift\+tab to cycle thinking · a hint · z hint/);
+    expect(lines).toHaveLength(render().length);
+  });
+
+  it("lists one line per other status by key, collapses whitespace and hides mirror statuses", () => {
     const statuses = new Map([
       ["zeta", "last"],
-      [SPENDING_STATUS_KEY, "main $1.000 · total $1.000"],
+      [`${MIRROR_STATUS_PREFIX}totals`, "main $1.000 · total $1.000"],
       ["alpha", "  first\n  line "],
       ["empty", "   "],
     ]);
 
     expect(render({}, { statuses }).slice(-4)).toEqual(["", " first line", " last", ""]);
-    expect(render({}, { statuses: new Map([[SPENDING_STATUS_KEY, "main $1.000"]]) })).toEqual(render());
+    expect(render({}, { statuses: new Map([[`${MIRROR_STATUS_PREFIX}totals`, "main $1.000"]]) })).toEqual(
+      render(),
+    );
   });
 });
 

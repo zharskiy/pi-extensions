@@ -1,8 +1,8 @@
 import type { ContextSnapshot, Host, ModelInfo } from "../../../platform/pi-adapter/index.ts";
 import {
-  AGENTS_HINT_KEY,
+  HINT_STATUS_PREFIX,
   type Limits,
-  SPENDING_STATUS_KEY,
+  MIRROR_STATUS_PREFIX,
   type SpendingTotals,
   sessionCacheHit,
   thresholdsFor,
@@ -49,18 +49,21 @@ export const sessionSpend = (totals: SpendingTotals) => {
   };
 };
 
-export const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
+const statusTexts = (statuses: ReadonlyMap<string, string>, keep: (key: string) => boolean) =>
   Array.from(statuses)
-    .filter(([key]) => key !== SPENDING_STATUS_KEY && key !== AGENTS_HINT_KEY)
+    .filter(([key]) => keep(key))
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, text]) => text.replace(/\s+/g, " ").trim())
     .filter((text) => text.length > 0);
 
-export const agentsHint = (statuses: ReadonlyMap<string, string>): string | undefined => {
-  const text = statuses.get(AGENTS_HINT_KEY)?.trim();
+export const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
+  statusTexts(
+    statuses,
+    (key) => !key.startsWith(HINT_STATUS_PREFIX) && !key.startsWith(MIRROR_STATUS_PREFIX),
+  );
 
-  return text || undefined;
-};
+export const hintTexts = (statuses: ReadonlyMap<string, string>): string[] =>
+  statusTexts(statuses, (key) => key.startsWith(HINT_STATUS_PREFIX));
 
 export type ContextBase = { base: number; warnAt?: number; errorAt?: number };
 

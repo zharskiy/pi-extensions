@@ -1,11 +1,13 @@
 import {
+  MIRROR_STATUS_PREFIX,
   type Plugin,
-  SPENDING_STATUS_KEY,
   TOTALS_CHANNEL,
   USAGE_CHANNEL,
 } from "../../../platform/shared/index.ts";
 import { createSpending } from "../core/spending.ts";
 import { footerText } from "../ui/footer-text.ts";
+
+const STATUS_KEY = `${MIRROR_STATUS_PREFIX}spending`;
 
 export const spendingPlugin: Plugin<never, never, undefined> = {
   id: "spending",
@@ -19,7 +21,7 @@ export const spendingPlugin: Plugin<never, never, undefined> = {
       const current = spending.totals();
 
       host.ui.setStatus(
-        SPENDING_STATUS_KEY,
+        STATUS_KEY,
         footerText({ main: current.main.cost, sources: current.sources, subscription: current.subscription }),
       );
       host.publish(TOTALS_CHANNEL, current);

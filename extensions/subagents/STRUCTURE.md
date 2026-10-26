@@ -29,7 +29,7 @@ extensions/subagents/
 │       ├── usage-report.ts                # reports agent usage to the spending channel
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
-│       ├── agent-panel.ts                 # panel below the editor, selection keys, the `pi-subagents` status (`AGENTS_HINT_KEY`, a dim key and muted words)
+│       ├── agent-panel.ts                 # panel below the editor, selection keys, the `hint:subagents` status (under `HINT_STATUS_PREFIX`, a dim key and muted words)
 │       ├── interrupt.ts                   # Esc on an empty idle prompt: confirm to stop running agents
 │       ├── agent-setup.ts                 # /agents setup, autosetup and the agent_skills_proposal tool, /agents create, the `agentSetup` service
 │       ├── agent-view.ts                  # /agents: menu, list and agent view, the `agentView` service

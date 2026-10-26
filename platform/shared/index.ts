@@ -40,7 +40,6 @@ export {
 } from "./handoff-prompt.ts";
 export { type HandoffTarget, handoffTool } from "./handoff-tool.ts";
 export {
-  AGENTS_HINT_KEY,
   AWAITING_INPUT_CHANNEL,
   BUSY_CHANNEL,
   LIMITS_CHANNEL,
@@ -49,7 +48,6 @@ export {
   parseLimits,
   parseTotals,
   parseUsageReport,
-  SPENDING_STATUS_KEY,
   type SpendingTotals,
   TOTALS_CHANNEL,
   USAGE_CHANNEL,
@@ -70,4 +68,5 @@ export {
   type SettingsSchema,
   userSettingsPath,
 } from "./settings-files.ts";
+export { HINT_STATUS_PREFIX, MIRROR_STATUS_PREFIX } from "./status-keys.ts";
 export { cutStart, DOT, ELLIPSIS, fixedBlock, padded, padRows, prefixed } from "./text-layout.ts";
