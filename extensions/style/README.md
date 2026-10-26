@@ -41,7 +41,7 @@ Pick a style in the interactive TUI:
 | Start pi | The main session answers in `concise` style until you pick another. Subagents are unaffected. |
 | `/style` | The list of styles in place of the editor. |
 | `/style normal` | The style is removed and pi's default replies return, in this and later sessions. |
-| `/style concise` | The short, result-first replies return from the next run. |
+| `/style concise` | The short, result-first replies return from the next run, in this and later sessions. |
 
 ## Development
 

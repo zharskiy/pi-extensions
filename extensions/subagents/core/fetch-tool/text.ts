@@ -88,13 +88,5 @@ export const assertSupported = (contentType: string) => {
 export const pageText = (body: string, contentType: string): PageText => {
   const type = mediaType(contentType);
 
-  if (type === "" || isHtml(type)) {
-    return readableText(body);
-  }
-
-  if (isPlain(type)) {
-    return { text: body.trim() };
-  }
-
-  throw new Error(`unsupported content type ${type}`);
+  return type === "" || isHtml(type) ? readableText(body) : { text: body.trim() };
 };

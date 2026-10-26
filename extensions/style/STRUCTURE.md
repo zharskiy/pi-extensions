@@ -5,7 +5,7 @@ extensions/style/
 ├── index.ts               # pi entry: re-exports the default of api/extension.ts
 ├── api/
 │   ├── extension.ts       # createManagedExtension (namespace pi-style, one plugin)
-│   └── plugin.ts          # createStyle (/style command, session start, settings wiring), stylePlugin (loads prompts/ from ctx.paths.root)
+│   └── plugin.ts          # createStyle (/style command, session start, settings wiring; saves into `Host.session().agentDir`), stylePlugin (loads prompts/ from ctx.paths.root)
 ├── core/
 │   ├── style.ts           # SECTION, createStyleSection (style names, default fallback, current style, setPromptSection)
 │   ├── styles.ts          # Style, NORMAL, DEFAULT_STYLE (concise), parseStyle (front matter), loadStyles

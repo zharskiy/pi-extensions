@@ -8,7 +8,7 @@ export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cos
 
 export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken };
 
-export type ReceiptFacts = {
+type ReceiptFacts = {
   word?: string;
   reason?: string;
   elapsedMs?: number;

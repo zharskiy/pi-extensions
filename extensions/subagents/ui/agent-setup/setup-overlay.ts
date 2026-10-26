@@ -3,7 +3,7 @@ import type { Scope, SetupChange } from "../../core/agent-setup/scope.ts";
 import { initialSetup, pressSetupKey, type SetupContext, scopeOptions, setupChanges } from "./form.ts";
 import { renderSetup, type SetupPaths } from "./setup-render.ts";
 
-export type SetupResult = { scope: Scope; changes: SetupChange[] };
+type SetupResult = { scope: Scope; changes: SetupChange[] };
 
 export const setupForm =
   (context: SetupContext, paths: SetupPaths): FormFactory<SetupResult | undefined> =>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageText, readableText } from "../../../core/fetch-tool/text.ts";
+import { assertSupported, pageText, readableText } from "../../../core/fetch-tool/text.ts";
 
 describe("readableText", () => {
   it("extracts the title and drops the head", () => {
@@ -73,9 +73,11 @@ describe("pageText", () => {
     expect(pageText('{"a":1}', "application/json").text).toBe('{"a":1}');
     expect(pageText("plain", "text/plain").text).toBe("plain");
   });
+});
 
+describe("assertSupported", () => {
   it("reports unsupported types", () => {
-    expect(() => pageText("x", "image/png")).toThrow("unsupported content type image/png");
-    expect(() => pageText("x", "application/pdf")).toThrow("application/pdf");
+    expect(() => assertSupported("image/png")).toThrow("unsupported content type image/png");
+    expect(() => assertSupported("application/pdf")).toThrow("application/pdf");
   });
 });

@@ -86,7 +86,7 @@ extensions/subagents/
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
 │   │   ├── source.ts                      # createAgentSource: reads an agent's session file, re-parsing on change
-│   │   └── list-model.ts                  # list sections, listCounts, countsText, subtitle, clearTargets, MAX_CLOSED_ROOTS
+│   │   └── list-model.ts                  # list sections, subtitle (with the counts), clearTargets, MAX_CLOSED_ROOTS
 │   └── fetch-tool/
 │       ├── fetch.ts                       # fetchPage: request, limits, redirects
 │       └── text.ts                        # readableText, pageText, supported content types

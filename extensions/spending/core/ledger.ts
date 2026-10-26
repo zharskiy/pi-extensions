@@ -52,8 +52,6 @@ export const createLedger = (append: (customType: string, data: unknown) => void
       persisted.set(key, report.usage);
       append(USAGE_ENTRY, report);
     });
-
-    return changed.length;
   };
 
   const absorb = (entries: readonly unknown[], idPrefix = "") => {

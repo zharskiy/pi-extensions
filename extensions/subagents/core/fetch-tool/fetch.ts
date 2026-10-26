@@ -1,3 +1,4 @@
+import { errorText } from "../../../../platform/shared/index.ts";
 import { assertSupported, pageText, supported } from "./text.ts";
 
 type FetchLimits = { timeoutSeconds: number; maxBytes: number; maxChars: number };
@@ -6,7 +7,6 @@ export type FetchedPage = {
   url: string;
   status: number;
   reason: string;
-  contentType: string;
   title?: string;
   text: string;
   chars: { shown: number; total: number };
@@ -81,7 +81,7 @@ const failure = (error: unknown, caller: AbortSignal | undefined, timer: AbortSi
   }
 
   const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorText(error);
 
   if (/redirect/i.test(cause) || /redirect/i.test(message)) {
     return new Error("too many redirects");
@@ -121,7 +121,6 @@ export const fetchPage = async (
       url: response.url === "" ? target.href : response.url,
       status: response.status,
       reason: response.statusText,
-      contentType,
       title: page.title,
       text: page.text.slice(0, limits.maxChars),
       chars: { shown: Math.min(page.text.length, limits.maxChars), total: page.text.length },

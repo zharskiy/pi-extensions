@@ -141,7 +141,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecor
 
   if (record.state !== "done") {
     lines.push(`(unverified partial output: ${record.error ?? record.state})`);
-  } else if (!(record.statusLine ?? hasStatusLine(text))) {
+  } else if (record.statusLine === false) {
     lines.push("(shape: no Status line)");
   }
 

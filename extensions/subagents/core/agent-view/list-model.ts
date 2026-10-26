@@ -124,7 +124,7 @@ export const listedTerminals = (visible: AgentRecord[]): AgentRecord[] => {
   return visible.filter((record) => isTerminal(record, byId));
 };
 
-export const listCounts = (visible: AgentRecord[]): { running: number; finished: number } => {
+const listCounts = (visible: AgentRecord[]): { running: number; finished: number } => {
   const { terminals, rootOf } = forestOf(visible);
 
   return {
@@ -133,7 +133,7 @@ export const listCounts = (visible: AgentRecord[]): { running: number; finished:
   };
 };
 
-export const countsText = (running: number, finished: number): string =>
+const countsText = (running: number, finished: number): string =>
   [running > 0 ? `${running} running` : undefined, finished > 0 ? `${finished} finished` : undefined]
     .filter((part) => part !== undefined)
     .join(DOT);

@@ -2,7 +2,7 @@ import type { Host, RowLines, WidgetHandle } from "../../../../platform/pi-adapt
 
 const WIDGET_KEY = "pi-subagents-agents";
 
-export type PanelWidget = { show(): void; hide(): void };
+type PanelWidget = { show(): void; hide(): void };
 
 export const createPanelWidget = (ui: Pick<Host["ui"], "setWidget">, render: RowLines): PanelWidget => {
   let handle: WidgetHandle | undefined;

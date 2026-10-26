@@ -545,7 +545,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     void releaseLive(record.id);
   };
 
-  const handleEvent = (id: string, live: Live, event: ChildEvent) => {
+  const handleEvent = (id: string, live: Live, child: ChildSession, event: ChildEvent) => {
     const record = deps.registry.get(id);
 
     if (!record) {
@@ -553,16 +553,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (event.type === "turn_end") {
-      const usage = live.child?.ownUsage();
-      const tokens = usage ? usage.input + usage.output + usage.cacheWrite : record.tokens;
-      const cost = usage ? usage.cost.total : record.cost;
+      const usage = child.ownUsage();
+      const tokens = usage.input + usage.output + usage.cacheWrite;
+      const cost = usage.cost.total;
       const turns = record.turns + 1;
 
       deps.registry.update(id, { turns, context: event.context, tokens, cost, lastText: live.lastText });
 
-      if (usage) {
-        deps.bus.emit("agent:usage", { id, usage });
-      }
+      deps.bus.emit("agent:usage", { id, usage });
 
       const continuing =
         live.lastToolCalls > 0 && live.lastStopReason !== undefined && !failedStop(live.lastStopReason);
@@ -601,9 +599,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         live.turn = "idle";
       }
 
-      if (live.child) {
-        noteUsage(id, live.child.ownUsage());
-      }
+      noteUsage(id, child.ownUsage());
 
       if (record.state === "grace") {
         settleGrace(record, live);
@@ -689,7 +685,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     live.child = child;
-    live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, event));
+    live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, child, event));
 
     const afterSpawn = deps.registry.get(record.id);
 
