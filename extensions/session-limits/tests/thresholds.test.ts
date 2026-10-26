@@ -92,21 +92,21 @@ describe("handoffStep", () => {
 
 describe("segmentFor", () => {
   it("names the hard threshold and the tokens used when the token cap wins", () => {
-    expect(segmentFor(at(160_000, 1_000_000), "watching", limits, "session-handoff")).toEqual({
+    expect(segmentFor(at(160_000, 1_000_000), false, limits, "session-handoff")).toEqual({
       token: "warning",
       text: "» Handoff at 175k tokens · 160.0k used",
     });
   });
 
   it("names the hard threshold when the ratio wins", () => {
-    expect(segmentFor(at(100_000, 200_000), "watching", limits, "session-handoff")).toEqual({
+    expect(segmentFor(at(100_000, 200_000), false, limits, "session-handoff")).toEqual({
       token: "warning",
       text: "» Handoff at 120k tokens · 100.0k used",
     });
     expect(
       segmentFor(
         at(142_300, 200_000),
-        "watching",
+        false,
         { ...limits, hardTokens: 175_000, hardRatio: 0.9 },
         "session-handoff",
       ),
@@ -117,44 +117,36 @@ describe("segmentFor", () => {
   });
 
   it("is empty without a known window", () => {
-    expect(segmentFor(at(80_000, 0), "watching", limits, "session-handoff")).toBeUndefined();
+    expect(segmentFor(at(80_000, 0), false, limits, "session-handoff")).toBeUndefined();
   });
 
   it("is empty below the soft limit and warns from it", () => {
-    expect(segmentFor(at(40_000), "watching", limits, "session-handoff")).toBeUndefined();
-    expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toEqual({
+    expect(segmentFor(at(40_000), false, limits, "session-handoff")).toBeUndefined();
+    expect(segmentFor(at(50_000), false, limits, "session-handoff")).toEqual({
       token: "warning",
       text: "» Handoff at 60k tokens · 50.0k used",
     });
   });
 
-  it("keeps the threshold warning in every phase in progress and says nothing else", () => {
-    const text = (phase: "queued" | "requested" | "waiting" | "switching") =>
-      segmentFor(at(78_000), phase, limits, "session-handoff");
-
-    const warning = { token: "warning", text: "» Handoff at 60k tokens · 78.0k used" };
-
-    expect(text("queued")).toEqual(warning);
-    expect(text("requested")).toEqual(warning);
-    expect(text("waiting")).toEqual(warning);
-    expect(text("switching")).toEqual(warning);
-    expect(segmentFor(at(40_000), "requested", limits, "session-handoff")).toBeUndefined();
-    expect(segmentFor(undefined, "requested", limits, "session-handoff")).toBeUndefined();
-    expect(segmentFor(undefined, "watching", limits, "session-handoff")).toBeUndefined();
+  it("keeps the threshold warning while a handoff is in progress and says nothing else", () => {
+    expect(segmentFor(at(78_000), false, limits, "session-handoff")).toEqual({
+      token: "warning",
+      text: "» Handoff at 60k tokens · 78.0k used",
+    });
+    expect(segmentFor(at(40_000), false, limits, "session-handoff")).toBeUndefined();
+    expect(segmentFor(undefined, false, limits, "session-handoff")).toBeUndefined();
   });
 
   it("marks only the failure with the error glyph and colour, and names the command", () => {
-    expect(segmentFor(at(78_000), "stuck", limits, "session-handoff")).toEqual({
+    expect(segmentFor(at(78_000), true, limits, "session-handoff")).toEqual({
       token: "error",
       text: "✗ Handoff failed · run /session-handoff",
     });
   });
 
   it("never repeats the footer's context percentage", () => {
-    const phases = ["watching", "queued", "requested", "waiting", "switching", "stuck"] as const;
-
-    phases.forEach((phase) => {
-      expect(segmentFor(at(78_000), phase, limits, "session-handoff")?.text).not.toMatch(/ctx|%/);
+    [false, true].forEach((stuck) => {
+      expect(segmentFor(at(78_000), stuck, limits, "session-handoff")?.text).not.toMatch(/ctx|%/);
     });
   });
 });

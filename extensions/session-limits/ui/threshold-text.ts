@@ -1,17 +1,17 @@
 import type { ThemeToken } from "../../../platform/pi-adapter/index.ts";
 import { budgetLevel, DOT, formatTokens, formatWindow, type Limits } from "../../../platform/shared/index.ts";
 import { MARKS } from "../../../platform/ui-kit/index.ts";
-import { type ContextTokens, mainBudget, type Phase } from "../core/thresholds.ts";
+import { type ContextTokens, mainBudget } from "../core/thresholds.ts";
 
 const notice = (text: string) => ({ token: "warning" as const, text: `${MARKS.info} ${text}` });
 
 export const segmentFor = (
   context: ContextTokens | undefined,
-  phase: Phase,
+  stuck: boolean,
   limits: Limits,
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
-  if (phase === "stuck") {
+  if (stuck) {
     return { token: "error", text: `${MARKS.error} Handoff failed${DOT}run /${command}` };
   }
 

@@ -50,7 +50,7 @@ type LimitWatchOptions = {
   limits: () => Limits;
   segment: (
     context: ContextTokens | undefined,
-    phase: Phase,
+    stuck: boolean,
     limits: Limits,
     command: string,
   ) => Segment | undefined;
@@ -108,7 +108,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const refresh = () => {
-    const notice = segment(state.context, state.phase, limits(), HANDOFF_COMMAND);
+    const notice = segment(state.context, state.phase === "stuck", limits(), HANDOFF_COMMAND);
 
     host.ui.setNotice(NOTICE_KEY, notice ? host.ui.style(notice.token, notice.text) : undefined);
   };
