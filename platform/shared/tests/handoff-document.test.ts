@@ -1,7 +1,12 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { handoffPath, validateHandoff } from "../handoff/handoff-document.ts";
+import {
+  handoffPath,
+  parseRequestDetails,
+  parseSeedDetails,
+  validateHandoff,
+} from "../handoff/handoff-document.ts";
 
 const STATUSES = ["done", "partial", "blocked"];
 
@@ -63,5 +68,50 @@ describe("handoffPath", () => {
     expect(handoffPath("s1", { agentId: "scout-1a2b3c4d5e6f" })).toBe(
       join(root, "scout-1a2b3c4d5e6f-handoff.md"),
     );
+  });
+});
+
+describe("parseSeedDetails", () => {
+  it("reads a session or an agent origin", () => {
+    expect(parseSeedDetails({ from: "session" })).toEqual({ from: "session" });
+    expect(parseSeedDetails({ from: "agent", id: "a3", link: 2, extra: true })).toEqual({
+      from: "agent",
+      id: "a3",
+      link: 2,
+    });
+  });
+
+  it("rejects missing, unknown or incomplete details", () => {
+    expect(parseSeedDetails(undefined)).toBeUndefined();
+    expect(parseSeedDetails({ from: "elsewhere" })).toBeUndefined();
+    expect(parseSeedDetails({ from: "agent", id: "a3" })).toBeUndefined();
+  });
+});
+
+describe("parseRequestDetails", () => {
+  it("reads a limit request with its figures, dropping figures that are not numbers", () => {
+    expect(parseRequestDetails({ reason: "limit", tokens: 176_000, request: 175_000 })).toEqual({
+      reason: "limit",
+      tokens: 176_000,
+      request: 175_000,
+    });
+    expect(parseRequestDetails({ reason: "limit", tokens: "many" })).toEqual({
+      reason: "limit",
+      tokens: undefined,
+      request: undefined,
+    });
+  });
+
+  it("reads a manual request only with its command label", () => {
+    expect(parseRequestDetails({ reason: "manual", command: "/hand-over" })).toEqual({
+      reason: "manual",
+      command: "/hand-over",
+    });
+    expect(parseRequestDetails({ reason: "manual" })).toBeUndefined();
+  });
+
+  it("rejects unknown details", () => {
+    expect(parseRequestDetails(undefined)).toBeUndefined();
+    expect(parseRequestDetails({ reason: "other" })).toBeUndefined();
   });
 });

@@ -17,9 +17,9 @@ const seed = [
 
 const padded = (lines: string[]) => lines.map((line) => (line === "" ? "" : ` ${line}`));
 
-const seedMessage = (details?: unknown) => ({ text: seed, details });
+const seedMessage = (details: unknown = { from: "session" }) => ({ text: seed, details });
 
-const draw = (expanded: boolean, width: number, details?: unknown, key = "ctrl+o") =>
+const draw = (expanded: boolean, width: number, details: unknown = { from: "session" }, key = "ctrl+o") =>
   handoffSeedMessage(() => key)(seedMessage(details), width, expanded, plainTheme);
 
 describe("handoff seed message", () => {
@@ -79,11 +79,13 @@ describe("handoff seed message", () => {
     expect(summaryOf("No mark here\nnext")).toBe("  ↳ No mark here");
   });
 
-  it("names the agent and the link in the title of an agent-origin seed", () => {
+  it("titles the seed by its origin, and plainly when the origin is unknown", () => {
     expect(draw(false, 200, { from: "agent", id: "scout-1", link: 2 })[0]).toBe(
       "» Handoff from agent scout-1 · link 2",
     );
     expect(draw(false, 200, { from: "session" })[0]).toBe("» Handoff from the previous session");
+    expect(draw(false, 200, null)[0]).toBe("» Handoff");
+    expect(draw(false, 200, { from: "agent", id: "scout-1" })[0]).toBe("» Handoff");
   });
 });
 

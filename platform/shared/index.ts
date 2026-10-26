@@ -31,6 +31,8 @@ export {
   type HandoffToolRows,
   type HandoffValidation,
   handoffPath,
+  parseRequestDetails,
+  parseSeedDetails,
   validateHandoff,
 } from "./handoff/handoff-document.ts";
 export {

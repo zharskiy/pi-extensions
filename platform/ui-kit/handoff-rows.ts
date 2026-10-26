@@ -3,15 +3,16 @@ import { CHILD_COLUMN, type MessageRender, type ThemeLike } from "../pi-adapter/
 import {
   DOT,
   formatWindow,
-  type HandoffRequestDetails,
-  type HandoffSeedDetails,
   type HandoffToolRows,
   homeRelative,
-  isPlainObject,
+  parseRequestDetails,
+  parseSeedDetails,
 } from "../shared/index.ts";
 import { markOf } from "./glyphs.ts";
 import { EXPAND_BINDING, expandHint } from "./key-hints.ts";
 import { type RowRender, row, rowChildren, rowText, wrapChild } from "./row.ts";
+
+const SEED_TITLE = "Handoff";
 
 const SESSION_SEED_TITLE = "Handoff from the previous session";
 
@@ -22,22 +23,14 @@ const firstSentence = (text: string) => {
   return end ? line.slice(0, end.index + 1) : line;
 };
 
-const seedDetails = (details: unknown): HandoffSeedDetails | undefined => {
-  if (!isPlainObject(details)) {
-    return undefined;
+const seedTitle = (details: unknown) => {
+  const source = parseSeedDetails(details);
+
+  if (source?.from === "agent") {
+    return `Handoff from agent ${source.id}${DOT}link ${source.link}`;
   }
 
-  const { from, id, link } = details;
-
-  return from === "agent" && typeof id === "string" && typeof link === "number"
-    ? { from, id, link }
-    : undefined;
-};
-
-const seedTitle = (details: unknown) => {
-  const source = seedDetails(details);
-
-  return source ? `Handoff from agent ${source.id}${DOT}link ${source.link}` : SESSION_SEED_TITLE;
+  return source ? SESSION_SEED_TITLE : SEED_TITLE;
 };
 
 const summary = (text: string) => (theme: ThemeLike) => theme.fg("muted", firstSentence(text));
@@ -58,30 +51,10 @@ export const handoffSeedMessage =
   (message, width, expanded, theme) =>
     seedRow(seedTitle(message.details), message.text, expanded, keyText(EXPAND_BINDING))(width, theme);
 
-const requestDetails = (details: unknown): HandoffRequestDetails | undefined => {
-  if (!isPlainObject(details)) {
-    return undefined;
-  }
-
-  const { reason, tokens, request, command } = details;
-
-  if (reason === "manual") {
-    return typeof command === "string" ? { reason, command } : undefined;
-  }
-
-  return reason === "limit"
-    ? {
-        reason,
-        tokens: typeof tokens === "number" ? tokens : undefined,
-        request: typeof request === "number" ? request : undefined,
-      }
-    : undefined;
-};
-
 const REQUEST_TITLE = "Handoff requested";
 
 const requestTitle = (details: unknown) => {
-  const known = requestDetails(details);
+  const known = parseRequestDetails(details);
 
   if (known?.reason === "manual") {
     return `${REQUEST_TITLE}${DOT}${known.command}`;

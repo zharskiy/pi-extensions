@@ -1211,10 +1211,9 @@ describe("handoff seed message", () => {
   it("draws the seed of a new session as a row with the expand key the host names", () => {
     const { host } = setup();
 
-    expect(host.renderMessage(HANDOFF_TYPE, { text: "Carry on. More." })).toEqual([
-      "» Handoff from the previous session",
-      "  ↳ Carry on. (<app.tools.expand> to expand)",
-    ]);
+    expect(
+      host.renderMessage(HANDOFF_TYPE, { text: "Carry on. More.", details: { from: "session" } }),
+    ).toEqual(["» Handoff from the previous session", "  ↳ Carry on. (<app.tools.expand> to expand)"]);
   });
 });
 
@@ -1253,7 +1252,7 @@ describe("handoff request message", () => {
     });
   });
 
-  it("seeds the new session with a handoff seed that names no agent origin", async () => {
+  it("seeds the new session with a handoff seed that names the session as its origin", async () => {
     const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
@@ -1262,7 +1261,7 @@ describe("handoff request message", () => {
     await flush();
 
     expect(host.newSessions[0].seed?.customType).toBe("pi-handoff-seed");
-    expect(host.newSessions[0].seed).not.toHaveProperty("details");
+    expect(host.newSessions[0].seed?.details).toEqual({ from: "session" });
   });
 
   it("draws the request row with the figures and the expand key", () => {

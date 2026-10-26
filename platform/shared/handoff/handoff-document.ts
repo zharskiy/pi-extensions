@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec } from "../../pi-adapter/index.ts";
+import { isPlainObject } from "../plain-object.ts";
 
 const HANDOFF_SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"] as const;
 
@@ -8,7 +9,7 @@ export type HandoffValidation = { ok: true; status: string } | { ok: false; erro
 
 export type HandoffToolRows = Pick<ToolSpec<{ content: string }, unknown>, "renderCall" | "renderResult">;
 
-export type HandoffSeedDetails = { from: "agent"; id: string; link: number };
+export type HandoffSeedDetails = { from: "session" } | { from: "agent"; id: string; link: number };
 
 export const HANDOFF_REQUEST_TYPE = "pi-handoff-request";
 
@@ -17,6 +18,42 @@ export const HANDOFF_SEED_TYPE = "pi-handoff-seed";
 export type HandoffRequestDetails =
   | { reason: "limit"; tokens?: number; request?: number }
   | { reason: "manual"; command: string };
+
+export const parseSeedDetails = (details: unknown): HandoffSeedDetails | undefined => {
+  if (!isPlainObject(details)) {
+    return undefined;
+  }
+
+  const { from, id, link } = details;
+
+  if (from === "session") {
+    return { from };
+  }
+
+  return from === "agent" && typeof id === "string" && typeof link === "number"
+    ? { from, id, link }
+    : undefined;
+};
+
+export const parseRequestDetails = (details: unknown): HandoffRequestDetails | undefined => {
+  if (!isPlainObject(details)) {
+    return undefined;
+  }
+
+  const { reason, tokens, request, command } = details;
+
+  if (reason === "manual") {
+    return typeof command === "string" ? { reason, command } : undefined;
+  }
+
+  return reason === "limit"
+    ? {
+        reason,
+        tokens: typeof tokens === "number" ? tokens : undefined,
+        request: typeof request === "number" ? request : undefined,
+      }
+    : undefined;
+};
 
 export const handoffPath = (sessionId: string, owner: { main: true } | { agentId: string }) =>
   join(

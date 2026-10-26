@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-A long session eventually fills the model's context window. Before that happens, this extension has the model save a handoff with a dedicated tool, and pi continues in a new session seeded with it. You keep typing, and a notice below the editor warns when the handoff is near. When background work is still running, the switch waits for it instead of ending it. A handoff switch starts a session marked as created from this one, so spending carries its totals over. The context thresholds are judged exactly as the footer judges them, and the handoff format is shared with subagents; what the main session is told to write is its own.
+A long session eventually fills the model's context window. Before that happens, this extension has the model save a handoff with a dedicated tool, and pi continues in a new session seeded with it. You keep typing, and a notice below the editor warns when the handoff is near. When background work is still running, the switch waits for it instead of ending it. The new session's first row says it continues the previous session. A handoff switch starts a session marked as created from this one, so spending carries its totals over. The context thresholds are judged exactly as the footer judges them, and the handoff format is shared with subagents; what the main session is told to write is its own.
 
 ## What it looks like
 

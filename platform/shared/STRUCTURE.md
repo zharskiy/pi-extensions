@@ -9,7 +9,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `plugin-contract.ts`: the plugin, disable, bus, service registry, event map and extension paths types.
   - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`.
 - `handoff/`: the handoff format session-limits and subagents share.
-  - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details and types, `handoffPath`.
+  - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details types and their parsers `parseSeedDetails` and `parseRequestDetails`, `handoffPath`.
   - `handoff-budget.ts`: `Limits`, `thresholdsFor`, `HandoffBudget` (request and warn lines), `mainBudget`, `budgetLevel`.
   - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template, `HandoffAudience` and the builder, retry text and seed text.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
@@ -25,6 +25,6 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/handoff-budget.test.ts`: `budgetLevel`, `thresholdsFor` and `mainBudget`.
 - `tests/handoff-tool.test.ts`: `handoffTool`.
 - `tests/handoff-prompt.test.ts`: the instruction over test audiences, retry and seed text.
-- `tests/handoff-document.test.ts`: `validateHandoff`.
+- `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.

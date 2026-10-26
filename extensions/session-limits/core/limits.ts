@@ -9,6 +9,7 @@ import {
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
+  type HandoffSeedDetails,
   type HandoffTarget,
   type HandoffValidation,
   handoffInstruction,
@@ -267,6 +268,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         parentSession: previous,
         seed: {
           customType: HANDOFF_SEED_TYPE,
+          details: { from: "session" } satisfies HandoffSeedDetails,
           text: seedText(
             sessionPreface({
               file: previous,
