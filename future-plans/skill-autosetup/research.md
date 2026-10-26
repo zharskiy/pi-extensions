@@ -97,7 +97,7 @@ All paths below are under `extensions/subagents/` unless they start with `platfo
 
 ### Project signals
 
-- No helper in the repo lists a directory tree or reads `package.json` dependencies. Nearest: `readText`, `isPlainObject` and `errorText` in `platform/shared/index.ts` (used by `write.ts:3`), `platform/shared/settings-files.ts` (JSON settings files), and `existsSync`/`statSync` loops in `platform/pi-adapter/child/skills.ts` and `test/architecture.test.ts` (test only, not shippable). A new core helper (cwd basename, `readdirSync` of the root, manifest dependency names) is needed; manifests other than `package.json` (`pyproject.toml`, `Cargo.toml`, `go.mod`) would need their own light parsing.
+- No helper in the repo lists a directory tree or reads `package.json` dependencies. Nearest: `readText`, `isPlainObject` and `errorText` in `platform/shared/index.ts` (used by `write.ts:3`), `platform/shared/plugin/settings-files.ts` (JSON settings files), and `existsSync`/`statSync` loops in `platform/pi-adapter/child/skills.ts` and `test/architecture.test.ts` (test only, not shippable). A new core helper (cwd basename, `readdirSync` of the root, manifest dependency names) is needed; manifests other than `package.json` (`pyproject.toml`, `Cargo.toml`, `go.mod`) would need their own light parsing.
 
 ### Files rule (AGENTS.md)
 
