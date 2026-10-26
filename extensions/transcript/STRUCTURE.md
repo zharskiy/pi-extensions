@@ -5,9 +5,9 @@ extensions/transcript/
 ├── index.ts                        entry: re-exports the default from api/extension.ts
 ├── api/
 │   ├── extension.ts                createManagedExtension: namespace pi-transcript, transcriptPlugin
-│   └── plugin.ts                   transcriptPlugin, createTranscript: tool rows, thinking label and answer rule
+│   └── plugin.ts                   transcriptPlugin, createTranscript: tool rows, thinking label, answer rule and its turn
 ├── core/
-│   ├── turn-summary.ts             run work count, the answer entry's data, label and parsing
+│   ├── turn-summary.ts             turn work count, the answer entry's data, label and parsing
 │   ├── tool-kinds.ts               call classification: arguments, read range, listed counts, missing file, edit diff text, duration
 │   └── word-spans.ts               changed-word spans of a removed/added line pair
 ├── ui/

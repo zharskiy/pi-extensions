@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BACKGROUND_WORK_CHANNEL } from "../../../platform/shared/index.ts";
 import { createFakeHost, plainTheme } from "../../../test/framework/index.ts";
 import { createTranscript } from "../api/plugin.ts";
 
@@ -80,13 +81,22 @@ describe("transcript", () => {
   });
 
   describe("answer rule", () => {
-    it("adds a rule with the run's duration after a run that used tools", () => {
+    const work = (host: ReturnType<typeof tuiHost>, count: number, source = "pi-subagents") =>
+      host.emit(BACKGROUND_WORK_CHANNEL, { source, count });
+
+    const durations = (host: ReturnType<typeof tuiHost>) => answers(host).map((entry) => entry.data);
+
+    it("adds a rule with the turn's duration once the session settles after a turn that used tools", () => {
       const host = tuiHost();
 
       host.agentStart();
       host.assistantEnd({ toolCalls: 2, stopReason: "toolUse", text: true });
       vi.advanceTimersByTime(42_000);
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+
+      expect(answers(host)).toEqual([]);
+
+      host.settle();
 
       expect(answers(host)).toHaveLength(1);
 
@@ -97,26 +107,17 @@ describe("transcript", () => {
       ]);
     });
 
-    it("adds nothing for an answer without tools", () => {
+    it("adds nothing for a turn that only answers", () => {
       const host = tuiHost();
 
       host.agentStart();
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
 
       expect(answers(host)).toEqual([]);
     });
 
-    it("adds nothing when the final message has no text", () => {
-      const host = tuiHost();
-
-      host.agentStart();
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: false });
-
-      expect(answers(host)).toEqual([]);
-    });
-
-    it("keeps the run across a retry and times the rule from the first start", () => {
+    it("keeps the turn across a retry and times the rule from the first start", () => {
       const host = tuiHost();
 
       host.agentStart();
@@ -126,11 +127,120 @@ describe("transcript", () => {
       host.agentStart();
       vi.advanceTimersByTime(22_000);
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
 
-      expect(answers(host).map((entry) => entry.data)).toEqual([{ ms: 42_000 }]);
+      expect(durations(host)).toEqual([{ ms: 42_000 }]);
     });
 
-    it("starts a new run after idle", () => {
+    it("keeps the turn open across idle while background work is pending and adds the rule after the final answer", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      work(host, 1);
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      vi.advanceTimersByTime(10_000);
+      host.settle();
+
+      expect(answers(host)).toEqual([]);
+
+      vi.advanceTimersByTime(50_000);
+      host.agentStart();
+      vi.advanceTimersByTime(5_000);
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      work(host, 0);
+
+      expect(answers(host)).toEqual([]);
+
+      host.settle();
+
+      expect(durations(host)).toEqual([{ ms: 65_000 }]);
+    });
+
+    it("adds the rule when the last pending work clears after the session went idle", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      work(host, 1);
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.settle();
+      host.agentStart();
+      vi.advanceTimersByTime(30_000);
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
+
+      expect(answers(host)).toEqual([]);
+
+      work(host, 0);
+
+      expect(durations(host)).toEqual([{ ms: 30_000 }]);
+    });
+
+    it("waits for every source of background work", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      work(host, 1, "one");
+      work(host, 2, "two");
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.settle();
+      work(host, 0, "one");
+
+      expect(answers(host)).toEqual([]);
+
+      work(host, 0, "two");
+
+      expect(answers(host)).toHaveLength(1);
+    });
+
+    it("ignores a malformed background work report", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      host.emit(BACKGROUND_WORK_CHANNEL, { source: "pi-subagents", count: "1" });
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.settle();
+
+      expect(answers(host)).toHaveLength(1);
+    });
+
+    it("joins a prompt typed while background work is pending to the same turn", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      work(host, 1);
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.settle();
+      vi.advanceTimersByTime(20_000);
+      host.agentStart();
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
+      vi.advanceTimersByTime(20_000);
+      host.agentStart();
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      work(host, 0);
+      host.settle();
+
+      expect(durations(host)).toEqual([{ ms: 40_000 }]);
+    });
+
+    it("counts tools from every run of the turn", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      work(host, 1);
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
+      host.agentStart();
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      work(host, 0);
+      host.settle();
+
+      expect(answers(host)).toHaveLength(1);
+    });
+
+    it("starts a new turn after the session settled", () => {
       const host = tuiHost();
 
       host.agentStart();
@@ -138,46 +248,66 @@ describe("transcript", () => {
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
       vi.advanceTimersByTime(30_000);
       host.settle();
+      vi.advanceTimersByTime(60_000);
       host.agentStart();
       vi.advanceTimersByTime(5_000);
       host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
       vi.advanceTimersByTime(1_000);
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
 
-      expect(answers(host).map((entry) => entry.data)).toEqual([{ ms: 0 }, { ms: 6_000 }]);
+      expect(durations(host)).toEqual([{ ms: 30_000 }, { ms: 6_000 }]);
     });
 
-    it.each(["aborted", "error", "length"] as const)(
-      "adds nothing when the final message stops with %s",
-      (stopReason) => {
-        const host = tuiHost();
+    it("ends the turn without a rule when the user aborts, even with work pending", () => {
+      const host = tuiHost();
 
-        host.agentStart();
-        host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-        host.assistantEnd({ toolCalls: 0, stopReason, text: true });
+      host.agentStart();
+      work(host, 1);
+      host.assistantEnd({ toolCalls: 2, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 0, stopReason: "aborted", text: false });
+      host.settle({ aborted: true });
+      work(host, 0);
 
-        expect(answers(host)).toEqual([]);
-      },
-    );
+      expect(answers(host)).toEqual([]);
 
-    it("adds a second rule only when tools ran after the first, timed from it", () => {
+      vi.advanceTimersByTime(10_000);
+      host.agentStart();
+      vi.advanceTimersByTime(3_000);
+      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
+      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
+
+      expect(durations(host)).toEqual([{ ms: 3_000 }]);
+    });
+
+    it.each(["error", "length"] as const)("adds the rule when the turn ends with a %s stop", (stopReason) => {
       const host = tuiHost();
 
       host.agentStart();
       host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      vi.advanceTimersByTime(10_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
-      vi.advanceTimersByTime(5_000);
-      host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.assistantEnd({ toolCalls: 0, stopReason, text: false });
+      host.settle();
 
       expect(answers(host)).toHaveLength(1);
+    });
 
-      vi.advanceTimersByTime(3_000);
-      host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
-      vi.advanceTimersByTime(4_000);
+    it("starts fresh in a new session", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      work(host, 1);
+      host.assistantEnd({ toolCalls: 3, stopReason: "toolUse", text: true });
+      host.start();
+      work(host, 0);
+
+      expect(answers(host)).toEqual([]);
+
+      host.agentStart();
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
 
-      expect(answers(host).map((entry) => entry.data)).toEqual([{ ms: 10_000 }, { ms: 12_000 }]);
+      expect(answers(host)).toEqual([]);
     });
 
     it.each(["print", "rpc", "json"] as const)("adds nothing in %s mode", (mode) => {
@@ -188,6 +318,7 @@ describe("transcript", () => {
       host.agentStart();
       host.assistantEnd({ toolCalls: 1, stopReason: "toolUse", text: true });
       host.assistantEnd({ toolCalls: 0, stopReason: "stop", text: true });
+      host.settle();
 
       expect(answers(host)).toEqual([]);
     });

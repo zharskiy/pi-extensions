@@ -1,25 +1,19 @@
 import type { AssistantEnd } from "../../../platform/pi-adapter/index.ts";
 import { formatDuration } from "../../../platform/shared/index.ts";
 
-export type RunWork = { startedAt: number; tools: number };
+export type TurnWork = { startedAt: number; tools: number };
 
 type AnswerData = { ms: number };
 
-export const startRun = (now: number): RunWork => ({ startedAt: now, tools: 0 });
+export const openTurn = (now: number): TurnWork => ({ startedAt: now, tools: 0 });
 
-export const afterMessage = (
-  work: RunWork,
-  info: AssistantEnd,
-  now: number,
-): { work: RunWork; entry?: AnswerData } => {
-  const isFinal = info.toolCalls === 0 && info.stopReason === "stop" && info.text;
+export const countTools = (work: TurnWork, info: AssistantEnd): TurnWork => ({
+  ...work,
+  tools: work.tools + info.toolCalls,
+});
 
-  if (isFinal && work.tools > 0) {
-    return { work: startRun(now), entry: { ms: now - work.startedAt } };
-  }
-
-  return { work: { ...work, tools: work.tools + info.toolCalls } };
-};
+export const settledAnswer = (work: TurnWork, now: number): AnswerData | undefined =>
+  work.tools > 0 ? { ms: now - work.startedAt } : undefined;
 
 export const parseAnswer = (data: unknown): AnswerData | undefined => {
   const ms = (data as { ms?: unknown } | null)?.ms;

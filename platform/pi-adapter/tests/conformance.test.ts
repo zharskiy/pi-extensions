@@ -1442,7 +1442,7 @@ describe("pi adapter conformance", () => {
         return codes.includes("23") || codes.includes("0") || codes.includes("") ? false : italic;
       }, false);
 
-    it("emits an entry appended in an extension's message_end before that message_end reaches session listeners", async () => {
+    it("emits an entry appended in an extension's agent_settled after the run's last message", async () => {
       const dir = temp.make("pi-conformance-");
       const order: string[] = [];
       let fileOrder: string[] = [];
@@ -1462,15 +1462,7 @@ describe("pi adapter conformance", () => {
             {
               name: "marker",
               factory: (api) => {
-                api.on("message_end", (event) => {
-                  if (event.message.role !== "assistant") {
-                    return;
-                  }
-
-                  if (event.message.content.some((part) => part.type === "toolCall")) {
-                    return;
-                  }
-
+                api.on("agent_settled", () => {
                   api.appendEntry("conformance:mark", {});
                 });
               },
@@ -1528,8 +1520,8 @@ describe("pi adapter conformance", () => {
         vi.unstubAllEnvs();
       }
 
-      expect(order).toEqual(["assistant message_end", "mark", "assistant message_end"]);
-      expect(fileOrder.slice(-3)).toEqual(["toolResult", "conformance:mark", "assistant"]);
+      expect(order).toEqual(["assistant message_end", "assistant message_end", "mark"]);
+      expect(fileOrder.slice(-3)).toEqual(["toolResult", "assistant", "conformance:mark"]);
     });
 
     it("draws the user message between prompt marks the transcript pane takes off", () => {
