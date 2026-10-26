@@ -32,6 +32,7 @@ export type ChildSession = {
   start(task: string, seed?: CustomMessage): void;
   subscribe(listener: (event: ChildEvent) => void): () => void;
   send(message: RoutedMessage, delivery: MessageDelivery): Promise<void>;
+  sendCustom(message: CustomMessage, delivery: MessageDelivery): Promise<void>;
   abort(): Promise<void>;
   dispose(): Promise<void>;
   ownUsage(): UsageTotals;

@@ -63,7 +63,7 @@ describe("limits plugin", () => {
     await turn(81_000);
 
     expect(child.messages).toHaveLength(1);
-    expect(child.messages[0].message.sender).toBe("pi-subagents");
+    expect(child.messages[0].message).toMatchObject({ sender: "pi-subagents" });
     expect(child.messages[0].message.text).toContain("Context limit warning");
     expect(child.messages[0].delivery).toBe("steer");
 
@@ -76,13 +76,12 @@ describe("limits plugin", () => {
     expect(child.messages).toHaveLength(2);
     expect(child.messages[1].message.text).toContain(record.handoffPath);
     expect(child.messages[1].message.text).toContain("## Files touched");
-    expect(child.messages[1].message.sender).toBe("pi-subagents");
-    expect(child.messages[1].message.custom).toEqual({
+    expect(child.messages[1].message).toMatchObject({
       customType: "pi-handoff-request",
       details: { reason: "limit", tokens: 100_500, request: 100_000 },
     });
     expect(child.messages[1].delivery).toBe("steer");
-    expect(child.messages[0].message.custom).toBeUndefined();
+    expect(child.messages[0].message).not.toHaveProperty("customType");
     expect(services.require("registry").get(record.id)?.handoffRequested).toBe(true);
   });
 
@@ -97,11 +96,7 @@ describe("limits plugin", () => {
     await flushMicrotasks();
 
     const queued = registry.list()[1];
-    const request = {
-      sender: "pi-subagents",
-      text: "hand off",
-      custom: { customType: "pi-handoff-request" },
-    };
+    const request = { customType: "pi-handoff-request", text: "hand off" };
 
     await runner.route(queued.id, request);
 

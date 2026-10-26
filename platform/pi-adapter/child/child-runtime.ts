@@ -18,7 +18,7 @@ import { finalRunTexts, formatRoutedMessage, messageText, toolCallCount } from "
 import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
-import type { CustomMessage, RoutedMessage, SkillInfo } from "../types/messages.ts";
+import type { CustomMessage, SkillInfo } from "../types/messages.ts";
 import type {
   AgentRuntime,
   ChildEvent,
@@ -354,16 +354,16 @@ export const createPiRuntime = (
       await session.followUp(text, undefined, { source: "extension" });
     };
 
-    const deliverCustom = async (
-      text: string,
-      routed: NonNullable<RoutedMessage["custom"]>,
-      delivery: MessageDelivery,
-    ) => {
+    const deliverCustom = async (message: CustomMessage, delivery: MessageDelivery) => {
       if (disposed) {
         return;
       }
 
-      const custom: QueuedCustom = { customType: routed.customType, content: text, details: routed.details };
+      const custom: QueuedCustom = {
+        customType: message.customType,
+        content: message.text,
+        details: message.details,
+      };
 
       if (!running && !session.isStreaming) {
         sendCustomNow(custom);
@@ -397,10 +397,8 @@ export const createPiRuntime = (
           listeners.delete(listener);
         };
       },
-      send: (message, delivery) =>
-        message.custom
-          ? deliverCustom(message.text, message.custom, delivery)
-          : deliver(formatRoutedMessage(message), delivery),
+      send: (message, delivery) => deliver(formatRoutedMessage(message), delivery),
+      sendCustom: deliverCustom,
       wake: (text) => deliver(text, "followUp"),
       abort: () => session.abort(),
       dispose,

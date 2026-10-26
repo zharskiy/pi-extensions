@@ -22,7 +22,7 @@ export type FakeChildSession = ChildSession & {
   spec: SpawnSpec;
   task?: string;
   seed?: CustomMessage;
-  messages: { message: RoutedMessage; delivery: MessageDelivery }[];
+  messages: { message: RoutedMessage | CustomMessage; delivery: MessageDelivery }[];
   wakes: string[];
   aborted: boolean;
   abortDelayMs?: number;
@@ -63,6 +63,9 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
       };
     },
     send: async (message, delivery) => {
+      child.messages.push({ message, delivery });
+    },
+    sendCustom: async (message, delivery) => {
       child.messages.push({ message, delivery });
     },
     wake: async (text) => {

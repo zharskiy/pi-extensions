@@ -43,12 +43,9 @@ export const limitsPlugin: Plugin = {
         handoffTurn.set(id, turns);
         registry.update(id, { handoffRequested: true });
         void runner.route(id, {
-          sender: LIMITS_SENDER,
+          customType: HANDOFF_REQUEST_TYPE,
           text: handoffService.instruction(record.handoffPath),
-          custom: {
-            customType: HANDOFF_REQUEST_TYPE,
-            details: { reason: "limit", tokens, request: budget.request },
-          },
+          details: { reason: "limit", tokens, request: budget.request },
         });
         return;
       }

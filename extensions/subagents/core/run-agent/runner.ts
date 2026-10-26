@@ -7,7 +7,7 @@ import {
   type ChildEvent,
   type ChildSession,
   type CustomMessage,
-  type RoutedMessage,
+  type MessageDelivery,
   type SessionInfo,
   type StopReason,
   settleWithin,
@@ -18,6 +18,7 @@ import { errorText, HANDOFF_SEED_TYPE, readText, seedText } from "../../../../pl
 import {
   type AgentDefinition,
   type AgentDefinitions,
+  type AgentMessage,
   type AgentRecord,
   type AgentRegistry,
   type AgentRunner,
@@ -98,7 +99,7 @@ type Live = {
   lastError?: string;
   abortReason?: string;
   lastText: string;
-  pending: RoutedMessage[];
+  pending: AgentMessage[];
   unsubscribe?: () => void;
   release?: () => void;
   graceTimer?: ReturnType<typeof setTimeout>;
@@ -207,8 +208,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const hasOpenBatches = (callerId: string) =>
     Array.from(batches.values()).some((batch) => batch.callerId === callerId && !batch.wait);
 
+  const deliver = (child: ChildSession, message: AgentMessage, delivery: MessageDelivery) =>
+    "customType" in message ? child.sendCustom(message, delivery) : child.send(message, delivery);
+
   const sendHeld = (live: Live, child: ChildSession) =>
-    Promise.all(live.pending.splice(0).map((message) => child.send(message, "steer")));
+    Promise.all(live.pending.splice(0).map((message) => deliver(child, message, "steer")));
 
   const resume = async (id: string, deliver: (child: ChildSession) => Promise<void>) => {
     const live = lives.get(id);
@@ -987,7 +991,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return true;
   };
 
-  const route = async (requestedId: string, message: RoutedMessage): Promise<RouteResult> => {
+  const route = async (requestedId: string, message: AgentMessage): Promise<RouteResult> => {
     const record = terminalOf(requestedId);
 
     if (!record) {
@@ -1017,11 +1021,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (live.turn === "running") {
-      await live.child.send(message, "steer");
+      await deliver(live.child, message, "steer");
       return { ok: true, delivery: "steer" };
     }
 
-    void resume(id, (child) => child.send(message, "followUp"));
+    void resume(id, (child) => deliver(child, message, "followUp"));
 
     return { ok: true, delivery: "followUp" };
   };
