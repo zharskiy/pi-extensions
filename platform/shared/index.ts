@@ -16,6 +16,7 @@ export {
   budgetLevel,
   budgetStep,
   type HandoffBudget,
+  type StepBudget,
 } from "./handoff-budget.ts";
 export {
   HANDOFF_REQUEST_TYPE,

@@ -8,7 +8,7 @@ export type HandoffValidation = { ok: true; status: string } | { ok: false; erro
 
 export type HandoffToolRows = Pick<ToolSpec<{ content: string }, unknown>, "renderCall" | "renderResult">;
 
-export type HandoffSeedDetails = { from: "session" } | { from: "agent"; id: string; link: number };
+export type HandoffSeedDetails = { from: "agent"; id: string; link: number };
 
 export const HANDOFF_REQUEST_TYPE = "pi-handoff-request";
 

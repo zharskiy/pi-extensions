@@ -37,9 +37,7 @@ const seedDetails = (details: unknown): HandoffSeedDetails | undefined => {
 const seedTitle = (details: unknown) => {
   const source = seedDetails(details);
 
-  return source?.from === "agent"
-    ? `Handoff from agent ${source.id}${DOT}link ${source.link}`
-    : SESSION_SEED_TITLE;
+  return source ? `Handoff from agent ${source.id}${DOT}link ${source.link}` : SESSION_SEED_TITLE;
 };
 
 const summary = (text: string) => (theme: ThemeLike) => theme.fg("muted", firstSentence(text));

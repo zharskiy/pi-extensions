@@ -14,8 +14,6 @@ import { type PanelActions, panelKeyHandler, selectFirst } from "../../ui/agent-
 import { createPanelWidget } from "../../ui/agent-panel/panel.ts";
 import { panelLines } from "../../ui/agent-panel/panel-lines.ts";
 
-const HINT_KEY = AGENTS_HINT_KEY;
-
 export const agentPanelPlugin: Plugin = {
   id: "agent-panel",
   requires: ["agent-registry"],
@@ -59,7 +57,7 @@ export const agentPanelPlugin: Plugin = {
       }
 
       shown = value;
-      host.ui.setStatus(HINT_KEY, value);
+      host.ui.setStatus(AGENTS_HINT_KEY, value);
     };
 
     const refresh = () => {
@@ -138,7 +136,7 @@ export const agentPanelPlugin: Plugin = {
       enabled = false;
       if (shown !== undefined) {
         shown = undefined;
-        host.ui.setStatus(HINT_KEY, undefined);
+        host.ui.setStatus(AGENTS_HINT_KEY, undefined);
       }
 
       offDown();

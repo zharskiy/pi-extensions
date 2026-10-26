@@ -365,7 +365,7 @@ describe("pi adapter", () => {
         received.push(args);
         await control.newSession({
           parentSession: "/old.jsonl",
-          seed: { customType: "t", text: "hello", details: { from: "session" } },
+          seed: { customType: "t", text: "hello", details: { n: 1 } },
         });
       },
     });
@@ -393,7 +393,7 @@ describe("pi adapter", () => {
     expect(calls).toEqual(["/old.jsonl"]);
     expect(seeded).toEqual([
       {
-        message: { customType: "t", content: "hello", display: true, details: { from: "session" } },
+        message: { customType: "t", content: "hello", display: true, details: { n: 1 } },
         options: { triggerTurn: false },
       },
     ]);

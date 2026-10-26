@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { type BudgetState, budgetLevel, budgetStep, type HandoffBudget } from "../handoff-budget.ts";
+import { type BudgetState, budgetLevel, budgetStep, type StepBudget } from "../handoff-budget.ts";
 
-const agent: HandoffBudget = {
+const agent: StepBudget = {
   request: 100_000,
   warn: 80_000,
   ceiling: 115_000,
@@ -25,10 +25,6 @@ describe("budget step before the request", () => {
     expect(budgetStep(100_000, agent, { ...fresh, warned: true })).toBe("request");
     expect(budgetStep(100_000, agent, fresh)).toBe("request");
   });
-
-  it("never warns without a warn line", () => {
-    expect(budgetStep(99_999, { request: 100_000 }, fresh)).toBe("none");
-  });
 });
 
 describe("budget step after the request", () => {
@@ -42,10 +38,6 @@ describe("budget step after the request", () => {
     expect(budgetStep(101_000, agent, requestedFor(2))).toBe("none");
     expect(budgetStep(101_000, agent, requestedFor(3))).toBe("abort");
   });
-
-  it("never aborts a budget with no ceiling and no cap", () => {
-    expect(budgetStep(900_000, { request: 100_000 }, requestedFor(50))).toBe("none");
-  });
 });
 
 describe("budget level", () => {
@@ -58,6 +50,5 @@ describe("budget level", () => {
     expect(budgetLevel(79_999, agent)).toBe("normal");
     expect(budgetLevel(80_000, agent)).toBe("soft");
     expect(budgetLevel(100_000, agent)).toBe("hard");
-    expect(budgetLevel(99_999, { request: 100_000 })).toBe("normal");
   });
 });

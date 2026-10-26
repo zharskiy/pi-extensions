@@ -253,10 +253,9 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const performSwitch = async (control: SessionControl) => {
-    const path = state.path ?? handoffPath(host.session());
-    const { saved } = state;
+    const { path, saved } = state;
 
-    if (!saved?.validation.ok) {
+    if (!path || !saved?.validation.ok) {
       failSwitch(
         `No valid handoff was saved; ask the session to call the \`handoff\` tool, then run /${HANDOFF_COMMAND}.`,
       );
@@ -277,7 +276,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         parentSession: previous,
         seed: {
           customType: HANDOFF_SEED_TYPE,
-          details: { from: "session" },
           text: seedText(
             successorPreface({
               kind: "session",

@@ -1284,7 +1284,7 @@ describe("handoff request message", () => {
     expect(host.messages.map((entry) => entry.message.display)).toEqual([true, true]);
   });
 
-  it("seeds the new session with details naming the session as the origin", async () => {
+  it("seeds the new session with a handoff seed that names no agent origin", async () => {
     const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
@@ -1292,7 +1292,8 @@ describe("handoff request message", () => {
     host.settle();
     await flush();
 
-    expect(host.newSessions[0].seed?.details).toEqual({ from: "session" });
+    expect(host.newSessions[0].seed?.customType).toBe("pi-handoff-seed");
+    expect(host.newSessions[0].seed).not.toHaveProperty("details");
   });
 
   it("draws the request row with the figures and the expand key", () => {

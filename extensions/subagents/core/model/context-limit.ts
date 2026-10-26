@@ -1,4 +1,4 @@
-import type { HandoffBudget } from "../../../../platform/shared/index.ts";
+import type { StepBudget } from "../../../../platform/shared/index.ts";
 import type { Settings } from "./settings.ts";
 
 const UNKNOWN_LIMIT = 0;
@@ -15,7 +15,7 @@ export const agentBudget = (
   definitionLimit: number,
   window: number,
   settings: Pick<Settings, "reserveTokens" | "softContextRatio" | "hardContextRatio">,
-): HandoffBudget => {
+): StepBudget => {
   const request = effectiveContextLimit(definitionLimit, window, settings.reserveTokens);
 
   return {

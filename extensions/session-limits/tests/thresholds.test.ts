@@ -116,6 +116,10 @@ describe("segmentFor", () => {
     });
   });
 
+  it("is empty without a known window", () => {
+    expect(segmentFor(at(80_000, 0), "watching", limits, "session-handoff")).toBeUndefined();
+  });
+
   it("is empty below the soft limit and warns from it", () => {
     expect(segmentFor(at(40_000), "watching", limits, "session-handoff")).toBeUndefined();
     expect(segmentFor(at(50_000), "watching", limits, "session-handoff")).toEqual({

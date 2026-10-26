@@ -1,13 +1,7 @@
 import type { ThemeToken } from "../../../platform/pi-adapter/index.ts";
-import {
-  DOT,
-  formatTokens,
-  formatWindow,
-  type Limits,
-  thresholdsFor,
-} from "../../../platform/shared/index.ts";
+import { budgetLevel, DOT, formatTokens, formatWindow, type Limits } from "../../../platform/shared/index.ts";
 import { MARKS } from "../../../platform/ui-kit/index.ts";
-import { type ContextTokens, contextLevel, type Phase } from "../core/thresholds.ts";
+import { type ContextTokens, mainBudget, type Phase } from "../core/thresholds.ts";
 
 const pendingLabels: Record<Exclude<Phase, "watching" | "stuck">, string> = {
   queued: "Handoff after this turn",
@@ -36,13 +30,13 @@ export const segmentFor = (
     return undefined;
   }
 
-  const level = contextLevel(context, limits);
+  const budget = mainBudget(context.window, limits);
 
-  if (level === "normal") {
+  if (!budget || budgetLevel(context.tokens, budget) === "normal") {
     return undefined;
   }
 
-  const { hard } = thresholdsFor(context.window, limits);
-
-  return notice(`Handoff at ${formatWindow(hard)} tokens${DOT}${formatTokens(context.tokens)} used`);
+  return notice(
+    `Handoff at ${formatWindow(budget.request)} tokens${DOT}${formatTokens(context.tokens)} used`,
+  );
 };
