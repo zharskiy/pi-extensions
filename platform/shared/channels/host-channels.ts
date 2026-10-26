@@ -4,11 +4,11 @@ import { isPlainObject } from "../plain-object.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
 
+export const BACKGROUND_WORK_CHANNEL = "pi:background-work";
+
 export const USAGE_CHANNEL = "spending:usage";
 
 export const AWAITING_INPUT_CHANNEL = "pi:awaiting-input";
-
-export const BACKGROUND_WORK_CHANNEL = "pi:background-work";
 
 type BusySignal = { source: string; busy: boolean };
 
