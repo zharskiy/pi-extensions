@@ -1,6 +1,6 @@
-import type { UsageTotals } from "../pi-adapter/index.ts";
-import type { Limits } from "./handoff-limits.ts";
-import { isPlainObject } from "./plain-object.ts";
+import type { UsageTotals } from "../../pi-adapter/index.ts";
+import type { Limits } from "../handoff/handoff-budget.ts";
+import { isPlainObject } from "../plain-object.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
 

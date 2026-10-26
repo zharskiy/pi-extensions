@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolSpec } from "../pi-adapter/index.ts";
+import type { ToolSpec } from "../../pi-adapter/index.ts";
 
 const HANDOFF_SECTIONS = ["Status", "Outcome", "Evidence", "Blocker", "Next", "Files touched"] as const;
 

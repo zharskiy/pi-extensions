@@ -1,6 +1,6 @@
 # extension-manager architecture
 
-The plugin runtime every extension boots on. It imports only `platform/pi-adapter/index.ts` and `platform/shared/index.ts`; it never imports `platform/ui-kit/`, an extension or test code. Extensions reach it through `index.ts`, and only from their `api/` folder, which is their composition root. The plugin and bus types it works with live in `platform/shared/plugin-contract.ts`, so an extension's `core/` can name them without importing this folder.
+The plugin runtime every extension boots on. It imports only `platform/pi-adapter/index.ts` and `platform/shared/index.ts`; it never imports `platform/ui-kit/`, an extension or test code. Extensions reach it through `index.ts`, and only from their `api/` folder, which is their composition root. The plugin and bus types it works with live in `platform/shared/plugin/plugin-contract.ts`, so an extension's `core/` can name them without importing this folder.
 
 ## createManagedExtension
 
@@ -27,4 +27,4 @@ Twelve extensions pass one plugin from `api/plugin.ts` whose `enable` wires host
 
 ## Settings
 
-Each extension's settings are `<agentDir>/<file>` (user) and `<cwd>/.pi/<file>` (project, read only when the project is trusted). `parseSettings` (`platform/shared/settings-files.ts`) validates each known key against a schema (number range, string list, boolean, choice of strings, or an object with its own `parse`); invalid keys are dropped and reported, the rest applies. Settings are read once per session start, defaults then user then project, because pi builds a new extension per session; nothing reloads live. `watchSettings` (`watch-settings.ts`) is the getter form of the same merge, and `reportSettingsErrors` the once-per-message warning both forms use.
+Each extension's settings are `<agentDir>/<file>` (user) and `<cwd>/.pi/<file>` (project, read only when the project is trusted). `parseSettings` (`platform/shared/plugin/settings-files.ts`) validates each known key against a schema (number range, string list, boolean, choice of strings, or an object with its own `parse`); invalid keys are dropped and reported, the rest applies. Settings are read once per session start, defaults then user then project, because pi builds a new extension per session; nothing reloads live. `watchSettings` (`watch-settings.ts`) is the getter form of the same merge, and `reportSettingsErrors` the once-per-message warning both forms use.

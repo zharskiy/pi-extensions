@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { handoffPath, validateHandoff } from "../handoff-document.ts";
+import { handoffPath, validateHandoff } from "../handoff/handoff-document.ts";
 
 const STATUSES = ["done", "partial", "blocked"];
 

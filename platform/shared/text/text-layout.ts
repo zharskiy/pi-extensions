@@ -1,4 +1,4 @@
-import { PAD, type ThemeLike } from "../pi-adapter/index.ts";
+import { PAD, type ThemeLike } from "../../pi-adapter/index.ts";
 
 export const DOT = " · ";
 

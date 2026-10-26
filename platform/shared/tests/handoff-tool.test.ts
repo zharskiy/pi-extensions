@@ -2,8 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import type { HandoffValidation } from "../handoff-document.ts";
-import { type HandoffToolDeps, handoffTool } from "../handoff-tool.ts";
+import type { HandoffValidation } from "../handoff/handoff-document.ts";
+import { type HandoffToolDeps, handoffTool } from "../handoff/handoff-tool.ts";
 
 const temp = useTempDirs();
 

@@ -9,7 +9,7 @@ import {
   parseLimits,
   parseTotals,
   parseUsageReport,
-} from "../host-channels.ts";
+} from "../channels/host-channels.ts";
 
 describe("parseBusySignal", () => {
   it("names the channel pi:busy", () => {

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { type BudgetState, budgetLevel, budgetStep, type StepBudget } from "../handoff-budget.ts";
+import {
+  type BudgetState,
+  budgetLevel,
+  budgetStep,
+  type StepBudget,
+  thresholdsFor,
+} from "../handoff/handoff-budget.ts";
 
 const agent: StepBudget = {
   request: 100_000,
@@ -50,5 +56,17 @@ describe("budget level", () => {
     expect(budgetLevel(79_999, agent)).toBe("normal");
     expect(budgetLevel(80_000, agent)).toBe("soft");
     expect(budgetLevel(100_000, agent)).toBe("hard");
+  });
+});
+
+const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+
+describe("thresholdsFor", () => {
+  it("caps the thresholds by tokens on a large window", () => {
+    expect(thresholdsFor(1_000_000, limits)).toEqual({ soft: 125_000, hard: 175_000 });
+  });
+
+  it("keeps the ratios when they are below the caps", () => {
+    expect(thresholdsFor(200_000, limits)).toEqual({ soft: 90_000, hard: 120_000 });
   });
 });

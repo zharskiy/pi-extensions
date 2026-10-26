@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ToolSpec } from "../pi-adapter/index.ts";
-import { errorText } from "./format.ts";
+import type { ToolSpec } from "../../pi-adapter/index.ts";
+import { errorText } from "../text/format.ts";
 import type { HandoffToolRows, HandoffValidation } from "./handoff-document.ts";
 
 const HANDOFF_TOOL = "handoff";

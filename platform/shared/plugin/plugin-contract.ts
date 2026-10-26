@@ -1,4 +1,4 @@
-import type { AgentRuntime, Host } from "../pi-adapter/index.ts";
+import type { AgentRuntime, Host } from "../../pi-adapter/index.ts";
 
 export type EventMap = Record<string, unknown>;
 

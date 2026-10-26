@@ -7,7 +7,7 @@ import {
   formatTokens,
   formatWindow,
   homeRelative,
-} from "../format.ts";
+} from "../text/format.ts";
 
 describe("shared formatters", () => {
   it("formats tokens as 999, 1.0k, 1.2M", () => {

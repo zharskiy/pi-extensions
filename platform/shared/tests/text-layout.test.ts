@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme } from "../../../test/framework/index.ts";
-import { fixedBlock, padRows } from "../text-layout.ts";
+import { fixedBlock, padRows } from "../text/text-layout.ts";
 
 describe("padRows", () => {
   it("pads short input with blank rows and cuts long input", () => {

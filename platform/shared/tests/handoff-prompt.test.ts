@@ -7,7 +7,7 @@ import {
   MAIN_AUDIENCE,
   seedText,
   successorPreface,
-} from "../handoff-prompt.ts";
+} from "../handoff/handoff-prompt.ts";
 
 const PATH = "/tmp/pi-handoff/s1/main-handoff.md";
 

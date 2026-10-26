@@ -96,7 +96,7 @@ Export `create<Name>` only when a test imports it to wire a fake host without bo
 Rules that bite while writing the code, all enforced by `npm run check`:
 
 - Imports carry the `.ts` extension and use `import type` for types (`verbatimModuleSyntax`); no enums or namespaces (`erasableSyntaxOnly`); relative paths are normalised (`../x`, never `./../x`).
-- `core/` imports its own `core/`, `platform/shared/` and `platform/pi-adapter/` only. `ui/` adds `platform/ui-kit/`. `api/` sees everything, including another extension's `index.ts`, though none does today: extensions talk over the bus (channel names and payload parsers live in `platform/shared/host-channels.ts`; add a channel there, with a parser, when the new extension publishes something others may want) or through session entries.
+- `core/` imports its own `core/`, `platform/shared/` and `platform/pi-adapter/` only. `ui/` adds `platform/ui-kit/`. `api/` sees everything, including another extension's `index.ts`, though none does today: extensions talk over the bus (channel names and payload parsers live in `platform/shared/channels/host-channels.ts`; add a channel there, with a parser, when the new extension publishes something others may want) or through session entries.
 - Every export is used somewhere, including by tests, or knip fails; `index.ts` exports are checked too. Write the export when the consumer exists, not before.
 - No provider or model names anywhere, in code, prompts or docs.
 - Failures become data: a bad setting is a warning and a default, a tool misuse is an error result, an exception never reaches the user.

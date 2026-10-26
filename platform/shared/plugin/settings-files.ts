@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorText } from "./format.ts";
-import { isPlainObject } from "./plain-object.ts";
+import { isPlainObject } from "../plain-object.ts";
+import { errorText } from "../text/format.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
