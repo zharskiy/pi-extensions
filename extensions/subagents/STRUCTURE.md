@@ -25,7 +25,7 @@ extensions/subagents/
 │   └── plugins/
 │       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
-│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, main prompt, block invalidation
+│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count, main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
@@ -37,7 +37,7 @@ extensions/subagents/
 ├── core/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
-│   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:settled
+│   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
 │   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types, chain helpers, grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
@@ -62,6 +62,7 @@ extensions/subagents/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, createPendingCalls, describeRunAgent
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
+│   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until their wake is answered
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
 │   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage
@@ -140,7 +141,7 @@ extensions/subagents/
     │   ├── interrupt/                     # interrupt.test.ts
     │   ├── limits/                        # limits.test.ts
     │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, nesting, skills, models,
-    │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant tests
+    │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant, background-work tests
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
     └── support/                           # the one support folder test/evals/subagents/ may import

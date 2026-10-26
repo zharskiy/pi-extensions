@@ -1,9 +1,11 @@
 export { cacheHitPercent, reportedCache, sessionCacheHit } from "./cache-hit.ts";
 export {
   AWAITING_INPUT_CHANNEL,
+  BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
   LIMITS_CHANNEL,
   parseAwaitingInput,
+  parseBackgroundWork,
   parseBusySignal,
   parseLimits,
   parseTotals,

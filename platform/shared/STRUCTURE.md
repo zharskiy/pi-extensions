@@ -14,7 +14,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template and its builder, retry text, successor preface and seed text.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `channels/`: how extensions talk without importing each other.
-  - `host-channels.ts`: the busy, awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
+  - `host-channels.ts`: the busy, background-work, awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
   - `status-keys.ts`: `HINT_STATUS_PREFIX`, `MIRROR_STATUS_PREFIX`, the status-key roles the footer reads.
 - `text/`: theme-free text helpers.
   - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.

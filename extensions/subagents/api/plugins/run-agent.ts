@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { HANDOFF_REQUEST_TYPE, HANDOFF_SEED_TYPE, handoffTool } from "../../../../platform/shared/index.ts";
+import {
+  BACKGROUND_WORK_CHANNEL,
+  HANDOFF_REQUEST_TYPE,
+  HANDOFF_SEED_TYPE,
+  handoffTool,
+} from "../../../../platform/shared/index.ts";
 import {
   EXPAND_BINDING,
   handoffRequestMessage,
@@ -14,10 +19,13 @@ import {
   type AgentRecord,
   allowlist,
   isClosed,
+  MAIN_CALLER,
   subagentNames,
 } from "../../core/model/agent-record.ts";
 import { handoffService } from "../../core/model/handoff.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
+import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
 import {
@@ -38,6 +46,9 @@ export const runAgentPlugin: Plugin = {
     const definitions = services.require("definitions");
 
     const waking: string[] = [];
+    const work = createBackgroundWork((count) => {
+      host.publish(BACKGROUND_WORK_CHANNEL, { source: NAMESPACE, count });
+    });
     const calls = createPendingCalls();
     const hints = {
       manage: () => !settings.disabledPlugins.includes("agent-panel"),
@@ -50,6 +61,7 @@ export const runAgentPlugin: Plugin = {
 
       if (texts.length > 0) {
         host.sendHiddenMessage({ customType: "pi-subagents:wake", text: joinTexts(texts) });
+        work.sent();
       }
     };
 
@@ -145,9 +157,24 @@ export const runAgentPlugin: Plugin = {
       onChange: () => Array.from(invalidators.keys()).forEach(safeInvalidate),
     });
 
+    const offStarted = bus.on("batch:started", ({ batchId, callerId, wait }) => {
+      if (callerId === MAIN_CALLER && !wait) {
+        work.started(batchId);
+      }
+    });
+
     const offSettled = bus.on("batch:settled", ({ batchId }) => {
+      work.settled(batchId);
       safeInvalidate(batchId);
       invalidators.delete(batchId);
+    });
+
+    host.onAssistantEnd(() => {
+      work.answered();
+    });
+
+    host.onIdle(({ aborted }) => {
+      work.idle(aborted);
     });
 
     const onRendered = (batchId: string, invalidate: () => void) => {
@@ -182,6 +209,7 @@ export const runAgentPlugin: Plugin = {
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));
     host.onSessionStart(() => {
+      work.reset();
       registerRunAgent();
       host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
     });
@@ -194,6 +222,7 @@ export const runAgentPlugin: Plugin = {
 
     return () => {
       offChanged();
+      offStarted();
       offSettled();
       invalidators.clear();
       calls.clear();

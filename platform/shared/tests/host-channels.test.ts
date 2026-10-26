@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { usageTotals } from "../../../test/framework/index.ts";
 import {
   AWAITING_INPUT_CHANNEL,
+  BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
   LIMITS_CHANNEL,
   parseAwaitingInput,
+  parseBackgroundWork,
   parseBusySignal,
   parseLimits,
   parseTotals,
@@ -25,6 +27,28 @@ describe("parseBusySignal", () => {
     expect(parseBusySignal({ source: "x", busy: "yes" })).toBeUndefined();
     expect(parseBusySignal(null)).toBeUndefined();
     expect(parseBusySignal("busy")).toBeUndefined();
+  });
+});
+
+describe("parseBackgroundWork", () => {
+  it("names the channel pi:background-work", () => {
+    expect(BACKGROUND_WORK_CHANNEL).toBe("pi:background-work");
+  });
+
+  it("accepts a source name and a whole count from zero", () => {
+    expect(parseBackgroundWork({ source: "pi-subagents", count: 2 })).toEqual({
+      source: "pi-subagents",
+      count: 2,
+    });
+    expect(parseBackgroundWork({ source: "pi-subagents", count: 0 })).toEqual({
+      source: "pi-subagents",
+      count: 0,
+    });
+    expect(parseBackgroundWork({ source: "", count: 1 })).toBeUndefined();
+    expect(parseBackgroundWork({ source: "x", count: -1 })).toBeUndefined();
+    expect(parseBackgroundWork({ source: "x", count: 1.5 })).toBeUndefined();
+    expect(parseBackgroundWork({ source: "x", count: "1" })).toBeUndefined();
+    expect(parseBackgroundWork(null)).toBeUndefined();
   });
 });
 

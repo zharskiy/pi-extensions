@@ -902,6 +902,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       resolve,
     });
 
+    deps.bus.emit("batch:started", { batchId, callerId: options.callerId, wait: options.wait });
+
     records.forEach((record, index) => {
       void launch(record, slots[index]);
     });
