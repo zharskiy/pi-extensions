@@ -2,16 +2,11 @@ import type { AgentRecord } from "../model/agent-record.ts";
 
 type TaskInput = { task: string; files?: string[] };
 
-export const composeTask = (
-  record: AgentRecord,
-  item: TaskInput,
-  predecessor?: AgentRecord,
-  undelivered: string[] = [],
-) => {
+export const composeTask = (record: AgentRecord, item: TaskInput, undelivered: string[] = []) => {
   const files = item.files ?? [];
   const lines = [`Task from ${record.callerId} (agent id ${record.id}):`, `Agent folder: ${record.dir}`];
 
-  if (predecessor) {
+  if (record.predecessorId) {
     lines.push("Original task:");
   }
 

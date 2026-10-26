@@ -2,6 +2,7 @@ import { budgetStep, HANDOFF_REQUEST_TYPE } from "../../../../platform/shared/in
 import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
 import { agentBudget } from "../../core/model/context-limit.ts";
+import { handoffService } from "../../core/model/handoff.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 
 const LIMITS_SENDER = "pi-subagents";
@@ -12,11 +13,8 @@ export const limitsPlugin: Plugin = {
   enable: ({ bus, settings, services }) => {
     const registry = services.require("registry");
     const runner = services.require("runner");
-    const handoff = services.require("handoff");
     const warned = new Set<string>();
     const handoffTurn = new Map<string, number>();
-
-    const send = (id: string, text: string) => runner.route(id, { sender: LIMITS_SENDER, text });
 
     const offTurn = bus.on("agent:turn", ({ id, context, turns, continuing }) => {
       const record = registry.get(id);
@@ -36,7 +34,7 @@ export const limitsPlugin: Plugin = {
 
       if (step === "warn") {
         warned.add(id);
-        void send(id, softWarning(tokens, budget.request));
+        void runner.route(id, { sender: LIMITS_SENDER, text: softWarning(tokens, budget.request) });
         return;
       }
 
@@ -46,7 +44,7 @@ export const limitsPlugin: Plugin = {
         registry.update(id, { handoffRequested: true });
         void runner.route(id, {
           sender: LIMITS_SENDER,
-          text: handoff.instruction(record.handoffPath),
+          text: handoffService.instruction(record.handoffPath),
           custom: {
             customType: HANDOFF_REQUEST_TYPE,
             details: { reason: "limit", tokens, request: budget.request },

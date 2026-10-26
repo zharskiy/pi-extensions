@@ -30,7 +30,6 @@ import {
   allowlist,
   chainLinks,
   chainTerminal,
-  type HandoffService,
   isClosed,
   MAIN_CALLER,
   type RouteResult,
@@ -38,6 +37,7 @@ import {
 } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL } from "../model/agent-schema.ts";
 import type { Bus } from "../model/events.ts";
+import { handoffService } from "../model/handoff.ts";
 import { agentsDirFor } from "../model/paths.ts";
 import type { Settings } from "../model/settings.ts";
 import { resolutionError } from "./model-text.ts";
@@ -57,7 +57,6 @@ type RunnerDeps = {
   definitions: AgentDefinitions;
   outbox: Pick<Outbox, "post">;
   session: () => SessionInfo;
-  handoff: HandoffService;
   toolsFor: (record: AgentRecord) => AnyToolSpec[];
 };
 
@@ -345,7 +344,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const replyHandoff = (live: Live) => {
     const text = replyText(live);
 
-    return text.length > 0 && deps.handoff.validate(text).ok ? text : undefined;
+    return text.length > 0 && handoffService.validate(text).ok ? text : undefined;
   };
 
   const saveReplyHandoff = (record: AgentRecord, live: Live): { text?: string; error?: string } => {
@@ -376,7 +375,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return deps.registry.close(record.id, { state: "failed", error });
     }
 
-    const validation = deps.handoff.validate(text);
+    const validation = handoffService.validate(text);
 
     if (!validation.ok) {
       return deps.registry.close(record.id, {
@@ -705,12 +704,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       sessionFile: child.sessionFile,
     });
 
-    const predecessor = record.predecessorId ? deps.registry.get(record.predecessorId) : undefined;
-
     live.turn = "running";
 
     try {
-      child.start(composeTask(record, slot.item, predecessor, slot.undelivered), slot.seed);
+      child.start(composeTask(record, slot.item, slot.undelivered), slot.seed);
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });

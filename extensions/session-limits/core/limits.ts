@@ -88,11 +88,13 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
 
-  const instruction = (path: string, reason: string, focus: string | undefined) =>
-    handoffInstruction({ path, reason, focus, audience: MAIN_AUDIENCE });
-
   const currentInstruction = (path: string) =>
-    instruction(path, state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON, state.focus);
+    handoffInstruction({
+      path,
+      reason: state.handedOff ? MANUAL_REASON : AUTOMATIC_REASON,
+      focus: state.focus,
+      audience: MAIN_AUDIENCE,
+    });
 
   const requestDetails = (): HandoffRequestDetails => {
     const tokens = state.context?.tokens ?? undefined;

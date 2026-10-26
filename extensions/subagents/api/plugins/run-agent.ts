@@ -16,8 +16,8 @@ import {
   isClosed,
   subagentNames,
 } from "../../core/model/agent-record.ts";
+import { handoffService } from "../../core/model/handoff.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
-import { createHandoff } from "../../core/run-agent/handoff.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
 import {
@@ -78,7 +78,7 @@ export const runAgentPlugin: Plugin = {
 
             return live && { path: live.handoffPath, requested: live.handoffRequested };
           },
-          validate: handoff.validate,
+          validate: handoffService.validate,
           rows: handoffToolRows(() => registry.get(record.id)?.handoffPath),
         }),
         ...(granted ? [services.require("fetchTool").tool()] : []),
@@ -110,8 +110,6 @@ export const runAgentPlugin: Plugin = {
       return tools;
     };
 
-    const handoff = createHandoff();
-
     const keyText = (binding: string) => host.ui.keyText(binding);
 
     host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
@@ -125,12 +123,10 @@ export const runAgentPlugin: Plugin = {
       definitions,
       outbox,
       session: () => host.session(),
-      handoff,
       toolsFor: childTools,
     });
 
     services.provide("runner", runner);
-    services.provide("handoff", handoff);
 
     const invalidators = new Map<string, () => void>();
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { VALID_HANDOFF } from "../../../../../test/framework/index.ts";
-import { createHandoff } from "../../../core/run-agent/handoff.ts";
+import { handoffService } from "../../../core/model/handoff.ts";
 
-const { validate: validateHandoff } = createHandoff();
+const { validate: validateHandoff } = handoffService;
 
 describe("handoff schema", () => {
   it("accepts the documented schema", () => {
