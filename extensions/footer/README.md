@@ -17,14 +17,14 @@ This extension replaces pi's footer with a status block right below the editor. 
 ```
 
  my-project on main · session-name                    model-name · thinking high
- context 8% of 163k · cache 73%                            851.3k tokens · $0.34
+ context 13,040 · 8% of 163k · cache 73%                     851.3k tokens · $0.34
  shift+tab to cycle thinking · ← to list agents
 
  <status text other extensions have set>
 
 ```
 
-Everything is neutral grey: folder, branch, session and model are `muted`, labels and separators `dim`, the context percentage and the total cost plain text. The thinking level carries the one accent, in the colour of its level. Colour otherwise marks state only: the context percentage turns warning at 70 % and error at 90 % of the window. With [session-limits](../session-limits/README.md) installed the figure counts toward its handoff point instead (`context 8% of 163k`), warning at the soft threshold and error at the hard one.
+Everything is neutral grey: folder, branch, session and model are `muted`, labels and separators `dim`, the context token count and percentage and the total cost plain text. The thinking level carries the one accent, in the colour of its level. Colour otherwise marks state only: the context count and percentage turn warning at 70 % and error at 90 % of the window. With [session-limits](../session-limits/README.md) installed the figure counts toward its handoff point instead (`context 13,040 · 8% of 163k`), warning at the soft threshold and error at the hard one.
 
 ## Quick start
 

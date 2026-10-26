@@ -73,14 +73,20 @@ const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: Conte
   }
 
   const percent = `${Math.round((context.tokens / base.base) * 100)}%`;
+  const count = context.tokens.toLocaleString("en-US");
   const of = `of ${formatWindow(base.base)}`;
 
   const tone =
     context.tokens >= base.errorAt ? "error" : context.tokens >= base.warnAt ? "warning" : undefined;
-  const figure = theme.fg(tone ?? "text", percent);
+  const figure = (text: string) => {
+    const painted = theme.fg(tone ?? "text", text);
+
+    return tone === "error" ? theme.bold(painted) : painted;
+  };
+  const plain = { text: `${label} ${figure(percent)}`, drop: NEVER };
 
   return [
-    { text: `${label} ${tone === "error" ? theme.bold(figure) : figure}`, drop: NEVER },
+    { text: `${label} ${figure(count)}${theme.fg("dim", DOT)}${figure(percent)}`, drop: 5, next: plain },
     { text: theme.fg(tone ?? "dim", of), drop: 5, tight: true },
   ];
 };

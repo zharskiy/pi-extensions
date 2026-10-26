@@ -30,7 +30,7 @@ describe("footer", () => {
     expect(lines()).toEqual([
       "",
       " my-project on main                                 test-model · thinking medium",
-      " context 25% of 200k",
+      " context 50,000 · 25% of 200k",
       " <app.thinking.cycle> to cycle thinking",
       "",
     ]);
@@ -45,7 +45,7 @@ describe("footer", () => {
 
     host.mainUsage = { input: 100, cacheRead: 870, cacheWrite: 30, output: 10 };
 
-    expect(lines()[2]).toBe(" context 25% of 200k · cache 87%");
+    expect(lines()[2]).toBe(" context 50,000 · 25% of 200k · cache 87%");
   });
 
   it("shows the published totals and refreshes", () => {
@@ -59,7 +59,7 @@ describe("footer", () => {
 
     expect(host.footerRefreshes).toBe(1);
     expect(lines()[2]).toBe(
-      " context 25% of 200k      50.0k tokens · $1.50 main · $0.50 agents · $2.00 total",
+      " context 50,000 · 25% of 200k            $1.50 main · $0.50 agents · $2.00 total",
     );
   });
 
@@ -76,7 +76,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines()[2]).toBe(" context 25% of 200k");
+    expect(lines()[2]).toBe(" context 50,000 · 25% of 200k");
   });
 
   it("refreshes on idle", () => {
@@ -96,7 +96,7 @@ describe("footer", () => {
 
     expect(lines()[1]).toContain("my-project on main · refactor");
     expect(lines()[1]).toContain("test-model · thinking high");
-    expect(lines()[2]).toBe(" context 95% of 200k");
+    expect(lines()[2]).toBe(" context 190,000 · 95% of 200k");
   });
 });
 
@@ -106,12 +106,12 @@ describe("footer handoff limits", () => {
   it("shows the context against the handoff point once session-limits publishes", () => {
     const { host, lines } = setup();
 
-    expect(lines()[2]).toBe(" context 25% of 200k");
+    expect(lines()[2]).toBe(" context 50,000 · 25% of 200k");
 
     host.emit(LIMITS_CHANNEL, limits);
 
     expect(host.footerRefreshes).toBe(1);
-    expect(lines()[2]).toBe(" context 42% of 120k");
+    expect(lines()[2]).toBe(" context 50,000 · 42% of 120k");
   });
 
   it("ignores malformed limits", () => {
@@ -121,6 +121,6 @@ describe("footer handoff limits", () => {
     host.emit(LIMITS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines()[2]).toBe(" context 25% of 200k");
+    expect(lines()[2]).toBe(" context 50,000 · 25% of 200k");
   });
 });
