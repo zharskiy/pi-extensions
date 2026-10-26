@@ -6,6 +6,6 @@
 - `core/status.ts`: `watchChannel`; subscribes to a bus channel (`spending:totals`, `session-limits:limits`) and keeps the last valid payload.
 - `core/segments.ts`: `FooterState`, `footerState` (live host values and the session cache hit), `folderName`, `sessionSpend`, `statusLines`, `agentsHint`, `contextBase` (the window or the handoff point).
 - `ui/layout.ts`: `Segment` and `spread`; fit prioritised segments to a width, left and right aligned.
-- `ui/render.ts`: `renderFooter`; builds the place, model, context (exact token count and percent), cache, money and hint-row segments and the status lines.
+- `ui/render.ts`: `renderFooter`; builds the place, model, context (compact token count of the base), cache, money and hint-row segments and the status lines.
 - `tests/footer.test.ts`: the extension booted on a fake host.
 - `tests/render.test.ts`: `renderFooter` token roles, layout, drop order and hint row.

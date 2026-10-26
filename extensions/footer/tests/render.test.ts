@@ -102,15 +102,15 @@ describe("renderFooter colours", () => {
     expect(lines.join("\n")).not.toContain("thinking");
   });
 
-  it("never paints a figure dim and keeps the percent and the total plain text", () => {
+  it("never paints a figure dim and keeps the count and the total plain text", () => {
     const { painted } = paint(full);
 
-    const figures = ["15%", "73%", "162.4k", "$4.00", "$0.42", "$4.42"];
+    const figures = ["150.1k", "73%", "162.4k", "$4.00", "$0.42", "$4.42"];
 
     figures.forEach((figure) => {
       expect(painted.filter(({ token, text }) => token === "dim" && text.includes(figure))).toEqual([]);
     });
-    expect(painted).toContainEqual({ token: "text", text: "15%" });
+    expect(painted).toContainEqual({ token: "text", text: "150.1k" });
     expect(painted).toContainEqual({ token: "text", text: "$4.42" });
   });
 
@@ -119,20 +119,19 @@ describe("renderFooter colours", () => {
     const warn = paint(at(70));
     const error = paint(at(90));
 
-    expect(base.painted).toContainEqual({ token: "text", text: "69%" });
+    expect(base.painted).toContainEqual({ token: "text", text: "690" });
     expect(base.painted).toContainEqual({ token: "dim", text: "of 1k" });
-    expect(warn.painted).toContainEqual({ token: "warning", text: "70%" });
+    expect(warn.painted).toContainEqual({ token: "warning", text: "700" });
     expect(warn.painted).toContainEqual({ token: "warning", text: "of 1k" });
     expect(warn.bolded).toEqual([]);
-    expect(error.painted).toContainEqual({ token: "error", text: "90%" });
     expect(error.painted).toContainEqual({ token: "error", text: "of 1k" });
     expect(error.painted).toContainEqual({ token: "error", text: "900" });
     expect(warn.painted).toContainEqual({ token: "warning", text: "700" });
     expect(base.painted).toContainEqual({ token: "text", text: "690" });
-    expect(error.bolded).toEqual(expect.arrayContaining(["90%", "900"]));
+    expect(error.bolded).toEqual(expect.arrayContaining(["900"]));
 
     const rest = (spans: { token: string; text: string }[]) =>
-      spans.filter(({ text }) => !/^\d+%?$|^of /.test(text));
+      spans.filter(({ text }) => !/^\d+$|^of /.test(text));
 
     expect(rest(warn.painted)).toEqual(rest(base.painted));
     expect(rest(error.painted)).toEqual(rest(base.painted));
@@ -154,7 +153,7 @@ describe("renderFooter colours", () => {
       paint(at(95))
         .painted.filter(({ token }) => token === "error")
         .map(({ text }) => text),
-    ).toEqual(expect.arrayContaining(["950", "95%", "of 1k"]));
+    ).toEqual(expect.arrayContaining(["950", "of 1k"]));
     expect(
       paint(at(95))
         .painted.filter(({ token }) => token === "error")
@@ -162,15 +161,16 @@ describe("renderFooter colours", () => {
     ).not.toContain("$4.42");
   });
 
-  it("shows the exact token count before the percent and drops it before the percent", () => {
+  it("shows the compact token count of the window and drops the window first", () => {
     const at = (width: number) =>
       render({ context: { tokens: 42_318, window: 100_000, percent: 42 } }, { width })[2];
 
-    expect(at(200)).toContain("context 42,318 · 42% of 100k");
-    expect(at(32)).not.toContain("42,318");
-    expect(at(32)).toContain("context 42%");
-    expect(at(30)).toContain("context 42%");
-    expect(at(30)).not.toContain("42,318");
+    expect(at(200)).toContain("context 42.3k of 100k");
+    expect(at(200)).not.toContain("%");
+    expect(at(26)).toContain("context 42.3k");
+    expect(at(26)).not.toContain("of 100k");
+    expect(at(24)).toContain("context 42.3k");
+    expect(at(24)).not.toContain("of 100k");
   });
 
   it("marks unknown context and a missing model", () => {
@@ -192,7 +192,7 @@ describe("renderFooter text", () => {
     expect(lines).toEqual([
       "",
       " my-project on main · refactor                        test-model · thinking high",
-      " context 13,040 · 8% of 163k · cache 73%                   162.4k tokens · $4.42",
+      " context 13.0k of 163k · cache 73%                         162.4k tokens · $4.42",
       " shift+tab to cycle thinking",
       "",
     ]);
@@ -298,7 +298,7 @@ describe("renderFooter layout", () => {
     const line1 = ["refactor", "thinking", "on main"];
     const line2 = ["tokens", "subscription", "cache", "agents", "of 1M"];
     const keep1 = ["my-project", "test-model"];
-    const keep2 = ["context 15%", "$4.42"];
+    const keep2 = ["context 150.1k", "$4.42"];
     const lines = (width: number) => render(patch, { branch: "main", width });
 
     widths.slice(1).forEach((width, index) => {
@@ -414,7 +414,7 @@ describe("renderFooter with handoff limits", () => {
   it("measures the context against the handoff point", () => {
     const { painted } = paint(withLimits(120_000));
 
-    expect(painted).toContainEqual({ token: "text", text: "74%" });
+    expect(painted).toContainEqual({ token: "text", text: "120.0k" });
     expect(painted).toContainEqual({ token: "dim", text: "of 163k" });
   });
 
@@ -422,25 +422,24 @@ describe("renderFooter with handoff limits", () => {
     const warn = paint(withLimits(122_400));
     const error = paint(withLimits(163_200));
 
-    expect(warn.painted).toContainEqual({ token: "warning", text: "75%" });
+    expect(warn.painted).toContainEqual({ token: "warning", text: "122.4k" });
     expect(warn.bolded).toEqual([]);
-    expect(error.painted).toContainEqual({ token: "error", text: "100%" });
     expect(error.painted).toContainEqual({ token: "error", text: "of 163k" });
-    expect(error.painted).toContainEqual({ token: "error", text: "163,200" });
-    expect(error.bolded).toEqual(expect.arrayContaining(["163,200", "100%"]));
+    expect(error.painted).toContainEqual({ token: "error", text: "163.2k" });
+    expect(error.bolded).toEqual(expect.arrayContaining(["163.2k"]));
   });
 
-  it("lets the percentage pass 100", () => {
-    expect(render(withLimits(170_000))[2]).toContain("context 170,000 · 104% of 163k");
+  it("lets the count pass the handoff point", () => {
+    expect(render(withLimits(170_000))[2]).toContain("context 170.0k of 163k");
   });
 
   it("falls back to the window without limits", () => {
     const patch = { context: { tokens: 120_000, window, percent: 44 } };
 
-    expect(render(patch)[2]).toContain("context 120,000 · 44% of 272k");
+    expect(render(patch)[2]).toContain("context 120.0k of 272k");
     expect(paint({ context: { tokens: 190_400, window, percent: 70 } }).painted).toContainEqual({
       token: "warning",
-      text: "70%",
+      text: "190.4k",
     });
   });
 });
