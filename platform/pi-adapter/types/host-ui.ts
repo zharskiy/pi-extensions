@@ -44,7 +44,7 @@ export type EditorUi = {
   captureEditorKeys(handler: EditorKeyHandler): () => void;
 };
 
-export type KeysUi = {
+type KeysUi = {
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
 };

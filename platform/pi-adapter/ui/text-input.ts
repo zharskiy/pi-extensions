@@ -30,7 +30,6 @@ export const createTextInputs = (tui: TUI, theme: Theme) => {
           editor.handleInput(key.raw);
         }
       },
-      text: () => editor.getText(),
       setText: (text) => {
         editor.setText(text);
       },

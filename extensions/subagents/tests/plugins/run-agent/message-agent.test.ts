@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../../../../../platform/pi-adapter/index.ts";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test/framework/index.ts";
-import { parseSessionLines } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
@@ -204,16 +202,5 @@ describe("message_agent", () => {
     const result = await send("ghost-0000", "hi");
 
     expect(result.isError).toBe(true);
-  });
-
-  it("tags the message with its sender so it shows in the agent transcript", () => {
-    const text = formatRoutedMessage({ sender: "main", text: "also cover the tests" });
-
-    const session = parseSessionLines(
-      [JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text }] } })],
-      "pi-subagents:prompt-record",
-    );
-
-    expect(session.items).toEqual([{ kind: "user", text: "[message from main]\nalso cover the tests" }]);
   });
 });

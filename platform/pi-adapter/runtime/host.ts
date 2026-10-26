@@ -452,8 +452,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     sendMessage: (message) => {
       deliver(message, true);
     },
-    dispatchCommand: (name, args) => {
-      sendCommand(args ? `/${name} ${args}` : `/${name}`);
+    dispatchCommand: (name) => {
+      sendCommand(`/${name}`);
     },
     publish: (channel, data) => {
       if (!state.ctx) {

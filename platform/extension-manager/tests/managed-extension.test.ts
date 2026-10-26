@@ -111,8 +111,8 @@ describe("createManagedExtension", () => {
     const seen: string[] = [];
     const plugin = (id: string): TestPlugin => ({
       id,
-      enable: ({ root, paths }) => {
-        seen.push(`${id} ${root} ${paths.root} ${paths.agentDir}`);
+      enable: ({ paths }) => {
+        seen.push(`${id} ${paths.root} ${paths.agentDir}`);
 
         return undefined;
       },
@@ -121,7 +121,7 @@ describe("createManagedExtension", () => {
 
     managed([plugin("a"), plugin("b")]).boot(host, runtime, paths, { settings: { off: ["b"] } });
 
-    expect(seen).toEqual([`a /ext/managed /ext/managed ${paths.agentDir}`]);
+    expect(seen).toEqual([`a /ext/managed ${paths.agentDir}`]);
   });
 
   it("resolves childExclude entries against the extension root", () => {

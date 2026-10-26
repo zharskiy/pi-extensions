@@ -146,7 +146,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const entryRenderers = new Map<string, EntryRender>();
   const messageRenderers = new Map<string, MessageRender>();
   const channels = new Map<string, Set<(data: unknown) => void>>();
-  const deferred: { name: string; args?: string }[] = [];
+  const deferred: string[] = [];
   let started = false;
   const editorLive = () => started && !host.foreignEditor;
 
@@ -452,15 +452,15 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     isIdle: () => started && host.idle,
     sendHiddenMessage: (message) => record(host.hidden, message),
     sendMessage: (message) => record(host.messages, message),
-    dispatchCommand: (name, args) => {
-      host.dispatched.push(args ? `${name} ${args}` : name);
+    dispatchCommand: (name) => {
+      host.dispatched.push(name);
 
       if (settling) {
-        deferred.push({ name, args });
+        deferred.push(name);
         return;
       }
 
-      void host.runCommand(name, args);
+      void host.runCommand(name);
     },
     publish: (channel, data) => {
       if (stale) {
@@ -533,8 +533,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       settling = false;
       host.setPhase("idle");
 
-      deferred.splice(0).forEach(({ name, args }) => {
-        void host.runCommand(name, args);
+      deferred.splice(0).forEach((name) => {
+        void host.runCommand(name);
       });
     },
     emit: deliver,

@@ -20,7 +20,7 @@ export default defineConfig({
             "test/evals/**/tests/**/*.test.ts",
             "test/*.test.ts",
           ],
-          exclude: [...configDefaults.exclude, "**/*.live.test.ts", "**/*.eval.ts"],
+          exclude: [...configDefaults.exclude, "**/*.live.test.ts"],
           environment: "node",
           env: { [RESULTS_ENV]: "" },
         },

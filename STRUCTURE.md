@@ -38,7 +38,7 @@ pi-extensions/
 - `package.json`: version, `pi.extensions` (the 13 `extensions/<name>/index.ts` entries), the published `files`, and the scripts: `check` (typecheck, lint, knip, test), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
 - `tsconfig.json`: strict NodeNext, no emit, over every code folder.
 - `vitest.config.ts`: three projects, picked with `--project`:
-  - `unit` (`npm run test`): every `tests/` folder and `test/`, without `*.live.test.ts` and `*.eval.ts`.
+  - `unit` (`npm run test`): every `tests/` folder and `test/`, without `*.live.test.ts`.
   - `live` (`npm run test:live`): only live tests (`extensions/*/tests/live/`, `platform/pi-adapter/tests/live/`), serial, long timeouts.
   - `evals` (`npm run evals`): only evals (`test/evals/**/*.eval.ts`), one forked worker, serial, 30 minutes per test, results under `test/evals/.results/<timestamp>/`.
 - `biome.json`: format and lint, the import-cycle and unused-code rules, and the per-folder `noRestrictedImports` overrides that hold each layer to its imports.

@@ -20,11 +20,11 @@ Twelve extensions pass one plugin from `api/plugin.ts` whose `enable` wires host
 
 `createExtensionManager` (`extension-manager.ts`):
 
-- A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host`, `runtime`, `bus`, `settings`, the service registry, `root` and `paths`.
+- A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host`, `runtime`, `bus`, `settings`, the service registry and `paths` (`root`, `agentDir`).
 - Plugins are sorted topologically by `requires`; a cycle throws. A plugin in the disabled list is skipped silently; one whose required plugin is off or missing is skipped with one warning at session start.
 - Plugins talk two ways: the service registry (`provide`, `require`, `has`; `require` throws when no enabled plugin provided the key) and the typed in-process bus (`createBus` in `bus.ts`, keyed by the extension's event map type; subagents uses `agent:changed`, `agent:turn`, `agent:closed`, `agent:usage`, `batch:settled`). A throwing bus listener goes to `onError`.
 - `disableAll()` runs the disable callbacks in reverse order, one after another; a failing callback goes to `onError` and the rest still run.
 
 ## Settings
 
-Each extension's settings are `<agentDir>/<file>` (user) and `<cwd>/.pi/<file>` (project, read only when the project is trusted). `parseSettings` (`platform/shared/plugin/settings-files.ts`) validates each known key against a schema (number range, string list, boolean, choice of strings, or an object with its own `parse`); invalid keys are dropped and reported, the rest applies. Settings are read once per session start, defaults then user then project, because pi builds a new extension per session; nothing reloads live. `watchSettings` (`watch-settings.ts`) is the getter form of the same merge, and `reportSettingsErrors` the once-per-message warning both forms use.
+Each extension's settings are `<agentDir>/<file>` (user) and `<cwd>/.pi/<file>` (project, read only when the project is trusted). `parseSettings` (`platform/shared/plugin/settings-files.ts`) validates each known key against a schema (number range, string list, choice of strings, or an object with its own `parse`); invalid keys are dropped and reported, the rest applies. Settings are read once per session start, defaults then user then project, because pi builds a new extension per session; nothing reloads live. `reportSettingsErrors` (`watch-settings.ts`) is the once-per-message warning.

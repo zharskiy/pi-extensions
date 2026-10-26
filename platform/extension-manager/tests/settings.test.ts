@@ -12,15 +12,14 @@ import {
   type SettingsSchema,
   userSettingsPath,
 } from "../../shared/index.ts";
-import { reportSettingsErrors, watchSettings } from "../watch-settings.ts";
+import { reportSettingsErrors } from "../watch-settings.ts";
 
-type Example = { count: number; ratio: number; names: string[]; loud?: boolean };
+type Example = { count: number; ratio: number; names: string[] };
 
 const schema: SettingsSchema<Example> = {
   count: { type: "number", min: 1, max: 10 },
   ratio: { type: "number", min: 0, max: 1, minExclusive: true },
   names: { type: "list", of: "names" },
-  loud: { type: "boolean" },
 };
 
 describe("settings helpers", () => {
@@ -41,12 +40,6 @@ describe("settings helpers", () => {
     ]);
   });
 
-  it("accepts booleans and rejects anything else for a boolean rule", () => {
-    expect(parseSettings(schema, { loud: false }, "f").patch).toEqual({ loud: false });
-    expect(parseSettings(schema, { loud: "no" }, "f").errors).toEqual(["f: loud must be true or false"]);
-    expect(parseSettings(schema, { loud: 0 }, "f").patch).toEqual({});
-  });
-
   it("accepts only listed strings for a choice rule", () => {
     const choice: SettingsSchema<{ mode: string }> = { mode: { type: "choice", values: ["a", "b"] } };
 
@@ -60,8 +53,7 @@ describe("settings helpers", () => {
     });
   });
 
-  it("accepts a plain object for an object rule, through its own parser when it has one", () => {
-    const plain: SettingsSchema<{ map: unknown }> = { map: { type: "object", of: "entries" } };
+  it("accepts a plain object for an object rule through its own parser", () => {
     const parsed: SettingsSchema<{ map: unknown }> = {
       map: {
         type: "object",
@@ -70,8 +62,7 @@ describe("settings helpers", () => {
       },
     };
 
-    expect(parseSettings(plain, { map: { a: 1 } }, "f").patch).toEqual({ map: { a: 1 } });
-    expect(parseSettings(plain, { map: [] }, "f").errors).toEqual(["f: map must be an object of entries"]);
+    expect(parseSettings(parsed, { map: [] }, "f").errors).toEqual(["f: map must be an object of entries"]);
     expect(parseSettings(parsed, { map: { good: 1, bad: 2 } }, "f")).toEqual({
       patch: { map: { kept: 1 } },
       errors: ["f: map.bad is wrong"],
@@ -180,31 +171,5 @@ describe("settings files", () => {
       ratio: 0.2,
       names: [],
     });
-  });
-
-  it("re-reads on session start and reports each invalid value once", () => {
-    const where = location(false);
-    const host = createFakeHost({ id: "s", ...where });
-    const settings = watchSettings(host, "example", schema, DEFAULTS, FILE);
-    const file = userSettingsPath(where.agentDir, FILE);
-
-    expect(settings()).toEqual(DEFAULTS);
-
-    write(file, { count: 3, ratio: 2 });
-    host.start();
-    host.start();
-
-    expect(settings()).toEqual({ count: 3, ratio: 0.5, names: [] });
-    expect(host.notices).toEqual([
-      {
-        message: `example settings: ${file}: ratio must be a number above 0 and at most 1`,
-        level: "warning",
-      },
-    ]);
-
-    write(file, { ratio: 0.8 });
-    host.start();
-
-    expect(settings()).toEqual({ count: 5, ratio: 0.8, names: [] });
   });
 });

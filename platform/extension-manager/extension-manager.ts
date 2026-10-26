@@ -96,7 +96,6 @@ export const createExtensionManager = <E extends EventMap, S, C>(
       bus,
       settings: options.settings,
       services,
-      root: options.paths.root,
       paths: options.paths,
     });
 

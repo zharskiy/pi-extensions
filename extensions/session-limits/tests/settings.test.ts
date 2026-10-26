@@ -1,10 +1,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { watchSettings } from "../../../platform/extension-manager/index.ts";
 import { userSettingsPath } from "../../../platform/shared/index.ts";
-import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
-import { DEFAULT_LIMITS, SETTINGS_FILE, schema } from "../core/settings.ts";
+import {
+  createFakeAgentRuntime,
+  createFakeHost,
+  startExtension,
+  useTempDirs,
+} from "../../../test/framework/index.ts";
+import sessionLimits from "../api/extension.ts";
+import { SETTINGS_FILE } from "../core/settings.ts";
 
 const temp = useTempDirs();
 
@@ -14,13 +19,13 @@ const load = (settings: object) => {
   const agentDir = join(root, "agent");
   const file = userSettingsPath(agentDir, SETTINGS_FILE);
   const host = createFakeHost({ id: "s", cwd: join(root, "project"), agentDir, projectTrusted: false });
-  const limits = watchSettings(host, "pi-session-limits", schema, DEFAULT_LIMITS, SETTINGS_FILE);
 
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(file, JSON.stringify(settings));
-  host.start();
 
-  return { file, host, limits };
+  const started = startExtension({ extension: sessionLimits, runtime: createFakeAgentRuntime(), host });
+
+  return { file, host, limits: () => ({ ...started.settings }) };
 };
 
 describe("session-limits settings", () => {

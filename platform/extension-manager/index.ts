@@ -1,4 +1,4 @@
 export { createBus } from "./bus.ts";
 export { createExtensionManager } from "./extension-manager.ts";
 export { createManagedExtension, type ManagedExtension } from "./managed-extension.ts";
-export { reportSettingsErrors, watchSettings } from "./watch-settings.ts";
+export { reportSettingsErrors } from "./watch-settings.ts";

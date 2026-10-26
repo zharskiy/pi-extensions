@@ -356,11 +356,9 @@ describe("pi adapter", () => {
 
     await fire("session_start", fakeCtx("tui", false));
     host.dispatchCommand("session-handoff");
-    host.dispatchCommand("agents", "a1");
 
     expect(sent).toEqual([
       { text: "/session-handoff", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
-      { text: "/agents a1", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
     ]);
   });
 
@@ -369,9 +367,9 @@ describe("pi adapter", () => {
     const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
-    host.dispatchCommand("skill:review", "src");
+    host.dispatchCommand("skill:review");
 
-    expect(sent).toEqual([{ text: "/skill:review src", options: { expandPromptTemplates: true } }]);
+    expect(sent).toEqual([{ text: "/skill:review", options: { expandPromptTemplates: true } }]);
   });
 
   it("seeds the new session with a displayed message that triggers no turn", async () => {

@@ -1,12 +1,12 @@
 import type { ThinkingLevel } from "./model.ts";
 
-export type PaintToken = "accent" | "muted" | "dim" | "text";
+type PaintToken = "accent" | "muted" | "dim" | "text";
 
 export type StatusToken = "success" | "warning" | "error";
 
-export type ThinkingToken = `thinking${Capitalize<ThinkingLevel>}`;
+type ThinkingToken = `thinking${Capitalize<ThinkingLevel>}`;
 
-export type MessageToken = "customMessageLabel" | "customMessageText";
+type MessageToken = "customMessageLabel" | "customMessageText";
 
 export type ThemeToken = PaintToken | StatusToken | ThinkingToken | MessageToken;
 

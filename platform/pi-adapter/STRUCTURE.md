@@ -4,7 +4,7 @@
 - `types/host-capabilities.ts`: `Host` = `ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }`.
 - `types/host-ui.ts`: `HostUi` (including `copyText`) = `NoticeUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
 - `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `ThinkingToken`, `MessageToken`), `BgToken`, `ThemeLike`.
-- `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`), `isNavigationKey`.
+- `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`).
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
@@ -55,7 +55,6 @@
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
 - `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
-- `tests/contract-types.test.ts`: type-level checks of the contract unions (theme tokens, keys, thinking levels, host capabilities).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
 - `tests/phase.test.ts`: `runtime/phase.ts`.
 - `tests/child-scope.test.ts`: `runtime/child-scope.ts`.

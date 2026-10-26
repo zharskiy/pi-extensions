@@ -7,18 +7,18 @@ import type { ToolRows, ToolSpec } from "./tools.ts";
 import type { UsageTotals } from "./usage.ts";
 import type { EntryRender, MessageRender } from "./view.ts";
 
-export type ToolHost = {
+type ToolHost = {
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
   registerCommand(name: string, spec: CommandSpec): void;
-  dispatchCommand(name: string, args?: string): void;
+  dispatchCommand(name: string): void;
 };
 
-export type PromptHost = {
+type PromptHost = {
   setMainPrompt(text: string): void;
   setPromptSection(name: string, text: string | undefined): void;
 };
 
-export type LifecycleHost = {
+type LifecycleHost = {
   onSessionStart(handler: (info: SessionInfo, parent?: string) => void): void;
   onSessionShutdown(handler: (reason: ShutdownReason) => void | Promise<void>): void;
   onIdle(handler: (info: IdleInfo) => void): void;
@@ -31,7 +31,7 @@ export type LifecycleHost = {
   isIdle(): boolean;
 };
 
-export type MessagingHost = {
+type MessagingHost = {
   sendHiddenMessage(message: CustomMessage): void;
   sendMessage(message: CustomMessage): void;
   publish(channel: string, data: unknown): void;

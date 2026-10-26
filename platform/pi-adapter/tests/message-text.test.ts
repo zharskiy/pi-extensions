@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRoutedMessage } from "../index.ts";
-import { finalRunTexts } from "../runtime/message-text.ts";
+import { finalRunTexts, formatRoutedMessage } from "../runtime/message-text.ts";
 
 const message = (role: string, content: unknown) => ({ type: "message", message: { role, content } });
 

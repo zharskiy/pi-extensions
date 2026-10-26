@@ -41,7 +41,7 @@ const readPrompt = (root: string, file: string) => readFileSync(join(root, "prom
 export const runAgentPlugin: Plugin = {
   id: "run-agent",
   requires: ["agent-registry", "agent-definitions"],
-  enable: ({ host, runtime, bus, settings, services, root }) => {
+  enable: ({ host, runtime, bus, settings, services, paths }) => {
     const registry = services.require("registry");
     const definitions = services.require("definitions");
 
@@ -203,8 +203,8 @@ export const runAgentPlugin: Plugin = {
       host.registerTool(runAgentTool(toolDeps, description));
     };
 
-    const mainPrompt = readPrompt(root, "main-session.md");
-    const statusPrompt = readPrompt(root, "main-session-agent-status.md");
+    const mainPrompt = readPrompt(paths.root, "main-session.md");
+    const statusPrompt = readPrompt(paths.root, "main-session-agent-status.md");
 
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));

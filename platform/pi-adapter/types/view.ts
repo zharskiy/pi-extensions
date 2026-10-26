@@ -46,7 +46,6 @@ export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 export type TextInput = {
   render(width: number): string[];
   handleKey(key: KeyPress): void;
-  text(): string;
   setText(text: string): void;
   onSubmit(handler: (text: string) => void): void;
 };
