@@ -220,7 +220,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       ? [["r", requestExpanded ? "to hide the request" : "to show the request"]]
       : [];
     const tools: KeyHint = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"];
-    const copy: KeyHint[] = request.length ? [["c", "to copy"]] : [];
+    const copy: KeyHint[] = request.length ? [["c", "to copy request"]] : [];
 
     const lead = [exit, ...stop, ...request];
 

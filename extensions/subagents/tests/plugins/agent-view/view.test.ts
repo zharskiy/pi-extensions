@@ -224,7 +224,9 @@ describe("agent view", () => {
     expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
     expect(
-      lines.at(-2)?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools · c to copy"),
+      lines
+        .at(-2)
+        ?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools · c to copy request"),
     ).toBe(true);
     expect(lines.at(-3)).toBe("");
     expect(lines.at(-1)).toBe("");
@@ -600,7 +602,12 @@ describe("agent view copy", () => {
 
 describe("agent view hint", () => {
   const hintOf = (record: AgentRecord, options: { back?: boolean; session?: SessionRecord } = {}) =>
-    viewOf("session" in options ? options.session : fixture(), { record, back: options.back, rows: 400 });
+    viewOf("session" in options ? options.session : fixture(), {
+      record,
+      back: options.back,
+      rows: 400,
+      width: 120,
+    });
 
   it("writes the hint per state and per way back", () => {
     const open = agentRecord({ id: "explorer-1" });
@@ -610,10 +617,10 @@ describe("agent view hint", () => {
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
     expect(hint(hintOf(open))).toBe(
-      " esc to close · x to stop · r to show the request · ctrl+o to expand tools · c to copy",
+      " esc to close · x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
     );
     expect(hint(hintOf(closed, { back: true }))).toBe(
-      " esc to go back · r to show the request · ctrl+o to expand tools · c to copy",
+      " esc to go back · r to show the request · ctrl+o to expand tools · c to copy request",
     );
     expect(hint(hintOf(open, { session: noRequest }))).toBe(
       " esc to close · x to stop · ctrl+o to expand tools",
@@ -624,7 +631,7 @@ describe("agent view hint", () => {
     expanded.view.handleKey(char("r"));
 
     expect(hint(expanded)).toBe(
-      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools",
+      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools · c to copy request",
     );
 
     [open, grace, closed].forEach((record) => {
@@ -1105,7 +1112,11 @@ const codemodeSession = () =>
 
 describe("agent view codemode", () => {
   it("renders codemode calls with pi's renderer", () => {
-    const { lines } = viewOf(codemodeSession(), { record: agentRecord({ id: "explorer-1" }), rows: 400 });
+    const { lines } = viewOf(codemodeSession(), {
+      record: agentRecord({ id: "explorer-1" }),
+      rows: 400,
+      width: 120,
+    });
     const all = lines();
     const text = all.join("\n");
 
@@ -1405,7 +1416,9 @@ describe("agent view request block", () => {
 
     expect(all[all.indexOf(RULE(100)) + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
     expect(all.join("\n")).not.toContain('"model": "provider/model"');
-    expect(all.at(-2)).toContain("x to stop · r to show the request · ctrl+o to expand tools · c to copy");
+    expect(lines(120).at(-2)).toContain(
+      "x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
+    );
   });
 
   it("leaves a blank line under the collapsed request, apart from the task box padding", () => {
