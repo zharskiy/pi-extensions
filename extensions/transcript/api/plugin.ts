@@ -35,8 +35,6 @@ export const createTranscript = (host: Host, home = homedir()) => {
 
   host.onSessionStart((info) => {
     tui = info.mode === "tui";
-    turn = undefined;
-    running = false;
 
     if (!tui) {
       return;

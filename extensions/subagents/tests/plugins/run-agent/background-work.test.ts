@@ -39,21 +39,13 @@ const setup = () => {
 };
 
 describe("background work", () => {
-  it("publishes no pending work at session start", () => {
-    const { host } = setup();
-
-    expect(host.published.filter((entry) => entry.channel === BACKGROUND_WORK_CHANNEL)).toEqual([
-      { channel: BACKGROUND_WORK_CHANNEL, data: { source: "pi-subagents", count: 0 } },
-    ]);
-  });
-
   it("counts a background batch from its start until the model answered its wake and the session settled", async () => {
     const { run, runtime, host, counts, answer } = setup();
 
     await run(2);
     await run(1);
 
-    expect(counts()).toEqual([0, 1, 2]);
+    expect(counts()).toEqual([1, 2]);
 
     host.settle();
     runtime.children.forEach((child) => {
@@ -62,15 +54,15 @@ describe("background work", () => {
     await flushMicrotasks();
 
     expect(host.hidden).toHaveLength(1);
-    expect(counts()).toEqual([0, 1, 2]);
+    expect(counts()).toEqual([1, 2]);
 
     answer();
 
-    expect(counts()).toEqual([0, 1, 2]);
+    expect(counts()).toEqual([1, 2]);
 
     host.settle();
 
-    expect(counts()).toEqual([0, 1, 2, 0]);
+    expect(counts()).toEqual([1, 2, 0]);
   });
 
   it("keeps a wake that joins a busy run pending until that run settles", async () => {
@@ -84,11 +76,11 @@ describe("background work", () => {
 
     host.assistantEnd({ toolCalls: 0 });
 
-    expect(counts()).toEqual([0, 1]);
+    expect(counts()).toEqual([1]);
 
     host.settle();
 
-    expect(counts()).toEqual([0, 1, 0]);
+    expect(counts()).toEqual([1, 0]);
   });
 
   it("keeps a wake sent after the run's last message pending through that run's settle", async () => {
@@ -100,12 +92,12 @@ describe("background work", () => {
     await flushMicrotasks();
     host.settle();
 
-    expect(counts()).toEqual([0, 1]);
+    expect(counts()).toEqual([1]);
 
     answer();
     host.settle();
 
-    expect(counts()).toEqual([0, 1, 0]);
+    expect(counts()).toEqual([1, 0]);
   });
 
   it("keeps a running batch pending through an idle", async () => {
@@ -115,7 +107,7 @@ describe("background work", () => {
     host.assistantEnd({ toolCalls: 0 });
     host.settle();
 
-    expect(counts()).toEqual([0, 1]);
+    expect(counts()).toEqual([1]);
   });
 
   it("drops a delivered wake when the user aborts the run", async () => {
@@ -128,7 +120,7 @@ describe("background work", () => {
     host.agentStart();
     host.settle({ aborted: true });
 
-    expect(counts()).toEqual([0, 1, 0]);
+    expect(counts()).toEqual([1, 0]);
   });
 
   it("does not count a batch the model waits for", async () => {
@@ -139,7 +131,7 @@ describe("background work", () => {
     runtime.children[0].finish("waited");
     await result;
 
-    expect(counts()).toEqual([0]);
+    expect(counts()).toEqual([]);
   });
 
   it("counts only the main session's batches, not the ones an agent starts", async () => {
@@ -159,20 +151,11 @@ describe("background work", () => {
 
     expect(result.isError).not.toBe(true);
     expect(runtime.children).toHaveLength(2);
-    expect(counts()).toEqual([0, 1]);
+    expect(counts()).toEqual([1]);
 
     runtime.children[1].finish("looked");
     await flushMicrotasks();
 
-    expect(counts()).toEqual([0, 1]);
-  });
-
-  it("forgets pending work when a new session starts", async () => {
-    const { run, host, counts } = setup();
-
-    await run(1);
-    host.start();
-
-    expect(counts()).toEqual([0, 1, 0]);
+    expect(counts()).toEqual([1]);
   });
 });

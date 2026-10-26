@@ -281,28 +281,6 @@ describe("transcript", () => {
       expect(durations(host)).toEqual([{ ms: 3_000 }]);
     });
 
-    it("starts fresh in a new session", () => {
-      const host = tuiHost();
-
-      host.agentStart();
-      work(host, 1);
-      host.assistantEnd({ toolCalls: 3 });
-      host.start();
-      work(host, 0);
-
-      expect(answers(host)).toEqual([]);
-
-      vi.advanceTimersByTime(90_000);
-      host.agentStart();
-      vi.advanceTimersByTime(4_000);
-      host.assistantEnd({ toolCalls: 1 });
-      vi.advanceTimersByTime(2_000);
-      host.assistantEnd({ toolCalls: 0 });
-      host.settle();
-
-      expect(durations(host)).toEqual([{ ms: 6_000 }]);
-    });
-
     it.each(["print", "rpc", "json"] as const)("adds nothing in %s mode", (mode) => {
       const host = createFakeHost({ mode });
 

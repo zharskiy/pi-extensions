@@ -209,7 +209,6 @@ export const runAgentPlugin: Plugin = {
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));
     host.onSessionStart(() => {
-      work.reset();
       registerRunAgent();
       host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);
     });

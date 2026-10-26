@@ -6,7 +6,6 @@ type BackgroundWork = {
   sent(): void;
   answered(): void;
   idle(aborted: boolean): void;
-  reset(): void;
 };
 
 export const createBackgroundWork = (publish: (count: number) => void): BackgroundWork => {
@@ -57,11 +56,6 @@ export const createBackgroundWork = (publish: (count: number) => void): Backgrou
     },
     idle: (aborted) => {
       drop(aborted ? ["sent", "answered"] : ["answered"]);
-      sync();
-    },
-    reset: () => {
-      stages.clear();
-      published = undefined;
       sync();
     },
   };
