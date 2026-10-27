@@ -86,24 +86,79 @@ describe("transcript", () => {
 
     const durations = (host: ReturnType<typeof tuiHost>) => answers(host).map((entry) => entry.data);
 
-    it("adds a rule with the turn's duration once the session settles after a turn that used tools", () => {
+    const chat = (host: ReturnType<typeof tuiHost>) =>
+      host.chat.map((item) =>
+        item.kind === "assistant"
+          ? item.text
+          : (host.renderEntry(item.customType, item.data, { width: 30 })[0] ?? "").replaceAll("─", "").trim(),
+      );
+
+    it("draws the rule right above the final answer of a turn that used tools", () => {
       const host = tuiHost();
 
       host.agentStart();
-      host.assistantEnd({ toolCalls: 2 });
+      host.assistantEnd({ toolCalls: 2, text: "looking" });
       vi.advanceTimersByTime(42_000);
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd({ text: "both tests pass now" });
 
-      expect(answers(host)).toEqual([]);
-
-      host.settle();
-
-      expect(answers(host)).toHaveLength(1);
+      expect(chat(host)).toEqual(["looking", "worked 42s", "both tests pass now"]);
 
       const [entry] = answers(host);
 
       expect(host.renderEntry(ANSWER, entry?.data, { width: 40 })).toEqual([
         `── worked 42s ${"─".repeat(26)}`,
+      ]);
+
+      host.settle();
+
+      expect(answers(host)).toHaveLength(1);
+    });
+
+    it("draws it above the last reply of the settled turn, not above replies made while agents still ran", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      host.assistantEnd({ toolCalls: 1, text: "spawning" });
+      work(host, 1);
+      host.assistantEnd({ text: "Started 5 agents" });
+      host.settle();
+      vi.advanceTimersByTime(60_000);
+      host.agentStart();
+      work(host, 2);
+      host.assistantEnd({ toolCalls: 1, text: "checking" });
+      work(host, 1);
+      host.assistantEnd({ text: "All 20 agents completed" });
+      host.settle();
+      vi.advanceTimersByTime(30_000);
+      host.agentStart();
+      work(host, 0);
+      host.assistantEnd({ text: "All 15 checks succeeded" });
+      host.settle();
+
+      expect(chat(host)).toEqual([
+        "spawning",
+        "Started 5 agents",
+        "checking",
+        "All 20 agents completed",
+        "worked 1m 30s",
+        "All 15 checks succeeded",
+      ]);
+    });
+
+    it("skips a reply after which the run goes on", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      host.assistantEnd({ toolCalls: 1, text: "editing" });
+      host.assistantEnd({ final: false, text: "done, but a message is queued" });
+      host.assistantEnd({ text: "now really done" });
+      host.settle();
+
+      expect(chat(host)).toEqual([
+        "editing",
+        "done, but a message is queued",
+        "worked 0s",
+        "now really done",
       ]);
     });
 
@@ -111,7 +166,7 @@ describe("transcript", () => {
       const host = tuiHost();
 
       host.agentStart();
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd({ text: "hi" });
       host.settle();
 
       expect(answers(host)).toEqual([]);
@@ -123,38 +178,26 @@ describe("transcript", () => {
       host.agentStart();
       host.assistantEnd({ toolCalls: 3 });
       vi.advanceTimersByTime(20_000);
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd({ final: false, text: "overloaded" });
       host.agentStart();
       vi.advanceTimersByTime(22_000);
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd({ text: "answer" });
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 42_000 }]);
+      expect(chat(host).slice(-2)).toEqual(["worked 42s", "answer"]);
     });
 
-    it("keeps the turn open across idle while background work is pending and adds the rule after the final answer", () => {
+    it("adds the rule at the end when the turn settles without a final answer to draw it above", () => {
       const host = tuiHost();
 
       host.agentStart();
-      work(host, 1);
-      host.assistantEnd({ toolCalls: 1 });
-      host.assistantEnd({ toolCalls: 0 });
-      vi.advanceTimersByTime(10_000);
-      host.settle();
-
-      expect(answers(host)).toEqual([]);
-
-      vi.advanceTimersByTime(50_000);
-      host.agentStart();
+      host.assistantEnd({ toolCalls: 1, text: "trying" });
       vi.advanceTimersByTime(5_000);
-      host.assistantEnd({ toolCalls: 0 });
-      work(host, 0);
-
-      expect(answers(host)).toEqual([]);
-
+      host.assistantEnd({ final: false, text: "error" });
       host.settle();
 
-      expect(durations(host)).toEqual([{ ms: 65_000 }]);
+      expect(chat(host)).toEqual(["trying", "error", "worked 5s"]);
     });
 
     it("adds the rule when the last pending work clears after the session went idle", () => {
@@ -166,7 +209,7 @@ describe("transcript", () => {
       host.settle();
       host.agentStart();
       vi.advanceTimersByTime(30_000);
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd();
       host.settle();
 
       expect(answers(host)).toEqual([]);
@@ -185,12 +228,17 @@ describe("transcript", () => {
       host.assistantEnd({ toolCalls: 1 });
       host.settle();
       work(host, 0, "one");
+      host.agentStart();
+      host.assistantEnd({ text: "one is done" });
+      host.settle();
 
       expect(answers(host)).toEqual([]);
 
+      host.agentStart();
       work(host, 0, "two");
+      host.assistantEnd({ text: "two is done" });
 
-      expect(answers(host)).toHaveLength(1);
+      expect(chat(host).slice(-2)).toEqual(["worked 0s", "two is done"]);
     });
 
     it("ignores a malformed background work report", () => {
@@ -199,7 +247,7 @@ describe("transcript", () => {
       host.agentStart();
       host.emit(BACKGROUND_WORK_CHANNEL, { source: "pi-subagents", count: "1" });
       host.assistantEnd({ toolCalls: 1 });
-      host.settle();
+      host.assistantEnd();
 
       expect(answers(host)).toHaveLength(1);
     });
@@ -213,12 +261,12 @@ describe("transcript", () => {
       host.settle();
       vi.advanceTimersByTime(20_000);
       host.agentStart();
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd();
       host.settle();
       vi.advanceTimersByTime(20_000);
       host.agentStart();
-      host.assistantEnd({ toolCalls: 0 });
       work(host, 0);
+      host.assistantEnd();
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 40_000 }]);
@@ -229,31 +277,31 @@ describe("transcript", () => {
 
       host.agentStart();
       work(host, 1);
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd();
       host.settle();
       host.agentStart();
       host.assistantEnd({ toolCalls: 1 });
-      host.assistantEnd({ toolCalls: 0 });
       work(host, 0);
+      host.assistantEnd();
       host.settle();
 
       expect(answers(host)).toHaveLength(1);
     });
 
-    it("starts a new turn after the session settled", () => {
+    it("starts a new turn after the last one was answered", () => {
       const host = tuiHost();
 
       host.agentStart();
       host.assistantEnd({ toolCalls: 1 });
-      host.assistantEnd({ toolCalls: 0 });
       vi.advanceTimersByTime(30_000);
+      host.assistantEnd();
       host.settle();
       vi.advanceTimersByTime(60_000);
       host.agentStart();
       vi.advanceTimersByTime(5_000);
       host.assistantEnd({ toolCalls: 1 });
       vi.advanceTimersByTime(1_000);
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd();
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 30_000 }, { ms: 6_000 }]);
@@ -265,7 +313,7 @@ describe("transcript", () => {
       host.agentStart();
       work(host, 1);
       host.assistantEnd({ toolCalls: 2 });
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd({ final: false });
       host.settle({ aborted: true });
       work(host, 0);
 
@@ -275,7 +323,7 @@ describe("transcript", () => {
       host.agentStart();
       vi.advanceTimersByTime(3_000);
       host.assistantEnd({ toolCalls: 1 });
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd();
       host.settle();
 
       expect(durations(host)).toEqual([{ ms: 3_000 }]);
@@ -288,7 +336,7 @@ describe("transcript", () => {
       host.start();
       host.agentStart();
       host.assistantEnd({ toolCalls: 1 });
-      host.assistantEnd({ toolCalls: 0 });
+      host.assistantEnd();
       host.settle();
 
       expect(answers(host)).toEqual([]);

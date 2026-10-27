@@ -51,8 +51,14 @@ export const createTranscript = (host: Host, home = homedir()) => {
   });
 
   host.onAssistantEnd((info) => {
-    if (turn) {
-      turn = countTools(turn, info);
+    if (!turn) {
+      return;
+    }
+
+    turn = countTools(turn, info);
+
+    if (info.final && !waiting()) {
+      settle();
     }
   });
 
