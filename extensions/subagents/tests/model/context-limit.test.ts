@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentBudget,
-  budgetStep,
+  agentLimit,
   effectiveContextLimit,
-  type StepBudget,
+  limitStep,
+  type StepLimit,
 } from "../../core/model/context-limit.ts";
 
 describe("effective context limit", () => {
@@ -18,22 +18,22 @@ describe("effective context limit", () => {
   });
 });
 
-describe("agent budget", () => {
+describe("agent limit", () => {
   const settings = { reserveTokens: 16_000, softContextRatio: 0.8, hardContextRatio: 1.15 };
 
   it("requests at the effective limit, warns at the soft ratio and aborts past the hard ratio", () => {
-    const budget = agentBudget(100_000, 400_000, settings);
+    const limit = agentLimit(100_000, 400_000, settings);
 
-    expect(budget).toMatchObject({ request: 100_000, warn: 80_000 });
-    expect(budget.ceiling).toBeCloseTo(115_000);
+    expect(limit).toMatchObject({ request: 100_000, warn: 80_000 });
+    expect(limit.ceiling).toBeCloseTo(115_000);
   });
 
   it("caps the request by the window minus the reserve", () => {
-    expect(agentBudget(300_000, 200_000, settings).request).toBe(184_000);
+    expect(agentLimit(300_000, 200_000, settings).request).toBe(184_000);
   });
 });
 
-const agent: StepBudget = {
+const agent: StepLimit = {
   request: 100_000,
   warn: 80_000,
   ceiling: 115_000,
@@ -45,25 +45,25 @@ const fresh = { warned: false, requested: false, turnsSinceRequest: 0 };
 
 const requestedFor = (turnsSinceRequest: number) => ({ warned: true, requested: true, turnsSinceRequest });
 
-describe("budget step before the request", () => {
+describe("limit step before the request", () => {
   it("requests at the request line, warns once at the warn line and is quiet below it", () => {
-    expect(budgetStep(79_999, agent, fresh)).toBe("none");
-    expect(budgetStep(80_000, agent, fresh)).toBe("warn");
-    expect(budgetStep(85_000, agent, { ...fresh, warned: true })).toBe("none");
-    expect(budgetStep(100_000, agent, { ...fresh, warned: true })).toBe("request");
-    expect(budgetStep(100_000, agent, fresh)).toBe("request");
+    expect(limitStep(79_999, agent, fresh)).toBe("none");
+    expect(limitStep(80_000, agent, fresh)).toBe("warn");
+    expect(limitStep(85_000, agent, { ...fresh, warned: true })).toBe("none");
+    expect(limitStep(100_000, agent, { ...fresh, warned: true })).toBe("request");
+    expect(limitStep(100_000, agent, fresh)).toBe("request");
   });
 });
 
-describe("budget step after the request", () => {
+describe("limit step after the request", () => {
   it("waits out the grace turns before the ceiling aborts", () => {
-    expect(budgetStep(150_000, agent, requestedFor(0))).toBe("none");
-    expect(budgetStep(150_000, agent, requestedFor(1))).toBe("none");
-    expect(budgetStep(115_000, agent, requestedFor(2))).toBe("abort");
+    expect(limitStep(150_000, agent, requestedFor(0))).toBe("none");
+    expect(limitStep(150_000, agent, requestedFor(1))).toBe("none");
+    expect(limitStep(115_000, agent, requestedFor(2))).toBe("abort");
   });
 
   it("aborts after the turn cap even under the ceiling", () => {
-    expect(budgetStep(101_000, agent, requestedFor(2))).toBe("none");
-    expect(budgetStep(101_000, agent, requestedFor(3))).toBe("abort");
+    expect(limitStep(101_000, agent, requestedFor(2))).toBe("none");
+    expect(limitStep(101_000, agent, requestedFor(3))).toBe("abort");
   });
 });

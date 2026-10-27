@@ -6,7 +6,6 @@ import type {
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
-  budgetLevel,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
@@ -16,7 +15,8 @@ import {
   handoffInstruction,
   handoffRetry,
   type Limits,
-  mainBudget,
+  limitLevel,
+  mainLimit,
   parseBusySignal,
   seedText,
 } from "../../../platform/shared/index.ts";
@@ -95,7 +95,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
 
   const requestDetails = (): HandoffRequestDetails => {
     const tokens = state.context?.tokens ?? undefined;
-    const request = mainBudget(state.context?.window ?? 0, limits())?.request;
+    const request = mainLimit(state.context?.window ?? 0, limits())?.request;
 
     return state.handedOff
       ? { reason: "manual", command: `/${HANDOFF_COMMAND}` }
@@ -442,7 +442,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       state = { ...state, userActive: true };
     }
 
-    const level = budgetLevel(context.tokens, mainBudget(context.window, limits()));
+    const level = limitLevel(context.tokens, mainLimit(context.window, limits()));
 
     state = { ...state, context: level === "unknown" ? undefined : context };
 

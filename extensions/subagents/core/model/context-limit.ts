@@ -1,17 +1,17 @@
-import type { HandoffBudget } from "../../../../platform/shared/index.ts";
+import type { HandoffLimit } from "../../../../platform/shared/index.ts";
 import type { Settings } from "./settings.ts";
 
 const UNKNOWN_LIMIT = 0;
 
-export type StepBudget = HandoffBudget & {
+export type StepLimit = HandoffLimit & {
   ceiling: number;
   graceTurns: number;
   maxTurnsAfterRequest: number;
 };
 
-type BudgetState = { warned: boolean; requested: boolean; turnsSinceRequest: number };
+type LimitState = { warned: boolean; requested: boolean; turnsSinceRequest: number };
 
-type BudgetStep = "none" | "warn" | "request" | "abort";
+type LimitStep = "none" | "warn" | "request" | "abort";
 
 export const effectiveContextLimit = (limit: number, window: number, reserveTokens: number) => {
   if (window <= 0 || limit <= UNKNOWN_LIMIT) {
@@ -21,11 +21,11 @@ export const effectiveContextLimit = (limit: number, window: number, reserveToke
   return Math.max(1, Math.min(limit, window - reserveTokens));
 };
 
-export const agentBudget = (
+export const agentLimit = (
   definitionLimit: number,
   window: number,
   settings: Pick<Settings, "reserveTokens" | "softContextRatio" | "hardContextRatio">,
-): StepBudget => {
+): StepLimit => {
   const request = effectiveContextLimit(definitionLimit, window, settings.reserveTokens);
 
   return {
@@ -37,20 +37,20 @@ export const agentBudget = (
   };
 };
 
-const shouldAbort = (tokens: number, budget: StepBudget, turnsSinceRequest: number) => {
-  const ceilingAbort = tokens >= budget.ceiling && turnsSinceRequest >= budget.graceTurns;
+const shouldAbort = (tokens: number, limit: StepLimit, turnsSinceRequest: number) => {
+  const ceilingAbort = tokens >= limit.ceiling && turnsSinceRequest >= limit.graceTurns;
 
-  return ceilingAbort || turnsSinceRequest >= budget.maxTurnsAfterRequest;
+  return ceilingAbort || turnsSinceRequest >= limit.maxTurnsAfterRequest;
 };
 
-export const budgetStep = (tokens: number, budget: StepBudget, state: BudgetState): BudgetStep => {
+export const limitStep = (tokens: number, limit: StepLimit, state: LimitState): LimitStep => {
   if (state.requested) {
-    return shouldAbort(tokens, budget, state.turnsSinceRequest) ? "abort" : "none";
+    return shouldAbort(tokens, limit, state.turnsSinceRequest) ? "abort" : "none";
   }
 
-  if (tokens >= budget.request) {
+  if (tokens >= limit.request) {
     return "request";
   }
 
-  return !state.warned && tokens >= budget.warn ? "warn" : "none";
+  return !state.warned && tokens >= limit.warn ? "warn" : "none";
 };

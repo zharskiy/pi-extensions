@@ -17,13 +17,6 @@ export {
 } from "./channels/host-channels.ts";
 export { HINT_STATUS_PREFIX, MIRROR_STATUS_PREFIX } from "./channels/status-keys.ts";
 export {
-  type BudgetLevel,
-  budgetLevel,
-  type HandoffBudget,
-  type Limits,
-  mainBudget,
-} from "./handoff/handoff-budget.ts";
-export {
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
@@ -35,6 +28,13 @@ export {
   parseSeedDetails,
   validateHandoff,
 } from "./handoff/handoff-document.ts";
+export {
+  type HandoffLimit,
+  type LimitLevel,
+  type Limits,
+  limitLevel,
+  mainLimit,
+} from "./handoff/handoff-limit.ts";
 export {
   type HandoffAudience,
   handoffInstruction,

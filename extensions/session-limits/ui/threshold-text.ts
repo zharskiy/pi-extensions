@@ -1,11 +1,11 @@
 import type { ThemeToken } from "../../../platform/pi-adapter/index.ts";
 import {
-  budgetLevel,
   DOT,
   formatTokens,
   formatWindow,
   type Limits,
-  mainBudget,
+  limitLevel,
+  mainLimit,
 } from "../../../platform/shared/index.ts";
 import { MARKS } from "../../../platform/ui-kit/index.ts";
 import type { ContextTokens } from "../core/thresholds.ts";
@@ -26,13 +26,11 @@ export const segmentFor = (
     return undefined;
   }
 
-  const budget = mainBudget(context.window, limits);
+  const limit = mainLimit(context.window, limits);
 
-  if (!budget || budgetLevel(context.tokens, budget) === "normal") {
+  if (!limit || limitLevel(context.tokens, limit) === "normal") {
     return undefined;
   }
 
-  return notice(
-    `handoff at ${formatWindow(budget.request)} tokens${DOT}${formatTokens(context.tokens)} used`,
-  );
+  return notice(`handoff at ${formatWindow(limit.request)} tokens${DOT}${formatTokens(context.tokens)} used`);
 };

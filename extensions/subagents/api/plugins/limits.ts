@@ -1,7 +1,7 @@
 import { HANDOFF_REQUEST_TYPE, type HandoffRequestDetails } from "../../../../platform/shared/index.ts";
 import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
-import { agentBudget, budgetStep } from "../../core/model/context-limit.ts";
+import { agentLimit, limitStep } from "../../core/model/context-limit.ts";
 import { handoffService } from "../../core/model/handoff.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 
@@ -23,10 +23,10 @@ export const limitsPlugin: Plugin = {
         return;
       }
 
-      const budget = agentBudget(record.contextLimit, context.window, settings);
+      const limit = agentLimit(record.contextLimit, context.window, settings);
       const tokens = context.tokens ?? 0;
 
-      const step = budgetStep(tokens, budget, {
+      const step = limitStep(tokens, limit, {
         warned: warned.has(id),
         requested: record.handoffRequested,
         turnsSinceRequest: turns - (handoffTurn.get(id) ?? turns),
@@ -34,7 +34,7 @@ export const limitsPlugin: Plugin = {
 
       if (step === "warn") {
         warned.add(id);
-        void runner.route(id, { sender: LIMITS_SENDER, text: softWarning(tokens, budget.request) });
+        void runner.route(id, { sender: LIMITS_SENDER, text: softWarning(tokens, limit.request) });
         return;
       }
 
@@ -45,7 +45,7 @@ export const limitsPlugin: Plugin = {
         void runner.route(id, {
           customType: HANDOFF_REQUEST_TYPE,
           text: handoffService.instruction(record.handoffPath),
-          details: { reason: "limit", tokens, request: budget.request } satisfies HandoffRequestDetails,
+          details: { reason: "limit", tokens, request: limit.request } satisfies HandoffRequestDetails,
         });
         return;
       }

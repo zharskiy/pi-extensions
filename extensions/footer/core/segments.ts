@@ -1,11 +1,11 @@
 import type { ContextSnapshot, Host, ModelInfo } from "../../../platform/pi-adapter/index.ts";
 import {
-  type BudgetLevel,
-  budgetLevel,
   HINT_STATUS_PREFIX,
+  type LimitLevel,
   type Limits,
+  limitLevel,
   MIRROR_STATUS_PREFIX,
-  mainBudget,
+  mainLimit,
   type SpendingTotals,
   sessionCacheHit,
 } from "../../../platform/shared/index.ts";
@@ -67,12 +67,10 @@ export const statusLines = (statuses: ReadonlyMap<string, string>): string[] =>
 export const hintTexts = (statuses: ReadonlyMap<string, string>): string[] =>
   statusTexts(statuses, (key) => key.startsWith(HINT_STATUS_PREFIX));
 
-export type ContextBase = { base: number; level?: BudgetLevel };
+export type ContextBase = { base: number; level?: LimitLevel };
 
 export const contextBase = ({ context, limits }: FooterState): ContextBase => {
-  const budget = limits && mainBudget(context.window, limits);
+  const limit = limits && mainLimit(context.window, limits);
 
-  return budget
-    ? { base: budget.request, level: budgetLevel(context.tokens, budget) }
-    : { base: context.window };
+  return limit ? { base: limit.request, level: limitLevel(context.tokens, limit) } : { base: context.window };
 };
