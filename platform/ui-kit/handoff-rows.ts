@@ -12,9 +12,9 @@ import { markOf } from "./glyphs.ts";
 import { EXPAND_BINDING, expandHint } from "./key-hints.ts";
 import { type RowRender, row, rowChildren, rowText, wrapChild } from "./row.ts";
 
-const SEED_TITLE = "Handoff";
+const SEED_TITLE = "handoff";
 
-const SESSION_SEED_TITLE = "Handoff from the previous session";
+const SESSION_SEED_TITLE = "handoff from the previous session";
 
 const firstSentence = (text: string) => {
   const [line = ""] = text.trim().split("\n");
@@ -27,7 +27,7 @@ const seedTitle = (details: unknown) => {
   const source = parseSeedDetails(details);
 
   if (source?.from === "agent") {
-    return `Handoff from agent ${source.id}${DOT}link ${source.link}`;
+    return `handoff from agent ${source.id}${DOT}link ${source.link}`;
   }
 
   return source ? SESSION_SEED_TITLE : SEED_TITLE;
@@ -51,7 +51,7 @@ export const handoffSeedMessage =
   (message, width, expanded, theme) =>
     seedRow(seedTitle(message.details), message.text, expanded, keyText(EXPAND_BINDING))(width, theme);
 
-const REQUEST_TITLE = "Handoff requested";
+const REQUEST_TITLE = "handoff requested";
 
 const requestTitle = (details: unknown) => {
   const known = parseRequestDetails(details);

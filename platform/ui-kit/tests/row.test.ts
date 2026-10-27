@@ -103,7 +103,7 @@ describe("row", () => {
       at(
         {
           mark: "info",
-          title: "Handoff from the previous session",
+          title: "handoff from the previous session",
           children: [summary],
           hint: expandHint("ctrl+o"),
           hintCuts: true,

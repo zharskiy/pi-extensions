@@ -1213,7 +1213,7 @@ describe("handoff seed message", () => {
 
     expect(
       host.renderMessage(HANDOFF_TYPE, { text: "Carry on. More.", details: { from: "session" } }),
-    ).toEqual(["» Handoff from the previous session", "  ↳ Carry on. (<app.tools.expand> to expand)"]);
+    ).toEqual(["» handoff from the previous session", "  ↳ Carry on. (<app.tools.expand> to expand)"]);
   });
 });
 
@@ -1272,6 +1272,6 @@ describe("handoff request message", () => {
         text: "do it",
         details: { reason: "limit", tokens: 176_000, request: 175_000 },
       }),
-    ).toEqual(["» Handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)"]);
+    ).toEqual(["» handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)"]);
   });
 });

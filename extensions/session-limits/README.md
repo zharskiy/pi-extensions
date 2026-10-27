@@ -17,12 +17,12 @@ A long session eventually fills the model's context window. Before that happens,
 ```
  » Handoff at 175k tokens · 142.3k used
 
- » Handoff requested · 175k of 175k tokens
+ » handoff requested · 175k of 175k tokens
 
  ✓ handoff
    ↳ Saved ~/…
 
- » Handoff from the previous session
+ » handoff from the previous session
    ↳ This session continues the previous session /s/main.j... (ctrl+o to expand)
 ```
 
@@ -39,7 +39,7 @@ Start pi and try:
 |---|---|
 | Keep working until the context grows | A warning notice below the editor shows the handoff threshold and the tokens used, then pi switches to a new session started from it. |
 | Watch the footer while the context grows | The `context N of X` figure counts toward the handoff point (X, the hard threshold), so a handoff is due when N reaches X. |
-| `/session-handoff` | A "Handoff requested" row appears in the transcript (no toast), the model writes a handoff, then pi switches to a new session started from it. |
+| `/session-handoff` | A "handoff requested" row appears in the transcript (no toast), the model writes a handoff, then pi switches to a new session started from it. |
 | Ask the model to save a handoff on its own | The `handoff` tool refuses unless a handoff was requested. |
 | `/session-handoff finish the login tests` | The same, with the text folded into the instruction and repeated in the new session's preface. |
 

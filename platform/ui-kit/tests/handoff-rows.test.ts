@@ -25,14 +25,14 @@ const draw = (expanded: boolean, width: number, details: unknown = { from: "sess
 describe("handoff seed message", () => {
   it("shows the info marker, the title and the first sentence cut so the hint keeps its place", () => {
     expect(padded(draw(false, 79))).toEqual([
-      " » Handoff from the previous session",
+      " » handoff from the previous session",
       "   ↳ This session continues the previous session /s/main.j... (ctrl+o to expand)",
     ]);
   });
 
   it("lets the hint give way at 40 columns", () => {
     expect(padded(draw(false, 39))).toEqual([
-      " » Handoff from the previous session",
+      " » handoff from the previous session",
       "   ↳ This session continues the previ...",
     ]);
   });
@@ -50,13 +50,13 @@ describe("handoff seed message", () => {
       tokenOf("This session continues the previous session /s/main.jsonl, which reached its context limit."),
     ).toBe("muted");
     expect(tokenOf("(ctrl+o to expand)")).toBe("dim");
-    expect(bolded).toContain("Handoff from the previous session");
+    expect(bolded).toContain("handoff from the previous session");
   });
 
   it("shows the whole seed wrapped at column 4 without a hint when expanded", () => {
     const lines = draw(true, 40);
 
-    expect(lines[0]).toBe("» Handoff from the previous session");
+    expect(lines[0]).toBe("» handoff from the previous session");
     expect(lines[1]?.startsWith("  ↳ This session continues")).toBe(true);
     expect(lines).toContain("    ## Outcome");
     expect(lines.at(-1)).toBe("    The parser is fixed.");
@@ -81,11 +81,11 @@ describe("handoff seed message", () => {
 
   it("titles the seed by its origin, and plainly when the origin is unknown", () => {
     expect(draw(false, 200, { from: "agent", id: "scout-1", link: 2 })[0]).toBe(
-      "» Handoff from agent scout-1 · link 2",
+      "» handoff from agent scout-1 · link 2",
     );
-    expect(draw(false, 200, { from: "session" })[0]).toBe("» Handoff from the previous session");
-    expect(draw(false, 200, null)[0]).toBe("» Handoff");
-    expect(draw(false, 200, { from: "agent", id: "scout-1" })[0]).toBe("» Handoff");
+    expect(draw(false, 200, { from: "session" })[0]).toBe("» handoff from the previous session");
+    expect(draw(false, 200, null)[0]).toBe("» handoff");
+    expect(draw(false, 200, { from: "agent", id: "scout-1" })[0]).toBe("» handoff");
   });
 });
 
@@ -131,23 +131,23 @@ describe("handoff request message", () => {
 
   it("names the figures of a limit request and gives the expand hint", () => {
     expect(draw({ reason: "limit", tokens: 176_000, request: 175_000 })).toEqual([
-      "» Handoff requested · 176k of 175k tokens (ctrl+o to expand)",
+      "» handoff requested · 176k of 175k tokens (ctrl+o to expand)",
     ]);
   });
 
   it("names the command of a manual request and nothing for unknown details", () => {
     expect(draw({ reason: "manual", command: "/hand-over" })[0]).toBe(
-      "» Handoff requested · /hand-over (ctrl+o to expand)",
+      "» handoff requested · /hand-over (ctrl+o to expand)",
     );
-    expect(draw({ reason: "manual" })[0]).toBe("» Handoff requested (ctrl+o to expand)");
-    expect(draw(undefined)[0]).toBe("» Handoff requested (ctrl+o to expand)");
-    expect(draw({ reason: "limit" })[0]).toBe("» Handoff requested (ctrl+o to expand)");
+    expect(draw({ reason: "manual" })[0]).toBe("» handoff requested (ctrl+o to expand)");
+    expect(draw(undefined)[0]).toBe("» handoff requested (ctrl+o to expand)");
+    expect(draw({ reason: "limit" })[0]).toBe("» handoff requested (ctrl+o to expand)");
   });
 
   it("shows the whole instruction wrapped at column 4 without a hint when expanded", () => {
     const lines = draw({ reason: "manual", command: "/hand-over" }, true, 40);
 
-    expect(lines[0]).toBe("» Handoff requested · /hand-over");
+    expect(lines[0]).toBe("» handoff requested · /hand-over");
     expect(lines[1]).toBe("  ↳ Save the handoff now.");
     expect(lines.at(-1)).toBe("    Then stop.");
   });

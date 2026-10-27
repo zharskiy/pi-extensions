@@ -116,13 +116,13 @@ describe("limits plugin", () => {
         text: "x",
         details: { reason: "limit", tokens: 176_000, request: 175_000 },
       })[0],
-    ).toBe("» Handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)");
+    ).toBe("» handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)");
     expect(
       host.renderMessage("pi-handoff-seed", {
         text: "Carry on. More.",
         details: { from: "agent", id: "a3", link: 2 },
       })[0],
-    ).toBe("» Handoff from agent a3 · link 2");
+    ).toBe("» handoff from agent a3 · link 2");
   });
 
   it("closes the agent as handoff and wakes the caller with the file path when the handoff is valid", async () => {
