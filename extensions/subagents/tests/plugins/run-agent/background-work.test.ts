@@ -30,7 +30,7 @@ const setup = () => {
 
   const answer = () => {
     harness.host.agentStart();
-    harness.host.assistantEnd({ toolCalls: 0 });
+    harness.host.assistantStart();
   };
 
   harness.host.agentStart();
@@ -39,7 +39,7 @@ const setup = () => {
 };
 
 describe("background work", () => {
-  it("counts a background batch from its start until the model answered its wake and the session settled", async () => {
+  it("counts a background batch from its start until the model starts answering its wake", async () => {
     const { run, runtime, host, counts, answer } = setup();
 
     await run(2);
@@ -58,27 +58,24 @@ describe("background work", () => {
 
     answer();
 
-    expect(counts()).toEqual([1, 2]);
-
-    host.settle();
-
     expect(counts()).toEqual([1, 2, 0]);
   });
 
-  it("keeps a wake that joins a busy run pending until that run settles", async () => {
+  it("keeps a batch counted until its result is sent, even when the model answers meanwhile", async () => {
     const { run, runtime, host, counts } = setup();
 
     await run(1);
+    host.assistantStart();
+
+    expect(counts()).toEqual([1]);
+
     runtime.children[0].finish("done while busy");
     await flushMicrotasks();
 
     expect(host.hidden[0].delivery).toBe("followUp");
-
-    host.assistantEnd({ toolCalls: 0 });
-
     expect(counts()).toEqual([1]);
 
-    host.settle();
+    host.assistantStart();
 
     expect(counts()).toEqual([1, 0]);
   });
@@ -87,7 +84,7 @@ describe("background work", () => {
     const { run, runtime, host, counts, answer } = setup();
 
     await run(1);
-    host.assistantEnd({ toolCalls: 0 });
+    host.assistantEnd();
     runtime.children[0].finish("late result");
     await flushMicrotasks();
     host.settle();
@@ -95,7 +92,6 @@ describe("background work", () => {
     expect(counts()).toEqual([1]);
 
     answer();
-    host.settle();
 
     expect(counts()).toEqual([1, 0]);
   });
@@ -104,7 +100,8 @@ describe("background work", () => {
     const { run, host, counts } = setup();
 
     await run(1);
-    host.assistantEnd({ toolCalls: 0 });
+    host.assistantStart();
+    host.assistantEnd();
     host.settle();
 
     expect(counts()).toEqual([1]);

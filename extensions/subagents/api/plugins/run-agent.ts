@@ -169,12 +169,14 @@ export const runAgentPlugin: Plugin = {
       invalidators.delete(batchId);
     });
 
-    host.onAssistantEnd(() => {
+    host.onAssistantStart(() => {
       work.answered();
     });
 
     host.onIdle(({ aborted }) => {
-      work.idle(aborted);
+      if (aborted) {
+        work.aborted();
+      }
     });
 
     const onRendered = (batchId: string, invalidate: () => void) => {

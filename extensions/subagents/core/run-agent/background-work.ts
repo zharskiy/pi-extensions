@@ -1,11 +1,11 @@
-type Stage = "running" | "settled" | "sent" | "answered";
+type Stage = "running" | "settled" | "sent";
 
 type BackgroundWork = {
   started(batchId: string): void;
   settled(batchId: string): void;
   sent(): void;
   answered(): void;
-  idle(aborted: boolean): void;
+  aborted(): void;
 };
 
 export const createBackgroundWork = (publish: (count: number) => void): BackgroundWork => {
@@ -22,20 +22,14 @@ export const createBackgroundWork = (publish: (count: number) => void): Backgrou
     publish(published);
   };
 
-  const advance = (from: Stage, to: Stage) => {
+  const dropSent = () => {
     stages.forEach((stage, batchId) => {
-      if (stage === from) {
-        stages.set(batchId, to);
-      }
-    });
-  };
-
-  const drop = (done: Stage[]) => {
-    stages.forEach((stage, batchId) => {
-      if (done.includes(stage)) {
+      if (stage === "sent") {
         stages.delete(batchId);
       }
     });
+
+    sync();
   };
 
   return {
@@ -49,14 +43,13 @@ export const createBackgroundWork = (publish: (count: number) => void): Backgrou
       }
     },
     sent: () => {
-      advance("settled", "sent");
+      stages.forEach((stage, batchId) => {
+        if (stage === "settled") {
+          stages.set(batchId, "sent");
+        }
+      });
     },
-    answered: () => {
-      advance("sent", "answered");
-    },
-    idle: (aborted) => {
-      drop(aborted ? ["sent", "answered"] : ["answered"]);
-      sync();
-    },
+    answered: dropSent,
+    aborted: dropSent,
   };
 };
