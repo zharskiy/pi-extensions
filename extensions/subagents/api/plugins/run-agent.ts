@@ -175,7 +175,7 @@ export const runAgentPlugin: Plugin = {
 
     host.onIdle(({ aborted }) => {
       if (aborted) {
-        work.aborted();
+        work.answered();
       }
     });
 

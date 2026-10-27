@@ -50,6 +50,10 @@ export const createTranscript = (host: Host, home = homedir()) => {
     turn ??= openTurn(Date.now());
   });
 
+  host.onAssistantStart(() => {
+    turn ??= openTurn(Date.now());
+  });
+
   host.onAssistantEnd((info) => {
     if (!turn) {
       return;

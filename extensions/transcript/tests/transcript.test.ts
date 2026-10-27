@@ -162,6 +162,25 @@ describe("transcript", () => {
       ]);
     });
 
+    it("gives tool work that goes on in the same run after a final reply a turn of its own", () => {
+      const host = tuiHost();
+
+      host.agentStart();
+      host.assistantStart();
+      host.assistantEnd({ toolCalls: 1, text: "editing" });
+      host.assistantStart();
+      host.assistantEnd({ text: "done" });
+      vi.advanceTimersByTime(1_000);
+      host.assistantStart();
+      vi.advanceTimersByTime(4_000);
+      host.assistantEnd({ toolCalls: 1, text: "one more check" });
+      host.assistantStart();
+      host.assistantEnd({ final: false, text: "error" });
+      host.settle();
+
+      expect(chat(host)).toEqual(["editing", "worked 0s", "done", "one more check", "error", "worked 4s"]);
+    });
+
     it("adds nothing for a turn that only answers", () => {
       const host = tuiHost();
 

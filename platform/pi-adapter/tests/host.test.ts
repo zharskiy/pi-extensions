@@ -257,7 +257,53 @@ describe("pi adapter", () => {
     await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
     await fire("message_end", ctx, reply("stop"));
 
-    expect(seen).toEqual(["start", false, false, true, false, false, true]);
+    expect(seen).toEqual(["start", false, false, false, false, false, true]);
+  });
+
+  it("shares a queued follow-up between hosts and takes it once when it starts", async () => {
+    const { pi, fire } = fakePi();
+    const sender = createPiHost(pi, { tools: new Map() });
+    const reader = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+    const ctx = fakeCtx("tui", false);
+    const reply = () => ({ message: { role: "assistant", stopReason: "stop", content: [] } });
+
+    reader.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+
+    sender.sendHiddenMessage({ customType: "wake", text: "first" });
+    sender.sendHiddenMessage({ customType: "wake", text: "second" });
+
+    await fire("message_end", ctx, reply());
+    await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
+    await fire("message_end", ctx, reply());
+    await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
+    await fire("message_end", ctx, reply());
+    await fire("agent_settled", ctx, { aborted: false });
+
+    expect(seen).toEqual([false, false, true]);
+  });
+
+  it("forgets a queued follow-up when the session shuts down", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+    const ctx = fakeCtx("tui", false);
+
+    host.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
+
+    await fire("session_shutdown", ctx, { reason: "quit" });
+    await fire("session_start", ctx);
+    await fire("message_end", ctx, { message: { role: "assistant", stopReason: "stop", content: [] } });
+
+    expect(seen).toEqual([true]);
   });
 
   it("forgets a queued follow-up when the run settles", async () => {

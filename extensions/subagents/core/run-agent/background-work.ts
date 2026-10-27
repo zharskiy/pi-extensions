@@ -5,7 +5,6 @@ type BackgroundWork = {
   settled(batchId: string): void;
   sent(): void;
   answered(): void;
-  aborted(): void;
 };
 
 export const createBackgroundWork = (publish: (count: number) => void): BackgroundWork => {
@@ -50,6 +49,5 @@ export const createBackgroundWork = (publish: (count: number) => void): Backgrou
       });
     },
     answered: dropSent,
-    aborted: dropSent,
   };
 };

@@ -81,8 +81,6 @@ type HeldCustom = { customType: string; content: string; display: boolean; detai
 
 const HELD_POLL_MS = 100;
 
-const RUN_STOPS = ["stop", "length"];
-
 const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
@@ -149,10 +147,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   };
 
   const endsRun = (ctx: ExtensionContext, stopReason: string, toolCalls: number) =>
-    toolCalls === 0 &&
-    RUN_STOPS.includes(stopReason) &&
-    !ctx.hasPendingMessages() &&
-    !followUpsQueued(sessionOf(ctx));
+    toolCalls === 0 && stopReason === "stop" && !ctx.hasPendingMessages() && !followUpsQueued(sessionOf(ctx));
 
   const startHeld = (customs: HeldCustom[]) => {
     const [first, ...rest] = customs;
@@ -249,6 +244,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     runActive = false;
     held.length = 0;
     stopHeldPoll();
+
+    if (state.ctx) {
+      dropFollowUps(sessionOf(state.ctx));
+    }
 
     await shutdownHandlers.reduce<Promise<void>>(
       (chain, handler) =>
