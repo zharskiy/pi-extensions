@@ -15,7 +15,7 @@ A long session eventually fills the model's context window. Before that happens,
 ## What it looks like
 
 ```
- » Handoff at 175k tokens · 142.3k used
+ » handoff at 175k tokens · 142.3k used
 
  » handoff requested · 175k of 175k tokens
 

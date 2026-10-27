@@ -175,7 +175,7 @@ describe("child session MCP", () => {
 
     const own = {
       name: "handoff",
-      label: "Handoff",
+      label: "handoff",
       description: "the agent's own",
       parameters: {},
       execute: async () => ({ text: "" }),

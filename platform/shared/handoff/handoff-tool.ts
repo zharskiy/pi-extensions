@@ -28,7 +28,7 @@ const handoffParameters = {
 
 export const handoffTool = (deps: HandoffToolDeps): ToolSpec<HandoffParams, unknown> => ({
   name: HANDOFF_TOOL,
-  label: "Handoff",
+  label: "handoff",
   description:
     "Saves your handoff when you are asked to write one. Pass the whole handoff with the sections the instruction lists; nothing else.",
   promptSnippet: "save your handoff when you are asked to write one",

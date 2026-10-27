@@ -19,7 +19,7 @@ export const segmentFor = (
   command: string,
 ): { token: ThemeToken; text: string } | undefined => {
   if (stuck) {
-    return { token: "error", text: `${MARKS.error} Handoff failed${DOT}run /${command}` };
+    return { token: "error", text: `${MARKS.error} handoff failed${DOT}run /${command}` };
   }
 
   if (!context || context.tokens === null) {
@@ -33,6 +33,6 @@ export const segmentFor = (
   }
 
   return notice(
-    `Handoff at ${formatWindow(budget.request)} tokens${DOT}${formatTokens(context.tokens)} used`,
+    `handoff at ${formatWindow(budget.request)} tokens${DOT}${formatTokens(context.tokens)} used`,
   );
 };

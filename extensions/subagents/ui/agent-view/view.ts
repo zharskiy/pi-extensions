@@ -111,7 +111,7 @@ const handoffLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
 
   const invalid = record.error ? ` (invalid: ${record.error})` : "";
 
-  return [padLine(theme, "warning", `Handoff file ${record.handoffPath}${invalid}`, inner)];
+  return [padLine(theme, "warning", `handoff file ${record.handoffPath}${invalid}`, inner)];
 };
 
 export const headerLines = (

@@ -299,9 +299,9 @@ describe("setNotice with pi's interactive layout", () => {
 
     footer();
     panel.setWidget("panel", () => ["panel row"]);
-    limits.setNotice("pi-session-limits", "Handoff after this turn");
+    limits.setNotice("pi-session-limits", "handoff after this turn");
 
-    expect(below()).toEqual([" Handoff after this turn", "", "usage", "", "panel row"]);
+    expect(below()).toEqual([" handoff after this turn", "", "usage", "", "panel row"]);
 
     limits.setNotice("pi-session-limits", undefined);
 
@@ -444,9 +444,9 @@ describe("setNotice with pi's interactive layout", () => {
     const after = createNotices(stateOf());
 
     footer();
-    after.setNotice("pi-session-limits", "Handoff after this turn");
+    after.setNotice("pi-session-limits", "handoff after this turn");
 
-    expect(below()).toEqual([" Handoff after this turn", "", "usage", ""]);
+    expect(below()).toEqual([" handoff after this turn", "", "usage", ""]);
   });
 
   it("draws a key set by two adapter copies once, with the last text", () => {

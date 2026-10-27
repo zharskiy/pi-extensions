@@ -454,9 +454,9 @@ describe("agent view header", () => {
       " tests failed twice",
       " stack",
     ]);
-    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" Handoff file /tmp/h.md");
+    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" handoff file /tmp/h.md");
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md", error: "missing Status" }))[3]).toBe(
-      " Handoff file /tmp/h.md (invalid: missing Status)",
+      " handoff file /tmp/h.md (invalid: missing Status)",
     );
 
     const painted = header(
