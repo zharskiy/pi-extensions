@@ -1442,7 +1442,7 @@ describe("pi adapter conformance", () => {
         return codes.includes("23") || codes.includes("0") || codes.includes("") ? false : italic;
       }, false);
 
-    it("emits an entry appended in an extension's agent_settled after the run's last message", async () => {
+    it("emits and stores an entry appended in an extension's message_end before that message", async () => {
       const dir = temp.make("pi-conformance-");
       const order: string[] = [];
       let fileOrder: string[] = [];
@@ -1462,8 +1462,10 @@ describe("pi adapter conformance", () => {
             {
               name: "marker",
               factory: (api) => {
-                api.on("agent_settled", () => {
-                  api.appendEntry("conformance:mark", {});
+                api.on("message_end", (event) => {
+                  if (event.message.role === "assistant" && event.message.stopReason === "stop") {
+                    api.appendEntry("conformance:mark", {});
+                  }
                 });
               },
             },
@@ -1520,8 +1522,92 @@ describe("pi adapter conformance", () => {
         vi.unstubAllEnvs();
       }
 
-      expect(order).toEqual(["assistant message_end", "assistant message_end", "mark"]);
-      expect(fileOrder.slice(-3)).toEqual(["toolResult", "assistant", "conformance:mark"]);
+      expect(order).toEqual(["assistant message_end", "mark", "assistant message_end"]);
+      expect(fileOrder.slice(-3)).toEqual(["toolResult", "conformance:mark", "assistant"]);
+    });
+
+    it("starts a custom follow-up queued during a run after the reply that would end it", async () => {
+      const dir = temp.make("pi-conformance-");
+      const order: string[] = [];
+
+      try {
+        vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+        const settingsManager = pi.SettingsManager.inMemory({});
+
+        const loader = new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager,
+          extensionFactories: [
+            {
+              name: "waker",
+              factory: (api) => {
+                api.on("message_start", (event) => {
+                  const message = event.message as { role: string; customType?: string };
+
+                  if (message.role === "custom") {
+                    order.push(message.customType ?? "custom");
+                  }
+
+                  if (message.role !== "assistant") {
+                    return;
+                  }
+
+                  order.push("assistant");
+
+                  if (order.length === 1) {
+                    api.sendMessage(
+                      { customType: "conformance:wake", content: "results", display: false },
+                      { deliverAs: "followUp", triggerTurn: true },
+                    );
+                  }
+                });
+                api.on("message_end", (event, ctx) => {
+                  if (event.message.role === "assistant") {
+                    order.push(`end ${event.message.stopReason} pending ${ctx.hasPendingMessages()}`);
+                  }
+                });
+              },
+            },
+          ],
+        });
+
+        await loader.reload();
+
+        const faux = fauxProvider();
+        const modelRuntime = await pi.ModelRuntime.create();
+
+        modelRuntime.registerNativeProvider(faux.provider);
+        faux.setResponses([
+          fauxAssistantMessage(fauxText("started")),
+          fauxAssistantMessage(fauxText("answered")),
+        ]);
+
+        const { session } = await pi.createAgentSession({
+          cwd: dir,
+          agentDir: dir,
+          modelRuntime,
+          model: faux.getModel() as never,
+          resourceLoader: loader,
+          settingsManager,
+          sessionManager: pi.SessionManager.inMemory(dir),
+        });
+
+        await session.bindExtensions({ mode: "print", uiContext: {} as unknown as pi.ExtensionUIContext });
+        await session.prompt("go");
+        session.dispose();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(order).toEqual([
+        "assistant",
+        "end stop pending false",
+        "conformance:wake",
+        "assistant",
+        "end stop pending false",
+      ]);
     });
 
     it("draws the user message between prompt marks the transcript pane takes off", () => {

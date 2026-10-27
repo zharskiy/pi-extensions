@@ -12,8 +12,9 @@ import { sharedPad } from "../tools/row-component.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
-const fakeCtx = (mode: string, idle = true) => ({
+const fakeCtx = (mode: string, idle = true, pending = false) => ({
   mode,
+  hasPendingMessages: () => pending,
   cwd: "/project",
   model: { contextWindow: 200_000 },
   modelRegistry: { isUsingOAuth: () => false },
@@ -226,7 +227,58 @@ describe("pi adapter", () => {
     });
     await fire("message_end", ctx, { message: { role: "toolResult", content: [] } });
 
-    expect(seen).toEqual([{ toolCalls: 2 }, { toolCalls: 0 }]);
+    expect(seen).toEqual([
+      { toolCalls: 2, final: false },
+      { toolCalls: 0, final: true },
+    ]);
+  });
+
+  it("marks a reply final only when the run ends with it", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: unknown[] = [];
+    const ctx = fakeCtx("tui", false);
+    const reply = (stopReason: string) => ({ message: { role: "assistant", stopReason, content: [] } });
+
+    host.onAssistantStart(() => seen.push("start"));
+    host.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+    await fire("message_start", ctx, reply("stop"));
+    await fire("message_end", ctx, reply("error"));
+    await fire("message_end", ctx, reply("aborted"));
+    await fire("message_end", ctx, reply("length"));
+    await fire("message_end", fakeCtx("tui", false, true), reply("stop"));
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
+
+    await fire("message_end", ctx, reply("stop"));
+    await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
+    await fire("message_end", ctx, reply("stop"));
+
+    expect(seen).toEqual(["start", false, false, true, false, false, true]);
+  });
+
+  it("forgets a queued follow-up when the run settles", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+    const ctx = fakeCtx("tui", false);
+    const reply = { message: { role: "assistant", stopReason: "stop", content: [] } };
+
+    host.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
+
+    await fire("agent_settled", ctx, { aborted: true });
+    await fire("agent_start", ctx);
+    await fire("message_end", ctx, reply);
+
+    expect(seen).toEqual([true]);
   });
 
   it("stays in the tool phase until the last parallel tool ends", async () => {

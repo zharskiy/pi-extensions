@@ -25,6 +25,7 @@ type LifecycleHost = {
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   onCompact(handler: () => void): void;
   onAgentStart(handler: () => void): void;
+  onAssistantStart(handler: () => void): void;
   onAssistantEnd(handler: (info: AssistantEnd) => void): void;
   onPhase(handler: (phase: Phase) => void): void;
   onDialog(handler: (event: DialogEvent) => void): void;

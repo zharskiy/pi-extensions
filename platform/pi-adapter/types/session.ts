@@ -33,4 +33,4 @@ export type DialogEvent = { phase: "start" | "end"; kind: DialogKind; title?: st
 
 export type IdleInfo = { aborted: boolean };
 
-export type AssistantEnd = { toolCalls: number };
+export type AssistantEnd = { toolCalls: number; final: boolean };

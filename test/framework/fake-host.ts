@@ -39,12 +39,15 @@ import { promptTokens } from "./usage-builders.ts";
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
+type ChatItem = { kind: "assistant"; text: string } | { kind: "entry"; customType: string; data: unknown };
+
 export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
   commands: Map<string, CommandSpec>;
   mainPrompt?: string;
   promptSections: Map<string, string>;
   entries: { customType: string; data: unknown }[];
+  chat: ChatItem[];
   files: Map<string, FakeSessionFile>;
   hidden: { message: CustomMessage; delivery: "followUp" | "run" }[];
   messages: { message: CustomMessage; delivery: "followUp" | "run" }[];
@@ -97,7 +100,8 @@ export type FakeHost = Host & {
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
   agentStart(): void;
-  assistantEnd(info: AssistantEnd): void;
+  assistantStart(): void;
+  assistantEnd(info?: Partial<AssistantEnd> & { text?: string }): void;
   setPhase(phase: Phase): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
@@ -138,6 +142,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const assistantStartHandlers: (() => void)[] = [];
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
@@ -201,6 +206,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     commands: new Map(),
     promptSections: new Map(),
     entries: [],
+    chat: [],
     files: new Map(),
     hidden: [],
     messages: [],
@@ -487,6 +493,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       host.entries.push({ customType, data: structuredClone(data) });
+      host.chat.push({ kind: "entry", customType, data: structuredClone(data) });
     },
     readEntries: <T>(customType: string, file?: string) =>
       sessionFile(file)
@@ -606,13 +613,23 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       host.setPhase("waiting");
     },
+    onAssistantStart: (handler) => {
+      assistantStartHandlers.push(handler);
+    },
+    assistantStart: () => {
+      assistantStartHandlers.forEach((handler) => {
+        handler();
+      });
+    },
     onAssistantEnd: (handler) => {
       assistantEndHandlers.push(handler);
     },
-    assistantEnd: (info) => {
+    assistantEnd: ({ toolCalls = 0, final = toolCalls === 0, text = "" } = {}) => {
       assistantEndHandlers.forEach((handler) => {
-        handler(info);
+        handler({ toolCalls, final });
       });
+
+      host.chat.push({ kind: "assistant", text });
     },
     onPhase: (handler) => {
       phaseHandlers.push(handler);

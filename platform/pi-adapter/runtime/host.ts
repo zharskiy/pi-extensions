@@ -29,6 +29,7 @@ import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
+import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -80,6 +81,10 @@ type HeldCustom = { customType: string; content: string; display: boolean; detai
 
 const HELD_POLL_MS = 100;
 
+const RUN_STOPS = ["stop", "length"];
+
+const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo) => void)[] = [];
@@ -88,6 +93,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const assistantStartHandlers: (() => void)[] = [];
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
@@ -136,6 +142,17 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     pi.sendUserMessage(text, { expandPromptTemplates: true, deliverAs: "followUp" });
   };
+
+  const followUp = (ctx: ExtensionContext, custom: HeldCustom) => {
+    queueFollowUp(sessionOf(ctx), custom.customType);
+    pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+  };
+
+  const endsRun = (ctx: ExtensionContext, stopReason: string, toolCalls: number) =>
+    toolCalls === 0 &&
+    RUN_STOPS.includes(stopReason) &&
+    !ctx.hasPendingMessages() &&
+    !followUpsQueued(sessionOf(ctx));
 
   const startHeld = (customs: HeldCustom[]) => {
     const [first, ...rest] = customs;
@@ -189,7 +206,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     };
 
     if (runActive) {
-      pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+      followUp(ctx, custom);
       return;
     }
 
@@ -273,7 +290,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     runActive = true;
     stopHeldPoll();
     held.splice(0).forEach((custom) => {
-      pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+      followUp(ctx, custom);
     });
 
     agentStartHandlers.forEach((handler) => {
@@ -286,6 +303,23 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("turn_start", (_event, ctx) => {
     capture(ctx);
     applyPhase({ type: "turn_start" });
+  });
+
+  pi.on("message_start", (event, ctx) => {
+    capture(ctx);
+
+    if (event.message.role === "custom") {
+      takeFollowUp(sessionOf(ctx), event.message, event.message.customType);
+      return;
+    }
+
+    if (event.message.role !== "assistant") {
+      return;
+    }
+
+    assistantStartHandlers.forEach((handler) => {
+      handler();
+    });
   });
 
   pi.on("message_update", (event, ctx) => {
@@ -309,7 +343,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    const info = { toolCalls: toolCallCount(event.message.content) };
+    const toolCalls = toolCallCount(event.message.content);
+    const info = { toolCalls, final: endsRun(ctx, event.message.stopReason, toolCalls) };
 
     assistantEndHandlers.forEach((handler) => {
       handler(info);
@@ -364,6 +399,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("agent_settled", (event, ctx) => {
     capture(ctx);
     runActive = false;
+    dropFollowUps(sessionOf(ctx));
     const info: IdleInfo = { aborted: event.aborted === true };
 
     idleHandlers.forEach((handler) => {
@@ -473,6 +509,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     session: () => sessionInfo(liveCtx(state), created),
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
+    },
+    onAssistantStart: (handler) => {
+      assistantStartHandlers.push(handler);
     },
     onAssistantEnd: (handler) => {
       assistantEndHandlers.push(handler);
