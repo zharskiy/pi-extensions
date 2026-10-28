@@ -12,7 +12,7 @@ const savedThinking = (agentDir: string) =>
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
-const startSession = async () => {
+const startSession = async ({ factory = modelDefault, startLevel = "high" } = {}) => {
   const agentDir = temp.make("pi-model-default-agent-");
   const cwd = temp.make("pi-model-default-cwd-");
   const models = [
@@ -20,8 +20,8 @@ const startSession = async () => {
     { id: "beta", reasoning: true },
     { id: "plain", reasoning: false },
   ];
-  const settings = { defaultProvider: "fake", defaultModel: "alpha", defaultThinkingLevel: "high" };
-  const started = await startPiSession({ agentDir, cwd, factory: modelDefault, settings, models });
+  const settings = { defaultProvider: "fake", defaultModel: "alpha", defaultThinkingLevel: startLevel };
+  const started = await startPiSession({ agentDir, cwd, factory, settings, models });
 
   return { ...started, agentDir };
 };
@@ -92,6 +92,56 @@ describe("the thinking level across model switches in a real pi session", () => 
 
     expect(session.thinkingLevel).toBe("off");
     expect(savedThinking(agentDir)).toBe("high");
+
+    session.dispose();
+  });
+
+  it("does not save the clamp of the chosen level put back after a switch", async () => {
+    const { session, agentDir, model } = await startSession({ startLevel: "medium" });
+
+    Object.assign(model("alpha"), { thinkingLevelMap: { xhigh: "xhigh" } });
+    session.setThinkingLevel("xhigh");
+
+    await vi.waitFor(() => expect(savedThinking(agentDir)).toBe("xhigh"));
+
+    await session.setModel(model("beta"));
+    await settle();
+
+    expect(session.thinkingLevel).toBe("high");
+    expect(savedThinking(agentDir)).toBe("xhigh");
+
+    await session.setModel(model("alpha"));
+    await settle();
+
+    expect(session.thinkingLevel).toBe("xhigh");
+
+    session.dispose();
+  });
+
+  it("does not save the level a switch lands on when its event reaches the extension after the switch", async () => {
+    const { session, agentDir, model } = await startSession({
+      factory: (pi) => {
+        pi.on("thinking_level_select", () => new Promise((resolve) => setTimeout(resolve, 10)));
+
+        return modelDefault(pi);
+      },
+    });
+
+    session.setThinkingLevel("low");
+
+    await vi.waitFor(() => expect(savedThinking(agentDir)).toBe("low"));
+
+    await session.setModel(model("plain"));
+    await settle();
+
+    expect(session.thinkingLevel).toBe("off");
+    expect(savedThinking(agentDir)).toBe("low");
+
+    await session.setModel(model("beta"));
+    await settle();
+
+    expect(session.thinkingLevel).toBe("low");
+    expect(savedThinking(agentDir)).toBe("low");
 
     session.dispose();
   });

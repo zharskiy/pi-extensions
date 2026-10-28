@@ -4,10 +4,13 @@ import type { Plugin } from "../../../platform/shared/index.ts";
 export const createModelDefault = (host: Host) => {
   let chosen: string | undefined;
   let landed: string | undefined;
+  let reapplying = false;
 
   host.onModelSelect(async (ref) => {
     if (chosen) {
+      reapplying = true;
       host.setThinkingLevel(chosen);
+      reapplying = false;
     }
 
     const level = host.thinkingLevel();
@@ -22,7 +25,7 @@ export const createModelDefault = (host: Host) => {
   });
 
   host.onThinkingSelect(async (level) => {
-    if (level === landed) {
+    if (reapplying || level === landed) {
       return;
     }
 
