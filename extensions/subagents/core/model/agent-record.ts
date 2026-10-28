@@ -1,8 +1,9 @@
-import type {
-  AnyToolSpec,
-  ContextSnapshot,
-  CustomMessage,
-  RoutedMessage,
+import {
+  type AnyToolSpec,
+  type ContextSnapshot,
+  type CustomMessage,
+  type RoutedMessage,
+  walkLineage,
 } from "../../../../platform/pi-adapter/index.ts";
 import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
@@ -18,14 +19,11 @@ export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: Agen
   return successor ? chainTerminal(registry, successor) : record;
 };
 
-export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] => {
-  const predecessor = record.predecessorId ? registry.get(record.predecessorId) : undefined;
-  const earlier = predecessor ? chainLinks(registry, predecessor) : [];
-
-  earlier.push(record);
-
-  return earlier;
-};
+export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] =>
+  walkLineage(record, (link) => (link.predecessorId ? registry.get(link.predecessorId) : undefined), {
+    key: (link) => link.id,
+    max: Number.POSITIVE_INFINITY,
+  }).links;
 
 export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 

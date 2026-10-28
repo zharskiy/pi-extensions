@@ -38,7 +38,7 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers, grantText, grantOrNone, sameGrant, isLead
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainLinks over the adapter's walkLineage), grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
@@ -85,7 +85,7 @@ extensions/subagents/
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
-│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file, re-parsing on change, and joins their transcripts
+│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file through the adapter's cached file reader and joins their transcripts
 │   │   └── list-model.ts                  # list sections, subtitle (with the counts), clearTargets, MAX_CLOSED_ROOTS
 │   └── fetch-tool/
 │       ├── fetch.ts                       # fetchPage: request, limits, redirects
