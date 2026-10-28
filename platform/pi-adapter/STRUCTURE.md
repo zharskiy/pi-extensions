@@ -17,6 +17,7 @@
 - `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages.
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).
 - `runtime/child-scope.ts`: the child scope in which no extension boots.
+- `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, and its restore of the model and thinking level on `session_start`.
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
 - `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts, context tokens.
@@ -57,6 +58,7 @@
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
 - `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
+- `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime: the model and thinking level kept across `newSession`.
 - `tests/phase.test.ts`: `runtime/phase.ts`.
 - `tests/child-scope.test.ts`: `runtime/child-scope.ts`.
 - `tests/session-file.test.ts`: `runtime/session-file.ts`.

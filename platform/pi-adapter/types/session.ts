@@ -19,6 +19,7 @@ export type ShutdownReason = "quit" | "reload" | "new" | "resume" | "fork";
 export type NewSessionOptions = {
   parentSession?: string;
   seed?: CustomMessage;
+  keepSelection?: boolean;
 };
 
 export type SessionControl = {
