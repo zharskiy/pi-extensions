@@ -79,7 +79,7 @@ export const agentSetupPlugin: Plugin = {
         return { error };
       }
 
-      const failure = writeChanges(paths[scope], changes);
+      const failure = writeChanges(paths[scope], changes, scope === "project" ? info.cwd : undefined);
 
       if (failure) {
         notify(failure, "error");

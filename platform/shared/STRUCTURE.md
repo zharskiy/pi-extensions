@@ -21,6 +21,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
 - `plain-object.ts`: `isPlainObject`.
+- `project-dir.ts`: `ensureProjectDir`.
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-limit.test.ts`: `limitLevel` and `mainLimit`.
 - `tests/handoff-tool.test.ts`: `handoffTool`.
@@ -28,3 +29,4 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.
+- `tests/project-dir.test.ts`: `ensureProjectDir` on fresh and existing folders and in a git repo.

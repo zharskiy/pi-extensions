@@ -47,8 +47,9 @@ export const createMcpImport = (host: Host, home: string) => {
 
   const prepare = (source: Source, scope: Scope) => prepareImport(source, scope, places());
 
-  const write = (path: string, text: string | undefined) => {
-    const problem = writeImport(path, text);
+  const write = (pair: Pair, text: string | undefined) => {
+    const projectCwd = pair.scope === "project" ? places().cwd : undefined;
+    const problem = writeImport(pair.path, text, projectCwd);
 
     if (problem) {
       fail(problem);
@@ -89,7 +90,7 @@ export const createMcpImport = (host: Host, home: string) => {
       return;
     }
 
-    if (write(pair.path, pair.plan.text)) {
+    if (write(pair, pair.plan.text)) {
       notify(appliedReport(report));
     }
   };
@@ -116,7 +117,7 @@ export const createMcpImport = (host: Host, home: string) => {
       return;
     }
 
-    if (!write(pair.path, plan.text)) {
+    if (!write(pair, plan.text)) {
       return;
     }
 

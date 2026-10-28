@@ -78,7 +78,7 @@ extensions/subagents/
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
-│   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
+│   │   ├── write.ts                       # mergeChanges, writeChanges (a new .pi/ gets its .gitignore), overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
 │   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
 │   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts

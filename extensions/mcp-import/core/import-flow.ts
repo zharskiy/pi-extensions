@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, sep } from "node:path";
 import {
+  ensureProjectDir,
   errorText,
   homeRelative,
   projectSettingsPath,
@@ -70,14 +71,19 @@ export const prepareImport = (source: Source, scope: Scope, { home, cwd, agentDi
   return { found, pair: { source, scope, found, plan, path, target, text } };
 };
 
-export const writeImport = (path: string, text: string | undefined) => {
+export const writeImport = (path: string, text: string | undefined, projectCwd?: string) => {
   if (text === undefined) {
     return undefined;
   }
 
   try {
+    if (projectCwd !== undefined) {
+      ensureProjectDir(projectCwd);
+    }
+
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text);
+
     return undefined;
   } catch (error) {
     return `cannot write ${path}: ${errorText(error)}`;

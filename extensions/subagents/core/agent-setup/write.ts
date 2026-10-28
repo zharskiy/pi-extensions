@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { errorText, isPlainObject, readText } from "../../../../platform/shared/index.ts";
+import { ensureProjectDir, errorText, isPlainObject, readText } from "../../../../platform/shared/index.ts";
 import type { SetupChange } from "./scope.ts";
 
 const readObject = (path: string): Record<string, unknown> => {
@@ -32,9 +32,17 @@ export const mergeChanges = (current: Record<string, unknown>, changes: SetupCha
   return { ...current, agents: merged };
 };
 
-export const writeChanges = (path: string, changes: SetupChange[]): string | undefined => {
+export const writeChanges = (
+  path: string,
+  changes: SetupChange[],
+  projectCwd?: string,
+): string | undefined => {
   try {
     const next = mergeChanges(readObject(path), changes);
+
+    if (projectCwd !== undefined) {
+      ensureProjectDir(projectCwd);
+    }
 
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);

@@ -14,7 +14,7 @@ The accent rule that used to live here (`rule`) now sits in `platform/ui-kit/key
 
 ## Modules
 
-Modules are grouped by concern in four folders, plus two single-purpose modules at the top; `index.ts` re-exports them all and stays the only import surface.
+Modules are grouped by concern in four folders, plus three single-purpose modules at the top; `index.ts` re-exports them all and stays the only import surface.
 
 - `plugin/`, the contract between the extension manager and the plugins.
   - `plugin-contract.ts`: `Plugin`, `Disable`, `Bus`, the service registry type, the event map type and `ExtensionPaths`; `platform/extension-manager/` implements them.
@@ -34,3 +34,4 @@ Modules are grouped by concern in four folders, plus two single-purpose modules 
   - `text-layout.ts`: `DOT`, the one ` · ` separator; `ELLIPSIS`, pi's ASCII `...` and the only cut mark; `cutStart`, a cut at the start by columns; `prefixed`/`padded`, wrapped lines behind a lead; `fixedBlock`, text wrapped to exactly N rows with the last cut by `...` and short text padded with blank rows; `padRows`, lines padded with blank rows or cut to exactly N.
 - `cache-hit.ts`: `reportedCache`, `cacheHitPercent`, `sessionCacheHit` over the adapter's prompt token figures; its colour is `platform/ui-kit/cache-tone.ts`.
 - `plain-object.ts`: `isPlainObject`, the guard the parsers share.
+- `project-dir.ts`: `ensureProjectDir(cwd)`, the one way the extensions create `<cwd>/.pi/` (worktrees, `/agents setup`, `/mcp-import`). When `mkdirSync` reports that it created the folder, it writes `.pi/.gitignore` with `*` (which hides the file itself too), never over an existing one; a `.pi/` that already exists is left untouched, so a user who deletes the file to track `.pi/` never gets it back.
