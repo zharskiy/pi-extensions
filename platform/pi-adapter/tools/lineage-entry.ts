@@ -70,7 +70,7 @@ export const recordCompaction = (pi: ExtensionAPI, ctx: ExtensionContext) => {
     return;
   }
 
-  const recorded = sessionManager.getEntries().some((entry) => {
+  const recorded = sessionManager.getBranch().some((entry) => {
     const lineage = entry.type === "custom" ? lineageEntryOf(entry.customType, entry.data) : undefined;
 
     return lineage?.reason === "compaction" && lineage.file === file && lineage.leafId === leafId;

@@ -31,6 +31,7 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
   const modelRuntime = await pi.ModelRuntime.create();
   const requests: unknown[] = [];
   const order: Order = [];
+  let keptPrompt: string | undefined;
 
   modelRuntime.registerNativeProvider(faux.provider);
 
@@ -56,12 +57,15 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
         return undefined;
       }
 
-      const lastUser = event.branchEntries.findLast(
-        (entry) => entry.type === "message" && entry.message.role === "user",
+      const kept = event.branchEntries.findLast(
+        (entry) =>
+          entry.type === "message" &&
+          entry.message.role === "user" &&
+          (keptPrompt === undefined || JSON.stringify(entry.message.content).includes(keptPrompt)),
       );
 
-      return lastUser
-        ? { compaction: { summary: "the summary", firstKeptEntryId: lastUser.id, tokensBefore: 100 } }
+      return kept
+        ? { compaction: { summary: "the summary", firstKeptEntryId: kept.id, tokensBefore: 100 } }
         : undefined;
     });
 
@@ -172,7 +176,31 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
       ).replaceAll(dir, "<dir>"),
     );
 
-  return { runtime, requests, order, dir, manager, lineageEntries, lineageEntry, draw, normalized };
+  const keepFrom = (prompt: string) => {
+    keptPrompt = prompt;
+  };
+
+  const compactionMarkers = (entries: readonly pi.SessionEntry[]) =>
+    entries.filter(
+      (entry): entry is pi.CustomEntry =>
+        entry.type === "custom" &&
+        entry.customType === LINEAGE &&
+        (entry.data as { reason?: string }).reason === "compaction",
+    );
+
+  return {
+    runtime,
+    requests,
+    order,
+    dir,
+    manager,
+    lineageEntries,
+    lineageEntry,
+    draw,
+    normalized,
+    keepFrom,
+    compactionMarkers,
+  };
 };
 
 const handOff = async (args: string) => {
@@ -478,6 +506,28 @@ describe("keeping the history a compaction drops", () => {
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(expanded).not.toContain("third question");
+
+    await session.runtime.dispose();
+  });
+
+  it("records the compaction on another branch that drops the same entries", async () => {
+    const session = await compacted();
+    const firstLeaf = session.lineageEntry("compaction")?.data;
+    const secondAnswer = session
+      .manager()
+      .getEntries()
+      .find((entry) => entry.type === "message" && JSON.stringify(entry.message).includes("second answer"));
+
+    await session.runtime.session.navigateTree(secondAnswer?.id ?? "", { summarize: false });
+    await session.runtime.session.prompt("fourth question");
+    session.keepFrom("second question");
+    await session.runtime.session.compact();
+
+    const onBranch = session.compactionMarkers(session.manager().getBranch());
+
+    expect(onBranch).toHaveLength(1);
+    expect(onBranch[0]?.data).toEqual(firstLeaf);
+    expect(session.draw(onBranch[0], true)).toContain("first question");
 
     await session.runtime.dispose();
   });
