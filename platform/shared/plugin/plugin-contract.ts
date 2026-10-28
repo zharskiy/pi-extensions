@@ -1,4 +1,4 @@
-import type { AgentRuntime, Host } from "../pi-adapter/index.ts";
+import type { AgentRuntime, Host } from "../../pi-adapter/index.ts";
 
 export type EventMap = Record<string, unknown>;
 
@@ -23,7 +23,6 @@ type PluginContext<E extends EventMap, S, C> = {
   bus: Bus<E>;
   settings: C;
   services: Services<S>;
-  root: string;
   paths: ExtensionPaths;
 };
 

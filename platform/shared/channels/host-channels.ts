@@ -1,7 +1,10 @@
-import type { UsageTotals } from "../pi-adapter/index.ts";
-import { isPlainObject } from "./plain-object.ts";
+import type { UsageTotals } from "../../pi-adapter/index.ts";
+import type { Limits } from "../handoff/handoff-limit.ts";
+import { isPlainObject } from "../plain-object.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
+
+export const BACKGROUND_WORK_CHANNEL = "pi:background-work";
 
 export const USAGE_CHANNEL = "spending:usage";
 
@@ -10,6 +13,8 @@ export const AWAITING_INPUT_CHANNEL = "pi:awaiting-input";
 type BusySignal = { source: string; busy: boolean };
 
 export type AwaitingInput = { source: string; waiting: boolean; title?: string };
+
+type BackgroundWork = { source: string; count: number };
 
 export type UsageReport = { source: string; id: string; usage: UsageTotals };
 
@@ -39,6 +44,20 @@ export const parseBusySignal = (data: unknown): BusySignal | undefined => {
   return { source: data.source, busy: data.busy };
 };
 
+export const parseBackgroundWork = (data: unknown): BackgroundWork | undefined => {
+  if (
+    !isPlainObject(data) ||
+    !isLabel(data.source) ||
+    typeof data.count !== "number" ||
+    !Number.isInteger(data.count) ||
+    data.count < 0
+  ) {
+    return undefined;
+  }
+
+  return { source: data.source, count: data.count };
+};
+
 export const parseAwaitingInput = (data: unknown): AwaitingInput | undefined => {
   if (!isPlainObject(data) || !isLabel(data.source) || typeof data.waiting !== "boolean") {
     return undefined;
@@ -62,8 +81,6 @@ export const parseUsageReport = (data: unknown): UsageReport | undefined => {
 
   return { source: data.source, id: data.id, usage: data.usage };
 };
-
-export const SPENDING_STATUS_KEY = "pi-spending";
 
 export const TOTALS_CHANNEL = "spending:totals";
 
@@ -97,5 +114,31 @@ export const parseTotals = (data: unknown): SpendingTotals | undefined => {
     main: { cost: data.main.cost, tokens: data.main.tokens },
     sources: data.sources.map(({ source, cost, tokens }) => ({ source, cost, tokens })),
     subscription: data.subscription,
+  };
+};
+
+export const LIMITS_CHANNEL = "session-limits:limits";
+
+const isPositive = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0;
+
+const isRatio = (value: unknown): value is number => isPositive(value) && value <= 1;
+
+export const parseLimits = (data: unknown): Limits | undefined => {
+  if (
+    !isPlainObject(data) ||
+    !isRatio(data.softRatio) ||
+    !isRatio(data.hardRatio) ||
+    !isPositive(data.softTokens) ||
+    !isPositive(data.hardTokens)
+  ) {
+    return undefined;
+  }
+
+  return {
+    softRatio: data.softRatio,
+    hardRatio: data.hardRatio,
+    softTokens: data.softTokens,
+    hardTokens: data.hardTokens,
   };
 };

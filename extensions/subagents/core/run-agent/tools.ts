@@ -19,7 +19,7 @@ export type RunAgentDetails = {
 
 export type MessageAgentParams = { id: string; message: string };
 
-export type MessageAgentDetails = { delivery?: string };
+type MessageAgentDetails = { delivery?: string };
 
 type ResultRender<P, D> = NonNullable<ToolSpec<P, D>["renderResult"]>;
 

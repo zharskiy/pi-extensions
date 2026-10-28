@@ -53,6 +53,7 @@ export type ToolCallView = {
   durationMs?: number;
   aborted: boolean;
   label?: string;
+  skill?: { name: string };
   result?: ToolResult & { images: number };
 };
 

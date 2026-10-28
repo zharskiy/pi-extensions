@@ -44,4 +44,4 @@ End your turn. You are woken once with every result, in a message the user does 
 
 # Session handoffs
 
-When a message asks you to write a handoff file, write it as your very next step, exactly as instructed, and start or message no agents in that turn. Under Evidence list every agent you delegated to: id, agent, state, result file path. When a session starts from a handoff, continue from its Next section without asking the user to repeat.
+When asked for a session handoff, start or message no agents in that turn, and list every agent you delegated to under Evidence: id, agent, state, result file path.

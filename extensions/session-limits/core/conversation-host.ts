@@ -16,9 +16,9 @@ export const conversationOnly = (host: Host): Host => {
   return {
     ...host,
     onSessionStart: (handler) => {
-      host.onSessionStart((info, parent) => {
+      host.onSessionStart((info) => {
         if (CONVERSATIONAL.has(info.mode)) {
-          handler(info, parent);
+          handler(info);
         }
       });
     },

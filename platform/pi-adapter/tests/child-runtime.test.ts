@@ -25,7 +25,7 @@ type LoaderOptions = {
 
 const captured = vi.hoisted(() => ({
   loaderOptions: [] as LoaderOptions[],
-  sessionOptions: [] as { tools?: string[] }[],
+  sessionOptions: [] as { tools?: string[]; customTools?: { name: string }[] }[],
   session: undefined as unknown,
 }));
 
@@ -51,7 +51,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
     DefaultResourceLoader: FakeLoader,
     ModelRuntime: { create: async () => ({}) },
     SessionManager: { create: () => ({}) },
-    createAgentSession: async (options: { tools?: string[] }) => {
+    createAgentSession: async (options: { tools?: string[]; customTools?: { name: string }[] }) => {
       captured.sessionOptions.push(options);
 
       return { session: captured.session ?? fakeSession };
@@ -163,6 +163,30 @@ describe("child session MCP", () => {
 
     expect(factoriesOf(0).map((entry) => entry.name)).toEqual(["test-ext-child", ...MCP_BUILTINS]);
     expect(captured.sessionOptions[0].tools).toEqual(["read", "grep", "web_fetch", ...EVERY_MCP]);
+  });
+
+  it("binds the agent's own handoff tool when another extension's tool of that name is active in the main session", async () => {
+    const withMain = runtimeWith({
+      activeTools: () => [
+        { name: "read", path: "builtin:read" },
+        { name: "handoff", path: "/ext/session-limits/index.ts" },
+      ],
+    });
+
+    const own = {
+      name: "handoff",
+      label: "handoff",
+      description: "the agent's own",
+      parameters: {},
+      execute: async () => ({ text: "" }),
+    };
+
+    await withMain.spawn(spec({ customTools: [own] }));
+
+    const [options] = captured.sessionOptions;
+
+    expect(options.tools?.filter((name) => name === "handoff")).toHaveLength(1);
+    expect(options.customTools?.map((tool) => tool.name)).toEqual(["handoff"]);
   });
 
   it("ignores relative exclude entries instead of resolving them against the working directory", async () => {
@@ -289,7 +313,9 @@ const scriptedSession = () => {
   let promptError: Error | undefined;
   let bindError: Error | undefined;
   const queued: string[] = [];
+  const agentQueue: string[] = [];
   const bindings: unknown[] = [];
+  const appended: string[] = [];
 
   const session = {
     isStreaming: false,
@@ -322,10 +348,30 @@ const scriptedSession = () => {
     followUp: async (text: string) => {
       calls.push(`followUp ${text}`);
     },
+    sendCustomMessage: async (
+      message: { customType: string; content: string; display: boolean; details?: unknown },
+      options: { deliverAs?: string; triggerTurn?: boolean },
+    ) => {
+      const mode = options.deliverAs ?? (options.triggerTurn ? "trigger" : "append");
+
+      calls.push(`custom ${message.customType} ${mode} ${message.content}`);
+
+      if (mode === "steer" || mode === "followUp") {
+        agentQueue.push(`${message.customType} ${message.content}`);
+      }
+
+      if (mode === "append") {
+        appended.push(message.customType);
+      }
+    },
     get pendingMessageCount() {
       return queued.length;
     },
-    clearQueue: () => ({ steering: queued.splice(0), followUp: [] }),
+    clearQueue: () => {
+      agentQueue.length = 0;
+
+      return { steering: queued.splice(0), followUp: [] };
+    },
     extensionRunner: {
       emit: async (event: { type: string }) => {
         calls.push(`emit ${event.type}`);
@@ -341,6 +387,11 @@ const scriptedSession = () => {
     calls,
     bindings,
     settle: () => listener({ type: "agent_settled", aborted: false }),
+    settleAborted: () => listener({ type: "agent_settled", aborted: true }),
+    seen: (customType: string, content: string) =>
+      listener({ type: "message_start", message: { role: "custom", customType, content } }),
+    agentQueue,
+    appended,
     leaveQueued: (text: string) => {
       queued.push(text);
     },
@@ -413,6 +464,114 @@ describe("child prompting", () => {
     settle();
 
     expect(events).toEqual(["settled"]);
+  });
+
+  const request = { customType: "pi-handoff-request", text: "hand off", details: { reason: "limit" } };
+
+  it("sends a custom message to a running child as a displayed custom message, without a sender prefix", async () => {
+    const { child, calls, session } = await spawnScripted();
+
+    child.start("task");
+    session.isStreaming = true;
+    await child.sendCustom(request, "steer");
+
+    expect(calls.at(-1)).toBe("custom pi-handoff-request steer hand off");
+  });
+
+  it("queues a custom message sent before pi reports streaming for the starting run instead of starting a second one", async () => {
+    const { child, calls, settle, seen } = await spawnScripted();
+
+    child.start("task");
+    await child.sendCustom(request, "steer");
+
+    expect(calls.at(-1)).toBe("custom pi-handoff-request nextTurn hand off");
+    expect(calls.some((call) => call.includes("trigger"))).toBe(false);
+
+    seen("pi-handoff-request", "hand off");
+    settle();
+
+    expect(calls.some((call) => call.includes("trigger"))).toBe(false);
+  });
+
+  it("starts a run with a custom message sent to an idle child", async () => {
+    const { child, calls, settle, events } = await spawnScripted();
+
+    child.start("task");
+    settle();
+    await child.sendCustom(request, "steer");
+    settle();
+
+    expect(calls.at(-1)).toBe("custom pi-handoff-request trigger hand off");
+    expect(events).toEqual(["settled", "settled"]);
+  });
+
+  it("runs the queued text and the queued custom message together when the run settles", async () => {
+    const { child, calls, events, settle, leaveQueued, agentQueue } = await spawnScripted();
+
+    child.start("task");
+    leaveQueued("late");
+    await child.sendCustom(request, "steer");
+    settle();
+
+    expect(agentQueue).toEqual([]);
+    expect(calls.slice(-2)).toEqual(["custom pi-handoff-request nextTurn hand off", "prompt late"]);
+    expect(events).toEqual([]);
+  });
+
+  it("starts the next run with a custom message that is the only thing pending at settle", async () => {
+    const { child, calls, events, settle } = await spawnScripted();
+
+    child.start("task");
+    await child.sendCustom(request, "steer");
+    settle();
+
+    expect(calls.at(-1)).toBe("custom pi-handoff-request trigger hand off");
+    expect(events).toEqual([]);
+  });
+
+  it("re-queues only one of two identical custom messages when pi has taken the other", async () => {
+    const { child, calls, settle, seen, session } = await spawnScripted();
+
+    child.start("task");
+    session.isStreaming = true;
+    await child.sendCustom(request, "steer");
+    await child.sendCustom(request, "steer");
+    seen("pi-handoff-request", "hand off");
+    settle();
+
+    expect(calls.filter((call) => call.endsWith("hand off") && !call.includes("steer"))).toEqual([
+      "custom pi-handoff-request trigger hand off",
+    ]);
+  });
+
+  it("delivers nothing on a later send after a dispose dropped a queued custom message", async () => {
+    const { child, calls, settle, session } = await spawnScripted();
+
+    child.start("task");
+    session.isStreaming = true;
+    await child.sendCustom(request, "steer");
+    await child.dispose();
+    settle();
+
+    expect(calls.some((call) => call.includes("trigger") || call.includes("nextTurn"))).toBe(false);
+  });
+
+  it("appends the seed before the task prompt and queues, not prompts, the messages sent in between", async () => {
+    const { child, calls } = await spawnScripted();
+
+    child.start("task", { customType: "pi-handoff-seed", text: "the handoff", details: { from: "agent" } });
+    await Promise.all([
+      child.send({ sender: "main", text: "hi" }, "steer"),
+      child.sendCustom(request, "steer"),
+    ]);
+    await flushMicrotasks(2);
+
+    expect(calls).toEqual([
+      "custom pi-handoff-seed append the handoff",
+      expect.stringMatching(/^steer .*hi/s),
+      "custom pi-handoff-request nextTurn hand off",
+      "prompt task",
+    ]);
   });
 
   it("never prompts a disposed session", async () => {

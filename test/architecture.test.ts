@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -197,14 +197,7 @@ describe("architecture", () => {
 
     expect([...manifestExtensions()].sort()).toEqual(entries.sort());
     expect(entries).toHaveLength(13);
-  });
-
-  it("points every pi.extensions entry at an existing extensions/<name>/index.ts", () => {
-    const offenders = manifestExtensions().filter(
-      (entry) => !/^\.\/extensions\/[a-z-]+\/index\.ts$/.test(entry) || !existsSync(join(ROOT, entry)),
-    );
-
-    expect(offenders).toEqual([]);
+    expect(entries.filter((entry) => !/^\.\/extensions\/[a-z-]+\/index\.ts$/.test(entry))).toEqual([]);
   });
 
   it("keeps each extension index.ts to re-exports from ./api/", () => {

@@ -20,10 +20,6 @@ describe("themeLike colours", () => {
     const live = themeLike((await themeModule()).theme);
     const tokens = Object.keys({
       accent: true,
-      border: true,
-      borderAccent: true,
-      syntaxString: true,
-      syntaxVariable: true,
       muted: true,
       dim: true,
       success: true,
@@ -37,6 +33,8 @@ describe("themeLike colours", () => {
       thinkingHigh: true,
       thinkingXhigh: true,
       thinkingMax: true,
+      customMessageLabel: true,
+      customMessageText: true,
     } satisfies Record<ThemeToken, true>) as ThemeToken[];
 
     expect(tokens.map((token) => like.fg(token, "x"))).toEqual(tokens.map((token) => `<${token}>x`));

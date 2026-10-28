@@ -34,7 +34,7 @@ import { chainSuffix, modelId } from "../components/agent-row.ts";
 import { receiptText } from "../components/format.ts";
 import { stateMark } from "../components/state-text.ts";
 
-export type BlockHints = { manage(): boolean; list(): boolean; expandKey?(): string };
+export type BlockHints = { manage(): boolean; list(): boolean; expandKey(): string };
 
 type BlockInput = {
   params: RunAgentParams | undefined;
@@ -147,9 +147,7 @@ const failureLines = (
   const hidden = state.expanded ? 0 : Math.max(0, wrapped.length - REASON_ROWS);
   const shown = hidden > 0 ? wrapped.slice(0, REASON_ROWS) : wrapped;
   const count =
-    hidden > 0
-      ? [countLine({ hidden, end: "more", noun: "line", key: hints.expandKey?.() }, cols, theme)]
-      : [];
+    hidden > 0 ? [countLine({ hidden, end: "more", noun: "line", key: hints.expandKey() }, cols, theme)] : [];
 
   return [
     withCleanup(agentReceipt(totals, 0, { live: false }), cleanup, cols, theme),
@@ -334,7 +332,7 @@ const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, widt
   }
 
   const shown = state.expanded ? lines : [reason];
-  const more = !state.expanded && lines.length > 1 ? expandHint(hints.expandKey?.() ?? "") : undefined;
+  const more = !state.expanded && lines.length > 1 ? expandHint(hints.expandKey()) : undefined;
 
   return row({
     mark: "error",

@@ -158,7 +158,7 @@ describe("setFooter with pi's interactive layout", () => {
       footer: { render: () => ["pi footer"], invalidate: () => {} },
       footerDataProvider: {
         getGitBranch: () => "main",
-        getExtensionStatuses: () => new Map([["pi-subagents", "← to list agents"]]),
+        getExtensionStatuses: () => new Map([["agents", "← to list agents"]]),
         onBranchChange: () => () => {},
       },
       ui: { requestRender: () => {} },
@@ -189,7 +189,7 @@ describe("setFooter with pi's interactive layout", () => {
     );
     const setFooter = createFooterSetter(() => state.ctx);
     const footer = () =>
-      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("pi-subagents") ?? ""]);
+      setFooter((_width, _theme, { statuses }) => ["usage", "thinking", statuses.get("agents") ?? ""]);
     const below = () => [...mode.widgetContainerBelow.render(40), ...mode.footerContainer.render(40)];
     const reset = () => {
       mode.setExtensionFooter(undefined);
@@ -299,9 +299,9 @@ describe("setNotice with pi's interactive layout", () => {
 
     footer();
     panel.setWidget("panel", () => ["panel row"]);
-    limits.setNotice("pi-session-limits", "Handoff after this turn");
+    limits.setNotice("pi-session-limits", "handoff after this turn");
 
-    expect(below()).toEqual([" Handoff after this turn", "", "usage", "", "panel row"]);
+    expect(below()).toEqual([" handoff after this turn", "", "usage", "", "panel row"]);
 
     limits.setNotice("pi-session-limits", undefined);
 
@@ -444,9 +444,9 @@ describe("setNotice with pi's interactive layout", () => {
     const after = createNotices(stateOf());
 
     footer();
-    after.setNotice("pi-session-limits", "Handoff after this turn");
+    after.setNotice("pi-session-limits", "handoff after this turn");
 
-    expect(below()).toEqual([" Handoff after this turn", "", "usage", ""]);
+    expect(below()).toEqual([" handoff after this turn", "", "usage", ""]);
   });
 
   it("draws a key set by two adapter copies once, with the last text", () => {
@@ -475,7 +475,7 @@ describe("footerHost", () => {
     const host = footerHost({ getThinkingLevel: () => "high" }, state);
 
     expect(host.context()).toEqual({ tokens: 1_000, window: 200_000, percent: 0.5 });
-    expect(host.model()).toEqual({ name: "test-model", contextWindow: 200_000, reasoning: true });
+    expect(host.model()).toEqual({ name: "test-model", reasoning: true });
     expect(host.thinkingLevel()).toBe("high");
     expect(host.sessionName()).toBe("refactor");
 

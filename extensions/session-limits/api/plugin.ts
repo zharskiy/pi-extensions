@@ -1,34 +1,54 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import type { Plugin } from "../../../platform/shared/index.ts";
-import { HANDOFF_TYPE, watchLimits } from "../core/limits.ts";
-import type { Limits } from "../core/thresholds.ts";
-import { seedMessage } from "../ui/limit-messages.ts";
+import {
+  HANDOFF_REQUEST_TYPE,
+  HANDOFF_SEED_TYPE,
+  handoffTool,
+  LIMITS_CHANNEL,
+  type Limits,
+  type Plugin,
+} from "../../../platform/shared/index.ts";
+import {
+  handoffRequestMessage,
+  handoffSeedMessage,
+  handoffToolRows,
+} from "../../../platform/ui-kit/index.ts";
+import { validateMainHandoff } from "../core/handoff.ts";
+import { watchLimits } from "../core/limits.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 type LimitsOptions = {
   host: Host;
-  template: string;
   limits: () => Limits;
   releaseDelayMs?: number;
 };
 
-export const createLimits = ({ host, template, limits, releaseDelayMs }: LimitsOptions) => {
-  host.registerMessageRenderer(
-    HANDOFF_TYPE,
-    seedMessage((binding) => host.ui.keyText(binding)),
-  );
+export const createLimits = ({ host, limits, releaseDelayMs }: LimitsOptions) => {
+  const keyText = (binding: string) => host.ui.keyText(binding);
 
-  watchLimits({ host, template, limits, segment: segmentFor, releaseDelayMs });
+  host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
+  host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
+
+  const saving = watchLimits({ host, limits, segment: segmentFor, releaseDelayMs });
+
+  host.registerTool(
+    handoffTool({
+      target: saving.target,
+      validate: validateMainHandoff,
+      rows: handoffToolRows(() => saving.target()?.path),
+      onSaved: saving.saved,
+    }),
+  );
 };
 
 export const sessionLimitsPlugin: Plugin<never, never, Limits> = {
   id: "session-limits",
-  enable({ host, settings, paths }) {
-    const template = readFileSync(join(paths.root, "prompts", "handoff.md"), "utf8");
+  enable({ host, settings }) {
+    createLimits({ host, limits: () => settings });
 
-    createLimits({ host, template, limits: () => settings });
+    host.onSessionStart(() => {
+      host.publish(LIMITS_CHANNEL, { ...settings });
+    });
+
     return undefined;
   },
 };

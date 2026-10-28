@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxToolCall,
+  getSupportedThinkingLevels,
+} from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -165,6 +171,7 @@ describe("pi adapter conformance", () => {
       "getMarkdownTheme",
       "initTheme",
       "keyText",
+      "copyToClipboard",
       "getDocsPath",
       "getExamplesPath",
       "getReadmePath",
@@ -472,6 +479,182 @@ describe("pi adapter conformance", () => {
     });
 
     expect(finalRunTexts(session.getEntries())).toEqual(["Status: done\nreport", "bye"]);
+  });
+
+  it("starts a run at a displayed custom entry and ignores a hidden one", () => {
+    const session = pi.SessionManager.inMemory(temp.make("pi-custom-runs-"));
+    const text = (value: string) => ({ type: "text" as const, text: value });
+    const assistant = (value: string) =>
+      ({ role: "assistant", content: [text(value)], stopReason: "stop" }) as never;
+
+    session.appendMessage({ role: "user", content: "task", timestamp: 0 });
+    session.appendMessage(assistant("old answer"));
+    session.appendCustomMessageEntry("req", "now", true);
+    session.appendMessage(assistant("new answer"));
+
+    expect(
+      session.getEntries().map((entry) => [entry.type, "display" in entry ? entry.display : undefined]),
+    ).toEqual([
+      ["message", undefined],
+      ["message", undefined],
+      ["custom_message", true],
+      ["message", undefined],
+    ]);
+    expect(finalRunTexts(session.getEntries())).toEqual(["new answer"]);
+  });
+
+  describe("custom messages in a session", () => {
+    const offlineSession = async () => {
+      const dir = temp.make("pi-custom-queue-");
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager: pi.SettingsManager.inMemory({}),
+        }),
+        settingsManager: pi.SettingsManager.inMemory({}),
+        sessionManager: pi.SessionManager.inMemory(dir),
+        tools: [],
+      });
+
+      return session;
+    };
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const fauxSession = async (responses: ReturnType<typeof fauxAssistantMessage>[]) => {
+      const dir = temp.make("pi-custom-faux-");
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+      writeFileSync(join(dir, "notes.txt"), "notes");
+
+      const faux = fauxProvider();
+      const modelRuntime = await pi.ModelRuntime.create();
+
+      modelRuntime.registerNativeProvider(faux.provider);
+      faux.setResponses(responses);
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime,
+        model: faux.getModel() as never,
+        resourceLoader: new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager: pi.SettingsManager.inMemory({}),
+        }),
+        settingsManager: pi.SettingsManager.inMemory({}),
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      return session;
+    };
+
+    it("emits message_start with the type and the string content of a custom message steered into a streaming turn", async () => {
+      const session = await fauxSession([
+        fauxAssistantMessage(fauxToolCall("read", { path: "notes.txt" }), { stopReason: "toolUse" }),
+        fauxAssistantMessage(fauxText("done")),
+        fauxAssistantMessage(fauxText("done")),
+      ]);
+
+      const started: unknown[] = [];
+      let steered: Promise<void> | undefined;
+
+      session.subscribe((event) => {
+        if (event.type === "tool_execution_start" && !steered) {
+          steered = session.sendCustomMessage(
+            { customType: "req", content: "x", display: true },
+            { deliverAs: "steer", triggerTurn: true },
+          );
+        }
+
+        if (event.type === "message_start" && event.message.role === "custom") {
+          started.push([event.message.customType, event.message.content]);
+        }
+      });
+
+      await session.prompt("read the notes");
+      await steered;
+
+      expect(started).toEqual([["req", "x"]]);
+
+      session.dispose();
+    });
+
+    it("starts a run for a custom message sent with triggerTurn to an idle session, whatever deliverAs says", async () => {
+      const session = await fauxSession([fauxAssistantMessage(fauxText("ok"))]);
+
+      await session.sendCustomMessage(
+        { customType: "req", content: "x", display: true },
+        { deliverAs: "steer", triggerTurn: true },
+      );
+
+      const roles = session.sessionManager
+        .getEntries()
+        .map((entry) => (entry.type === "message" ? entry.message.role : entry.type));
+
+      expect(roles).toContain("assistant");
+
+      session.dispose();
+    });
+
+    it("emits message_start with the sent type and content, appends the entry and queues next-turn messages apart", async () => {
+      const session = await offlineSession();
+      const started: unknown[] = [];
+
+      session.subscribe((event) => {
+        if (event.type === "message_start" && event.message.role === "custom") {
+          started.push([event.message.customType, event.message.content]);
+        }
+      });
+
+      await session.sendCustomMessage(
+        { customType: "req", content: "now", display: true },
+        { triggerTurn: false },
+      );
+      await session.sendCustomMessage(
+        { customType: "later", content: "queued", display: true },
+        { deliverAs: "nextTurn" },
+      );
+
+      expect(started).toEqual([["req", "now"]]);
+      expect(
+        session.sessionManager.getEntries().filter((entry) => entry.type === "custom_message"),
+      ).toHaveLength(1);
+
+      session.dispose();
+    });
+
+    it("drops the agent's queued custom messages on clearQueue and counts only text in pendingMessageCount", async () => {
+      const session = await offlineSession();
+      const custom = {
+        role: "custom",
+        customType: "req",
+        content: "now",
+        display: true,
+        timestamp: 0,
+      } as never;
+
+      session.agent.steer(custom);
+
+      expect(session.agent.hasQueuedMessages()).toBe(true);
+      expect(session.pendingMessageCount).toBe(0);
+
+      expect(session.clearQueue()).toEqual({ steering: [], followUp: [] });
+      expect(session.agent.hasQueuedMessages()).toBe(false);
+
+      session.dispose();
+    });
   });
 
   it("records the first provider request once as the prompt record", () => {
@@ -1077,6 +1260,8 @@ describe("pi adapter conformance", () => {
         "toolDiffAdded",
         "toolDiffRemoved",
         "userMessageBg",
+        "customMessageLabel",
+        "customMessageText",
       ] as const;
       const mixed = tui.mixColors(theme.colors.toolSuccessBg, theme.colors.toolDiffAdded, 0.4);
 
@@ -1084,6 +1269,7 @@ describe("pi adapter conformance", () => {
       expect(theme.style("x", { bg: "toolSuccessBg" })).toContain("\x1b[48;");
       expect(theme.style("x", { bg: mixed })).toContain("\x1b[48;");
       expect(tui.stripTerminalSequences(theme.style("x", { bg: mixed }))).toBe("x");
+      expect(stripVTControlCharacters(theme.fg("customMessageLabel", "x"))).toBe("x");
     });
 
     it("closes a foreground with its own reset only, so a surrounding background stays", async () => {
@@ -1255,6 +1441,174 @@ describe("pi adapter conformance", () => {
 
         return codes.includes("23") || codes.includes("0") || codes.includes("") ? false : italic;
       }, false);
+
+    it("emits and stores an entry appended in an extension's message_end before that message", async () => {
+      const dir = temp.make("pi-conformance-");
+      const order: string[] = [];
+      let fileOrder: string[] = [];
+
+      writeFileSync(join(dir, "notes.txt"), "one\n");
+
+      try {
+        vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+        const settingsManager = pi.SettingsManager.inMemory({});
+
+        const loader = new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager,
+          extensionFactories: [
+            {
+              name: "marker",
+              factory: (api) => {
+                api.on("message_end", (event) => {
+                  if (event.message.role === "assistant" && event.message.stopReason === "stop") {
+                    api.appendEntry("conformance:mark", {});
+                  }
+                });
+              },
+            },
+          ],
+        });
+
+        await loader.reload();
+
+        const faux = fauxProvider();
+        const modelRuntime = await pi.ModelRuntime.create();
+
+        modelRuntime.registerNativeProvider(faux.provider);
+        faux.setResponses([
+          fauxAssistantMessage(fauxToolCall("read", { path: "notes.txt" }), { stopReason: "toolUse" }),
+          fauxAssistantMessage(fauxText("done")),
+        ]);
+
+        const { session } = await pi.createAgentSession({
+          cwd: dir,
+          agentDir: dir,
+          modelRuntime,
+          model: faux.getModel() as never,
+          resourceLoader: loader,
+          settingsManager,
+          sessionManager: pi.SessionManager.inMemory(dir),
+        });
+
+        await session.bindExtensions({ mode: "print", uiContext: {} as unknown as pi.ExtensionUIContext });
+
+        session.subscribe((event) => {
+          const seen = event as {
+            type: string;
+            entry?: { customType?: string };
+            message?: { role?: string };
+          };
+
+          if (seen.type === "message_end" && seen.message?.role === "assistant") {
+            order.push("assistant message_end");
+          }
+
+          if (seen.type === "entry_appended" && seen.entry?.customType === "conformance:mark") {
+            order.push("mark");
+          }
+        });
+
+        await session.prompt("read the notes");
+        fileOrder = session.sessionManager.getEntries().map((entry) => {
+          const message = entry.type === "message" ? entry.message.role : undefined;
+
+          return entry.type === "custom" ? entry.customType : (message ?? entry.type);
+        });
+        session.dispose();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(order).toEqual(["assistant message_end", "mark", "assistant message_end"]);
+      expect(fileOrder.slice(-3)).toEqual(["toolResult", "conformance:mark", "assistant"]);
+    });
+
+    it("starts a custom follow-up queued during a run after the reply that would end it", async () => {
+      const dir = temp.make("pi-conformance-");
+      const order: string[] = [];
+
+      try {
+        vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+        const settingsManager = pi.SettingsManager.inMemory({});
+
+        const loader = new pi.DefaultResourceLoader({
+          cwd: dir,
+          agentDir: dir,
+          settingsManager,
+          extensionFactories: [
+            {
+              name: "waker",
+              factory: (api) => {
+                api.on("message_start", (event) => {
+                  const message = event.message as { role: string; customType?: string };
+
+                  if (message.role === "custom") {
+                    order.push(message.customType ?? "custom");
+                  }
+
+                  if (message.role !== "assistant") {
+                    return;
+                  }
+
+                  order.push("assistant");
+
+                  if (order.length === 1) {
+                    api.sendMessage(
+                      { customType: "conformance:wake", content: "results", display: false },
+                      { deliverAs: "followUp", triggerTurn: true },
+                    );
+                  }
+                });
+                api.on("message_end", (event, ctx) => {
+                  if (event.message.role === "assistant") {
+                    order.push(`end ${event.message.stopReason} pending ${ctx.hasPendingMessages()}`);
+                  }
+                });
+              },
+            },
+          ],
+        });
+
+        await loader.reload();
+
+        const faux = fauxProvider();
+        const modelRuntime = await pi.ModelRuntime.create();
+
+        modelRuntime.registerNativeProvider(faux.provider);
+        faux.setResponses([
+          fauxAssistantMessage(fauxText("started")),
+          fauxAssistantMessage(fauxText("answered")),
+        ]);
+
+        const { session } = await pi.createAgentSession({
+          cwd: dir,
+          agentDir: dir,
+          modelRuntime,
+          model: faux.getModel() as never,
+          resourceLoader: loader,
+          settingsManager,
+          sessionManager: pi.SessionManager.inMemory(dir),
+        });
+
+        await session.bindExtensions({ mode: "print", uiContext: {} as unknown as pi.ExtensionUIContext });
+        await session.prompt("go");
+        session.dispose();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      expect(order).toEqual([
+        "assistant",
+        "end stop pending false",
+        "conformance:wake",
+        "assistant",
+        "end stop pending false",
+      ]);
+    });
 
     it("draws the user message between prompt marks the transcript pane takes off", () => {
       initPiRenderTheme();

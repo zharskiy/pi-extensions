@@ -1,5 +1,11 @@
 import type { ContextSnapshot } from "./context.ts";
-import type { CodemodeShortfall, RoutedMessage, SessionRecord, SkillInfo } from "./messages.ts";
+import type {
+  CodemodeShortfall,
+  CustomMessage,
+  RoutedMessage,
+  SessionRecord,
+  SkillInfo,
+} from "./messages.ts";
 import type { AvailableModel, ModelResolution } from "./model.ts";
 import type { AnyToolSpec } from "./tools.ts";
 import type { UsageTotals } from "./usage.ts";
@@ -23,9 +29,10 @@ export type MessageDelivery = "steer" | "followUp";
 export type ChildSession = {
   readonly id: string;
   readonly sessionFile: string | undefined;
-  start(task: string): void;
+  start(task: string, seed?: CustomMessage): void;
   subscribe(listener: (event: ChildEvent) => void): () => void;
   send(message: RoutedMessage, delivery: MessageDelivery): Promise<void>;
+  sendCustom(message: CustomMessage, delivery: MessageDelivery): Promise<void>;
   abort(): Promise<void>;
   dispose(): Promise<void>;
   ownUsage(): UsageTotals;

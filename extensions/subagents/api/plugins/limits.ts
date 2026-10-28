@@ -1,6 +1,8 @@
-import { contextStep, softWarning } from "../../core/limits/context-step.ts";
+import { HANDOFF_REQUEST_TYPE, type HandoffRequestDetails } from "../../../../platform/shared/index.ts";
+import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
-import { effectiveContextLimit } from "../../core/model/context-limit.ts";
+import { agentLimit, limitStep } from "../../core/model/context-limit.ts";
+import { handoffService } from "../../core/model/handoff.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 
 const LIMITS_SENDER = "pi-subagents";
@@ -11,11 +13,8 @@ export const limitsPlugin: Plugin = {
   enable: ({ bus, settings, services }) => {
     const registry = services.require("registry");
     const runner = services.require("runner");
-    const handoff = services.require("handoff");
     const warned = new Set<string>();
     const handoffTurn = new Map<string, number>();
-
-    const send = (id: string, text: string) => runner.route(id, { sender: LIMITS_SENDER, text });
 
     const offTurn = bus.on("agent:turn", ({ id, context, turns, continuing }) => {
       const record = registry.get(id);
@@ -24,30 +23,30 @@ export const limitsPlugin: Plugin = {
         return;
       }
 
-      const limit = effectiveContextLimit(record.contextLimit, context.window, settings.reserveTokens);
+      const limit = agentLimit(record.contextLimit, context.window, settings);
       const tokens = context.tokens ?? 0;
 
-      const step = contextStep({
-        tokens,
-        limit,
-        softRatio: settings.softContextRatio,
-        hardRatio: settings.hardContextRatio,
+      const step = limitStep(tokens, limit, {
         warned: warned.has(id),
-        handoffRequested: record.handoffRequested,
-        turnsSinceHandoff: turns - (handoffTurn.get(id) ?? turns),
+        requested: record.handoffRequested,
+        turnsSinceRequest: turns - (handoffTurn.get(id) ?? turns),
       });
 
       if (step === "warn") {
         warned.add(id);
-        void send(id, softWarning(tokens, limit));
+        void runner.route(id, { sender: LIMITS_SENDER, text: softWarning(tokens, limit.request) });
         return;
       }
 
-      if (step === "handoff") {
+      if (step === "request") {
         warned.add(id);
         handoffTurn.set(id, turns);
         registry.update(id, { handoffRequested: true });
-        void send(id, handoff.instruction(record.handoffPath));
+        void runner.route(id, {
+          customType: HANDOFF_REQUEST_TYPE,
+          text: handoffService.instruction(record.handoffPath),
+          details: { reason: "limit", tokens, request: limit.request } satisfies HandoffRequestDetails,
+        });
         return;
       }
 

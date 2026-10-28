@@ -1,14 +1,14 @@
 import type { ThinkingLevel } from "./model.ts";
 
-export type PaintToken = "accent" | "border" | "borderAccent" | "muted" | "dim" | "text";
+type PaintToken = "accent" | "muted" | "dim" | "text";
 
 export type StatusToken = "success" | "warning" | "error";
 
-export type SyntaxToken = "syntaxString" | "syntaxVariable";
+type ThinkingToken = `thinking${Capitalize<ThinkingLevel>}`;
 
-export type ThinkingToken = `thinking${Capitalize<ThinkingLevel>}`;
+type MessageToken = "customMessageLabel" | "customMessageText";
 
-export type ThemeToken = PaintToken | StatusToken | SyntaxToken | ThinkingToken;
+export type ThemeToken = PaintToken | StatusToken | ThinkingToken | MessageToken;
 
 export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
 

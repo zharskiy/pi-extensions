@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  listCounts,
   listSections,
   MAX_CLOSED_ROOTS,
+  subtitle,
   visibleRecords,
 } from "../../../core/agent-view/list-model.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
@@ -79,11 +79,11 @@ describe("list model", () => {
     expect(sectionRows(visible(tree("done")))).toEqual([
       { title: "Finished (3)", rows: ["0:lead", "1:child", "2:grandchild"] },
     ]);
-    expect(listCounts(visible(tree("done")))).toEqual({ running: 0, finished: 3 });
+    expect(subtitle(visible(tree("done")))).toBe(" · 3 finished");
     expect(sectionRows(visible(tree("running")))).toEqual([
       { title: "Running", rows: ["0:lead", "1:child", "2:grandchild"] },
     ]);
-    expect(listCounts(visible(tree("running")))).toEqual({ running: 3, finished: 0 });
+    expect(subtitle(visible(tree("running")))).toBe(" · 3 running");
   });
 
   it("keeps closed agents however long ago they ended", () => {

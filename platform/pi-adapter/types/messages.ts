@@ -7,7 +7,7 @@ export type CommandSpec = {
   run(args: string, control: SessionControl): Promise<void> | void;
 };
 
-export type HiddenMessage = { customType: string; text: string; details?: unknown };
+export type CustomMessage = { customType: string; text: string; details?: unknown };
 
 export type RoutedMessage = { sender: string; text: string };
 

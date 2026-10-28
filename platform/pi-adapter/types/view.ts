@@ -46,7 +46,6 @@ export type OverlayFactory = (api: OverlayApi) => ViewComponent;
 export type TextInput = {
   render(width: number): string[];
   handleKey(key: KeyPress): void;
-  text(): string;
   setText(text: string): void;
   onSubmit(handler: (text: string) => void): void;
 };
@@ -66,7 +65,6 @@ export type EditorLayout = { bottom: number; scrolled: boolean };
 
 export type EditorFrame = {
   chrome: number;
-  left: number;
   minWidth: number;
   decorate(
     lines: string[],

@@ -133,7 +133,7 @@ const scanPairs = (candidates: readonly Pair[], trusted: boolean): Scan => {
 
   return {
     kind: "empty",
-    files: [...new Set(files)],
+    files,
     targets: [...new Set(withServers.map((pair) => pair.target))],
     skipped: withServers.flatMap((pair) => pair.plan.skipped),
     present: withServers.length > 0 && withServers.every(allPresent),

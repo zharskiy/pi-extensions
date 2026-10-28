@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { reportSettingsErrors } from "../../../platform/extension-manager/index.ts";
-import type { Host, SessionInfo } from "../../../platform/pi-adapter/index.ts";
+import type { Host } from "../../../platform/pi-adapter/index.ts";
 import type { Plugin } from "../../../platform/shared/index.ts";
 import { readStyleSettings, SETTINGS_FILE, saveStyle } from "../core/settings.ts";
 import { createStyleSection } from "../core/style.ts";
@@ -10,21 +10,19 @@ import { pickStyle } from "../ui/pick.ts";
 export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   const { names, fallback, current, apply } = createStyleSection(host, styles);
   let projectStyle: string | undefined;
-  let session: SessionInfo | undefined;
 
   const report = reportSettingsErrors(host, "pi-style");
 
   host.onSessionStart((info) => {
     const stored = readStyleSettings(names, info);
 
-    session = info;
     projectStyle = stored.project;
     report(stored.errors);
     apply(projectStyle ?? stored.user ?? fallback);
   });
 
   const choose = (name: string) => {
-    const failure = session && saveStyle(session.agentDir, name);
+    const failure = saveStyle(host.session().agentDir, name);
 
     if (failure) {
       host.ui.notify(`pi-style: ${failure}`, "warning");

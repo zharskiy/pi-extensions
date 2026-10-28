@@ -11,9 +11,9 @@ import { reloadSettings, settingsWarning } from "../../core/model/settings.ts";
 
 export const agentDefinitionsPlugin: Plugin = {
   id: "agent-definitions",
-  enable: ({ host, runtime, services, settings, root }) => {
-    const basePrompt = readFileSync(join(root, "prompts", "base-system-prompt.md"), "utf8");
-    const builtin: DefinitionDir = { path: join(root, "agents"), source: "builtin" };
+  enable: ({ host, runtime, services, settings, paths }) => {
+    const basePrompt = readFileSync(join(paths.root, "prompts", "base-system-prompt.md"), "utf8");
+    const builtin: DefinitionDir = { path: join(paths.root, "agents"), source: "builtin" };
     const reported = new Set<string>();
 
     let loaded = loadDefinitions([builtin]);

@@ -39,6 +39,7 @@ The model opens the form; you answer it with the keyboard:
 |---|---|
 | Ask the model to decide something with you | The form in place of the editor, one tab per question when there are several. |
 | Pick an answer per question and submit | `✓ questionnaire · 2 questions` in the transcript, your answers under it. |
+| Press `Enter` on the Submit tab before every question is answered | Nothing: it submits only once all are answered. |
 | Pick `Type something.` | A text field for your own answer. `Enter` saves it. |
 | Press `Esc` | `⊘ questionnaire · cancelled`. The model picks a sensible default or stops. |
 

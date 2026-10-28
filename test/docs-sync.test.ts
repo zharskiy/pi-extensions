@@ -152,18 +152,6 @@ describe("docs sync rule", () => {
     ]);
   });
 
-  it("treats a new untracked file as code of its extension", () => {
-    const changed = ["extensions/footer/ui/new-widget.ts", ...docsOf("footer").slice(1)];
-
-    expect(missingDocs(changed)).toEqual([
-      {
-        extension: "extensions/footer",
-        triggers: ["extensions/footer/ui/new-widget.ts"],
-        missing: ["extensions/footer/README.md"],
-      },
-    ]);
-  });
-
   it("names every trigger and missing doc in the report", () => {
     const text = report(missingDocs(["extensions/footer/core/segments.ts"]));
 

@@ -49,4 +49,4 @@ export type ModelResolution =
 
 export type AvailableModel = ModelChoice & { thinking: string[] };
 
-export type ModelInfo = { name: string; contextWindow: number; reasoning: boolean };
+export type ModelInfo = { name: string; reasoning: boolean };

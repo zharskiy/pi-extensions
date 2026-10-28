@@ -85,7 +85,7 @@ export const resultText = ({ questions, answers, cancelled }: QuestionnaireDetai
   return [CANCELLED, ...(lines.length > 0 ? [ANSWERED_BEFORE, ...lines] : []), FALLBACK].join("\n");
 };
 
-export const errorResult = (text: string, questions: Question[] = []): ToolResult<QuestionnaireDetails> => ({
+export const errorResult = (text: string, questions: Question[]): ToolResult<QuestionnaireDetails> => ({
   text,
   isError: true,
   details: { questions, answers: [], cancelled: true },

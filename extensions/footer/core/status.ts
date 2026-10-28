@@ -1,19 +1,23 @@
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import { parseTotals, type SpendingTotals, TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
 
-export const watchTotals = (host: Host, changed: () => void) => {
-  let totals: SpendingTotals | undefined;
+export const watchChannel = <T>(
+  host: Host,
+  channel: string,
+  parse: (data: unknown) => T | undefined,
+  changed: () => void,
+) => {
+  let latest: T | undefined;
 
-  host.subscribe(TOTALS_CHANNEL, (data) => {
-    const parsed = parseTotals(data);
+  host.subscribe(channel, (data) => {
+    const parsed = parse(data);
 
     if (!parsed) {
       return;
     }
 
-    totals = parsed;
+    latest = parsed;
     changed();
   });
 
-  return () => totals;
+  return () => latest;
 };

@@ -8,10 +8,7 @@ import type {
 
 export type FakeForm = {
   view: ViewComponent;
-  inputs: TextInput[];
   closed: boolean;
-  result?: unknown;
-  renders: number;
   render(width?: number): string[];
   press(...keys: KeyPress[]): void;
   type(text: string): void;
@@ -38,7 +35,6 @@ const fakeTextInput = (): TextInput => {
         text += key.char;
       }
     },
-    text: () => text,
     setText: (value) => {
       text = value;
     },
@@ -55,15 +51,12 @@ export const openFakeForm = <T>(
   register: (form: FakeForm) => void,
 ) =>
   new Promise<T | undefined>((resolve) => {
-    const inputs: TextInput[] = [];
-
     const close = (result: T | undefined) => {
       if (form.closed) {
         return;
       }
 
       form.closed = true;
-      form.result = result;
       signal?.removeEventListener("abort", abort);
       form.view.dispose?.();
       resolve(result);
@@ -73,9 +66,7 @@ export const openFakeForm = <T>(
 
     const form: FakeForm = {
       view: { render: () => [], handleKey: () => {} },
-      inputs,
       closed: false,
-      renders: 0,
       render: (width = 80) => form.view.render(width),
       press: (...keys) => {
         keys.forEach((key) => {
@@ -91,17 +82,9 @@ export const openFakeForm = <T>(
 
     form.view = factory({
       theme,
-      requestRender: () => {
-        form.renders += 1;
-      },
+      requestRender: () => {},
       done: close,
-      createTextInput: () => {
-        const input = fakeTextInput();
-
-        inputs.push(input);
-
-        return input;
-      },
+      createTextInput: fakeTextInput,
     });
 
     signal?.addEventListener("abort", abort, { once: true });

@@ -180,7 +180,6 @@ describe("scroll window", () => {
 describe("moreRow", () => {
   it("counts the hidden rows after the prefix and is blank when nothing is hidden", () => {
     expect(moreRow(plainTheme, "↑", 3, 40)).toBe(" ↑ 3 more");
-    expect(moreRow(plainTheme, "↓", 12, 40, "   ")).toBe("   ↓ 12 more");
     expect(moreRow(plainTheme, "↓", 0, 40)).toBe("");
     expect(moreRow(plainTheme, "↓", 123, 8)).toBe(" ↓ 12...");
   });

@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import { usageTotals } from "../../../test/framework/index.ts";
 import {
   AWAITING_INPUT_CHANNEL,
+  BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
+  LIMITS_CHANNEL,
   parseAwaitingInput,
+  parseBackgroundWork,
   parseBusySignal,
+  parseLimits,
   parseTotals,
   parseUsageReport,
-} from "../host-channels.ts";
+} from "../channels/host-channels.ts";
 
 describe("parseBusySignal", () => {
   it("names the channel pi:busy", () => {
@@ -23,6 +27,28 @@ describe("parseBusySignal", () => {
     expect(parseBusySignal({ source: "x", busy: "yes" })).toBeUndefined();
     expect(parseBusySignal(null)).toBeUndefined();
     expect(parseBusySignal("busy")).toBeUndefined();
+  });
+});
+
+describe("parseBackgroundWork", () => {
+  it("names the channel pi:background-work", () => {
+    expect(BACKGROUND_WORK_CHANNEL).toBe("pi:background-work");
+  });
+
+  it("accepts a source name and a whole count from zero", () => {
+    expect(parseBackgroundWork({ source: "pi-subagents", count: 2 })).toEqual({
+      source: "pi-subagents",
+      count: 2,
+    });
+    expect(parseBackgroundWork({ source: "pi-subagents", count: 0 })).toEqual({
+      source: "pi-subagents",
+      count: 0,
+    });
+    expect(parseBackgroundWork({ source: "", count: 1 })).toBeUndefined();
+    expect(parseBackgroundWork({ source: "x", count: -1 })).toBeUndefined();
+    expect(parseBackgroundWork({ source: "x", count: 1.5 })).toBeUndefined();
+    expect(parseBackgroundWork({ source: "x", count: "1" })).toBeUndefined();
+    expect(parseBackgroundWork(null)).toBeUndefined();
   });
 });
 
@@ -122,5 +148,28 @@ describe("parseTotals", () => {
     expect(parseTotals(totals)).toBeUndefined();
     expect(parseTotals({ ...totals, subscription: "yes" })).toBeUndefined();
     expect(parseTotals({ ...totals, subscription: 1 })).toBeUndefined();
+  });
+});
+
+describe("parseLimits", () => {
+  const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+
+  it("names the channel session-limits:limits", () => {
+    expect(LIMITS_CHANNEL).toBe("session-limits:limits");
+  });
+
+  it("accepts the defaults and ratios up to 1", () => {
+    expect(parseLimits({ ...limits, extra: true })).toEqual(limits);
+    expect(parseLimits({ ...limits, hardRatio: 1 })).toEqual({ ...limits, hardRatio: 1 });
+  });
+
+  it("ignores malformed payloads", () => {
+    expect(parseLimits(undefined)).toBeUndefined();
+    expect(parseLimits({ ...limits, softRatio: undefined })).toBeUndefined();
+    expect(parseLimits({ ...limits, softTokens: "125000" })).toBeUndefined();
+    expect(parseLimits({ ...limits, softRatio: 0 })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardRatio: 1.1 })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardTokens: -1 })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardTokens: Number.NaN })).toBeUndefined();
   });
 });

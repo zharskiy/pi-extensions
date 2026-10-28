@@ -17,22 +17,24 @@ This extension draws each tool call as one row: a glyph that says how it went, a
 A turn in the main session's transcript:
 
 ```
- Thinking (ctrl+t to expand)
+ ∴ Thinking (ctrl+t to expand)
 
  ✓ read src/stats.py:5-14
    ↳ 10 lines
 
- ✓ edit src/stats.py
-   ↳ Added 1 line, removed 1 line (ctrl+o to expand)
+ [skill] tdd (ctrl+o to expand)
 
- ✗ bash npm test -- --run · exit 1 · 9s
-   ↳ ... (52 earlier lines, ctrl+o to expand)
-     FAIL src/stats.test.ts > mean > counts the first value
-     AssertionError: expected 2 to be 3
-     Test Files  1 failed | 1 passed (2)
+ ✓ bash npm test · 9s
+   ↳ Tests  2 passed (2)
+
+ ∴ Thinking (ctrl+t to expand)
+
+ ── worked 42s ────────────────────────────────────────────
 
  The mean skipped the first value; both tests pass now.
 ```
+
+`ctrl+t` folds or shows the thinking, and pi remembers the choice. Once the work is done, a dim rule above the final answer says how long it took and sets the answer apart from the steps before it, if at least one tool ran; a turn that only answers gets none. Work you started in the background, such as subagents, belongs to the same turn: replies the model gives while agents still run get no rule, the answer to the last results does, and a prompt you type meanwhile joins the turn. Stopping the run with Esc ends the turn without a rule; a turn that ends on an error still gets one, under the error, since there is no answer to put it above. A skill read keeps pi's `[skill]` look.
 
 ## Quick start
 

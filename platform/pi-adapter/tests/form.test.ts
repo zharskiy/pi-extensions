@@ -220,7 +220,6 @@ describe("showForm", () => {
       entry.component.handleInput(data);
     });
 
-    expect(input?.text()).toBe("hi");
     expect(entry.component.render(20).join("\n")).not.toContain(CURSOR_MARKER);
 
     entry.component.focused = true;
@@ -228,9 +227,12 @@ describe("showForm", () => {
     expect(entry.component.render(20).join("\n")).toContain(CURSOR_MARKER);
 
     entry.component.handleInput("\r");
-    input?.setText("again");
 
     expect(submitted).toEqual(["hi"]);
-    expect(input?.text()).toBe("again");
+
+    input?.setText("again");
+    entry.component.handleInput("\r");
+
+    expect(submitted).toEqual(["hi", "again"]);
   });
 });

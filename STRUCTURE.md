@@ -5,7 +5,7 @@ Where things are at the top level. Each code folder has its own `STRUCTURE.md` w
 ```
 pi-extensions/
 ├── platform/
-│   ├── pi-adapter/          the only shipped code that imports pi packages
+│   ├── pi-adapter/          the only shipped code that imports pi packages; `tools/` also holds the skill-read detection
 │   ├── shared/              pi-free, theme-free, host-free helpers
 │   ├── ui-kit/              theme-aware rendering components
 │   └── extension-manager/   createManagedExtension, plugins, bus, settings
@@ -23,10 +23,10 @@ pi-extensions/
 
 ## Folders
 
-- [platform/pi-adapter/](platform/pi-adapter/STRUCTURE.md): `index.ts` and `types/`, `runtime/`, `child/`, `ui/`, `editor/`, `tools/`, `context/`, `prompt/`, `tests/`.
-- [platform/shared/](platform/shared/STRUCTURE.md): flat helper modules and `tests/`; its admission rule is at the top of that file.
-- [platform/ui-kit/](platform/ui-kit/STRUCTURE.md): flat component modules and `tests/`.
-- [platform/extension-manager/](platform/extension-manager/STRUCTURE.md): the manager, the managed-extension factory, the bus, the settings watcher and `tests/`.
+- [platform/pi-adapter/](platform/pi-adapter/STRUCTURE.md): `index.ts` and `types/`, `runtime/`, `child/`, `ui/`, `editor/`, `tools/`, `context/`, `prompt/`, `tests/`; `editor/` holds the editor subclass behind the empty-editor key hooks, and `runtime/` the record of custom follow-ups queued in a session, which tells a run's final reply.
+- [platform/shared/](platform/shared/STRUCTURE.md): helper modules grouped by concern (`plugin/`, `handoff/` with the handoff prompt template `handoff-prompt.md`, `channels/`, `text/`), two top-level helpers and `tests/`; its admission rule is at the top of that file.
+- [platform/ui-kit/](platform/ui-kit/STRUCTURE.md): flat component modules (rows, including the handoff rows) and `tests/`.
+- [platform/extension-manager/](platform/extension-manager/STRUCTURE.md): the manager, the managed-extension factory, the bus, the settings error report and `tests/`.
 - `extensions/`: one folder per extension, each with `README.md` (for users), `ARCHITECTURE.md` and `STRUCTURE.md`: [command-aliases](extensions/command-aliases/STRUCTURE.md), [composer](extensions/composer/STRUCTURE.md), [context](extensions/context/STRUCTURE.md), [footer](extensions/footer/STRUCTURE.md), [mcp-import](extensions/mcp-import/STRUCTURE.md), [notifications](extensions/notifications/STRUCTURE.md), [questionnaire](extensions/questionnaire/STRUCTURE.md), [session-limits](extensions/session-limits/STRUCTURE.md), [spending](extensions/spending/STRUCTURE.md), [style](extensions/style/STRUCTURE.md), [subagents](extensions/subagents/STRUCTURE.md), [transcript](extensions/transcript/STRUCTURE.md), [working-indicator](extensions/working-indicator/STRUCTURE.md). The `style` prompts live in `extensions/style/prompts/`, `concise.md` being the default, and the `subagents` prompts in `extensions/subagents/prompts/`.
 - [test/framework/](test/framework/STRUCTURE.md): root fakes, `live/`, `eval-runs/`, `pi/`, `pi/live/`, `tests/`.
 - [test/evals/](test/evals/README.md): `subagents/<subject>/` with `*-cases.ts` and `*.eval.ts`, shared helpers in `subagents/support/` and their tests in `subagents/tests/`; results go to the gitignored `test/evals/.results/`.
@@ -38,7 +38,7 @@ pi-extensions/
 - `package.json`: version, `pi.extensions` (the 13 `extensions/<name>/index.ts` entries), the published `files`, and the scripts: `check` (typecheck, lint, knip, test), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
 - `tsconfig.json`: strict NodeNext, no emit, over every code folder.
 - `vitest.config.ts`: three projects, picked with `--project`:
-  - `unit` (`npm run test`): every `tests/` folder and `test/`, without `*.live.test.ts` and `*.eval.ts`.
+  - `unit` (`npm run test`): every `tests/` folder and `test/`, without `*.live.test.ts`.
   - `live` (`npm run test:live`): only live tests (`extensions/*/tests/live/`, `platform/pi-adapter/tests/live/`), serial, long timeouts.
   - `evals` (`npm run evals`): only evals (`test/evals/**/*.eval.ts`), one forked worker, serial, 30 minutes per test, results under `test/evals/.results/<timestamp>/`.
 - `biome.json`: format and lint, the import-cycle and unused-code rules, and the per-folder `noRestrictedImports` overrides that hold each layer to its imports.

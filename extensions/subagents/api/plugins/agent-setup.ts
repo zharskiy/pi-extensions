@@ -58,10 +58,10 @@ const changeSummary = (changes: SetupChange[]) =>
 export const agentSetupPlugin: Plugin = {
   id: "agent-setup",
   requires: ["agent-definitions"],
-  enable: ({ host, runtime, services, settings, root }) => {
+  enable: ({ host, runtime, services, settings, paths }) => {
     const definitions = services.require("definitions");
-    const createPrompt = readFileSync(join(root, "prompts", "create-agent.md"), "utf8").trim();
-    const autosetupPrompt = readFileSync(join(root, "prompts", "autosetup-skills.md"), "utf8").trim();
+    const createPrompt = readFileSync(join(paths.root, "prompts", "create-agent.md"), "utf8").trim();
+    const autosetupPrompt = readFileSync(join(paths.root, "prompts", "autosetup-skills.md"), "utf8").trim();
 
     let pending: { candidates: string[]; interactive: string[] } | undefined;
 

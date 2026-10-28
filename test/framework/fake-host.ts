@@ -1,7 +1,9 @@
 import {
+  type AssistantEnd,
   type CommandSpec,
   type ContextFacts,
   type ContextSnapshot,
+  type CustomMessage,
   type DialogEvent,
   type DialogKind,
   type EditorFrame,
@@ -9,7 +11,6 @@ import {
   type EntryRender,
   emptyUsage,
   type FooterRender,
-  type HiddenMessage,
   type Host,
   type IdleInfo,
   type KeyPress,
@@ -38,18 +39,23 @@ import { promptTokens } from "./usage-builders.ts";
 
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
+type ChatItem = { kind: "assistant"; text: string } | { kind: "entry"; customType: string; data: unknown };
+
 export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
   commands: Map<string, CommandSpec>;
   mainPrompt?: string;
   promptSections: Map<string, string>;
   entries: { customType: string; data: unknown }[];
+  chat: ChatItem[];
   files: Map<string, FakeSessionFile>;
-  hidden: { message: HiddenMessage; delivery: "followUp" | "run" }[];
+  hidden: { message: CustomMessage; delivery: "followUp" | "run" }[];
+  messages: { message: CustomMessage; delivery: "followUp" | "run" }[];
   dispatched: string[];
   published: { channel: string; data: unknown }[];
   notices: { message: string; level?: string }[];
   terminalNotices: { message: string; channel: NotifyChannel }[];
+  copied: string[];
   statuses: Map<string, string | undefined>;
   editorNotices: Map<string, string | undefined>;
   statusCalls: { key: string; text: string | undefined }[];
@@ -74,7 +80,7 @@ export type FakeHost = Host & {
   confirmAnswer: boolean | ((title: string, message: string) => boolean);
   newSessions: NewSessionOptions[];
   newSessionResult: boolean | Error;
-  start(parent?: string): void;
+  start(info?: Partial<SessionInfo>): void;
   turnEnd(context: { tokens: number | null; window: number; percent?: number | null }): void;
   compact(): void;
   settle(options?: { aborted?: boolean }): void;
@@ -94,6 +100,8 @@ export type FakeHost = Host & {
   workingMessages: (string | undefined)[];
   workingVisibility: boolean[];
   agentStart(): void;
+  assistantStart(): void;
+  assistantEnd(info?: Partial<AssistantEnd> & { text?: string }): void;
   setPhase(phase: Phase): void;
   submitRewrites: ((text: string) => string | undefined)[];
   completionMaps: ((command: string) => string | undefined)[];
@@ -128,12 +136,14 @@ export type FakeHost = Host & {
 export const FAKE_FOOTER_KEY = "footer";
 
 export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
-  const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
+  const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const assistantStartHandlers: (() => void)[] = [];
+  const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   const emptyDownHandlers = new Set<() => void>();
@@ -141,7 +151,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const entryRenderers = new Map<string, EntryRender>();
   const messageRenderers = new Map<string, MessageRender>();
   const channels = new Map<string, Set<(data: unknown) => void>>();
-  const deferred: { name: string; args?: string }[] = [];
+  const deferred: string[] = [];
   let started = false;
   const editorLive = () => started && !host.foreignEditor;
 
@@ -183,17 +193,28 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const sessionFile = (file: string | undefined): FakeSessionFile =>
     file ? (host.files.get(file) as FakeSessionFile) : host;
 
+  const record = <M>(list: { message: M; delivery: "followUp" | "run" }[], message: M) => {
+    if (!started) {
+      return;
+    }
+
+    list.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
+  };
+
   const host: FakeHost = {
     tools: new Map(),
     commands: new Map(),
     promptSections: new Map(),
     entries: [],
+    chat: [],
     files: new Map(),
     hidden: [],
+    messages: [],
     dispatched: [],
     published: [],
     notices: [],
     terminalNotices: [],
+    copied: [],
     statuses: new Map(),
     editorNotices: new Map(),
     statusCalls: [],
@@ -252,6 +273,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     info: {
       id: "main-session",
       file: undefined,
+      created: false,
       cwd: "/tmp/pi-extensions-test",
       agentDir: "/tmp/pi-extensions-test/agent",
       projectTrusted: false,
@@ -305,6 +327,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       style: (token, text) => `<${token}>${text}`,
       terminalNotify: (message, channel) => {
         host.terminalNotices.push({ message, channel });
+      },
+      copyText: async (text) => {
+        host.copied.push(text);
       },
       setWorkingMessage: (text) => {
         host.workingMessages.push(text);
@@ -432,22 +457,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       compactHandlers.push(handler);
     },
     isIdle: () => started && host.idle,
-    sendHiddenMessage: (message) => {
-      if (!started) {
-        return;
-      }
-
-      host.hidden.push({ message: structuredClone(message), delivery: host.idle ? "run" : "followUp" });
-    },
-    dispatchCommand: (name, args) => {
-      host.dispatched.push(args ? `${name} ${args}` : name);
+    sendHiddenMessage: (message) => record(host.hidden, message),
+    sendMessage: (message) => record(host.messages, message),
+    dispatchCommand: (name) => {
+      host.dispatched.push(name);
 
       if (settling) {
-        deferred.push({ name, args });
+        deferred.push(name);
         return;
       }
 
-      void host.runCommand(name, args);
+      void host.runCommand(name);
     },
     publish: (channel, data) => {
       if (stale) {
@@ -473,6 +493,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       host.entries.push({ customType, data: structuredClone(data) });
+      host.chat.push({ kind: "entry", customType, data: structuredClone(data) });
     },
     readEntries: <T>(customType: string, file?: string) =>
       sessionFile(file)
@@ -486,12 +507,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
       return host.info;
     },
-    start: (parent) => {
+    start: (patch = {}) => {
       started = true;
       stale = false;
+      host.info = { ...host.info, ...patch };
 
       startHandlers.forEach((handler) => {
-        handler(host.info, parent);
+        handler(host.info);
       });
     },
     turnEnd: (turn) => {
@@ -520,8 +542,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       settling = false;
       host.setPhase("idle");
 
-      deferred.splice(0).forEach(({ name, args }) => {
-        void host.runCommand(name, args);
+      deferred.splice(0).forEach((name) => {
+        void host.runCommand(name);
       });
     },
     emit: deliver,
@@ -590,6 +612,24 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       });
 
       host.setPhase("waiting");
+    },
+    onAssistantStart: (handler) => {
+      assistantStartHandlers.push(handler);
+    },
+    assistantStart: () => {
+      assistantStartHandlers.forEach((handler) => {
+        handler();
+      });
+    },
+    onAssistantEnd: (handler) => {
+      assistantEndHandlers.push(handler);
+    },
+    assistantEnd: ({ toolCalls = 0, final = toolCalls === 0, text = "" } = {}) => {
+      assistantEndHandlers.forEach((handler) => {
+        handler({ toolCalls, final });
+      });
+
+      host.chat.push({ kind: "assistant", text });
     },
     onPhase: (handler) => {
       phaseHandlers.push(handler);
@@ -664,6 +704,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
 
   return host;
 };
+
+export const requestTexts = (host: Pick<FakeHost, "messages">) =>
+  host.messages.map((entry) => entry.message.text);
 
 export const hiddenMessageTexts = (host: Pick<FakeHost, "hidden">) =>
   host.hidden.map((entry) => entry.message.text);

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { VALID_HANDOFF } from "../../../../../test/framework/index.ts";
-import { createHandoff } from "../../../core/run-agent/handoff.ts";
-import { PACKAGE_ROOT } from "../../support/subagents-harness.ts";
+import { handoffService } from "../../../core/model/handoff.ts";
 
-const { instruction, validate: validateHandoff } = createHandoff(PACKAGE_ROOT);
+const { validate: validateHandoff, instruction, preface } = handoffService;
 
 describe("handoff schema", () => {
   it("accepts the documented schema", () => {
@@ -39,12 +38,26 @@ describe("handoff schema", () => {
       status: "blocked",
     });
   });
+});
 
-  it("fills the handoff instruction with the target path", () => {
-    const text = instruction("/tmp/x/handoff.md");
+describe("agent handoff instruction", () => {
+  const text = instruction("/tmp/a3-handoff.md");
 
-    expect(text).toContain("/tmp/x/handoff.md");
-    expect(text).not.toContain("{{path}}");
-    expect(text).toContain("Call the `handoff` tool");
+  it("starts from the context limit and offers only partial or blocked", () => {
+    expect(text.startsWith("You have reached your context limit.")).toBe(true);
+    expect(text).toContain("One word: partial or blocked.");
+    expect(text).not.toContain("done");
+    expect(text).not.toContain("Skills:");
+    expect(text).not.toContain("background keeps running");
+  });
+});
+
+describe("agent successor preface", () => {
+  it("names the agent, the link and the saved path", () => {
+    const text = preface({ id: "a3", link: 2, path: "/tmp/a3-handoff.md" });
+
+    expect(text).toContain("agent a3 as link 2");
+    expect(text).toContain("/tmp/a3-handoff.md");
+    expect(text).toContain("Next section");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
+import { LIMITS_CHANNEL, TOTALS_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
@@ -12,7 +12,7 @@ import footer from "../api/extension.ts";
 const setup = () => {
   const host = createFakeHost({ cwd: "/work/my-project" });
 
-  host.activeModel = { name: "test-model", contextWindow: 200_000, reasoning: true };
+  host.activeModel = { name: "test-model", reasoning: true };
   host.thinking = "medium";
   host.contextUsage = { tokens: 50_000, window: 200_000, percent: 25 };
   startExtension({ extension: footer, runtime: createFakeAgentRuntime(), host });
@@ -29,9 +29,9 @@ describe("footer", () => {
     expect(host.belowEditor).toEqual([FAKE_FOOTER_KEY]);
     expect(lines()).toEqual([
       "",
-      " 50.0k · test-model (200k context)",
-      " my-project git:(main)",
-      " thinking medium (<app.thinking.cycle> to cycle)",
+      " my-project on main                                 test-model · thinking medium",
+      " context 50.0k of 200k",
+      " <app.thinking.cycle> to cycle thinking",
       "",
     ]);
   });
@@ -41,11 +41,11 @@ describe("footer", () => {
 
     host.mainUsage = { input: 1_000, cacheRead: 0, cacheWrite: 0, output: 10 };
 
-    expect(lines()[1]).toBe(" 50.0k · test-model (200k context)");
+    expect(lines()[2]).not.toContain("cache");
 
     host.mainUsage = { input: 100, cacheRead: 870, cacheWrite: 30, output: 10 };
 
-    expect(lines()[1]).toBe(" 50.0k · cache 87% · test-model (200k context)");
+    expect(lines()[2]).toBe(" context 50.0k of 200k · cache 87%");
   });
 
   it("shows the published totals and refreshes", () => {
@@ -58,10 +58,9 @@ describe("footer", () => {
     });
 
     expect(host.footerRefreshes).toBe(1);
-    expect(lines().slice(1, 3)).toEqual([
-      " 50.0k · $1.50 · test-model (200k context)",
-      " session total (agents included) 50.0k · $2.00",
-    ]);
+    expect(lines()[2]).toBe(
+      " context 50.0k of 200k    50.0k tokens · $1.50 main · $0.50 agents · $2.00 total",
+    );
   });
 
   it("ignores malformed totals", () => {
@@ -77,7 +76,7 @@ describe("footer", () => {
     host.emit(TOTALS_CHANNEL, null);
 
     expect(host.footerRefreshes).toBe(0);
-    expect(lines().slice(1, 3)).toEqual([" 50.0k · test-model (200k context)", " my-project git:(main)"]);
+    expect(lines()[2]).toBe(" context 50.0k of 200k");
   });
 
   it("refreshes on idle", () => {
@@ -95,8 +94,33 @@ describe("footer", () => {
     host.thinking = "high";
     host.sessionTitle = "refactor";
 
-    expect(lines()).toContain(" 190.0k · test-model (200k context)");
-    expect(lines()).toContain(" my-project git:(main) • refactor");
-    expect(lines()).toContain(" thinking high (<app.thinking.cycle> to cycle)");
+    expect(lines()[1]).toContain("my-project on main · refactor");
+    expect(lines()[1]).toContain("test-model · thinking high");
+    expect(lines()[2]).toBe(" context 190.0k of 200k");
+  });
+});
+
+describe("footer handoff limits", () => {
+  const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+
+  it("shows the context against the handoff point once session-limits publishes", () => {
+    const { host, lines } = setup();
+
+    expect(lines()[2]).toBe(" context 50.0k of 200k");
+
+    host.emit(LIMITS_CHANNEL, limits);
+
+    expect(host.footerRefreshes).toBe(1);
+    expect(lines()[2]).toBe(" context 50.0k of 120k");
+  });
+
+  it("ignores malformed limits", () => {
+    const { host, lines } = setup();
+
+    host.emit(LIMITS_CHANNEL, { ...limits, hardRatio: 2 });
+    host.emit(LIMITS_CHANNEL, null);
+
+    expect(host.footerRefreshes).toBe(0);
+    expect(lines()[2]).toBe(" context 50.0k of 200k");
   });
 });

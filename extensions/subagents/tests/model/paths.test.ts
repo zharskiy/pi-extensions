@@ -17,8 +17,6 @@ describe("handoffPathFor", () => {
   it("keeps agent handoffs under the OS temp dir, per session", () => {
     const info = { ...createFakeHost().info, id: "s1" };
 
-    expect(handoffPathFor(info, "worker-1")).toBe(
-      join(tmpdir(), "pi-subagents", "s1", "worker-1-handoff.md"),
-    );
+    expect(handoffPathFor(info, "worker-1")).toBe(join(tmpdir(), "pi-handoff", "s1", "worker-1-handoff.md"));
   });
 });

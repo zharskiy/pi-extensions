@@ -9,7 +9,7 @@ extensions/context/
 ├── core/
 │   ├── buckets.ts                   context facts → breakdown (memory files, skills, prompt, tools by source, messages)
 │   ├── breakdown.ts                 usage model: categories, scaling to pi's total, free space, cache figures
-│   └── snapshot.ts                  Snapshot type and validation of a stored entry
+│   └── snapshot.ts                  Snapshot type and validation of a stored entry, its timestamp included
 ├── ui/
 │   ├── grid.ts                      grid layout and painting, legend glyphs
 │   ├── details.ts                   section titles, summaries and expanded item lines

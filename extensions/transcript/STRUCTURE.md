@@ -5,13 +5,16 @@ extensions/transcript/
 ├── index.ts                        entry: re-exports the default from api/extension.ts
 ├── api/
 │   ├── extension.ts                createManagedExtension: namespace pi-transcript, transcriptPlugin
-│   └── plugin.ts                   transcriptPlugin, createTranscript: tool rows and the hidden thinking label
+│   └── plugin.ts                   transcriptPlugin, createTranscript: tool rows, thinking label, answer rule and its turn
 ├── core/
+│   ├── turn-summary.ts             turn work count from the tool calls of each assistant end (the final one carries the rule), the answer entry's data, label and parsing
 │   ├── tool-kinds.ts               call classification: arguments, read range, listed counts, missing file, edit diff text, duration
 │   └── word-spans.ts               changed-word spans of a removed/added line pair
 ├── ui/
+│   ├── answer-rule.ts              answerRule: the dim labelled rule of an answer entry
 │   ├── tools.ts                    transcriptRows: look per tool, title, outcome and hint of every row
 │   ├── tool-look.ts                Look, Context, Outcome types and the shared look helpers
+│   ├── skill.ts                    collapsed skill-read row: [skill] label, name, range, one-line failure
 │   ├── shell.ts                    bash and powershell rows
 │   ├── codemode.ts                 codemode rows and their call list
 │   ├── generic.ts                  MCP and unknown-tool rows
@@ -22,7 +25,7 @@ extensions/transcript/
 │   ├── output.test.ts              output helpers
 │   ├── pi.test.ts                  rows through pi's components
 │   ├── tools.test.ts               every tool's rows
-│   ├── transcript.test.ts          tool rows registration and the thinking label on a fake host
+│   ├── transcript.test.ts          tool rows registration, the thinking label and the answer rule on a fake host
 │   └── support/transcript-rows.ts  rows and numbered helpers
 ├── README.md                       user guide
 ├── ARCHITECTURE.md                 runtime behaviour

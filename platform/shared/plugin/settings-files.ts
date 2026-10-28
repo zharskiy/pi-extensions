@@ -1,21 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorText } from "./format.ts";
-import { isPlainObject } from "./plain-object.ts";
+import { isPlainObject } from "../plain-object.ts";
+import { errorText } from "../text/format.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
 
 type ListRule = { type: "list"; of: string };
 
-type BooleanRule = { type: "boolean" };
-
 type ChoiceRule = { type: "choice"; values: readonly string[] };
 
 export type ObjectParse = { value: unknown; errors: string[] };
 
-type ObjectRule = { type: "object"; of: string; parse?: (value: Record<string, unknown>) => ObjectParse };
+type ObjectRule = { type: "object"; of: string; parse: (value: Record<string, unknown>) => ObjectParse };
 
-type SettingsRule = NumberRule | ListRule | BooleanRule | ChoiceRule | ObjectRule;
+type SettingsRule = NumberRule | ListRule | ChoiceRule | ObjectRule;
 
 export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 
@@ -31,10 +29,6 @@ const validList = (value: unknown) =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string");
 
 const isValid = (rule: SettingsRule, value: unknown) => {
-  if (rule.type === "boolean") {
-    return typeof value === "boolean";
-  }
-
   if (rule.type === "choice") {
     return typeof value === "string" && rule.values.includes(value);
   }
@@ -47,10 +41,6 @@ const isValid = (rule: SettingsRule, value: unknown) => {
 };
 
 const expectation = (rule: SettingsRule) => {
-  if (rule.type === "boolean") {
-    return "true or false";
-  }
-
   if (rule.type === "list") {
     return `a list of ${rule.of}`;
   }
@@ -90,7 +80,7 @@ export const parseSettings = <T>(
         return;
       }
 
-      if (rule.type === "object" && rule.parse) {
+      if (rule.type === "object") {
         const parsed = rule.parse(value as Record<string, unknown>);
 
         errors.push(...parsed.errors.map((error) => `${source}: ${key}.${error}`));

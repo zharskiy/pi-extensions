@@ -2,22 +2,12 @@ import type { AgentRecord } from "../model/agent-record.ts";
 
 type TaskInput = { task: string; files?: string[] };
 
-export const composeTask = (
-  record: AgentRecord,
-  item: TaskInput,
-  predecessor?: AgentRecord,
-  undelivered: string[] = [],
-) => {
-  const files = predecessor ? [predecessor.handoffPath].concat(item.files ?? []) : (item.files ?? []);
+export const composeTask = (record: AgentRecord, item: TaskInput, undelivered: string[] = []) => {
+  const files = item.files ?? [];
   const lines = [`Task from ${record.callerId} (agent id ${record.id}):`, `Agent folder: ${record.dir}`];
 
-  if (predecessor) {
-    lines.push(
-      `You continue the work of agent ${predecessor.id} as link ${record.chainIndex} of its chain; it reached its context limit and wrote a handoff file.`,
-      `Read the handoff file at ${predecessor.handoffPath} first, then carry on from its Next section without redoing the work it reports as done.`,
-      "",
-      "Original task:",
-    );
+  if (record.predecessorId) {
+    lines.push("Original task:");
   }
 
   lines.push(item.task);

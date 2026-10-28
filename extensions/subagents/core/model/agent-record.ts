@@ -1,5 +1,9 @@
-import type { AnyToolSpec, ContextSnapshot, RoutedMessage } from "../../../../platform/pi-adapter/index.ts";
-import type { HandoffValidation } from "../../../../platform/shared/index.ts";
+import type {
+  AnyToolSpec,
+  ContextSnapshot,
+  CustomMessage,
+  RoutedMessage,
+} from "../../../../platform/pi-adapter/index.ts";
 import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
@@ -143,19 +147,16 @@ export type AgentDefinitions = {
   reload(): void;
 };
 
+export type AgentMessage = RoutedMessage | CustomMessage;
+
 export type RouteResult =
   | { ok: true; delivery: "steer" | "followUp" | "held" }
   | { ok: false; error: string };
 
 export type AgentRunner = {
   stop(id: string): Promise<boolean>;
-  route(id: string, message: RoutedMessage): Promise<RouteResult>;
+  route(id: string, message: AgentMessage): Promise<RouteResult>;
   abort(id: string, reason: string): Promise<void>;
-};
-
-export type HandoffService = {
-  instruction(path: string): string;
-  validate(text: string): HandoffValidation;
 };
 
 type AgentStatusService = {
@@ -183,7 +184,6 @@ export type ServiceMap = {
   agentSetup: AgentSetupService;
   definitions: AgentDefinitions;
   runner: AgentRunner;
-  handoff: HandoffService;
   agentStatus: AgentStatusService;
   fetchTool: FetchToolService;
 };

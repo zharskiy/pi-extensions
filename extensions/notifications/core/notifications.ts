@@ -53,16 +53,11 @@ export const createNotifier = (
 
   const fireWait = () => {
     const open = Array.from(waits.values());
-    const latest = open.at(-1);
-
-    if (!latest) {
-      return;
-    }
 
     open.forEach((wait) => {
       wait.fired = true;
     });
-    send(dialogText(latest.title));
+    send(dialogText(open.at(-1)?.title));
   };
 
   const armIdle = () => idle.arm(fireIdle, settings.idleDelayMs);

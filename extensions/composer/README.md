@@ -36,7 +36,7 @@ Open pi in the interactive TUI and type:
 |---|---|
 | Open pi | The input between two full-width lines, `›` in front of the first line. |
 | Type a second line | It is indented under the first, with no prompt of its own. |
-| Click in the input | The cursor moves to the clicked character. |
+| Click in the input | The cursor moves to the clicked character, counted from the start of the text after the `›` gutter. |
 
 ## Development
 

@@ -38,12 +38,18 @@ describe("ledger", () => {
     ledger.record({ source: "agents", id: "a1", usage: usageTotals(0.1) });
     ledger.record({ source: "agents", id: "a2", usage: usageTotals(0.2) });
 
-    expect(ledger.persist()).toBe(2);
-    expect(ledger.persist()).toBe(0);
+    ledger.persist();
+
+    expect(store.entries).toHaveLength(2);
+
+    ledger.persist();
+
+    expect(store.entries).toHaveLength(2);
 
     ledger.record({ source: "agents", id: "a2", usage: usageTotals(0.3) });
 
-    expect(ledger.persist()).toBe(1);
+    ledger.persist();
+
     expect(store.entries.map((entry) => entry.customType)).toEqual([USAGE_ENTRY, USAGE_ENTRY, USAGE_ENTRY]);
     expect(store.entries.at(-1)?.data).toEqual({ source: "agents", id: "a2", usage: usageTotals(0.3) });
   });
@@ -63,7 +69,11 @@ describe("ledger", () => {
     second.restore(store.data());
 
     expect(costs(second)).toEqual([["agents", 0.3]]);
-    expect(second.persist()).toBe(0);
+    const before = store.entries.length;
+
+    second.persist();
+
+    expect(store.entries).toHaveLength(before);
   });
 
   it("persists absorbed figures it has not persisted yet", () => {
@@ -76,7 +86,8 @@ describe("ledger", () => {
       { source: "agents", id: "a2", usage: usageTotals(0.2) },
     ]);
 
-    expect(ledger.persist()).toBe(1);
+    ledger.persist();
+
     expect(store.data()).toEqual([{ source: "agents", id: "a2", usage: usageTotals(0.2) }]);
   });
 

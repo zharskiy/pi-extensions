@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
@@ -15,6 +16,7 @@ import {
   slotFor,
   toolRowsRecord,
 } from "./row-component.ts";
+import { skillOfRead } from "./skill-reads.ts";
 import { fromPiResult, type PiToolRenderContext } from "./tool-bridge.ts";
 
 export const BUILTIN_TOOLS: readonly string[] = [
@@ -69,6 +71,7 @@ const callView = (
 ): ToolCallView => {
   const converted = result ? fromPiResult(result as never) : undefined;
   const tool = label(name);
+  const skill = skillOfRead(name, context.args, context.cwd, homedir());
   const aborted = context.isError && converted !== undefined && abortedText(converted.text, name);
 
   return {
@@ -83,6 +86,7 @@ const callView = (
     aborted,
     ...(context.durationMs === undefined ? {} : { durationMs: context.durationMs }),
     ...(tool ? { label: tool } : {}),
+    ...(skill ? { skill } : {}),
     ...(converted && result
       ? {
           result: {

@@ -62,7 +62,7 @@ export const readableText = (html: string): PageText => {
   return { title: titleOf(html), text: collapse(decodeEntities(text)) };
 };
 
-const mediaType = (contentType: string) => contentType.split(";")[0].trim().toLowerCase();
+export const mediaType = (contentType: string) => contentType.split(";")[0].trim().toLowerCase();
 
 const isHtml = (type: string) => type === "text/html" || type === "application/xhtml+xml";
 
@@ -79,22 +79,8 @@ export const supported = (contentType: string) => {
   return type === "" || isHtml(type) || isPlain(type);
 };
 
-export const assertSupported = (contentType: string) => {
-  if (!supported(contentType)) {
-    throw new Error(`unsupported content type ${mediaType(contentType)}`);
-  }
-};
-
 export const pageText = (body: string, contentType: string): PageText => {
   const type = mediaType(contentType);
 
-  if (type === "" || isHtml(type)) {
-    return readableText(body);
-  }
-
-  if (isPlain(type)) {
-    return { text: body.trim() };
-  }
-
-  throw new Error(`unsupported content type ${type}`);
+  return type === "" || isHtml(type) ? readableText(body) : { text: body.trim() };
 };

@@ -73,9 +73,4 @@ describe("pageText", () => {
     expect(pageText('{"a":1}', "application/json").text).toBe('{"a":1}');
     expect(pageText("plain", "text/plain").text).toBe("plain");
   });
-
-  it("reports unsupported types", () => {
-    expect(() => pageText("x", "image/png")).toThrow("unsupported content type image/png");
-    expect(() => pageText("x", "application/pdf")).toThrow("application/pdf");
-  });
 });

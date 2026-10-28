@@ -6,24 +6,31 @@ import {
   type AnyToolSpec,
   type ChildEvent,
   type ChildSession,
-  type RoutedMessage,
+  type CustomMessage,
+  type MessageDelivery,
   type SessionInfo,
   type StopReason,
   settleWithin,
   splitModelRequest,
   type UsageTotals,
 } from "../../../../platform/pi-adapter/index.ts";
-import { errorText, readText } from "../../../../platform/shared/index.ts";
+import {
+  errorText,
+  HANDOFF_SEED_TYPE,
+  type HandoffSeedDetails,
+  readText,
+  seedText,
+} from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
   type AgentDefinitions,
+  type AgentMessage,
   type AgentRecord,
   type AgentRegistry,
   type AgentRunner,
   allowlist,
   chainLinks,
   chainTerminal,
-  type HandoffService,
   isClosed,
   MAIN_CALLER,
   type RouteResult,
@@ -31,6 +38,7 @@ import {
 } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL } from "../model/agent-schema.ts";
 import type { Bus } from "../model/events.ts";
+import { handoffService } from "../model/handoff.ts";
 import { agentsDirFor } from "../model/paths.ts";
 import type { Settings } from "../model/settings.ts";
 import { resolutionError } from "./model-text.ts";
@@ -50,7 +58,6 @@ type RunnerDeps = {
   definitions: AgentDefinitions;
   outbox: Pick<Outbox, "post">;
   session: () => SessionInfo;
-  handoff: HandoffService;
   toolsFor: (record: AgentRecord) => AnyToolSpec[];
 };
 
@@ -82,7 +89,13 @@ type Batch = {
   resolve: (records: AgentRecord[]) => void;
 };
 
-type LaunchSlot = { item: BatchItem; definition: AgentDefinition; plan: ModelPlan; undelivered?: string[] };
+type LaunchSlot = {
+  item: BatchItem;
+  definition: AgentDefinition;
+  plan: ModelPlan;
+  undelivered?: string[];
+  seed?: CustomMessage;
+};
 
 type Live = {
   child?: ChildSession;
@@ -92,7 +105,7 @@ type Live = {
   lastError?: string;
   abortReason?: string;
   lastText: string;
-  pending: RoutedMessage[];
+  pending: AgentMessage[];
   unsubscribe?: () => void;
   release?: () => void;
   graceTimer?: ReturnType<typeof setTimeout>;
@@ -201,10 +214,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const hasOpenBatches = (callerId: string) =>
     Array.from(batches.values()).some((batch) => batch.callerId === callerId && !batch.wait);
 
-  const sendHeld = (live: Live, child: ChildSession) =>
-    Promise.all(live.pending.splice(0).map((message) => child.send(message, "steer")));
+  const deliver = (child: ChildSession, message: AgentMessage, delivery: MessageDelivery) =>
+    "customType" in message ? child.sendCustom(message, delivery) : child.send(message, delivery);
 
-  const resume = async (id: string, deliver: (child: ChildSession) => Promise<void>) => {
+  const sendHeld = (live: Live, child: ChildSession) =>
+    Promise.all(live.pending.splice(0).map((message) => deliver(child, message, "steer")));
+
+  const resume = async (id: string, send: (child: ChildSession) => Promise<void>) => {
     const live = lives.get(id);
 
     if (!live?.child) {
@@ -227,7 +243,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.turn = "running";
 
     try {
-      await deliver(child);
+      await send(child);
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(id, { state: "failed", error: `wake failed: ${errorText(error)}` });
@@ -332,7 +348,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const replyHandoff = (live: Live) => {
     const text = replyText(live);
 
-    return text.length > 0 && deps.handoff.validate(text).ok ? text : undefined;
+    return text.length > 0 && handoffService.validate(text).ok ? text : undefined;
   };
 
   const saveReplyHandoff = (record: AgentRecord, live: Live): { text?: string; error?: string } => {
@@ -363,7 +379,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return deps.registry.close(record.id, { state: "failed", error });
     }
 
-    const validation = deps.handoff.validate(text);
+    const validation = handoffService.validate(text);
 
     if (!validation.ok) {
       return deps.registry.close(record.id, {
@@ -405,7 +421,18 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       worktree: record.worktree,
     });
 
-    launches.set(successor.id, slot);
+    const link = { id: record.id, link: successor.chainIndex };
+
+    const successorSlot: LaunchSlot = {
+      ...slot,
+      seed: {
+        customType: HANDOFF_SEED_TYPE,
+        text: seedText(handoffService.preface({ ...link, path: record.handoffPath }), text),
+        details: { from: "agent", ...link } satisfies HandoffSeedDetails,
+      },
+    };
+
+    launches.set(successor.id, successorSlot);
 
     batch.ids.push(successor.id);
 
@@ -415,7 +442,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       successorId: successor.id,
     });
 
-    void launch(successor, slot);
+    void launch(successor, successorSlot);
 
     return closed;
   };
@@ -522,7 +549,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     void releaseLive(record.id);
   };
 
-  const handleEvent = (id: string, live: Live, event: ChildEvent) => {
+  const handleEvent = (id: string, live: Live, child: ChildSession, event: ChildEvent) => {
     const record = deps.registry.get(id);
 
     if (!record) {
@@ -530,16 +557,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (event.type === "turn_end") {
-      const usage = live.child?.ownUsage();
-      const tokens = usage ? usage.input + usage.output + usage.cacheWrite : record.tokens;
-      const cost = usage ? usage.cost.total : record.cost;
+      const usage = child.ownUsage();
+      const tokens = usage.input + usage.output + usage.cacheWrite;
+      const cost = usage.cost.total;
       const turns = record.turns + 1;
 
       deps.registry.update(id, { turns, context: event.context, tokens, cost, lastText: live.lastText });
 
-      if (usage) {
-        deps.bus.emit("agent:usage", { id, usage });
-      }
+      deps.bus.emit("agent:usage", { id, usage });
 
       const continuing =
         live.lastToolCalls > 0 && live.lastStopReason !== undefined && !failedStop(live.lastStopReason);
@@ -578,9 +603,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         live.turn = "idle";
       }
 
-      if (live.child) {
-        noteUsage(id, live.child.ownUsage());
-      }
+      noteUsage(id, child.ownUsage());
 
       if (record.state === "grace") {
         settleGrace(record, live);
@@ -666,7 +689,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     live.child = child;
-    live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, event));
+    live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, child, event));
 
     const afterSpawn = deps.registry.get(record.id);
 
@@ -681,12 +704,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       sessionFile: child.sessionFile,
     });
 
-    const predecessor = record.predecessorId ? deps.registry.get(record.predecessorId) : undefined;
-
     live.turn = "running";
 
     try {
-      child.start(composeTask(record, slot.item, predecessor, slot.undelivered));
+      child.start(composeTask(record, slot.item, slot.undelivered), slot.seed);
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });
@@ -881,6 +902,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       resolve,
     });
 
+    deps.bus.emit("batch:started", { batchId, callerId: options.callerId, wait: options.wait });
+
     records.forEach((record, index) => {
       void launch(record, slots[index]);
     });
@@ -974,7 +997,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return true;
   };
 
-  const route = async (requestedId: string, message: RoutedMessage): Promise<RouteResult> => {
+  const route = async (requestedId: string, message: AgentMessage): Promise<RouteResult> => {
     const record = terminalOf(requestedId);
 
     if (!record) {
@@ -1004,11 +1027,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (live.turn === "running") {
-      await live.child.send(message, "steer");
+      await deliver(live.child, message, "steer");
       return { ok: true, delivery: "steer" };
     }
 
-    void resume(id, (child) => child.send(message, "followUp"));
+    void resume(id, (child) => deliver(child, message, "followUp"));
 
     return { ok: true, delivery: "followUp" };
   };

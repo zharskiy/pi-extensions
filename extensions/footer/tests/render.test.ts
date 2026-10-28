@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
-import { SPENDING_STATUS_KEY, type SpendingTotals } from "../../../platform/shared/index.ts";
-import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
+import {
+  HINT_STATUS_PREFIX,
+  MIRROR_STATUS_PREFIX,
+  type SpendingTotals,
+} from "../../../platform/shared/index.ts";
+import { paintRecordingTheme, plainTheme } from "../../../test/framework/index.ts";
 import type { FooterState } from "../core/segments.ts";
 import { renderFooter } from "../ui/render.ts";
 
-const tokenTheme: ThemeLike = tokenTaggingTheme({ close: () => "" });
+const model = { name: "test-model", reasoning: true };
 
-const boldTheme: ThemeLike = tokenTaggingTheme({ close: () => "", bold: true });
+const plainTotals: SpendingTotals = {
+  main: { cost: 4.42, tokens: 162_400 },
+  sources: [],
+  subscription: false,
+};
 
-const model = { name: "test-model", contextWindow: 1_000_000, reasoning: true };
-
-const totals: SpendingTotals = {
+const withAgents: SpendingTotals = {
   main: { cost: 4, tokens: 150_000 },
   sources: [{ source: "agents", cost: 0.42, tokens: 12_400 }],
   subscription: false,
@@ -24,189 +30,418 @@ const state = (patch: Partial<FooterState> = {}): FooterState => ({
   cycleKey: "shift+tab",
   cwd: "/work/my-project",
   sessionName: undefined,
-  totals,
+  totals: plainTotals,
   cache: undefined,
+  limits: undefined,
   ...patch,
 });
 
-const render = (patch: Partial<FooterState> = {}, branch: string | null = null, statuses = new Map()) =>
-  renderFooter(plainTheme, state(patch), { branch, statuses });
+type Options = { branch?: string | null; statuses?: Map<string, string>; width?: number; theme?: ThemeLike };
 
-const paint = (patch: Partial<FooterState> = {}, branch: string | null = null, theme = tokenTheme) =>
-  renderFooter(theme, state(patch), { branch, statuses: new Map() });
+const render = (patch: Partial<FooterState> = {}, options: Options = {}) =>
+  renderFooter(
+    options.theme ?? plainTheme,
+    state(patch),
+    { branch: options.branch ?? null, statuses: options.statuses ?? new Map() },
+    options.width ?? 200,
+  );
 
-const statsOf = (patch: Partial<FooterState>) => render(patch)[1];
+const paint = (patch: Partial<FooterState> = {}, options: Options = {}) => {
+  const recording = paintRecordingTheme();
 
-const costOf = (cost: number) => statsOf({ totals: { ...totals, main: { cost, tokens: 0 } } });
+  renderFooter(
+    recording.theme,
+    state(patch),
+    { branch: options.branch ?? null, statuses: options.statuses ?? new Map() },
+    options.width ?? 200,
+  );
 
-describe("renderFooter", () => {
-  it("renders the padded block between a blank line above and below", () => {
-    expect(render()).toEqual([
-      "",
-      " 150.1k · $4.00 · test-model (1M context)",
-      " session total (agents included) 162.4k · $4.42",
-      " my-project",
-      " thinking high (shift+tab to cycle)",
-      "",
+  return recording;
+};
+
+const full = { sessionName: "refactor", cache: 73, totals: withAgents };
+
+const tokensOf = (painted: { token: string }[]) => new Set(painted.map(({ token }) => token));
+
+const at = (percent: number): Partial<FooterState> => ({
+  context: { tokens: percent * 10, window: 1000, percent },
+});
+
+const present = (lines: string[], markers: string[]) =>
+  markers.filter((marker) => lines.join("\n").includes(marker));
+
+const widths = Array.from({ length: 91 }, (_, index) => 120 - index);
+
+const lineAt = (index: number, patch: Partial<FooterState>, width: number, options: Options = {}) =>
+  render(patch, { ...options, width })[index];
+
+describe("renderFooter colours", () => {
+  it("uses only text, muted and dim plus the thinking accent", () => {
+    const { painted } = paint(full, { branch: "main" });
+    const thinking = painted.filter(({ token }) => token.startsWith("thinking"));
+
+    expect([...tokensOf(painted)].filter((token) => !token.startsWith("thinking")).sort()).toEqual([
+      "dim",
+      "muted",
+      "text",
     ]);
+    expect(thinking).toHaveLength(1);
   });
 
-  it("adds the branch, the session name and the statuses", () => {
-    const lines = render({ sessionName: "refactor" }, "feature-branch", new Map([["other", "busy"]]));
+  it("paints the level word in the token of its level and nothing else with an accent", () => {
+    const levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-    expect(lines).toEqual([
-      "",
-      " 150.1k · $4.00 · test-model (1M context)",
-      " session total (agents included) 162.4k · $4.42",
-      " my-project git:(feature-branch) • refactor",
-      " thinking high (shift+tab to cycle)",
-      "",
-      " busy",
-      "",
-    ]);
+    levels.forEach((level) => {
+      const { painted } = paint({ thinking: level });
+      const accent = painted.filter(({ token }) => token.startsWith("thinking"));
+
+      expect(accent).toEqual([{ token: `thinking${level[0].toUpperCase()}${level.slice(1)}`, text: level }]);
+    });
+
+    const unavailable = paint({ model: { ...model, reasoning: false } }).painted;
+    const lines = render({ model: { ...model, reasoning: false } });
+
+    expect(unavailable.some(({ token }) => token.startsWith("thinking"))).toBe(false);
+    expect(lines.join("\n")).not.toContain("shift+tab");
+    expect(lines.join("\n")).not.toContain("thinking");
   });
 
-  it("hides the cost and the session total until spending publishes", () => {
-    expect(render({ totals: undefined })).toEqual([
-      "",
-      " 150.1k · test-model (1M context)",
-      " my-project",
-      " thinking high (shift+tab to cycle)",
-      "",
-    ]);
+  it("never paints a figure dim and keeps the count and the total plain text", () => {
+    const { painted } = paint(full);
+
+    const figures = ["150.1k", "73%", "162.4k", "$4.00", "$0.42", "$4.42"];
+
+    figures.forEach((figure) => {
+      expect(painted.filter(({ token, text }) => token === "dim" && text.includes(figure))).toEqual([]);
+    });
+    expect(painted).toContainEqual({ token: "text", text: "150.1k" });
+    expect(painted).toContainEqual({ token: "text", text: "$4.42" });
   });
 
-  it("formats the main cost", () => {
-    expect(costOf(0.004)).toBe(" 150.1k · <$0.01 · test-model (1M context)");
+  it("leaves the context plain without limits, however full the window", () => {
+    [69, 90, 99].forEach((percent) => {
+      const { painted, bolded } = paint(at(percent));
+
+      expect(painted.filter(({ token }) => token === "warning" || token === "error")).toEqual([]);
+      expect(painted).toContainEqual({ token: "dim", text: "of 1k" });
+      expect(bolded).toEqual([]);
+    });
   });
 
-  it("formats the context window", () => {
-    expect(statsOf({ model: { ...model, contextWindow: 200_000 }, totals: undefined })).toBe(
-      " 150.1k · test-model (200k context)",
-    );
+  it("keeps the cache muted at every rate", () => {
+    [5, 50, 95].forEach((cache) => {
+      const { painted } = paint({ cache });
+
+      expect(painted).toContainEqual({ token: "muted", text: `${cache}%` });
+    });
   });
 
-  it("colours the context tokens by occupancy", () => {
-    const at = (percent: number) => paint({ context: { tokens: 1000, window: 2000, percent } })[1];
+  it("never colours the cost", () => {
+    const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+    const { painted } = paint({
+      totals: withAgents,
+      limits,
+      context: { tokens: 190_000, window: 272_000, percent: 70 },
+    });
+    const errors = painted.filter(({ token }) => token === "error").map(({ text }) => text);
 
-    expect([50, 70, 71, 90, 91].map((percent) => at(percent).split("<muted>")[0])).toEqual([
-      " <success>1.0k",
-      " <success>1.0k",
-      " <warning>1.0k",
-      " <warning>1.0k",
-      " <error>1.0k",
-    ]);
+    expect(tokensOf(painted).has("success")).toBe(false);
+    expect(errors).toEqual(expect.arrayContaining(["190.0k", "of 163k"]));
+    expect(errors).not.toContain("$4.42");
   });
 
-  it("shows the session cache hit after the context tokens, coloured by rate", () => {
-    expect(statsOf({ cache: 91.4 })).toBe(" 150.1k · cache 91% · $4.00 · test-model (1M context)");
-
-    const painted = (cache: number) => paint({ cache })[1];
-
-    expect(painted(91)).toContain("<muted>cache <success>91%");
-    expect(painted(50)).toContain("<warning>50%");
-    expect(painted(12)).toContain("<error>12%");
-  });
-
-  it("paints the thinking label bold in the colour of its level, without a mode mark", () => {
-    const line = (thinking: string) => paint({ thinking }, null, boldTheme)[4];
-
-    expect(line("high")).toBe(" <b><thinkingHigh>thinking high</b> <dim>(shift+tab to cycle)");
-    expect(line("")).toContain("<b><thinkingOff>thinking off</b>");
-    expect(line("xhigh")).toContain("<thinkingXhigh>thinking xhigh");
-    expect(line("max")).toContain("<thinkingMax>thinking max");
-    expect(line("max")).not.toContain("thinkingXhigh");
-  });
-
-  it("tints each kind of value its own way, with muted separators and dim labels", () => {
-    const lines = paint({ sessionName: "refactor", cache: 91 }, "feature-branch");
-
-    expect(lines[1]).toBe(
-      " <success>150.1k<muted> · <muted>cache <success>91%<muted> · <text>$4.00<muted> · <borderAccent>test-model <muted>(1M context)",
-    );
-    expect(lines[2]).toBe(" <muted>session total (agents included) <text>162.4k<muted> · <text>$4.42");
-    expect(lines[3]).toBe(
-      " <border>my-project<muted> git:(<syntaxString>feature-branch<muted>)<muted> • refactor",
-    );
-  });
-
-  it("tints the folder alone when there is no branch or session name", () => {
-    expect(paint()[3]).toBe(" <border>my-project");
-  });
-
-  it("paints key hints dim and every other label or separator muted", () => {
-    const tokensOf = (line: string) => Array.from(line.matchAll(/<(\w+)>/g), (match) => match[1]);
-    const greys = (line: string) => tokensOf(line).filter((token) => token === "dim" || token === "muted");
-    const lines = paint({ sessionName: "refactor", cache: 91 }, "feature-branch");
-    const unavailable = paint({ model: { ...model, reasoning: false } })[4];
-
-    expect([1, 2, 3].flatMap((index) => greys(lines[index])).every((token) => token === "muted")).toBe(true);
-    expect(greys(lines[4])).toEqual(["dim"]);
-    expect(unavailable).toBe(" <muted>thinking unavailable <dim>(shift+tab to cycle)");
-  });
-
-  it("tints the model name violet, leaves spend plain and nothing on the line bold", () => {
-    const line = (patch: Partial<FooterState>) => paint(patch, null, boldTheme)[1];
-
-    expect(line({})).not.toContain("<b>");
-    expect(paint({}, null, boldTheme)[2]).not.toContain("<b>");
-    expect(line({ model: undefined })).toMatch(/<muted>no model$/);
-  });
-
-  it("tints the branch cyan instead of orange when the theme paints orange like the success gauge", () => {
-    const greenStrings: ThemeLike = {
-      ...tokenTheme,
-      fg: (token, text) => tokenTheme.fg(token === "syntaxString" ? "success" : token, text),
-    };
-    const line = (theme: ThemeLike) => paint({}, "main", theme)[3];
-
-    expect(line(tokenTheme)).toContain("<syntaxString>main");
-    expect(line(greenStrings)).toBe(line(tokenTheme).replace("<syntaxString>", "<syntaxVariable>"));
-  });
-
-  it("drops the cache segment first when the line is too narrow", () => {
+  it("shows the compact token count of the window and drops the window first", () => {
     const at = (width: number) =>
-      renderFooter(plainTheme, state({ cache: 91 }), { branch: null, statuses: new Map() }, width)[1];
+      render({ context: { tokens: 42_318, window: 100_000, percent: 42 } }, { width })[2];
 
-    expect(at(53)).toBe(" 150.1k · cache 91% · $4.00 · test-model (1M context)");
-    expect(at(52)).toBe(" 150.1k · $4.00 · test-model (1M context)");
+    expect(at(200)).toContain("context 42.3k of 100k");
+    expect(at(200)).not.toContain("%");
+    expect(at(26)).toContain("context 42.3k");
+    expect(at(26)).not.toContain("of 100k");
+    expect(at(24)).toContain("context 42.3k");
+    expect(at(24)).not.toContain("of 100k");
   });
 
   it("marks unknown context and a missing model", () => {
-    expect(statsOf({ context: { tokens: null, window: 0, percent: null }, model: undefined })).toBe(
-      " ? · $4.00 · no model",
+    const lines = render({ context: { tokens: null, window: 0, percent: null }, model: undefined });
+
+    expect(lines[1]).toContain("no model");
+    expect(lines[2]).toContain("context ?");
+    expect(lines[2]).not.toContain("of ");
+  });
+});
+
+describe("renderFooter text", () => {
+  it("draws the idle block over three lines", () => {
+    const lines = render(
+      { sessionName: "refactor", cache: 73, context: { tokens: 13_040, window: 163_000, percent: 8 } },
+      { branch: "main", width: 80 },
     );
 
-    expect(paint({ context: { tokens: null, window: 0, percent: null } })[1]).toMatch(/^ <muted>\?<muted>/);
+    expect(lines).toEqual([
+      "",
+      " my-project on main · refactor                        test-model · thinking high",
+      " context 13.0k of 163k · cache 73%                         162.4k tokens · $4.42",
+      " shift+tab to cycle thinking",
+      "",
+    ]);
   });
 
-  it("marks subscription sessions on the session total", () => {
-    const sub = { ...totals, subscription: true };
+  it("uses a dot as the only separator", () => {
+    const lines = render({ ...full, totals: { ...withAgents, subscription: true } }, { branch: "main" });
 
-    expect(render({ totals: sub })[2]).toBe(" session total (agents included) 162.4k · $4.42 (sub)");
-    expect(paint({ totals: sub })[2]).toContain("<muted> (sub)");
+    lines.forEach((line) => {
+      expect(line).not.toMatch(/[()•]|git:/);
+    });
+  });
+
+  it("splits the cost only when agents spent something", () => {
+    const alone = render({ totals: plainTotals })[2];
+    const split = render({ totals: withAgents })[2];
+
+    expect(alone.match(/\$/g)).toHaveLength(1);
+    expect(alone).not.toContain("total");
+    expect(split).toMatch(/\$4\.00 main · \$0\.42 agents · \$4\.42 total/);
+
+    const { painted } = paint({ totals: withAgents });
+
+    expect(painted.filter(({ token, text }) => token === "text" && text.startsWith("$"))).toEqual([
+      { token: "text", text: "$4.42" },
+    ]);
+  });
+
+  it("marks a subscription and shortens it before dropping anything else on the line", () => {
+    const totals = { ...plainTotals, subscription: true };
+    const { painted } = paint({ totals });
+    const line = (width: number) => lineAt(2, { totals, cache: 73 }, width);
+    const shortened = widths.filter(
+      (width) => line(width).includes("on sub") && !line(width).includes("subscription"),
+    );
+
+    expect(painted.some(({ token, text }) => token === "text" && text.startsWith("$"))).toBe(false);
+    expect(line(200)).toContain("on subscription");
+    expect(shortened.length).toBeGreaterThan(0);
+    expect(shortened.some((width) => line(width).includes("cache"))).toBe(true);
+  });
+
+  it("hides the money until spending publishes", () => {
+    const line = render({ totals: undefined })[2];
+
+    expect(line).not.toContain("$");
+    expect(line).not.toContain("tokens");
   });
 
   it("names the last folder of the path", () => {
-    expect(render({ cwd: "/work/my-project/" })[3]).toBe(" my-project");
-    expect(render({ cwd: "C:\\work\\my-project", sessionName: "refactor" })[3]).toBe(
-      " my-project • refactor",
+    expect(render({ cwd: "/work/my-project/" })[1]).toContain(" my-project ");
+    expect(render({ cwd: "C:\\work\\my-project", sessionName: "refactor" })[1]).toContain(
+      "my-project · refactor",
     );
   });
 
   it("shows the thinking level, off when empty", () => {
-    expect(render({ thinking: "" })[4]).toBe(" thinking off (shift+tab to cycle)");
+    expect(render({ thinking: "" })[1]).toContain("thinking off");
+  });
+});
+
+describe("renderFooter layout", () => {
+  it("ends the two top lines at the last column", () => {
+    const patch = { ...full, sessionName: "refactor" };
+
+    widths
+      .filter((width) => width >= 60)
+      .forEach((width) => {
+        const lines = render(patch, { branch: "main", width });
+
+        expect(plainTheme.width(lines[1])).toBe(width);
+        expect(plainTheme.width(lines[2])).toBe(width);
+      });
   });
 
-  it("lists one line per status by key, collapses whitespace and skips the spending status", () => {
+  it("keeps the left side still when the figure grows", () => {
+    const small = render(
+      { totals: { ...plainTotals, main: { cost: 9.99, tokens: 162_400 } } },
+      { width: 80 },
+    )[2];
+    const large = render(
+      { totals: { ...plainTotals, main: { cost: 10, tokens: 162_400 } } },
+      { width: 80 },
+    )[2];
+    const left = (line: string) => line.slice(0, line.indexOf("  "));
+
+    expect(left(small)).toBe(left(large));
+    expect(plainTheme.width(large)).toBe(80);
+  });
+
+  it("never draws a line wider than the width", () => {
+    const patch = { ...full, sessionName: "a-long-session-name" };
+
+    [30, 40, 60, 80].forEach((width) => {
+      render(patch, { branch: "a-long-branch-name", width }).forEach((line) => {
+        expect(plainTheme.width(line)).toBeLessThanOrEqual(width);
+      });
+    });
+  });
+
+  it("drops segments monotonically and keeps the ones that never drop", () => {
+    const patch = { ...full, totals: { ...withAgents, subscription: true }, thinking: "high" };
+    const line1 = ["refactor", "thinking", "on main"];
+    const line2 = ["tokens", "subscription", "cache", "agents", "of 1M"];
+    const keep1 = ["my-project", "test-model"];
+    const keep2 = ["context 150.1k", "$4.42"];
+    const lines = (width: number) => render(patch, { branch: "main", width });
+
+    widths.slice(1).forEach((width, index) => {
+      const wider = lines(widths[index]);
+      const narrower = lines(width);
+
+      expect(
+        present([narrower[1]], line1).every((marker) => present([wider[1]], line1).includes(marker)),
+      ).toBe(true);
+      expect(
+        present([narrower[2]], line2).every((marker) => present([wider[2]], line2).includes(marker)),
+      ).toBe(true);
+    });
+
+    const narrowest = lines(30);
+
+    expect(present([narrowest[1]], keep1)).toEqual(keep1);
+    expect(present([narrowest[2]], keep2)).toEqual(keep2);
+
+    const lostAt = (index: number, marker: string) =>
+      widths.find((width) => !lines(width)[index].includes(marker)) ?? 0;
+
+    expect(lostAt(1, "refactor")).toBeGreaterThanOrEqual(lostAt(1, "thinking"));
+    expect(lostAt(1, "thinking")).toBeGreaterThanOrEqual(lostAt(1, "on main"));
+    expect(lostAt(2, "tokens")).toBeGreaterThanOrEqual(lostAt(2, "subscription"));
+    expect(lostAt(2, "subscription")).toBeGreaterThanOrEqual(lostAt(2, "cache"));
+    expect(lostAt(2, "cache")).toBeGreaterThanOrEqual(lostAt(2, "agents"));
+    expect(lostAt(2, "agents")).toBeGreaterThanOrEqual(lostAt(2, "of 1M"));
+  });
+
+  it("drops the total label together with the split", () => {
+    widths.forEach((width) => {
+      const line = lineAt(2, { totals: withAgents }, width);
+
+      expect(line.includes("total")).toBe(line.includes("agents"));
+    });
+  });
+
+  it("cuts the left side when the never-drop segments do not fit", () => {
+    const line = lineAt(1, { cwd: "/work/a-very-long-project-folder-name" }, 20);
+
+    expect(plainTheme.width(line)).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("renderFooter hint row", () => {
+  const agents = new Map([[`${HINT_STATUS_PREFIX}agents`, "← to list agents"]]);
+
+  it("holds the cycle pair alone without an agents status", () => {
+    const lines = render();
+
+    expect(lines[3]).toContain("shift+tab to cycle thinking");
+    expect(lines[3]).not.toContain("list agents");
+  });
+
+  it("puts the agents pair after the cycle pair and never repeats it as a status line", () => {
+    const lines = render({}, { statuses: agents });
+
+    expect(lines[3]).toMatch(/shift\+tab to cycle thinking · ← to list agents/);
+    expect(lines.filter((line) => line.includes("list agents"))).toHaveLength(1);
+  });
+
+  it("drops the cycle pair first at a narrow width", () => {
+    const rows = widths.map((width) => render({}, { statuses: agents, width })[3]);
+    const cycleOnly = rows.some((row) => row.includes("cycle") && !row.includes("list agents"));
+    const agentsOnly = rows.some((row) => row.includes("list agents") && !row.includes("cycle"));
+
+    expect(cycleOnly).toBe(false);
+    expect(agentsOnly).toBe(true);
+  });
+
+  it("omits the row for a model without reasoning and no agents status", () => {
+    const noReasoning = { model: { ...model, reasoning: false } };
+    const bare = render(noReasoning);
+
+    expect(bare).toHaveLength(render().length - 1);
+    expect(render(noReasoning, { statuses: agents })[3]).toBe(" ← to list agents");
+  });
+
+  it("draws every hint status in the hint row, ordered by key", () => {
+    const statuses = new Map([
+      [`${HINT_STATUS_PREFIX}zeta`, "z hint"],
+      [`${HINT_STATUS_PREFIX}alpha`, "a hint"],
+    ]);
+    const lines = render({}, { statuses });
+
+    expect(lines[3]).toMatch(/shift\+tab to cycle thinking · a hint · z hint/);
+    expect(lines).toHaveLength(render().length);
+  });
+
+  it("lists one line per other status by key, collapses whitespace and hides mirror statuses", () => {
     const statuses = new Map([
       ["zeta", "last"],
-      [SPENDING_STATUS_KEY, "main $1.000 · total $1.000"],
+      [`${MIRROR_STATUS_PREFIX}totals`, "main $1.000 · total $1.000"],
       ["alpha", "  first\n  line "],
       ["empty", "   "],
     ]);
 
-    expect(render({}, null, statuses).slice(-4)).toEqual(["", " first line", " last", ""]);
-    expect(render({}, null, new Map([[SPENDING_STATUS_KEY, "main $1.000"]]))).toEqual(render());
+    expect(render({}, { statuses }).slice(-4)).toEqual(["", " first line", " last", ""]);
+    expect(render({}, { statuses: new Map([[`${MIRROR_STATUS_PREFIX}totals`, "main $1.000"]]) })).toEqual(
+      render(),
+    );
+  });
+});
+
+describe("renderFooter while working", () => {
+  it("keeps the same height whatever the figures", () => {
+    const idle = render(full, { branch: "main", width: 80 });
+    const working = render(
+      { ...full, context: { tokens: 990_000, window: 1_000_000, percent: 99 }, cache: 5 },
+      { branch: "main", width: 80 },
+    );
+
+    expect(working).toHaveLength(idle.length);
+  });
+});
+
+describe("renderFooter with handoff limits", () => {
+  const limits = { softRatio: 0.45, hardRatio: 0.6, softTokens: 125_000, hardTokens: 175_000 };
+  const window = 272_000;
+  const withLimits = (tokens: number): Partial<FooterState> => ({
+    context: { tokens, window, percent: (tokens / window) * 100 },
+    limits,
+  });
+
+  it("measures the context against the handoff point", () => {
+    const { painted } = paint(withLimits(120_000));
+
+    expect(painted).toContainEqual({ token: "text", text: "120.0k" });
+    expect(painted).toContainEqual({ token: "dim", text: "of 163k" });
+  });
+
+  it("warns at the soft threshold and errors in bold at the hard one", () => {
+    const warn = paint(withLimits(122_400));
+    const error = paint(withLimits(163_200));
+
+    expect(warn.painted).toContainEqual({ token: "warning", text: "122.4k" });
+    expect(warn.bolded).toEqual([]);
+    expect(error.painted).toContainEqual({ token: "error", text: "of 163k" });
+    expect(error.painted).toContainEqual({ token: "error", text: "163.2k" });
+    expect(error.bolded).toEqual(expect.arrayContaining(["163.2k"]));
+  });
+
+  it("lets the count pass the handoff point", () => {
+    expect(render(withLimits(170_000))[2]).toContain("context 170.0k of 163k");
+  });
+
+  it("falls back to the plain window without limits", () => {
+    const patch = { context: { tokens: 120_000, window, percent: 44 } };
+
+    expect(render(patch)[2]).toContain("context 120.0k of 272k");
+    expect(paint({ context: { tokens: 250_000, window, percent: 92 } }).painted).toContainEqual({
+      token: "text",
+      text: "250.0k",
+    });
   });
 });

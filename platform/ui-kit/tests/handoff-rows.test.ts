@@ -1,0 +1,154 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { paintRecordingTheme, plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
+import type { ThemeLike, ToolRender, ToolRenderState } from "../../pi-adapter/index.ts";
+import { handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "../handoff-rows.ts";
+
+const seed = [
+  "This session continues the previous session /s/main.jsonl, which reached its context limit. Its handoff follows.",
+  "",
+  "## Status",
+  "partial",
+  "",
+  "## Outcome",
+  "The parser is fixed.",
+].join("\n");
+
+const padded = (lines: string[]) => lines.map((line) => (line === "" ? "" : ` ${line}`));
+
+const seedMessage = (details: unknown = { from: "session" }) => ({ text: seed, details });
+
+const draw = (expanded: boolean, width: number, details: unknown = { from: "session" }, key = "ctrl+o") =>
+  handoffSeedMessage(() => key)(seedMessage(details), width, expanded, plainTheme);
+
+describe("handoff seed message", () => {
+  it("shows the info marker, the title and the first sentence cut so the hint keeps its place", () => {
+    expect(padded(draw(false, 79))).toEqual([
+      " » handoff from the previous session",
+      "   ↳ This session continues the previous session /s/main.j... (ctrl+o to expand)",
+    ]);
+  });
+
+  it("lets the hint give way at 40 columns", () => {
+    expect(padded(draw(false, 39))).toEqual([
+      " » handoff from the previous session",
+      "   ↳ This session continues the previ...",
+    ]);
+  });
+
+  it("paints the marker in accent, the title bold, the summary muted and the hint dim", () => {
+    const { theme, painted, bolded } = paintRecordingTheme();
+
+    handoffSeedMessage(() => "ctrl+o")(seedMessage(), 200, false, theme);
+
+    const tokenOf = (text: string) => painted.find((entry) => entry.text === text)?.token;
+
+    expect(tokenOf("»")).toBe("accent");
+    expect(tokenOf("↳")).toBe("dim");
+    expect(
+      tokenOf("This session continues the previous session /s/main.jsonl, which reached its context limit."),
+    ).toBe("muted");
+    expect(tokenOf("(ctrl+o to expand)")).toBe("dim");
+    expect(bolded).toContain("handoff from the previous session");
+  });
+
+  it("shows the whole seed wrapped at column 4 without a hint when expanded", () => {
+    const lines = draw(true, 40);
+
+    expect(lines[0]).toBe("» handoff from the previous session");
+    expect(lines[1]?.startsWith("  ↳ This session continues")).toBe(true);
+    expect(lines).toContain("    ## Outcome");
+    expect(lines.at(-1)).toBe("    The parser is fixed.");
+    expect(lines.every((line) => plainTheme.width(line) <= 40)).toBe(true);
+    expect(lines.some((line) => line.includes("expand)"))).toBe(false);
+  });
+
+  it("has no hint when the expand key is unbound", () => {
+    expect(draw(false, 200, undefined, "")[1]?.endsWith("context limit.")).toBe(true);
+  });
+
+  it("cuts the summary at the first sentence mark followed by a space, keeping dots inside paths", () => {
+    const summaryOf = (text: string) =>
+      handoffSeedMessage(() => "ctrl+o")({ text }, 200, false, plainTheme)[1]?.replace(
+        / \(ctrl\+o to expand\)$/,
+        "",
+      );
+
+    expect(summaryOf("Use a.ts first. Then more.")).toBe("  ↳ Use a.ts first.");
+    expect(summaryOf("No mark here\nnext")).toBe("  ↳ No mark here");
+  });
+
+  it("titles the seed by its origin, and plainly when the origin is unknown", () => {
+    expect(draw(false, 200, { from: "agent", id: "scout-1", link: 2 })[0]).toBe(
+      "» handoff from agent scout-1 · link 2",
+    );
+    expect(draw(false, 200, { from: "session" })[0]).toBe("» handoff from the previous session");
+    expect(draw(false, 200, null)[0]).toBe("» handoff");
+    expect(draw(false, 200, { from: "agent", id: "scout-1" })[0]).toBe("» handoff");
+  });
+});
+
+const state = (patch: Partial<ToolRenderState> = {}): ToolRenderState => ({
+  aborted: false,
+  expanded: false,
+  isPartial: false,
+  isError: false,
+  args: {},
+  invalidate: () => {},
+  ...patch,
+});
+
+const drawn = (render: ToolRender | undefined) => (typeof render === "function" ? render(80) : render);
+
+const tagged: ThemeLike = tokenTaggingTheme({ close: () => "" });
+
+describe("handoff tool rows", () => {
+  const rows = handoffToolRows(() => join(homedir(), "work", "handoff.md"));
+
+  it("draws the bold title with its state mark", () => {
+    expect(drawn(rows.renderCall?.({ content: "" }, plainTheme, state()))).toBe("✓ handoff");
+  });
+
+  it("names the saved file under the home directory, or the error lines", () => {
+    expect(drawn(rows.renderResult?.({ text: "Handoff saved" }, state(), plainTheme))).toBe(
+      "  ↳ Saved ~/work/handoff.md",
+    );
+    expect(drawn(rows.renderResult?.({ text: "Error: bad\nmore", isError: true }, state(), tagged))).toBe(
+      ["  <dim>↳ <error>Error: bad", "    <error>more"].join("\n"),
+    );
+  });
+});
+
+describe("handoff request message", () => {
+  const draw = (details: unknown, expanded = false, width = 200) =>
+    handoffRequestMessage(() => "ctrl+o")(
+      { text: "Save the handoff now.\nThen stop.", details },
+      width,
+      expanded,
+      plainTheme,
+    );
+
+  it("names the figures of a limit request and gives the expand hint", () => {
+    expect(draw({ reason: "limit", tokens: 176_000, request: 175_000 })).toEqual([
+      "» handoff requested · 176k of 175k tokens (ctrl+o to expand)",
+    ]);
+  });
+
+  it("names the command of a manual request and nothing for unknown details", () => {
+    expect(draw({ reason: "manual", command: "/hand-over" })[0]).toBe(
+      "» handoff requested · /hand-over (ctrl+o to expand)",
+    );
+    expect(draw({ reason: "manual" })[0]).toBe("» handoff requested (ctrl+o to expand)");
+    expect(draw(undefined)[0]).toBe("» handoff requested (ctrl+o to expand)");
+    expect(draw({ reason: "limit" })[0]).toBe("» handoff requested (ctrl+o to expand)");
+  });
+
+  it("shows the whole instruction wrapped at column 4 without a hint when expanded", () => {
+    const lines = draw({ reason: "manual", command: "/hand-over" }, true, 40);
+
+    expect(lines[0]).toBe("» handoff requested · /hand-over");
+    expect(lines[1]).toBe("  ↳ Save the handoff now.");
+    expect(lines.at(-1)).toBe("    Then stop.");
+  });
+});

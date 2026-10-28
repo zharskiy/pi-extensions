@@ -14,8 +14,9 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec } from "../types/messages.ts";
+import type { CommandSpec, CustomMessage } from "../types/messages.ts";
 import type {
+  AssistantEnd,
   DialogEvent,
   IdleInfo,
   Phase,
@@ -28,6 +29,8 @@ import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
+import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
+import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
 
@@ -36,9 +39,11 @@ const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
   modelRegistry.isUsingOAuth(model) &&
   modelRegistry.getProvider(model.provider)?.auth.oauth?.isSubscription === true;
 
-const sessionInfo = (ctx: ExtensionContext): SessionInfo => ({
+const sessionInfo = (ctx: ExtensionContext, created: boolean): SessionInfo => ({
   id: ctx.sessionManager.getSessionId(),
   file: ctx.sessionManager.getSessionFile(),
+  parentSession: ctx.sessionManager.getHeader()?.parentSession,
+  created,
   cwd: ctx.cwd,
   agentDir: getAgentDir(),
   projectTrusted: ctx.isProjectTrusted(),
@@ -53,7 +58,7 @@ const sessionControl = (ctx: ExtensionCommandContext): SessionControl => ({
       withSession: seed
         ? async (fresh) => {
             await fresh.sendMessage(
-              { customType: seed.customType, content: seed.text, display: true },
+              { customType: seed.customType, content: seed.text, display: true, details: seed.details },
               { triggerTurn: false },
             );
           }
@@ -72,29 +77,35 @@ export const liveCtx = (state: HostState) => {
   return state.ctx;
 };
 
-type HiddenCustom = { customType: string; content: string; display: false; details: unknown };
+type HeldCustom = { customType: string; content: string; display: boolean; details: unknown };
 
 const HELD_POLL_MS = 100;
 
+const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
-  const startHandlers: ((info: SessionInfo, parent?: string) => void)[] = [];
+  const startHandlers: ((info: SessionInfo) => void)[] = [];
   const shutdownHandlers: ((reason: ShutdownReason) => void | Promise<void>)[] = [];
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
   const agentStartHandlers: (() => void)[] = [];
+  const assistantStartHandlers: (() => void)[] = [];
+  const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
-  const held: HiddenCustom[] = [];
+  const held: HeldCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
   const notices = createNotices(state);
   const sections = new Map<string, string>();
   const toolRows = toolRowsHost(pi);
+  const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
+  let created = false;
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -130,7 +141,15 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     pi.sendUserMessage(text, { expandPromptTemplates: true, deliverAs: "followUp" });
   };
 
-  const startHidden = (customs: HiddenCustom[]) => {
+  const followUp = (ctx: ExtensionContext, custom: HeldCustom) => {
+    queueFollowUp(sessionOf(ctx), custom.customType);
+    pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+  };
+
+  const endsRun = (ctx: ExtensionContext, stopReason: string, toolCalls: number) =>
+    toolCalls === 0 && stopReason === "stop" && !ctx.hasPendingMessages() && !followUpsQueued(sessionOf(ctx));
+
+  const startHeld = (customs: HeldCustom[]) => {
     const [first, ...rest] = customs;
 
     rest.forEach((custom) => {
@@ -164,7 +183,38 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    startHidden(held.splice(0));
+    startHeld(held.splice(0));
+  };
+
+  const deliver = (message: CustomMessage, display: boolean) => {
+    const ctx = state.ctx;
+
+    if (!ctx) {
+      return;
+    }
+
+    const custom: HeldCustom = {
+      customType: message.customType,
+      content: message.text,
+      display,
+      details: message.details,
+    };
+
+    if (runActive) {
+      followUp(ctx, custom);
+      return;
+    }
+
+    held.push(custom);
+
+    if (ctx.isIdle()) {
+      queueMicrotask(deliverHeld);
+      return;
+    }
+
+    if (!heldTimer) {
+      pollHeld();
+    }
   };
 
   pi.on("session_start", (event, ctx) => {
@@ -178,12 +228,12 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       recordPad(pi.getSettings().outputPad === 0 ? 0 : 1);
     }
 
-    const info = sessionInfo(ctx);
-    const created = event.reason === "new" || event.reason === "fork";
-    const parent = created ? ctx.sessionManager.getHeader()?.parentSession : undefined;
+    created = event.reason === "new" || event.reason === "fork";
+
+    const info = sessionInfo(ctx, created);
 
     startHandlers.forEach((handler) => {
-      handler(info, parent);
+      handler(info);
     });
   });
 
@@ -194,6 +244,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     runActive = false;
     held.length = 0;
     stopHeldPoll();
+
+    if (state.ctx) {
+      dropFollowUps(sessionOf(state.ctx));
+    }
 
     await shutdownHandlers.reduce<Promise<void>>(
       (chain, handler) =>
@@ -211,6 +265,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     notices.release();
     sections.clear();
     toolRows.release();
+    entries.release();
     thinkingLabel.release();
     state.ctx = undefined;
 
@@ -234,7 +289,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     runActive = true;
     stopHeldPoll();
     held.splice(0).forEach((custom) => {
-      pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
+      followUp(ctx, custom);
     });
 
     agentStartHandlers.forEach((handler) => {
@@ -247,6 +302,23 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("turn_start", (_event, ctx) => {
     capture(ctx);
     applyPhase({ type: "turn_start" });
+  });
+
+  pi.on("message_start", (event, ctx) => {
+    capture(ctx);
+
+    if (event.message.role === "custom") {
+      takeFollowUp(sessionOf(ctx), event.message, event.message.customType);
+      return;
+    }
+
+    if (event.message.role !== "assistant") {
+      return;
+    }
+
+    assistantStartHandlers.forEach((handler) => {
+      handler();
+    });
   });
 
   pi.on("message_update", (event, ctx) => {
@@ -269,6 +341,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     if (event.message.role !== "assistant") {
       return;
     }
+
+    const toolCalls = toolCallCount(event.message.content);
+    const info = { toolCalls, final: endsRun(ctx, event.message.stopReason, toolCalls) };
+
+    assistantEndHandlers.forEach((handler) => {
+      handler(info);
+    });
 
     applyPhase({ type: "message_end" });
   });
@@ -319,6 +398,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("agent_settled", (event, ctx) => {
     capture(ctx);
     runActive = false;
+    dropFollowUps(sessionOf(ctx));
     const info: IdleInfo = { aborted: event.aborted === true };
 
     idleHandlers.forEach((handler) => {
@@ -400,37 +480,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {
-      const ctx = state.ctx;
-
-      if (!ctx) {
-        return;
-      }
-
-      const custom: HiddenCustom = {
-        customType: message.customType,
-        content: message.text,
-        display: false,
-        details: message.details,
-      };
-
-      if (runActive) {
-        pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
-        return;
-      }
-
-      held.push(custom);
-
-      if (ctx.isIdle()) {
-        queueMicrotask(deliverHeld);
-        return;
-      }
-
-      if (!heldTimer) {
-        pollHeld();
-      }
+      deliver(message, false);
     },
-    dispatchCommand: (name, args) => {
-      sendCommand(args ? `/${name} ${args}` : `/${name}`);
+    sendMessage: (message) => {
+      deliver(message, true);
+    },
+    dispatchCommand: (name) => {
+      sendCommand(`/${name}`);
     },
     publish: (channel, data) => {
       if (!state.ctx) {
@@ -449,9 +505,15 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     readEntries,
     sessionUsage: (file) => sumUsage(entriesOf(file)),
-    session: () => sessionInfo(liveCtx(state)),
+    session: () => sessionInfo(liveCtx(state), created),
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);
+    },
+    onAssistantStart: (handler) => {
+      assistantStartHandlers.push(handler);
+    },
+    onAssistantEnd: (handler) => {
+      assistantEndHandlers.push(handler);
     },
     onPhase: (handler) => {
       phaseHandlers.push(handler);
@@ -461,7 +523,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     ...footerHost(pi, state),
     ...contextHost(pi, state),
-    ...entryHost(pi),
+    registerEntryRenderer: entries.registerEntryRenderer,
+    registerMessageRenderer: entries.registerMessageRenderer,
     registerToolRows: toolRows.registerToolRows,
   };
 };

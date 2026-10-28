@@ -1,6 +1,6 @@
 import type { OverlayApi } from "../../../../platform/pi-adapter/index.ts";
 import { DOT, errorText } from "../../../../platform/shared/index.ts";
-import { countsText, listCounts, listedTerminals, visibleRecords } from "../../core/agent-view/list-model.ts";
+import { listedTerminals, subtitle, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { createAgentSource } from "../../core/agent-view/source.ts";
 import { cutChars } from "../../core/components/receipt.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
@@ -72,6 +72,7 @@ export const agentViewPlugin: Plugin = {
             stop: () => stop(id),
             watch: viewWatch(id),
             leave,
+            clipboard: host.ui,
           },
           api,
         ),
@@ -175,12 +176,7 @@ export const agentViewPlugin: Plugin = {
     const runSubcommand = (word: Subcommand, args: string) =>
       word === "view" ? openList() : runSetupWord(word, args);
 
-    const viewText = () => {
-      const { running, finished } = listCounts(visibleRecords(registry.list(), cleared));
-      const counts = countsText(running, finished);
-
-      return counts ? SUBCOMMAND_TEXT.view + DOT + counts : SUBCOMMAND_TEXT.view;
-    };
+    const viewText = () => SUBCOMMAND_TEXT.view + subtitle(visibleRecords(registry.list(), cleared));
 
     const menu = async () => {
       if (!setup() || host.session().mode !== "tui") {

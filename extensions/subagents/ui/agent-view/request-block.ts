@@ -40,6 +40,8 @@ const linesOf = (payload: unknown): string[] => {
   return lines;
 };
 
+export const requestText = (payload: unknown): string => linesOf(payload).join("\n");
+
 export const requestLineCount = (payload: unknown): number => linesOf(payload).length;
 
 const wrappedLines = (payload: unknown, cols: number, theme: ThemeLike): string[] => {

@@ -31,9 +31,9 @@ Pi is a lean, extensible coding agent. This package adds what a long working day
 
  ── ⠹ Pondering · 12s (esc to interrupt) ─────────────────────────────
 
- 150.1k · cache 91% · $4.00 · model-name (1M context)
- session total (agents included) 162.4k · $4.42
- my-project git:(feature-branch) • session-name
+ my-project on main · session-name                    model-name · thinking high
+ context 13.0k of 163k · cache 73%                         851.3k tokens · $0.34
+ shift+tab to cycle thinking · ← to list agents
 ```
 
 Tool rows from [transcript](extensions/transcript/README.md), an agent batch from [subagents](extensions/subagents/README.md), the working line from [working-indicator](extensions/working-indicator/README.md) and the status block from [footer](extensions/footer/README.md).
@@ -65,7 +65,7 @@ The package installs thirteen extensions:
 
 **Look and feel**
 
-- **[footer](extensions/footer/README.md)**: a multi-line status block: context, cache, cost, model, session total, folder, branch, thinking level.
+- **[footer](extensions/footer/README.md)**: a three-line status block: folder, branch, model, thinking level, context, cache, cost and a key-hint row.
 - **[transcript](extensions/transcript/README.md)**: tool calls as state rows: a glyph, a title and a one-line outcome you expand with `ctrl+o`.
 - **[composer](extensions/composer/README.md)**: the input drawn between two full-width rules, with pi's `›` cursor as the prompt.
 - **[working-indicator](extensions/working-indicator/README.md)**: a rotating verb and the elapsed time next to pi's spinner (`Pondering · 12s`).

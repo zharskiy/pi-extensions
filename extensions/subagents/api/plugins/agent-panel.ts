@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
-import { errorText } from "../../../../platform/shared/index.ts";
+import { errorText, HINT_STATUS_PREFIX } from "../../../../platform/shared/index.ts";
 import {
   createPanelState,
   type PanelActionsAvailable,
@@ -14,9 +14,7 @@ import { type PanelActions, panelKeyHandler, selectFirst } from "../../ui/agent-
 import { createPanelWidget } from "../../ui/agent-panel/panel.ts";
 import { panelLines } from "../../ui/agent-panel/panel-lines.ts";
 
-const HINT_KEY = NAMESPACE;
-
-const HINT = "← to list agents";
+const HINT_KEY = `${HINT_STATUS_PREFIX}subagents`;
 
 export const agentPanelPlugin: Plugin = {
   id: "agent-panel",
@@ -52,7 +50,9 @@ export const agentPanelPlugin: Plugin = {
     const applyHint = (force = false) => {
       const wanted =
         enabled && tui && current.length === 0 && !settings.disabledPlugins.includes("agent-view");
-      const value = wanted ? host.ui.style("dim", HINT) : undefined;
+      const value = wanted
+        ? `${host.ui.style("dim", "←")} ${host.ui.style("muted", "to list agents")}`
+        : undefined;
 
       if (force ? value === undefined && shown === undefined : value === shown) {
         return;

@@ -1,4 +1,5 @@
 import type { ToolSpec } from "../../../../platform/pi-adapter/index.ts";
+import { errorText } from "../../../../platform/shared/index.ts";
 import { type FetchedPage, fetchPage } from "../../core/fetch-tool/fetch.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import type { Settings } from "../../core/model/settings.ts";
@@ -23,8 +24,6 @@ const pageText = (page: FetchedPage, maxBytes: number) => {
   return `${lines.join("\n")}\n\n${page.text}`;
 };
 
-const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
 const fetchSpec = (settings: Settings): ToolSpec<FetchParams> => ({
   name: "fetch",
   label: "Fetch",
@@ -47,7 +46,7 @@ const fetchSpec = (settings: Settings): ToolSpec<FetchParams> => ({
     try {
       return { text: pageText(await fetchPage(url, limits, signal), limits.maxBytes) };
     } catch (error) {
-      return { text: `Fetch failed: ${url}: ${reasonOf(error)}`, isError: true };
+      return { text: `Fetch failed: ${url}: ${errorText(error)}`, isError: true };
     }
   },
 });

@@ -5,13 +5,13 @@ import {
   type ChildSession,
   type CodemodeShortfall,
   type ContextSnapshot,
+  type CustomMessage,
   emptyUsage,
   type MessageDelivery,
   type ModelPreferences,
   type RoutedMessage,
   resolveModel,
   type SessionRecord,
-  type SkillInfo,
   type SpawnSpec,
   type StopReason,
   THINKING_LEVELS,
@@ -21,7 +21,8 @@ import {
 export type FakeChildSession = ChildSession & {
   spec: SpawnSpec;
   task?: string;
-  messages: { message: RoutedMessage; delivery: MessageDelivery }[];
+  seed?: CustomMessage;
+  messages: { message: RoutedMessage | CustomMessage; delivery: MessageDelivery }[];
   wakes: string[];
   aborted: boolean;
   abortDelayMs?: number;
@@ -51,8 +52,9 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
     disposed: false,
     usage: emptyUsage(),
     text: "",
-    start: (task) => {
+    start: (task, seed) => {
       child.task = task;
+      child.seed = seed;
     },
     subscribe: (listener) => {
       listeners.add(listener);
@@ -61,6 +63,9 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
       };
     },
     send: async (message, delivery) => {
+      child.messages.push({ message, delivery });
+    },
+    sendCustom: async (message, delivery) => {
       child.messages.push({ message, delivery });
     },
     wake: async (text) => {
@@ -138,7 +143,6 @@ export type FakeAgentRuntime = AgentRuntime & {
   skills: string[];
   sessionSkills?: string[];
   skillDescriptions: Record<string, string>;
-  skillScopes: Record<string, SkillInfo["scope"]>;
   skillPaths: Record<string, string>;
   workerRequests: number[];
   codemodeShortfall: CodemodeShortfall | undefined;
@@ -173,13 +177,12 @@ export const createFakeAgentRuntime = (extraModels: CatalogModel[] = []): FakeAg
     defaultThinking: () => "medium",
     skills: [],
     skillDescriptions: {},
-    skillScopes: {},
     skillPaths: {},
     skillCatalog: () =>
       runtime.skills.map((name) => ({
         name,
         description: runtime.skillDescriptions[name] ?? "",
-        scope: runtime.skillScopes[name] ?? "user",
+        scope: "user",
         path: runtime.skillPaths[name] ?? `/skills/${name}/SKILL.md`,
       })),
     skillNames: () => runtime.skillCatalog().map((skill) => skill.name),

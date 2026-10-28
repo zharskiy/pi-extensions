@@ -1,6 +1,5 @@
 export { type CatalogModel, type ModelPreferences, resolveModel } from "./child/model-resolver.ts";
 export { createPiExtension } from "./runtime/extension.ts";
-export { formatRoutedMessage } from "./runtime/message-text.ts";
 export { settleWithin } from "./runtime/settle-within.ts";
 export type {
   ContextFacts,
@@ -12,12 +11,12 @@ export type {
   ToolSource,
 } from "./types/context.ts";
 export type { Host, SessionHost } from "./types/host-capabilities.ts";
-export type { NotifyChannel } from "./types/host-ui.ts";
+export type { ClipboardUi, NotifyChannel } from "./types/host-ui.ts";
 export type { KeyPress } from "./types/keys.ts";
 export type {
   CodemodeShortfall,
   CommandSpec,
-  HiddenMessage,
+  CustomMessage,
   RoutedMessage,
   SessionRecord,
   SkillInfo,
@@ -40,6 +39,7 @@ export type {
   StopReason,
 } from "./types/runtime.ts";
 export type {
+  AssistantEnd,
   DialogEvent,
   DialogKind,
   IdleInfo,

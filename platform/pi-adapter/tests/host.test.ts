@@ -12,14 +12,16 @@ import { sharedPad } from "../tools/row-component.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
-const fakeCtx = (mode: string, idle = true) => ({
+const fakeCtx = (mode: string, idle = true, pending = false) => ({
   mode,
+  hasPendingMessages: () => pending,
   cwd: "/project",
   model: { contextWindow: 200_000 },
   modelRegistry: { isUsingOAuth: () => false },
   sessionManager: {
     getSessionId: () => "s1",
     getSessionFile: () => "/sessions/s1.jsonl",
+    getHeader: () => undefined,
     buildContextEntries: () => [],
   },
   isProjectTrusted: () => true,
@@ -199,6 +201,132 @@ describe("pi adapter", () => {
     expect(seen).toEqual(["waiting", "writing", "waiting", "tool", "waiting", "idle handler", "idle"]);
   });
 
+  it("reports the tool calls of an assistant message end, not of other messages", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: unknown[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onAssistantEnd((info) => seen.push(info));
+
+    await fire("session_start", ctx);
+    await fire("message_end", ctx, { message: { role: "user", content: "hi" } });
+    await fire("message_end", ctx, {
+      message: {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "text", text: "looking" },
+          { type: "toolCall", id: "a", name: "read", arguments: {} },
+          { type: "toolCall", id: "b", name: "grep", arguments: {} },
+        ],
+      },
+    });
+    await fire("message_end", ctx, {
+      message: { role: "assistant", stopReason: "stop", content: [{ type: "thinking", thinking: "hm" }] },
+    });
+    await fire("message_end", ctx, { message: { role: "toolResult", content: [] } });
+
+    expect(seen).toEqual([
+      { toolCalls: 2, final: false },
+      { toolCalls: 0, final: true },
+    ]);
+  });
+
+  it("marks a reply final only when the run ends with it", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: unknown[] = [];
+    const ctx = fakeCtx("tui", false);
+    const reply = (stopReason: string) => ({ message: { role: "assistant", stopReason, content: [] } });
+
+    host.onAssistantStart(() => seen.push("start"));
+    host.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+    await fire("message_start", ctx, reply("stop"));
+    await fire("message_end", ctx, reply("error"));
+    await fire("message_end", ctx, reply("aborted"));
+    await fire("message_end", ctx, reply("length"));
+    await fire("message_end", fakeCtx("tui", false, true), reply("stop"));
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
+
+    await fire("message_end", ctx, reply("stop"));
+    await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
+    await fire("message_end", ctx, reply("stop"));
+
+    expect(seen).toEqual(["start", false, false, false, false, false, true]);
+  });
+
+  it("shares a queued follow-up between hosts and takes it once when it starts", async () => {
+    const { pi, fire } = fakePi();
+    const sender = createPiHost(pi, { tools: new Map() });
+    const reader = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+    const ctx = fakeCtx("tui", false);
+    const reply = () => ({ message: { role: "assistant", stopReason: "stop", content: [] } });
+
+    reader.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+
+    sender.sendHiddenMessage({ customType: "wake", text: "first" });
+    sender.sendHiddenMessage({ customType: "wake", text: "second" });
+
+    await fire("message_end", ctx, reply());
+    await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
+    await fire("message_end", ctx, reply());
+    await fire("message_start", ctx, { message: { role: "custom", customType: "wake" } });
+    await fire("message_end", ctx, reply());
+    await fire("agent_settled", ctx, { aborted: false });
+
+    expect(seen).toEqual([false, false, true]);
+  });
+
+  it("forgets a queued follow-up when the session shuts down", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+    const ctx = fakeCtx("tui", false);
+
+    host.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
+
+    await fire("session_shutdown", ctx, { reason: "quit" });
+    await fire("session_start", ctx);
+    await fire("message_end", ctx, { message: { role: "assistant", stopReason: "stop", content: [] } });
+
+    expect(seen).toEqual([true]);
+  });
+
+  it("forgets a queued follow-up when the run settles", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: boolean[] = [];
+    const ctx = fakeCtx("tui", false);
+    const reply = { message: { role: "assistant", stopReason: "stop", content: [] } };
+
+    host.onAssistantEnd((info) => seen.push(info.final));
+
+    await fire("session_start", ctx);
+    await fire("agent_start", ctx);
+
+    host.sendHiddenMessage({ customType: "wake", text: "results" });
+
+    await fire("agent_settled", ctx, { aborted: true });
+    await fire("agent_start", ctx);
+    await fire("message_end", ctx, reply);
+
+    expect(seen).toEqual([true]);
+  });
+
   it("stays in the tool phase until the last parallel tool ends", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
@@ -237,17 +365,38 @@ describe("pi adapter", () => {
     expect(seen).toEqual(["waiting", "shutdown", "waiting"]);
   });
 
-  it("passes the parent session file to start handlers only for a session created from another one", async () => {
+  it("exposes the header's parent session on the session info for every start reason", async () => {
     const { pi, fire } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
     const seen: (string | undefined)[] = [];
+    const ctx = fakeCtx("tui");
+
+    host.onSessionStart((info) => seen.push(info.parentSession));
+
+    await fire(
+      "session_start",
+      {
+        ...ctx,
+        sessionManager: { ...ctx.sessionManager, getHeader: () => ({ parentSession: "/sessions/p.jsonl" }) },
+      },
+      { reason: "reload" },
+    );
+    await fire("session_start", ctx, { reason: "new" });
+
+    expect(seen).toEqual(["/sessions/p.jsonl", undefined]);
+  });
+
+  it("marks a session created only when pi starts it by new or fork", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: [boolean, boolean][] = [];
     const withHeader = (parentSession?: string) => {
       const ctx = fakeCtx("tui");
 
       return { ...ctx, sessionManager: { ...ctx.sessionManager, getHeader: () => ({ parentSession }) } };
     };
 
-    host.onSessionStart((_info, parent) => seen.push(parent));
+    host.onSessionStart((info) => seen.push([info.created, host.session().created]));
 
     await fire("session_start", withHeader("/sessions/forked.jsonl"), { reason: "fork" });
     await fire("session_start", withHeader("/sessions/handoff.jsonl"), { reason: "new" });
@@ -257,12 +406,12 @@ describe("pi adapter", () => {
     await fire("session_start", withHeader("/sessions/old.jsonl"), { reason: "reload" });
 
     expect(seen).toEqual([
-      "/sessions/forked.jsonl",
-      "/sessions/handoff.jsonl",
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+      [true, true],
+      [true, true],
+      [true, true],
+      [false, false],
+      [false, false],
+      [false, false],
     ]);
   });
 
@@ -302,11 +451,9 @@ describe("pi adapter", () => {
 
     await fire("session_start", fakeCtx("tui", false));
     host.dispatchCommand("session-handoff");
-    host.dispatchCommand("agents", "a1");
 
     expect(sent).toEqual([
       { text: "/session-handoff", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
-      { text: "/agents a1", options: { expandPromptTemplates: true, deliverAs: "followUp" } },
     ]);
   });
 
@@ -315,9 +462,9 @@ describe("pi adapter", () => {
     const host = createPiHost(pi, { tools: new Map() });
 
     await fire("session_start", fakeCtx("tui", true));
-    host.dispatchCommand("skill:review", "src");
+    host.dispatchCommand("skill:review");
 
-    expect(sent).toEqual([{ text: "/skill:review src", options: { expandPromptTemplates: true } }]);
+    expect(sent).toEqual([{ text: "/skill:review", options: { expandPromptTemplates: true } }]);
   });
 
   it("seeds the new session with a displayed message that triggers no turn", async () => {
@@ -331,7 +478,10 @@ describe("pi adapter", () => {
       description: "switch",
       run: async (args, control) => {
         received.push(args);
-        await control.newSession({ parentSession: "/old.jsonl", seed: { customType: "t", text: "hello" } });
+        await control.newSession({
+          parentSession: "/old.jsonl",
+          seed: { customType: "t", text: "hello", details: { n: 1 } },
+        });
       },
     });
 
@@ -357,7 +507,10 @@ describe("pi adapter", () => {
     expect(received).toEqual(["now"]);
     expect(calls).toEqual(["/old.jsonl"]);
     expect(seeded).toEqual([
-      { message: { customType: "t", content: "hello", display: true }, options: { triggerTurn: false } },
+      {
+        message: { customType: "t", content: "hello", display: true, details: { n: 1 } },
+        options: { triggerTurn: false },
+      },
     ]);
   });
 
@@ -375,6 +528,42 @@ describe("pi adapter", () => {
         call: "sendMessage",
         message: { customType: "wake", content: "results", display: false, details: { batch: 1 } },
         options: { deliverAs: "followUp", triggerTurn: true },
+      },
+    ]);
+  });
+
+  it("sends a displayed message during a run as a follow-up that triggers a turn", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+
+    await fire("session_start", fakeCtx("tui", false));
+    await fire("agent_start", fakeCtx("tui", false));
+
+    host.sendMessage({ customType: "req", text: "later", details: { n: 1 } });
+
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: { customType: "req", content: "later", display: true, details: { n: 1 } },
+        options: { deliverAs: "followUp", triggerTurn: true },
+      },
+    ]);
+  });
+
+  it("starts a run with a displayed message when idle", async () => {
+    const { pi, fire, calls } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+
+    await fire("session_start", fakeCtx("tui", true));
+
+    host.sendMessage({ customType: "req", text: "now" });
+    await Promise.resolve();
+
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: { customType: "req", content: "now", display: true, details: undefined },
+        options: { triggerTurn: true },
       },
     ]);
   });

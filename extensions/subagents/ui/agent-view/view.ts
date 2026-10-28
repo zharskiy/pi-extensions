@@ -1,8 +1,10 @@
 import {
+  type ClipboardUi,
   type KeyPress,
   type OverlayApi,
   PAD,
   type ThemeLike,
+  type ThemeToken,
   type ViewComponent,
 } from "../../../../platform/pi-adapter/index.ts";
 import { DOT, errorText } from "../../../../platform/shared/index.ts";
@@ -15,7 +17,7 @@ import { effectiveContextLimit } from "../../core/model/context-limit.ts";
 import { agentName } from "../components/agent-row.ts";
 import { alignRight, innerWidth, padLine, receiptText, truncatePainted } from "../components/format.ts";
 import { stateGlyph, stateToken, stopWords } from "../components/state-text.ts";
-import { requestLineCount, requestLines } from "./request-block.ts";
+import { requestLineCount, requestLines, requestText } from "./request-block.ts";
 
 type ViewDeps = {
   load(): ViewData;
@@ -24,6 +26,7 @@ type ViewDeps = {
   stop(): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void, onTick: () => void): () => void;
   leave(): void;
+  clipboard: ClipboardUi;
 };
 
 const RELOAD_TICK_MS = 1_000;
@@ -108,7 +111,7 @@ const handoffLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
 
   const invalid = record.error ? ` (invalid: ${record.error})` : "";
 
-  return [padLine(theme, "warning", `Handoff file ${record.handoffPath}${invalid}`, inner)];
+  return [padLine(theme, "warning", `handoff file ${record.handoffPath}${invalid}`, inner)];
 };
 
 export const headerLines = (
@@ -147,7 +150,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   let toolsExpanded = false;
   let requestExpanded = false;
   let pendingTop = false;
-  let notice: string | undefined;
+  let notice: { text: string; token: ThemeToken } | undefined;
   let lastHeight = 1;
   let layout = { width: 0, headerRows: 0, requestRows: 0, bodyRows: 0 };
   let disposed = false;
@@ -210,7 +213,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     return { request, lines, clickable: lines.length };
   };
 
-  const hintPairs = (): KeyHint[] => {
+  const hintTiers = (): KeyHint[][] => {
     const record = data.record;
     const exit: KeyHint = ["esc", deps.back ? "to go back" : "to close"];
     const stop: KeyHint[] = isOpen() ? [["x", stopWords(record.state)]] : [];
@@ -218,8 +221,11 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
       ? [["r", requestExpanded ? "to hide the request" : "to show the request"]]
       : [];
     const tools: KeyHint = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"];
+    const copy: KeyHint[] = request.length ? [["c", "to copy request"]] : [];
 
-    return [exit, ...stop, ...request, tools];
+    const lead = [exit, ...stop, ...request];
+
+    return [[...lead, tools, ...copy], [...lead, tools], lead];
   };
 
   const positionText = () => {
@@ -238,23 +244,21 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const position = positionText();
     const right = position ? theme.fg("dim", position) : "";
-    const pairs = hintPairs();
-    const full = keyHints(pairs, theme);
-    const core = keyHints(pairs.slice(0, -1), theme);
-    const placed = right
-      ? (alignRight(theme, full, right, inner) ?? alignRight(theme, core, right, inner))
-      : theme.width(full) <= inner
-        ? full
-        : undefined;
+    const tiers = hintTiers().map((pairs) => keyHints(pairs, theme));
+    const placed = tiers
+      .map((tier) =>
+        right ? alignRight(theme, tier, right, inner) : theme.width(tier) <= inner ? tier : undefined,
+      )
+      .find((line) => line !== undefined);
 
-    return PAD + (placed ?? theme.truncate(core, inner));
+    return PAD + (placed ?? theme.truncate(tiers.at(-1) ?? "", inner));
   };
 
   const render = (width: number) => {
     const theme = api.theme;
     const inner = innerWidth(width);
     const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
-    const footer = notice ? padLine(theme, "warning", notice, inner) : "";
+    const footer = notice ? padLine(theme, notice.token, notice.text, inner) : "";
     const height = Math.max(3, api.rows() - header.length - CHROME_ROWS);
     const { request, lines, clickable } = bodyLines(width);
     const body = request.concat(lines);
@@ -279,13 +283,26 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     return ["", ...header, ...window, ...padding, "", footer, hintLine(inner), ""];
   };
 
-  const fail = (error: unknown) => {
+  const show = (text: string, token: ThemeToken) => {
     if (disposed) {
       return;
     }
 
-    notice = `Stop failed: ${errorText(error)}`;
+    notice = { text, token };
     api.requestRender();
+  };
+
+  const fail = (error: unknown) => show(`Stop failed: ${errorText(error)}`, "warning");
+
+  const copyRequest = () => {
+    if (!hasRequest()) {
+      return;
+    }
+
+    void deps.clipboard.copyText(requestText(payload())).then(
+      () => show("Copied the request", "success"),
+      (error) => show(`Copy failed: ${errorText(error)}`, "warning"),
+    );
   };
 
   const toggleRequest = () => {
@@ -360,7 +377,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     escape: () => deps.leave(),
   };
 
-  const chars: Record<string, () => void> = { r: toggleRequest, x: stop };
+  const chars: Record<string, () => void> = { r: toggleRequest, x: stop, c: copyRequest };
 
   const handleKey = (key: KeyPress) => {
     notice = undefined;

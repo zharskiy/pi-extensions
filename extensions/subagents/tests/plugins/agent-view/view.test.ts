@@ -131,6 +131,7 @@ type ViewOptions = {
   record?: AgentRecord;
   back?: boolean;
   stop?: () => Promise<unknown> | undefined;
+  copy?: (text: string) => Promise<void>;
   width?: number;
   theme?: ThemeLike;
 };
@@ -163,6 +164,7 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
         leave: () => {
           left.count += 1;
         },
+        clipboard: { copyText: options.copy ?? (async () => {}) },
       },
       api,
     ),
@@ -221,9 +223,11 @@ describe("agent view", () => {
     expect(lines[6]).toBe("");
     expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
-    expect(lines.at(-2)?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools")).toBe(
-      true,
-    );
+    expect(
+      lines
+        .at(-2)
+        ?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools · c to copy request"),
+    ).toBe(true);
     expect(lines.at(-3)).toBe("");
     expect(lines.at(-1)).toBe("");
   });
@@ -264,7 +268,7 @@ describe("agent view", () => {
     expect(plainLines(view.render(100))).toEqual(collapsed);
   });
 
-  it("ignores Enter, Space, Tab, c and v", async () => {
+  it("ignores Enter, Space, Tab and v", async () => {
     const harness = setup();
     const record = closedAgent(harness);
     const { view, state } = await harness.openView(record.id);
@@ -273,7 +277,6 @@ describe("agent view", () => {
     view.handleKey(key("enter"));
     view.handleKey(key("space"));
     view.handleKey(key("tab"));
-    view.handleKey(char("c"));
     view.handleKey(char("v"));
 
     expect(plainLines(view.render(100))).toEqual(before);
@@ -451,9 +454,9 @@ describe("agent view header", () => {
       " tests failed twice",
       " stack",
     ]);
-    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" Handoff file /tmp/h.md");
+    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" handoff file /tmp/h.md");
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md", error: "missing Status" }))[3]).toBe(
-      " Handoff file /tmp/h.md (invalid: missing Status)",
+      " handoff file /tmp/h.md (invalid: missing Status)",
     );
 
     const painted = header(
@@ -584,9 +587,27 @@ describe("agent view header", () => {
   });
 });
 
+describe("agent view copy", () => {
+  it("hands the pretty-printed request to the host clipboard", async () => {
+    const harness = setup();
+    const record = closedAgent(harness, requestSession());
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(char("c"));
+    await flushMicrotasks();
+
+    expect(harness.host.copied).toEqual([JSON.stringify(PAYLOAD, null, 2)]);
+  });
+});
+
 describe("agent view hint", () => {
   const hintOf = (record: AgentRecord, options: { back?: boolean; session?: SessionRecord } = {}) =>
-    viewOf("session" in options ? options.session : fixture(), { record, back: options.back, rows: 400 });
+    viewOf("session" in options ? options.session : fixture(), {
+      record,
+      back: options.back,
+      rows: 400,
+      width: 120,
+    });
 
   it("writes the hint per state and per way back", () => {
     const open = agentRecord({ id: "explorer-1" });
@@ -596,10 +617,10 @@ describe("agent view hint", () => {
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
     expect(hint(hintOf(open))).toBe(
-      " esc to close · x to stop · r to show the request · ctrl+o to expand tools",
+      " esc to close · x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
     );
     expect(hint(hintOf(closed, { back: true }))).toBe(
-      " esc to go back · r to show the request · ctrl+o to expand tools",
+      " esc to go back · r to show the request · ctrl+o to expand tools · c to copy request",
     );
     expect(hint(hintOf(open, { session: noRequest }))).toBe(
       " esc to close · x to stop · ctrl+o to expand tools",
@@ -610,7 +631,7 @@ describe("agent view hint", () => {
     expanded.view.handleKey(char("r"));
 
     expect(hint(expanded)).toBe(
-      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools",
+      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools · c to copy request",
     );
 
     [open, grace, closed].forEach((record) => {
@@ -1091,7 +1112,11 @@ const codemodeSession = () =>
 
 describe("agent view codemode", () => {
   it("renders codemode calls with pi's renderer", () => {
-    const { lines } = viewOf(codemodeSession(), { record: agentRecord({ id: "explorer-1" }), rows: 400 });
+    const { lines } = viewOf(codemodeSession(), {
+      record: agentRecord({ id: "explorer-1" }),
+      rows: 400,
+      width: 120,
+    });
     const all = lines();
     const text = all.join("\n");
 
@@ -1334,6 +1359,48 @@ describe("agent view request block", () => {
   const openRecord = agentRecord({ id: "explorer-1" });
   const closedRecord = agentRecord({ id: "explorer-1", state: "done", endedAt: 0 });
 
+  it("copies the request and confirms it in the notice row", async () => {
+    const copy = vi.fn(async (_text: string) => {});
+    const { view, lines } = viewOf(requestSession(), {
+      record: openRecord,
+      copy,
+      theme: tokenTaggingTheme(),
+    });
+
+    view.handleKey(char("c"));
+    await flushMicrotasks();
+
+    expect(lines().at(-3)).toBe(" <success>Copied the request</>");
+
+    view.handleKey(char("r"));
+
+    expect(lines().at(-3)).toBe("");
+  });
+
+  it("reports why the copy failed", async () => {
+    const copy = vi.fn(async (_text: string) => {
+      throw new Error("Clipboard unavailable");
+    });
+    const { view, lines } = viewOf(requestSession(), { record: openRecord, copy });
+
+    view.handleKey(char("c"));
+    await flushMicrotasks();
+
+    expect(lines().at(-3)).toBe(" Copy failed: Clipboard unavailable");
+  });
+
+  it("ignores c without a request", async () => {
+    const copy = vi.fn(async (_text: string) => {});
+    const { view, lines } = viewOf(requestSession(1, false), { record: openRecord, copy });
+    const before = lines();
+
+    view.handleKey(char("c"));
+    await flushMicrotasks();
+
+    expect(copy).not.toHaveBeenCalled();
+    expect(lines()).toEqual(before);
+  });
+
   it("shows the task as the first transcript item", () => {
     const { lines } = viewOf(requestSession(), { record: openRecord });
     const all = lines();
@@ -1349,7 +1416,9 @@ describe("agent view request block", () => {
 
     expect(all[all.indexOf(RULE(100)) + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
     expect(all.join("\n")).not.toContain('"model": "provider/model"');
-    expect(all.at(-2)).toContain("x to stop · r to show the request · ctrl+o to expand tools");
+    expect(lines(120).at(-2)).toContain(
+      "x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
+    );
   });
 
   it("leaves a blank line under the collapsed request, apart from the task box padding", () => {

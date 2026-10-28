@@ -71,16 +71,16 @@ describe("extension manager", () => {
     expect(() => managerOf([stub("a", ["b"]), stub("b", ["a"])])).toThrow(/cycle/);
   });
 
-  it("hands each plugin the host, typed bus, services, settings, root and paths", () => {
+  it("hands each plugin the host, typed bus, services, settings and paths", () => {
     const seen: string[] = [];
 
     const provider: TestPlugin = {
       id: "provider",
-      enable: ({ services, settings, root, paths }) => {
+      enable: ({ services, settings, paths }) => {
         let count = 0;
 
         services.provide("counter", { next: () => ++count });
-        seen.push(`${settings.label} ${root} ${paths.root} ${paths.agentDir}`);
+        seen.push(`${settings.label} ${paths.root} ${paths.agentDir}`);
 
         return undefined;
       },
@@ -108,7 +108,7 @@ describe("extension manager", () => {
 
     manager.bus.emit("ping", { from: "test" });
 
-    expect(seen).toEqual(["test /ext /ext /agent", "ping from test #1"]);
+    expect(seen).toEqual(["test /ext /agent", "ping from test #1"]);
     expect([...host.commands.keys()]).toEqual(["hello"]);
     expect([...host.tools.keys()]).toEqual(["greet"]);
     expect(manager.services.has("counter")).toBe(true);

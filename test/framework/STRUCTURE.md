@@ -1,7 +1,7 @@
 # test/framework structure
 
 - `index.ts`: the pi-free surface (fakes, harness, `live/` helpers).
-- `fake-host.ts`: `createFakeHost`, `FakeHost`, `createTurnScope`, `hiddenMessageTexts`, `FAKE_FOOTER_KEY`.
+- `fake-host.ts`: `createFakeHost`, `FakeHost` (with `hidden` and `messages` recorders, `agentStart`, `assistantStart` and `assistantEnd` to fire the lifecycle handlers, and `chat`, the replies and entries in drawing order), `createTurnScope`, `hiddenMessageTexts`, `requestTexts`, `FAKE_FOOTER_KEY`.
 - `fake-agent-runtime.ts`: `createFakeAgentRuntime`, `FakeAgentRuntime`, `FakeChildSession`, `catalogModel` (invented refs).
 - `fake-form.ts`: `openFakeForm`, `FakeForm`; the fake `showForm` with a fake text input.
 - `themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`.

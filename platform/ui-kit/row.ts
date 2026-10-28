@@ -8,13 +8,11 @@ import {
 } from "../pi-adapter/index.ts";
 import { cutStart, DOT, ELLIPSIS } from "../shared/index.ts";
 import { type Mark, markGlyph } from "./glyphs.ts";
-import { appendHint } from "./key-hints.ts";
+import { appendHint, paint } from "./key-hints.ts";
 
 export type Styled = string | ((theme: ThemeLike) => string);
 
 export type RowRender = RowLines;
-
-const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? text(theme) : text);
 
 export const rowText = (render: RowRender, theme: ThemeLike) => (width: number) =>
   render(width, theme).join("\n");
@@ -207,7 +205,7 @@ const hinted = (
   }
 
   const room = width - theme.width(last.prefix);
-  const text = appendHint(last.text, paint(spec.hint, theme), room, theme, {
+  const text = appendHint(last.text, spec.hint, room, theme, {
     cuttable: spec.hintCuts === true && last.summary,
   });
 

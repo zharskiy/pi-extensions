@@ -33,9 +33,9 @@ type ListLayout = { slots?: boolean; empty?: string };
 
 const NONE_AVAILABLE = "(none available)";
 
-export const moreRow = (theme: ThemeLike, arrow: "↑" | "↓", hidden: number, width: number, prefix = PAD) =>
+export const moreRow = (theme: ThemeLike, arrow: "↑" | "↓", hidden: number, width: number) =>
   hidden > 0
-    ? `${prefix}${theme.fg("dim", theme.truncate(`${arrow} ${hidden} more`, Math.max(1, width - theme.width(prefix))))}`
+    ? `${PAD}${theme.fg("dim", theme.truncate(`${arrow} ${hidden} more`, Math.max(1, width - theme.width(PAD))))}`
     : "";
 
 const emptyRow = (theme: ThemeLike, text: string, width: number) =>

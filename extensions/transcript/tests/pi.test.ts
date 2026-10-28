@@ -104,6 +104,29 @@ describe("diff rows through pi", () => {
   });
 });
 
+describe("skill reads through pi", () => {
+  const skillRead = {
+    name: "read",
+    args: { path: "/repo/skills/tdd/SKILL.md" },
+    result: numbered(10),
+    width: 80,
+  };
+
+  it("draws the collapsed read as the skill line", () => {
+    const { lines } = renderToolRows(rows, skillRead);
+
+    expect(lines[0]?.trim()).toBe("[skill] tdd (ctrl+o to expand)");
+  });
+
+  it("draws the expanded read as the read row with pi's body", () => {
+    const { lines } = renderToolRows(rows, { ...skillRead, expanded: true });
+
+    expect(lines[0]?.trim()).toBe("✓ read skills/tdd/SKILL.md");
+    expect(lines[1]?.trim()).toBe("↳ 10 lines");
+    expect(lines[2]?.trim()).toBe("out 1");
+  });
+});
+
 describe("pi's bodies under the rows", () => {
   it("hangs pi's read body at column 4 under the line count", () => {
     const { lines } = renderToolRows(rows, {

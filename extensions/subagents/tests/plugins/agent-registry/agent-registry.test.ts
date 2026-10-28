@@ -12,7 +12,7 @@ import type { AgentStatusDetails, AgentStatusParams } from "../../../core/agent-
 import { type AgentRecord, MAIN_CALLER } from "../../../core/model/agent-record.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness, startPlugins } from "../../support/subagents-harness.ts";
+import { createHarness, spawnAgents, startPlugins } from "../../support/subagents-harness.ts";
 
 const HANDOFF = [
   "## Status",
@@ -216,5 +216,49 @@ describe("reload", () => {
 
     expect(restored?.state).toBe("failed");
     expect(busySignals(next.host.published)).toEqual([{ source: "pi-subagents", busy: false }]);
+  });
+
+  it("lists nothing from a parent when the session has none", async () => {
+    const harness = createHarness(plugins);
+
+    await spawnAgents(harness, 1);
+
+    const child = createFakeHost({
+      ...harness.host.info,
+      id: "child-session",
+      file: join(harness.root, "sessions", "child.jsonl"),
+    });
+
+    const next = startPlugins(child, harness.runtime, plugins);
+
+    expect(next.services.require("registry").list()).toEqual([]);
+  });
+
+  it("keeps the parent session's agents across a reload of the child session", async () => {
+    const harness = createHarness(plugins);
+    const [record] = await spawnAgents(harness, 1);
+
+    const child = createFakeHost({
+      ...harness.host.info,
+      id: "child-session",
+      file: join(harness.root, "sessions", "child.jsonl"),
+      parentSession: harness.host.info.file,
+    });
+
+    const first = startPlugins(child, harness.runtime, plugins);
+    const inherited = first.services.require("registry").get(record.id);
+
+    expect(inherited?.state).toBe("failed");
+    expect(inherited?.description).toBe(record.description);
+    expect(first.services.require("registry").list()).toHaveLength(1);
+
+    await child.shutdown("reload");
+
+    const reloaded = startPlugins(createFakeHost(child.info), harness.runtime, plugins);
+    const kept = reloaded.services.require("registry");
+
+    expect(kept.get(record.id)?.state).toBe("failed");
+    expect(kept.get(record.id)?.description).toBe(record.description);
+    expect(kept.list()).toHaveLength(1);
   });
 });

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { plainLines } from "../../../test/framework/index.ts";
 import { initPiRenderTheme, renderPaneToolRows, visible } from "../../../test/framework/pi/index.ts";
 import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../index.ts";
+import { entryHost } from "../tools/entry-renderers.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import { capturePiRenderers, createTranscriptPane } from "../tools/transcript.ts";
 import { releaseLabel, storeLabel } from "../ui/thinking-label.ts";
@@ -463,5 +464,71 @@ describe("transcript pane messages", () => {
     expect(text).toContain(" Found them.");
     expect(text).not.toContain("Looking around.");
     expect(text).not.toMatch(/[❯●∴]/);
+  });
+});
+
+describe("transcript pane custom messages", () => {
+  const registerWith = (host: ReturnType<typeof entryHost>, customType: string, marker: string) => {
+    host.registerMessageRenderer(customType, (message, _width, expanded) => [
+      `${marker} ${message.text}${expanded ? " (expanded)" : ""}`,
+    ]);
+  };
+
+  const noop = { registerEntryRenderer: () => {}, registerMessageRenderer: () => {} } as never;
+
+  const custom = (customType: string, display = true): TranscriptItem => ({
+    kind: "custom",
+    raw: { role: "custom", customType, content: "the request", display, timestamp: 0 },
+  });
+
+  it("draws a custom message with a renderer another adapter copy registered", () => {
+    const other = entryHost(noop);
+    const pane = createTranscriptPane(tui, "/repo");
+
+    registerWith(other, "pi-handoff-request", "REQUEST");
+    pane.sync([custom("pi-handoff-request")]);
+
+    expect(visibleText(pane.render(60))).toContain("REQUEST the request");
+
+    other.release();
+  });
+
+  it("follows the pane's expanded toggle", () => {
+    const other = entryHost(noop);
+    const pane = createTranscriptPane(tui, "/repo");
+
+    registerWith(other, "pi-handoff-request", "REQUEST");
+    pane.sync([custom("pi-handoff-request")]);
+    pane.setToolsExpanded(true);
+
+    expect(visibleText(pane.render(60))).toContain("REQUEST the request (expanded)");
+
+    other.release();
+  });
+
+  it("keeps drawing with the other copy's renderer when one copy shuts down", () => {
+    const first = entryHost(noop);
+    const second = entryHost(noop);
+    const pane = createTranscriptPane(tui, "/repo");
+
+    registerWith(first, "pi-handoff-request", "FIRST");
+    registerWith(second, "pi-handoff-request", "SECOND");
+    second.release();
+    pane.sync([custom("pi-handoff-request")]);
+
+    expect(visibleText(pane.render(60))).toContain("FIRST the request");
+
+    first.release();
+  });
+
+  it("falls back to pi's component for an unknown type and draws nothing for a hidden message", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([custom("unknown-type"), custom("pi-handoff-request", false)]);
+
+    const text = visibleText(pane.render(60));
+
+    expect(text).toContain("[unknown-type]");
+    expect(text).not.toContain("pi-handoff-request");
   });
 });

@@ -18,7 +18,9 @@ export const toolCallCount = (content: unknown) =>
 
 type RawMessage = { role?: string; content?: unknown };
 
-type RawEntry = { type?: string; message?: RawMessage };
+type RawEntry = { type?: string; message?: RawMessage; display?: boolean };
+
+const startsRun = (entry: RawEntry) => entry.type === "custom_message" && entry.display !== false;
 
 const endsRun = (message: RawMessage) => message.role === "assistant" && toolCallCount(message.content) === 0;
 
@@ -26,6 +28,11 @@ type RunWalk = { texts: string[]; userAfter: boolean; done: boolean };
 
 const step = (walk: RunWalk, entry: RawEntry): RunWalk => {
   const message = entry.type === "message" ? entry.message : undefined;
+
+  if (!walk.done && startsRun(entry)) {
+    walk.userAfter = true;
+    return walk;
+  }
 
   if (walk.done || message === undefined) {
     return walk;

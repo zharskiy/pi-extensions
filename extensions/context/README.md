@@ -14,6 +14,8 @@ A context window fills with more than the conversation. The system prompt, tool 
 
 ## What it looks like
 
+The title line always carries the time the snapshot was taken.
+
 ```
  » Context usage · 14:32
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   model-name · 61.2k/200k tokens (31%)

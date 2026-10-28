@@ -23,7 +23,7 @@ const readJson = (path: string): Read => {
   }
 };
 
-export const serversOf = (data: unknown): Record<string, unknown> | string => {
+const serversOf = (data: unknown): Record<string, unknown> | string => {
   if (!isPlainObject(data)) {
     return "expected a JSON object";
   }
@@ -35,10 +35,7 @@ export const serversOf = (data: unknown): Record<string, unknown> | string => {
   return isPlainObject(data.mcpServers) ? data.mcpServers : 'expected "mcpServers" to be an object';
 };
 
-export const claudeLocalServers = (
-  data: unknown,
-  dirs: readonly string[],
-): Record<string, unknown> | string => {
+const claudeLocalServers = (data: unknown, dirs: readonly string[]): Record<string, unknown> | string => {
   if (!isPlainObject(data) || !isPlainObject(data.projects)) {
     return {};
   }
@@ -105,7 +102,7 @@ export const findServers = (source: Source, scope: Scope, places: Places): Found
         ? []
         : [{ label: spec.label, servers, ...(spec.note ? { note: spec.note } : {}) }],
     ),
-    checked: [...new Set(specs.map((spec) => spec.label))],
+    checked: specs.map((spec) => spec.label),
     problems: [
       ...reads.flatMap(({ read }) => (read.problem ? [read.problem] : [])),
       ...parsed.flatMap(({ spec, servers }) =>

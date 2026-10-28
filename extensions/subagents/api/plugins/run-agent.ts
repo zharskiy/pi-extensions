@@ -1,18 +1,31 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { EXPAND_BINDING } from "../../../../platform/ui-kit/index.ts";
+import {
+  BACKGROUND_WORK_CHANNEL,
+  HANDOFF_REQUEST_TYPE,
+  HANDOFF_SEED_TYPE,
+  handoffTool,
+} from "../../../../platform/shared/index.ts";
+import {
+  EXPAND_BINDING,
+  handoffRequestMessage,
+  handoffSeedMessage,
+  handoffToolRows,
+} from "../../../../platform/ui-kit/index.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
 import {
   type AgentDefinition,
   type AgentRecord,
   allowlist,
   isClosed,
+  MAIN_CALLER,
   subagentNames,
 } from "../../core/model/agent-record.ts";
+import { handoffService } from "../../core/model/handoff.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
-import { createHandoff } from "../../core/run-agent/handoff.ts";
-import { handoffTool } from "../../core/run-agent/handoff-tool.ts";
+import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
 import {
@@ -21,7 +34,6 @@ import {
   messageAgentTool,
   runAgentTool,
 } from "../../core/run-agent/tools.ts";
-import { handoffRows } from "../../ui/run-agent/handoff-row.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
@@ -29,11 +41,14 @@ const readPrompt = (root: string, file: string) => readFileSync(join(root, "prom
 export const runAgentPlugin: Plugin = {
   id: "run-agent",
   requires: ["agent-registry", "agent-definitions"],
-  enable: ({ host, runtime, bus, settings, services, root }) => {
+  enable: ({ host, runtime, bus, settings, services, paths }) => {
     const registry = services.require("registry");
     const definitions = services.require("definitions");
 
     const waking: string[] = [];
+    const work = createBackgroundWork((count) => {
+      host.publish(BACKGROUND_WORK_CHANNEL, { source: NAMESPACE, count });
+    });
     const calls = createPendingCalls();
     const hints = {
       manage: () => !settings.disabledPlugins.includes("agent-panel"),
@@ -46,6 +61,7 @@ export const runAgentPlugin: Plugin = {
 
       if (texts.length > 0) {
         host.sendHiddenMessage({ customType: "pi-subagents:wake", text: joinTexts(texts) });
+        work.sent();
       }
     };
 
@@ -68,7 +84,15 @@ export const runAgentPlugin: Plugin = {
 
       const granted = own && allowlist(own.tools)?.includes("fetch") && services.has("fetchTool");
       const extra: AnyToolSpec[] = [
-        handoffTool({ registry, handoff, rows: handoffRows }, record.id),
+        handoffTool({
+          target: () => {
+            const live = registry.get(record.id);
+
+            return live && { path: live.handoffPath, requested: live.handoffRequested };
+          },
+          validate: handoffService.validate,
+          rows: handoffToolRows(() => registry.get(record.id)?.handoffPath),
+        }),
         ...(granted ? [services.require("fetchTool").tool()] : []),
       ];
 
@@ -98,7 +122,10 @@ export const runAgentPlugin: Plugin = {
       return tools;
     };
 
-    const handoff = createHandoff(root);
+    const keyText = (binding: string) => host.ui.keyText(binding);
+
+    host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
+    host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
 
     const runner = createRunner({
       registry,
@@ -108,12 +135,10 @@ export const runAgentPlugin: Plugin = {
       definitions,
       outbox,
       session: () => host.session(),
-      handoff,
       toolsFor: childTools,
     });
 
     services.provide("runner", runner);
-    services.provide("handoff", handoff);
 
     const invalidators = new Map<string, () => void>();
 
@@ -132,9 +157,26 @@ export const runAgentPlugin: Plugin = {
       onChange: () => Array.from(invalidators.keys()).forEach(safeInvalidate),
     });
 
+    const offStarted = bus.on("batch:started", ({ batchId, callerId, wait }) => {
+      if (callerId === MAIN_CALLER && !wait) {
+        work.started(batchId);
+      }
+    });
+
     const offSettled = bus.on("batch:settled", ({ batchId }) => {
+      work.settled(batchId);
       safeInvalidate(batchId);
       invalidators.delete(batchId);
+    });
+
+    host.onAssistantStart(() => {
+      work.answered();
+    });
+
+    host.onIdle(({ aborted }) => {
+      if (aborted) {
+        work.answered();
+      }
     });
 
     const onRendered = (batchId: string, invalidate: () => void) => {
@@ -163,8 +205,8 @@ export const runAgentPlugin: Plugin = {
       host.registerTool(runAgentTool(toolDeps, description));
     };
 
-    const mainPrompt = readPrompt(root, "main-session.md");
-    const statusPrompt = readPrompt(root, "main-session-agent-status.md");
+    const mainPrompt = readPrompt(paths.root, "main-session.md");
+    const statusPrompt = readPrompt(paths.root, "main-session-agent-status.md");
 
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));
@@ -181,6 +223,7 @@ export const runAgentPlugin: Plugin = {
 
     return () => {
       offChanged();
+      offStarted();
       offSettled();
       invalidators.clear();
       calls.clear();

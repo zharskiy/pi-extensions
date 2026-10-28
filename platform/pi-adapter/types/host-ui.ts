@@ -19,6 +19,10 @@ export type NoticeUi = {
   terminalNotify(message: string, channel: NotifyChannel): void;
 };
 
+export type ClipboardUi = {
+  copyText(text: string): Promise<void>;
+};
+
 export type OverlayUi = {
   openOverlay(factory: OverlayFactory): Promise<void>;
   showForm<T>(factory: FormFactory<T>, options?: { signal?: AbortSignal }): Promise<T | undefined>;
@@ -43,12 +47,13 @@ export type EditorUi = {
   captureEditorKeys(handler: EditorKeyHandler): () => void;
 };
 
-export type KeysUi = {
+type KeysUi = {
   keyText(binding: string): string;
   onKeyPress(listener: () => void): () => void;
 };
 
 export type HostUi = NoticeUi &
+  ClipboardUi &
   OverlayUi &
   WidgetUi &
   EditorUi &

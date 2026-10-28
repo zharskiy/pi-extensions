@@ -17,35 +17,35 @@ extensions/subagents/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
 │   ├── base-system-prompt.md              # shared agent rules and the result contract
-│   ├── handoff.md                         # the handoff instruction template ({{path}})
 │   ├── create-agent.md                    # the /agents create brief
 │   └── autosetup-skills.md                # the /agents setup skills brief
 ├── api/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
 │   └── plugins/
-│       ├── agent-registry.ts              # in-memory records, manifest restore, the `registry` service
+│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
-│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, main prompt, block invalidation
+│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count (answered at any assistant start), main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
-│       ├── agent-panel.ts                 # panel below the editor, selection keys, the `pi-subagents` status
-│       ├── interrupt.ts                   # Esc after an interrupted turn: confirm to stop running agents
+│       ├── agent-panel.ts                 # panel below the editor, selection keys, the `hint:subagents` status (under `HINT_STATUS_PREFIX`, a dim key and muted words)
+│       ├── interrupt.ts                   # Esc on an empty idle prompt: confirm to stop running agents
 │       ├── agent-setup.ts                 # /agents setup, autosetup and the agent_skills_proposal tool, /agents create, the `agentSetup` service
 │       ├── agent-view.ts                  # /agents: menu, list and agent view, the `agentView` service
 │       └── fetch-tool.ts                  # the fetch tool as the `fetchTool` service
 ├── core/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
-│   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions, runner and handoff service types, chain helpers, grantText, grantOrNone, sameGrant, isLead
+│   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers, grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
-│   │   ├── context-limit.ts               # effectiveContextLimit
-│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore
+│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, StepLimit, limitStep (warn, request or abort)
+│   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
+│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
@@ -59,21 +59,20 @@ extensions/subagents/
 │   ├── agent-registry/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events
 │   ├── run-agent/
-│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake
+│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, createPendingCalls, describeRunAgent
-│   │   ├── handoff-tool.ts                # every child's handoff tool, HandoffRows
-│   │   ├── handoff.ts                     # createHandoff: the handoff template and schema service
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
+│   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
 │   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage
-│   │   ├── task.ts                        # composeTask: the child's first message
+│   │   ├── task.ts                        # composeTask: the child's first message (no handoff path; the handoff is the seed)
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
 │   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf, snapshotLine, agent_status params and details, unknownText
 │   ├── limits/
-│   │   └── context-step.ts                # contextStep, softWarning
+│   │   └── warning.ts                     # softWarning
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
@@ -87,7 +86,7 @@ extensions/subagents/
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
 │   │   ├── source.ts                      # createAgentSource: reads an agent's session file, re-parsing on change
-│   │   └── list-model.ts                  # list sections, listCounts, countsText, subtitle, clearTargets, MAX_CLOSED_ROOTS
+│   │   └── list-model.ts                  # list sections, subtitle (with the counts), clearTargets, MAX_CLOSED_ROOTS
 │   └── fetch-tool/
 │       ├── fetch.ts                       # fetchPage: request, limits, redirects
 │       └── text.ts                        # readableText, pageText, supported content types
@@ -99,8 +98,7 @@ extensions/subagents/
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
 │   ├── run-agent/
 │   │   ├── render.ts                      # renderBlock: the run_agent block, BlockHints
-│   │   ├── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
-│   │   └── handoff-row.ts                 # handoffRows: the handoff tool's call and result rows
+│   │   └── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
@@ -117,13 +115,13 @@ extensions/subagents/
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
 │       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
 │       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
-│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved)
-│       └── request-block.ts               # requestLines: the collapsed Request block
+│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved, clipboard dep, c key)
+│       └── request-block.ts               # requestLines, requestText: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/
     │   ├── agent-record.test.ts           # isLead, including the shipped general agent
-    │   ├── context-limit.test.ts          # effectiveContextLimit
+    │   ├── context-limit.test.ts          # effectiveContextLimit, agentLimit, limitStep
     │   ├── paths.test.ts                  # paths helpers
     │   └── settings.test.ts               # settings schema, overrides and files
     ├── components/
@@ -142,8 +140,8 @@ extensions/subagents/
     │   ├── fetch-tool/                    # plugin.test.ts, fetch.test.ts, text.test.ts
     │   ├── interrupt/                     # interrupt.test.ts
     │   ├── limits/                        # limits.test.ts
-    │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, handoff-tool, nesting, skills, models,
-    │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant tests
+    │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, nesting, skills, models,
+    │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant, background-work tests
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
     └── support/                           # the one support folder test/evals/subagents/ may import

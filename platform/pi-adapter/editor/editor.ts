@@ -93,7 +93,7 @@ class HostEditor extends CustomEditor {
 
     return super.handleMouse({
       ...event,
-      x: Math.max(0, event.x - frame.left),
+      x: Math.max(0, event.x - frame.chrome),
       width: event.width - frame.chrome,
     });
   }
