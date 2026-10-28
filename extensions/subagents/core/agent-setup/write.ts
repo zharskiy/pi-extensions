@@ -1,7 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { ensureProjectDir, errorText, isPlainObject, readText } from "../../../../platform/shared/index.ts";
-import type { SetupChange } from "./scope.ts";
+import { errorText, isPlainObject, readText, writeSettingsFile } from "../../../../platform/shared/index.ts";
+import { SETTINGS_FILE, settingsPaths } from "../model/settings.ts";
+import type { Scope, SetupChange } from "./scope.ts";
 
 const readObject = (path: string): Record<string, unknown> => {
   const text = readText(path) ?? "";
@@ -33,19 +32,16 @@ export const mergeChanges = (current: Record<string, unknown>, changes: SetupCha
 };
 
 export const writeChanges = (
-  path: string,
+  location: { agentDir: string; cwd: string },
+  scope: Scope,
   changes: SetupChange[],
-  projectCwd?: string,
 ): string | undefined => {
+  const path = settingsPaths(location)[scope];
+
   try {
     const next = mergeChanges(readObject(path), changes);
 
-    if (projectCwd !== undefined) {
-      ensureProjectDir(projectCwd);
-    }
-
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+    writeSettingsFile(location, scope, SETTINGS_FILE, `${JSON.stringify(next, null, 2)}\n`);
 
     return undefined;
   } catch (error) {

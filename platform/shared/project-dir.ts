@@ -1,5 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+
+const PROJECT_DIR = ".pi";
 
 const PROJECT_IGNORE = "*\n";
 
@@ -15,11 +17,33 @@ const ignoreFromGit = (dir: string) => {
   }
 };
 
-export const ensureProjectDir = (cwd: string) => {
-  const dir = join(cwd, ".pi");
+const ensureProjectDir = (cwd: string) => {
+  const dir = projectPath(cwd);
   const created = mkdirSync(dir, { recursive: true }) !== undefined;
 
   if (created) {
     ignoreFromGit(dir);
   }
+};
+
+export const projectPath = (cwd: string, relativePath = "") => join(cwd, PROJECT_DIR, relativePath);
+
+export const ensureProjectSubdir = (cwd: string, relativePath: string) => {
+  const dir = projectPath(cwd, relativePath);
+
+  ensureProjectDir(cwd);
+
+  mkdirSync(dir, { recursive: true });
+
+  return dir;
+};
+
+export const writeProjectFile = (cwd: string, relativePath: string, text: string) => {
+  const path = projectPath(cwd, relativePath);
+
+  ensureProjectSubdir(cwd, dirname(relativePath));
+
+  writeFileSync(path, text);
+
+  return path;
 };

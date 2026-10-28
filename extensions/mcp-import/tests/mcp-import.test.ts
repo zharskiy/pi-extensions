@@ -128,6 +128,18 @@ describe("/mcp-import", () => {
     expect(existsSync(join(dirname(projectFile), ".gitignore"))).toBe(false);
   });
 
+  it("reports a .pi that is a file and writes nothing", async () => {
+    const { host, projectFile } = setup({ mcpJson: { mcpServers: { tool: { command: "tool" } } } });
+
+    writeFileSync(dirname(projectFile), "");
+
+    await host.runCommand("mcp-import", "claude project apply");
+
+    expect(host.notices[0].level).toBe("error");
+    expect(host.notices[0].message).toContain(`cannot write ${projectFile}: `);
+    expect(host.notices[0].message).toContain("EEXIST");
+  });
+
   it("imports Cursor's project file", async () => {
     const { host, projectFile } = setup({
       cursorProject: { mcpServers: { other: { command: "${userHome}/srv" } } },

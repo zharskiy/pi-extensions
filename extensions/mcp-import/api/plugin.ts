@@ -48,8 +48,7 @@ export const createMcpImport = (host: Host, home: string) => {
   const prepare = (source: Source, scope: Scope) => prepareImport(source, scope, places());
 
   const write = (pair: Pair, text: string | undefined) => {
-    const projectCwd = pair.scope === "project" ? places().cwd : undefined;
-    const problem = writeImport(pair.path, text, projectCwd);
+    const problem = writeImport(pair, text, places());
 
     if (problem) {
       fail(problem);
