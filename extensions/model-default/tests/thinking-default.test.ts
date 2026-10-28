@@ -12,7 +12,12 @@ const savedThinking = (agentDir: string) =>
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
-const startSession = async ({ factory = modelDefault, startLevel = "high" } = {}) => {
+type SessionOptions = {
+  factory?: Parameters<typeof startPiSession>[0]["factory"];
+  startLevel?: string;
+};
+
+const startSession = async ({ factory = modelDefault, startLevel = "high" }: SessionOptions = {}) => {
   const agentDir = temp.make("pi-model-default-agent-");
   const cwd = temp.make("pi-model-default-cwd-");
   const models = [
