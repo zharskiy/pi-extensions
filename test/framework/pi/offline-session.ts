@@ -27,8 +27,6 @@ export const startPiSession = async (options: PiSessionOptions) => {
   const faux = fauxProvider({ provider: "fake", models: options.models });
   const modelRuntime = await pi.ModelRuntime.create();
   const settingsManager = pi.SettingsManager.create(cwd, agentDir);
-  const inScope = <T>(scope: () => Promise<T>) =>
-    options.child ? childScope.run({ agentId: "a1" }, scope) : scope();
 
   modelRuntime.registerNativeProvider(faux.provider);
 
@@ -41,6 +39,8 @@ export const startPiSession = async (options: PiSessionOptions) => {
     noExtensions: true,
     extensionFactories: [{ name: "under-test", factory: options.factory }],
   });
+  const inScope = <T>(scope: () => Promise<T>) =>
+    options.child ? childScope.run({ agentId: "a1" }, scope) : scope();
 
   await inScope(() => loader.reload());
 
@@ -61,7 +61,9 @@ export const startPiSession = async (options: PiSessionOptions) => {
   await session.bindExtensions({ mode: "print" });
 
   await vi.waitFor(() => {
-    if (modelRuntime.getAvailableSnapshot().length < options.models.length) {
+    const listed = modelRuntime.getAvailableSnapshot().filter((model) => model.provider === "fake");
+
+    if (listed.length < options.models.length) {
       throw new Error("faux models are not available yet");
     }
   });
