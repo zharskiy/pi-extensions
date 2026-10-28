@@ -20,7 +20,7 @@ extensions/mcp-import/
 │   ├── convert.test.ts      entry conversion
 │   ├── plan.test.ts         merging into the target
 │   ├── sources.test.ts      reading the source files
-│   └── mcp-import.test.ts   the command on a fake host: dry run, apply, interactive pick, `.pi/.gitignore`, a `.pi` that is a file
+│   └── mcp-import.test.ts   the command on a fake host: dry run, apply, interactive pick (keys carry `shortcut`), `.pi/.gitignore`, a `.pi` that is a file
 ├── README.md                user guide
 ├── ARCHITECTURE.md          runtime behaviour
 └── STRUCTURE.md             this file map

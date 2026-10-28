@@ -26,7 +26,7 @@ Unit tests run against fakes with no network and no pi session (`npm run check`,
 
 ## Real pi offline (`pi/`)
 
-A few unit tests need pi's real rendering: `render-theme.ts` initialises pi's theme and keybindings, `tool-row-rendering.ts` draws tool rows and edit diffs through pi's renderers, `overlay-api.ts` opens overlays on pi's TUI and `session-files.ts` reads and writes real session files. These still run offline under `npm run check`.
+A few unit tests need pi's real rendering: `render-theme.ts` initialises pi's theme and keybindings, `tool-row-rendering.ts` draws tool rows and edit diffs through pi's renderers, `overlay-api.ts` opens overlays on pi's TUI, `session-files.ts` reads and writes real session files and `typed-keys.ts` names terminal data with the adapter's `keyPress`, so a test can press `ч` as a Cyrillic layout sends it. These still run offline under `npm run check`.
 
 ## Live runs (`pi/live/`, `live/`)
 

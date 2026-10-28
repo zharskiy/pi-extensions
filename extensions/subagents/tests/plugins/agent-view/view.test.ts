@@ -26,6 +26,7 @@ import {
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
+  typed,
 } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
@@ -354,6 +355,16 @@ describe("agent view", () => {
     expect(transcripts).toHaveLength(2);
   });
 
+  it("stops the agent with the x key in a Cyrillic layout", async () => {
+    const { harness, record } = await runningAgent();
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(typed("ч"));
+    await flushMicrotasks();
+
+    expect(harness.registry.get(record.id)?.state).toBe("grace");
+  });
+
   it("enters grace on the first x and closes on the second", async () => {
     const { harness, record } = await runningAgent();
     const { view } = await harness.openView(record.id);
@@ -588,6 +599,30 @@ describe("agent view header", () => {
 });
 
 describe("agent view copy", () => {
+  it("toggles the request with the r key in a Cyrillic layout", () => {
+    const record = agentRecord({ id: "explorer-1", state: "done", endedAt: 0 });
+    const { view, lines } = viewOf(fixture(), { rows: 40, record });
+
+    view.handleKey(typed("к"));
+
+    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
+
+    view.handleKey(typed("к"));
+
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
+  });
+
+  it("copies the request with the c key in a Cyrillic layout", async () => {
+    const harness = setup();
+    const record = closedAgent(harness, requestSession());
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(typed("с"));
+    await flushMicrotasks();
+
+    expect(harness.host.copied).toEqual([JSON.stringify(PAYLOAD, null, 2)]);
+  });
+
   it("hands the pretty-printed request to the host clipboard", async () => {
     const harness = setup();
     const record = closedAgent(harness, requestSession());

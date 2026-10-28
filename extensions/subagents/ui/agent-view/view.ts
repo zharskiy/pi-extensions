@@ -382,7 +382,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const handleKey = (key: KeyPress) => {
     notice = undefined;
 
-    const action = key.name === "other" && key.char ? chars[key.char] : actions[key.name];
+    const action = key.name === "other" && key.shortcut ? chars[key.shortcut] : actions[key.name];
 
     action?.();
   };
