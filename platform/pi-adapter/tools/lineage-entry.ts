@@ -6,6 +6,7 @@ import {
   type ExtensionContext,
   getLatestCompactionEntry,
   keyText,
+  type SessionEntry,
   type SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
@@ -30,6 +31,7 @@ const LINEAGE_LABELS = { handoff: "lineage: handoff", compaction: "lineage: comp
 type Block = { component: Component; setExpanded(expanded: boolean): void };
 
 type RendererDeps = {
+  branch(): readonly SessionEntry[];
   cwd(): string;
   tools(): AnyToolSpec[];
   requestRender(): void;
@@ -172,10 +174,28 @@ export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
     };
   };
 
+  const laterCompactionOnBranch = (entryId: string, lineage: LineageEntry) => {
+    const branch = deps.branch();
+    const position = branch.findIndex((item) => item.id === entryId);
+
+    return (
+      position >= 0 &&
+      branch.slice(position + 1).some((later) => {
+        const next = later.type === "custom" ? lineageEntryOf(later.customType, later.data) : undefined;
+
+        return next?.reason === "compaction" && next.file === lineage.file;
+      })
+    );
+  };
+
   return (entry, options, theme) => {
     const lineage = lineageEntryOf(entry.customType, entry.data);
 
     if (!lineage) {
+      return undefined;
+    }
+
+    if (lineage.reason === "compaction" && laterCompactionOnBranch(entry.id, lineage)) {
       return undefined;
     }
 

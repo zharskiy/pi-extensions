@@ -532,6 +532,30 @@ describe("keeping the history a compaction drops", () => {
     await session.runtime.dispose();
   });
 
+  it("draws only the latest marker when a later compaction keeps an earlier marker", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+    await session.runtime.session.prompt("second question");
+    await session.runtime.session.prompt("third question");
+    session.keepFrom("second question");
+    await session.runtime.session.compact();
+    await session.runtime.session.prompt("fourth question");
+    session.keepFrom("third question");
+    await session.runtime.session.compact();
+
+    const markers = session.compactionMarkers(session.manager().buildContextEntries());
+    const drawn = markers.map((marker) => session.draw(marker, true));
+    const shown = drawn.filter((text) => text !== "");
+
+    expect(markers).toHaveLength(2);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.split("first question")).toHaveLength(2);
+    expect(shown[0]).toContain("second answer");
+
+    await session.runtime.dispose();
+  });
+
   it("labels the entry so /tree lists it under the labeled-only filter", async () => {
     const session = await compacted();
 

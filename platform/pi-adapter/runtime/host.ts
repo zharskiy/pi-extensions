@@ -140,6 +140,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   hostStates().add(state);
 
   const renderLineage = lineageRenderer({
+    branch: () => state.ctx?.sessionManager.getBranch() ?? [],
     cwd: () => state.ctx?.cwd ?? process.cwd(),
     tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
     requestRender: () => {
