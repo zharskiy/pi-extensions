@@ -34,6 +34,8 @@ pi-model-default: high is not saved as the default thinking level: <reason>
 
 Only a level you choose is saved: the thinking selector's Enter or Ctrl+S, Shift+Tab, `/thinking <level>`, or an extension that replays your choice, such as a handoff restoring the level kept from the previous session. A model switch never changes the saved level. Pi resets the level when you switch models; this extension puts the session back on the level you last chose, or the nearest one the new model supports, and that nearest level is not saved. Switch to a model without thinking and back, and you are on your level again, with `off` never saved. Until you choose a level in a session, a switch keeps the level pi gives the new model. Starting or resuming a session saves nothing.
 
+Known limits: picking the model you are already on (Enter on it in the selector, or `/model <current>`) makes pi reset the level to the default it loaded at startup, and that level is saved, because pi reports no model switch to extensions in that case. Changing or removing a per-model thinking level in pi's settings also sets the session's level, and that level is saved as the global default.
+
 ## Quick start
 
 ```bash
