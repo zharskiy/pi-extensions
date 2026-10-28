@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { KeyPress } from "../../../platform/pi-adapter/index.ts";
 import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
@@ -114,6 +114,30 @@ describe("/mcp-import", () => {
 
     expect(readJson(projectFile)).toEqual({ mcpServers: { tool: { command: "tool" } } });
     expect(existsSync(userFile)).toBe(false);
+    expect(readFileSync(join(dirname(projectFile), ".gitignore"), "utf8")).toBe("*\n");
+  });
+
+  it("adds no .gitignore to a .pi folder that already exists", async () => {
+    const { host, projectFile } = setup({ mcpJson: { mcpServers: { tool: { command: "tool" } } } });
+
+    mkdirSync(dirname(projectFile));
+
+    await host.runCommand("mcp-import", "claude project apply");
+
+    expect(readJson(projectFile)).toEqual({ mcpServers: { tool: { command: "tool" } } });
+    expect(existsSync(join(dirname(projectFile), ".gitignore"))).toBe(false);
+  });
+
+  it("reports a .pi that is a file and writes nothing", async () => {
+    const { host, projectFile } = setup({ mcpJson: { mcpServers: { tool: { command: "tool" } } } });
+
+    writeFileSync(dirname(projectFile), "");
+
+    await host.runCommand("mcp-import", "claude project apply");
+
+    expect(host.notices[0].level).toBe("error");
+    expect(host.notices[0].message).toContain(`cannot write ${projectFile}: `);
+    expect(host.notices[0].message).toContain("EEXIST");
   });
 
   it("imports Cursor's project file", async () => {
