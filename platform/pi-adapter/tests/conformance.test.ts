@@ -211,6 +211,21 @@ describe("pi adapter conformance", () => {
     ).toEqual([]);
   });
 
+  it("has the settings manager methods the default model save calls", () => {
+    const methods = [
+      "setDefaultModelAndProvider",
+      "getEnabledModels",
+      "setEnabledModels",
+      "flush",
+      "drainErrors",
+    ];
+
+    expect(typeof pi.SettingsManager.create).toBe("function");
+    expect(
+      methods.filter((name) => typeof Reflect.get(pi.SettingsManager.prototype, name) !== "function"),
+    ).toEqual([]);
+  });
+
   it("gives extensions the API and UI methods the adapter calls, and tools their source path and exposure", async () => {
     const dir = temp.make("pi-conformance-");
     const seen: { api?: pi.ExtensionAPI; ui?: pi.ExtensionUIContext } = {};

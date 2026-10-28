@@ -1,7 +1,7 @@
 {
   "name": "pi-extensions-mz",
   "version": "0.4.0",
-  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session (a panel below the editor and an /agents overlay), session limits that hand the main conversation over to a new session before its context fills up, a spending total of the session's cost including subagents, a working line with a rotating verb and the elapsed time of the current prompt beside pi's spinner, terminal notifications when pi waits for your input or a dialog waits unanswered, friendlier aliases for built-in commands, an input box between two rules with pi's message cursor as the prompt, a questionnaire tool that asks you a batch of multiple-choice questions in one inline form, a /style switch that makes the main session and every subagent answer concisely, a /context command that shows what fills the context window with cache hit rates, a multi-line status footer with session totals, and pi-native state rows for tool calls: a state glyph, a title and a one-line outcome you expand.",
+  "description": "Extensions for the pi coding agent: background subagents you run, watch and message from the main session (a panel below the editor and an /agents overlay), session limits that hand the main conversation over to a new session before its context fills up, a spending total of the session's cost including subagents, a working line with a rotating verb and the elapsed time of the current prompt beside pi's spinner, terminal notifications when pi waits for your input or a dialog waits unanswered, friendlier aliases for built-in commands, an input box between two rules with pi's message cursor as the prompt, a questionnaire tool that asks you a batch of multiple-choice questions in one inline form, a /style switch that makes the main session and every subagent answer concisely, a /context command that shows what fills the context window with cache hit rates, a multi-line status footer with session totals, the last model you picked saved as pi's default without Ctrl+S, and pi-native state rows for tool calls: a state glyph, a title and a one-line outcome you expand.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -19,7 +19,8 @@
     "context",
     "footer",
     "mcp-import",
-    "transcript"
+    "transcript",
+    "model-default"
   ],
   "files": [
     "platform",
@@ -51,7 +52,8 @@
       "./extensions/context/index.ts",
       "./extensions/footer/index.ts",
       "./extensions/mcp-import/index.ts",
-      "./extensions/transcript/index.ts"
+      "./extensions/transcript/index.ts",
+      "./extensions/model-default/index.ts"
     ]
   },
   "scripts": {

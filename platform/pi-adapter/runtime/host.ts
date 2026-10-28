@@ -29,6 +29,7 @@ import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
+import { writeDefaultModel } from "./default-model.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
@@ -95,6 +96,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
+  const modelSelectHandlers: ((ref: string) => void | Promise<void>)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
   const held: HeldCustom[] = [];
@@ -424,6 +426,18 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
+  pi.on("model_select", async (event, ctx) => {
+    capture(ctx);
+
+    if (event.source === "restore") {
+      return;
+    }
+
+    const ref = `${event.model.provider}/${event.model.id}`;
+
+    await Promise.all(modelSelectHandlers.map((handler) => handler(ref)));
+  });
+
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
     state.tools.set(spec.name, spec as AnyToolSpec);
     pi.registerTool(toPiTool(spec, capture));
@@ -521,6 +535,10 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onDialog: (handler) => {
       dialogHandlers.push(handler);
     },
+    onModelSelect: (handler) => {
+      modelSelectHandlers.push(handler);
+    },
+    saveDefaultModel: (ref) => writeDefaultModel(liveCtx(state), ref),
     ...footerHost(pi, state),
     ...contextHost(pi, state),
     registerEntryRenderer: entries.registerEntryRenderer,
