@@ -479,6 +479,34 @@ describe("keeping the history a compaction drops", () => {
     await session.runtime.dispose();
   });
 
+  it("draws each message of a fork's compacted history once", async () => {
+    const session = await compacted();
+    const original = session.manager().getSessionFile();
+    const thirdAnswer = session
+      .manager()
+      .getEntries()
+      .find((entry) => entry.type === "message" && JSON.stringify(entry.message).includes("third answer"));
+
+    await session.runtime.fork(thirdAnswer?.id ?? "", { position: "at" });
+    await session.runtime.session.prompt("fourth question");
+    session.keepFrom("fourth question");
+    await session.runtime.session.compact();
+
+    const latest = session.lineageEntries().at(-1);
+    const expanded = session.draw(latest, true);
+    const texts = ["first question", "first answer", "second question", "second answer", "third question"];
+
+    expect(session.manager().getSessionFile()).not.toBe(original);
+    expect(latest?.data).toMatchObject({ file: session.manager().getSessionFile(), reason: "compaction" });
+    expect(session.draw(latest)).toMatch(/» 6 earlier messages, compacted/);
+    expect(texts.map((text) => expanded.split(text).length - 1)).toEqual([1, 1, 1, 1, 1]);
+    expect(expanded).not.toContain("» previous session");
+    expect(expanded).not.toContain("fourth question");
+    expect(session.draw(session.lineageEntries()[0], true)).toBe("");
+
+    await session.runtime.dispose();
+  });
+
   it("keeps a handed-off session's history in the marker once the new session compacts", async () => {
     const session = await handOff("show");
 

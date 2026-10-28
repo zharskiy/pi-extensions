@@ -47,7 +47,7 @@ export const createLineageReader = () => {
 
     const previous = path.customEntries
       .map((entry) => lineageEntryOf(entry.customType, entry.data))
-      .filter((entry) => entry !== undefined && entry.file !== link.file)
+      .filter((entry): entry is LineageEntry => entry?.reason === "handoff")
       .at(-1);
 
     return { status: "read", value: { items: path.items, previous } };

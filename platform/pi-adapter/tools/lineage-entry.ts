@@ -174,7 +174,7 @@ export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
     };
   };
 
-  const laterCompactionOnBranch = (entryId: string, lineage: LineageEntry) => {
+  const laterCompactionOnBranch = (entryId: string) => {
     const branch = deps.branch();
     const position = branch.findIndex((item) => item.id === entryId);
 
@@ -183,7 +183,7 @@ export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
       branch.slice(position + 1).some((later) => {
         const next = later.type === "custom" ? lineageEntryOf(later.customType, later.data) : undefined;
 
-        return next?.reason === "compaction" && next.file === lineage.file;
+        return next?.reason === "compaction";
       })
     );
   };
@@ -195,7 +195,7 @@ export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
       return undefined;
     }
 
-    if (lineage.reason === "compaction" && laterCompactionOnBranch(entry.id, lineage)) {
+    if (lineage.reason === "compaction" && laterCompactionOnBranch(entry.id)) {
       return undefined;
     }
 
