@@ -30,6 +30,7 @@ type LifecycleHost = {
   onPhase(handler: (phase: Phase) => void): void;
   onDialog(handler: (event: DialogEvent) => void): void;
   onModelSelect(handler: (ref: string) => void | Promise<void>): void;
+  onThinkingSelect(handler: (level: string) => void | Promise<void>): void;
   isIdle(): boolean;
 };
 
@@ -59,6 +60,7 @@ export type SessionHost = {
   lastRequestUsage(): PromptTokens | undefined;
   mainRequestUsage(): PromptTokens;
   saveDefaultModel(ref: string): Promise<string | undefined>;
+  saveDefaultThinkingLevel(level: string): Promise<string | undefined>;
 };
 
 export type Host = ToolHost &

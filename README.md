@@ -62,7 +62,7 @@ The package installs fourteen extensions:
 - **[spending](extensions/spending/README.md)**: the session's total spend in the footer, subagents at every depth included.
 - **[context](extensions/context/README.md)**: `/context` shows what fills the context window, per category, with cache hit rates.
 - **[notifications](extensions/notifications/README.md)**: one terminal notification when pi waits for your input or a dialog waits unanswered.
-- **[model-default](extensions/model-default/README.md)**: the model you last picked (Enter in the selector, `/model <name>`, cycling) becomes pi's saved default, as Ctrl+S does.
+- **[model-default](extensions/model-default/README.md)**: the model and thinking level you last picked (Enter in the selector, `/model <name>`, cycling, Shift+Tab) become pi's saved defaults, as Ctrl+S does.
 
 **Look and feel**
 

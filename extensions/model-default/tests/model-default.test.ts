@@ -37,4 +37,30 @@ describe("model default", () => {
       },
     ]);
   });
+
+  it("saves every chosen thinking level as the default, the latest last", async () => {
+    const host = setup();
+
+    await host.selectThinking("high");
+    await host.selectThinking("low");
+
+    expect(host.savedThinkingLevels).toEqual(["high", "low"]);
+    expect(host.notices).toEqual([]);
+  });
+
+  it("warns when the thinking level cannot be saved", async () => {
+    const host = setup();
+
+    host.saveFailure = "settings.json is locked";
+
+    await host.selectThinking("high");
+
+    expect(host.savedThinkingLevels).toEqual([]);
+    expect(host.notices).toEqual([
+      {
+        message: "pi-model-default: high is not saved as the default thinking level: settings.json is locked",
+        level: "warning",
+      },
+    ]);
+  });
 });

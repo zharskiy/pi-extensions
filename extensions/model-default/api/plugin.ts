@@ -9,6 +9,17 @@ export const createModelDefault = (host: Host) => {
       host.ui.notify(`pi-model-default: ${ref} is not saved as the default model: ${failure}`, "warning");
     }
   });
+
+  host.onThinkingSelect(async (level) => {
+    const failure = await host.saveDefaultThinkingLevel(level);
+
+    if (failure) {
+      host.ui.notify(
+        `pi-model-default: ${level} is not saved as the default thinking level: ${failure}`,
+        "warning",
+      );
+    }
+  });
 };
 
 export const modelDefaultPlugin: Plugin<never, never, undefined> = {

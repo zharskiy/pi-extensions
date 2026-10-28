@@ -134,6 +134,8 @@ export type FakeHost = Host & {
   savedDefaults: string[];
   saveFailure?: string;
   selectModel(ref: string): Promise<void>;
+  savedThinkingLevels: string[];
+  selectThinking(level: string): Promise<void>;
 };
 
 export const FAKE_FOOTER_KEY = "footer";
@@ -150,6 +152,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
   const modelSelectHandlers: ((ref: string) => void | Promise<void>)[] = [];
+  const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   const emptyDownHandlers = new Set<() => void>();
   const emptyEscapeHandlers = new Set<() => boolean>();
   const entryRenderers = new Map<string, EntryRender>();
@@ -717,6 +720,22 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       host.savedDefaults.push(ref);
+
+      return undefined;
+    },
+    savedThinkingLevels: [],
+    onThinkingSelect: (handler) => {
+      thinkingSelectHandlers.push(handler);
+    },
+    selectThinking: async (level) => {
+      await Promise.all(thinkingSelectHandlers.map((handler) => handler(level)));
+    },
+    saveDefaultThinkingLevel: async (level) => {
+      if (host.saveFailure) {
+        return host.saveFailure;
+      }
+
+      host.savedThinkingLevels.push(level);
 
       return undefined;
     },

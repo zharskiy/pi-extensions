@@ -211,9 +211,10 @@ describe("pi adapter conformance", () => {
     ).toEqual([]);
   });
 
-  it("has the settings manager methods the default model save calls", () => {
+  it("has the settings manager methods the default model and thinking saves call", () => {
     const methods = [
       "setDefaultModelAndProvider",
+      "setDefaultThinkingLevel",
       "getEnabledModels",
       "setEnabledModels",
       "flush",

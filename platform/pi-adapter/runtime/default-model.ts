@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { ThinkingLevel } from "../types/model.ts";
 
 const refOf = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
 
@@ -26,16 +27,16 @@ const globalErrors = (settings: SettingsManager) =>
     .filter(({ scope }) => scope === "global")
     .map(({ error }) => error.message);
 
-export const writeDefaultModel = async (ctx: ExtensionContext, ref: string): Promise<string | undefined> => {
-  const slash = ref.indexOf("/");
-
+const writeGlobalSettings = async (
+  ctx: ExtensionContext,
+  change: (settings: SettingsManager) => void,
+): Promise<string | undefined> => {
   try {
     const settings = SettingsManager.create(ctx.cwd, getAgentDir(), {
       projectTrusted: ctx.isProjectTrusted(),
     });
 
-    settings.setDefaultModelAndProvider(ref.slice(0, slash), ref.slice(slash + 1));
-    widenScope(settings, ctx, ref);
+    change(settings);
 
     await settings.flush();
 
@@ -46,3 +47,16 @@ export const writeDefaultModel = async (ctx: ExtensionContext, ref: string): Pro
     return error instanceof Error ? error.message : String(error);
   }
 };
+
+export const writeDefaultModel = (ctx: ExtensionContext, ref: string) =>
+  writeGlobalSettings(ctx, (settings) => {
+    const slash = ref.indexOf("/");
+
+    settings.setDefaultModelAndProvider(ref.slice(0, slash), ref.slice(slash + 1));
+    widenScope(settings, ctx, ref);
+  });
+
+export const writeDefaultThinkingLevel = (ctx: ExtensionContext, level: ThinkingLevel) =>
+  writeGlobalSettings(ctx, (settings) => {
+    settings.setDefaultThinkingLevel(level);
+  });

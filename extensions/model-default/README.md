@@ -2,7 +2,7 @@
 
 # model-default
 
-**The model you last picked becomes pi's saved default, without pressing Ctrl+S.**
+**The model and thinking level you last picked become pi's saved defaults, without pressing Ctrl+S.**
 
 Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
@@ -10,25 +10,29 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-Pi saves a model as the default for new sessions only when you press Ctrl+S in the model selector. Enter, `/model <name>` and Ctrl+P switch the current session and leave the default behind, so the next session starts on a model you moved away from. With this extension every model you pick in the main session is saved as the default, as Ctrl+S would, and the thinking level is left alone. Subagents never change it.
+Pi saves a model as the default for new sessions only when you press Ctrl+S in the model selector. Enter, `/model <name>` and Ctrl+P switch the current session and leave the default behind, so the next session starts on a model you moved away from. The thinking selector works the same way: Enter and Shift+Tab change the level for the current session only. With this extension every model and every thinking level you pick in the main session is saved as the default, as Ctrl+S would. Subagents never change either.
 
 ## What it looks like
 
-Pick `acme/beta` with Enter, and pi's `settings.json` follows:
+Pick `acme/beta` with Enter and `high` in the thinking selector, and pi's `settings.json` follows:
 
 ```
 {
   "theme": "dark",
   "defaultProvider": "acme",
-  "defaultModel": "beta"
+  "defaultModel": "beta",
+  "defaultThinkingLevel": "high"
 }
 ```
 
-If the file cannot be written, a warning says why and the session keeps the model:
+If the file cannot be written, a warning says why and the session keeps the model or level:
 
 ```
 pi-model-default: acme/beta is not saved as the default model: <reason>
+pi-model-default: high is not saved as the default thinking level: <reason>
 ```
+
+Every change of the thinking level counts, not only the ones you make yourself. A model switch sets the level pi loaded as the default when the session started (or the model's own level, or the nearest one the model supports), and that level is saved; switching to a model without thinking saves `off`. An extension that sets the level, such as a handoff restoring the level kept from the previous session, saves it too. Starting or resuming a session saves nothing.
 
 ## Quick start
 
@@ -43,6 +47,7 @@ Start pi and try:
 |---|---|
 | Pick a model with Enter in the selector, then `/new` | The new session starts on that model. |
 | Cycle models with Ctrl+P, then restart pi | Pi starts on the model you cycled to. |
+| Press Shift+Tab to cycle the thinking level, then `/new` | The new session starts on that level. |
 
 ## Development
 
