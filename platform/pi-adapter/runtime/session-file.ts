@@ -164,7 +164,7 @@ type PathEntry = RawEntry & { id?: string; parentId?: string | null };
 
 type CustomEntryData = { customType: string; data: unknown };
 
-export type SessionPath = { items: TranscriptItem[]; customEntries: CustomEntryData[] };
+export type SessionPath = { segments: TranscriptItem[][]; customEntries: CustomEntryData[] };
 
 export const readSessionTree = (file: string): PathEntry[] => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
@@ -194,11 +194,30 @@ const pathTo = (entries: readonly PathEntry[], leafId: string | null): PathEntry
 export const sessionPath = (entries: readonly PathEntry[], leafId: string | null): SessionPath => {
   const path = pathTo(entries, leafId);
 
-  const items = path.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
+  const segments = path
+    .reduce<TranscriptItem[][]>(
+      (split, entry) => {
+        if (entry.type === "compaction") {
+          split.push([]);
+
+          return split;
+        }
+
+        const item = transcriptItem(entry);
+
+        if (item) {
+          split.at(-1)?.push(item);
+        }
+
+        return split;
+      },
+      [[]],
+    )
+    .filter((segment) => segment.length > 0);
 
   const customEntries = path
     .filter((entry) => entry.type === "custom")
     .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
 
-  return { items, customEntries };
+  return { segments, customEntries };
 };

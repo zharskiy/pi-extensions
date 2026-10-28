@@ -10,11 +10,11 @@ type LineageReason = "handoff" | "compaction";
 
 export type LineageEntry = { file: string; leafId: string | null; reason: LineageReason };
 
-export type LineageLinkRead = { link: LineageEntry; read: LinkRead<TranscriptItem[]> };
+export type LineageLinkRead = { link: LineageEntry; read: LinkRead<TranscriptItem[][]> };
 
 export type LineageRead = { links: LineageLinkRead[]; truncated: boolean };
 
-type LinkPath = { items: TranscriptItem[]; previous?: LineageEntry };
+type LinkPath = { segments: TranscriptItem[][]; previous?: LineageEntry };
 
 export const lineageEntryOf = (customType: string | undefined, data: unknown): LineageEntry | undefined => {
   if (customType !== LINEAGE_TYPE && customType !== LEGACY_LINEAGE_TYPE) {
@@ -50,7 +50,7 @@ export const createLineageReader = () => {
       .filter((entry): entry is LineageEntry => entry?.reason === "handoff")
       .at(-1);
 
-    return { status: "read", value: { items: path.items, previous } };
+    return { status: "read", value: { segments: path.segments, previous } };
   };
 
   const previousOf = (link: LineageEntry) => {
@@ -65,7 +65,7 @@ export const createLineageReader = () => {
     const links = walk.links.map((link): LineageLinkRead => {
       const read = readLink(link);
 
-      return { link, read: read.status === "read" ? { status: "read", value: read.value.items } : read };
+      return { link, read: read.status === "read" ? { status: "read", value: read.value.segments } : read };
     });
 
     return { links, truncated: walk.truncated };

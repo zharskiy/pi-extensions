@@ -463,18 +463,27 @@ describe("keeping the history a compaction drops", () => {
   it("draws everything before the latest compaction once the session compacts again", async () => {
     const session = await compacted();
 
+    await session.runtime.session.prompt("fourth question");
+    session.keepFrom("fourth question");
     await session.runtime.session.compact();
 
     const latest = session.lineageEntries().at(-1);
     const expanded = session.draw(latest, true);
-    const order = ["first question", "first answer", "second question", "second answer"].map((text) =>
-      expanded.indexOf(text),
-    );
+    const order = [
+      "first question",
+      "first answer",
+      "second question",
+      "second answer",
+      "» compacted here",
+      "third question",
+      "third answer",
+    ].map((text) => expanded.indexOf(text));
 
-    expect(session.draw(latest)).toMatch(/» 4 earlier messages, compacted/);
+    expect(session.draw(latest)).toMatch(/» 6 earlier messages, compacted/);
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(expanded).not.toContain("third question");
+    expect(expanded.split("» compacted here")).toHaveLength(2);
+    expect(expanded).not.toContain("fourth question");
 
     await session.runtime.dispose();
   });

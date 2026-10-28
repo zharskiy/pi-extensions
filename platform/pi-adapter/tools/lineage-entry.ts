@@ -26,6 +26,8 @@ import { paddedComponent } from "./entry-renderers.ts";
 import { sharedPad } from "./row-component.ts";
 import { createTranscriptPane } from "./transcript.ts";
 
+const COMPACTED_HERE = "» compacted here";
+
 const LINEAGE_LABELS = { handoff: "lineage: handoff", compaction: "lineage: compaction" } as const;
 
 type Block = { component: Component; setExpanded(expanded: boolean): void };
@@ -114,18 +116,29 @@ export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
       };
     }
 
+    const segments = view.read.value;
+    const count = segments.reduce((sum, segment) => sum + segment.length, 0);
     const compacted = view.link === start && start.reason === "compaction";
-    const heading = compacted
-      ? `» ${messageCount(view.read.value.length)}, compacted`
-      : `» previous session · ${path}`;
-    const pane = createTranscriptPane(tui, deps.cwd(), { tools: deps.tools() });
+    const heading = compacted ? `» ${messageCount(count)}, compacted` : `» previous session · ${path}`;
     const container = new Container();
 
-    pane.sync(view.read.value);
     container.addChild(line(theme, "dim", heading));
-    container.addChild({ render: (width) => pane.render(width), invalidate: () => {} });
 
-    return { component: container, pane, count: view.read.value.length };
+    const panes = segments.map((segment, index) => {
+      const pane = createTranscriptPane(tui, deps.cwd(), { tools: deps.tools() });
+
+      pane.sync(segment);
+
+      if (index > 0) {
+        container.addChild(line(theme, "dim", COMPACTED_HERE));
+      }
+
+      container.addChild({ render: (width) => pane.render(width), invalidate: () => {} });
+
+      return pane;
+    });
+
+    return { component: container, panes, count };
   };
 
   const lineageBlock = (lineage: LineageEntry, theme: Theme): Block => {
@@ -148,7 +161,9 @@ export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
 
     const setToolsExpanded = (expanded: boolean) => {
       blocks.forEach((block) => {
-        block.pane?.setToolsExpanded(expanded);
+        block.panes?.forEach((pane) => {
+          pane.setToolsExpanded(expanded);
+        });
       });
     };
 
