@@ -34,6 +34,8 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
 
   modelRuntime.registerNativeProvider(faux.provider);
 
+  await modelRuntime.refresh({ allowNetwork: false });
+
   const reply = (text: string) => (context: unknown) => {
     requests.push(structuredClone(context));
 
@@ -166,7 +168,7 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
   const normalized = (request: unknown) =>
     JSON.parse(
       JSON.stringify(request, (key, value) =>
-        ["timestamp", "api"].includes(key) ? undefined : value,
+        ["timestamp", "api", "durationMs"].includes(key) ? undefined : value,
       ).replaceAll(dir, "<dir>"),
     );
 
