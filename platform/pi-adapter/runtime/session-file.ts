@@ -1,10 +1,8 @@
 import { readFileSync } from "node:fs";
 import {
-  buildContextEntries,
   calculateContextTokens,
   migrateSessionEntries,
   parseSessionEntries,
-  type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
 import type { TranscriptItem } from "../types/view.ts";
@@ -162,20 +160,43 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
   parseSessionLines(readLines(file), recordEntry);
 
+type PathEntry = RawEntry & { id?: string; parentId?: string | null };
+
 type CustomEntryData = { customType: string; data: unknown };
 
-type SessionBranch = { items: TranscriptItem[]; customEntries: CustomEntryData[] };
+export type SessionPath = { items: TranscriptItem[]; customEntries: CustomEntryData[] };
 
-export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
+export const readSessionTree = (file: string): PathEntry[] => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
 
   migrateSessionEntries(entries);
 
-  const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
+  return entries as PathEntry[];
+};
 
-  const items = branch.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
+const pathTo = (entries: readonly PathEntry[], leafId: string | null): PathEntry[] => {
+  const walk = entries.reduceRight(
+    (state, entry) => {
+      if (entry.id === undefined || entry.id !== state.next) {
+        return state;
+      }
 
-  const customEntries = branch
+      state.path.push(entry);
+
+      return { next: entry.parentId ?? null, path: state.path };
+    },
+    { next: leafId, path: [] as PathEntry[] },
+  );
+
+  return walk.path.reverse();
+};
+
+export const sessionPath = (entries: readonly PathEntry[], leafId: string | null): SessionPath => {
+  const path = pathTo(entries, leafId);
+
+  const items = path.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
+
+  const customEntries = path
     .filter((entry) => entry.type === "custom")
     .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
 

@@ -20,7 +20,9 @@
 - `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, and its restore of the model and thinking level on `session_start`.
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
-- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or one branch through pi's context entries), context tokens.
+- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or the full root-to-leaf path of one leaf), context tokens.
+- `runtime/lineage-walk.ts`: pi-free `walkLineage` (links oldest first, cycle guard, depth cap), `linkKey` and `createFileReader` (a per-file read cached by size and mtime, failures as data); exported through `index.ts` for the subagents chain.
+- `runtime/lineage.ts`: the `pi-adapter:lineage` entry type (and its earlier name `pi-adapter:previous-session`), `lineageEntryOf`, and `createLineageReader`, which resolves a link `{ file, leafId }` to its transcript and walks the lineage.
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with displayed custom messages as run starts), `formatRoutedMessage`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
 - `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones and their re-queue at settle, the seeded start).
@@ -50,7 +52,7 @@
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
 - `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
 - `tools/transcript.ts`: the transcript pane and pi renderer capture.
-- `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer, which draws the previous sessions of a handoff chain with the transcript pane.
+- `tools/lineage-entry.ts`: the lineage entries `newSession({ showPrevious })` and `session_compact` write, with their `/tree` labels, and their renderer, which draws the lineage with the transcript pane (whole after a handoff, one collapsed line after a compaction).
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
 - `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
 - `context/context-messages.ts`: per-message and per-block token estimates.
@@ -83,7 +85,8 @@
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
 - `tests/transcript.test.ts`: `tools/transcript.ts`.
-- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, and the model's requests unchanged by the entry, on later turns and after a resume too.
+- `tests/lineage-entry.test.ts`: `tools/lineage-entry.ts` over a real pi session runtime: the drawn handoff chain, the earlier entry name, the not-found line, the compaction marker collapsed and expanded, pi's `session_compact` order, the `/tree` labels, and the model's requests unchanged by the entries, on later turns, after a resume and over two compactions.
+- `tests/lineage-walk.test.ts`: `runtime/lineage-walk.ts`: order, cycle guard, depth cap and the cached file reader.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.
 - `tests/main-prompt.test.ts`: `prompt/main-prompt.ts`.

@@ -1,5 +1,6 @@
 export { type CatalogModel, type ModelPreferences, resolveModel } from "./child/model-resolver.ts";
 export { createPiExtension } from "./runtime/extension.ts";
+export { createFileReader, type LinkRead, walkLineage } from "./runtime/lineage-walk.ts";
 export { settleWithin } from "./runtime/settle-within.ts";
 export type {
   ContextFacts,
