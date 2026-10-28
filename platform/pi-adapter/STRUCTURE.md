@@ -4,7 +4,7 @@
 - `types/host-capabilities.ts`: `Host` = `ToolHost & PromptHost & LifecycleHost & MessagingHost & EntryHost & SessionHost & { ui }`.
 - `types/host-ui.ts`: `HostUi` = `NoticeUi & ClipboardUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
 - `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `ThinkingToken`, `MessageToken`), `BgToken`, `ThemeLike`.
-- `types/keys.ts`: `KeyPress`, `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`).
+- `types/keys.ts`: `KeyPress` (with `shortcut`), `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`).
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
@@ -33,7 +33,8 @@
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
 - `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.
 - `ui/text-input.ts`: the form `TextInput` over pi-tui's `Editor`, its theme and focus.
-- `ui/key-events.ts`: `KeyPress` naming through pi keybinding ids.
+- `ui/key-events.ts`: `KeyPress` naming through pi keybinding ids, and the layout-independent `shortcut`.
+- `ui/key-layout.ts`: `qwertyTwin`, the Russian letters and the Ukrainian `і`, `ї`, `є` and Belarusian `ў` mapped to the QWERTY keys they sit on.
 - `ui/footer.ts`: the custom footer and its live context, model and thinking getters.
 - `ui/notices.ts`: `HostUi.setNotice`; one-line notices between the editor and the footer.
 - `ui/thinking-label.ts`: the hidden thinking label: composed hint, record on `globalThis`, OSC 133 prefix.
@@ -69,7 +70,7 @@
 - `tests/create-ui.test.ts`: `ui/create-ui.ts`.
 - `tests/form.test.ts`: `ui/form.ts` and `ui/overlay.ts`.
 - `tests/overlay.test.ts`: `ui/overlay.ts`.
-- `tests/key-events.test.ts`: `ui/key-events.ts`.
+- `tests/key-events.test.ts`: `ui/key-events.ts` and `ui/key-layout.ts`.
 - `tests/footer.test.ts`: `ui/footer.ts` and `ui/notices.ts`.
 - `tests/theme-bridge.test.ts`: `ui/theme-bridge.ts`.
 - `tests/working-message.test.ts`: `ui/working-message.ts`.

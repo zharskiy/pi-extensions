@@ -5,6 +5,7 @@ import type {
   ThemeLike,
   ViewComponent,
 } from "../../platform/pi-adapter/index.ts";
+import { char } from "./key-presses.ts";
 
 export type FakeForm = {
   view: ViewComponent;
@@ -76,7 +77,7 @@ export const openFakeForm = <T>(
         });
       },
       type: (text) => {
-        form.press(...Array.from(text).map((char): KeyPress => ({ name: "other", char, raw: char })));
+        form.press(...Array.from(text, (letter) => char(letter)));
       },
     };
 

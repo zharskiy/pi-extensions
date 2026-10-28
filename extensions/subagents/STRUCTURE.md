@@ -103,7 +103,7 @@ extensions/subagents/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
 │   │   ├── panel-lines.ts                 # panelLines: the shown agent rows, a blank line, the always-present hint row (ending in `N more, ← to list agents` when agents are hidden) and the closing blank line
-│   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
+│   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys (x on KeyPress.shortcut)
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
 │   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, fieldValue, the Previous/Suggested PRESETS (presetsOf, presetFieldsOf), selectedRow, changeRows for the Submit tab, FIELD_ROWS, pickers with the all row and the filter, BLOCK_ROWS from the field and preset counts, scopes and keys

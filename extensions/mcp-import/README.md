@@ -46,7 +46,7 @@ Start with a dry run, then write:
 
 | Try | What you see |
 |---|---|
-| `/mcp-import` | A pick of the source, then the servers. Enter writes the checked ones. |
+| `/mcp-import` | A pick of the source, then the servers. Enter writes the checked ones. In the server list `a` checks all and `n` none, also on the same keys in a Cyrillic layout. |
 | `/mcp-import claude` | A dry run like the one above. Nothing is written. |
 | `/mcp-import claude apply` | The servers are written. Run `/reload`, then `/mcp` to check them. |
 

@@ -180,7 +180,7 @@ const ENTER: KeyPress = { name: "enter" };
 const ESCAPE: KeyPress = { name: "escape" };
 const DOWN: KeyPress = { name: "down" };
 const SPACE: KeyPress = { name: "space" };
-const NONE: KeyPress = { name: "other", char: "n", raw: "n" };
+const NONE: KeyPress = { name: "other", char: "n", shortcut: "n", raw: "n" };
 
 const GITHUB = { command: "gh", args: ["mcp", "serve"] };
 const DOCS = { type: "http", url: "https://docs.test/mcp" };

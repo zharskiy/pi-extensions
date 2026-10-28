@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { keyPress } from "../ui/key-events.ts";
+import { qwertyTwin } from "../ui/key-layout.ts";
 
 const ESC = String.fromCharCode(27);
 
@@ -56,5 +57,41 @@ describe("keyPress", () => {
 
   it("names Backspace and keeps its raw bytes", () => {
     expect(keyPress("\x7f", { matches: () => false })).toEqual({ name: "backspace", raw: "\x7f" });
+  });
+
+  it("keeps a Cyrillic letter as typed and names the QWERTY key under it as the shortcut", () => {
+    const keys = { matches: () => false };
+
+    expect(keyPress("ч", keys)).toEqual({ name: "other", char: "ч", shortcut: "x", raw: "ч" });
+    expect(keyPress("Ч", keys)).toEqual({ name: "other", char: "Ч", shortcut: "X", raw: "Ч" });
+    expect(["x", "X", "z", "1", "/"].map((data) => keyPress(data, keys).shortcut)).toEqual([
+      "x",
+      "X",
+      "z",
+      "1",
+      "/",
+    ]);
+  });
+
+  it("takes the shortcut from the base-layout key of a kitty key event", () => {
+    const keys = { matches: () => false };
+
+    expect(keyPress(`${ESC}[1095::120u`, keys)).toEqual({
+      name: "other",
+      char: undefined,
+      shortcut: "x",
+      raw: `${ESC}[1095::120u`,
+    });
+    expect(keyPress(`${ESC}[1095:1063:120;2u`, keys).shortcut).toBe("X");
+    expect(keyPress(`${ESC}[1097::111;5u`, keys).shortcut).toBeUndefined();
+  });
+
+  it("maps every Russian letter and the Ukrainian і ї є and Belarusian ў to the QWERTY key it sits on", () => {
+    const lower = Array.from("йцукенгшщзхъфывапролджэячсмитьбюёіїєў", qwertyTwin).join("");
+    const upper = Array.from("ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮЁІЇЄЎ", qwertyTwin).join("");
+
+    expect(lower).toBe("qwertyuiop[]asdfghjkl;'zxcvbnm,.`s]'o");
+    expect(upper).toBe('QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>~S}"O');
+    expect(["x", "ü", "α"].map(qwertyTwin)).toEqual(["x", "ü", "α"]);
   });
 });
