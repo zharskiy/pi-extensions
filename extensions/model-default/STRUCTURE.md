@@ -7,7 +7,8 @@ extensions/model-default/
 │   ├── extension.ts            # createManagedExtension (namespace pi-model-default, one plugin)
 │   └── plugin.ts               # createModelDefault (the model and thinking handlers and their warnings), modelDefaultPlugin
 ├── tests/
-│   └── model-default.test.ts   # save on every model and thinking choice, warning on a failed save
+│   ├── model-default.test.ts   # save on every model and thinking choice, re-apply after a switch, warning on a failed save
+│   └── thinking-default.test.ts # the extension in a real pi session: the chosen level survives model switches and clamping
 ├── README.md
 ├── ARCHITECTURE.md
 └── STRUCTURE.md

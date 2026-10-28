@@ -57,6 +57,7 @@ export type SessionHost = {
   contextFacts(): ContextFacts | undefined;
   model(): ModelInfo | undefined;
   thinkingLevel(): string;
+  setThinkingLevel(level: string): void;
   lastRequestUsage(): PromptTokens | undefined;
   mainRequestUsage(): PromptTokens;
   saveDefaultModel(ref: string): Promise<string | undefined>;

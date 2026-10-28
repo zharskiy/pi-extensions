@@ -32,7 +32,7 @@ pi-model-default: acme/beta is not saved as the default model: <reason>
 pi-model-default: high is not saved as the default thinking level: <reason>
 ```
 
-Every change of the thinking level counts, not only the ones you make yourself. A model switch sets the level pi loaded as the default when the session started (or the model's own level, or the nearest one the model supports), and that level is saved; switching to a model without thinking saves `off`. An extension that sets the level, such as a handoff restoring the level kept from the previous session, saves it too. Starting or resuming a session saves nothing.
+Only a level you choose is saved: the thinking selector's Enter or Ctrl+S, Shift+Tab, `/thinking <level>`, or an extension that replays your choice, such as a handoff restoring the level kept from the previous session. A model switch never changes the saved level. Pi resets the level when you switch models; this extension puts the session back on the level you last chose, or the nearest one the new model supports, and that nearest level is not saved. Switch to a model without thinking and back, and you are on your level again, with `off` never saved. Until you choose a level in a session, a switch keeps the level pi gives the new model. Starting or resuming a session saves nothing.
 
 ## Quick start
 
@@ -48,6 +48,7 @@ Start pi and try:
 | Pick a model with Enter in the selector, then `/new` | The new session starts on that model. |
 | Cycle models with Ctrl+P, then restart pi | Pi starts on the model you cycled to. |
 | Press Shift+Tab to cycle the thinking level, then `/new` | The new session starts on that level. |
+| Pick `low` in the thinking selector, then switch models with Ctrl+P | The session stays on `low`, and `low` stays the default. |
 
 ## Development
 

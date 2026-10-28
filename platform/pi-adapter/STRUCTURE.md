@@ -56,13 +56,13 @@
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
+- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
 - `tests/phase.test.ts`: `runtime/phase.ts`.
 - `tests/child-scope.test.ts`: `runtime/child-scope.ts`.
 - `tests/session-file.test.ts`: `runtime/session-file.ts`.
 - `tests/message-text.test.ts`: `runtime/message-text.ts`.
-- `tests/default-model.test.ts`: `Host.onModelSelect`, `Host.saveDefaultModel`, `Host.onThinkingSelect` and `Host.saveDefaultThinkingLevel` over a real pi session and a temp `settings.json`.
+- `tests/default-model.test.ts`: `Host.onModelSelect`, `Host.saveDefaultModel`, `Host.onThinkingSelect` (without the reset of a model switch) and `Host.saveDefaultThinkingLevel` over a real pi session and a temp `settings.json`.
 - `tests/settle-within.test.ts`: `runtime/settle-within.ts`.
 - `tests/child-runtime.test.ts`: `child/child-runtime.ts` and `child/child-extension.ts`.
 - `tests/skills.test.ts`: `child/skills.ts`.

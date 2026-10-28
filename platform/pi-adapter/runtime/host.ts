@@ -85,6 +85,8 @@ const HELD_POLL_MS = 100;
 
 const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
+const modelRef = (model: ExtensionContext["model"]) => model && `${model.provider}/${model.id}`;
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo) => void)[] = [];
@@ -110,6 +112,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
   let created = false;
+  let currentModel: string | undefined;
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -233,6 +236,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     created = event.reason === "new" || event.reason === "fork";
+    currentModel = modelRef(ctx.model);
 
     const info = sessionInfo(ctx, created);
 
@@ -247,6 +251,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     phaseState = initialPhase();
     runActive = false;
     held.length = 0;
+    currentModel = undefined;
     stopHeldPoll();
 
     if (state.ctx) {
@@ -431,6 +436,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   pi.on("model_select", async (event, ctx) => {
     capture(ctx);
 
+    currentModel = modelRef(event.model);
+
     if (event.source === "restore") {
       return;
     }
@@ -442,6 +449,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("thinking_level_select", async (event, ctx) => {
     capture(ctx);
+
+    const switching = currentModel !== undefined && modelRef(ctx.model) !== currentModel;
+    const superseded = event.level !== pi.getThinkingLevel();
+
+    if (switching || superseded) {
+      return;
+    }
 
     await Promise.all(thinkingSelectHandlers.map((handler) => handler(event.level)));
   });
@@ -549,6 +563,11 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     saveDefaultModel: (ref) => writeDefaultModel(liveCtx(state), ref),
     onThinkingSelect: (handler) => {
       thinkingSelectHandlers.push(handler);
+    },
+    setThinkingLevel: (level) => {
+      if (isThinkingLevel(level)) {
+        pi.setThinkingLevel(level);
+      }
     },
     saveDefaultThinkingLevel: async (level) =>
       isThinkingLevel(level)

@@ -15,7 +15,7 @@ import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, piRenderContext } from "../../../test/framework/pi/index.ts";
+import { initPiRenderTheme, piRenderContext, startPiSession } from "../../../test/framework/pi/index.ts";
 import { createChildExtension } from "../child/child-extension.ts";
 import { childSettings, childToolNames } from "../child/child-runtime.ts";
 import { CODEMODE_WORKERS_SETTING } from "../child/codemode.ts";
@@ -209,6 +209,36 @@ describe("pi adapter conformance", () => {
     expect(
       screen.filter((name) => typeof Reflect.get(tui.TuiMainScreen.prototype, name) !== "function"),
     ).toEqual([]);
+  });
+
+  it("resets the thinking level inside a model switch after setting the model and before model_select", async () => {
+    const seen: string[] = [];
+    const factory: pi.ExtensionFactory = (api) => {
+      api.on("thinking_level_select", (event, ctx) => {
+        seen.push(`thinking ${event.level} on ${ctx.model?.id}`);
+      });
+      api.on("model_select", (event) => {
+        seen.push(`model ${event.model.id}`);
+      });
+    };
+    const { session, model } = await startPiSession({
+      agentDir: temp.make("pi-conformance-agent-"),
+      cwd: temp.make("pi-conformance-cwd-"),
+      factory,
+      settings: { defaultThinkingLevel: "high" },
+      models: [
+        { id: "alpha", reasoning: true },
+        { id: "beta", reasoning: true },
+      ],
+    });
+
+    session.setThinkingLevel("low");
+    await session.setModel(model("beta"));
+
+    expect(seen).toEqual(["thinking low on alpha", "thinking high on beta", "model beta"]);
+
+    session.dispose();
+    vi.unstubAllEnvs();
   });
 
   it("has the settings manager methods the default model and thinking saves call", () => {

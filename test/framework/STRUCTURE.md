@@ -27,6 +27,7 @@
 - `eval-runs/eval-results.ts`: `observations.jsonl` and failed-session snapshots under `PI_EVAL_RESULTS`.
 - `pi/index.ts`: the surface of the helpers that load pi offline.
 - `pi/render-theme.ts`: `initPiRenderTheme`, `initPiKeybindings`, `plainPiTheme`.
+- `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory.
 - `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
 - `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.
 - `pi/session-files.ts`: real session files: read, parse, header, facts, prompt record.

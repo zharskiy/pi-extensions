@@ -63,4 +63,47 @@ describe("model default", () => {
       },
     ]);
   });
+
+  it("puts the session back on the chosen level after a model switch", async () => {
+    const host = setup();
+
+    host.thinking = "low";
+
+    await host.selectThinking("low");
+
+    host.thinking = "high";
+
+    await host.selectModel("acme/beta");
+
+    expect(host.thinking).toBe("low");
+    expect(host.savedThinkingLevels).toEqual(["low"]);
+  });
+
+  it("does not save the level a switch lands on, even when its event arrives after the switch", async () => {
+    const host = setup();
+
+    host.setThinkingLevel = () => {
+      host.thinking = "off";
+    };
+
+    await host.selectThinking("low");
+    await host.selectModel("acme/plain");
+    await host.selectThinking("off");
+
+    expect(host.thinking).toBe("off");
+    expect(host.savedThinkingLevels).toEqual(["low"]);
+  });
+
+  it("saves a level picked after the switch, even the one the switch landed on before", async () => {
+    const host = setup();
+
+    host.thinking = "high";
+
+    await host.selectModel("acme/beta");
+    await host.selectThinking("high");
+    await host.selectThinking("low");
+    await host.selectThinking("high");
+
+    expect(host.savedThinkingLevels).toEqual(["low", "high"]);
+  });
 });

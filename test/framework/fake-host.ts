@@ -724,6 +724,9 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       return undefined;
     },
     savedThinkingLevels: [],
+    setThinkingLevel: (level) => {
+      host.thinking = level;
+    },
     onThinkingSelect: (handler) => {
       thinkingSelectHandlers.push(handler);
     },

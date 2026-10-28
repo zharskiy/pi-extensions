@@ -2,7 +2,18 @@ import type { Host } from "../../../platform/pi-adapter/index.ts";
 import type { Plugin } from "../../../platform/shared/index.ts";
 
 export const createModelDefault = (host: Host) => {
+  let chosen: string | undefined;
+  let landed: string | undefined;
+
   host.onModelSelect(async (ref) => {
+    if (chosen) {
+      host.setThinkingLevel(chosen);
+    }
+
+    const level = host.thinkingLevel();
+
+    landed = level === chosen ? undefined : level;
+
     const failure = await host.saveDefaultModel(ref);
 
     if (failure) {
@@ -11,6 +22,13 @@ export const createModelDefault = (host: Host) => {
   });
 
   host.onThinkingSelect(async (level) => {
+    if (level === landed) {
+      return;
+    }
+
+    chosen = level;
+    landed = undefined;
+
     const failure = await host.saveDefaultThinkingLevel(level);
 
     if (failure) {

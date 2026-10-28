@@ -1,18 +1,19 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fauxProvider } from "@earendil-works/pi-ai";
-import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
+import { startPiSession } from "../../../test/framework/pi/index.ts";
 import { createPiExtension } from "../index.ts";
-import { childScope } from "../runtime/child-scope.ts";
 
 const temp = useTempDirs();
 const failures: string[] = [];
+const reported: string[] = [];
 
 const saveEveryChoice = createPiExtension(
   (host) => {
     host.onModelSelect(async (ref) => {
+      reported.push(`model ${ref}`);
+
       const failure = await host.saveDefaultModel(ref);
 
       if (failure) {
@@ -20,6 +21,8 @@ const saveEveryChoice = createPiExtension(
       }
     });
     host.onThinkingSelect(async (level) => {
+      reported.push(`thinking ${level}`);
+
       const failure = await host.saveDefaultThinkingLevel(level);
 
       if (failure) {
@@ -40,62 +43,28 @@ const startSession = async (
 ) => {
   const agentDir = temp.make("pi-default-model-agent-");
   const cwd = temp.make("pi-default-model-cwd-");
-
-  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
-  writeFileSync(
-    join(agentDir, "settings.json"),
-    typeof settings === "string" ? settings : JSON.stringify(settings, null, 2),
-  );
-
-  const faux = fauxProvider({
-    provider: "fake",
-    models: [
-      { id: "alpha", reasoning: true },
-      { id: "beta", reasoning: true },
-      { id: "gamma", reasoning: true },
-    ],
-  });
-  const modelRuntime = await pi.ModelRuntime.create();
-  const settingsManager = pi.SettingsManager.create(cwd, agentDir);
-  const inScope = (scope: () => Promise<unknown>) =>
-    options.child ? childScope.run({ agentId: "a1" }, scope) : scope();
-
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  await modelRuntime.refresh({ allowNetwork: false });
-
-  const loader = new pi.DefaultResourceLoader({
-    cwd,
+  const models = [
+    { id: "alpha", reasoning: true },
+    { id: "beta", reasoning: true },
+    { id: "gamma", reasoning: true },
+  ];
+  const started = await startPiSession({
     agentDir,
-    settingsManager,
-    noExtensions: true,
-    extensionFactories: [{ name: "model-default", factory: saveEveryChoice }],
-  });
-
-  await inScope(() => loader.reload());
-
-  const model = (id: string) => faux.getModel(id) as pi.ExtensionContext["model"] & object;
-
-  const { session } = await pi.createAgentSession({
     cwd,
-    agentDir,
-    modelRuntime,
-    model: model("alpha"),
-    scopedModels: options.scoped?.map((id) => ({ model: model(id) })),
-    resourceLoader: loader,
-    settingsManager,
-    sessionManager: pi.SessionManager.inMemory(cwd),
+    factory: saveEveryChoice,
+    settings,
+    models,
+    ...options,
   });
 
-  await session.bindExtensions({ mode: "print" });
-
-  return { session, settingsManager, agentDir, model, inScope };
+  return { ...started, agentDir };
 };
 
 describe("saving the chosen model as pi's default", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     failures.length = 0;
+    reported.length = 0;
   });
 
   it("writes the model picked with Enter into settings.json and keeps the other keys", async () => {
@@ -201,6 +170,7 @@ describe("saving the chosen thinking level as pi's default", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     failures.length = 0;
+    reported.length = 0;
   });
 
   it("saves nothing when a session starts", async () => {
@@ -249,7 +219,7 @@ describe("saving the chosen thinking level as pi's default", () => {
     session.dispose();
   });
 
-  it("writes the level a model switch lands on", async () => {
+  it("does not report the level a model switch resets to", async () => {
     const { session, agentDir, model } = await startSession({ defaultThinkingLevel: "high" });
 
     session.setThinkingLevel("low");
@@ -257,14 +227,15 @@ describe("saving the chosen thinking level as pi's default", () => {
     await vi.waitFor(() => expect(readSettings(agentDir)).toMatchObject({ defaultThinkingLevel: "low" }));
 
     await session.setModel(model("beta"));
+    await settle();
 
-    await vi.waitFor(() =>
-      expect(readSettings(agentDir)).toEqual({
-        defaultThinkingLevel: "high",
-        defaultProvider: "fake",
-        defaultModel: "beta",
-      }),
-    );
+    expect(session.thinkingLevel).toBe("high");
+    expect(reported).toEqual(["thinking low", "model fake/beta"]);
+    expect(readSettings(agentDir)).toEqual({
+      defaultThinkingLevel: "low",
+      defaultProvider: "fake",
+      defaultModel: "beta",
+    });
 
     session.dispose();
   });
