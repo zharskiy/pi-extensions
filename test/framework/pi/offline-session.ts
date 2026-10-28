@@ -60,5 +60,11 @@ export const startPiSession = async (options: PiSessionOptions) => {
 
   await session.bindExtensions({ mode: "print" });
 
+  await vi.waitFor(() => {
+    if (modelRuntime.getAvailableSnapshot().length < options.models.length) {
+      throw new Error("faux models are not available yet");
+    }
+  });
+
   return { session, settingsManager, model, inScope };
 };
