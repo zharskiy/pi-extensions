@@ -52,19 +52,33 @@ const sessionInfo = (ctx: ExtensionContext, created: boolean): SessionInfo => ({
   mode: ctx.mode,
 });
 
+type NewSessionRequest = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
+
+type FreshSession = Parameters<NonNullable<NewSessionRequest["withSession"]>>[0];
+
+const sendSeed = async (fresh: FreshSession, seed: CustomMessage, run: boolean) => {
+  const message = { customType: seed.customType, content: seed.text, display: true, details: seed.details };
+
+  if (!run) {
+    await fresh.sendMessage(message, { triggerTurn: false });
+    return;
+  }
+
+  const { ui } = fresh;
+
+  void fresh.sendMessage(message, { triggerTurn: true }).catch((error: unknown) => {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    ui.notify(`The new session could not continue the handoff: ${reason}`, "warning");
+  });
+};
+
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, seed, keepSelection: keep }) => {
+  newSession: async ({ parentSession, seed, keepSelection: keep, continueWithSeed }) => {
     const result = await ctx.newSession({
       parentSession,
       setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-      withSession: seed
-        ? async (fresh) => {
-            await fresh.sendMessage(
-              { customType: seed.customType, content: seed.text, display: true, details: seed.details },
-              { triggerTurn: false },
-            );
-          }
-        : undefined,
+      withSession: seed ? (fresh) => sendSeed(fresh, seed, continueWithSeed === true) : undefined,
     });
 
     return !result.cancelled;

@@ -23,6 +23,7 @@ import {
 import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface } from "./handoff.ts";
 import {
   type ContextTokens,
+  continuesAfterSwitch,
   handoffStep,
   isPending,
   MAX_INSTRUCTIONS,
@@ -67,7 +68,7 @@ type LimitsState = {
   focus?: string;
 };
 
-type RequestOrigin = { manual: boolean; focus?: string };
+type RequestOrigin = { manual: boolean; handedOff?: boolean; focus?: string };
 
 export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
   const sources = new Set<string>();
@@ -122,7 +123,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       settledSinceInstruction: false,
       userActive: false,
       manual: origin.manual,
-      handedOff: origin.manual,
+      handedOff: origin.handedOff ?? origin.manual,
       focus: origin.focus,
     };
 
@@ -191,7 +192,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         }
 
         if (state.userActive) {
-          sendRequest(path, { manual: state.manual, focus: state.focus });
+          sendRequest(path, { manual: state.manual, handedOff: state.handedOff, focus: state.focus });
           return;
         }
 
@@ -267,6 +268,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       .newSession({
         parentSession: previous,
         keepSelection: true,
+        continueWithSeed: continuesAfterSwitch(state.handedOff, saved.validation.status),
         seed: {
           customType: HANDOFF_SEED_TYPE,
           details: { from: "session" } satisfies HandoffSeedDetails,

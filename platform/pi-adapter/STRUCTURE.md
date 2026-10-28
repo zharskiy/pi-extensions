@@ -58,7 +58,7 @@
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
 - `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
-- `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once.
+- `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once, and the seed starting the first run with `continueWithSeed`.
 - `tests/phase.test.ts`: `runtime/phase.ts`.
 - `tests/child-scope.test.ts`: `runtime/child-scope.ts`.
 - `tests/session-file.test.ts`: `runtime/session-file.ts`.
