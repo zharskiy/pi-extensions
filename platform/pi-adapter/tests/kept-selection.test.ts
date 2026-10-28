@@ -45,6 +45,10 @@ const startHandoffRuntime = async () => {
     });
   };
 
+  const bystander: pi.ExtensionFactory = (api) => {
+    createPiHost(api, { tools: new Map() });
+  };
+
   const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
     cwd,
     agentDir,
@@ -56,7 +60,12 @@ const startHandoffRuntime = async () => {
       agentDir,
       settingsManager,
       modelRuntime,
-      resourceLoaderOptions: { extensionFactories: [{ name: "handoff", factory: handoff }] },
+      resourceLoaderOptions: {
+        extensionFactories: [
+          { name: "handoff", factory: handoff },
+          { name: "bystander", factory: bystander },
+        ],
+      },
     });
     const created = await pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent });
 
@@ -113,7 +122,17 @@ const startHandoffRuntime = async () => {
       .getEntries()
       .some((entry) => entry.type === "custom_message" && entry.customType === SEED.customType);
 
-  return { runtime, faux, locked, modelRuntime, warnings, select, selection, defaults, seeded };
+  const modelAtSeed = () => {
+    const entries = runtime.session.sessionManager.getEntries();
+    const seedAt = entries.findIndex(
+      (entry) => entry.type === "custom_message" && entry.customType === SEED.customType,
+    );
+    const change = entries.slice(0, seedAt).findLast((entry) => entry.type === "model_change");
+
+    return change?.type === "model_change" ? `${change.provider}/${change.modelId}` : undefined;
+  };
+
+  return { runtime, faux, locked, modelRuntime, warnings, select, selection, defaults, seeded, modelAtSeed };
 };
 
 describe("keeping the model and thinking level across a handoff", () => {
@@ -129,7 +148,7 @@ describe("keeping the model and thinking level across a handoff", () => {
 
     expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "high" });
     expect(handoff.defaults()).toEqual({ model: "acme/small", thinking: "low" });
-    expect(handoff.seeded()).toBe(true);
+    expect(handoff.modelAtSeed()).toBe("acme/large");
     expect(handoff.warnings).toEqual([]);
 
     await handoff.runtime.dispose();

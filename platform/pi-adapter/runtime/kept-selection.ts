@@ -51,6 +51,7 @@ export const restoreSelection = async (pi: SelectionApi, ctx: ExtensionContext, 
       `Could not keep ${kept.provider}/${kept.id} after the handoff; the new session uses ${fallback}.`,
       "warning",
     );
+
     return;
   }
 

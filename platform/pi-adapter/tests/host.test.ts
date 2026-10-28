@@ -62,7 +62,6 @@ const fakePi = () => {
       calls.push({ call: "sendMessage", message, options });
     },
     getSettings: () => ({}),
-    getThinkingLevel: () => "high",
     getCommands: () => [],
     registerEntryRenderer: (customType: string) => {
       renderers.push(customType);
@@ -513,50 +512,6 @@ describe("pi adapter", () => {
         message: { customType: "t", content: "hello", display: true, details: { n: 1 } },
         options: { triggerTurn: false },
       },
-    ]);
-  });
-
-  it("writes the current model and thinking level into the new session only when asked to keep them", async () => {
-    const { pi, commands } = fakePi();
-    const host = createPiHost(pi, { tools: new Map() });
-    const written: unknown[][] = [];
-
-    host.registerCommand("session-handoff", {
-      description: "switch",
-      run: async (args, control) => {
-        await control.newSession({ keepSelection: args === "keep" });
-      },
-    });
-
-    const ctx = {
-      ...fakeCtx("tui"),
-      model: { provider: "acme", id: "large", contextWindow: 200_000 },
-      newSession: async (options: { setup?: (sessionManager: unknown) => Promise<void> }) => {
-        const entries: unknown[] = [];
-
-        await options.setup?.({
-          appendCustomEntry: (customType: string, data: unknown) => {
-            entries.push({ customType, data });
-          },
-        });
-
-        written.push(entries);
-
-        return { cancelled: false };
-      },
-    };
-
-    await commands.get("session-handoff")?.handler("keep", ctx);
-    await commands.get("session-handoff")?.handler("", ctx);
-
-    expect(written).toEqual([
-      [
-        {
-          customType: "pi-adapter:kept-selection",
-          data: { provider: "acme", id: "large", thinking: "high" },
-        },
-      ],
-      [],
     ]);
   });
 
