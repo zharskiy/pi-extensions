@@ -125,6 +125,7 @@ describe("createWorktree", () => {
     expect(git(repo, "worktree", "list")).toContain(path);
     expect(git(repo, "status", "--porcelain")).toBe("");
     expect(readFileSync(join(cwd, ".pi", "worktrees", ".gitignore"), "utf8")).toBe("*\n");
+    expect(readFileSync(join(cwd, ".pi", ".gitignore"), "utf8")).toBe("*\n");
   });
 
   it("keeps an existing .pi/worktrees/.gitignore", async () => {
@@ -135,6 +136,7 @@ describe("createWorktree", () => {
     await createWorktree(repo, "scout-ab12");
 
     expect(readFileSync(join(repo, ".pi", "worktrees", ".gitignore"), "utf8")).toBe("custom\n");
+    expect(existsSync(join(repo, ".pi", ".gitignore"))).toBe(false);
   });
 
   it("returns the fs error when .pi/worktrees cannot be created", async () => {
@@ -145,7 +147,7 @@ describe("createWorktree", () => {
     const result = await createWorktree(repo, "scout-ab12");
 
     expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toContain("ENOTDIR");
+    expect(result.ok ? "" : result.error).toContain("EEXIST");
   });
 });
 
@@ -307,7 +309,7 @@ describe("worktree agents", () => {
     await vi.waitFor(() => expect(hiddenMessageTexts(host)).toHaveLength(1));
 
     expect(current(record.id).state).toBe("failed");
-    expect(current(record.id).error).toContain("worktree failed: ENOTDIR");
+    expect(current(record.id).error).toContain("worktree failed: EEXIST");
     expect(runtime.children).toHaveLength(0);
   });
 
