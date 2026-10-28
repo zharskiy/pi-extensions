@@ -83,7 +83,7 @@
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
 - `tests/transcript.test.ts`: `tools/transcript.ts`.
-- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, and the model's requests unchanged by the entry.
+- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, and the model's requests unchanged by the entry, on later turns and after a resume too.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.
 - `tests/main-prompt.test.ts`: `prompt/main-prompt.ts`.

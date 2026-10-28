@@ -31,7 +31,7 @@ const startRuntime = async () => {
     return fauxAssistantMessage(fauxText(text));
   };
 
-  faux.setResponses([reply("first answer"), reply("second answer"), reply("third answer")]);
+  faux.setResponses(["first", "second", "third", "fourth"].map((turn) => reply(`${turn} answer`)));
 
   const settingsManager = pi.SettingsManager.inMemory({ defaultProvider: "acme", defaultModel: "small" });
 
@@ -106,10 +106,9 @@ const startRuntime = async () => {
 
   const normalized = (request: unknown) =>
     JSON.parse(
-      JSON.stringify(request, (key, value) => (key === "timestamp" ? undefined : value)).replaceAll(
-        dir,
-        "<dir>",
-      ),
+      JSON.stringify(request, (key, value) =>
+        ["timestamp", "api"].includes(key) ? undefined : value,
+      ).replaceAll(dir, "<dir>"),
     );
 
   return { runtime, requests, dir, previousEntry, draw, normalized };
@@ -143,6 +142,35 @@ describe("showing the previous session after a handoff", () => {
     expect(JSON.stringify(request)).not.toContain("first answer");
     expect(shown.previousEntry()).toBeDefined();
     expect(hidden.previousEntry()).toBeUndefined();
+
+    await shown.runtime.dispose();
+    await hidden.runtime.dispose();
+  });
+
+  it("keeps the model's requests the same on a later turn and after resuming the new session", async () => {
+    const resumed = async (args: string) => {
+      const session = await handOff(args);
+      const file = session.runtime.session.sessionManager.getSessionFile() ?? "";
+
+      await session.runtime.session.prompt("third question");
+      await session.runtime.newSession();
+      await session.runtime.switchSession(file);
+      await session.runtime.session.prompt("fourth question");
+
+      return session;
+    };
+
+    const shown = await resumed("show");
+    const hidden = await resumed("");
+    const requests = shown.requests.slice(-2);
+
+    expect(shown.requests).toHaveLength(4);
+    expect(requests.map(shown.normalized)).toEqual(hidden.requests.slice(-2).map(hidden.normalized));
+    expect(JSON.stringify(requests.at(-1))).toContain("third answer");
+    expect(JSON.stringify(requests)).toContain("fourth question");
+    expect(JSON.stringify(requests)).not.toContain("first question");
+    expect(JSON.stringify(requests)).not.toContain("first answer");
+    expect(shown.draw(shown.previousEntry())).toContain("first question");
 
     await shown.runtime.dispose();
     await hidden.runtime.dispose();
