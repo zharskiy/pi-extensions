@@ -15,7 +15,7 @@ type OverlayOptions = { rows?: number; theme?: ThemeLike; host?: Pick<FakeHost, 
 
 export const createOverlayApi = ({ rows = 200, theme = plainTheme, host }: OverlayOptions = {}) => {
   const state = { closed: false, renders: 0 };
-  const transcripts: { owner?: string }[] = [];
+  const transcripts: { owner?: () => string | undefined }[] = [];
 
   const requestRender = () => {
     state.renders += 1;

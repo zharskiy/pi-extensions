@@ -84,7 +84,7 @@ const defaultPiRenderers = () => {
 
 export type TranscriptPaneOptions = {
   tools?: AnyToolSpec[];
-  owner?: string;
+  owner?: () => string | undefined;
 };
 
 export const createTranscriptPane = (
@@ -213,7 +213,7 @@ export const createTranscriptPane = (
   const seedPendingResults = () => {
     pendingCalls.forEach((call, id) => {
       const spec = options.tools?.find((tool) => tool.name === call.name);
-      const partial = spec?.pendingResult?.(id, options.owner);
+      const partial = spec?.pendingResult?.(id, options.owner?.());
 
       if (!partial) {
         return;

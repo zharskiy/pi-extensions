@@ -85,7 +85,7 @@ extensions/subagents/
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
-│   │   ├── source.ts                      # createAgentSource: reads an agent's session file, re-parsing on change
+│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file, re-parsing on change, and joins their transcripts
 │   │   └── list-model.ts                  # list sections, subtitle (with the counts), clearTargets, MAX_CLOSED_ROOTS
 │   └── fetch-tool/
 │       ├── fetch.ts                       # fetchPage: request, limits, redirects
@@ -115,7 +115,7 @@ extensions/subagents/
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
 │       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
 │       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
-│       ├── view.ts                        # createAgentView, headerLines: one agent's transcript (notice row always reserved, clipboard dep, c key)
+│       ├── view.ts                        # createAgentView, headerLines: one agent's chain transcript in one pane (notice row always reserved, clipboard dep, c key)
 │       └── request-block.ts               # requestLines, requestText: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order

@@ -139,14 +139,11 @@ export const headerLines = (
   ];
 };
 
-const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.sessionFile ?? ""}`;
-
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const scroll = api.createScroll();
   let loadedAt = Date.now();
   let data = deps.load();
-  let transcript = api.createTranscript({ owner: data.record.id });
-  let transcriptKey = transcriptKeyOf(data);
+  const transcript = api.createTranscript({ owner: () => data.record.id });
   let toolsExpanded = false;
   let requestExpanded = false;
   let pendingTop = false;
@@ -161,29 +158,26 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
   const isOpen = () => !isClosed(data.record.state);
 
-  const syncTranscript = () => {
-    const key = transcriptKeyOf(data);
-
-    if (key !== transcriptKey) {
-      transcriptKey = key;
+  const syncTranscript = (previous: AgentRecord) => {
+    if (previous.id !== data.record.id) {
       requestExpanded = false;
-      transcript = api.createTranscript({ owner: data.record.id });
-      transcript.setToolsExpanded(toolsExpanded);
     }
 
     transcript.sync(data.session?.items ?? []);
   };
 
-  syncTranscript();
+  syncTranscript(data.record);
 
   const reload = () => {
     if (disposed) {
       return;
     }
 
+    const previous = data.record;
+
     loadedAt = Date.now();
     data = deps.load();
-    syncTranscript();
+    syncTranscript(previous);
     api.requestRender();
   };
 

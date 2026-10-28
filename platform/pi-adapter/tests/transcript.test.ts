@@ -222,7 +222,7 @@ describe("transcript pane pending results", () => {
   it("fills an executing call once with the spec's partial result until its result arrives", () => {
     const asked: [string, string | undefined][] = [];
     const pane = createTranscriptPane(tui, "/repo", {
-      owner: "explorer-1",
+      owner: () => "explorer-1",
       tools: [
         pendingSpec((id, owner) => {
           asked.push([id, owner]);
