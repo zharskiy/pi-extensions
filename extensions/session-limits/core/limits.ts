@@ -267,6 +267,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       .newSession({
         parentSession: previous,
         keepSelection: true,
+        showPrevious: true,
         seed: {
           customType: HANDOFF_SEED_TYPE,
           details: { from: "session" } satisfies HandoffSeedDetails,

@@ -23,7 +23,7 @@ pi-extensions/
 
 ## Folders
 
-- [platform/pi-adapter/](platform/pi-adapter/STRUCTURE.md): `index.ts` and `types/`, `runtime/`, `child/`, `ui/`, `editor/`, `tools/`, `context/`, `prompt/`, `tests/`; `editor/` holds the editor subclass behind the empty-editor key hooks, and `runtime/` the record of custom follow-ups queued in a session, which tells a run's final reply, and the model and thinking level a handoff keeps.
+- [platform/pi-adapter/](platform/pi-adapter/STRUCTURE.md): `index.ts` and `types/`, `runtime/`, `child/`, `ui/`, `editor/`, `tools/`, `context/`, `prompt/`, `tests/`; `editor/` holds the editor subclass behind the empty-editor key hooks, `tools/` the renderer that draws the previous session after a handoff, and `runtime/` the record of custom follow-ups queued in a session, which tells a run's final reply, and the model and thinking level a handoff keeps.
 - [platform/shared/](platform/shared/STRUCTURE.md): helper modules grouped by concern (`plugin/`, `handoff/` with the handoff prompt template `handoff-prompt.md`, `channels/`, `text/`), two top-level helpers and `tests/`; its admission rule is at the top of that file.
 - [platform/ui-kit/](platform/ui-kit/STRUCTURE.md): flat component modules (rows, including the handoff rows) and `tests/`.
 - [platform/extension-manager/](platform/extension-manager/STRUCTURE.md): the manager, the managed-extension factory, the bus, the settings error report and `tests/`.

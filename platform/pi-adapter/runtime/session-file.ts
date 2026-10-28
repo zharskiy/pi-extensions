@@ -1,5 +1,11 @@
 import { readFileSync } from "node:fs";
-import { calculateContextTokens } from "@earendil-works/pi-coding-agent";
+import {
+  buildContextEntries,
+  calculateContextTokens,
+  migrateSessionEntries,
+  parseSessionEntries,
+  type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
 import type { TranscriptItem } from "../types/view.ts";
 import { messageText } from "./message-text.ts";
@@ -155,3 +161,23 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
   parseSessionLines(readLines(file), recordEntry);
+
+type CustomEntryData = { customType: string; data: unknown };
+
+type SessionBranch = { items: TranscriptItem[]; customEntries: CustomEntryData[] };
+
+export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
+  const entries = parseSessionEntries(readFileSync(file, "utf8"));
+
+  migrateSessionEntries(entries);
+
+  const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
+
+  const items = branch.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
+
+  const customEntries = branch
+    .filter((entry) => entry.type === "custom")
+    .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
+
+  return { items, customEntries };
+};
