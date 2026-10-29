@@ -34,7 +34,7 @@ const setup = (overrides = {}) => {
 
     const result = await harness.host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents }, { update: () => {} });
+      .execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -50,10 +50,7 @@ const setup = (overrides = {}) => {
   };
 
   const spawnFrom = async (parent: FakeChildSession, agents: RunAgentParams["agents"]) => {
-    const result = await childTool<RunAgentParams>(parent, "run_agent").execute(
-      { agents },
-      { update: () => {} },
-    );
+    const result = await childTool<RunAgentParams>(parent, "run_agent").execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -204,34 +201,12 @@ describe("nested agents", () => {
     expect(hiddenMessageTexts(host)).toHaveLength(1);
   });
 
-  it("releases a waiting child's slot while it blocks on a batch with wait", async () => {
-    const { startGeneral, registry, runtime } = setup({ maxConcurrent: 1 });
-    const { child } = await startGeneral();
-
-    const pending = childTool<RunAgentParams>(child, "run_agent").execute(
-      { agents: [{ agent: "scout", task: "find a" }], wait: true },
-      { update: () => {} },
-    );
-
-    await flushMicrotasks();
-
-    expect(runtime.children).toHaveLength(2);
-
-    runtime.child(registry.list()[1].id).finish("found a");
-
-    const result = await pending;
-
-    expect(result.text).toContain("found a");
-  });
-
-  it("does not keep a slot for a waiting caller that closed before its batch settled", async () => {
-    const { startGeneral, runMain, registry, runtime, services } = setup({ maxConcurrent: 1 });
+  it("frees the slot of a caller stopped while its batch runs", async () => {
+    const { startGeneral, spawnFrom, runMain, registry, runtime, services } = setup({ maxConcurrent: 1 });
     const { record, child } = await startGeneral();
 
-    void childTool<RunAgentParams>(child, "run_agent").execute(
-      { agents: [{ agent: "scout", task: "find a" }], wait: true },
-      { update: () => {} },
-    );
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
+    child.finish("waiting for the scout");
     await flushMicrotasks();
 
     await (services.require("runner") as Runner).stop(record.id, { immediate: true });
@@ -245,19 +220,53 @@ describe("nested agents", () => {
     expect(runtime.children).toHaveLength(3);
   });
 
-  it("resolves a waiting caller's batch when the session shuts down", async () => {
-    const { startGeneral, host } = setup();
+  it("wakes once and takes the slot back when a batch settles before the caller's turn ends", async () => {
+    const { startGeneral, spawnFrom, runMain, registry, runtime, services } = setup({ maxConcurrent: 1 });
+    const { record, child } = await startGeneral();
+
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
+
+    const scout = registry.list()[1];
+
+    await (services.require("runner") as Runner).stop(scout.id);
+    await flushMicrotasks();
+
+    expect(registry.get(scout.id)?.state).toBe("stopped");
+    expect(child.wakes).toEqual([]);
+
+    child.finish("turn over");
+    await flushMicrotasks();
+
+    expect(child.wakes).toHaveLength(1);
+    expect(child.wakes[0]).toContain(`${scout.id} (scout) - stopped`);
+
+    await runMain([{ agent: "scout", task: "later" }]);
+
+    const later = registry.list()[2];
+
+    expect(later.state).toBe("queued");
+
+    child.finish("done");
+    await flushMicrotasks();
+
+    expect(registry.get(record.id)?.state).toBe("done");
+    expect(registry.get(later.id)?.state).toBe("running");
+    expect(runtime.children).toHaveLength(2);
+    expect(child.wakes).toHaveLength(1);
+  });
+
+  it("never wakes a child caller whose batch is open at shutdown", async () => {
+    const { startGeneral, spawnFrom, host } = setup();
     const { child } = await startGeneral();
 
-    const pending = childTool<RunAgentParams>(child, "run_agent").execute(
-      { agents: [{ agent: "scout", task: "find a" }], wait: true },
-      { update: () => {} },
-    );
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
+    child.finish("waiting for the scout");
     await flushMicrotasks();
 
     await host.shutdown("quit");
+    await flushMicrotasks();
 
-    expect((await pending).text).toContain("finished: 1 failed");
+    expect(child.wakes).toEqual([]);
   });
 
   it("records nested agents as interrupted, not stopped by the user, at shutdown", async () => {
@@ -277,7 +286,7 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, runtime, host } = setup({ maxConcurrent: 1 });
     const { record, child } = await startGeneral();
     const message = host.tool<{ id: string; message: string }, { delivery?: string }>("message_agent");
-    const send = (text: string) => message.execute({ id: record.id, message: text }, { update: () => {} });
+    const send = (text: string) => message.execute({ id: record.id, message: text }, {});
 
     await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
     child.finish("waiting for the scout");
@@ -316,8 +325,8 @@ describe("nested agents", () => {
     const [, own, foreign] = registry.list();
     const message = childTool<{ id: string; message: string }>(child, "message_agent");
 
-    const allowed = await message.execute({ id: own.id, message: "also b" }, { update: () => {} });
-    const denied = await message.execute({ id: foreign.id, message: "x" }, { update: () => {} });
+    const allowed = await message.execute({ id: own.id, message: "also b" }, {});
+    const denied = await message.execute({ id: foreign.id, message: "x" }, {});
 
     expect(allowed.text).toContain(`Message delivered to ${own.id}`);
     expect(denied.text).toContain(`only the caller that started ${foreign.id}`);
@@ -335,76 +344,5 @@ describe("nested agents", () => {
 
     expect(registry.get(record.id)?.state).toBe("stopped");
     expect(scout.state).toBe("stopped");
-  });
-});
-
-describe("pending nested calls", () => {
-  it("shares a nested call's partial result with the main spec until the call returns", async () => {
-    const { startGeneral, host, registry, runtime } = setup();
-    const { record, child } = await startGeneral();
-    const params = { agents: [{ agent: "scout", task: "find callers" }], wait: true };
-    const running = childTool<RunAgentParams>(child, "run_agent").execute(params, {
-      toolCallId: "ra1",
-      update: () => {},
-    });
-
-    await flushMicrotasks();
-
-    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
-    const nested = registry.list().filter((entry) => entry.callerId === record.id);
-    const shared = main.pendingResult?.("ra1", record.id);
-
-    expect(shared?.details?.ids).toEqual(nested.map((entry) => entry.id));
-    expect(main.pendingResult?.("ra1", undefined)).toBeUndefined();
-    expect(main.pendingResult?.("ra1", "main")).toBeUndefined();
-    expect(main.pendingResult?.("ra2", record.id)).toBeUndefined();
-
-    runtime.child(String(nested[0]?.id)).finish("callers found");
-
-    const result = await running;
-
-    expect(result.details).toEqual(shared?.details);
-    expect(main.pendingResult?.("ra1", record.id)).toBeUndefined();
-  });
-
-  it("keeps the calls of two agents that reuse a tool call id apart", async () => {
-    const { runMain, host, registry, runtime } = setup();
-
-    await runMain([
-      { agent: "general", task: "fix a" },
-      { agent: "general", task: "fix b" },
-    ]);
-
-    const [first, second] = registry.list();
-    const run = (id: string, task: string) =>
-      childTool<RunAgentParams>(runtime.child(id), "run_agent").execute(
-        { agents: [{ agent: "scout", task }], wait: true },
-        { toolCallId: "call_0", update: () => {} },
-      );
-
-    void run(first.id, "find a");
-    void run(second.id, "find b");
-    await flushMicrotasks();
-
-    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
-    const batchOf = (callerId: string) =>
-      registry.list().find((entry) => entry.callerId === callerId)?.batchId;
-
-    expect(batchOf(first.id)).not.toBe(batchOf(second.id));
-    expect(main.pendingResult?.("call_0", first.id)?.details?.batchId).toBe(batchOf(first.id));
-    expect(main.pendingResult?.("call_0", second.id)?.details?.batchId).toBe(batchOf(second.id));
-  });
-
-  it("keeps nothing for a main-session call, whose transcript gets pi's own partial results", async () => {
-    const { host } = setup();
-    const main = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
-
-    void main.execute(
-      { agents: [{ agent: "scout", task: "look" }], wait: true },
-      { toolCallId: "ra1", update: () => {} },
-    );
-    await flushMicrotasks();
-
-    expect(main.pendingResult?.("ra1", "main")).toBeUndefined();
   });
 });

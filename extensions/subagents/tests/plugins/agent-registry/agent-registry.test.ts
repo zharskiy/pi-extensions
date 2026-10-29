@@ -67,7 +67,7 @@ const setupRunning = async (overrides = {}) => {
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
-    .execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
+    .execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, {});
   await flushMicrotasks();
   harness.host.settle();
 
@@ -162,7 +162,7 @@ describe("reload", () => {
   const statusText = async (next: Awaited<ReturnType<typeof reload>>) => {
     const result = await next.host
       .tool<AgentStatusParams, AgentStatusDetails>("agent_status")
-      .execute({}, { update: () => {} });
+      .execute({}, {});
 
     return JSON.stringify(result);
   };
@@ -177,7 +177,7 @@ describe("reload", () => {
           { agent: "scout", task: "map the billing flow" },
         ],
       },
-      { update: () => {} },
+      {},
     );
     await flushMicrotasks();
     harness.host.settle();
@@ -206,7 +206,7 @@ describe("reload", () => {
 
     await harness.host
       .tool<RunAgentParams, unknown>("run_agent")
-      .execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
+      .execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, {});
     await flushMicrotasks();
     harness.host.settle();
 

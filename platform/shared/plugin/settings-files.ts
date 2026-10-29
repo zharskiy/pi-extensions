@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { isPlainObject } from "../plain-object.ts";
+import { projectPath, writeProjectFile } from "../project-dir.ts";
 import { errorText } from "../text/format.ts";
 
 type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
@@ -110,9 +111,30 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
 
 export const userSettingsPath = (agentDir: string, file: string) => join(agentDir, file);
 
-export const projectSettingsPath = (cwd: string, file: string) => join(cwd, ".pi", file);
+export const projectSettingsPath = (cwd: string, file: string) => projectPath(cwd, file);
 
 export type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
+
+type SettingsScope = "user" | "project";
+
+export const writeSettingsFile = (
+  location: Pick<SettingsLocation, "agentDir" | "cwd">,
+  scope: SettingsScope,
+  file: string,
+  text: string,
+) => {
+  if (scope === "project") {
+    return writeProjectFile(location.cwd, file, text);
+  }
+
+  const path = userSettingsPath(location.agentDir, file);
+
+  mkdirSync(dirname(path), { recursive: true });
+
+  writeFileSync(path, text);
+
+  return path;
+};
 
 export const readSettingsFiles = <T>(schema: SettingsSchema<T>, file: string, location: SettingsLocation) => {
   const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));

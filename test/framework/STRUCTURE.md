@@ -6,7 +6,7 @@
 - `fake-form.ts`: `openFakeForm`, `FakeForm`; the fake `showForm` with a fake text input.
 - `themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`.
 - `extension-harness.ts`: `startExtension`; a plugin list or a managed extension on the extension manager over the fakes.
-- `key-presses.ts`: `key`, `char`; `KeyPress` builders.
+- `key-presses.ts`: `key`, `char`; `KeyPress` builders (`char` sets `shortcut` to the character itself).
 - `rendered-text.ts`: `plainText`, `plainLines`, `visibleWidth`; rendered lines without escapes.
 - `usage-builders.ts`: `usageTotals`, `promptTokens`.
 - `waiting.ts`: `flushMicrotasks`, `flushTimers`, `pause`, `waitUntil`.
@@ -31,6 +31,7 @@
 - `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
 - `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.
 - `pi/session-files.ts`: real session files: read, parse, header, facts, prompt record.
+- `pi/typed-keys.ts`: `typed`, a `KeyPress` named by the adapter's own `keyPress`, for keys in a Cyrillic layout.
 - `pi/live/index.ts`: the live helpers' surface.
 - `pi/live/live-model.ts`: `describeLive`, `liveAgentModel`, `liveChoreModel`, `LIVE_TIMEOUT_MS`.
 - `pi/live/live-agent-dir.ts`: `prepareAgentDir`, `isolateAgentDir`, `restoreAgentDir`, `realContextMarkers`.

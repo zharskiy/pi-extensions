@@ -66,7 +66,7 @@ const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking:
 };
 
 const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: ContextBase): Segment[] => {
-  const label = theme.fg("dim", "context");
+  const label = theme.fg("dim", base.level ? "working context" : "context");
 
   if (context.tokens === null || base.base <= 0) {
     return [{ text: `${label} ${theme.fg("muted", "?")}`, drop: NEVER }];

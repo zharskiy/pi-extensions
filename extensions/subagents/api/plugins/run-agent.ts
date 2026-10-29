@@ -28,12 +28,7 @@ import type { Plugin } from "../../core/model/plugin.ts";
 import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
-import {
-  createPendingCalls,
-  describeRunAgent,
-  messageAgentTool,
-  runAgentTool,
-} from "../../core/run-agent/tools.ts";
+import { describeRunAgent, messageAgentTool, runAgentTool } from "../../core/run-agent/tools.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
@@ -49,7 +44,6 @@ export const runAgentPlugin: Plugin = {
     const work = createBackgroundWork((count) => {
       host.publish(BACKGROUND_WORK_CHANNEL, { source: NAMESPACE, count });
     });
-    const calls = createPendingCalls();
     const hints = {
       manage: () => !settings.disabledPlugins.includes("agent-panel"),
       list: () => !settings.disabledPlugins.includes("agent-view"),
@@ -107,7 +101,7 @@ export const runAgentPlugin: Plugin = {
         childCap: settings.maxChildrenPerAgent,
       });
 
-      const childDeps = { runner, registry, calls, rows: pendingRows({ registry, hints }) };
+      const childDeps = { runner, registry, rows: pendingRows({ registry, hints }) };
 
       const tools: AnyToolSpec[] = [
         ...extra,
@@ -157,8 +151,8 @@ export const runAgentPlugin: Plugin = {
       onChange: () => Array.from(invalidators.keys()).forEach(safeInvalidate),
     });
 
-    const offStarted = bus.on("batch:started", ({ batchId, callerId, wait }) => {
-      if (callerId === MAIN_CALLER && !wait) {
+    const offStarted = bus.on("batch:started", ({ batchId, callerId }) => {
+      if (callerId === MAIN_CALLER) {
         work.started(batchId);
       }
     });
@@ -185,7 +179,7 @@ export const runAgentPlugin: Plugin = {
       }
     };
 
-    const toolDeps = { runner, registry, calls, rows: pendingRows({ registry, hints, onRendered }) };
+    const toolDeps = { runner, registry, rows: pendingRows({ registry, hints, onRendered }) };
 
     let registeredDescription: string | undefined;
 
@@ -217,7 +211,6 @@ export const runAgentPlugin: Plugin = {
 
     host.onSessionShutdown(async (reason) => {
       waking.length = 0;
-      calls.clear();
       await runner.shutdown(`session ${reason}`);
     });
 
@@ -226,7 +219,6 @@ export const runAgentPlugin: Plugin = {
       offStarted();
       offSettled();
       invalidators.clear();
-      calls.clear();
     };
   },
 };

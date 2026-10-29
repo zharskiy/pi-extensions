@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { char, key } from "../../../../../test/framework/index.ts";
+import { typed as pressed } from "../../../../../test/framework/pi/index.ts";
 import { initialSetup, scopeOptions, setupChanges } from "../../../ui/agent-setup/form.ts";
 import { context, PATHS, press, proposedContext, render } from "../../support/setup-context.ts";
 
@@ -183,6 +184,13 @@ describe("agent setup form", () => {
 
     expect(render(ctx, confirmed)).toContain(` › Skills    ${ALL_SKILLS}`);
     expect(setupChanges(ctx, confirmed)).toEqual([]);
+  });
+
+  it("types a Cyrillic letter into the filter as it is", () => {
+    const ctx = context();
+    const { state } = press(ctx, initialSetup(ctx), ...toSkills, pressed("ч"), pressed("ф"));
+
+    expect(pickerTitle(render(ctx, state))?.trimEnd()).toMatch(/^ Skills {2}\/ чф▏/);
   });
 
   it("keeps hidden checked skills and confirms in the order shown without a filter", () => {

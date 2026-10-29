@@ -23,7 +23,7 @@ Pi is a lean, extensible coding agent. This package adds what a long working day
  ✓ read src/stats.py:5-14
    ↳ 10 lines
 
- ✗ 3 background agents · 4m 2s · 35 calls · 64.7k tokens · $0.25
+ ✗ 3 agents · 4m 2s · 35 calls · 64.7k tokens · $0.25
    ↳ ✓ scout  Map the auth module · model-a:low
        1m 5s · 4 calls · 12.3k tokens · $0.04
      ✗ worker  Fix the login redirect · model-a:low

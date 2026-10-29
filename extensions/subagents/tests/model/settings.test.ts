@@ -235,7 +235,7 @@ describe("subagents settings", () => {
 });
 
 describe("codemode workers on settings reload", () => {
-  it("asks for maxConcurrent times maxDepth agent sessions and stays quiet without a shortfall", () => {
+  it("asks for maxConcurrent agent sessions, whatever maxDepth, and stays quiet without a shortfall", () => {
     const { agentDir, cwd, userFile } = dirs();
     const runtime = createFakeAgentRuntime();
     const warnings: string[] = [];
@@ -245,7 +245,7 @@ describe("codemode workers on settings reload", () => {
       warnings.push(message),
     );
 
-    expect(runtime.workerRequests).toEqual([20]);
+    expect(runtime.workerRequests).toEqual([5]);
     expect(warnings).toEqual([]);
   });
 
@@ -256,13 +256,13 @@ describe("codemode workers on settings reload", () => {
     const warnings: string[] = [];
     const info = { agentDir, cwd, projectTrusted: false };
 
-    runtime.codemodeShortfall = { setting: "FAKE_WORKERS", workers: 3, wanted: 38 };
+    runtime.codemodeShortfall = { setting: "FAKE_WORKERS", workers: 3, wanted: 14 };
     reloadSettings(settings, info, runtime, (message) => warnings.push(message));
     reloadSettings(settings, info, runtime, (message) => warnings.push(message));
 
-    expect(runtime.workerRequests).toEqual([36, 36]);
+    expect(runtime.workerRequests).toEqual([12, 12]);
     expect(warnings).toEqual([
-      "FAKE_WORKERS=3 is below the 38 codemode workers the agents may need; agents' codemode scripts may wait or fail",
+      "FAKE_WORKERS=3 is below the 14 codemode workers the agents may need; agents' codemode scripts may wait or fail",
     ]);
   });
 });

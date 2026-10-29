@@ -147,13 +147,13 @@ describe("row", () => {
       at(
         {
           mark: "pending",
-          title: "3 background agents (↓ to manage, ← to list)",
+          title: "3 agents (↓ to manage, ← to list)",
           children: [agent("scout", "Running"), agent("worker", "Queued"), agent("reviewer", "Starting")],
         },
         80,
       ),
     ).toEqual([
-      "◌ 3 background agents (↓ to manage, ← to list)",
+      "◌ 3 agents (↓ to manage, ← to list)",
       "  ↳ ◌ scout  Map the auth module · model-a:low",
       "      Running",
       "    ◌ worker  Map the auth module · model-a:low",

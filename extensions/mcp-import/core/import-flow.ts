@@ -1,11 +1,11 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, sep } from "node:path";
+import { sep } from "node:path";
 import {
   errorText,
   homeRelative,
   projectSettingsPath,
   readText,
   userSettingsPath,
+  writeSettingsFile,
 } from "../../../platform/shared/index.ts";
 import type { Scope, Source } from "./args.ts";
 import { type Plan, planImport, type Skipped } from "./plan.ts";
@@ -70,17 +70,17 @@ export const prepareImport = (source: Source, scope: Scope, { home, cwd, agentDi
   return { found, pair: { source, scope, found, plan, path, target, text } };
 };
 
-export const writeImport = (path: string, text: string | undefined) => {
+export const writeImport = (pair: Pair, text: string | undefined, places: Omit<Places, "home">) => {
   if (text === undefined) {
     return undefined;
   }
 
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, text);
+    writeSettingsFile(places, pair.scope, MCP_FILE, text);
+
     return undefined;
   } catch (error) {
-    return `cannot write ${path}: ${errorText(error)}`;
+    return `cannot write ${pair.path}: ${errorText(error)}`;
   }
 };
 

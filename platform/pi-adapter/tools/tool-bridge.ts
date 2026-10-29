@@ -49,7 +49,7 @@ const textComponent = (previous: unknown, text: ToolRender): Component => {
 
 const splitLines = (text: string) => (text === "" ? [] : text.split("\n"));
 
-export const toPiResult = (result: ToolResult) => ({
+const toPiResult = (result: ToolResult) => ({
   content: [{ type: "text" as const, text: result.text }],
   details: result.details,
   ...(result.isError ? { isError: true } : {}),
@@ -121,21 +121,15 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
     exposure: spec.modelOnly ? "model-only" : undefined,
     renderShell: spec.renderShell === "row" ? "self" : undefined,
     execute: async (
-      toolCallId: string,
+      _toolCallId: string,
       params: unknown,
       signal: AbortSignal | undefined,
-      onUpdate:
-        | ((update: { content: { type: "text"; text: string }[]; details: D | undefined }) => void)
-        | undefined,
+      _onUpdate: unknown,
       ctx: ExtensionContext,
     ) => {
       onContext(ctx);
 
-      const result = await spec.execute(params as P, {
-        signal,
-        toolCallId,
-        update: (text, details) => onUpdate?.({ content: [{ type: "text", text }], details }),
-      });
+      const result = await spec.execute(params as P, { signal });
 
       return toPiResult(result) as never;
     },

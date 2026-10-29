@@ -37,7 +37,7 @@ const setup = async (overrides = {}, agent = "scout") => {
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
-    .execute({ agents: [{ agent, task: "huge repo" }] }, { update: () => {} });
+    .execute({ agents: [{ agent, task: "huge repo" }] }, {});
   await flushMicrotasks();
   harness.host.settle();
 
@@ -92,7 +92,7 @@ describe("limits plugin", () => {
 
     await host
       .tool<RunAgentParams, unknown>("run_agent")
-      .execute({ agents: [{ agent: "scout", task: "second" }] }, { update: () => {} });
+      .execute({ agents: [{ agent: "scout", task: "second" }] }, {});
     await flushMicrotasks();
 
     const queued = registry.list()[1];
@@ -256,7 +256,7 @@ describe("limits plugin", () => {
       unknown
     >;
 
-    await runChild.execute({ agents: [{ agent: "scout", task: "look" }] }, { update: () => {} });
+    await runChild.execute({ agents: [{ agent: "scout", task: "look" }] }, {});
     await flushMicrotasks();
     await turn(100_500, "stop");
     child.finish("Started batch, waiting.");

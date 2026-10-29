@@ -29,7 +29,7 @@ const setup = () => {
 
     await harness.host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents: [{ agent: "general", task: "investigate" }] }, { update: () => {} });
+      .execute({ agents: [{ agent: "general", task: "investigate" }] }, {});
 
     await flushMicrotasks();
 
@@ -42,7 +42,7 @@ const setup = () => {
       RunAgentDetails
     >;
 
-    await tool.execute({ agents: [{ agent, task: "look" }] }, { update: () => {} });
+    await tool.execute({ agents: [{ agent, task: "look" }] }, {});
     await flushMicrotasks();
 
     return harness.runtime.child(registry.list().at(-1)?.id ?? "");

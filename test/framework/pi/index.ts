@@ -18,3 +18,4 @@ export {
   renderToolRows,
   visible,
 } from "./tool-row-rendering.ts";
+export { typed } from "./typed-keys.ts";

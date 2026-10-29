@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { char, key, plainTheme } from "../../../test/framework/index.ts";
+import { typed } from "../../../test/framework/pi/index.ts";
 import { type MultiState, moreRow, multiKey, multiLines, scrolledLines } from "../multi-select.ts";
 
 const initial = (count: number, checked: readonly boolean[] = []): MultiState => ({
@@ -28,6 +29,13 @@ describe("multiKey", () => {
     expect(ticked(toggled)).toEqual([1, 2]);
     expect(ticked(multiKey(char("a"), state) ?? state)).toEqual([0, 1, 2]);
     expect(ticked(multiKey(char("n"), toggled) ?? toggled)).toEqual([]);
+  });
+
+  it("checks every row with the a key and none with the n key in a Cyrillic layout", () => {
+    const state = initial(3, [false, true]);
+
+    expect(ticked(multiKey(typed("ф"), state) ?? state)).toEqual([0, 1, 2]);
+    expect(ticked(multiKey(typed("т"), state) ?? state)).toEqual([]);
   });
 
   it("does nothing harmful on an empty list", () => {

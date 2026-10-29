@@ -9,5 +9,6 @@ type KeyName = NavigationKey | EditKey | AppKey | "other";
 export type KeyPress = {
   name: KeyName;
   char?: string;
+  shortcut?: string;
   raw?: string;
 };
