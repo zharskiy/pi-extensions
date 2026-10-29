@@ -15,6 +15,7 @@ const fakePi = () => {
     getCommands: () => [],
     getActiveTools: () => [],
     getAllTools: () => [],
+    registerEntryRenderer: () => {},
   };
 
   return { pi: pi as never, events };

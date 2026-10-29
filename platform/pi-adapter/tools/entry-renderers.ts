@@ -16,7 +16,7 @@ const indentLines = (lines: string[], pad: number, width: number) => {
   );
 };
 
-const paddedComponent = (pad: () => number, draw: (width: number) => string[]): Component => ({
+export const paddedComponent = (pad: () => number, draw: (width: number) => string[]): Component => ({
   render: (width) => {
     const shift = pad();
 

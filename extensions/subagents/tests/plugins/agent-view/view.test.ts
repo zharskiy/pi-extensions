@@ -16,6 +16,7 @@ import {
   plainTheme,
   tokenTaggingTheme,
   usageTotals,
+  userLine,
 } from "../../../../../test/framework/index.ts";
 import {
   createOverlayApi,
@@ -332,27 +333,37 @@ describe("agent view", () => {
     expect(body()).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
   });
 
-  it("starts a fresh transcript when the view follows a successor with another session file", () => {
+  it("keeps the transcript when the view follows a successor and appends the successor's messages", () => {
     const full = fixture();
     const head = { ...full, items: full.items.slice(0, 2) };
-    const tail = { ...full, items: full.items.slice(-2) };
     const first = agentRecord({ id: "explorer-1", state: "done", endedAt: 0, sessionFile: "/first.jsonl" });
-    const { view, update, lines, transcripts } = viewOf(head, { rows: 40, record: first });
-    const body = (all: string[]) => all.slice(6).join("\n");
-    const before = body(lines());
+    const second = agentRecord({ id: "explorer-2", state: "running", sessionFile: "/second.jsonl" });
+    const { view, update, lines, transcripts } = viewOf(head, { record: first });
+    const request = () => lines().find((line) => line.startsWith(" Request"));
+    const body = () =>
+      (
+        lines()
+          .join("\n")
+          .split(request() ?? "")[1] ?? ""
+      )
+        .split(" esc to close")[0]
+        ?.trimEnd() ?? "";
+    const before = body();
 
     view.handleKey(char("r"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
+    expect(request()).toBe(" Request · 12 lines (r to collapse)");
 
-    update({ record: { ...first, sessionFile: "/other.jsonl" }, session: tail });
+    update({
+      record: second,
+      chain: [first.id, second.id],
+      session: { ...full, items: [...head.items, { kind: "user", text: "Continue with the tests" }] },
+    });
 
-    const after = lines();
-
-    expect(after[5]).toBe(" Request · 12 lines (r to expand)");
-    expect(body(after)).not.toEqual(before);
-    expect(body(after)).toEqual(body(viewOf(tail, { rows: 40, record: first }).lines()));
-    expect(transcripts).toHaveLength(2);
+    expect(request()).toBe(" Request · 12 lines (r to expand)");
+    expect(body().startsWith(before)).toBe(true);
+    expect(body().indexOf("Continue with the tests")).toBeGreaterThan(before.length);
+    expect(transcripts).toHaveLength(1);
   });
 
   it("stops the agent with the x key in a Cyrillic layout", async () => {
@@ -952,7 +963,11 @@ describe("agent view with live agents", () => {
 });
 
 describe("agent view past sessions", () => {
-  type Past = { manifests: Record<string, unknown>[]; cost?: number };
+  type Past = {
+    manifests: Record<string, unknown>[];
+    cost?: number;
+    sessions?: Record<string, SessionRecord>;
+  };
 
   const writeManifest = (host: FakeHost, manifest: Record<string, unknown>) => {
     const dir = join(agentsDirFor(host.info), String(manifest.id));
@@ -961,7 +976,7 @@ describe("agent view past sessions", () => {
     writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest));
   };
 
-  const restarted = ({ manifests, cost }: Past) =>
+  const restarted = ({ manifests, cost, sessions = {} }: Past) =>
     setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
       beforeStart: ({ root, host, runtime }) => {
         manifests.forEach((manifest) => {
@@ -970,7 +985,7 @@ describe("agent view past sessions", () => {
 
           if (file) {
             writeFileSync(file, "");
-            runtime.sessions.set(file, fixture());
+            runtime.sessions.set(file, sessions[name] ?? fixture());
           }
 
           if (file && cost !== undefined) {
@@ -1044,6 +1059,54 @@ describe("agent view past sessions", () => {
     });
 
     expect(lines[2]).toBe(" 3s");
+  });
+
+  it("shows every link of a chain in order, the successor's handoff seed between them", async () => {
+    const seed = JSON.stringify({
+      type: "custom_message",
+      customType: "pi-handoff-seed",
+      content: "Pick up the token refresh trace.",
+      display: true,
+      details: { from: "agent", id: "explorer-old1", link: 2 },
+    });
+    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          sessionFile: "old-2.jsonl",
+        },
+      ],
+      sessions: {
+        "old-1.jsonl": session([userLine("Find the login handler")]),
+        "old-2.jsonl": session([seed, userLine("Trace the token refresh")]),
+      },
+    });
+
+    const drawn = async (id: string) => plainLines((await harness.openView(id)).view.render(200)).join("\n");
+    const text = await drawn("explorer-old1");
+    const order = [
+      "Find the login handler",
+      "Pick up the token refresh trace.",
+      "Trace the token refresh",
+    ].map((part) => text.indexOf(part));
+
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(await drawn("explorer-old2")).toBe(text);
   });
 
   it("follows a chain of an earlier session to its last link", async () => {

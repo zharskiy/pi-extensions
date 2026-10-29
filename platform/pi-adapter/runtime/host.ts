@@ -2,13 +2,20 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { contextHost } from "../context/context-facts.ts";
 import { contextOf, sumUsage } from "../context/usage-math.ts";
 import { createEditorHooks } from "../editor/editor.ts";
+import { captureTui } from "../editor/input.ts";
 import { replaceMainPrompt } from "../prompt/main-prompt.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
+import {
+  PREVIOUS_SESSION_TYPE,
+  previousSessionRenderer,
+  showPreviousSession,
+} from "../tools/previous-session.ts";
 import { recordPad } from "../tools/row-component.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
@@ -30,6 +37,7 @@ import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
+import { globalRecord } from "./global-record.ts";
 import { claimKeptSelection, keepSelection, restoreSelection } from "./kept-selection.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
@@ -52,11 +60,31 @@ const sessionInfo = (ctx: ExtensionContext, created: boolean): SessionInfo => ({
   mode: ctx.mode,
 });
 
+type SessionSetup = ((sessionManager: SessionManager) => Promise<void>) | undefined;
+
+const setupAll = (...setups: SessionSetup[]): SessionSetup => {
+  const steps = setups.filter((step) => step !== undefined);
+
+  if (steps.length === 0) {
+    return undefined;
+  }
+
+  return async (sessionManager) => {
+    await steps.reduce<Promise<void>>(
+      (chain, step) => chain.then(() => step(sessionManager)),
+      Promise.resolve(),
+    );
+  };
+};
+
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, seed, keepSelection: keep }) => {
+  newSession: async ({ parentSession, seed, keepSelection: keep, showPrevious }) => {
     const result = await ctx.newSession({
       parentSession,
-      setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
+      setup: setupAll(
+        keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
+        showPrevious ? showPreviousSession(ctx) : undefined,
+      ),
       withSession: seed
         ? async (fresh) => {
             await fresh.sendMessage(
@@ -85,6 +113,8 @@ const HELD_POLL_MS = 100;
 
 const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
+const hostStates = () => globalRecord<Set<HostState>>("host-states", () => new Set());
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo) => void)[] = [];
@@ -108,6 +138,25 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
   let created = false;
+  let previousTui: ReturnType<typeof captureTui>;
+
+  hostStates().add(state);
+
+  pi.registerEntryRenderer(
+    PREVIOUS_SESSION_TYPE,
+    previousSessionRenderer({
+      cwd: () => state.ctx?.cwd ?? process.cwd(),
+      tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
+      requestRender: () => {
+        const ctx = tuiContext(state);
+
+        if (ctx) {
+          previousTui ??= captureTui(ctx);
+          previousTui?.requestRender();
+        }
+      },
+    }),
+  );
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -275,6 +324,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     toolRows.release();
     entries.release();
     thinkingLabel.release();
+    hostStates().delete(state);
     state.ctx = undefined;
 
     if (errors.length > 0) {

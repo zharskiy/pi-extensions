@@ -10,7 +10,9 @@ export type ViewData = {
   error?: string;
 };
 
-type CachedSession = { file: string; size: number; mtimeMs: number; session: SessionRecord };
+type CachedSession = { size: number; mtimeMs: number; session: SessionRecord };
+
+type LinkRead = { session?: SessionRecord; error?: string };
 
 type AgentSourceDeps = {
   runtime: AgentRuntime;
@@ -25,7 +27,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
   };
 
   const loader = (id: string, found: AgentRecord) => {
-    let cached: CachedSession | undefined;
+    const cache = new Map<string, CachedSession>();
 
     const readSession = (file: string) => {
       const stat = statSync(file, { throwIfNoEntry: false });
@@ -34,31 +36,49 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
         return undefined;
       }
 
-      if (cached?.file === file && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+      const cached = cache.get(file);
+
+      if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
         return cached.session;
       }
 
       const session = runtime.readSession(file);
 
-      cached = { file, size: stat.size, mtimeMs: stat.mtimeMs, session };
+      cache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, session });
 
       return session;
+    };
+
+    const readLink = (link: AgentRecord): LinkRead => {
+      try {
+        const session = link.sessionFile ? readSession(link.sessionFile) : undefined;
+
+        return session ? { session } : { error: "session file not written yet" };
+      } catch (error) {
+        return { error: `cannot read session: ${errorText(error)}` };
+      }
     };
 
     return (): ViewData => {
       const live = registry.get(id);
       const record = live ? chainTerminal(registry, live) : found;
-      const chain = chainLinks(registry, record).map((link) => link.id);
+      const links = chainLinks(registry, record);
+      const chain = links.map((link) => link.id);
+      const reads = links.map(readLink);
+      const sessions = reads.flatMap((read) => (read.session ? [read.session] : []));
+      const last = reads.at(-1);
 
-      try {
-        const session = record.sessionFile ? readSession(record.sessionFile) : undefined;
-
-        return session
-          ? { record, chain, session }
-          : { record, chain, error: "session file not written yet" };
-      } catch (error) {
-        return { record, chain, error: `cannot read session: ${errorText(error)}` };
+      if (sessions.length === 0) {
+        return { record, chain, error: last?.error };
       }
+
+      const session: SessionRecord = {
+        providerPayload: last?.session?.providerPayload,
+        contextTokens: last?.session?.contextTokens,
+        items: sessions.flatMap((read) => read.items),
+      };
+
+      return { record, chain, session };
     };
   };
 
