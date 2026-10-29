@@ -1,6 +1,9 @@
-import { statSync } from "node:fs";
-import type { AgentRuntime, SessionRecord } from "../../../../platform/pi-adapter/index.ts";
-import { errorText } from "../../../../platform/shared/index.ts";
+import {
+  type AgentRuntime,
+  createFileReader,
+  type LinkRead,
+  type SessionRecord,
+} from "../../../../platform/pi-adapter/index.ts";
 import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../model/agent-record.ts";
 
 export type ViewData = {
@@ -9,10 +12,6 @@ export type ViewData = {
   session?: SessionRecord;
   error?: string;
 };
-
-type CachedSession = { size: number; mtimeMs: number; session: SessionRecord };
-
-type LinkRead = { session?: SessionRecord; error?: string };
 
 type AgentSourceDeps = {
   runtime: AgentRuntime;
@@ -27,36 +26,22 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
   };
 
   const loader = (id: string, found: AgentRecord) => {
-    const cache = new Map<string, CachedSession>();
+    const readFile = createFileReader((file) => runtime.readSession(file));
 
-    const readSession = (file: string) => {
-      const stat = statSync(file, { throwIfNoEntry: false });
-
-      if (!stat) {
-        return undefined;
+    const readLink = (link: AgentRecord): LinkRead<SessionRecord> => {
+      if (!link.sessionFile) {
+        return { status: "missing" };
       }
 
-      const cached = cache.get(file);
-
-      if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
-        return cached.session;
-      }
-
-      const session = runtime.readSession(file);
-
-      cache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, session });
-
-      return session;
+      return readFile(link.sessionFile);
     };
 
-    const readLink = (link: AgentRecord): LinkRead => {
-      try {
-        const session = link.sessionFile ? readSession(link.sessionFile) : undefined;
-
-        return session ? { session } : { error: "session file not written yet" };
-      } catch (error) {
-        return { error: `cannot read session: ${errorText(error)}` };
+    const errorOf = (read: LinkRead<SessionRecord> | undefined) => {
+      if (read?.status === "failed") {
+        return `cannot read session: ${read.error}`;
       }
+
+      return read?.status === "missing" ? "session file not written yet" : undefined;
     };
 
     return (): ViewData => {
@@ -65,16 +50,17 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
       const links = chainLinks(registry, record);
       const chain = links.map((link) => link.id);
       const reads = links.map(readLink);
-      const sessions = reads.flatMap((read) => (read.session ? [read.session] : []));
+      const sessions = reads.flatMap((read) => (read.status === "read" ? [read.value] : []));
       const last = reads.at(-1);
+      const lastSession = last?.status === "read" ? last.value : undefined;
 
       if (sessions.length === 0) {
-        return { record, chain, error: last?.error };
+        return { record, chain, error: errorOf(last) };
       }
 
       const session: SessionRecord = {
-        providerPayload: last?.session?.providerPayload,
-        contextTokens: last?.session?.contextTokens,
+        providerPayload: lastSession?.providerPayload,
+        contextTokens: lastSession?.contextTokens,
         items: sessions.flatMap((read) => read.items),
       };
 

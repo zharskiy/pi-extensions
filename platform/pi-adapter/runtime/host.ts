@@ -11,11 +11,7 @@ import { createEditorHooks } from "../editor/editor.ts";
 import { captureTui } from "../editor/input.ts";
 import { replaceMainPrompt } from "../prompt/main-prompt.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
-import {
-  PREVIOUS_SESSION_TYPE,
-  previousSessionRenderer,
-  showPreviousSession,
-} from "../tools/previous-session.ts";
+import { lineageRenderer, recordCompaction, showLineage } from "../tools/lineage-entry.ts";
 import { recordPad } from "../tools/row-component.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
@@ -39,6 +35,7 @@ import { type HostState, tuiContext } from "../ui/tui-context.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
 import { globalRecord } from "./global-record.ts";
 import { claimKeptSelection, keepSelection, restoreSelection } from "./kept-selection.ts";
+import { LEGACY_LINEAGE_TYPE, LINEAGE_TYPE } from "./lineage.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -83,7 +80,7 @@ const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): Session
       parentSession,
       setup: setupAll(
         keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-        showPrevious ? showPreviousSession(ctx) : undefined,
+        showPrevious ? showLineage(ctx) : undefined,
       ),
       withSession: seed
         ? async (fresh) => {
@@ -138,25 +135,27 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
   let created = false;
-  let previousTui: ReturnType<typeof captureTui>;
+  let lineageTui: ReturnType<typeof captureTui>;
 
   hostStates().add(state);
 
-  pi.registerEntryRenderer(
-    PREVIOUS_SESSION_TYPE,
-    previousSessionRenderer({
-      cwd: () => state.ctx?.cwd ?? process.cwd(),
-      tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
-      requestRender: () => {
-        const ctx = tuiContext(state);
+  const renderLineage = lineageRenderer({
+    branch: () => state.ctx?.sessionManager.getBranch() ?? [],
+    cwd: () => state.ctx?.cwd ?? process.cwd(),
+    tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
+    requestRender: () => {
+      const ctx = tuiContext(state);
 
-        if (ctx) {
-          previousTui ??= captureTui(ctx);
-          previousTui?.requestRender();
-        }
-      },
-    }),
-  );
+      if (ctx) {
+        lineageTui ??= captureTui(ctx);
+        lineageTui?.requestRender();
+      }
+    },
+  });
+
+  [LINEAGE_TYPE, LEGACY_LINEAGE_TYPE].forEach((customType) => {
+    pi.registerEntryRenderer(customType, renderLineage);
+  });
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -447,6 +446,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   pi.on("session_compact", (_event, ctx) => {
     capture(ctx);
+    recordCompaction(pi, ctx);
 
     compactHandlers.forEach((handler) => {
       handler();
