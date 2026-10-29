@@ -13,7 +13,7 @@ const setup = () => {
   const runAgent = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
 
   const run = async (agents: RunAgentParams["agents"]) => {
-    const result = await runAgent.execute({ agents }, { update: () => {} });
+    const result = await runAgent.execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -109,7 +109,7 @@ describe("per-call model override", () => {
           { agent: "reviewer", task: "b", model: "nova-6" },
         ],
       },
-      { update: () => {} },
+      {},
     );
 
     await expect(attempt).rejects.toThrow(/reviewer: model "nova-6": matches several models \(/);
@@ -128,19 +128,13 @@ describe("per-call model override", () => {
     runtime.catalog = runtime.catalog.filter((model) => model.provider !== "acme");
 
     await expect(
-      runAgent.execute({ agents: [{ agent: "reviewer", task: "b", model: "lyra" }] }, { update: () => {} }),
+      runAgent.execute({ agents: [{ agent: "reviewer", task: "b", model: "lyra" }] }, {}),
     ).rejects.toThrow(/matches only models without credentials \(locked\//);
     await expect(
-      runAgent.execute(
-        { agents: [{ agent: "reviewer", task: "b", model: "luna:hgih" }] },
-        { update: () => {} },
-      ),
+      runAgent.execute({ agents: [{ agent: "reviewer", task: "b", model: "luna:hgih" }] }, {}),
     ).rejects.toThrow(/invalid thinking level "hgih"/);
     await expect(
-      runAgent.execute(
-        { agents: [{ agent: "reviewer", task: "b", model: "locked/lyra-9-0" }] },
-        { update: () => {} },
-      ),
+      runAgent.execute({ agents: [{ agent: "reviewer", task: "b", model: "locked/lyra-9-0" }] }, {}),
     ).rejects.toThrow(/provider "locked" has no credentials/);
     expect(runtime.children).toEqual([]);
   });
@@ -159,7 +153,7 @@ describe("per-call model override", () => {
     await expect(
       host
         .tool<RunAgentParams, RunAgentDetails>("run_agent")
-        .execute({ agents: [{ agent: "locked", task: "x" }] }, { update: () => {} }),
+        .execute({ agents: [{ agent: "locked", task: "x" }] }, {}),
     ).rejects.toThrow(/locked: model "locked\/lyra-9-0": provider "locked" has no credentials/);
     expect(runtime.children).toEqual([]);
   });

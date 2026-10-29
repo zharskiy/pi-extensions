@@ -28,13 +28,6 @@ type Renderers = {
     theme: Theme,
     context: PiToolRenderContext,
   ): Component;
-  execute(
-    id: string,
-    params: unknown,
-    signal: AbortSignal | undefined,
-    onUpdate: (update: unknown) => void,
-    ctx: unknown,
-  ): Promise<unknown>;
 };
 
 const piTool = <P, D>(spec: ToolSpec<P, D>) => toPiTool(spec) as unknown as Renderers;
@@ -88,10 +81,10 @@ describe("toPiTool render state", () => {
       },
     });
 
-    tool.renderCall({ wait: true }, theme, context({ args: { wait: true } }));
-    tool.renderResult(piResult("x"), options, theme, context({ args: { wait: true } }));
+    tool.renderCall({ flag: true }, theme, context({ args: { flag: true } }));
+    tool.renderResult(piResult("x"), options, theme, context({ args: { flag: true } }));
 
-    expect(seen).toEqual([{ wait: true }, { wait: true }]);
+    expect(seen).toEqual([{ flag: true }, { flag: true }]);
   });
 
   it("passes pi's isError through the result and the state renderResult receives", () => {
@@ -112,40 +105,6 @@ describe("toPiTool render state", () => {
       [false, false],
     ]);
     expect(seen[0]?.[0].text).toBe("bad");
-  });
-
-  it("forwards update details", async () => {
-    const updates: unknown[] = [];
-    const tool = piTool<Record<string, never>, { step: number }>({
-      ...baseSpec,
-      execute: async (_params, ctx) => {
-        ctx.update("half", { step: 1 });
-        ctx.update("plain");
-        return { text: "done" };
-      },
-    });
-
-    await tool.execute("id", {}, undefined, (update) => updates.push(update), {});
-
-    expect(updates).toEqual([
-      { content: [{ type: "text", text: "half" }], details: { step: 1 } },
-      { content: [{ type: "text", text: "plain" }], details: undefined },
-    ]);
-  });
-
-  it("passes pi's tool call id into the execute context", async () => {
-    const seen: (string | undefined)[] = [];
-    const tool = piTool({
-      ...baseSpec,
-      execute: async (_params, ctx) => {
-        seen.push(ctx.toolCallId);
-        return { text: "done" };
-      },
-    });
-
-    await tool.execute("call-7", {}, undefined, () => {}, {});
-
-    expect(seen).toEqual(["call-7"]);
   });
 
   it("keeps string-only renderers working", () => {

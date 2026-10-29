@@ -35,7 +35,7 @@ describe("run_agent mcp", () => {
           { agent: "own", task: "c" },
         ],
       },
-      { update: () => {} },
+      {},
     );
     await flushMicrotasks();
 

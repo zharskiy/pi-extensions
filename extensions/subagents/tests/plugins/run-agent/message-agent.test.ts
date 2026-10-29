@@ -23,11 +23,11 @@ const setup = async (maxConcurrent = 4) => {
         { agent: "scout", task: "two" },
       ],
     },
-    { update: () => {} },
+    {},
   );
   await flushMicrotasks();
 
-  const send = (id: string, message: string) => messageAgent.execute({ id, message }, { update: () => {} });
+  const send = (id: string, message: string) => messageAgent.execute({ id, message }, {});
 
   return { ...harness, registry, send };
 };
@@ -136,7 +136,7 @@ describe("message_agent", () => {
 
     await host
       .tool<RunAgentParams, unknown>("run_agent")
-      .execute({ agents: [{ agent: "scout", task: "three" }] }, { update: () => {} });
+      .execute({ agents: [{ agent: "scout", task: "three" }] }, {});
     await flushMicrotasks();
 
     expect(registry.list()[2].state).toBe("running");
