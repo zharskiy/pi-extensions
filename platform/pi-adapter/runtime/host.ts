@@ -15,6 +15,7 @@ import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
 import type { CommandSpec, CustomMessage } from "../types/messages.ts";
+import { isThinkingLevel } from "../types/model.ts";
 import type {
   AssistantEnd,
   DialogEvent,
@@ -29,6 +30,7 @@ import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
+import { writeDefaultModel, writeDefaultThinkingLevel } from "./default-model.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
@@ -83,6 +85,8 @@ const HELD_POLL_MS = 100;
 
 const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
+const modelRef = (model: ExtensionContext["model"]) => model && `${model.provider}/${model.id}`;
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo) => void)[] = [];
@@ -95,6 +99,8 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
+  const modelSelectHandlers: ((ref: string) => void | Promise<void>)[] = [];
+  const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
   const held: HeldCustom[] = [];
@@ -106,6 +112,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
   let created = false;
+  let currentModel: string | undefined;
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -229,6 +236,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     created = event.reason === "new" || event.reason === "fork";
+    currentModel = modelRef(ctx.model);
 
     const info = sessionInfo(ctx, created);
 
@@ -243,6 +251,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     phaseState = initialPhase();
     runActive = false;
     held.length = 0;
+    currentModel = undefined;
     stopHeldPoll();
 
     if (state.ctx) {
@@ -424,6 +433,33 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
+  pi.on("model_select", async (event, ctx) => {
+    capture(ctx);
+
+    currentModel = modelRef(event.model);
+
+    if (event.source === "restore") {
+      return;
+    }
+
+    const ref = `${event.model.provider}/${event.model.id}`;
+
+    await Promise.all(modelSelectHandlers.map((handler) => handler(ref)));
+  });
+
+  pi.on("thinking_level_select", async (event, ctx) => {
+    capture(ctx);
+
+    const switching = currentModel !== undefined && modelRef(ctx.model) !== currentModel;
+    const superseded = event.level !== pi.getThinkingLevel();
+
+    if (switching || superseded) {
+      return;
+    }
+
+    await Promise.all(thinkingSelectHandlers.map((handler) => handler(event.level)));
+  });
+
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
     state.tools.set(spec.name, spec as AnyToolSpec);
     pi.registerTool(toPiTool(spec, capture));
@@ -521,6 +557,22 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onDialog: (handler) => {
       dialogHandlers.push(handler);
     },
+    onModelSelect: (handler) => {
+      modelSelectHandlers.push(handler);
+    },
+    saveDefaultModel: (ref) => writeDefaultModel(liveCtx(state), ref),
+    onThinkingSelect: (handler) => {
+      thinkingSelectHandlers.push(handler);
+    },
+    setThinkingLevel: (level) => {
+      if (isThinkingLevel(level)) {
+        pi.setThinkingLevel(level);
+      }
+    },
+    saveDefaultThinkingLevel: async (level) =>
+      isThinkingLevel(level)
+        ? writeDefaultThinkingLevel(liveCtx(state), level)
+        : `${level} is not a thinking level`,
     ...footerHost(pi, state),
     ...contextHost(pi, state),
     registerEntryRenderer: entries.registerEntryRenderer,

@@ -131,6 +131,11 @@ export type FakeHost = Host & {
   lastUsage?: PromptTokens;
   mainUsage: PromptTokens;
   dialog(phase: DialogEvent["phase"], kind: DialogKind, title?: string): void;
+  savedDefaults: string[];
+  saveFailure?: string;
+  selectModel(ref: string): Promise<void>;
+  savedThinkingLevels: string[];
+  selectThinking(level: string): Promise<void>;
 };
 
 export const FAKE_FOOTER_KEY = "footer";
@@ -146,6 +151,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
+  const modelSelectHandlers: ((ref: string) => void | Promise<void>)[] = [];
+  const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   const emptyDownHandlers = new Set<() => void>();
   const emptyEscapeHandlers = new Set<() => boolean>();
   const entryRenderers = new Map<string, EntryRender>();
@@ -699,6 +706,41 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       dialogHandlers.forEach((handler) => {
         handler({ phase, kind, title });
       });
+    },
+    savedDefaults: [],
+    onModelSelect: (handler) => {
+      modelSelectHandlers.push(handler);
+    },
+    selectModel: async (ref) => {
+      await Promise.all(modelSelectHandlers.map((handler) => handler(ref)));
+    },
+    saveDefaultModel: async (ref) => {
+      if (host.saveFailure) {
+        return host.saveFailure;
+      }
+
+      host.savedDefaults.push(ref);
+
+      return undefined;
+    },
+    savedThinkingLevels: [],
+    setThinkingLevel: (level) => {
+      host.thinking = level;
+    },
+    onThinkingSelect: (handler) => {
+      thinkingSelectHandlers.push(handler);
+    },
+    selectThinking: async (level) => {
+      await Promise.all(thinkingSelectHandlers.map((handler) => handler(level)));
+    },
+    saveDefaultThinkingLevel: async (level) => {
+      if (host.saveFailure) {
+        return host.saveFailure;
+      }
+
+      host.savedThinkingLevels.push(level);
+
+      return undefined;
     },
   };
 
