@@ -418,6 +418,7 @@ describe("renderFooter with handoff limits", () => {
 
     expect(painted).toContainEqual({ token: "text", text: "120.0k" });
     expect(painted).toContainEqual({ token: "dim", text: "of 163k" });
+    expect(render(withLimits(120_000))[2]).toContain("working context 120.0k of 163k");
   });
 
   it("warns at the soft threshold and errors in bold at the hard one", () => {
@@ -432,13 +433,14 @@ describe("renderFooter with handoff limits", () => {
   });
 
   it("lets the count pass the handoff point", () => {
-    expect(render(withLimits(170_000))[2]).toContain("context 170.0k of 163k");
+    expect(render(withLimits(170_000))[2]).toContain("working context 170.0k of 163k");
   });
 
   it("falls back to the plain window without limits", () => {
     const patch = { context: { tokens: 120_000, window, percent: 44 } };
 
     expect(render(patch)[2]).toContain("context 120.0k of 272k");
+    expect(render(patch)[2]).not.toContain("working");
     expect(paint({ context: { tokens: 250_000, window, percent: 92 } }).painted).toContainEqual({
       token: "text",
       text: "250.0k",
