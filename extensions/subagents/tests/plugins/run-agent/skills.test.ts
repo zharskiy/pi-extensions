@@ -36,7 +36,7 @@ const setup = (definitions: Record<string, string> = {}, overrides = {}) => {
 
     const result = await harness.host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents }, { update: () => {} });
+      .execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -115,13 +115,12 @@ describe("run_agent skills", () => {
     expect(() =>
       runner.startBatch([{ agent: "scout", task: "a", skills: ["lint"] }], {
         callerId: lead.id,
-        wait: false,
       }),
     ).toThrow(
       "scout: skill(s) \"lint\" not in this caller's skills. This caller's skills: docs, git, tdd. Nothing was started.",
     );
 
-    runner.startBatch([{ agent: "scout", task: "a", skills: ["git"] }], { callerId: lead.id, wait: false });
+    runner.startBatch([{ agent: "scout", task: "a", skills: ["git"] }], { callerId: lead.id });
     await flushMicrotasks();
 
     expect(runtime.children[1].spec.skills).toEqual(["git"]);
@@ -154,7 +153,7 @@ describe("run_agent skills", () => {
 
     await run([{ agent: "lead", task: "lead", skills: ["git"] }]);
 
-    runner.startBatch([{ agent: "every", task: "a" }], { callerId: registry.list()[0].id, wait: false });
+    runner.startBatch([{ agent: "every", task: "a" }], { callerId: registry.list()[0].id });
     await flushMicrotasks();
 
     expect(runtime.children[1].spec.skills).toEqual(["docs", "git"]);
@@ -187,7 +186,7 @@ describe("run_agent skills", () => {
     const lead = registry.list()[0];
 
     expect(() =>
-      runner.startBatch([{ agent: "scout", task: "a", skills: ["tdd"] }], { callerId: lead.id, wait: false }),
+      runner.startBatch([{ agent: "scout", task: "a", skills: ["tdd"] }], { callerId: lead.id }),
     ).toThrow(
       "scout: skill(s) \"tdd\" not in this caller's skills. This caller's skills: docs, git. Nothing was started.",
     );
@@ -195,7 +194,6 @@ describe("run_agent skills", () => {
 
     runner.startBatch([{ agent: "scout", task: "a", skills: ["git", "docs"] }], {
       callerId: lead.id,
-      wait: false,
     });
     await flushMicrotasks();
 
@@ -211,7 +209,6 @@ describe("run_agent skills", () => {
     expect(() =>
       runner.startBatch([{ agent: "scout", task: "a", skills: ["docs"] }], {
         callerId: registry.list()[0].id,
-        wait: false,
       }),
     ).toThrow(
       'scout: skill(s) "docs" not in this caller\'s skills. This caller has no skills. Nothing was started.',

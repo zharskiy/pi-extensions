@@ -101,8 +101,8 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
     return count === 0 ? state : toggle(state);
   }
 
-  if (key.name === "other" && (key.char === "a" || key.char === "n")) {
-    return fill(state, key.char === "a");
+  if (key.name === "other" && (key.shortcut === "a" || key.shortcut === "n")) {
+    return fill(state, key.shortcut === "a");
   }
 
   return undefined;

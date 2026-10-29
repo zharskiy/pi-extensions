@@ -70,13 +70,12 @@ export type BatchItem = {
   skills?: string[];
 };
 
-type BatchOptions = { callerId: string; wait: boolean };
+type BatchOptions = { callerId: string };
 
-type StartedBatch = { batchId: string; records: AgentRecord[]; settled: Promise<AgentRecord[]> };
+type StartedBatch = { batchId: string; records: AgentRecord[] };
 
 export type Runner = AgentRunner & {
   startBatch(items: BatchItem[], options: BatchOptions): StartedBatch;
-  batchText(batchId: string): string;
   stop(id: string, options?: { immediate?: boolean }): Promise<boolean>;
   shutdown(reason: string): Promise<void>;
 };
@@ -85,8 +84,6 @@ type Batch = {
   id: string;
   ids: string[];
   callerId: string;
-  wait: boolean;
-  resolve: (records: AgentRecord[]) => void;
 };
 
 type LaunchSlot = {
@@ -156,34 +153,29 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return created;
   };
 
-  const batchText = (batchId: string) =>
-    batchMessage(batchId, deps.registry.batch(batchId), deps.settings.inlineResultChars);
-
-  const settledTerminals = (batch: Batch) => {
-    const records = batch.ids.map((id) => deps.registry.get(id)).filter((entry) => entry !== undefined);
-
-    const settled = records.every((entry) => isClosed(entry.state) && !releasing.has(entry.id));
-
-    return settled ? records.filter((entry) => !entry.successorId) : undefined;
-  };
+  const isSettled = (batch: Batch) =>
+    batch.ids
+      .map((id) => deps.registry.get(id))
+      .filter((entry) => entry !== undefined)
+      .every((entry) => isClosed(entry.state) && !releasing.has(entry.id));
 
   const checkBatch = (record: AgentRecord) => {
     const batch = batches.get(record.batchId);
-    const terminals = batch && settledTerminals(batch);
 
-    if (!batch || !terminals) {
+    if (!batch || !isSettled(batch)) {
       return;
     }
 
     batches.delete(batch.id);
-    batch.resolve(terminals);
     deps.bus.emit("batch:settled", { batchId: batch.id });
 
-    if (batch.wait || shuttingDown) {
+    if (shuttingDown) {
       return;
     }
 
-    callerOutbox(batch.callerId)?.post(batchText(batch.id));
+    callerOutbox(batch.callerId)?.post(
+      batchMessage(batch.id, deps.registry.batch(batch.id), deps.settings.inlineResultChars),
+    );
   };
 
   const stopChildrenOf = (record: AgentRecord) => {
@@ -212,7 +204,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   deps.bus.on("agent:closed", onClosed);
 
   const hasOpenBatches = (callerId: string) =>
-    Array.from(batches.values()).some((batch) => batch.callerId === callerId && !batch.wait);
+    Array.from(batches.values()).some((batch) => batch.callerId === callerId);
 
   const deliver = (child: ChildSession, message: AgentMessage, delivery: MessageDelivery) =>
     "customType" in message ? child.sendCustom(message, delivery) : child.send(message, delivery);
@@ -868,12 +860,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const batchId = newBatchId();
     const dir = agentsDirFor(deps.session());
 
-    let resolve: (records: AgentRecord[]) => void = () => {};
-
-    const settled = new Promise<AgentRecord[]>((done) => {
-      resolve = done;
-    });
-
     const records = slots.map((slot) => {
       const { item, definition, plan } = slot;
 
@@ -898,44 +884,15 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       id: batchId,
       ids: records.map((record) => record.id),
       callerId: options.callerId,
-      wait: options.wait,
-      resolve,
     });
 
-    deps.bus.emit("batch:started", { batchId, callerId: options.callerId, wait: options.wait });
+    deps.bus.emit("batch:started", { batchId, callerId: options.callerId });
 
     records.forEach((record, index) => {
       void launch(record, slots[index]);
     });
 
-    if (!options.wait || options.callerId === MAIN_CALLER) {
-      return { batchId, records, settled };
-    }
-
-    const caller = lives.get(options.callerId);
-
-    if (caller) {
-      releaseSlot(caller);
-    }
-
-    const resumed = settled.then(async (done) => {
-      if (!caller || shuttingDown) {
-        return done;
-      }
-
-      const release = await semaphore.acquire();
-      const record = deps.registry.get(options.callerId);
-
-      if (!record || isClosed(record.state) || shuttingDown) {
-        release();
-      } else {
-        caller.release = release;
-      }
-
-      return done;
-    });
-
-    return { batchId, records, settled: resumed };
+    return { batchId, records };
   };
 
   const stopNow = async (record: AgentRecord) => {
@@ -1080,7 +1037,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
   return {
     startBatch,
-    batchText,
     stop,
     route,
     abort,

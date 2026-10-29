@@ -26,7 +26,7 @@ const setup = async (tools: string, overrides = {}) => {
 
   await harness.host
     .tool<RunAgentParams, RunAgentDetails>("run_agent")
-    .execute({ agents: [{ agent: "worker", task: "go" }] }, { update: () => {} });
+    .execute({ agents: [{ agent: "worker", task: "go" }] }, {});
   await flushMicrotasks();
 
   return harness.runtime.children[0].spec.customTools ?? [];

@@ -65,11 +65,11 @@ const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
   return first;
 };
 
-const nounPhrase = (agents: { agent?: string }[], background: boolean) => {
+const nounPhrase = (agents: { agent?: string }[]) => {
   const kind = sharedAgent(agents);
-  const words = [background ? "background" : undefined, kind, noun(agents.length, "agent")];
+  const label = noun(agents.length, "agent");
 
-  return words.filter((word) => word !== undefined).join(" ");
+  return kind ? `${kind} ${label}` : label;
 };
 
 const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
@@ -156,20 +156,14 @@ const failureLines = (
   ];
 };
 
-const statusLines = (
-  terminal: AgentRecord,
-  totals: AgentRecord,
-  input: BlockInput,
-  cols: number,
-  wait: boolean,
-) => {
+const statusLines = (terminal: AgentRecord, totals: AgentRecord, input: BlockInput, cols: number) => {
   const { theme } = input;
 
   if (terminal.state === "failed") {
     return failureLines(terminal, totals, cols, input);
   }
 
-  const segments = agentReceipt({ ...totals, activity: undefined }, Date.now(), { live: wait });
+  const segments = agentReceipt(totals, 0, { live: false });
 
   return [withCleanup(segments, cleanupText(terminal), cols, theme)];
 };
@@ -182,7 +176,7 @@ const unavailableRow = (entry: Entry, input: BlockInput, cols: number): MarkedRo
   return { mark: "info", title: `${line}\n${theme.fg("muted", theme.truncate(status, cols))}` };
 };
 
-const agentRow = (entry: Entry, input: BlockInput, cols: number, wait: boolean): MarkedRow => {
+const agentRow = (entry: Entry, input: BlockInput, cols: number): MarkedRow => {
   const { registry, theme } = input;
   const record = registry.get(entry.id);
 
@@ -201,7 +195,7 @@ const agentRow = (entry: Entry, input: BlockInput, cols: number, wait: boolean):
 
   return {
     mark: stateMark(terminal.state),
-    title: [line, ...statusLines(terminal, totals, input, cols, wait)].join("\n"),
+    title: [line, ...statusLines(terminal, totals, input, cols)].join("\n"),
   };
 };
 
@@ -282,10 +276,10 @@ const outcomeCounts = (terminals: AgentRecord[]) =>
     ["handed off", terminals.filter((record) => record.state === "handoff").length],
   ] as const;
 
-const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, width: number, mark: Mark) => {
+const header = (input: BlockInput, details: RunAgentDetails, width: number, mark: Mark) => {
   const { theme, registry, hints } = input;
   const count = details.agents.length;
-  const words = nounPhrase(details.agents, !wait);
+  const words = nounPhrase(details.agents);
   const title = countTitle(theme, count, words);
   const room = width - TITLE_COLUMN - theme.width(`${count} ${words}`);
   const terminals = terminalsOf(input, details.ids);
@@ -293,7 +287,7 @@ const header = (input: BlockInput, details: RunAgentDetails, wait: boolean, widt
   const open = terminals.some((record) => !isClosed(record.state));
 
   if (open) {
-    const hinted = !wait && records[0]?.callerId === MAIN_CALLER;
+    const hinted = records[0]?.callerId === MAIN_CALLER;
     const hint = hinted
       ? [hintText(hints, false, theme), hintText(hints, true, theme)].find(
           (text) => text !== undefined && theme.width(text) + 1 <= room,
@@ -344,7 +338,7 @@ const errorBlock = (input: BlockInput, result: ToolResult<RunAgentDetails>, widt
 
 const stoppedBlock = (input: BlockInput, params: RunAgentParams, width: number) => {
   const { theme } = input;
-  const words = nounPhrase(params.agents, params.wait !== true);
+  const words = nounPhrase(params.agents);
   const title = `${countTitle(theme, params.agents.length, words)}${theme.fg("muted", `${DOT}stopped`)}`;
 
   return row({ mark: "stopped", title })(width, theme);
@@ -368,17 +362,16 @@ const renderBlockAt = (input: BlockInput, width: number): string => {
   }
 
   if (!details?.agents) {
-    return state.isPartial ? "" : result.text;
+    return result.text;
   }
 
-  const wait = params?.wait === true;
   const cols = Math.max(1, width - AGENT_TEXT);
   const mark = blockMark(input, terminalsOf(input, details.ids));
 
   return row({
     mark,
-    title: header(input, details, wait, width, mark),
-    children: details.agents.map((entry) => agentRow(entry, input, cols, wait)),
+    title: header(input, details, width, mark),
+    children: details.agents.map((entry) => agentRow(entry, input, cols)),
   })(width, theme).join("\n");
 };
 

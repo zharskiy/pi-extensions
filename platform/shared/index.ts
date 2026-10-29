@@ -56,7 +56,9 @@ export {
   type SettingsParse,
   type SettingsSchema,
   userSettingsPath,
+  writeSettingsFile,
 } from "./plugin/settings-files.ts";
+export { ensureProjectSubdir } from "./project-dir.ts";
 export {
   counted,
   errorText,

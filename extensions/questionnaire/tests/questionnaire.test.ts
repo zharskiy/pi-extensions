@@ -21,7 +21,7 @@ const setup = (mode: RunMode = "tui") => {
 };
 
 const run = (tool: ReturnType<typeof setup>["tool"], params: QuestionnaireParams, signal?: AbortSignal) =>
-  tool.execute(params, { signal, update: () => {} });
+  tool.execute(params, { signal });
 
 const waitingSignals = (host: ReturnType<typeof setup>["host"]) =>
   host.published.filter((entry) => entry.channel === AWAITING_INPUT_CHANNEL).map((entry) => entry.data);
