@@ -145,7 +145,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const scroll = api.createScroll();
   let loadedAt = Date.now();
   let data = deps.load();
-  let transcript = api.createTranscript({ owner: data.record.id });
+  let transcript = api.createTranscript();
   let transcriptKey = transcriptKeyOf(data);
   let toolsExpanded = false;
   let requestExpanded = false;
@@ -167,7 +167,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     if (key !== transcriptKey) {
       transcriptKey = key;
       requestExpanded = false;
-      transcript = api.createTranscript({ owner: data.record.id });
+      transcript = api.createTranscript();
       transcript.setToolsExpanded(toolsExpanded);
     }
 

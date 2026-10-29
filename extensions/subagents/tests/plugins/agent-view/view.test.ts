@@ -1214,7 +1214,7 @@ const nestedSession = (args: Record<string, unknown>, result?: { text: string; d
     RECORD_ENTRY,
   );
 
-const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...ARGS, wait }) => {
+const nestedSetup = async () => {
   const harness = setup([
     agentRegistryPlugin,
     agentDefinitionsPlugin,
@@ -1225,7 +1225,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
 
   await harness.host
     .tool<RunAgentParams, RunAgentDetails>("run_agent")
-    .execute({ agents: [{ agent: "general", task: "nest" }] }, { toolCallId: "ra1", update: () => {} });
+    .execute({ agents: [{ agent: "general", task: "nest" }] }, { update: () => {} });
   await flushMicrotasks();
 
   const parent = harness.registry.list()[0] as AgentRecord;
@@ -1235,7 +1235,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
     RunAgentParams,
     RunAgentDetails
   >;
-  const running = runAgent.execute({ ...ARGS, wait }, { toolCallId: "ra1", update: () => {} });
+  const running = runAgent.execute(ARGS, { update: () => {} });
 
   await flushMicrotasks();
 
@@ -1246,7 +1246,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
     harness.runtime.sessions.set(file, session);
   };
 
-  show(nestedSession(args), "");
+  show(nestedSession(ARGS), "");
   harness.registry.update(parent.id, { sessionFile: file });
 
   const text = async () => {
@@ -1255,9 +1255,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
     return () => lines().join("\n");
   };
 
-  const nested = harness.registry.list().filter((record) => record.callerId === parent.id);
-
-  return { harness, running, nested, show, text };
+  return { running, show, text };
 };
 
 describe("agent view nested run_agent calls", () => {
@@ -1294,10 +1292,9 @@ describe("agent view nested run_agent calls", () => {
     const record = closedAgent(harness, session);
     const spec = harness.host.tools.get("run_agent") as unknown as { renderCall: () => string };
     const runAgentSpy = vi.spyOn(spec, "renderCall");
-    const { view, transcripts } = await harness.open(record.id);
+    const { view } = await harness.open(record.id);
     const text = plainLines(view.render(100)).join("\n");
 
-    expect(transcripts[0]?.owner).toBe(record.id);
     expect(runAgentSpy).toHaveBeenCalledWith(
       expect.objectContaining(args),
       expect.anything(),
@@ -1307,7 +1304,7 @@ describe("agent view nested run_agent calls", () => {
   });
 
   it("draws a returned background nested call with its live rows and no key hint", async () => {
-    const { running, show, text } = await nestedSetup(false);
+    const { running, show, text } = await nestedSetup();
 
     show(nestedSession(ARGS, await running), "written");
 
@@ -1318,42 +1315,6 @@ describe("agent view nested run_agent calls", () => {
     expect(shown).not.toContain("to list");
     expect(shown).toContain("scout  find callers");
     expect(shown).toContain("scout  find tests");
-    expect(shown).toContain("Starting");
-  });
-
-  it("draws a waiting nested call while its batch runs and its final block once the result is written", async () => {
-    const { harness, running, nested, show, text } = await nestedSetup(true);
-    const live = await text();
-
-    expect(live()).toContain(" ◌ 2 scout agents");
-    expect(live()).toContain("Starting");
-
-    nested.forEach((record) => {
-      harness.runtime.child(record.id).finish(`${record.id} done`);
-    });
-
-    const result = await running;
-
-    await flushMicrotasks();
-    expect(live()).toContain(" ✓ 2 scout agents · 0s");
-    expect(live()).toContain("✓ scout  find callers");
-
-    show(nestedSession({ ...ARGS, wait: true }, result), "written");
-
-    const final = (await text())();
-
-    expect(final).toContain(" ✓ 2 scout agents · 0s");
-    expect(final).toContain("✓ scout  find tests");
-  });
-
-  it("draws the live block when the saved arguments carry a null optional field", async () => {
-    const { running, show, text } = await nestedSetup(false, { ...ARGS, wait: null });
-
-    show(nestedSession({ ...ARGS, wait: null }, await running), "written");
-
-    const shown = (await text())();
-
-    expect(shown).toContain(" ◌ 2 background scout agents");
     expect(shown).toContain("Starting");
   });
 });

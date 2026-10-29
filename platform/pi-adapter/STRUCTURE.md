@@ -44,7 +44,7 @@
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
 - `editor/input.ts`: the editor submit key, command completion, re-submit.
-- `tools/tool-bridge.ts`: tool wrapping: `toPiTool`, `toPiResult`, `fromPiResult`.
+- `tools/tool-bridge.ts`: tool wrapping: `toPiTool`, `fromPiResult`.
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.

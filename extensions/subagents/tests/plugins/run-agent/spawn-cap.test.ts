@@ -44,8 +44,7 @@ const setup = async (overrides = {}) => {
   harness.host.settle();
 
   const lead = registry.list()[0];
-  const startFrom = (callerId: string, items: BatchItem[]) =>
-    runner.startBatch(items, { callerId, wait: false });
+  const startFrom = (callerId: string, items: BatchItem[]) => runner.startBatch(items, { callerId });
   const nested = () => registry.list().filter((record) => record.agent === "scout");
 
   return { ...harness, registry, runner, runMain, lead, startFrom, nested };

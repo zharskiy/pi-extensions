@@ -17,10 +17,10 @@ const setup = (overrides = {}) => {
   const runAgent = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
   const registry = harness.services.require("registry");
 
-  const run = async (agents: RunAgentParams["agents"], wait = false) => {
+  const run = async (agents: RunAgentParams["agents"]) => {
     harness.host.idle = false;
 
-    const result = await runAgent.execute({ agents, wait }, { update: () => {} });
+    const result = await runAgent.execute({ agents }, { update: () => {} });
 
     await flushMicrotasks();
 
@@ -278,19 +278,32 @@ describe("run_agent batches", () => {
     expect(hiddenMessageTexts(host)[0]).toContain("4 done");
   });
 
-  it("returns results directly and sends no wake when wait is true", async () => {
-    const { host, runtime, services } = setup();
-    const runAgent = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
-    const pending = runAgent.execute({ agents: tasks(1), wait: true }, { update: () => {} });
+  it("takes only the agents list at the top level of its strict schema", () => {
+    const { host } = setup();
+    const parameters = host.tool<RunAgentParams, RunAgentDetails>("run_agent").parameters as {
+      properties: Record<string, unknown>;
+      required: string[];
+      additionalProperties: boolean;
+    };
 
-    await flushMicrotasks();
-    runtime.children[0].finish("waited result");
+    expect(Object.keys(parameters.properties)).toEqual(["agents"]);
+    expect(parameters.required).toEqual(["agents"]);
+    expect(parameters.additionalProperties).toBe(false);
+  });
 
-    const result = await pending;
+  it("starts nothing when the call is already aborted", async () => {
+    const { host, runtime, registry } = setup();
+    const controller = new AbortController();
 
-    expect(result.text).toContain("waited result");
-    expect(hiddenMessageTexts(host)).toEqual([]);
-    expect(services.require("registry").list()[0].state).toBe("done");
+    controller.abort();
+
+    await expect(
+      host
+        .tool<RunAgentParams, RunAgentDetails>("run_agent")
+        .execute({ agents: tasks(1) }, { signal: controller.signal, update: () => {} }),
+    ).rejects.toThrow("aborted; nothing was started");
+    expect(runtime.children).toEqual([]);
+    expect(registry.list()).toEqual([]);
   });
 
   it("rejects unknown agents before starting anything", async () => {
@@ -541,8 +554,7 @@ describe("allowed subagents", () => {
 
   it("rejects an agent outside the caller's subagents list before starting anything", async () => {
     const { lead, runner, runtime } = await setupLead();
-    const spawn = (agent: string) =>
-      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
+    const spawn = (agent: string) => runner.startBatch([{ agent, task: "x" }], { callerId: lead.id });
 
     expect(() => spawn("reviewer")).toThrow("agent(s) not allowed for this caller: reviewer. Allowed: scout");
     expect(runtime.children).toHaveLength(1);
@@ -566,7 +578,6 @@ describe("allowed subagents", () => {
     expect(() =>
       runner.startBatch([{ agent: "reviewer", task: "x" }], {
         callerId: scout.id,
-        wait: false,
       }),
     ).toThrow("agent(s) not allowed for this caller: reviewer. Allowed: none");
   });
@@ -589,8 +600,7 @@ describe("allowed subagents", () => {
 
     const lead = harness.registry.list()[0];
     const runner = harness.services.require("runner") as Runner;
-    const spawn = (agent: string) =>
-      runner.startBatch([{ agent, task: "x" }], { callerId: lead.id, wait: false });
+    const spawn = (agent: string) => runner.startBatch([{ agent, task: "x" }], { callerId: lead.id });
 
     expect(() => spawn("lead")).toThrow(
       "agent(s) not allowed for this caller: lead. Allowed: editor, fetch, general, image, implementer, planner, reviewer, scout, shell, verifier",

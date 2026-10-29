@@ -484,37 +484,27 @@ describe("successor chain", () => {
     expect(task).toContain("the token store is src/store.ts");
   });
 
-  it("resolves a waiting child caller once with the terminal records", async () => {
-    const { first, current, handOff, runner, runtime } = await setup({}, "general");
+  it("wakes a child caller once with the chain's terminal result", async () => {
+    const { first, handOff, runner, runtime } = await setup({}, "general");
+    const caller = runtime.child(first.id);
 
     const started = runner.startBatch([{ agent: "scout", task: "find the token store" }], {
       callerId: first.id,
-      wait: true,
     });
+    await flushMicrotasks();
+    caller.finish("Started batch, waiting.");
     await flushMicrotasks();
 
     const [link] = started.records;
-    let resolutions = 0;
-
-    const settled = started.settled.then((records) => {
-      resolutions += 1;
-      return records;
-    });
-
     const second = (await handOff(link.id)) as string;
 
-    expect(resolutions).toBe(0);
+    expect(caller.wakes).toEqual([]);
 
     runtime.child(second).finish("token store is in src/store.ts");
     await flushMicrotasks();
 
-    const records = await settled;
-
-    expect(resolutions).toBe(1);
-    expect(records.map((record) => record.id)).toEqual([second]);
-    expect(records[0].state).toBe("done");
-    expect(runner.batchText(started.batchId)).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(runtime.child(first.id).wakes).toEqual([]);
-    expect(current(first.id).state).toBe("running");
+    expect(caller.wakes).toHaveLength(1);
+    expect(caller.wakes[0]).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(caller.wakes[0]).toContain("token store is in src/store.ts");
   });
 });

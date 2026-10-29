@@ -9,7 +9,7 @@ import {
 import { AGENT_SCOPE_ALL, type AgentFrontmatter } from "../model/agent-schema.ts";
 import type { BatchItem, Runner } from "./runner.ts";
 
-export type RunAgentParams = { agents: BatchItem[]; wait?: boolean };
+export type RunAgentParams = { agents: BatchItem[] };
 
 export type RunAgentDetails = {
   batchId?: string;
@@ -28,36 +28,9 @@ export type ToolRows = {
   messageAgent: ResultRender<MessageAgentParams, MessageAgentDetails>;
 };
 
-type PendingCalls = {
-  set(callerId: string, toolCallId: string, details: RunAgentDetails): void;
-  get(owner: string, toolCallId: string): RunAgentDetails | undefined;
-  delete(callerId: string, toolCallId: string): void;
-  clear(): void;
-};
-
-const callKey = (callerId: string, toolCallId: string) => `${callerId}\n${toolCallId}`;
-
-export const createPendingCalls = (): PendingCalls => {
-  const calls = new Map<string, RunAgentDetails>();
-
-  return {
-    set: (callerId, toolCallId, details) => {
-      calls.set(callKey(callerId, toolCallId), details);
-    },
-    get: (owner, toolCallId) => calls.get(callKey(owner, toolCallId)),
-    delete: (callerId, toolCallId) => {
-      calls.delete(callKey(callerId, toolCallId));
-    },
-    clear: () => {
-      calls.clear();
-    },
-  };
-};
-
 type ToolDeps = {
   runner: Runner;
   registry: AgentRegistry;
-  calls: PendingCalls;
   rows: ToolRows;
 };
 
@@ -119,7 +92,7 @@ const capRule = ({ childCap }: RunAgentLimits) =>
 
 export const describeRunAgent = (allowedAgents: DelegateAgent[], limits: RunAgentLimits): string =>
   [
-    "Start one or more background agents as one batch. Each agent gets its own context window, works alone with no access to this conversation, and returns one result. By default the call returns at once with agent ids and you are woken once, with every result of the batch, when all of its agents are done; after starting such a batch, end your turn. With `wait: true` the call blocks until the batch is done and returns its results.",
+    "Start one or more background agents as one batch. Each agent gets its own context window, works alone with no access to this conversation, and returns one result. The call returns at once with agent ids and you are woken once, with every result of the batch, when all of its agents are done; after starting a batch, end your turn.",
     "Agents you may start:",
     agentList(allowedAgents, limits),
     [
@@ -185,10 +158,6 @@ const runAgentParameters = {
         additionalProperties: false,
       },
     },
-    wait: {
-      type: "boolean",
-      description: "Block until the batch is done and return results directly. Default false (background).",
-    },
   },
   required: ["agents"],
   additionalProperties: false,
@@ -216,7 +185,11 @@ export const runAgentTool = (
   parameters: runAgentParameters,
   renderShell: "row",
   execute: async (params, ctx) => {
-    const started = deps.runner.startBatch(params.agents, { callerId, wait: params.wait === true });
+    if (ctx.signal?.aborted) {
+      throw new Error("aborted; nothing was started");
+    }
+
+    const started = deps.runner.startBatch(params.agents, { callerId });
 
     const details: RunAgentDetails = {
       batchId: started.batchId,
@@ -229,50 +202,17 @@ export const runAgentTool = (
       })),
     };
 
-    const pending = callerId !== MAIN_CALLER && ctx.toolCallId ? ctx.toolCallId : undefined;
+    ctx.update("", details);
 
-    if (pending) {
-      deps.calls.set(callerId, pending, details);
-    }
+    const list = started.records
+      .map((record) => `- ${record.id} (${record.agent}, ${record.model ?? "model n/a"})`)
+      .join("\n");
+    const text = `Started batch ${started.batchId}:\n${list}\nYou will be woken once when all agents are done. End your turn now.`;
 
-    try {
-      ctx.update("", details);
-
-      if (params.wait !== true) {
-        const list = started.records
-          .map((record) => `- ${record.id} (${record.agent}, ${record.model ?? "model n/a"})`)
-          .join("\n");
-        const text = `Started batch ${started.batchId}:\n${list}\nYou will be woken once when all agents are done. End your turn now.`;
-
-        return { text, details };
-      }
-
-      const onAbort = () => {
-        details.ids.forEach((id) => {
-          void deps.runner.stop(id, { immediate: true });
-        });
-      };
-
-      ctx.signal?.addEventListener("abort", onAbort, { once: true });
-
-      await started.settled;
-
-      ctx.signal?.removeEventListener("abort", onAbort);
-
-      return { text: deps.runner.batchText(started.batchId), details };
-    } finally {
-      if (pending) {
-        deps.calls.delete(callerId, pending);
-      }
-    }
+    return { text, details };
   },
   renderCall: () => "",
   renderResult: (result, state, theme) => deps.rows.runAgent(result, state, theme),
-  pendingResult: (toolCallId, owner) => {
-    const details = owner === undefined ? undefined : deps.calls.get(owner, toolCallId);
-
-    return details ? { text: "", details } : undefined;
-  },
 });
 
 export const messageAgentTool = (
