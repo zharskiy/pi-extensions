@@ -266,6 +266,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     const accepted = await control
       .newSession({
         parentSession: previous,
+        keepSelection: true,
         seed: {
           customType: HANDOFF_SEED_TYPE,
           details: { from: "session" } satisfies HandoffSeedDetails,

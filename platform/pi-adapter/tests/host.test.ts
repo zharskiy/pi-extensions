@@ -23,6 +23,7 @@ const fakeCtx = (mode: string, idle = true, pending = false) => ({
     getSessionFile: () => "/sessions/s1.jsonl",
     getHeader: () => undefined,
     buildContextEntries: () => [],
+    getEntries: () => [],
   },
   isProjectTrusted: () => true,
   isIdle: () => idle,
