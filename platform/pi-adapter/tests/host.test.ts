@@ -468,7 +468,7 @@ describe("pi adapter", () => {
     expect(sent).toEqual([{ text: "/skill:review", options: { expandPromptTemplates: true } }]);
   });
 
-  it("seeds the new session with a displayed message that triggers no turn", async () => {
+  it("seeds the new session with a displayed message that triggers no turn by default", async () => {
     const { pi, commands } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
     const seeded: unknown[] = [];
@@ -513,6 +513,70 @@ describe("pi adapter", () => {
         options: { triggerTurn: false },
       },
     ]);
+  });
+
+  const continuingHost = (sendMessage: (message: unknown, options: unknown) => Promise<void>) => {
+    const { pi, commands } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const warnings: string[] = [];
+
+    host.registerCommand("session-handoff", {
+      description: "switch",
+      run: async (_args, control) => {
+        await control.newSession({
+          seed: { customType: "t", text: "hello", details: { n: 1 } },
+          continueWithSeed: true,
+        });
+      },
+    });
+
+    const ctx = {
+      ...fakeCtx("tui"),
+      newSession: async (options: { withSession: (fresh: unknown) => Promise<void> }) => {
+        await options.withSession({
+          sendMessage,
+          ui: {
+            notify: (text: string, level: string) => {
+              warnings.push(`${level}: ${text}`);
+            },
+          },
+        });
+
+        return { cancelled: false };
+      },
+    };
+
+    return { run: () => commands.get("session-handoff")?.handler("", ctx), warnings };
+  };
+
+  it("starts a run with the seed without waiting for it when asked to continue", async () => {
+    const seeded: unknown[] = [];
+    const { run, warnings } = continuingHost((message, options) => {
+      seeded.push({ message, options });
+
+      return new Promise(() => {});
+    });
+
+    await run();
+
+    expect(seeded).toEqual([
+      {
+        message: { customType: "t", content: "hello", display: true, details: { n: 1 } },
+        options: { triggerTurn: true },
+      },
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("turns a failed continuation run into a warning", async () => {
+    const { run, warnings } = continuingHost(async () => {
+      throw new Error("no credentials");
+    });
+
+    await run();
+    await Promise.resolve();
+
+    expect(warnings).toEqual(["warning: The new session could not continue the handoff: no credentials"]);
   });
 
   it("sends a hidden follow-up while a run is active", async () => {

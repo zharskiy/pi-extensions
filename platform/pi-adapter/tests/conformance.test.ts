@@ -608,6 +608,27 @@ describe("pi adapter conformance", () => {
       session.dispose();
     });
 
+    it("resolves a custom message sent with triggerTurn to an idle session only after its run settles", async () => {
+      const session = await fauxSession([fauxAssistantMessage(fauxText("ok"))]);
+      const order: string[] = [];
+
+      session.subscribe((event) => {
+        if (event.type === "agent_end") {
+          order.push("agent_end");
+        }
+      });
+
+      await session
+        .sendCustomMessage({ customType: "req", content: "x", display: true }, { triggerTurn: true })
+        .then(() => {
+          order.push("resolved");
+        });
+
+      expect(order).toEqual(["agent_end", "resolved"]);
+
+      session.dispose();
+    });
+
     it("emits message_start with the sent type and content, appends the entry and queues next-turn messages apart", async () => {
       const session = await offlineSession();
       const started: unknown[] = [];

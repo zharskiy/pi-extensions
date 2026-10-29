@@ -1,4 +1,4 @@
-import { fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
@@ -40,7 +40,13 @@ const startHandoffRuntime = async () => {
     host.registerCommand("handoff", {
       description: "hand off",
       run: async (args, control) => {
-        await control.newSession({ keepSelection: args === "keep", seed: SEED });
+        const words = args.split(" ");
+
+        await control.newSession({
+          keepSelection: words.includes("keep"),
+          continueWithSeed: words.includes("continue"),
+          seed: SEED,
+        });
       },
     });
   };
@@ -132,7 +138,28 @@ const startHandoffRuntime = async () => {
     return change?.type === "model_change" ? `${change.provider}/${change.modelId}` : undefined;
   };
 
-  return { runtime, faux, locked, modelRuntime, warnings, select, selection, defaults, seeded, modelAtSeed };
+  const roles = () =>
+    runtime.session.sessionManager.getEntries().flatMap((entry) => {
+      if (entry.type === "message") {
+        return [entry.message.role];
+      }
+
+      return entry.type === "custom_message" ? [entry.customType] : [];
+    });
+
+  return {
+    runtime,
+    faux,
+    locked,
+    modelRuntime,
+    warnings,
+    select,
+    selection,
+    defaults,
+    seeded,
+    modelAtSeed,
+    roles,
+  };
 };
 
 describe("keeping the model and thinking level across a handoff", () => {
@@ -150,6 +177,41 @@ describe("keeping the model and thinking level across a handoff", () => {
     expect(handoff.defaults()).toEqual({ model: "acme/small", thinking: "low" });
     expect(handoff.modelAtSeed()).toBe("acme/large");
     expect(handoff.warnings).toEqual([]);
+
+    await handoff.runtime.dispose();
+  });
+
+  it("runs the seed as a turn on the kept model when asked to continue", async () => {
+    const handoff = await startHandoffRuntime();
+    const requested: string[] = [];
+
+    handoff.faux.setResponses([
+      (_context, _options, _state, model) => {
+        requested.push(`${model.provider}/${model.id}`);
+
+        return fauxAssistantMessage(fauxText("continuing"));
+      },
+    ]);
+
+    await handoff.select(handoff.faux.getModel("large"), "high");
+    await handoff.runtime.session.prompt("/handoff keep continue");
+    await handoff.runtime.session.waitForIdle();
+
+    expect(requested).toEqual(["acme/large"]);
+    expect(handoff.roles().slice(-2)).toEqual([SEED.customType, "assistant"]);
+    expect(handoff.warnings).toEqual([]);
+
+    await handoff.runtime.dispose();
+  });
+
+  it("appends the seed without a turn when not asked to continue", async () => {
+    const handoff = await startHandoffRuntime();
+
+    await handoff.runtime.session.prompt("/handoff keep");
+    await handoff.runtime.session.waitForIdle();
+
+    expect(handoff.roles()).toEqual([SEED.customType]);
+    expect(handoff.faux.state.callCount).toBe(0);
 
     await handoff.runtime.dispose();
   });

@@ -163,6 +163,7 @@ describe("session limits", () => {
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].parentSession).toBe(host.info.file);
     expect(host.newSessions[0].keepSelection).toBe(true);
+    expect(host.newSessions[0].continueWithSeed).toBe(true);
     expect(host.newSessions[0].seed?.customType).toBe(HANDOFF_TYPE);
     expect(host.newSessions[0].seed?.text).toContain(`the previous session ${host.info.file}`);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
@@ -170,6 +171,21 @@ describe("session limits", () => {
     expect(requests()).toHaveLength(1);
     expect(notice()).toBe("<warning>» handoff at 60k tokens · 76.0k used");
   });
+
+  it.each(["done", "blocked"])(
+    "switches without continuing the work after an automatic %s handoff",
+    async (status) => {
+      const { host, turn, saveHandoff } = setup();
+
+      turn(76_000);
+      saveHandoff(VALID_HANDOFF.replace("partial", status));
+      host.settle();
+      await flush();
+
+      expect(host.newSessions).toHaveLength(1);
+      expect(host.newSessions[0].continueWithSeed).toBe(false);
+    },
+  );
 
   it("waits while a source reports running work and switches once it is released", async () => {
     const { host, requests, turn, saveHandoff, notice, busy } = setup();
@@ -657,6 +673,7 @@ describe("/session-handoff on demand", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].keepSelection).toBe(true);
+    expect(host.newSessions[0].continueWithSeed).toBe(false);
     expect(host.newSessions[0].seed?.text).toContain("which the user handed off with /session-handoff");
     expect(host.newSessions[0].seed?.text).toContain(`The user said this session is for: ${FOCUS}.`);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
@@ -716,6 +733,33 @@ describe("/session-handoff on demand", () => {
     expect(host.confirmations).toHaveLength(1);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].seed?.text).toContain(`The user said this session is for: ${FOCUS}.`);
+  });
+
+  it("keeps a declined manual handoff manual when the user speaks before the switch", async () => {
+    const { host, turn, saveHandoff, busy } = setup();
+
+    busy(true);
+    host.confirmAnswer = false;
+    await host.runCommand(HANDOFF_COMMAND, "");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+    host.settle();
+    turn(40_000);
+    host.settle();
+    busy(false);
+    await flush();
+    await flush();
+
+    expect(host.messages).toHaveLength(2);
+    expect(host.messages.at(-1)?.message.details).toEqual({ reason: "manual", command: "/session-handoff" });
+
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].continueWithSeed).toBe(false);
   });
 
   it("switches at once after a cancelled switch when the file is still valid", async () => {
