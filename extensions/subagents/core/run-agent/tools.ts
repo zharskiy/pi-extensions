@@ -186,7 +186,7 @@ export const runAgentTool = (
   renderShell: "row",
   execute: async (params, ctx) => {
     if (ctx.signal?.aborted) {
-      throw new Error("aborted; nothing was started");
+      throw new Error("Operation aborted");
     }
 
     const started = deps.runner.startBatch(params.agents, { callerId });

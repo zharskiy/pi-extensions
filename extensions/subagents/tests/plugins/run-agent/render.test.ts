@@ -81,7 +81,6 @@ const resolve = (render: ToolRender | undefined, width = WIDE) =>
   typeof render === "function" ? render(width) : (render ?? "");
 
 type RenderState = {
-  isPartial?: boolean;
   expanded?: boolean;
   isError?: boolean;
   aborted?: boolean;

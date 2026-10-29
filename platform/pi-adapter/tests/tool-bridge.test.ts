@@ -28,13 +28,6 @@ type Renderers = {
     theme: Theme,
     context: PiToolRenderContext,
   ): Component;
-  execute(
-    id: string,
-    params: unknown,
-    signal: AbortSignal | undefined,
-    onUpdate: unknown,
-    ctx: unknown,
-  ): Promise<unknown>;
 };
 
 const piTool = <P, D>(spec: ToolSpec<P, D>) => toPiTool(spec) as unknown as Renderers;

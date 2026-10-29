@@ -362,7 +362,7 @@ const renderBlockAt = (input: BlockInput, width: number): string => {
   }
 
   if (!details?.agents) {
-    return state.isPartial ? "" : result.text;
+    return result.text;
   }
 
   const cols = Math.max(1, width - AGENT_TEXT);

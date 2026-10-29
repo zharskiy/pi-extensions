@@ -1189,7 +1189,7 @@ const ARGS = {
   ],
 };
 
-const nestedSession = (args: Record<string, unknown>, result?: { text: string; details?: RunAgentDetails }) =>
+const nestedSession = (args: Record<string, unknown>, result: { text: string; details?: RunAgentDetails }) =>
   parseSessionLines(
     [
       line({ role: "user", content: [{ type: "text", text: "Task from main (agent id explorer-1): Nest" }] }),
@@ -1198,18 +1198,14 @@ const nestedSession = (args: Record<string, unknown>, result?: { text: string; d
         content: [{ type: "toolCall", id: "ra1", name: "run_agent", arguments: args }],
         stopReason: "toolUse",
       }),
-      ...(result
-        ? [
-            line({
-              role: "toolResult",
-              toolCallId: "ra1",
-              toolName: "run_agent",
-              content: [{ type: "text", text: result.text }],
-              details: result.details,
-              isError: false,
-            }),
-          ]
-        : []),
+      line({
+        role: "toolResult",
+        toolCallId: "ra1",
+        toolName: "run_agent",
+        content: [{ type: "text", text: result.text }],
+        details: result.details,
+        isError: false,
+      }),
     ],
     RECORD_ENTRY,
   );
@@ -1246,7 +1242,6 @@ const nestedSetup = async () => {
     harness.runtime.sessions.set(file, session);
   };
 
-  show(nestedSession(ARGS), "");
   harness.registry.update(parent.id, { sessionFile: file });
 
   const text = async () => {
@@ -1303,7 +1298,7 @@ describe("agent view nested run_agent calls", () => {
     expect(text).not.toContain('"agents": [');
   });
 
-  it("draws a returned background nested call with its live rows and no key hint", async () => {
+  it("draws a nested call with its live rows and no key hint", async () => {
     const { running, show, text } = await nestedSetup();
 
     show(nestedSession(ARGS, await running), "written");

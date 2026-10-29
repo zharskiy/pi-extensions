@@ -301,7 +301,7 @@ describe("run_agent batches", () => {
       host
         .tool<RunAgentParams, RunAgentDetails>("run_agent")
         .execute({ agents: tasks(1) }, { signal: controller.signal }),
-    ).rejects.toThrow("aborted; nothing was started");
+    ).rejects.toThrow("Operation aborted");
     expect(runtime.children).toEqual([]);
     expect(registry.list()).toEqual([]);
   });
