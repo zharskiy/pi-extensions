@@ -960,7 +960,7 @@ describe("pi adapter", () => {
     });
 
     await host.ui.openOverlay((api) => {
-      const pane = api.createTranscript({ owner: () => "agent-1" });
+      const pane = api.createTranscript();
 
       pane.sync([
         {

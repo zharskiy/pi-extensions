@@ -101,9 +101,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
 
   const run = async (agent: string, task: string) => {
     const result = await turn(() =>
-      host
-        .tool<RunAgentParams, RunAgentDetails>("run_agent")
-        .execute({ agents: [{ agent, task }] }, { update: () => {} }),
+      host.tool<RunAgentParams, RunAgentDetails>("run_agent").execute({ agents: [{ agent, task }] }, {}),
     );
 
     if (result.isError || !result.details) {

@@ -8,12 +8,7 @@ import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
 import type { AgentRecord, AgentRegistry, AgentState } from "../../../core/model/agent-record.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
-import {
-  createPendingCalls,
-  type RunAgentDetails,
-  type RunAgentParams,
-  runAgentTool,
-} from "../../../core/run-agent/tools.ts";
+import { type RunAgentDetails, type RunAgentParams, runAgentTool } from "../../../core/run-agent/tools.ts";
 import { pendingRows } from "../../../ui/run-agent/pending-rows.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
 import { createHarness, tempDir } from "../../support/subagents-harness.ts";
@@ -47,7 +42,6 @@ const WIDE = 79;
 const toolDeps = (runner: Runner, registry: AgentRegistry) => ({
   runner,
   registry,
-  calls: createPendingCalls(),
   rows: pendingRows({ registry, hints: { manage: () => true, list: () => true, expandKey: () => "ctrl+o" } }),
 });
 
@@ -76,7 +70,7 @@ type Harness = ReturnType<typeof setup>;
 const launched = async (harness: Harness, agents: Agent[]) => {
   harness.host.idle = false;
 
-  const pending = harness.tool.execute({ agents }, { update: () => {} });
+  const pending = harness.tool.execute({ agents }, {});
 
   await flushMicrotasks();
 
@@ -87,7 +81,6 @@ const resolve = (render: ToolRender | undefined, width = WIDE) =>
   typeof render === "function" ? render(width) : (render ?? "");
 
 type RenderState = {
-  isPartial?: boolean;
   expanded?: boolean;
   isError?: boolean;
   aborted?: boolean;
@@ -189,17 +182,8 @@ const batch = (specs: Spec[], options: { callerId?: string } = {}) => {
     })),
   };
   const params = { agents: specs.map((spec) => item(spec.agent, spec.description)) };
-  const draw = (width = WIDE, options: { wait?: boolean; state?: RenderState; theme?: ThemeLike } = {}) =>
-    lines(
-      renderWith(
-        tool,
-        { text: "model text", details },
-        { ...params, wait: options.wait },
-        options.state,
-        options.theme,
-        width,
-      ),
-    );
+  const draw = (width = WIDE, options: { state?: RenderState; theme?: ThemeLike } = {}) =>
+    lines(renderWith(tool, { text: "model text", details }, params, options.state, options.theme, width));
 
   return { harness, registry, records, draw };
 };
@@ -253,7 +237,7 @@ afterEach(() => {
 describe("run_agent block samples", () => {
   it("draws a running background batch with static words and the hint", () => {
     expect(batch(SAMPLE_RUNNING).draw()).toEqual([
-      "◌ 3 background agents (↓ to manage, ← to list)",
+      "◌ 3 agents (↓ to manage, ← to list)",
       "  ↳ ◌ scout  Map the auth module · model-a:low",
       "      Running",
       "    ◌ worker  Fix the login redirect · model-a:low",
@@ -265,39 +249,13 @@ describe("run_agent block samples", () => {
 
   it("draws a closed batch with the batch receipt and each agent's outcome", () => {
     expect(batch(SAMPLE_CLOSED).draw()).toEqual([
-      "✗ 3 background agents · 4m 2s · 35 calls · 64.7k tokens · $0.25",
+      "✗ 3 agents · 4m 2s · 35 calls · 64.7k tokens · $0.25",
       "  ↳ ✓ scout  Map the auth module · model-a:low",
       "      1m 5s · 4 calls · 12.3k tokens · $0.04",
       "    ✗ worker  Fix the login redirect · model-a:low",
       "      tests failed twice · 2m 10s · 31 calls · 52.4k tokens · $0.21",
       "    ⊘ reviewer  Review the diff of PR 5 · model-b:high",
       "      Stopped · 3s · 0 calls · worktree removed",
-    ]);
-  });
-
-  it("draws a waiting batch with live figures", () => {
-    const { draw } = batch([
-      {
-        agent: "scout",
-        description: "Find callers of login",
-        start: NOW - 42_000,
-        values: { toolCalls: 9, tokens: 6_100, cost: 0.01, activity: "grep" },
-      },
-      {
-        agent: "scout",
-        description: "Map the auth module",
-        state: "done",
-        end: 65_000,
-        values: { chainIndex: 2, toolCalls: 4, tokens: 12_300, cost: 0.04 },
-      },
-    ]);
-
-    expect(draw(WIDE, { wait: true, state: { isPartial: true } })).toEqual([
-      "◌ 2 scout agents",
-      "  ↳ ◌ scout  Find callers of login · model-a:low",
-      "      Elapsed 42s · 9 calls · 6.1k tokens · $0.01",
-      "    ✓ scout #2  Map the auth module · model-a:low",
-      "      1m 5s · 4 calls · 12.3k tokens · $0.04",
     ]);
   });
 
@@ -314,7 +272,7 @@ describe("run_agent block samples", () => {
     ]);
 
     expect(draw()).toEqual([
-      "✗ 1 background worker agent · 2m 10s · 31 calls · 52.4k tokens · $0.21",
+      "✗ 1 worker agent · 2m 10s · 31 calls · 52.4k tokens · $0.21",
       "  ↳ ✗ worker  Fix the login redirect · model-a:low",
       "      2m 10s · 31 calls · 52.4k tokens · $0.21",
       "      line 1 of the failure",
@@ -367,12 +325,12 @@ describe("run_agent block samples", () => {
     ]);
   });
 
-  it("draws an interrupted waiting call as stopped", () => {
+  it("draws a call aborted before it started as stopped", () => {
     const harness = setup();
     const scouts = [item("scout", "a"), item("scout", "b"), item("scout", "c")];
     const result = { isError: true, text: "Operation aborted" };
 
-    expect(lines(renderResult(harness, result, { agents: scouts, wait: true }, { aborted: true }))).toEqual([
+    expect(lines(renderResult(harness, result, { agents: scouts }, { aborted: true }))).toEqual([
       "⊘ 3 scout agents · stopped",
     ]);
   });
@@ -394,7 +352,7 @@ describe("run_agent block samples", () => {
     };
 
     expect(lines(renderWith(tool, { text: "Started batch", details }, { agents: THREE }))).toEqual([
-      "◌ 2 background agents",
+      "◌ 2 agents",
       "  ↳ » scout  Map the auth module · model-a:low",
       "      Status unavailable · /agents scout-ab12",
       "    » worker  Fix the login redirect",
@@ -404,7 +362,7 @@ describe("run_agent block samples", () => {
 
   it("draws the 40-column samples", () => {
     expect(batch(SAMPLE_RUNNING).draw(39)).toEqual([
-      "◌ 3 background agents (↓ to manage)",
+      "◌ 3 agents (↓ to manage, ← to list)",
       "  ↳ ◌ scout  Map the auth module",
       "      Running",
       "    ◌ worker  Fix the login redirect",
@@ -413,7 +371,7 @@ describe("run_agent block samples", () => {
       "      Starting",
     ]);
     expect(batch(SAMPLE_CLOSED).draw(39)).toEqual([
-      "✗ 3 background agents · 4m 2s",
+      "✗ 3 agents · 4m 2s · 64.7k tokens",
       "  ↳ ✓ scout  Map the auth module",
       "      1m 5s · 4 calls · 12.3k tokens",
       "    ✗ worker  Fix the login redirect",
@@ -437,20 +395,18 @@ describe("run_agent block header", () => {
     const head = (specs: Spec[], state?: RenderState) => batch(specs).draw(WIDE, { state })[0];
 
     expect(head([closed("done"), { agent: "scout", description: "b" }])).toMatch(/^◌ /);
-    expect(head([closed("done"), closed("failed")])).toMatch(/^✗ 2 background scout agents · 1s · 2 calls$/);
+    expect(head([closed("done"), closed("failed")])).toMatch(/^✗ 2 scout agents · 1s · 2 calls$/);
     expect(head([closed("stopped"), closed("handoff")])).toMatch(/^⊘ /);
-    expect(head([closed("done"), closed("stopped")])).toBe(
-      "✓ 2 background scout agents · 1 stopped · 1s · 2 calls",
-    );
+    expect(head([closed("done"), closed("stopped")])).toBe("✓ 2 scout agents · 1 stopped · 1s · 2 calls");
     expect(head([closed("done")], { isError: true })).toMatch(/^✗ /);
   });
 
   it("drops ← to list first, then the whole hint, as the width shrinks", () => {
     const { draw } = batch(SAMPLE_RUNNING);
 
-    expect(draw(46)[0]).toBe("◌ 3 background agents (↓ to manage, ← to list)");
-    expect(draw(45)[0]).toBe("◌ 3 background agents (↓ to manage)");
-    expect(draw(34)[0]).toBe("◌ 3 background agents");
+    expect(draw(35)[0]).toBe("◌ 3 agents (↓ to manage, ← to list)");
+    expect(draw(34)[0]).toBe("◌ 3 agents (↓ to manage)");
+    expect(draw(23)[0]).toBe("◌ 3 agents");
   });
 
   it("names only the keys of the enabled panel and list plugins", async () => {
@@ -463,24 +419,21 @@ describe("run_agent block header", () => {
       )[0];
     };
 
-    expect(await header([])).toBe("◌ 3 background agents (↓ to manage, ← to list)");
-    expect(await header(["agent-view"])).toBe("◌ 3 background agents (↓ to manage)");
-    expect(await header(["agent-panel"])).toBe("◌ 3 background agents (← to list)");
-    expect(await header(["agent-panel"], 30)).toBe("◌ 3 background agents");
-    expect(await header(["agent-panel", "agent-view"])).toBe("◌ 3 background agents");
+    expect(await header([])).toBe("◌ 3 agents (↓ to manage, ← to list)");
+    expect(await header(["agent-view"])).toBe("◌ 3 agents (↓ to manage)");
+    expect(await header(["agent-panel"])).toBe("◌ 3 agents (← to list)");
+    expect(await header(["agent-panel"], 19)).toBe("◌ 3 agents");
+    expect(await header(["agent-panel", "agent-view"])).toBe("◌ 3 agents");
   });
 
   it("names the agent when the batch shares one", () => {
     expect(batch([{ agent: "scout", description: "a" }]).draw()[0]).toBe(
-      "◌ 1 background scout agent (↓ to manage, ← to list)",
-    );
-    expect(batch([{ agent: "scout", description: "a" }]).draw(WIDE, { wait: true })[0]).toBe(
-      "◌ 1 scout agent",
+      "◌ 1 scout agent (↓ to manage, ← to list)",
     );
   });
 
   it("draws no hint for a batch an agent started", () => {
-    expect(batch(SAMPLE_RUNNING, { callerId: "general-1" }).draw()[0]).toBe("◌ 3 background agents");
+    expect(batch(SAMPLE_RUNNING, { callerId: "general-1" }).draw()[0]).toBe("◌ 3 agents");
   });
 
   it("points Status unavailable at /agents only while the list plugin is on", () => {
@@ -511,11 +464,10 @@ describe("run_agent block rows", () => {
     expect(harness.tool.renderShell).toBe("row");
   });
 
-  it("shows Stopping without a ticking time in the background and with it while waiting", () => {
+  it("shows Stopping without a ticking time", () => {
     const { draw } = batch([{ agent: "scout", description: "a", state: "grace", start: NOW - 5_000 }]);
 
     expect(draw()[2]).toBe("      Stopping");
-    expect(draw(WIDE, { wait: true })[2]).toBe("      Stopping · Elapsed 5s");
   });
 
   it("appends the worktree outcome to closed rows", () => {
@@ -620,7 +572,7 @@ describe("run_agent block colours", () => {
     const running = batch([SAMPLE_RUNNING[0]]).draw(400, { theme: tagged });
 
     expect(running[0]).toBe(
-      "<dim>◌</dim> <b><text>1</text></b> <text>background scout agent</text> <muted>(</muted><dim>↓</dim> <muted>to manage</muted><muted>, </muted><dim>←</dim> <muted>to list</muted><muted>)</muted>",
+      "<dim>◌</dim> <b><text>1</text></b> <text>scout agent</text> <muted>(</muted><dim>↓</dim> <muted>to manage</muted><muted>, </muted><dim>←</dim> <muted>to list</muted><muted>)</muted>",
     );
     expect(running[1]).toBe(
       "  <dim>↳</dim> <dim>◌</dim> <b><text>scout</text></b>  <muted>Map the auth module</muted><dim> · model-a:low</dim>",
@@ -643,7 +595,7 @@ describe("run_agent block invalidation", () => {
 
     harness.host.idle = false;
 
-    const result = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
+    const result = await main.execute({ agents: [THREE[0]] }, {});
 
     await flushMicrotasks();
 
@@ -684,8 +636,8 @@ describe("run_agent block invalidation", () => {
 
     harness.host.idle = false;
 
-    const first = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
-    const second = await main.execute({ agents: [THREE[1]] }, { update: () => {} });
+    const first = await main.execute({ agents: [THREE[0]] }, {});
+    const second = await main.execute({ agents: [THREE[1]] }, {});
 
     await flushMicrotasks();
 
@@ -727,8 +679,8 @@ describe("run_agent block invalidation", () => {
 
     harness.host.idle = false;
 
-    const first = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
-    const second = await main.execute({ agents: [THREE[1]] }, { update: () => {} });
+    const first = await main.execute({ agents: [THREE[0]] }, {});
+    const second = await main.execute({ agents: [THREE[1]] }, {});
 
     await flushMicrotasks();
 

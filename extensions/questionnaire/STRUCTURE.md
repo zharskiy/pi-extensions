@@ -4,7 +4,7 @@
 - `api/extension.ts`: `createManagedExtension` with namespace `pi-questionnaire` and `questionnairePlugin`.
 - `api/plugin.ts`: `questionnairePlugin` and `createQuestionnaire`; registers the tool, its `execute` (form, awaiting-input signal, result) and renderers.
 - `core/questionnaire.ts`: `QUESTIONNAIRE_SOURCE`, `questionnaireDefinition` (name, prompt texts, parameter schema, execution mode), `checkCall`, `awaitingInput`.
-- `core/questions.ts`: question, answer and details types, normalising, validation, result text, error results (always given the batch's questions).
+- `core/questions.ts`: question, answer and details types, normalisation, validation, result text, error results (always given the batch's questions).
 - `ui/form.ts`: pure form state and key handling (`initialForm`, `pressKey`, `answerText`).
 - `ui/render.ts`: `renderForm` line builders over the theme.
 - `ui/view.ts`: `createFormView`; joins form state, text input and clock.

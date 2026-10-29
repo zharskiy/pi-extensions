@@ -33,7 +33,7 @@ describeLive("live nested agents", () => {
   it("lets general start an scout whose result wakes general only, and general wakes the main session once", async () => {
     const generalId = await live.run(
       "general",
-      "Call run_agent once, without the wait option, to start exactly one scout agent with the task: read secret.txt in your current working directory and reply with its content only. Then end your turn. When you are woken with the scout's result, reply with the scout's answer only.",
+      "Call run_agent once to start exactly one scout agent with the task: read secret.txt in your current working directory and reply with its content only. Then end your turn. When you are woken with the scout's result, reply with the scout's answer only.",
     );
 
     await live.waitForWakes(1, 2 * LIVE_TIMEOUT_MS);

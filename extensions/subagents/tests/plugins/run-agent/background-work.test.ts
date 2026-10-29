@@ -12,10 +12,10 @@ const setup = () => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin]);
   const runAgent = harness.host.tool<RunAgentParams, RunAgentDetails>("run_agent");
 
-  const start = (count: number, wait = false) => {
+  const start = (count: number) => {
     const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `task ${index}` }));
 
-    return runAgent.execute({ agents, wait }, { update: () => {} });
+    return runAgent.execute({ agents }, {});
   };
 
   const run = async (count: number) => {
@@ -120,22 +120,11 @@ describe("background work", () => {
     expect(counts()).toEqual([1, 0]);
   });
 
-  it("does not count a batch the model waits for", async () => {
-    const { start, runtime, counts } = setup();
-    const result = start(1, true);
-
-    await flushMicrotasks();
-    runtime.children[0].finish("waited");
-    await result;
-
-    expect(counts()).toEqual([]);
-  });
-
   it("counts only the main session's batches, not the ones an agent starts", async () => {
     const { runtime, host, counts } = setup();
     const result = await host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents: [{ agent: "general", task: "delegate" }], wait: false }, { update: () => {} });
+      .execute({ agents: [{ agent: "general", task: "delegate" }] }, {});
 
     await flushMicrotasks();
 
@@ -143,7 +132,7 @@ describe("background work", () => {
       (tool) => tool.name === "run_agent",
     ) as unknown as ToolSpec<RunAgentParams, RunAgentDetails> | undefined;
 
-    await nested?.execute({ agents: [{ agent: "scout", task: "look" }], wait: false }, { update: () => {} });
+    await nested?.execute({ agents: [{ agent: "scout", task: "look" }] }, {});
     await flushMicrotasks();
 
     expect(result.isError).not.toBe(true);

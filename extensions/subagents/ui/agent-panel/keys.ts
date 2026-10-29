@@ -93,7 +93,7 @@ export const panelKeyHandler =
   (key) => {
     const rows = shownRows(actions);
     const index = selectedIndex(rows, actions.state);
-    const binding = key.name === "other" && key.char ? chars[key.char] : names[key.name];
+    const binding = key.name === "other" && key.shortcut ? chars[key.shortcut] : names[key.name];
 
     if (index < 0 || !binding) {
       deselect(actions);

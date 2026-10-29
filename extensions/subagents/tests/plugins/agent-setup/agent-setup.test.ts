@@ -111,6 +111,7 @@ describe("/agents setup form", () => {
     expect(noticesOf("info")).toEqual([
       `pi-subagents: saved general (model, thinking, skills) to ${projectFile}; ${APPLIES}`,
     ]);
+    expect(existsSync(join(dirname(projectFile), ".gitignore"))).toBe(false);
   });
 
   it("shows each skill's description on its row and two rows of the one under the cursor", async () => {
@@ -329,7 +330,7 @@ const autosetup = (options: { trusted?: boolean; seeded?: boolean } = {}) => {
   runtime.skillPaths = { asker };
 
   const propose = (params: ProposalParams) =>
-    host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, { update: () => {} });
+    host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, {});
 
   const awaiting = () =>
     host.published
@@ -612,6 +613,7 @@ describe("/agents setup one-line form", () => {
       agents: { reviewer: { model: "fake/model", thinking: "low", skills: ["docs", "search"] } },
     });
     expect(definition("reviewer")).toMatchObject({ model: "fake/model", thinking: "low" });
+    expect(readFileSync(join(dirname(projectFile), ".gitignore"), "utf8")).toBe("*\n");
   });
 
   it("reports bad requests and writes nothing", async () => {

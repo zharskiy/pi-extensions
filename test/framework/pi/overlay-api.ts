@@ -15,7 +15,7 @@ type OverlayOptions = { rows?: number; theme?: ThemeLike; host?: Pick<FakeHost, 
 
 export const createOverlayApi = ({ rows = 200, theme = plainTheme, host }: OverlayOptions = {}) => {
   const state = { closed: false, renders: 0 };
-  const transcripts: { owner?: () => string | undefined }[] = [];
+  const transcripts: TranscriptPane[] = [];
 
   const requestRender = () => {
     state.renders += 1;
@@ -29,13 +29,14 @@ export const createOverlayApi = ({ rows = 200, theme = plainTheme, host }: Overl
     },
     requestRender,
     toolsKey: "ctrl+o",
-    createTranscript: (options): TranscriptPane => {
-      transcripts.push(options ?? {});
-
-      return createTranscriptPane({ requestRender } as never, "/repo", {
+    createTranscript: (): TranscriptPane => {
+      const pane = createTranscriptPane({ requestRender } as never, "/repo", {
         tools: [...(host?.tools.values() ?? [])] as AnyToolSpec[],
-        owner: options?.owner,
       });
+
+      transcripts.push(pane);
+
+      return pane;
     },
     createScroll: () => createScrollPane(requestRender),
   };

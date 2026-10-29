@@ -37,7 +37,7 @@ export type OverlayApi = {
   close(): void;
   requestRender(): void;
   toolsKey: string;
-  createTranscript(options?: { owner?: () => string | undefined }): TranscriptPane;
+  createTranscript(): TranscriptPane;
   createScroll(): ScrollPane;
 };
 

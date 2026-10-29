@@ -143,7 +143,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const scroll = api.createScroll();
   let loadedAt = Date.now();
   let data = deps.load();
-  const transcript = api.createTranscript({ owner: () => data.record.id });
+  const transcript = api.createTranscript();
   let toolsExpanded = false;
   let requestExpanded = false;
   let pendingTop = false;
@@ -376,7 +376,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const handleKey = (key: KeyPress) => {
     notice = undefined;
 
-    const action = key.name === "other" && key.char ? chars[key.char] : actions[key.name];
+    const action = key.name === "other" && key.shortcut ? chars[key.shortcut] : actions[key.name];
 
     action?.();
   };

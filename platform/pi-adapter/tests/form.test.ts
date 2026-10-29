@@ -235,4 +235,30 @@ describe("showForm", () => {
 
     expect(submitted).toEqual(["hi", "again"]);
   });
+
+  it("text inputs type Cyrillic letters as they are, not as their QWERTY keys", async () => {
+    const { shown, showForm } = formContext();
+    const submitted: string[] = [];
+
+    void showForm<string>((form) => {
+      const created = form.createTextInput();
+
+      created.onSubmit((text) => submitted.push(text));
+
+      return {
+        render: (width) => created.render(width),
+        handleKey: (key) => created.handleKey(key),
+      };
+    });
+
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+
+    const entry = shown[0] as Shown;
+
+    ["ч", "Ч", "\r"].forEach((data) => {
+      entry.component.handleInput(data);
+    });
+
+    expect(submitted).toEqual(["чЧ"]);
+  });
 });

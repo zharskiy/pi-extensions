@@ -2,11 +2,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike } from "../../../../../platform/pi-adapter/index.ts";
 import {
+  char,
   createFakeAgentRuntime,
   createFakeHost,
   FAKE_FOOTER_KEY,
   plainTheme,
 } from "../../../../../test/framework/index.ts";
+import { typed } from "../../../../../test/framework/pi/index.ts";
 import { agentPanelPlugin } from "../../../api/plugins/agent-panel.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import type { AgentRunner, AgentState, NewAgent, ServiceMap } from "../../../core/model/agent-record.ts";
@@ -62,7 +64,7 @@ const setup = (options: { services?: boolean; settings?: Partial<Settings> } = {
   const lines = (width = 80, theme: ThemeLike = plainTheme) => widget()?.(width, theme) ?? [];
   const key = (name: "up" | "down" | "left" | "right" | "enter" | "escape" | "tab") =>
     host.pressEditorKey({ name });
-  const type = (char: string) => host.pressEditorKey({ name: "other", char });
+  const type = (value: string) => host.pressEditorKey(char(value));
 
   return { ...harness, ...stub, registry, newAgent, running, widget, lines, key, type };
 };
@@ -399,6 +401,17 @@ describe("agent panel", () => {
 
     expect(panel.widget()).toBeUndefined();
     expect(panel.host.editorCapture).toBeUndefined();
+  });
+
+  it("stops a running agent with the x key in a Cyrillic layout", () => {
+    const panel = setup();
+    const record = panel.newAgent();
+
+    panel.running(record.id);
+    panel.host.pressEmptyDown();
+
+    expect(panel.host.pressEditorKey(typed("ч"))).toBe("consumed");
+    expect(panel.stop).toHaveBeenCalledWith(record.id);
   });
 
   it("x keeps the selection on a running row it stops", () => {

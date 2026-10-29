@@ -67,7 +67,7 @@ const setup = async (overrides = {}, agent = "scout") => {
 
   await harness.host
     .tool<RunAgentParams, unknown>("run_agent")
-    .execute({ agents: [{ agent, task: "map the auth flow" }] }, { update: () => {} });
+    .execute({ agents: [{ agent, task: "map the auth flow" }] }, {});
   await flushMicrotasks();
   harness.host.settle();
 
@@ -211,9 +211,7 @@ describe("successor chain", () => {
     expect(child.spec.tools).not.toContain("write");
     expect(child.spec.tools).not.toContain("bash");
 
-    const result = await handoffToolOf(child).execute({ content: handoffText("partial") } as never, {
-      update: () => {},
-    });
+    const result = await handoffToolOf(child).execute({ content: handoffText("partial") } as never, {});
 
     expect(result).toMatchObject({
       text: "Error: no handoff was requested; continue your task.",
@@ -228,9 +226,7 @@ describe("successor chain", () => {
 
     await requestHandoff(first.id);
 
-    const result = await handoffToolOf(child).execute({ content: handoffText("partial") } as never, {
-      update: () => {},
-    });
+    const result = await handoffToolOf(child).execute({ content: handoffText("partial") } as never, {});
 
     expect(result).toEqual({ text: `Handoff saved at ${first.handoffPath}` });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
@@ -262,7 +258,7 @@ describe("successor chain", () => {
 
     await requestHandoff(first.id);
 
-    const result = await handoffToolOf(child).execute({ content: invalid } as never, { update: () => {} });
+    const result = await handoffToolOf(child).execute({ content: invalid } as never, {});
 
     expect(result).toEqual({
       text: `Handoff saved at ${first.handoffPath} but it is invalid: missing sections: Evidence, Blocker, Next, Files touched. Fix the sections and call handoff again.`,
@@ -437,7 +433,7 @@ describe("successor chain", () => {
     const second = (await handOff(first.id)) as string;
     const status = host.tool<AgentStatusParams, AgentStatusDetails>("agent_status");
 
-    const byPredecessor = await status.execute({ ids: [first.id] }, { update: () => {} });
+    const byPredecessor = await status.execute({ ids: [first.id] }, {});
 
     expect(byPredecessor.details?.agents[0]).toMatchObject({
       id: second,
@@ -449,7 +445,7 @@ describe("successor chain", () => {
     expect(byPredecessor.text).toContain(`${first.id} → ${second} (scout`);
     expect(byPredecessor.text).toContain(`chain: link 2, continues ${first.id}`);
 
-    const all = await status.execute({}, { update: () => {} });
+    const all = await status.execute({}, {});
 
     expect(all.details?.agents.map((agent) => agent.id)).toEqual([second]);
   });
@@ -459,9 +455,7 @@ describe("successor chain", () => {
     const child = runtime.child(first.id);
     const runAgent = child.spec.customTools?.find((tool) => tool.name === "run_agent");
 
-    await runAgent?.execute({ agents: [{ agent: "scout", task: "find the token store" }] } as never, {
-      update: () => {},
-    });
+    await runAgent?.execute({ agents: [{ agent: "scout", task: "find the token store" }] } as never, {});
     await flushMicrotasks();
 
     const scout = registry.list()[1];
@@ -484,37 +478,27 @@ describe("successor chain", () => {
     expect(task).toContain("the token store is src/store.ts");
   });
 
-  it("resolves a waiting child caller once with the terminal records", async () => {
-    const { first, current, handOff, runner, runtime } = await setup({}, "general");
+  it("wakes a child caller once with the chain's terminal result", async () => {
+    const { first, handOff, runner, runtime } = await setup({}, "general");
+    const caller = runtime.child(first.id);
 
     const started = runner.startBatch([{ agent: "scout", task: "find the token store" }], {
       callerId: first.id,
-      wait: true,
     });
+    await flushMicrotasks();
+    caller.finish("Started batch, waiting.");
     await flushMicrotasks();
 
     const [link] = started.records;
-    let resolutions = 0;
-
-    const settled = started.settled.then((records) => {
-      resolutions += 1;
-      return records;
-    });
-
     const second = (await handOff(link.id)) as string;
 
-    expect(resolutions).toBe(0);
+    expect(caller.wakes).toEqual([]);
 
     runtime.child(second).finish("token store is in src/store.ts");
     await flushMicrotasks();
 
-    const records = await settled;
-
-    expect(resolutions).toBe(1);
-    expect(records.map((record) => record.id)).toEqual([second]);
-    expect(records[0].state).toBe("done");
-    expect(runner.batchText(started.batchId)).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(runtime.child(first.id).wakes).toEqual([]);
-    expect(current(first.id).state).toBe("running");
+    expect(caller.wakes).toHaveLength(1);
+    expect(caller.wakes[0]).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(caller.wakes[0]).toContain("token store is in src/store.ts");
   });
 });
