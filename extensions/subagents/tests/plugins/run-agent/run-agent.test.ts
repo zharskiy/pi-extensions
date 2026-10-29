@@ -20,7 +20,7 @@ const setup = (overrides = {}) => {
   const run = async (agents: RunAgentParams["agents"]) => {
     harness.host.idle = false;
 
-    const result = await runAgent.execute({ agents }, { update: () => {} });
+    const result = await runAgent.execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -300,7 +300,7 @@ describe("run_agent batches", () => {
     await expect(
       host
         .tool<RunAgentParams, RunAgentDetails>("run_agent")
-        .execute({ agents: tasks(1) }, { signal: controller.signal, update: () => {} }),
+        .execute({ agents: tasks(1) }, { signal: controller.signal }),
     ).rejects.toThrow("aborted; nothing was started");
     expect(runtime.children).toEqual([]);
     expect(registry.list()).toEqual([]);
@@ -310,9 +310,7 @@ describe("run_agent batches", () => {
     const { host, runtime } = setup();
     const runAgent = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
 
-    await expect(
-      runAgent.execute({ agents: [{ agent: "nope", task: "x" }] }, { update: () => {} }),
-    ).rejects.toThrow(
+    await expect(runAgent.execute({ agents: [{ agent: "nope", task: "x" }] }, {})).rejects.toThrow(
       /unknown agent\(s\): nope. Available: editor, fetch, general, image, implementer, planner, reviewer, scout, shell, verifier/,
     );
     expect(runtime.children).toEqual([]);

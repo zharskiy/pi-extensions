@@ -29,11 +29,11 @@ type FetchTool = {
   executionMode?: string;
   execute(
     params: { url: string },
-    ctx: { update(text: string): void },
+    ctx: { signal?: AbortSignal },
   ): Promise<{ text: string; isError?: boolean }>;
 };
 
-const run = (tool: FetchTool, url: string) => tool.execute({ url }, { update: () => {} });
+const run = (tool: FetchTool, url: string) => tool.execute({ url }, {});
 
 afterEach(() => {
   vi.unstubAllGlobals();

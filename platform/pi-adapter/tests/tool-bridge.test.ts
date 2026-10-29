@@ -32,7 +32,7 @@ type Renderers = {
     id: string,
     params: unknown,
     signal: AbortSignal | undefined,
-    onUpdate: (update: unknown) => void,
+    onUpdate: unknown,
     ctx: unknown,
   ): Promise<unknown>;
 };
@@ -112,25 +112,6 @@ describe("toPiTool render state", () => {
       [false, false],
     ]);
     expect(seen[0]?.[0].text).toBe("bad");
-  });
-
-  it("forwards update details", async () => {
-    const updates: unknown[] = [];
-    const tool = piTool<Record<string, never>, { step: number }>({
-      ...baseSpec,
-      execute: async (_params, ctx) => {
-        ctx.update("half", { step: 1 });
-        ctx.update("plain");
-        return { text: "done" };
-      },
-    });
-
-    await tool.execute("id", {}, undefined, (update) => updates.push(update), {});
-
-    expect(updates).toEqual([
-      { content: [{ type: "text", text: "half" }], details: { step: 1 } },
-      { content: [{ type: "text", text: "plain" }], details: undefined },
-    ]);
   });
 
   it("keeps string-only renderers working", () => {

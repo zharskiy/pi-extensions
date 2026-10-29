@@ -85,7 +85,7 @@ const setup = (cwd: string, overrides: Partial<Settings> = {}) => {
   const start = (agent = "isolated") =>
     harness.host
       .tool<RunAgentParams, unknown>("run_agent")
-      .execute({ agents: [{ agent, task: "rename app" }] }, { update: () => {} });
+      .execute({ agents: [{ agent, task: "rename app" }] }, {});
 
   const run = async (agent = "isolated") => {
     await start(agent);
@@ -258,7 +258,7 @@ describe("worktree agents", () => {
           { agent: "isolated", task: "b" },
         ],
       },
-      { update: () => {} },
+      {},
     );
     await vi.waitFor(() => expect(runtime.children).toHaveLength(2));
     host.settle();

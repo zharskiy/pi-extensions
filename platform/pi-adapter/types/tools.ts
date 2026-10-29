@@ -28,10 +28,7 @@ export type ToolSpec<P = Record<string, unknown>, D = unknown> = {
   executionMode?: "sequential" | "parallel";
   modelOnly?: boolean;
   renderShell?: "default" | "row";
-  execute(
-    params: P,
-    ctx: { signal?: AbortSignal; update(text: string, details?: D): void },
-  ): Promise<ToolResult<D>>;
+  execute(params: P, ctx: { signal?: AbortSignal }): Promise<ToolResult<D>>;
   renderCall?(params: P, theme: ThemeLike, state: ToolRenderState): ToolRender;
   renderResult?(result: ToolResult<D>, state: ToolRenderState, theme: ThemeLike): ToolRender;
 };

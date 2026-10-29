@@ -15,7 +15,7 @@ const setup = () => {
   const start = (count: number) => {
     const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `task ${index}` }));
 
-    return runAgent.execute({ agents }, { update: () => {} });
+    return runAgent.execute({ agents }, {});
   };
 
   const run = async (count: number) => {
@@ -124,7 +124,7 @@ describe("background work", () => {
     const { runtime, host, counts } = setup();
     const result = await host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents: [{ agent: "general", task: "delegate" }] }, { update: () => {} });
+      .execute({ agents: [{ agent: "general", task: "delegate" }] }, {});
 
     await flushMicrotasks();
 
@@ -132,7 +132,7 @@ describe("background work", () => {
       (tool) => tool.name === "run_agent",
     ) as unknown as ToolSpec<RunAgentParams, RunAgentDetails> | undefined;
 
-    await nested?.execute({ agents: [{ agent: "scout", task: "look" }] }, { update: () => {} });
+    await nested?.execute({ agents: [{ agent: "scout", task: "look" }] }, {});
     await flushMicrotasks();
 
     expect(result.isError).not.toBe(true);

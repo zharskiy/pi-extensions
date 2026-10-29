@@ -70,7 +70,7 @@ type Harness = ReturnType<typeof setup>;
 const launched = async (harness: Harness, agents: Agent[]) => {
   harness.host.idle = false;
 
-  const pending = harness.tool.execute({ agents }, { update: () => {} });
+  const pending = harness.tool.execute({ agents }, {});
 
   await flushMicrotasks();
 
@@ -598,7 +598,7 @@ describe("run_agent block invalidation", () => {
 
     harness.host.idle = false;
 
-    const result = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
+    const result = await main.execute({ agents: [THREE[0]] }, {});
 
     await flushMicrotasks();
 
@@ -639,8 +639,8 @@ describe("run_agent block invalidation", () => {
 
     harness.host.idle = false;
 
-    const first = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
-    const second = await main.execute({ agents: [THREE[1]] }, { update: () => {} });
+    const first = await main.execute({ agents: [THREE[0]] }, {});
+    const second = await main.execute({ agents: [THREE[1]] }, {});
 
     await flushMicrotasks();
 
@@ -682,8 +682,8 @@ describe("run_agent block invalidation", () => {
 
     harness.host.idle = false;
 
-    const first = await main.execute({ agents: [THREE[0]] }, { update: () => {} });
-    const second = await main.execute({ agents: [THREE[1]] }, { update: () => {} });
+    const first = await main.execute({ agents: [THREE[0]] }, {});
+    const second = await main.execute({ agents: [THREE[1]] }, {});
 
     await flushMicrotasks();
 

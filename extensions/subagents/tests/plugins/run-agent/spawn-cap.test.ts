@@ -33,7 +33,7 @@ const setup = async (overrides = {}) => {
 
     const result = await harness.host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents }, { update: () => {} });
+      .execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -82,9 +82,9 @@ describe("per-agent spawn cap", () => {
     const { lead, runtime, nested } = await setup({ maxChildrenPerAgent: 1 });
     const tool = runtime.child(lead.id).spec.customTools?.find((spec) => spec.name === "run_agent");
 
-    await expect(
-      tool?.execute({ agents: scouts(2) } as never, { update: () => {} } as never),
-    ).rejects.toThrow(refusal(lead.id, 1, 0));
+    await expect(tool?.execute({ agents: scouts(2) } as never, {} as never)).rejects.toThrow(
+      refusal(lead.id, 1, 0),
+    );
     expect(nested()).toEqual([]);
   });
 

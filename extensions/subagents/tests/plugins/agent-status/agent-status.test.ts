@@ -26,7 +26,7 @@ describe("agent_status", () => {
   it("names the model next to the agent", async () => {
     const harness = setup();
 
-    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "one" }] }, { update: () => {} });
+    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "one" }] }, {});
     await flushMicrotasks();
 
     const registry = harness.services.require("registry");
@@ -45,7 +45,7 @@ describe("agent_status", () => {
           { agent: "reviewer", task: "two" },
         ],
       },
-      { update: () => {} },
+      {},
     );
     await flushMicrotasks();
 
@@ -62,10 +62,7 @@ describe("agent_status", () => {
     child.usage = usageTotals(0.01, 1_000);
     child.turn({ tokens: 30_000, window: 200_000, percent: 15 });
 
-    const result = await harness.status.execute(
-      { ids: [first.id, second.id, "ghost-0000"] },
-      { update: () => {} },
-    );
+    const result = await harness.status.execute({ ids: [first.id, second.id, "ghost-0000"] }, {});
     const snapshot = result.details?.agents[0];
 
     expect(snapshot).toMatchObject({
@@ -111,7 +108,7 @@ describe("agent_status", () => {
     harness.host.settle();
     child.finish("final answer");
 
-    const after = await harness.status.execute({ ids: [first.id] }, { update: () => {} });
+    const after = await harness.status.execute({ ids: [first.id] }, {});
 
     expect(after.text).toContain(`result: ${harness.services.require("registry").get(first.id)?.resultPath}`);
   });
@@ -121,7 +118,7 @@ describe("agent_status", () => {
 
     const harness = setup();
 
-    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "x" }] }, { update: () => {} });
+    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "x" }] }, {});
     await flushMicrotasks();
 
     const [record] = harness.services.require("registry").list();
@@ -129,7 +126,7 @@ describe("agent_status", () => {
     await harness.services.require("runner").stop(record.id);
     vi.advanceTimersByTime(15_000);
 
-    const result = await harness.status.execute({ ids: [record.id] }, { update: () => {} });
+    const result = await harness.status.execute({ ids: [record.id] }, {});
 
     expect(result.details?.agents[0]).toMatchObject({ state: "grace", graceSecondsLeft: 45 });
     expect(result.text).toContain(
@@ -162,7 +159,7 @@ describe("agent_status", () => {
     registry.update(first.id, { successorId: second.id });
     registry.update(second.id, { predecessorId: first.id });
 
-    const result = await harness.status.execute({ ids: [first.id, second.id] }, { update: () => {} });
+    const result = await harness.status.execute({ ids: [first.id, second.id] }, {});
 
     expect(result.details?.agents.map((agent) => agent.id)).toEqual([second.id]);
     expect(result.text.split("\n")[0]).toMatch(new RegExp(`^${first.id} → ${second.id} `));
@@ -179,13 +176,13 @@ describe("agent_status", () => {
 
   it("lists every agent when no ids are given", async () => {
     const harness = setup();
-    const empty = await harness.status.execute({}, { update: () => {} });
+    const empty = await harness.status.execute({}, {});
 
     expect(empty.text).toBe("No agents in this session.");
 
-    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "x" }] }, { update: () => {} });
+    await harness.runAgent.execute({ agents: [{ agent: "scout", task: "x" }] }, {});
 
-    const all = await harness.status.execute({}, { update: () => {} });
+    const all = await harness.status.execute({}, {});
 
     expect(all.details?.agents).toHaveLength(1);
   });

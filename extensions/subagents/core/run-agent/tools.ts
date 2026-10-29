@@ -202,8 +202,6 @@ export const runAgentTool = (
       })),
     };
 
-    ctx.update("", details);
-
     const list = started.records
       .map((record) => `- ${record.id} (${record.agent}, ${record.model ?? "model n/a"})`)
       .join("\n");

@@ -198,7 +198,7 @@ describe("agent view", () => {
     const harness = setup();
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
 
-    await runAgent.execute({ agents: [{ agent: "scout", task: "list agents" }] }, { update: () => {} });
+    await runAgent.execute({ agents: [{ agent: "scout", task: "list agents" }] }, {});
     await flushMicrotasks();
 
     const record = harness.registry.list()[0] as AgentRecord;
@@ -872,7 +872,7 @@ describe("agent view with live agents", () => {
     const registry = harness.services.require("registry");
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
 
-    await runAgent.execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
+    await runAgent.execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, {});
     await flushMicrotasks();
     harness.host.settle();
 
@@ -1225,7 +1225,7 @@ const nestedSetup = async () => {
 
   await harness.host
     .tool<RunAgentParams, RunAgentDetails>("run_agent")
-    .execute({ agents: [{ agent: "general", task: "nest" }] }, { update: () => {} });
+    .execute({ agents: [{ agent: "general", task: "nest" }] }, {});
   await flushMicrotasks();
 
   const parent = harness.registry.list()[0] as AgentRecord;
@@ -1235,7 +1235,7 @@ const nestedSetup = async () => {
     RunAgentParams,
     RunAgentDetails
   >;
-  const running = runAgent.execute(ARGS, { update: () => {} });
+  const running = runAgent.execute(ARGS, {});
 
   await flushMicrotasks();
 

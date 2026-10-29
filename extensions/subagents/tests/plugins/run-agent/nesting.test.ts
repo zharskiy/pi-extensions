@@ -34,7 +34,7 @@ const setup = (overrides = {}) => {
 
     const result = await harness.host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents }, { update: () => {} });
+      .execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -50,10 +50,7 @@ const setup = (overrides = {}) => {
   };
 
   const spawnFrom = async (parent: FakeChildSession, agents: RunAgentParams["agents"]) => {
-    const result = await childTool<RunAgentParams>(parent, "run_agent").execute(
-      { agents },
-      { update: () => {} },
-    );
+    const result = await childTool<RunAgentParams>(parent, "run_agent").execute({ agents }, {});
 
     await flushMicrotasks();
 
@@ -289,7 +286,7 @@ describe("nested agents", () => {
     const { startGeneral, spawnFrom, registry, runtime, host } = setup({ maxConcurrent: 1 });
     const { record, child } = await startGeneral();
     const message = host.tool<{ id: string; message: string }, { delivery?: string }>("message_agent");
-    const send = (text: string) => message.execute({ id: record.id, message: text }, { update: () => {} });
+    const send = (text: string) => message.execute({ id: record.id, message: text }, {});
 
     await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
     child.finish("waiting for the scout");
@@ -328,8 +325,8 @@ describe("nested agents", () => {
     const [, own, foreign] = registry.list();
     const message = childTool<{ id: string; message: string }>(child, "message_agent");
 
-    const allowed = await message.execute({ id: own.id, message: "also b" }, { update: () => {} });
-    const denied = await message.execute({ id: foreign.id, message: "x" }, { update: () => {} });
+    const allowed = await message.execute({ id: own.id, message: "also b" }, {});
+    const denied = await message.execute({ id: foreign.id, message: "x" }, {});
 
     expect(allowed.text).toContain(`Message delivered to ${own.id}`);
     expect(denied.text).toContain(`only the caller that started ${foreign.id}`);

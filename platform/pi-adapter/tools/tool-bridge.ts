@@ -124,17 +124,12 @@ export const toPiTool = <P, D>(spec: ToolSpec<P, D>, onContext: (ctx: ExtensionC
       _toolCallId: string,
       params: unknown,
       signal: AbortSignal | undefined,
-      onUpdate:
-        | ((update: { content: { type: "text"; text: string }[]; details: D | undefined }) => void)
-        | undefined,
+      _onUpdate: unknown,
       ctx: ExtensionContext,
     ) => {
       onContext(ctx);
 
-      const result = await spec.execute(params as P, {
-        signal,
-        update: (text, details) => onUpdate?.({ content: [{ type: "text", text }], details }),
-      });
+      const result = await spec.execute(params as P, { signal });
 
       return toPiResult(result) as never;
     },

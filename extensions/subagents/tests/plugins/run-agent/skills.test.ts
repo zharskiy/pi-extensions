@@ -36,7 +36,7 @@ const setup = (definitions: Record<string, string> = {}, overrides = {}) => {
 
     const result = await harness.host
       .tool<RunAgentParams, RunAgentDetails>("run_agent")
-      .execute({ agents }, { update: () => {} });
+      .execute({ agents }, {});
 
     await flushMicrotasks();
 

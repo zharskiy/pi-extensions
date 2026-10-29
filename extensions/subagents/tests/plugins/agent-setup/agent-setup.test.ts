@@ -330,7 +330,7 @@ const autosetup = (options: { trusted?: boolean; seeded?: boolean } = {}) => {
   runtime.skillPaths = { asker };
 
   const propose = (params: ProposalParams) =>
-    host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, { update: () => {} });
+    host.tool<ProposalParams, unknown>(PROPOSAL_TOOL).execute(params, {});
 
   const awaiting = () =>
     host.published
