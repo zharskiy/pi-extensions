@@ -89,7 +89,7 @@ export const spawnAgents = async (
 ) => {
   const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `job ${index}` }));
 
-  await harness.host.tool<RunAgentParams, unknown>("run_agent").execute({ agents }, { update: () => {} });
+  await harness.host.tool<RunAgentParams, unknown>("run_agent").execute({ agents }, {});
   await flushMicrotasks();
   harness.host.settle();
 

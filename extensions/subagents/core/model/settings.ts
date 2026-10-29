@@ -38,7 +38,7 @@ export type Settings = {
   agents: AgentOverrides;
 };
 
-const SETTINGS_FILE = "pi-subagents.json";
+export const SETTINGS_FILE = "pi-subagents.json";
 
 export const defaultSettings = (): Settings => ({
   maxConcurrent: 12,
@@ -161,9 +161,6 @@ const reportedBy = new WeakMap<Settings, Set<string>>();
 const shortfallMessage = ({ setting, workers, wanted }: CodemodeShortfall) =>
   `${setting}=${workers} is below the ${wanted} codemode workers the agents may need; agents' codemode scripts may wait or fail`;
 
-const maxAgentSessions = (settings: Pick<Settings, "maxConcurrent" | "maxDepth">) =>
-  settings.maxConcurrent * settings.maxDepth;
-
 export const reloadSettings = (
   settings: Settings,
   info: { agentDir: string; cwd: string; projectTrusted: boolean },
@@ -176,7 +173,7 @@ export const reloadSettings = (
   reportedBy.set(settings, reported);
   Object.assign(settings, loaded.settings);
 
-  const shortfall = runtime.reserveCodemodeWorkers(maxAgentSessions(settings));
+  const shortfall = runtime.reserveCodemodeWorkers(settings.maxConcurrent);
 
   if (shortfall) {
     loaded.errors.push(shortfallMessage(shortfall));

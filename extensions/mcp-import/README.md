@@ -46,7 +46,7 @@ Start with a dry run, then write:
 
 | Try | What you see |
 |---|---|
-| `/mcp-import` | A pick of the source, then the servers. Enter writes the checked ones. |
+| `/mcp-import` | A pick of the source, then the servers. Enter writes the checked ones. In the server list `a` checks all and `n` none, also on the same keys in a Cyrillic layout. |
 | `/mcp-import claude` | A dry run like the one above. Nothing is written. |
 | `/mcp-import claude apply` | The servers are written. Run `/reload`, then `/mcp` to check them. |
 
@@ -55,6 +55,8 @@ Start with a dry run, then write:
 
 - Claude Code: `~/.claude.json`. For a project, its entry in `~/.claude.json` and `<cwd>/.mcp.json`.
 - Cursor: `~/.cursor/mcp.json`. For a project, `<cwd>/.cursor/mcp.json`.
+
+A project write creates `.pi/` when needed, with a `.pi/.gitignore` (`*`) that keeps it out of git; delete that file to track `.pi/`. A `.pi/` that already exists is left as it is.
 
 </details>
 

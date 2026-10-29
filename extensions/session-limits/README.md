@@ -37,7 +37,7 @@ Start pi and try:
 
 | Try | What you see |
 |---|---|
-| Keep working until the context grows | A warning notice below the editor shows the handoff threshold and the tokens used, then pi switches to a new session started from it. |
+| Keep working until the context grows | A warning notice below the editor shows the handoff threshold and the tokens used, then pi switches to a new session started from the handoff. |
 | Watch the footer while the context grows | The `context N of X` figure counts toward the handoff point (X, the hard threshold), so a handoff is due when N reaches X. |
 | `/session-handoff` | A "handoff requested" row appears in the transcript (no toast), the model writes a handoff, then pi switches to a new session started from it. |
 | Ask the model to save a handoff on its own | The `handoff` tool refuses unless a handoff was requested. |

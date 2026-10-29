@@ -60,7 +60,7 @@ extensions/subagents/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details
-│   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, createPendingCalls, describeRunAgent
+│   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, describeRunAgent
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
@@ -78,7 +78,7 @@ extensions/subagents/
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
 │   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
-│   │   ├── write.ts                       # mergeChanges, writeChanges, overriddenFields
+│   │   ├── write.ts                       # mergeChanges, writeChanges (through writeSettingsFile, so a new .pi/ gets its .gitignore), overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
 │   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
 │   │   ├── proposal.ts                    # agent_skills_proposal definition, checkProposal, proposalUnchanged, result texts
@@ -103,7 +103,7 @@ extensions/subagents/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
 │   │   ├── panel-lines.ts                 # panelLines: the shown agent rows, a blank line, the always-present hint row (ending in `N more, ← to list agents` when agents are hidden) and the closing blank line
-│   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys
+│   │   ├── keys.ts                        # panelKeyHandler, selectFirst: the captured editor keys (x on KeyPress.shortcut)
 │   │   └── panel.ts                       # createPanelWidget: the belowEditor widget handle
 │   ├── agent-setup/
 │   │   ├── form.ts                        # setup form state, roles, proposed drafts, fieldsOf, fieldValue, the Previous/Suggested PRESETS (presetsOf, presetFieldsOf), selectedRow, changeRows for the Submit tab, FIELD_ROWS, pickers with the all row and the filter, BLOCK_ROWS from the field and preset counts, scopes and keys

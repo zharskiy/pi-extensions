@@ -111,7 +111,7 @@ describe("footer handoff limits", () => {
     host.emit(LIMITS_CHANNEL, limits);
 
     expect(host.footerRefreshes).toBe(1);
-    expect(lines()[2]).toBe(" context 50.0k of 120k");
+    expect(lines()[2]).toBe(" working context 50.0k of 120k");
   });
 
   it("ignores malformed limits", () => {

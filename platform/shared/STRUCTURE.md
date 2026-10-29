@@ -7,7 +7,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `index.ts`: the public surface.
 - `plugin/`: what the extension manager and every plugin agree on.
   - `plugin-contract.ts`: the plugin, disable, bus, service registry, event map and extension paths types.
-  - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`.
+  - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`, `writeSettingsFile`.
 - `handoff/`: the handoff format session-limits and subagents share.
   - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details types and their parsers `parseSeedDetails` and `parseRequestDetails`, `handoffPath`.
   - `handoff-limit.ts`: `Limits`, `HandoffLimit` (request and warn lines), `mainLimit`, `limitLevel`.
@@ -21,6 +21,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
 - `plain-object.ts`: `isPlainObject`.
+- `project-dir.ts`: `projectPath`, `ensureProjectSubdir`, `writeProjectFile`; the `.pi/.gitignore` of a new `.pi/`.
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-limit.test.ts`: `limitLevel` and `mainLimit`.
 - `tests/handoff-tool.test.ts`: `handoffTool`.
@@ -28,3 +29,4 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.
+- `tests/project-dir.test.ts`: `writeProjectFile`, `ensureProjectSubdir` and `writeSettingsFile` on fresh and existing folders, a `.pi` file and a git repo.

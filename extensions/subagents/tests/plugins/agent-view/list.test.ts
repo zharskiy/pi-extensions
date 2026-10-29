@@ -12,6 +12,7 @@ import {
   disposeOverlays,
   initPiRenderTheme,
   openLastOverlay,
+  typed,
 } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
@@ -225,6 +226,42 @@ describe("agents list", () => {
     expect(harness.registry.get(queued.id)?.state).toBe("stopped");
     expect(harness.registry.get(grace.id)?.state).toBe("grace");
     expect(lines()).not.toContain(" Press shift+x again to stop all agents");
+  });
+
+  it("stops the selected agent with the x key in a Cyrillic layout", async () => {
+    const harness = setup();
+    const [record] = await harness.spawn(1);
+    const { view } = await harness.openList();
+
+    view.handleKey(typed("ч"));
+    await flushMicrotasks();
+
+    expect(harness.registry.get(record?.id ?? "")?.state).toBe("grace");
+    expect(harness.runtime.child(record?.id ?? "").aborted).toBe(true);
+  });
+
+  it("stops all agents with shift+x pressed twice in a Cyrillic layout", async () => {
+    const harness = setup();
+    const running = harness.create({ description: "running" });
+    const stop = vi.fn(async () => true);
+
+    harness.services.provide("runner", {
+      stop,
+      route: async () => ({ ok: true, delivery: "steer" }),
+      abort: async () => {},
+    });
+
+    const { view, lines } = await harness.openList();
+
+    view.handleKey(typed("Ч"));
+
+    expect(lines().at(-3)).toBe(" Press shift+x again to stop all agents");
+
+    view.handleKey(typed("Ч"));
+    await flushMicrotasks();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledWith(running.id);
   });
 
   it("drops the confirmation after 3 s or on any other key", async () => {

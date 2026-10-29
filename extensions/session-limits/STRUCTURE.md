@@ -13,7 +13,7 @@ extensions/session-limits/
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
-│   ├── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
+│   └── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── handoff.test.ts         path, validation, main audience and session preface

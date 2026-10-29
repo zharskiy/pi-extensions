@@ -7,7 +7,7 @@ export type BusEvents = {
   "agent:turn": { id: string; context: ContextSnapshot; turns: number; continuing: boolean };
   "agent:closed": AgentRecord;
   "agent:usage": { id: string; usage: UsageTotals };
-  "batch:started": { batchId: string; callerId: string; wait: boolean };
+  "batch:started": { batchId: string; callerId: string };
   "batch:settled": { batchId: string };
 };
 

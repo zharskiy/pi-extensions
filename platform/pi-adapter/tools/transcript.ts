@@ -23,7 +23,7 @@ import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 import { messageRendererFor } from "./entry-renderers.ts";
-import { toPiResult, toPiTool } from "./tool-bridge.ts";
+import { toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
 
 const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
@@ -84,7 +84,6 @@ const defaultPiRenderers = () => {
 
 export type TranscriptPaneOptions = {
   tools?: AnyToolSpec[];
-  owner?: () => string | undefined;
 };
 
 export const createTranscriptPane = (
@@ -94,7 +93,6 @@ export const createTranscriptPane = (
 ): TranscriptPane => {
   const container = new Container();
   const pendingTools = new Map<string, ToolExecutionComponent>();
-  const pendingCalls = new Map<string, RawToolCall>();
   const definitions = new Map<string, object | undefined>();
   const expandables: Expandable[] = [];
   const renderers = defaultPiRenderers();
@@ -162,10 +160,6 @@ export const createTranscriptPane = (
 
     component.markExecutionStarted();
     pendingTools.set(call.id, component);
-
-    if (options.tools?.some((tool) => tool.name === call.name && tool.pendingResult)) {
-      pendingCalls.set(call.id, call);
-    }
   };
 
   const addItem = (item: TranscriptItem) => {
@@ -197,7 +191,6 @@ export const createTranscriptPane = (
     if (item.kind === "tool") {
       pendingTools.get(item.toolCallId)?.updateResult(item.raw as never);
       pendingTools.delete(item.toolCallId);
-      pendingCalls.delete(item.toolCallId);
       return;
     }
 
@@ -210,24 +203,9 @@ export const createTranscriptPane = (
     }
   };
 
-  const seedPendingResults = () => {
-    pendingCalls.forEach((call, id) => {
-      const spec = options.tools?.find((tool) => tool.name === call.name);
-      const partial = spec?.pendingResult?.(id, options.owner?.());
-
-      if (!partial) {
-        return;
-      }
-
-      pendingCalls.delete(id);
-      pendingTools.get(id)?.updateResult(toPiResult(partial) as never, true);
-    });
-  };
-
   const reset = () => {
     container.clear();
     pendingTools.clear();
-    pendingCalls.clear();
     expandables.length = 0;
     synced = 0;
   };
@@ -249,8 +227,6 @@ export const createTranscriptPane = (
       });
     },
     render: (width) => {
-      seedPendingResults();
-
       const lines = container.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX, ""));
 
       rendered = lines.length;

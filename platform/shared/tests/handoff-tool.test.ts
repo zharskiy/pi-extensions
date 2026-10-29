@@ -21,7 +21,7 @@ const setup = (patch: Partial<HandoffToolDeps> = {}) => {
     ...patch,
   });
 
-  const save = (content: string) => tool.execute({ content }, { update: () => {} });
+  const save = (content: string) => tool.execute({ content }, {});
 
   return { path, onSaved, save, tool };
 };

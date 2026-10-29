@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { errorText } from "../../../../platform/shared/index.ts";
+import { ensureProjectSubdir, errorText } from "../../../../platform/shared/index.ts";
 import type { Worktree, WorktreeCleanup } from "../model/agent-record.ts";
 
 type WorktreeResult = { ok: true; worktree: Worktree } | { ok: false; error: string };
@@ -29,8 +29,19 @@ const ignoreWorktrees = (root: string) => {
   const file = join(root, ".gitignore");
 
   if (!existsSync(file)) {
-    mkdirSync(root, { recursive: true });
     writeFileSync(file, "*\n");
+  }
+};
+
+const worktreesRoot = (cwd: string): { ok: true; root: string } | { ok: false; error: string } => {
+  try {
+    const root = ensureProjectSubdir(cwd, "worktrees");
+
+    ignoreWorktrees(root);
+
+    return { ok: true, root };
+  } catch (error) {
+    return { ok: false, error: errorText(error) };
   }
 };
 
@@ -41,17 +52,16 @@ export const createWorktree = async (cwd: string, agentId: string): Promise<Work
     return { ok: false, error: head.error };
   }
 
-  const [base, prefix = ""] = head.output.split("\n");
-  const root = join(cwd, ".pi", "worktrees");
-  const name = `${agentId}-${Date.now().toString(36)}`;
-  const path = join(root, name);
-  const branch = `pi-agents/${name}`;
+  const worktrees = worktreesRoot(cwd);
 
-  try {
-    ignoreWorktrees(root);
-  } catch (error) {
-    return { ok: false, error: errorText(error) };
+  if (!worktrees.ok) {
+    return worktrees;
   }
+
+  const [base, prefix = ""] = head.output.split("\n");
+  const name = `${agentId}-${Date.now().toString(36)}`;
+  const path = join(worktrees.root, name);
+  const branch = `pi-agents/${name}`;
 
   const added = await runGit(cwd, ["worktree", "add", "-b", branch, path, base]);
 

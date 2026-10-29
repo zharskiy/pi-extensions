@@ -27,6 +27,7 @@ import {
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
+  typed,
 } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
@@ -198,7 +199,7 @@ describe("agent view", () => {
     const harness = setup();
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
 
-    await runAgent.execute({ agents: [{ agent: "scout", task: "list agents" }] }, { update: () => {} });
+    await runAgent.execute({ agents: [{ agent: "scout", task: "list agents" }] }, {});
     await flushMicrotasks();
 
     const record = harness.registry.list()[0] as AgentRecord;
@@ -363,6 +364,16 @@ describe("agent view", () => {
     expect(body().startsWith(before)).toBe(true);
     expect(body().indexOf("Continue with the tests")).toBeGreaterThan(before.length);
     expect(transcripts).toHaveLength(1);
+  });
+
+  it("stops the agent with the x key in a Cyrillic layout", async () => {
+    const { harness, record } = await runningAgent();
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(typed("ч"));
+    await flushMicrotasks();
+
+    expect(harness.registry.get(record.id)?.state).toBe("grace");
   });
 
   it("enters grace on the first x and closes on the second", async () => {
@@ -599,6 +610,30 @@ describe("agent view header", () => {
 });
 
 describe("agent view copy", () => {
+  it("toggles the request with the r key in a Cyrillic layout", () => {
+    const record = agentRecord({ id: "explorer-1", state: "done", endedAt: 0 });
+    const { view, lines } = viewOf(fixture(), { rows: 40, record });
+
+    view.handleKey(typed("к"));
+
+    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
+
+    view.handleKey(typed("к"));
+
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
+  });
+
+  it("copies the request with the c key in a Cyrillic layout", async () => {
+    const harness = setup();
+    const record = closedAgent(harness, requestSession());
+    const { view } = await harness.openView(record.id);
+
+    view.handleKey(typed("с"));
+    await flushMicrotasks();
+
+    expect(harness.host.copied).toEqual([JSON.stringify(PAYLOAD, null, 2)]);
+  });
+
   it("hands the pretty-printed request to the host clipboard", async () => {
     const harness = setup();
     const record = closedAgent(harness, requestSession());
@@ -848,7 +883,7 @@ describe("agent view with live agents", () => {
     const registry = harness.services.require("registry");
     const runAgent = harness.host.tool<RunAgentParams, unknown>("run_agent");
 
-    await runAgent.execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, { update: () => {} });
+    await runAgent.execute({ agents: [{ agent: "scout", task: "map the auth flow" }] }, {});
     await flushMicrotasks();
     harness.host.settle();
 
@@ -1217,7 +1252,7 @@ const ARGS = {
   ],
 };
 
-const nestedSession = (args: Record<string, unknown>, result?: { text: string; details?: RunAgentDetails }) =>
+const nestedSession = (args: Record<string, unknown>, result: { text: string; details?: RunAgentDetails }) =>
   parseSessionLines(
     [
       line({ role: "user", content: [{ type: "text", text: "Task from main (agent id explorer-1): Nest" }] }),
@@ -1226,23 +1261,19 @@ const nestedSession = (args: Record<string, unknown>, result?: { text: string; d
         content: [{ type: "toolCall", id: "ra1", name: "run_agent", arguments: args }],
         stopReason: "toolUse",
       }),
-      ...(result
-        ? [
-            line({
-              role: "toolResult",
-              toolCallId: "ra1",
-              toolName: "run_agent",
-              content: [{ type: "text", text: result.text }],
-              details: result.details,
-              isError: false,
-            }),
-          ]
-        : []),
+      line({
+        role: "toolResult",
+        toolCallId: "ra1",
+        toolName: "run_agent",
+        content: [{ type: "text", text: result.text }],
+        details: result.details,
+        isError: false,
+      }),
     ],
     RECORD_ENTRY,
   );
 
-const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...ARGS, wait }) => {
+const nestedSetup = async () => {
   const harness = setup([
     agentRegistryPlugin,
     agentDefinitionsPlugin,
@@ -1253,7 +1284,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
 
   await harness.host
     .tool<RunAgentParams, RunAgentDetails>("run_agent")
-    .execute({ agents: [{ agent: "general", task: "nest" }] }, { toolCallId: "ra1", update: () => {} });
+    .execute({ agents: [{ agent: "general", task: "nest" }] }, {});
   await flushMicrotasks();
 
   const parent = harness.registry.list()[0] as AgentRecord;
@@ -1263,7 +1294,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
     RunAgentParams,
     RunAgentDetails
   >;
-  const running = runAgent.execute({ ...ARGS, wait }, { toolCallId: "ra1", update: () => {} });
+  const running = runAgent.execute(ARGS, {});
 
   await flushMicrotasks();
 
@@ -1274,7 +1305,6 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
     harness.runtime.sessions.set(file, session);
   };
 
-  show(nestedSession(args), "");
   harness.registry.update(parent.id, { sessionFile: file });
 
   const text = async () => {
@@ -1283,9 +1313,7 @@ const nestedSetup = async (wait: boolean, args: Record<string, unknown> = { ...A
     return () => lines().join("\n");
   };
 
-  const nested = harness.registry.list().filter((record) => record.callerId === parent.id);
-
-  return { harness, running, nested, show, text };
+  return { running, show, text };
 };
 
 describe("agent view nested run_agent calls", () => {
@@ -1322,10 +1350,9 @@ describe("agent view nested run_agent calls", () => {
     const record = closedAgent(harness, session);
     const spec = harness.host.tools.get("run_agent") as unknown as { renderCall: () => string };
     const runAgentSpy = vi.spyOn(spec, "renderCall");
-    const { view, transcripts } = await harness.open(record.id);
+    const { view } = await harness.open(record.id);
     const text = plainLines(view.render(100)).join("\n");
 
-    expect(transcripts[0]?.owner?.()).toBe(record.id);
     expect(runAgentSpy).toHaveBeenCalledWith(
       expect.objectContaining(args),
       expect.anything(),
@@ -1334,54 +1361,18 @@ describe("agent view nested run_agent calls", () => {
     expect(text).not.toContain('"agents": [');
   });
 
-  it("draws a returned background nested call with its live rows and no key hint", async () => {
-    const { running, show, text } = await nestedSetup(false);
+  it("draws a nested call with its live rows and no key hint", async () => {
+    const { running, show, text } = await nestedSetup();
 
     show(nestedSession(ARGS, await running), "written");
 
     const shown = (await text())();
 
-    expect(shown).toContain(" ◌ 2 background scout agents");
+    expect(shown).toContain(" ◌ 2 scout agents");
     expect(shown).not.toContain("to manage");
     expect(shown).not.toContain("to list");
     expect(shown).toContain("scout  find callers");
     expect(shown).toContain("scout  find tests");
-    expect(shown).toContain("Starting");
-  });
-
-  it("draws a waiting nested call while its batch runs and its final block once the result is written", async () => {
-    const { harness, running, nested, show, text } = await nestedSetup(true);
-    const live = await text();
-
-    expect(live()).toContain(" ◌ 2 scout agents");
-    expect(live()).toContain("Starting");
-
-    nested.forEach((record) => {
-      harness.runtime.child(record.id).finish(`${record.id} done`);
-    });
-
-    const result = await running;
-
-    await flushMicrotasks();
-    expect(live()).toContain(" ✓ 2 scout agents · 0s");
-    expect(live()).toContain("✓ scout  find callers");
-
-    show(nestedSession({ ...ARGS, wait: true }, result), "written");
-
-    const final = (await text())();
-
-    expect(final).toContain(" ✓ 2 scout agents · 0s");
-    expect(final).toContain("✓ scout  find tests");
-  });
-
-  it("draws the live block when the saved arguments carry a null optional field", async () => {
-    const { running, show, text } = await nestedSetup(false, { ...ARGS, wait: null });
-
-    show(nestedSession({ ...ARGS, wait: null }, await running), "written");
-
-    const shown = (await text())();
-
-    expect(shown).toContain(" ◌ 2 background scout agents");
     expect(shown).toContain("Starting");
   });
 });

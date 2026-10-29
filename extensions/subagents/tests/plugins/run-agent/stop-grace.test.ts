@@ -18,12 +18,12 @@ const setup = async (count = 1, overrides = {}) => {
   const runner = harness.services.require("runner");
   const agents = Array.from({ length: count }, (_, index) => ({ agent: "scout", task: `task ${index}` }));
 
-  await runAgent.execute({ agents }, { update: () => {} });
+  await runAgent.execute({ agents }, {});
   await flushMicrotasks();
 
   harness.host.settle();
 
-  const send = (id: string, message: string) => messageAgent.execute({ id, message }, { update: () => {} });
+  const send = (id: string, message: string) => messageAgent.execute({ id, message }, {});
   const ids = registry.list().map((record) => record.id);
 
   return { ...harness, registry, runner, send, ids };
