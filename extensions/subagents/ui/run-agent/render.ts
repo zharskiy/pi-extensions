@@ -67,9 +67,9 @@ const sharedAgent = (agents: { agent?: string }[]): string | undefined => {
 
 const nounPhrase = (agents: { agent?: string }[]) => {
   const kind = sharedAgent(agents);
-  const words = ["background", kind, noun(agents.length, "agent")];
+  const label = noun(agents.length, "agent");
 
-  return words.filter((word) => word !== undefined).join(" ");
+  return kind ? `${kind} ${label}` : label;
 };
 
 const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {

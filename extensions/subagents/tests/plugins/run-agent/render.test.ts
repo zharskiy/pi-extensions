@@ -237,7 +237,7 @@ afterEach(() => {
 describe("run_agent block samples", () => {
   it("draws a running background batch with static words and the hint", () => {
     expect(batch(SAMPLE_RUNNING).draw()).toEqual([
-      "◌ 3 background agents (↓ to manage, ← to list)",
+      "◌ 3 agents (↓ to manage, ← to list)",
       "  ↳ ◌ scout  Map the auth module · model-a:low",
       "      Running",
       "    ◌ worker  Fix the login redirect · model-a:low",
@@ -249,7 +249,7 @@ describe("run_agent block samples", () => {
 
   it("draws a closed batch with the batch receipt and each agent's outcome", () => {
     expect(batch(SAMPLE_CLOSED).draw()).toEqual([
-      "✗ 3 background agents · 4m 2s · 35 calls · 64.7k tokens · $0.25",
+      "✗ 3 agents · 4m 2s · 35 calls · 64.7k tokens · $0.25",
       "  ↳ ✓ scout  Map the auth module · model-a:low",
       "      1m 5s · 4 calls · 12.3k tokens · $0.04",
       "    ✗ worker  Fix the login redirect · model-a:low",
@@ -272,7 +272,7 @@ describe("run_agent block samples", () => {
     ]);
 
     expect(draw()).toEqual([
-      "✗ 1 background worker agent · 2m 10s · 31 calls · 52.4k tokens · $0.21",
+      "✗ 1 worker agent · 2m 10s · 31 calls · 52.4k tokens · $0.21",
       "  ↳ ✗ worker  Fix the login redirect · model-a:low",
       "      2m 10s · 31 calls · 52.4k tokens · $0.21",
       "      line 1 of the failure",
@@ -331,7 +331,7 @@ describe("run_agent block samples", () => {
     const result = { isError: true, text: "Operation aborted" };
 
     expect(lines(renderResult(harness, result, { agents: scouts }, { aborted: true }))).toEqual([
-      "⊘ 3 background scout agents · stopped",
+      "⊘ 3 scout agents · stopped",
     ]);
   });
 
@@ -352,7 +352,7 @@ describe("run_agent block samples", () => {
     };
 
     expect(lines(renderWith(tool, { text: "Started batch", details }, { agents: THREE }))).toEqual([
-      "◌ 2 background agents",
+      "◌ 2 agents",
       "  ↳ » scout  Map the auth module · model-a:low",
       "      Status unavailable · /agents scout-ab12",
       "    » worker  Fix the login redirect",
@@ -362,7 +362,7 @@ describe("run_agent block samples", () => {
 
   it("draws the 40-column samples", () => {
     expect(batch(SAMPLE_RUNNING).draw(39)).toEqual([
-      "◌ 3 background agents (↓ to manage)",
+      "◌ 3 agents (↓ to manage, ← to list)",
       "  ↳ ◌ scout  Map the auth module",
       "      Running",
       "    ◌ worker  Fix the login redirect",
@@ -371,7 +371,7 @@ describe("run_agent block samples", () => {
       "      Starting",
     ]);
     expect(batch(SAMPLE_CLOSED).draw(39)).toEqual([
-      "✗ 3 background agents · 4m 2s",
+      "✗ 3 agents · 4m 2s · 64.7k tokens",
       "  ↳ ✓ scout  Map the auth module",
       "      1m 5s · 4 calls · 12.3k tokens",
       "    ✗ worker  Fix the login redirect",
@@ -395,20 +395,18 @@ describe("run_agent block header", () => {
     const head = (specs: Spec[], state?: RenderState) => batch(specs).draw(WIDE, { state })[0];
 
     expect(head([closed("done"), { agent: "scout", description: "b" }])).toMatch(/^◌ /);
-    expect(head([closed("done"), closed("failed")])).toMatch(/^✗ 2 background scout agents · 1s · 2 calls$/);
+    expect(head([closed("done"), closed("failed")])).toMatch(/^✗ 2 scout agents · 1s · 2 calls$/);
     expect(head([closed("stopped"), closed("handoff")])).toMatch(/^⊘ /);
-    expect(head([closed("done"), closed("stopped")])).toBe(
-      "✓ 2 background scout agents · 1 stopped · 1s · 2 calls",
-    );
+    expect(head([closed("done"), closed("stopped")])).toBe("✓ 2 scout agents · 1 stopped · 1s · 2 calls");
     expect(head([closed("done")], { isError: true })).toMatch(/^✗ /);
   });
 
   it("drops ← to list first, then the whole hint, as the width shrinks", () => {
     const { draw } = batch(SAMPLE_RUNNING);
 
-    expect(draw(46)[0]).toBe("◌ 3 background agents (↓ to manage, ← to list)");
-    expect(draw(45)[0]).toBe("◌ 3 background agents (↓ to manage)");
-    expect(draw(34)[0]).toBe("◌ 3 background agents");
+    expect(draw(35)[0]).toBe("◌ 3 agents (↓ to manage, ← to list)");
+    expect(draw(34)[0]).toBe("◌ 3 agents (↓ to manage)");
+    expect(draw(23)[0]).toBe("◌ 3 agents");
   });
 
   it("names only the keys of the enabled panel and list plugins", async () => {
@@ -421,21 +419,21 @@ describe("run_agent block header", () => {
       )[0];
     };
 
-    expect(await header([])).toBe("◌ 3 background agents (↓ to manage, ← to list)");
-    expect(await header(["agent-view"])).toBe("◌ 3 background agents (↓ to manage)");
-    expect(await header(["agent-panel"])).toBe("◌ 3 background agents (← to list)");
-    expect(await header(["agent-panel"], 30)).toBe("◌ 3 background agents");
-    expect(await header(["agent-panel", "agent-view"])).toBe("◌ 3 background agents");
+    expect(await header([])).toBe("◌ 3 agents (↓ to manage, ← to list)");
+    expect(await header(["agent-view"])).toBe("◌ 3 agents (↓ to manage)");
+    expect(await header(["agent-panel"])).toBe("◌ 3 agents (← to list)");
+    expect(await header(["agent-panel"], 19)).toBe("◌ 3 agents");
+    expect(await header(["agent-panel", "agent-view"])).toBe("◌ 3 agents");
   });
 
   it("names the agent when the batch shares one", () => {
     expect(batch([{ agent: "scout", description: "a" }]).draw()[0]).toBe(
-      "◌ 1 background scout agent (↓ to manage, ← to list)",
+      "◌ 1 scout agent (↓ to manage, ← to list)",
     );
   });
 
   it("draws no hint for a batch an agent started", () => {
-    expect(batch(SAMPLE_RUNNING, { callerId: "general-1" }).draw()[0]).toBe("◌ 3 background agents");
+    expect(batch(SAMPLE_RUNNING, { callerId: "general-1" }).draw()[0]).toBe("◌ 3 agents");
   });
 
   it("points Status unavailable at /agents only while the list plugin is on", () => {
@@ -574,7 +572,7 @@ describe("run_agent block colours", () => {
     const running = batch([SAMPLE_RUNNING[0]]).draw(400, { theme: tagged });
 
     expect(running[0]).toBe(
-      "<dim>◌</dim> <b><text>1</text></b> <text>background scout agent</text> <muted>(</muted><dim>↓</dim> <muted>to manage</muted><muted>, </muted><dim>←</dim> <muted>to list</muted><muted>)</muted>",
+      "<dim>◌</dim> <b><text>1</text></b> <text>scout agent</text> <muted>(</muted><dim>↓</dim> <muted>to manage</muted><muted>, </muted><dim>←</dim> <muted>to list</muted><muted>)</muted>",
     );
     expect(running[1]).toBe(
       "  <dim>↳</dim> <dim>◌</dim> <b><text>scout</text></b>  <muted>Map the auth module</muted><dim> · model-a:low</dim>",

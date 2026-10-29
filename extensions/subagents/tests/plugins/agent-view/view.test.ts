@@ -1305,7 +1305,7 @@ describe("agent view nested run_agent calls", () => {
 
     const shown = (await text())();
 
-    expect(shown).toContain(" ◌ 2 background scout agents");
+    expect(shown).toContain(" ◌ 2 scout agents");
     expect(shown).not.toContain("to manage");
     expect(shown).not.toContain("to list");
     expect(shown).toContain("scout  find callers");
