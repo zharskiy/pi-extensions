@@ -175,11 +175,7 @@ export const createUi = (
           close: () => done(),
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
-          createTranscript: (options) =>
-            createTranscriptPane(tui, cwd, {
-              tools: [...state.tools.values()],
-              owner: options?.owner,
-            }),
+          createTranscript: () => createTranscriptPane(tui, cwd, { tools: [...state.tools.values()] }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
         });
 

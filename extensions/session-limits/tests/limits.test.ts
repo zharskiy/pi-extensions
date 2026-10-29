@@ -54,7 +54,7 @@ const RELEASE_MS = 1_000;
 const saveWith = (host: ReturnType<typeof createFakeHost>, text: string) =>
   (host.tools.get("handoff") as unknown as ToolSpec<{ content: string }, unknown>).execute(
     { content: text },
-    { update: () => {} },
+    {},
   );
 
 const setup = (releaseDelayMs = 0, limits = LIMITS, mode: RunMode = "tui") => {

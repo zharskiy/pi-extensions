@@ -271,7 +271,7 @@ export const createAgentList = (deps: ListDeps, api: OverlayApi): ListComponent 
   const chars: Record<string, () => void> = { x: stopSelected, X: stopAll };
 
   const handleKey = (key: KeyPress) => {
-    const action = key.name === "other" && key.char ? chars[key.char] : names[key.name];
+    const action = key.name === "other" && key.shortcut ? chars[key.shortcut] : names[key.name];
 
     if (pendingStopAll && action !== stopAll) {
       clearFeedback();
