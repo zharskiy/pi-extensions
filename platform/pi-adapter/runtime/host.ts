@@ -32,6 +32,14 @@ import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
 import { writeDefaultModel, writeDefaultThinkingLevel } from "./default-model.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
+import {
+  claimKeptSelection,
+  forgetSessionSelection,
+  keepSelection,
+  releaseRestoredSelection,
+  restoredSelection,
+  restoreSelection,
+} from "./kept-selection.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -53,10 +61,11 @@ const sessionInfo = (ctx: ExtensionContext, created: boolean): SessionInfo => ({
   mode: ctx.mode,
 });
 
-const sessionControl = (ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, seed }) => {
+const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
+  newSession: async ({ parentSession, seed, keepSelection: keep }) => {
     const result = await ctx.newSession({
       parentSession,
+      setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
       withSession: seed
         ? async (fresh) => {
             await fresh.sendMessage(
@@ -224,9 +233,15 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
   };
 
-  pi.on("session_start", (event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     capture(ctx);
     editor.sync(event.reason);
+
+    const kept = event.reason === "new" ? claimKeptSelection(ctx) : undefined;
+
+    if (kept) {
+      await restoreSelection(pi, ctx, kept);
+    }
 
     const tui = tuiContext(state);
 
@@ -256,6 +271,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     if (state.ctx) {
       dropFollowUps(sessionOf(state.ctx));
+      forgetSessionSelection(state.ctx);
     }
 
     await shutdownHandlers.reduce<Promise<void>>(
@@ -443,12 +459,34 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     const ref = `${event.model.provider}/${event.model.id}`;
+    const restored = restoredSelection(ctx);
+
+    if (restored?.model === ref) {
+      return;
+    }
+
+    if (restored) {
+      releaseRestoredSelection(ctx);
+    }
 
     await Promise.all(modelSelectHandlers.map((handler) => handler(ref)));
   });
 
   pi.on("thinking_level_select", async (event, ctx) => {
     capture(ctx);
+
+    const restored = restoredSelection(ctx);
+
+    if (restored && restored.model === modelRef(ctx.model)) {
+      const chosen =
+        restored.applied && event.level !== restored.thinking && event.level === pi.getThinkingLevel();
+
+      if (!chosen) {
+        return;
+      }
+
+      releaseRestoredSelection(ctx);
+    }
 
     const switching = currentModel !== undefined && modelRef(ctx.model) !== currentModel;
     const superseded = event.level !== pi.getThinkingLevel();
@@ -471,7 +509,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       getArgumentCompletions: spec.complete,
       handler: async (args, ctx) => {
         capture(ctx);
-        await spec.run(args, sessionControl(ctx));
+        await spec.run(args, sessionControl(pi, ctx));
       },
     });
   };

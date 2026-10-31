@@ -9,6 +9,7 @@ type PiSessionOptions = {
   agentDir: string;
   cwd: string;
   factory: pi.ExtensionFactory;
+  extraFactories?: pi.ExtensionFactory[];
   settings: object | string;
   models: { id: string; reasoning?: boolean }[];
   scoped?: string[];
@@ -37,7 +38,10 @@ export const startPiSession = async (options: PiSessionOptions) => {
     agentDir,
     settingsManager,
     noExtensions: true,
-    extensionFactories: [{ name: "under-test", factory: options.factory }],
+    extensionFactories: [options.factory, ...(options.extraFactories ?? [])].map((factory, index) => ({
+      name: index === 0 ? "under-test" : `under-test-${index}`,
+      factory,
+    })),
   });
   const inScope = <T>(scope: () => Promise<T>) =>
     options.child ? childScope.run({ agentId: "a1" }, scope) : scope();

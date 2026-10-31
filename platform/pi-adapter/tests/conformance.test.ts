@@ -241,6 +241,33 @@ describe("pi adapter conformance", () => {
     vi.unstubAllEnvs();
   });
 
+  it("awaits the model_select listeners of every extension in turn before setModel resolves", async () => {
+    const seen: string[] = [];
+    const listenAfter =
+      (label: string, ms: number): pi.ExtensionFactory =>
+      (api) => {
+        api.on("model_select", async (event) => {
+          await new Promise((resolve) => setTimeout(resolve, ms));
+          seen.push(`${label} ${event.model.id}`);
+        });
+      };
+    const { session, model } = await startPiSession({
+      agentDir: temp.make("pi-conformance-agent-"),
+      cwd: temp.make("pi-conformance-cwd-"),
+      factory: listenAfter("first", 20),
+      extraFactories: [listenAfter("second", 0)],
+      settings: {},
+      models: [{ id: "alpha" }, { id: "beta" }],
+    });
+
+    await session.setModel(model("beta"));
+
+    expect(seen).toEqual(["first beta", "second beta"]);
+
+    session.dispose();
+    vi.unstubAllEnvs();
+  });
+
   it("has the settings manager methods the default model and thinking saves call", () => {
     const methods = [
       "setDefaultModelAndProvider",
