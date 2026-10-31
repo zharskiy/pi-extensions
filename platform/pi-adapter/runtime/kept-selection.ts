@@ -6,9 +6,16 @@ const KEPT_SELECTION_TYPE = "pi-adapter:kept-selection";
 
 type KeptSelection = { provider: string; id: string; thinking: string };
 
-type SelectionApi = Pick<ExtensionAPI, "setModel" | "setThinkingLevel">;
+type RestoredSelection = { model: string; thinking: string; applied: boolean };
+
+type SelectionApi = Pick<ExtensionAPI, "setModel" | "setThinkingLevel" | "getThinkingLevel">;
 
 const claimedSessions = () => globalRecord<Set<string>>("kept-selections", () => new Set());
+
+const restoredSelections = () =>
+  globalRecord<Map<string, RestoredSelection>>("restored-selections", () => new Map());
+
+const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
 export const keepSelection = (thinking: string, ctx: ExtensionContext) => {
   const model = ctx.model;
@@ -29,7 +36,7 @@ export const claimKeptSelection = (ctx: ExtensionContext) => {
     .getEntries()
     .findLast((candidate) => candidate.type === "custom" && candidate.customType === KEPT_SELECTION_TYPE);
   const claimed = claimedSessions();
-  const session = ctx.sessionManager.getSessionId();
+  const session = sessionOf(ctx);
 
   if (entry?.type !== "custom" || claimed.has(session)) {
     return undefined;
@@ -40,17 +47,30 @@ export const claimKeptSelection = (ctx: ExtensionContext) => {
   return entry.data as KeptSelection;
 };
 
+export const restoredSelection = (ctx: ExtensionContext) => restoredSelections().get(sessionOf(ctx));
+
+export const releaseRestoredSelection = (ctx: ExtensionContext) => {
+  restoredSelections().delete(sessionOf(ctx));
+};
+
+export const forgetSelection = (ctx: ExtensionContext) => {
+  releaseRestoredSelection(ctx);
+  claimedSessions().delete(sessionOf(ctx));
+};
+
 export const restoreSelection = async (pi: SelectionApi, ctx: ExtensionContext, kept: KeptSelection) => {
   const model = ctx.modelRegistry.find(kept.provider, kept.id);
+  const ref = `${kept.provider}/${kept.id}`;
+
+  restoredSelections().set(sessionOf(ctx), { model: ref, thinking: kept.thinking, applied: false });
+
   const restored = model !== undefined && (await pi.setModel(model).catch(() => false));
 
   if (!restored) {
     const fallback = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "the default model";
 
-    ctx.ui.notify(
-      `Could not keep ${kept.provider}/${kept.id} after the handoff; the new session uses ${fallback}.`,
-      "warning",
-    );
+    releaseRestoredSelection(ctx);
+    ctx.ui.notify(`Could not keep ${ref} after the handoff; the new session uses ${fallback}.`, "warning");
 
     return;
   }
@@ -58,4 +78,6 @@ export const restoreSelection = async (pi: SelectionApi, ctx: ExtensionContext, 
   if (isThinkingLevel(kept.thinking)) {
     pi.setThinkingLevel(kept.thinking);
   }
+
+  restoredSelections().set(sessionOf(ctx), { model: ref, thinking: pi.getThinkingLevel(), applied: true });
 };

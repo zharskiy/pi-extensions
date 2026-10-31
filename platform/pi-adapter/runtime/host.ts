@@ -32,7 +32,14 @@ import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
 import { writeDefaultModel, writeDefaultThinkingLevel } from "./default-model.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
-import { claimKeptSelection, keepSelection, restoreSelection } from "./kept-selection.ts";
+import {
+  claimKeptSelection,
+  forgetSelection,
+  keepSelection,
+  releaseRestoredSelection,
+  restoredSelection,
+  restoreSelection,
+} from "./kept-selection.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -264,6 +271,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     if (state.ctx) {
       dropFollowUps(sessionOf(state.ctx));
+      forgetSelection(state.ctx);
     }
 
     await shutdownHandlers.reduce<Promise<void>>(
@@ -451,12 +459,34 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     const ref = `${event.model.provider}/${event.model.id}`;
+    const restored = restoredSelection(ctx);
+
+    if (restored?.model === ref) {
+      return;
+    }
+
+    if (restored) {
+      releaseRestoredSelection(ctx);
+    }
 
     await Promise.all(modelSelectHandlers.map((handler) => handler(ref)));
   });
 
   pi.on("thinking_level_select", async (event, ctx) => {
     capture(ctx);
+
+    const restored = restoredSelection(ctx);
+
+    if (restored && restored.model === modelRef(ctx.model)) {
+      const chosen =
+        restored.applied && event.level !== restored.thinking && event.level === pi.getThinkingLevel();
+
+      if (!chosen) {
+        return;
+      }
+
+      releaseRestoredSelection(ctx);
+    }
 
     const switching = currentModel !== undefined && modelRef(ctx.model) !== currentModel;
     const superseded = event.level !== pi.getThinkingLevel();

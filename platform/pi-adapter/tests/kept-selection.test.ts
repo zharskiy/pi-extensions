@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fauxProvider } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +11,9 @@ const temp = useTempDirs();
 
 const SEED = { customType: "handoff-seed", text: "carry on" };
 
-const startHandoffRuntime = async () => {
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+const startHandoffRuntime = async (settings: object = {}) => {
   const dir = temp.make("pi-kept-selection-");
 
   vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -31,8 +35,10 @@ const startHandoffRuntime = async () => {
     defaultProvider: "acme",
     defaultModel: "small",
     defaultThinkingLevel: "low",
+    ...settings,
   });
   const warnings: string[] = [];
+  const reported: string[] = [];
 
   const handoff: pi.ExtensionFactory = (api) => {
     const host = createPiHost(api, { tools: new Map() });
@@ -47,6 +53,19 @@ const startHandoffRuntime = async () => {
 
   const bystander: pi.ExtensionFactory = (api) => {
     createPiHost(api, { tools: new Map() });
+  };
+
+  const chooser: pi.ExtensionFactory = (api) => {
+    const host = createPiHost(api, { tools: new Map() });
+
+    host.onModelSelect(async (ref) => {
+      reported.push(`model ${ref}`);
+      await host.saveDefaultModel(ref);
+    });
+    host.onThinkingSelect(async (level) => {
+      reported.push(`thinking ${level}`);
+      await host.saveDefaultThinkingLevel(level);
+    });
   };
 
   const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
@@ -64,6 +83,7 @@ const startHandoffRuntime = async () => {
         extensionFactories: [
           { name: "handoff", factory: handoff },
           { name: "bystander", factory: bystander },
+          { name: "chooser", factory: chooser },
         ],
       },
     });
@@ -117,6 +137,24 @@ const startHandoffRuntime = async () => {
     thinking: settingsManager.getDefaultThinkingLevel(),
   });
 
+  const saved = () => {
+    const file = join(dir, "settings.json");
+
+    return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  };
+
+  const handOff = async () => {
+    await settle();
+
+    const before = saved();
+
+    reported.length = 0;
+    await runtime.session.prompt("/handoff keep");
+    await settle();
+
+    return before;
+  };
+
   const seeded = () =>
     runtime.session.sessionManager
       .getEntries()
@@ -132,7 +170,21 @@ const startHandoffRuntime = async () => {
     return change?.type === "model_change" ? `${change.provider}/${change.modelId}` : undefined;
   };
 
-  return { runtime, faux, locked, modelRuntime, warnings, select, selection, defaults, seeded, modelAtSeed };
+  return {
+    runtime,
+    faux,
+    locked,
+    modelRuntime,
+    warnings,
+    reported,
+    select,
+    selection,
+    defaults,
+    saved,
+    handOff,
+    seeded,
+    modelAtSeed,
+  };
 };
 
 describe("keeping the model and thinking level across a handoff", () => {
@@ -150,6 +202,88 @@ describe("keeping the model and thinking level across a handoff", () => {
     expect(handoff.defaults()).toEqual({ model: "acme/small", thinking: "low" });
     expect(handoff.modelAtSeed()).toBe("acme/large");
     expect(handoff.warnings).toEqual([]);
+
+    await handoff.runtime.dispose();
+  });
+
+  it("reports and saves nothing while the handoff restores a thinking level that differs from the reset one", async () => {
+    const handoff = await startHandoffRuntime({ modelThinkingLevels: { "acme/large": "medium" } });
+
+    await handoff.select(handoff.faux.getModel("large"), "high");
+
+    const before = await handoff.handOff();
+
+    expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "high" });
+    expect(handoff.reported).toEqual([]);
+    expect(handoff.saved()).toEqual(before);
+
+    handoff.runtime.session.setThinkingLevel("minimal");
+    await settle();
+
+    expect(handoff.reported).toEqual(["thinking minimal"]);
+    expect(handoff.saved()).toMatchObject({ defaultThinkingLevel: "minimal" });
+
+    await handoff.select(handoff.faux.getModel("small"), "medium");
+    await settle();
+
+    expect(handoff.reported).toEqual(["thinking minimal", "model acme/small", "thinking medium"]);
+    expect(handoff.saved()).toMatchObject({
+      defaultProvider: "acme",
+      defaultModel: "small",
+      defaultThinkingLevel: "medium",
+    });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("reports and saves nothing while the handoff restores a thinking level equal to the reset one", async () => {
+    const handoff = await startHandoffRuntime({ modelThinkingLevels: { "acme/large": "medium" } });
+
+    await handoff.select(handoff.faux.getModel("large"), "medium");
+
+    const before = await handoff.handOff();
+
+    expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "medium" });
+    expect(handoff.reported).toEqual([]);
+    expect(handoff.saved()).toEqual(before);
+
+    await handoff.runtime.session.setModel(handoff.faux.getModel("small") as never);
+    await settle();
+
+    expect(handoff.reported).toEqual(["model acme/small"]);
+    expect(handoff.saved()).toMatchObject({ defaultProvider: "acme", defaultModel: "small" });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("reports and saves nothing while the handoff clamps the kept level of a model that no longer reasons", async () => {
+    const handoff = await startHandoffRuntime();
+    const withoutReasoning = fauxProvider({
+      provider: "acme",
+      models: [
+        { id: "small", reasoning: true },
+        { id: "large", reasoning: false },
+      ],
+    });
+
+    await handoff.select(handoff.faux.getModel("large"), "high");
+    handoff.modelRuntime.registerNativeProvider(withoutReasoning.provider);
+
+    const before = await handoff.handOff();
+
+    expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "off" });
+    expect(handoff.reported).toEqual([]);
+    expect(handoff.saved()).toEqual(before);
+
+    await handoff.select(withoutReasoning.getModel("small"), "high");
+    await settle();
+
+    expect(handoff.reported).toEqual(["model acme/small", "thinking high"]);
+    expect(handoff.saved()).toMatchObject({
+      defaultProvider: "acme",
+      defaultModel: "small",
+      defaultThinkingLevel: "high",
+    });
 
     await handoff.runtime.dispose();
   });
