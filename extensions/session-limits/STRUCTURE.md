@@ -8,7 +8,7 @@ extensions/session-limits/
 │   └── plugin.ts               sessionLimitsPlugin, createLimits: registers the `handoff` tool, the request and seed renderers (from ui-kit), starts watchLimits, publishes the settings on session start
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events (session info passed as is) and commands to tui and rpc
-│   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level), busy channel (a request shows only the transcript row, no toast)
+│   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level, continues after every automatic handoff), busy channel (a request shows only the transcript row, no toast)
 │   ├── thresholds.ts           handoff step, retry decisions
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
@@ -17,7 +17,7 @@ extensions/session-limits/
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── handoff.test.ts         path, validation, main audience and session preface
-│   ├── limits.test.ts          the flow on a fake host
+│   ├── limits.test.ts          the flow on a fake host, including the instruction's no-reply closing
 │   ├── publish.test.ts         the limits published on session start
 │   ├── settings.test.ts        settings files
 │   └── thresholds.test.ts      decisions and notice text

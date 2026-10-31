@@ -231,7 +231,7 @@ describe("successor chain", () => {
     expect(result).toEqual({ text: `Handoff saved at ${first.handoffPath}` });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
 
-    child.finish("handoff saved");
+    child.finish("");
     await flushMicrotasks();
 
     const second = current(first.id).successorId as string;
@@ -266,7 +266,7 @@ describe("successor chain", () => {
     });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${invalid}\n`);
 
-    child.finish("handoff saved");
+    child.finish("");
     await flushMicrotasks();
 
     expect(current(first.id)).toMatchObject({

@@ -16,7 +16,7 @@ extensions/subagents/
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
-│   ├── base-system-prompt.md              # shared agent rules and the result contract
+│   ├── base-system-prompt.md              # shared agent rules and the result contract (a handoff replaces it: no reply)
 │   ├── create-agent.md                    # the /agents create brief
 │   └── autosetup-skills.md                # the /agents setup skills brief
 ├── api/

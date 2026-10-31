@@ -20,6 +20,7 @@ export type NewSessionOptions = {
   parentSession?: string;
   seed?: CustomMessage;
   keepSelection?: boolean;
+  continueWithSeed?: boolean;
 };
 
 export type SessionControl = {
