@@ -9,8 +9,6 @@ export type Phase = "watching" | "queued" | "requested" | "waiting" | "switching
 
 export const shouldRequest = (phase: Phase, level: LimitLevel) => phase === "watching" && level === "hard";
 
-export const continuesAfterSwitch = (manual: boolean, status: string) => !manual && status === "partial";
-
 export const isPending = (phase: Phase) => phase === "requested" || phase === "waiting";
 
 type HandoffInput = {

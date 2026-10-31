@@ -172,20 +172,17 @@ describe("session limits", () => {
     expect(notice()).toBe("<warning>» handoff at 60k tokens · 76.0k used");
   });
 
-  it.each(["done", "blocked"])(
-    "switches without continuing the work after an automatic %s handoff",
-    async (status) => {
-      const { host, turn, saveHandoff } = setup();
+  it.each(["done", "blocked"])("continues the work after an automatic %s handoff too", async (status) => {
+    const { host, turn, saveHandoff } = setup();
 
-      turn(76_000);
-      saveHandoff(VALID_HANDOFF.replace("partial", status));
-      host.settle();
-      await flush();
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF.replace("partial", status));
+    host.settle();
+    await flush();
 
-      expect(host.newSessions).toHaveLength(1);
-      expect(host.newSessions[0].continueWithSeed).toBe(false);
-    },
-  );
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].continueWithSeed).toBe(true);
+  });
 
   it("waits while a source reports running work and switches once it is released", async () => {
     const { host, requests, turn, saveHandoff, notice, busy } = setup();
