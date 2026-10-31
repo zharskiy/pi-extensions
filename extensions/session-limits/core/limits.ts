@@ -6,23 +6,27 @@ import type {
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
   type HandoffSeedDetails,
   type HandoffTarget,
   type HandoffValidation,
+  HELD_RESULTS_CHANNEL,
   handoffInstruction,
   handoffRetry,
   type Limits,
   limitLevel,
   mainLimit,
   parseBusySignal,
+  parseHeldResults,
   seedText,
 } from "../../../platform/shared/index.ts";
-import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface } from "./handoff.ts";
+import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface, withLateResults } from "./handoff.ts";
 import {
   type ContextTokens,
+  handoffInFlight,
   handoffStep,
   isPending,
   MAX_INSTRUCTIONS,
@@ -30,7 +34,7 @@ import {
   shouldRequest,
 } from "./thresholds.ts";
 
-const NOTICE_KEY = "pi-session-limits";
+const NAMESPACE = "pi-session-limits";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
@@ -71,6 +75,7 @@ type RequestOrigin = { manual: boolean; handedOff?: boolean; focus?: string };
 
 export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
   const sources = new Set<string>();
+  const held = new Map<string, string>();
   let state: LimitsState = {
     phase: "watching",
     instructions: 0,
@@ -84,6 +89,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   let switchRunning = false;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
+  let announced = false;
 
   const currentInstruction = (path: string) =>
     handoffInstruction({
@@ -106,10 +112,32 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     host.sendMessage({ customType: HANDOFF_REQUEST_TYPE, text, details: requestDetails() });
   };
 
+  const announce = () => {
+    host.publish(HANDOFF_PENDING_CHANNEL, { source: NAMESPACE, pending: announced });
+  };
+
+  const syncPending = () => {
+    const pending = handoffInFlight(state.phase);
+
+    if (pending === announced) {
+      return;
+    }
+
+    announced = pending;
+
+    if (!pending) {
+      held.clear();
+    }
+
+    announce();
+  };
+
   const refresh = () => {
+    syncPending();
+
     const notice = segment(state.context, state.phase === "stuck", limits(), HANDOFF_COMMAND);
 
-    host.ui.setNotice(NOTICE_KEY, notice ? host.ui.style(notice.token, notice.text) : undefined);
+    host.ui.setNotice(NAMESPACE, notice ? host.ui.style(notice.token, notice.text) : undefined);
   };
 
   const sendRequest = (path: string, origin: RequestOrigin) => {
@@ -127,6 +155,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     };
 
     sendInstruction(currentInstruction(path));
+    syncPending();
   };
 
   const request = (origin: RequestOrigin) => {
@@ -262,6 +291,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     }
 
     const previous = host.session().file;
+    const handoff = withLateResults(saved.text, Array.from(held.values()));
 
     const accepted = await control
       .newSession({
@@ -277,7 +307,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
               manual: state.handedOff,
               focus: state.focus,
             }),
-            saved.text,
+            handoff,
           ),
         },
       })
@@ -433,6 +463,20 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     if (released && sources.size === 0 && state.phase === "waiting") {
       release();
     }
+  });
+
+  host.subscribe(HELD_RESULTS_CHANNEL, (data) => {
+    const results = parseHeldResults(data);
+
+    if (!results || !announced) {
+      return;
+    }
+
+    held.set(results.source, results.text);
+  });
+
+  host.onSessionStart(() => {
+    announce();
   });
 
   host.onTurnEnd((context) => {

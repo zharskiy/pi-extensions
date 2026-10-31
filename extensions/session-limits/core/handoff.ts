@@ -12,11 +12,16 @@ export const MAIN_AUDIENCE: HandoffAudience = {
   statusHint: "for the user's current goal",
   reader: "the session that continues",
   extraRules: [
-    "Work already running in the background keeps running, and the switch to the new session waits for it; list it below.",
+    "Background work still running keeps running, and the automatic switch waits for it: list each piece under Evidence with its id, what runs it, the question it answers and what you will do with its result, and put that use under Next. Results that arrive later are attached to the new session's seed.",
   ],
   nextHint:
     "When skills of this session fit those steps, end with a line `Skills: <names>` so the next session reads them first.",
 };
+
+export const HELD_HEADING = "Batch results that arrived while the handoff was pending:";
+
+export const withLateResults = (text: string, late: string[]) =>
+  late.length === 0 ? text : [text.trim(), HELD_HEADING, ...late].join("\n\n");
 
 type SessionSource = { file?: string; manual: boolean; focus?: string };
 

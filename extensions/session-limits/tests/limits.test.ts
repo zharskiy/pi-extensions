@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMode, ToolSpec } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL, handoffPath as pathFor } from "../../../platform/shared/index.ts";
+import {
+  BUSY_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
+  HELD_RESULTS_CHANNEL,
+  handoffPath as pathFor,
+} from "../../../platform/shared/index.ts";
 import {
   createFakeHost,
   flushTimers as flush,
@@ -11,6 +16,7 @@ import {
 } from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
+import { HELD_HEADING } from "../core/handoff.ts";
 import { DEFAULT_LIMITS } from "../core/settings.ts";
 
 const temp = useTempDirs();
@@ -1316,5 +1322,151 @@ describe("handoff request message", () => {
         details: { reason: "limit", tokens: 176_000, request: 175_000 },
       }),
     ).toEqual(["» handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)"]);
+  });
+});
+
+describe("handoff pending and held results", () => {
+  const watch = () => {
+    const limits = setup();
+
+    const pendings = () =>
+      limits.host.published
+        .filter((entry) => entry.channel === HANDOFF_PENDING_CHANNEL)
+        .map((entry) => (entry.data as { pending: boolean }).pending);
+
+    const hold = (text: string, source = "pi-subagents") =>
+      limits.host.emit(HELD_RESULTS_CHANNEL, { source, text });
+
+    const seed = () => limits.host.newSessions[0]?.seed?.text ?? "";
+
+    return { ...limits, pendings, hold, seed };
+  };
+
+  it("announces no pending handoff at session start", () => {
+    const { pendings } = watch();
+
+    expect(pendings()).toEqual([false]);
+  });
+
+  it("announces the pending handoff when the request is sent and keeps it through the resend", () => {
+    const { host, turn, pendings, requests } = watch();
+
+    turn(76_000);
+
+    expect(pendings()).toEqual([false, true]);
+
+    host.settle();
+
+    expect(requests()).toHaveLength(2);
+    expect(pendings()).toEqual([false, true]);
+  });
+
+  it("clears the pending handoff when the session gives up", () => {
+    const { host, turn, pendings } = watch();
+
+    turn(76_000);
+    host.settle();
+    host.settle();
+
+    expect(pendings()).toEqual([false, true, false]);
+  });
+
+  it("clears the pending handoff and the held results when the user cancels a manual handoff", async () => {
+    const { host, pendings, hold, saveHandoff, seed } = watch();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    hold("stale result");
+    host.settle({ aborted: true });
+
+    expect(pendings()).toEqual([false, true, false]);
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(seed()).not.toContain("stale result");
+    expect(seed()).not.toContain(HELD_HEADING);
+  });
+
+  it("clears the pending handoff when the new session is cancelled", async () => {
+    const { host, turn, saveHandoff, pendings } = watch();
+
+    host.newSessionResult = false;
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(pendings()).toEqual([false, true, false]);
+  });
+
+  it("clears the pending handoff when the dispatched switch never runs", async () => {
+    const { host, turn, saveHandoff, pendings } = watch();
+
+    host.commands.set(HANDOFF_COMMAND, { description: "", run: () => undefined });
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(pendings()).toEqual([false, true]);
+
+    host.settle();
+
+    expect(pendings()).toEqual([false, true, false]);
+  });
+
+  it("carries held results into the new session's seed after the handoff", async () => {
+    const { host, turn, saveHandoff, hold, seed } = watch();
+
+    turn(76_000);
+    hold("first result");
+    hold("first result\n\n---\n\nsecond result");
+    hold("other result", "other-source");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(seed()).toContain(
+      `${VALID_HANDOFF}\n\n${HELD_HEADING}\n\nfirst result\n\n---\n\nsecond result\n\nother result`,
+    );
+  });
+
+  it("ignores held results while no handoff is pending", async () => {
+    const { host, turn, saveHandoff, hold, seed } = watch();
+
+    hold("before the request");
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(seed()).not.toContain("before the request");
+  });
+
+  it("switches with a result that finished after the save once the batch's busy signal drops", async () => {
+    const { host, turn, saveHandoff, busy, hold, seed, requests } = watch();
+
+    busy(true);
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.dispatched).toEqual([]);
+
+    busy(false);
+    hold("late batch result");
+    await flush();
+    await flush();
+
+    expect(requests()).toHaveLength(1);
+    expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].continueWithSeed).toBe(true);
+    expect(seed()).toContain(`${HELD_HEADING}\n\nlate batch result`);
   });
 });

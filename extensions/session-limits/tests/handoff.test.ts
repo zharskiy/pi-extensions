@@ -3,7 +3,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { handoffInstruction } from "../../../platform/shared/index.ts";
-import { handoffPath, MAIN_AUDIENCE, sessionPreface, validateMainHandoff } from "../core/handoff.ts";
+import {
+  HELD_HEADING,
+  handoffPath,
+  MAIN_AUDIENCE,
+  sessionPreface,
+  validateMainHandoff,
+  withLateResults,
+} from "../core/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",
@@ -60,7 +67,7 @@ describe("main handoff instruction", () => {
 
   it("offers done for the user's goal and adds the background-work and skills rules", () => {
     expect(text).toContain("for the user's current goal: done, partial or blocked");
-    expect(text).toContain("the switch to the new session waits for it");
+    expect(text).toContain("attached to the new session's seed");
     expect(text).toContain("`Skills: <names>`");
   });
 });
@@ -86,5 +93,17 @@ describe("sessionPreface", () => {
     const first = sessionPreface({ manual: false }).split("\n")[0];
 
     expect(first.endsWith("Continue from its Next section without asking the user to repeat.")).toBe(true);
+  });
+});
+
+describe("withLateResults", () => {
+  it("leaves the handoff alone without late results", () => {
+    expect(withLateResults("## Status\ndone\n", [])).toBe("## Status\ndone\n");
+  });
+
+  it("appends each source's late results under the heading", () => {
+    expect(withLateResults("## Status\ndone\n", ["a", "b"])).toBe(
+      `## Status\ndone\n\n${HELD_HEADING}\n\na\n\nb`,
+    );
   });
 });
