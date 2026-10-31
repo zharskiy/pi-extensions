@@ -29,6 +29,8 @@ type LifecycleHost = {
   onAssistantEnd(handler: (info: AssistantEnd) => void): void;
   onPhase(handler: (phase: Phase) => void): void;
   onDialog(handler: (event: DialogEvent) => void): void;
+  onModelSelect(handler: (ref: string) => void | Promise<void>): void;
+  onThinkingSelect(handler: (level: string) => void | Promise<void>): void;
   isIdle(): boolean;
 };
 
@@ -55,8 +57,11 @@ export type SessionHost = {
   contextFacts(): ContextFacts | undefined;
   model(): ModelInfo | undefined;
   thinkingLevel(): string;
+  setThinkingLevel(level: string): void;
   lastRequestUsage(): PromptTokens | undefined;
   mainRequestUsage(): PromptTokens;
+  saveDefaultModel(ref: string): Promise<string | undefined>;
+  saveDefaultThinkingLevel(level: string): Promise<string | undefined>;
 };
 
 export type Host = ToolHost &
