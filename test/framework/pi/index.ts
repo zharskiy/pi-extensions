@@ -1,3 +1,4 @@
+export { startPiSession } from "./offline-session.ts";
 export { createOverlayApi, disposeOverlays, openLastOverlay } from "./overlay-api.ts";
 export { initPiKeybindings, initPiRenderTheme, plainPiTheme } from "./render-theme.ts";
 export {

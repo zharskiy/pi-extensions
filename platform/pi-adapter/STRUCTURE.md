@@ -22,6 +22,7 @@
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
 - `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts, context tokens.
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with displayed custom messages as run starts), `formatRoutedMessage`.
+- `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
 - `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones and their re-queue at settle, the seeded start).
 - `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource`.
@@ -57,13 +58,14 @@
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
+- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
 - `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once.
 - `tests/phase.test.ts`: `runtime/phase.ts`.
 - `tests/child-scope.test.ts`: `runtime/child-scope.ts`.
 - `tests/session-file.test.ts`: `runtime/session-file.ts`.
 - `tests/message-text.test.ts`: `runtime/message-text.ts`.
+- `tests/default-model.test.ts`: `Host.onModelSelect`, `Host.saveDefaultModel`, `Host.onThinkingSelect` (without the reset of a model switch) and `Host.saveDefaultThinkingLevel` over a real pi session and a temp `settings.json`.
 - `tests/settle-within.test.ts`: `runtime/settle-within.ts`.
 - `tests/child-runtime.test.ts`: `child/child-runtime.ts` and `child/child-extension.ts`.
 - `tests/skills.test.ts`: `child/skills.ts`.

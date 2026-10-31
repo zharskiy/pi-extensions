@@ -1,7 +1,7 @@
 # test/framework structure
 
 - `index.ts`: the pi-free surface (fakes, harness, `live/` helpers).
-- `fake-host.ts`: `createFakeHost`, `FakeHost` (with `hidden` and `messages` recorders, `agentStart`, `assistantStart` and `assistantEnd` to fire the lifecycle handlers, and `chat`, the replies and entries in drawing order), `createTurnScope`, `hiddenMessageTexts`, `requestTexts`, `FAKE_FOOTER_KEY`.
+- `fake-host.ts`: `createFakeHost`, `FakeHost` (with `hidden` and `messages` recorders, `agentStart`, `assistantStart` and `assistantEnd` to fire the lifecycle handlers, `selectModel` and `selectThinking` to fire the model and thinking handlers with `savedDefaults`, `savedThinkingLevels` and `saveFailure` behind `saveDefaultModel` and `saveDefaultThinkingLevel`, and `chat`, the replies and entries in drawing order), `createTurnScope`, `hiddenMessageTexts`, `requestTexts`, `FAKE_FOOTER_KEY`.
 - `fake-agent-runtime.ts`: `createFakeAgentRuntime`, `FakeAgentRuntime`, `FakeChildSession`, `catalogModel` (invented refs).
 - `fake-form.ts`: `openFakeForm`, `FakeForm`; the fake `showForm` with a fake text input.
 - `themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`.
@@ -27,6 +27,7 @@
 - `eval-runs/eval-results.ts`: `observations.jsonl` and failed-session snapshots under `PI_EVAL_RESULTS`.
 - `pi/index.ts`: the surface of the helpers that load pi offline.
 - `pi/render-theme.ts`: `initPiRenderTheme`, `initPiKeybindings`, `plainPiTheme`.
+- `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory.
 - `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
 - `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.
 - `pi/session-files.ts`: real session files: read, parse, header, facts, prompt record.

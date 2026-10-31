@@ -123,18 +123,19 @@ Test behaviour the user sees (the lines, the notice text, the command's effect),
 
 ## 6. Register it everywhere the siblings are listed
 
-Nothing here is discovered automatically. Each item is a check or a doc that names the thirteen current extensions, so each one must change; the count moves from 13 to 14 (then onward):
+Nothing here is discovered automatically. Each item is a check or a doc that names the fourteen current extensions, so each one must change; the count moves from 14 to 15 (then onward):
 
 | Where | What |
 |---|---|
 | `package.json` | add `./extensions/<name>/index.ts` to `pi.extensions`; add `<name>` to `keywords`; add one clause for the new extension to the single-sentence `description`, before its last clause, keeping it one sentence |
-| `test/architecture.test.ts` | `expect(entries).toHaveLength(13)` becomes the new count |
-| `.github/workflows/ci.yml` | the pack check `= 13` becomes the new count |
+| `test/architecture.test.ts` | `expect(entries).toHaveLength(14)` becomes the new count |
+| `.github/workflows/ci.yml` | the pack check `= 14` becomes the new count |
 | root `README.md` | the count word in the header line and in "The package installs … extensions:"; a bullet in the right Quick start group (Agents and tools, Session awareness, Look and feel), in the form `- **[<name>](extensions/<name>/README.md)**: <lowercase one-line pitch>.`, paraphrasing the extension's own pitch; a try row only if the new command is one of the three or four things a first-time user should try, since that table is a showcase, not a list |
-| root `ARCHITECTURE.md` | the count word in the first line and the `13` in the "Who enforces what" bullets; a link in the alphabetical "Extensions, each with its own architecture" list |
-| root `STRUCTURE.md` | the `13` in the tree line and in the `package.json` and `knip.json` bullets; a link in the alphabetical extensions list under Folders |
+| root `ARCHITECTURE.md` | the count word in the first line and the `14` in the "Who enforces what" bullets; a link in the alphabetical "Extensions, each with its own architecture" list |
+| root `STRUCTURE.md` | the `14` in the tree line and in the `package.json` and `knip.json` bullets; a link in the alphabetical extensions list under Folders |
+| `platform/extension-manager/ARCHITECTURE.md` | the count word of the extensions that pass one plugin (all but subagents) |
 
-Then `grep -rn "13\|[Tt]hirteen" README.md ARCHITECTURE.md STRUCTURE.md test/architecture.test.ts .github/workflows/ci.yml` to confirm nothing was missed, because the architecture test and CI fail on the count and the docs silently go stale.
+Then `grep -rn "14\|[Ff]ourteen\|[Tt]hirteen" README.md ARCHITECTURE.md STRUCTURE.md platform/extension-manager/ARCHITECTURE.md test/architecture.test.ts .github/workflows/ci.yml` to confirm nothing was missed, because the architecture test and CI fail on the count and the docs silently go stale.
 
 Nothing else needs an edit: `knip.json`, `biome.json`, `vitest.config.ts`, `tsconfig.json` and the `files` list in `package.json` are glob-based. The one exception is an `agents/` folder: `files` names `extensions/subagents/agents` explicitly, so a second extension that ships agent files adds its own line there.
 
