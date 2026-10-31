@@ -15,7 +15,7 @@ import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, piRenderContext } from "../../../test/framework/pi/index.ts";
+import { initPiRenderTheme, piRenderContext, startPiSession } from "../../../test/framework/pi/index.ts";
 import { createChildExtension } from "../child/child-extension.ts";
 import { childSettings, childToolNames } from "../child/child-runtime.ts";
 import { CODEMODE_WORKERS_SETTING } from "../child/codemode.ts";
@@ -208,6 +208,79 @@ describe("pi adapter conformance", () => {
     ).toEqual([]);
     expect(
       screen.filter((name) => typeof Reflect.get(tui.TuiMainScreen.prototype, name) !== "function"),
+    ).toEqual([]);
+  });
+
+  it("resets the thinking level inside a model switch after setting the model and before model_select", async () => {
+    const seen: string[] = [];
+    const factory: pi.ExtensionFactory = (api) => {
+      api.on("thinking_level_select", (event, ctx) => {
+        seen.push(`thinking ${event.level} on ${ctx.model?.id}`);
+      });
+      api.on("model_select", (event) => {
+        seen.push(`model ${event.model.id}`);
+      });
+    };
+    const { session, model } = await startPiSession({
+      agentDir: temp.make("pi-conformance-agent-"),
+      cwd: temp.make("pi-conformance-cwd-"),
+      factory,
+      settings: { defaultThinkingLevel: "high" },
+      models: [
+        { id: "alpha", reasoning: true },
+        { id: "beta", reasoning: true },
+      ],
+    });
+
+    session.setThinkingLevel("low");
+    await session.setModel(model("beta"));
+
+    expect(seen).toEqual(["thinking low on alpha", "thinking high on beta", "model beta"]);
+
+    session.dispose();
+    vi.unstubAllEnvs();
+  });
+
+  it("awaits the model_select listeners of every extension in turn before setModel resolves", async () => {
+    const seen: string[] = [];
+    const listenAfter =
+      (label: string, ms: number): pi.ExtensionFactory =>
+      (api) => {
+        api.on("model_select", async (event) => {
+          await new Promise((resolve) => setTimeout(resolve, ms));
+          seen.push(`${label} ${event.model.id}`);
+        });
+      };
+    const { session, model } = await startPiSession({
+      agentDir: temp.make("pi-conformance-agent-"),
+      cwd: temp.make("pi-conformance-cwd-"),
+      factory: listenAfter("first", 20),
+      extraFactories: [listenAfter("second", 0)],
+      settings: {},
+      models: [{ id: "alpha" }, { id: "beta" }],
+    });
+
+    await session.setModel(model("beta"));
+
+    expect(seen).toEqual(["first beta", "second beta"]);
+
+    session.dispose();
+    vi.unstubAllEnvs();
+  });
+
+  it("has the settings manager methods the default model and thinking saves call", () => {
+    const methods = [
+      "setDefaultModelAndProvider",
+      "setDefaultThinkingLevel",
+      "getEnabledModels",
+      "setEnabledModels",
+      "flush",
+      "drainErrors",
+    ];
+
+    expect(typeof pi.SettingsManager.create).toBe("function");
+    expect(
+      methods.filter((name) => typeof Reflect.get(pi.SettingsManager.prototype, name) !== "function"),
     ).toEqual([]);
   });
 

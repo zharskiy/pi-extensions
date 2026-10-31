@@ -196,7 +196,7 @@ describe("architecture", () => {
     const entries = extensionDirs().map((extension) => `./${relative(ROOT, join(extension, "index.ts"))}`);
 
     expect([...manifestExtensions()].sort()).toEqual(entries.sort());
-    expect(entries).toHaveLength(13);
+    expect(entries).toHaveLength(14);
     expect(entries.filter((entry) => !/^\.\/extensions\/[a-z-]+\/index\.ts$/.test(entry))).toEqual([]);
   });
 
