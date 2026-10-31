@@ -11,7 +11,7 @@ const temp = useTempDirs();
 
 const SEED = { customType: "handoff-seed", text: "carry on" };
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const startHandoffRuntime = async (settings: object = {}) => {
   const dir = temp.make("pi-kept-selection-");
@@ -39,6 +39,7 @@ const startHandoffRuntime = async (settings: object = {}) => {
   });
   const warnings: string[] = [];
   const reported: string[] = [];
+  const pending: Promise<unknown>[] = [];
 
   const handoff: pi.ExtensionFactory = (api) => {
     const host = createPiHost(api, { tools: new Map() });
@@ -59,12 +60,18 @@ const startHandoffRuntime = async (settings: object = {}) => {
     const host = createPiHost(api, { tools: new Map() });
 
     host.onModelSelect(async (ref) => {
+      const save = host.saveDefaultModel(ref);
+
       reported.push(`model ${ref}`);
-      await host.saveDefaultModel(ref);
+      pending.push(save);
+      await save;
     });
     host.onThinkingSelect(async (level) => {
+      const save = host.saveDefaultThinkingLevel(level);
+
       reported.push(`thinking ${level}`);
-      await host.saveDefaultThinkingLevel(level);
+      pending.push(save);
+      await save;
     });
   };
 
@@ -143,14 +150,21 @@ const startHandoffRuntime = async (settings: object = {}) => {
     return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
   };
 
-  const handOff = async () => {
-    await settle();
+  const drain = async () => {
+    await flush();
+    await Promise.all(pending.splice(0));
+  };
+
+  const handOffFromSaved = async (
+    start: () => Promise<unknown> = () => runtime.session.prompt("/handoff keep"),
+  ) => {
+    await drain();
 
     const before = saved();
 
     reported.length = 0;
-    await runtime.session.prompt("/handoff keep");
-    await settle();
+    await start();
+    await drain();
 
     return before;
   };
@@ -181,7 +195,8 @@ const startHandoffRuntime = async (settings: object = {}) => {
     selection,
     defaults,
     saved,
-    handOff,
+    drain,
+    handOffFromSaved,
     seeded,
     modelAtSeed,
   };
@@ -211,20 +226,20 @@ describe("keeping the model and thinking level across a handoff", () => {
 
     await handoff.select(handoff.faux.getModel("large"), "high");
 
-    const before = await handoff.handOff();
+    const before = await handoff.handOffFromSaved();
 
     expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "high" });
     expect(handoff.reported).toEqual([]);
     expect(handoff.saved()).toEqual(before);
 
     handoff.runtime.session.setThinkingLevel("minimal");
-    await settle();
+    await handoff.drain();
 
     expect(handoff.reported).toEqual(["thinking minimal"]);
     expect(handoff.saved()).toMatchObject({ defaultThinkingLevel: "minimal" });
 
     await handoff.select(handoff.faux.getModel("small"), "medium");
-    await settle();
+    await handoff.drain();
 
     expect(handoff.reported).toEqual(["thinking minimal", "model acme/small", "thinking medium"]);
     expect(handoff.saved()).toMatchObject({
@@ -241,14 +256,14 @@ describe("keeping the model and thinking level across a handoff", () => {
 
     await handoff.select(handoff.faux.getModel("large"), "medium");
 
-    const before = await handoff.handOff();
+    const before = await handoff.handOffFromSaved();
 
     expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "medium" });
     expect(handoff.reported).toEqual([]);
     expect(handoff.saved()).toEqual(before);
 
     await handoff.runtime.session.setModel(handoff.faux.getModel("small") as never);
-    await settle();
+    await handoff.drain();
 
     expect(handoff.reported).toEqual(["model acme/small"]);
     expect(handoff.saved()).toMatchObject({ defaultProvider: "acme", defaultModel: "small" });
@@ -269,14 +284,14 @@ describe("keeping the model and thinking level across a handoff", () => {
     await handoff.select(handoff.faux.getModel("large"), "high");
     handoff.modelRuntime.registerNativeProvider(withoutReasoning.provider);
 
-    const before = await handoff.handOff();
+    const before = await handoff.handOffFromSaved();
 
     expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "off" });
     expect(handoff.reported).toEqual([]);
     expect(handoff.saved()).toEqual(before);
 
     await handoff.select(withoutReasoning.getModel("small"), "high");
-    await settle();
+    await handoff.drain();
 
     expect(handoff.reported).toEqual(["model acme/small", "thinking high"]);
     expect(handoff.saved()).toMatchObject({
@@ -284,6 +299,99 @@ describe("keeping the model and thinking level across a handoff", () => {
       defaultModel: "small",
       defaultThinkingLevel: "high",
     });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("passes a switch back to the restored model once the user has moved away from it", async () => {
+    const handoff = await startHandoffRuntime();
+
+    await handoff.select(handoff.faux.getModel("large"), "high");
+    await handoff.handOffFromSaved();
+    await handoff.runtime.session.setModel(handoff.faux.getModel("small") as never);
+    await handoff.runtime.session.setModel(handoff.faux.getModel("large") as never);
+    await handoff.drain();
+
+    expect(handoff.reported).toEqual(["model acme/small", "model acme/large"]);
+    expect(handoff.saved()).toMatchObject({ defaultProvider: "acme", defaultModel: "large" });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("passes a return to the restored level once the user has picked another", async () => {
+    const handoff = await startHandoffRuntime();
+
+    await handoff.select(handoff.faux.getModel("large"), "high");
+    await handoff.handOffFromSaved();
+    handoff.runtime.session.setThinkingLevel("minimal");
+    await handoff.drain();
+    handoff.runtime.session.setThinkingLevel("high");
+    await handoff.drain();
+
+    expect(handoff.reported).toEqual(["thinking minimal", "thinking high"]);
+    expect(handoff.saved()).toMatchObject({ defaultThinkingLevel: "high" });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("passes the user's pick of a model the handoff failed to restore", async () => {
+    const handoff = await startHandoffRuntime();
+
+    await handoff.select(handoff.locked.getModel("sealed"), "high");
+    handoff.modelRuntime.registerNativeProvider({ ...handoff.locked.provider, auth: {} });
+    await handoff.handOffFromSaved();
+    handoff.modelRuntime.registerNativeProvider(handoff.locked.provider);
+    await handoff.runtime.session.setModel(handoff.locked.getModel("sealed") as never);
+    await handoff.drain();
+
+    expect(handoff.warnings).toHaveLength(1);
+    expect(handoff.reported).toEqual(["model vault/sealed"]);
+    expect(handoff.saved()).toMatchObject({ defaultProvider: "vault", defaultModel: "sealed" });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("reports and saves nothing for a kept thinking value that is not a level and passes a later pick", async () => {
+    const handoff = await startHandoffRuntime({ modelThinkingLevels: { "acme/large": "medium" } });
+    const keepBogus = async (sessionManager: pi.SessionManager) => {
+      sessionManager.appendCustomEntry("pi-adapter:kept-selection", {
+        provider: "acme",
+        id: "large",
+        thinking: "bogus",
+      });
+    };
+
+    const before = await handoff.handOffFromSaved(() => handoff.runtime.newSession({ setup: keepBogus }));
+
+    expect(handoff.selection()).toEqual({ model: "acme/large", thinking: "medium" });
+    expect(handoff.reported).toEqual([]);
+    expect(handoff.saved()).toEqual(before);
+
+    handoff.runtime.session.setThinkingLevel("high");
+    await handoff.drain();
+
+    expect(handoff.reported).toEqual(["thinking high"]);
+    expect(handoff.saved()).toMatchObject({ defaultThinkingLevel: "high" });
+
+    await handoff.runtime.dispose();
+  });
+
+  it("reports and saves nothing when the kept model is the one the new session starts on", async () => {
+    const handoff = await startHandoffRuntime();
+
+    await handoff.select(handoff.faux.getModel("small"), "high");
+
+    const before = await handoff.handOffFromSaved();
+
+    expect(handoff.selection()).toEqual({ model: "acme/small", thinking: "high" });
+    expect(handoff.reported).toEqual([]);
+    expect(handoff.saved()).toEqual(before);
+
+    await handoff.runtime.session.setModel(handoff.faux.getModel("large") as never);
+    await handoff.drain();
+
+    expect(handoff.reported).toEqual(["model acme/large"]);
+    expect(handoff.saved()).toMatchObject({ defaultProvider: "acme", defaultModel: "large" });
 
     await handoff.runtime.dispose();
   });

@@ -34,7 +34,7 @@ import { writeDefaultModel, writeDefaultThinkingLevel } from "./default-model.ts
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
 import {
   claimKeptSelection,
-  forgetSelection,
+  forgetSessionSelection,
   keepSelection,
   releaseRestoredSelection,
   restoredSelection,
@@ -271,7 +271,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
     if (state.ctx) {
       dropFollowUps(sessionOf(state.ctx));
-      forgetSelection(state.ctx);
+      forgetSessionSelection(state.ctx);
     }
 
     await shutdownHandlers.reduce<Promise<void>>(

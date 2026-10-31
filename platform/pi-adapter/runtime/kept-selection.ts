@@ -53,17 +53,17 @@ export const releaseRestoredSelection = (ctx: ExtensionContext) => {
   restoredSelections().delete(sessionOf(ctx));
 };
 
-export const forgetSelection = (ctx: ExtensionContext) => {
+export const forgetSessionSelection = (ctx: ExtensionContext) => {
   releaseRestoredSelection(ctx);
   claimedSessions().delete(sessionOf(ctx));
 };
 
 export const restoreSelection = async (pi: SelectionApi, ctx: ExtensionContext, kept: KeptSelection) => {
-  const model = ctx.modelRegistry.find(kept.provider, kept.id);
   const ref = `${kept.provider}/${kept.id}`;
 
   restoredSelections().set(sessionOf(ctx), { model: ref, thinking: kept.thinking, applied: false });
 
+  const model = ctx.modelRegistry.find(kept.provider, kept.id);
   const restored = model !== undefined && (await pi.setModel(model).catch(() => false));
 
   if (!restored) {

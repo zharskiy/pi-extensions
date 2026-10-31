@@ -241,23 +241,21 @@ describe("pi adapter conformance", () => {
     vi.unstubAllEnvs();
   });
 
-  it("awaits every model_select listener before setModel resolves", async () => {
+  it("awaits the model_select listeners of every extension in turn before setModel resolves", async () => {
     const seen: string[] = [];
-    const later = () => new Promise((resolve) => setTimeout(resolve, 10));
-    const factory: pi.ExtensionFactory = (api) => {
-      api.on("model_select", async (event) => {
-        await later();
-        seen.push(`first ${event.model.id}`);
-      });
-      api.on("model_select", async (event) => {
-        await later();
-        seen.push(`second ${event.model.id}`);
-      });
-    };
+    const listenAfter =
+      (label: string, ms: number): pi.ExtensionFactory =>
+      (api) => {
+        api.on("model_select", async (event) => {
+          await new Promise((resolve) => setTimeout(resolve, ms));
+          seen.push(`${label} ${event.model.id}`);
+        });
+      };
     const { session, model } = await startPiSession({
       agentDir: temp.make("pi-conformance-agent-"),
       cwd: temp.make("pi-conformance-cwd-"),
-      factory,
+      factory: listenAfter("first", 20),
+      extraFactories: [listenAfter("second", 0)],
       settings: {},
       models: [{ id: "alpha" }, { id: "beta" }],
     });
