@@ -17,7 +17,7 @@ extensions/session-limits/
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── handoff.test.ts         path, validation, main audience and session preface
-│   ├── limits.test.ts          the flow on a fake host
+│   ├── limits.test.ts          the flow on a fake host, including the instruction's no-reply closing
 │   ├── publish.test.ts         the limits published on session start
 │   ├── settings.test.ts        settings files
 │   └── thresholds.test.ts      decisions and notice text

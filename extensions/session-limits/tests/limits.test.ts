@@ -141,7 +141,7 @@ describe("session limits", () => {
     expect(requests()[0]).toContain("Call the `handoff` tool");
     expect(requests()[0]).toContain("If it reports errors, fix them and call it again.");
     expect(requests()[0]).not.toContain("write tool");
-    expect(requests()[0].endsWith("reply with one line: `handoff saved`.")).toBe(true);
+    expect(requests()[0].endsWith("end your turn without replying.")).toBe(true);
     expect(requests()[0]).not.toMatch(/agent/i);
     expect(requests()[0].startsWith("Your context window is nearly full.")).toBe(true);
     expect(requests()[0]).not.toContain("{{");
