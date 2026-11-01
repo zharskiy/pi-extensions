@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, livePiTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
+import { initPiRenderTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
 import { sharedPad } from "../tools/row-component.ts";
 
@@ -337,23 +337,29 @@ describe("showing the previous session after a handoff", () => {
     const line = (lines: string[] | undefined, text: string) =>
       lines?.find((row) => stripVTControlCharacters(row).includes(text));
 
+    let skin = "dark";
     pi.initTheme("dark");
+    const tagging = {
+      ...plainPiTheme,
+      fg: (token: string, text: string) => `<${skin}:${token}>${text}</>`,
+    } as pi.Theme;
 
-    const first = session.component(entry, livePiTheme);
+    const first = session.component(entry, tagging);
     const dark = first?.render(100);
 
+    skin = "light";
     pi.initTheme("light");
     first?.invalidate();
 
-    const light = session.component(entry, livePiTheme)?.render(100);
+    const light = session.component(entry, tagging)?.render(100);
 
     initPiRenderTheme();
 
     expect(line(dark, "first question")).toBeDefined();
     expect(line(light, "first question")).not.toBe(line(dark, "first question"));
-    expect(line(light, "continued from previous session")).not.toBe(
-      line(dark, "continued from previous session"),
-    );
+    expect(line(dark, "continued from previous session")).toContain("<dark:dim>");
+    expect(line(light, "continued from previous session")).toContain("<light:dim>");
+    expect(line(light, "continued from previous session")).not.toContain("<dark:");
 
     await session.runtime.dispose();
   });
