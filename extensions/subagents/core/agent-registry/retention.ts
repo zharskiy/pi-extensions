@@ -1,8 +1,5 @@
-import { lstat, readdir, readFile, rm, rmdir } from "node:fs/promises";
+import { lstat, readdir, rm, rmdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { isPlainObject } from "../../../../platform/shared/index.ts";
-import { type AgentState, isClosed } from "../model/agent-record.ts";
-import { MANIFEST_FILE } from "../model/paths.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -20,11 +17,6 @@ const isRealDir = (dir: string) =>
     () => false,
   );
 
-const readManifest = (dir: string) =>
-  readFile(join(dir, MANIFEST_FILE), "utf8")
-    .then((text) => JSON.parse(text) as unknown)
-    .catch(() => undefined);
-
 const newestMtime = async (dir: string) => {
   const names = await readdir(dir);
   const stats = await Promise.all([dir, ...names.map((name) => join(dir, name))].map((path) => lstat(path)));
@@ -32,25 +24,11 @@ const newestMtime = async (dir: string) => {
   return Math.max(...stats.map((stat) => stat.mtimeMs));
 };
 
-const lastActive = async (run: string) => {
-  const manifest = await readManifest(run);
-
-  if (!isPlainObject(manifest) || typeof manifest.state !== "string") {
-    return newestMtime(run);
-  }
-
-  if (!isClosed(manifest.state as AgentState)) {
-    return undefined;
-  }
-
-  return typeof manifest.endedAt === "number" ? manifest.endedAt : newestMtime(run);
-};
-
 const pruneRun = async (run: string, cutoff: number) => {
   try {
-    const active = await lastActive(run);
+    const touched = await newestMtime(run);
 
-    if (active === undefined || active >= cutoff) {
+    if (touched >= cutoff) {
       return [];
     }
 

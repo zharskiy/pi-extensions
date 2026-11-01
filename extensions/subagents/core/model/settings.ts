@@ -147,12 +147,14 @@ export const loadSettings = (agentDir: string, cwd: string, projectTrusted: bool
   const project: SettingsParse<Settings> = projectTrusted
     ? readSettingsFile(settingsSchema, projectPath)
     : { patch: {}, errors: [] };
-  const { disabledPlugins: ignored, ...projectPatch } = project.patch;
+  const { disabledPlugins: projectPlugins, retentionDays: projectRetention, ...projectPatch } = project.patch;
   const errors = [...user.errors, ...project.errors];
+  const userOnly = Object.entries({
+    disabledPlugins: projectPlugins,
+    retentionDays: projectRetention,
+  }).filter(([, value]) => value !== undefined);
 
-  if (ignored !== undefined) {
-    errors.push(`${projectPath}: disabledPlugins is read from the user settings file only`);
-  }
+  errors.push(...userOnly.map(([key]) => `${projectPath}: ${key} is read from the user settings file only`));
 
   const agents = mergeOverrides(user.patch.agents, projectPatch.agents);
 

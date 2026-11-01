@@ -52,7 +52,7 @@ A model configured in pi. The shipped agents name specific models; without crede
 <details>
 <summary>Disk use</summary>
 
-Each agent run keeps its transcript, result and status under pi's sessions folder, next to the session that started it (`~/.pi/agent/sessions/<project>/<session>/agents/<agent id>/`). When a session starts, finished runs that ended more than `retentionDays` days ago (default 60) are deleted, in every project; runs still marked as running, and the runs of the current session and the session it continued from, are kept. Only these agent folders are removed, never pi's own session files. Set `"retentionDays": 0` in `~/.pi/agent/pi-subagents.json` to keep everything.
+Each agent run keeps its transcript, result and status under pi's sessions folder, next to the session that started it (`~/.pi/agent/sessions/<project>/<session>/agents/<agent id>/`). When a session starts, agent folders whose files have not changed for more than `retentionDays` days (default 60) are deleted, in every project; a running agent keeps writing its files, so it is never old enough, and the runs of the current session and the session it continued from are always kept. Only these agent folders are removed, never pi's own session files. Set `"retentionDays": 0` in `~/.pi/agent/pi-subagents.json` to keep everything; the setting is read from that user file only, never from a project's `.pi/pi-subagents.json`.
 
 </details>
 

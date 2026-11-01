@@ -12,7 +12,7 @@ const NOW = Date.UTC(2026, 10, 1);
 const OLD = NOW - 90 * DAY_MS;
 const RECENT = NOW - 5 * DAY_MS;
 
-type Run = { state?: string; endedAt?: number; touched?: number; manifest?: string };
+type Run = { state?: string; touched?: number };
 
 const fabricate = (root = tempDir()) => {
   const sessionsRoot = join(root, "agent", "sessions");
@@ -27,17 +27,16 @@ const fabricate = (root = tempDir()) => {
     return join(slugDir, `${stem}.jsonl`);
   };
 
-  const run = (stem: string, id: string, { state, endedAt, touched = NOW, manifest }: Run = {}) => {
+  const run = (stem: string, id: string, { state, touched = NOW }: Run = {}) => {
     const dir = join(agentsDir(stem), id);
-    const text = manifest ?? (state ? JSON.stringify({ id, state, endedAt }) : undefined);
     const stamp = new Date(touched);
 
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "result.md"), "done\n");
     writeFileSync(join(dir, "child.jsonl"), "{}\n");
 
-    if (text !== undefined) {
-      writeFileSync(join(dir, MANIFEST_FILE), text);
+    if (state) {
+      writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify({ id, state }));
     }
 
     readdirSync(dir).forEach((name) => {
@@ -55,36 +54,36 @@ const prune = (sessionsRoot: string, keep: string[] = [], retentionDays = 60) =>
   pruneAgentRuns({ sessionsRoot, retentionDays, keep, now: NOW });
 
 describe("agent run retention", () => {
-  it("removes old closed runs and keeps running and recent ones", async () => {
+  it("removes runs untouched since before the cutoff, a stale running manifest included", async () => {
     const layout = fabricate();
-    const old = layout.run("s1", "scout-old", { state: "done", endedAt: OLD, touched: OLD });
-    const stopped = layout.run("s1", "scout-stopped", { state: "stopped", endedAt: OLD });
-    const running = layout.run("s1", "scout-running", { state: "running", touched: OLD });
-    const recent = layout.run("s1", "scout-recent", { state: "failed", endedAt: RECENT, touched: OLD });
+    const done = layout.run("s1", "scout-done", { state: "done", touched: OLD });
+    const crashed = layout.run("s1", "scout-crashed", { state: "running", touched: OLD });
+    const bare = layout.run("s1", "scout-bare", { touched: OLD });
 
     await prune(layout.sessionsRoot);
 
-    expect([old, stopped, running, recent].map(existsSync)).toEqual([false, false, true, true]);
+    expect([done, crashed, bare].map(existsSync)).toEqual([false, false, false]);
   });
 
-  it("judges a run without a readable manifest by its newest file", async () => {
+  it("keeps a run with a recently touched file, whatever its manifest says", async () => {
     const layout = fabricate();
-    const stale = layout.run("s1", "scout-stale", { touched: OLD });
-    const broken = layout.run("s1", "scout-broken", { manifest: "{not json", touched: OLD });
-    const fresh = layout.run("s1", "scout-fresh", { touched: OLD });
+    const done = layout.run("s1", "scout-done", { state: "done", touched: OLD });
+    const running = layout.run("s1", "scout-running", { state: "running", touched: OLD });
 
-    utimesSync(join(fresh, "child.jsonl"), new Date(RECENT), new Date(RECENT));
+    [done, running].forEach((dir) => {
+      utimesSync(join(dir, "child.jsonl"), new Date(RECENT), new Date(RECENT));
+    });
 
     await prune(layout.sessionsRoot);
 
-    expect([stale, broken, fresh].map(existsSync)).toEqual([false, false, true]);
+    expect([done, running].map(existsSync)).toEqual([true, true]);
   });
 
   it("keeps the protected sessions' runs and pi's own session files", async () => {
     const layout = fabricate();
     const files = ["current", "parent", "other"].map(layout.session);
     const runs = ["current", "parent", "other"].map((stem) =>
-      layout.run(stem, "scout-1", { state: "done", endedAt: OLD }),
+      layout.run(stem, "scout-1", { state: "done", touched: OLD }),
     );
 
     await prune(layout.sessionsRoot, [layout.agentsDir("current"), layout.agentsDir("parent")]);
@@ -96,9 +95,9 @@ describe("agent run retention", () => {
   it("drops the emptied agents and session directories but not ones still holding runs", async () => {
     const layout = fabricate();
 
-    layout.run("emptied", "scout-1", { state: "done", endedAt: OLD });
-    layout.run("partial", "scout-1", { state: "done", endedAt: OLD });
-    layout.run("partial", "scout-2", { state: "done", endedAt: RECENT });
+    layout.run("emptied", "scout-1", { state: "done", touched: OLD });
+    layout.run("partial", "scout-1", { state: "done", touched: OLD });
+    layout.run("partial", "scout-2", { state: "done", touched: RECENT });
 
     await prune(layout.sessionsRoot);
 
@@ -108,7 +107,7 @@ describe("agent run retention", () => {
 
   it("keeps everything when retentionDays is 0", async () => {
     const layout = fabricate();
-    const old = layout.run("s1", "scout-old", { state: "done", endedAt: OLD, touched: OLD });
+    const old = layout.run("s1", "scout-old", { state: "done", touched: OLD });
 
     await prune(layout.sessionsRoot, [], 0);
 
@@ -119,9 +118,9 @@ describe("agent run retention", () => {
     const layout = fabricate();
     const now = Date.now();
     const old = now - 90 * DAY_MS;
-    const stale = layout.run("other", "scout-1", { state: "done", endedAt: old });
-    const current = layout.run("current", "scout-1", { state: "done", endedAt: old });
-    const parent = layout.run("parent", "scout-1", { state: "done", endedAt: old });
+    const stale = layout.run("other", "scout-1", { state: "done", touched: old });
+    const current = layout.run("current", "scout-1", { state: "done", touched: old });
+    const parent = layout.run("parent", "scout-1", { state: "done", touched: old });
 
     const host = createFakeHost({
       id: basename(layout.root),
