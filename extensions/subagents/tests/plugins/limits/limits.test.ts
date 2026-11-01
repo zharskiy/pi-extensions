@@ -8,6 +8,7 @@ import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
+import { wakesOf } from "../../support/child-messages.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const WIDE_AGENT = [
@@ -63,8 +64,11 @@ describe("limits plugin", () => {
     await turn(81_000);
 
     expect(child.messages).toHaveLength(1);
-    expect(child.messages[0].message).toMatchObject({ sender: "pi-subagents" });
-    expect(child.messages[0].message.text).toContain("Context limit warning");
+    expect(child.messages[0].message).toEqual({
+      customType: "pi-subagents:message",
+      text: "[message from pi-subagents]\nContext limit warning: about 81% of your 100000-token context limit is used. Finish the current step, avoid reading large files, and prepare to wrap up.",
+      details: { sender: "pi-subagents" },
+    });
     expect(child.messages[0].delivery).toBe("steer");
 
     await turn(90_000);
@@ -81,7 +85,6 @@ describe("limits plugin", () => {
       details: { reason: "limit", tokens: 100_500, request: 100_000 },
     });
     expect(child.messages[1].delivery).toBe("steer");
-    expect(child.messages[0].message).not.toHaveProperty("customType");
     expect(services.require("registry").get(record.id)?.handoffRequested).toBe(true);
   });
 
@@ -268,12 +271,13 @@ describe("limits plugin", () => {
     runtime.child(registry.list()[1].id).finish("found it in src/a.ts");
     await flushMicrotasks();
 
-    expect(child.wakes).toHaveLength(1);
+    expect(wakesOf(child)).toHaveLength(1);
 
     await turn(101_000);
 
     expect(registry.get(record.id)?.handoffRequested).toBe(true);
     expect(child.messages.map((entry) => entry.message.text)).toEqual([
+      expect.stringContaining("found it in src/a.ts"),
       expect.stringContaining(record.handoffPath),
     ]);
   });

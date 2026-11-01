@@ -1,9 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { CustomMessage } from "../../../../platform/pi-adapter/index.ts";
 import { errorText } from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, plainReceipt, receipt, singleLine } from "../components/receipt.ts";
 import { isTerminal } from "../components/tree.ts";
 import { type AgentRecord, chainLinks, worktreeText } from "../model/agent-record.ts";
+import { BATCH_TYPE, type BatchDetails } from "../model/child-messages.ts";
+import { joinTexts } from "./outbox.ts";
 
 const SUMMARY_WORDS: Partial<Record<AgentRecord["state"], string>> = {
   done: "Done",
@@ -158,6 +161,21 @@ const countByState = (records: AgentRecord[]) => {
     .map(([state, count]) => `${count} ${state}`)
     .join(", ");
 };
+
+const BATCH_HEADER = /^\[pi-subagents\] Batch (\S+) finished: (.+)\.$/;
+
+const parseBatchHeader = (text: string) => {
+  const [first = ""] = text.split("\n");
+  const match = BATCH_HEADER.exec(first);
+
+  return match ? { id: match[1] ?? "", counts: match[2] ?? "" } : undefined;
+};
+
+export const batchWake = (texts: string[]): CustomMessage => ({
+  customType: BATCH_TYPE,
+  text: joinTexts(texts),
+  details: { batches: texts.flatMap((text) => parseBatchHeader(text) ?? []) } satisfies BatchDetails,
+});
 
 export const batchMessage = (batchId: string, records: AgentRecord[], inlineLimit: number) => {
   const byId = new Map(records.map((record) => [record.id, record]));

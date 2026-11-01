@@ -4,6 +4,7 @@ import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.t
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { MessageAgentParams, RunAgentParams } from "../../../core/run-agent/tools.ts";
+import { routedOf } from "../../support/child-messages.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const setup = async (maxConcurrent = 4) => {
@@ -40,9 +41,12 @@ describe("message_agent", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.text).toBe(`Message delivered to ${record.id} (steer).`);
-    expect(runtime.child(record.id).messages).toEqual([
+    expect(routedOf(runtime.child(record.id))).toEqual([
       { message: { sender: "main", text: "stop touching the auth module" }, delivery: "steer" },
     ]);
+    expect(runtime.child(record.id).messages[0]?.message.text).toBe(
+      "[message from main]\nstop touching the auth module",
+    );
   });
 
   it("renders nothing in the chat when the message is delivered", async () => {
@@ -158,7 +162,7 @@ describe("message_agent", () => {
     runtime.child(first.id).finish("done");
     await flushMicrotasks();
 
-    expect(runtime.child(second.id).messages).toEqual([
+    expect(routedOf(runtime.child(second.id))).toEqual([
       { message: { sender: "main", text: "also cover the tests" }, delivery: "steer" },
     ]);
   });

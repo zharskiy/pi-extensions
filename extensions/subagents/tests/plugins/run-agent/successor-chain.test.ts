@@ -13,6 +13,7 @@ import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
+import { routedOf, wakesOf } from "../../support/child-messages.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const handoffText = (status: string) =>
@@ -418,8 +419,8 @@ describe("successor chain", () => {
     const routed = await runner.route(first.id, { sender: "main", text: "also check logout" });
 
     expect(routed).toEqual({ ok: true, delivery: "steer" });
-    expect(runtime.child(second).messages.map((entry) => entry.message.text)).toEqual(["also check logout"]);
-    expect(runtime.child(first.id).messages.map((entry) => entry.message.text)).not.toContain(
+    expect(routedOf(runtime.child(second)).map((entry) => entry.message.text)).toEqual(["also check logout"]);
+    expect(routedOf(runtime.child(first.id)).map((entry) => entry.message.text)).not.toContain(
       "also check logout",
     );
 
@@ -463,7 +464,7 @@ describe("successor chain", () => {
     runtime.child(scout.id).finish("the token store is src/store.ts");
     await flushMicrotasks();
 
-    expect(child.wakes).toEqual([]);
+    expect(wakesOf(child)).toEqual([]);
 
     await requestHandoff(first.id);
     writeHandoff(first.id, "partial");
@@ -492,14 +493,14 @@ describe("successor chain", () => {
     const [link] = started.records;
     const second = (await handOff(link.id)) as string;
 
-    expect(caller.wakes).toEqual([]);
+    expect(wakesOf(caller)).toEqual([]);
 
     runtime.child(second).finish("token store is in src/store.ts");
     await flushMicrotasks();
 
-    expect(caller.wakes).toHaveLength(1);
-    expect(caller.wakes[0]).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(caller.wakes[0]).toContain("token store is in src/store.ts");
+    expect(wakesOf(caller)).toHaveLength(1);
+    expect(wakesOf(caller)[0]).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(wakesOf(caller)[0]).toContain("token store is in src/store.ts");
   });
 
   describe("handoff with open nested batches", () => {
@@ -541,7 +542,7 @@ describe("successor chain", () => {
       runtime.child(a.id).finish("a is in src/a.ts");
       await flushMicrotasks();
 
-      expect(caller.wakes).toEqual([]);
+      expect(wakesOf(caller)).toEqual([]);
       expect(current(first.id).successorId).toBeUndefined();
 
       runtime.child(b.id).finish("b is in src/b.ts");
@@ -551,7 +552,7 @@ describe("successor chain", () => {
       const task = runtime.child(successor).seed?.text ?? "";
 
       expect(current(first.id).state).toBe("handoff");
-      expect(caller.wakes).toEqual([]);
+      expect(wakesOf(caller)).toEqual([]);
       expect(caller.disposed).toBe(true);
       expect(task).toContain("Batch results that arrived while your predecessor's handoff was pending:");
       expect(task).toContain("a is in src/a.ts");
@@ -587,14 +588,14 @@ describe("successor chain", () => {
       const routed = await runner.route(first.id, { sender: "main", text: "also check logout" });
 
       expect(routed).toEqual({ ok: true, delivery: "held" });
-      expect(caller.messages.map((entry) => entry.message.text)).not.toContain("also check logout");
+      expect(routedOf(caller).map((entry) => entry.message.text)).not.toContain("also check logout");
 
       runtime.child(a.id).finish("a is in src/a.ts");
       await flushMicrotasks();
 
       const successor = current(first.id).successorId as string;
 
-      expect(runtime.child(successor).messages.map((entry) => entry.message.text)).toEqual([
+      expect(routedOf(runtime.child(successor)).map((entry) => entry.message.text)).toEqual([
         "also check logout",
       ]);
     });
@@ -716,7 +717,7 @@ describe("successor chain", () => {
 
       expect(current(first.id).state).toBe("handoff");
       expect(current(first.id).successorId).toBeUndefined();
-      expect(caller.wakes).toEqual([]);
+      expect(wakesOf(caller)).toEqual([]);
       expect(registry.list()).toHaveLength(2);
     });
 

@@ -1,11 +1,10 @@
 import { HANDOFF_REQUEST_TYPE, type HandoffRequestDetails } from "../../../../platform/shared/index.ts";
 import { softWarning } from "../../core/limits/warning.ts";
 import { isClosed } from "../../core/model/agent-record.ts";
+import { NOTICE_SENDER } from "../../core/model/child-messages.ts";
 import { agentLimit, limitStep } from "../../core/model/context-limit.ts";
 import { handoffService } from "../../core/model/handoff.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
-
-const LIMITS_SENDER = "pi-subagents";
 
 export const limitsPlugin: Plugin = {
   id: "limits",
@@ -34,7 +33,7 @@ export const limitsPlugin: Plugin = {
 
       if (step === "warn") {
         warned.add(id);
-        void runner.route(id, { sender: LIMITS_SENDER, text: softWarning(tokens, limit.request) });
+        void runner.route(id, { sender: NOTICE_SENDER, text: softWarning(tokens, limit.request) });
         return;
       }
 

@@ -38,10 +38,14 @@ import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { ViewData } from "../../../core/agent-view/source.ts";
+import { softWarning } from "../../../core/limits/warning.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
+import { BATCH_TYPE, NOTICE_SENDER, ROUTED_TYPE, routedMessage } from "../../../core/model/child-messages.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../core/model/paths.ts";
+import { batchWake } from "../../../core/run-agent/result.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createAgentView, headerLines } from "../../../ui/agent-view/view.ts";
+import { batchResultMessage, routedMessageRow } from "../../../ui/run-agent/message-rows.ts";
 import { agentRecord, newAgentInput } from "../../support/agent-records.ts";
 import { grepSession } from "../../support/recorded-grep-session.ts";
 import { createHarness, spawnAgents } from "../../support/subagents-harness.ts";
@@ -1189,6 +1193,96 @@ describe("agent view past sessions", () => {
     expect(expanded.indexOf("- Pick up the token refresh trace.")).toBeLessThan(
       expanded.indexOf("Original task:"),
     );
+  });
+
+  const customLine = ({
+    customType,
+    text,
+    details,
+  }: {
+    customType: string;
+    text: string;
+    details?: unknown;
+  }) => JSON.stringify({ type: "custom_message", customType, content: text, display: true, details });
+
+  const batchText = [
+    "[pi-subagents] Batch b-7 finished: 1 done.",
+    "",
+    "## verifier-3 (verifier) - done",
+    "Done · 12s · 4 calls",
+    "",
+    "All 20 auth checks pass; the refresh path is covered by test/auth.test.ts.",
+  ].join("\n");
+
+  const injectedView = async () => {
+    const keyText = () => "ctrl+o";
+
+    onTestFinished(registerPiMessageRenderer(ROUTED_TYPE, routedMessageRow(keyText)));
+    onTestFinished(registerPiMessageRenderer(BATCH_TYPE, batchResultMessage(keyText)));
+
+    const session = parseSessionLines(
+      [
+        userLine(
+          "Task from main (agent id explorer-inj):\nAgent folder: /agents/explorer-inj\nVerify the auth flow",
+        ),
+        customLine(batchWake([batchText])),
+        customLine(routedMessage({ sender: NOTICE_SENDER, text: softWarning(81_000, 100_000) })),
+        customLine(routedMessage({ sender: "main", text: "Also check logout.\nThen stop." })),
+      ],
+      RECORD_ENTRY,
+    );
+    const harness = restarted({
+      manifests: [
+        { id: "explorer-inj", agent: "scout", description: "old", state: "done", sessionFile: "inj.jsonl" },
+      ],
+      sessions: { "inj.jsonl": session },
+    });
+    const { view } = await harness.openView("explorer-inj");
+
+    return { view, text: () => plainLines(view.render(200)).join("\n") };
+  };
+
+  it("draws a batch result as one collapsed row with its counts and the results only when expanded", async () => {
+    const { view, text } = await injectedView();
+    const collapsed = text();
+
+    expect(collapsed).toContain("batch b-7 finished · 1 done (ctrl+o to expand)");
+    expect(collapsed).not.toContain("All 20 auth checks pass");
+    expect(collapsed).not.toContain("[pi-subagents]");
+
+    view.handleKey(key("toggleTools"));
+
+    expect(text()).toContain("All 20 auth checks pass; the refresh path is covered by test/auth.test.ts.");
+  });
+
+  it("draws the context limit warning as one dim line, the whole warning when expanded", async () => {
+    const { view, text } = await injectedView();
+    const lines = text().split("\n");
+    const at = lines.findIndex((line) => line.includes("Context limit warning"));
+
+    expect(lines[at]).toContain(
+      "Context limit warning: about 81% of your 100000-token context limit is used. (ctrl+o to expand)",
+    );
+    expect(lines[at + 1]?.trim()).toBe("");
+    expect(text()).not.toContain("prepare to wrap up");
+    expect(text()).not.toContain("[message from");
+
+    view.handleKey(key("toggleTools"));
+
+    expect(text()).toContain("prepare to wrap up");
+  });
+
+  it("draws a caller's message in full under a title naming the caller", async () => {
+    const { text } = await injectedView();
+    const lines = text().split("\n");
+    const at = lines.findIndex((line) => line.includes("message from main"));
+
+    expect(at).toBeGreaterThan(0);
+    expect(lines.slice(at + 1, at + 3).map((line) => line.trim())).toEqual([
+      "↳ Also check logout.",
+      "Then stop.",
+    ]);
+    expect(text()).not.toContain("[message from main]");
   });
 
   it("draws no seam rule while the last link has no session file", async () => {

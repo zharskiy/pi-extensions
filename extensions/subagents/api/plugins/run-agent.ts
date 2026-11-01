@@ -25,6 +25,7 @@ import {
   MAIN_CALLER,
   subagentNames,
 } from "../../core/model/agent-record.ts";
+import { BATCH_TYPE, ROUTED_TYPE } from "../../core/model/child-messages.ts";
 import { handoffService } from "../../core/model/handoff.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
@@ -32,6 +33,7 @@ import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
 import { describeRunAgent, messageAgentTool, runAgentTool } from "../../core/run-agent/tools.ts";
+import { batchResultMessage, routedMessageRow } from "../../ui/run-agent/message-rows.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
@@ -153,6 +155,8 @@ export const runAgentPlugin: Plugin = {
 
     host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
     host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
+    host.registerMessageRenderer(ROUTED_TYPE, routedMessageRow(keyText));
+    host.registerMessageRenderer(BATCH_TYPE, batchResultMessage(keyText));
 
     const runner = createRunner({
       registry,
