@@ -135,13 +135,23 @@ export const createPiRuntime = (
     let disposed = false;
     const customsInPiQueue: QueuedCustom[] = [];
 
+    const report = (step: string, error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error);
+
+      parent.reportError(`${options.namespace}: agent ${spec.id}: ${step}: ${reason}`);
+    };
+
     const emit = (event: ChildEvent) => {
       if (event.type === "settled") {
         running = false;
       }
 
       listeners.forEach((listener) => {
-        listener(event);
+        try {
+          listener(event);
+        } catch (error) {
+          report(`${event.type} handler failed`, error);
+        }
       });
     };
 
@@ -300,7 +310,12 @@ export const createPiRuntime = (
     });
 
     const failStart = (error: unknown) => {
+      if (disposed) {
+        return;
+      }
+
       if (!running) {
+        report("run failed after it settled", error);
         return;
       }
 

@@ -6,7 +6,7 @@ import {
   workingContextText,
 } from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, formatCalls, singleLine } from "../components/receipt.ts";
-import { type AgentRecord, type Worktree, worktreeText } from "../model/agent-record.ts";
+import { type AgentRecord, WAITING, type Worktree, worktreeText } from "../model/agent-record.ts";
 import { contextUse } from "../model/context-limit.ts";
 
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
@@ -29,6 +29,7 @@ export type AgentSnapshot = {
   cost?: number;
   context: { tokens: number; limit: number } | null;
   lastLine: string;
+  waiting?: string;
   resultPath?: string;
   handoffPath?: string;
   error?: string;
@@ -60,6 +61,12 @@ const stateLabel = (snapshot: AgentSnapshot) => {
   return `grace (closes in ${snapshot.graceSecondsLeft}s unless messaged)`;
 };
 
+const waitingOf = (record: AgentRecord) => {
+  const shown = record.state === "running" && record.activity?.startsWith(`${WAITING} `);
+
+  return shown ? record.activity : undefined;
+};
+
 const contextOf = (record: AgentRecord, limit: HandoffLimit) => {
   const use = contextUse(record.context?.tokens, limit);
 
@@ -85,6 +92,7 @@ export const snapshotOf = (
   cost: record.cost,
   context: contextOf(record, options.limit),
   lastLine: lastLineOf(record.lastText),
+  waiting: waitingOf(record),
   resultPath: record.resultPath,
   handoffPath: record.state === "handoff" ? record.handoffPath : undefined,
   error: record.error,
@@ -116,6 +124,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
 
   const extras = [
     chainText(snapshot),
+    snapshot.waiting,
     snapshot.lastLine ? `last: ${snapshot.lastLine}` : undefined,
     snapshot.error ? `error: ${snapshot.error}` : undefined,
     snapshot.resultPath ? `result: ${snapshot.resultPath}` : undefined,
