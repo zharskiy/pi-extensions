@@ -14,15 +14,15 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec, CustomMessage, ImageAttachment, UserMessage } from "../types/messages.ts";
+import type { CommandSpec, CustomMessage, UserMessage } from "../types/messages.ts";
 import { isThinkingLevel } from "../types/model.ts";
 import type {
   AssistantEnd,
   DialogEvent,
   IdleInfo,
-  NewSessionOptions,
   Phase,
   SessionControl,
+  SessionFill,
   SessionInfo,
   ShutdownReason,
   UserInput,
@@ -67,14 +67,6 @@ type NewSessionRequest = NonNullable<Parameters<ExtensionCommandContext["newSess
 
 type FreshSession = Parameters<NonNullable<NewSessionRequest["withSession"]>>[0];
 
-const contentOf = (
-  text: string,
-  images: ImageAttachment[] = [],
-): Parameters<FreshSession["sendUserMessage"]>[0] =>
-  images.length === 0
-    ? text
-    : [{ type: "text", text }, ...images.map((image) => ({ type: "image" as const, ...image }))];
-
 const warnOf = (fresh: FreshSession, lead: string) => (error: unknown) => {
   const reason = error instanceof Error ? error.message : String(error);
 
@@ -84,57 +76,49 @@ const warnOf = (fresh: FreshSession, lead: string) => (error: unknown) => {
 const sendFollowUps = (fresh: FreshSession, followUps: UserMessage[]) => {
   void followUps
     .reduce<Promise<void>>(
-      (chain, followUp) =>
+      (chain, { text, images }) =>
         chain.then(() =>
-          fresh.sendUserMessage(contentOf(followUp.text, followUp.images), {
-            deliverAs: "followUp",
-            expandPromptTemplates: true,
-          }),
+          fresh.sendUserMessage(
+            [{ type: "text", text }, ...images.map((image) => ({ type: "image" as const, ...image }))],
+            { deliverAs: "followUp", expandPromptTemplates: true },
+          ),
         ),
       Promise.resolve(),
     )
     .catch(warnOf(fresh, "A message kept for the new session could not be sent"));
 };
 
-const sendSeed = async (fresh: FreshSession, options: NewSessionOptions) => {
-  const { seed, continueWithSeed, followUps = [], editorText } = options;
-
+const fillSession = async (
+  fresh: FreshSession,
+  { seed, followUps = [], editorText }: SessionFill,
+  run: boolean,
+) => {
   if (editorText) {
     fresh.ui.setEditorText(editorText);
   }
 
-  if (!seed) {
-    sendFollowUps(fresh, followUps);
-    return;
+  const sent = seed
+    ? fresh.sendMessage(
+        { customType: seed.customType, content: seed.text, display: true, details: seed.details },
+        { triggerTurn: run },
+      )
+    : undefined;
+
+  if (run) {
+    void sent?.catch(warnOf(fresh, "The new session could not continue the handoff"));
+  } else {
+    await sent;
   }
-
-  const message = {
-    customType: seed.customType,
-    content: contentOf(seed.text, seed.images),
-    display: true,
-    details: seed.details,
-  };
-
-  if (!continueWithSeed) {
-    await fresh.sendMessage(message, { triggerTurn: false });
-    sendFollowUps(fresh, followUps);
-    return;
-  }
-
-  void fresh
-    .sendMessage(message, { triggerTurn: true })
-    .catch(warnOf(fresh, "The new session could not continue the handoff"));
 
   sendFollowUps(fresh, followUps);
 };
 
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async (options) => {
-    const fills = options.seed || options.editorText || (options.followUps?.length ?? 0) > 0;
+  newSession: async ({ parentSession, keepSelection: keep, continueWithSeed, fill }) => {
     const result = await ctx.newSession({
-      parentSession: options.parentSession,
-      setup: options.keepSelection ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-      withSession: fills ? (fresh) => sendSeed(fresh, options) : undefined,
+      parentSession,
+      setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
+      withSession: (fresh) => fillSession(fresh, fill?.() ?? {}, continueWithSeed === true),
     });
 
     return !result.cancelled;
@@ -481,7 +465,6 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       text: event.text,
       images: (event.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })),
       source: event.source,
-      streaming: event.streamingBehavior !== undefined,
     };
 
     return inputHandlers.some((handler) => handler(input)) ? { action: "handled" } : { action: "continue" };

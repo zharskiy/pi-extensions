@@ -9,7 +9,7 @@ export type CommandSpec = {
 
 export type CustomMessage = { customType: string; text: string; details?: unknown };
 
-export type ImageAttachment = { data: string; mimeType: string };
+type ImageAttachment = { data: string; mimeType: string };
 
 export type UserMessage = { text: string; images: ImageAttachment[] };
 

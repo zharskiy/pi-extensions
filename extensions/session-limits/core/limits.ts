@@ -27,6 +27,7 @@ import {
 import {
   HANDOFF_COMMAND,
   handoffPath,
+  joinParagraphs,
   MAIN_AUDIENCE,
   sessionPreface,
   withLateResults,
@@ -78,16 +79,10 @@ type LimitsState = {
 
 type RequestOrigin = { manual: boolean; handedOff?: boolean; focus?: string };
 
-const isCommand = (message: UserMessage) => message.text.trimStart().startsWith("/");
+const isFollowUp = (message: UserMessage) =>
+  message.text.trimStart().startsWith("/") || message.images.length > 0;
 
-const joined = (messages: UserMessage[]) =>
-  messages
-    .map((message) => message.text.trim())
-    .filter(Boolean)
-    .join("\n\n");
-
-const imageCount = (messages: UserMessage[]) =>
-  messages.reduce((sum, message) => sum + message.images.length, 0);
+const textsOf = (messages: UserMessage[]) => messages.map((message) => message.text);
 
 export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
   const sources = new Set<string>();
@@ -132,7 +127,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const dropImages = (messages: UserMessage[], reason: string) => {
-    const count = imageCount(messages);
+    const count = messages.reduce((sum, message) => sum + message.images.length, 0);
 
     if (count === 0) {
       return;
@@ -146,12 +141,11 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
 
   const restoreCaptured = () => {
     const messages = captured.splice(0);
-    const text = joined(messages);
+    const text = joinParagraphs(textsOf(messages));
 
     if (text) {
-      const current = host.ui.getEditorText().trim();
+      host.ui.setEditorText(joinParagraphs([text, host.ui.getEditorText()]));
 
-      host.ui.setEditorText([text, current].filter(Boolean).join("\n\n"));
       host.ui.notify(
         "No new session was started; the messages you typed during the handoff are back in the editor.",
         "info",
@@ -325,33 +319,33 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     }
 
     const previous = host.session().file;
-    const manual = state.handedOff;
-    const commands = manual ? [] : captured.filter(isCommand);
-    const plain = manual ? [] : captured.filter((message) => !isCommand(message));
-    const handoff = withUserMessages(
-      withLateResults(saved.text, Array.from(held.values())),
-      plain.map((message) => message.text),
-    );
+    const handedOff = state.handedOff;
+    const preface = sessionPreface({ file: previous, manual: handedOff, focus: state.focus });
 
-    if (manual) {
-      dropImages(captured, "cannot go into the new session's editor");
-      captured.splice(0, captured.length, ...captured.map((message) => ({ ...message, images: [] })));
-    }
+    const seed = (messages: UserMessage[]) => ({
+      customType: HANDOFF_SEED_TYPE,
+      details: { from: "session" } satisfies HandoffSeedDetails,
+      text: seedText(
+        preface,
+        withUserMessages(withLateResults(saved.text, Array.from(held.values())), textsOf(messages)),
+      ),
+    });
+
+    const fill = () => {
+      const messages = captured.splice(0);
+
+      if (handedOff) {
+        return { seed: seed([]), editorText: joinParagraphs(textsOf(messages)) };
+      }
+
+      return {
+        seed: seed(messages.filter((message) => !isFollowUp(message))),
+        followUps: messages.filter(isFollowUp),
+      };
+    };
 
     const accepted = await control
-      .newSession({
-        parentSession: previous,
-        keepSelection: true,
-        continueWithSeed: !manual,
-        seed: {
-          customType: HANDOFF_SEED_TYPE,
-          details: { from: "session" } satisfies HandoffSeedDetails,
-          text: seedText(sessionPreface({ file: previous, manual, focus: state.focus }), handoff),
-          images: plain.flatMap((message) => message.images),
-        },
-        followUps: commands,
-        editorText: manual ? joined(captured) || undefined : undefined,
-      })
+      .newSession({ parentSession: previous, keepSelection: true, continueWithSeed: !handedOff, fill })
       .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
 
     if (accepted instanceof Error) {
@@ -363,10 +357,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       failSwitch(
         `Switching to a new session was cancelled. The handoff stays at ${path}; run /${HANDOFF_COMMAND} to retry.`,
       );
-      return;
     }
-
-    captured.length = 0;
   };
 
   const runSwitch = async (control: SessionControl) => {
@@ -384,9 +375,12 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const abandonStalledSwitch = () => {
-    if (state.phase === "switching" && !switchRunning) {
-      state = { ...state, phase: "stuck" };
+    if (state.phase !== "switching" || switchRunning) {
+      return;
     }
+
+    state = { ...state, phase: "stuck" };
+    refresh();
   };
 
   const cancelRelease = () => {
@@ -510,17 +504,24 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   });
 
   host.onInput((input) => {
+    abandonStalledSwitch();
+
     if (!handoffInFlight(state.phase) || input.source === "extension") {
       return false;
     }
 
-    captured.push({ text: input.text, images: input.images });
-    host.ui.notify(
-      state.handedOff
-        ? "Kept for the new session: this message will be in its editor."
-        : "Kept for the new session: this message goes there with the handoff.",
-      "info",
-    );
+    captured.push({ text: input.text, images: state.handedOff ? [] : input.images });
+
+    const destination = state.handedOff
+      ? "this message will be in its editor"
+      : "this message goes there with the handoff";
+    const switchHint = state.phase === "waiting" ? ` Run /${HANDOFF_COMMAND} to switch now.` : "";
+
+    host.ui.notify(`Kept for the new session: ${destination}.${switchHint}`, "info");
+
+    if (state.handedOff) {
+      dropImages([input], "cannot go into the new session's editor");
+    }
 
     return true;
   });

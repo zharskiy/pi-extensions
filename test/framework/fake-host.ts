@@ -23,6 +23,7 @@ import {
   type PromptTokens,
   type RowLines,
   type SessionControl,
+  type SessionFill,
   type SessionInfo,
   type ShutdownReason,
   type ThemeLike,
@@ -41,6 +42,8 @@ import { promptTokens } from "./usage-builders.ts";
 type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
 type ChatItem = { kind: "assistant"; text: string } | { kind: "entry"; customType: string; data: unknown };
+
+type FakeNewSession = Omit<NewSessionOptions, "fill"> & SessionFill;
 
 export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
@@ -79,8 +82,9 @@ export type FakeHost = Host & {
   info: SessionInfo;
   confirmations: { title: string; message: string }[];
   confirmAnswer: boolean | ((title: string, message: string) => boolean);
-  newSessions: NewSessionOptions[];
+  newSessions: FakeNewSession[];
   newSessionResult: boolean | Error;
+  duringSwitch?: () => void;
   start(info?: Partial<SessionInfo>): void;
   turnEnd(context: { tokens: number | null; window: number; percent?: number | null }): void;
   compact(): void;
@@ -185,11 +189,18 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   let currentPhase: Phase = "idle";
 
   const control: SessionControl = {
-    newSession: async (options) => {
-      host.newSessions.push(options);
+    newSession: async ({ fill, ...options }) => {
+      const recorded: FakeNewSession = { ...options };
+
+      host.newSessions.push(recorded);
+      host.duringSwitch?.();
 
       if (host.newSessionResult instanceof Error) {
         throw host.newSessionResult;
+      }
+
+      if (host.newSessionResult) {
+        Object.assign(recorded, fill?.());
       }
 
       return host.newSessionResult;
@@ -482,7 +493,6 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         text,
         images: [],
         source: "interactive",
-        streaming: !host.idle,
         ...options,
       };
       const consumed = inputHandlers.some((handler) => handler(input));

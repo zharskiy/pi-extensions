@@ -482,7 +482,7 @@ describe("pi adapter", () => {
         received.push(args);
         await control.newSession({
           parentSession: "/old.jsonl",
-          seed: { customType: "t", text: "hello", details: { n: 1 } },
+          fill: () => ({ seed: { customType: "t", text: "hello", details: { n: 1 } } }),
         });
       },
     });
@@ -525,7 +525,7 @@ describe("pi adapter", () => {
       description: "switch",
       run: async (_args, control) => {
         await control.newSession({
-          seed: { customType: "t", text: "hello", details: { n: 1 } },
+          fill: () => ({ seed: { customType: "t", text: "hello", details: { n: 1 } } }),
           continueWithSeed: true,
         });
       },
@@ -580,7 +580,7 @@ describe("pi adapter", () => {
     expect(warnings).toEqual(["warning: The new session could not continue the handoff: no credentials"]);
   });
 
-  const filledSession = async (options: NewSessionOptions) => {
+  const filledSession = async (options: NewSessionOptions, beforeFill: () => void = () => {}) => {
     const { pi, commands } = fakePi();
     const host = createPiHost(pi, { tools: new Map() });
     const calls: unknown[] = [];
@@ -595,6 +595,8 @@ describe("pi adapter", () => {
     const ctx = {
       ...fakeCtx("tui"),
       newSession: async (request: { withSession?: (fresh: unknown) => Promise<void> }) => {
+        beforeFill();
+
         await request.withSession?.({
           sendMessage: async (message: unknown, sent: unknown) => {
             calls.push({ call: "sendMessage", message, options: sent });
@@ -620,41 +622,31 @@ describe("pi adapter", () => {
     return calls;
   };
 
-  it("sends the seed with its images as a content array and the follow-ups after it as user messages", async () => {
+  it("sends the seed as a string, then the follow-ups as user messages with their images", async () => {
     const image = { data: "aW1n", mimeType: "image/png" };
     const calls = await filledSession({
-      seed: { customType: "t", text: "hello", images: [image] },
       continueWithSeed: true,
-      followUps: [
-        { text: "/review x", images: [] },
-        { text: "look", images: [image] },
-      ],
+      fill: () => ({
+        seed: { customType: "t", text: "hello" },
+        followUps: [
+          { text: "/review x", images: [] },
+          { text: "look", images: [image] },
+        ],
+      }),
     });
 
-    expect(calls).toEqual([
-      {
-        call: "sendMessage",
-        message: {
-          customType: "t",
-          content: [
-            { type: "text", text: "hello" },
-            { type: "image", data: "aW1n", mimeType: "image/png" },
-          ],
-          display: true,
-          details: undefined,
-        },
-        options: { triggerTurn: true },
-      },
+    expect(calls).toMatchObject([
+      { call: "sendMessage", message: { customType: "t", content: "hello" }, options: { triggerTurn: true } },
       {
         call: "sendUserMessage",
-        content: "/review x",
+        content: [{ type: "text", text: "/review x" }],
         options: { deliverAs: "followUp", expandPromptTemplates: true },
       },
       {
         call: "sendUserMessage",
         content: [
           { type: "text", text: "look" },
-          { type: "image", data: "aW1n", mimeType: "image/png" },
+          { type: "image", ...image },
         ],
         options: { deliverAs: "followUp", expandPromptTemplates: true },
       },
@@ -662,16 +654,27 @@ describe("pi adapter", () => {
   });
 
   it("prefills the new session's editor before the seed", async () => {
-    const calls = await filledSession({ seed: { customType: "t", text: "hello" }, editorText: "next" });
+    const calls = await filledSession({
+      fill: () => ({ seed: { customType: "t", text: "hello" }, editorText: "next" }),
+    });
 
-    expect(calls).toEqual([
+    expect(calls).toMatchObject([
       { call: "setEditorText", text: "next" },
-      {
-        call: "sendMessage",
-        message: { customType: "t", content: "hello", display: true, details: undefined },
-        options: { triggerTurn: false },
-      },
+      { call: "sendMessage", message: { content: "hello" }, options: { triggerTurn: false } },
     ]);
+  });
+
+  it("composes the fill only when the new session is ready", async () => {
+    const typed: string[] = [];
+    const calls = await filledSession({ fill: () => ({ editorText: typed.join(" ") }) }, () => {
+      typed.push("typed during teardown");
+    });
+
+    expect(calls).toEqual([{ call: "setEditorText", text: "typed during teardown" }]);
+  });
+
+  it("leaves the new session untouched without a fill", async () => {
+    expect(await filledSession({ continueWithSeed: true })).toEqual([]);
   });
 
   it("forwards user input to the input handlers and reports a consumed message as handled", async () => {
@@ -700,9 +703,8 @@ describe("pi adapter", () => {
         text: "keep",
         images: [{ data: "aW1n", mimeType: "image/png" }],
         source: "interactive",
-        streaming: true,
       },
-      { text: "pass", images: [], source: "rpc", streaming: false },
+      { text: "pass", images: [], source: "rpc" },
     ]);
   });
 

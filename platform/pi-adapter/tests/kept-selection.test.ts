@@ -52,7 +52,7 @@ const startHandoffRuntime = async (settings: object = {}) => {
         await control.newSession({
           keepSelection: words.includes("keep"),
           continueWithSeed: words.includes("continue"),
-          seed: SEED,
+          fill: () => ({ seed: SEED }),
         });
       },
     });

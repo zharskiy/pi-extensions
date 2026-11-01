@@ -48,6 +48,7 @@ export type {
   Phase,
   RunMode,
   SessionControl,
+  SessionFill,
   SessionInfo,
   ShutdownReason,
   UserInput,

@@ -26,12 +26,17 @@ export const withLateResults = (text: string, late: string[]) =>
 export const USER_HEADING =
   "Messages the user sent while the handoff was pending. They are the user's latest instructions and take precedence over the handoff's Next section:";
 
-const IMAGE_ONLY = "(an image, attached to this message)";
+export const joinParagraphs = (texts: string[]) =>
+  texts
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .join("\n\n");
 
-export const withUserMessages = (text: string, messages: string[]) =>
-  messages.length === 0
-    ? text
-    : [text.trim(), USER_HEADING, ...messages.map((message) => message.trim() || IMAGE_ONLY)].join("\n\n");
+export const withUserMessages = (text: string, messages: string[]) => {
+  const joined = joinParagraphs(messages);
+
+  return joined ? [text.trim(), USER_HEADING, joined].join("\n\n") : text;
+};
 
 type SessionSource = { file?: string; manual: boolean; focus?: string };
 

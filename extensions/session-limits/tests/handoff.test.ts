@@ -8,7 +8,6 @@ import {
   handoffPath,
   MAIN_AUDIENCE,
   sessionPreface,
-  USER_HEADING,
   validateMainHandoff,
   withLateResults,
   withUserMessages,
@@ -115,14 +114,14 @@ describe("withUserMessages", () => {
     expect(withUserMessages("## Status\ndone\n", [])).toBe("## Status\ndone\n");
   });
 
-  it("appends the user's messages under a heading that puts them before the Next section", () => {
-    expect(USER_HEADING).toContain("take precedence over the handoff's Next section");
-    expect(withUserMessages("## Status\ndone\n", [" a ", "b"])).toBe(
-      `## Status\ndone\n\n${USER_HEADING}\n\na\n\nb`,
-    );
+  it("appends the user's trimmed, non-empty messages after the handoff, in order", () => {
+    const text = withUserMessages("## Status\ndone\n", [" a ", "", "b"]);
+
+    expect(text.startsWith("## Status\ndone\n\n")).toBe(true);
+    expect(text.endsWith("\n\na\n\nb")).toBe(true);
   });
 
-  it("names an image-only message", () => {
-    expect(withUserMessages("x", [""])).toBe(`x\n\n${USER_HEADING}\n\n(an image, attached to this message)`);
+  it("leaves the handoff alone when every message is blank", () => {
+    expect(withUserMessages("x", [" ", ""])).toBe("x");
   });
 });

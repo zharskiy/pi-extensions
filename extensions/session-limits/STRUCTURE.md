@@ -8,7 +8,7 @@ extensions/session-limits/
 │   └── plugin.ts               sessionLimitsPlugin, createLimits: registers the `handoff` tool, the request and seed renderers (from ui-kit), starts watchLimits, publishes the settings on session start
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events (session info passed as is) and commands to tui and rpc
-│   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level, continues after every automatic handoff), busy channel, pi:handoff-pending published, pi:held-results and the user messages kept through onInput carried into the seed, follow-ups or editor (a request shows only the transcript row, no toast)
+│   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level, continues after every automatic handoff), busy channel, pi:handoff-pending published, pi:held-results and the user messages kept through onInput carried into the seed, follow-ups or editor through the lazy fill (a request shows only the transcript row, no toast)
 │   ├── thresholds.ts           handoff step, retry decisions
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, HELD_HEADING and withLateResults, USER_HEADING and withUserMessages, handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema

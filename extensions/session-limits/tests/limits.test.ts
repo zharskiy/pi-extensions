@@ -1452,7 +1452,10 @@ describe("messages typed during a handoff", () => {
     expect(host.forwarded).toEqual([]);
     expect(host.notices).toEqual([
       { message: "Kept for the new session: this message goes there with the handoff.", level: "info" },
-      { message: "Kept for the new session: this message goes there with the handoff.", level: "info" },
+      {
+        message: `Kept for the new session: this message goes there with the handoff. Run /${HANDOFF_COMMAND} to switch now.`,
+        level: "info",
+      },
     ]);
 
     busy(false);
@@ -1512,17 +1515,34 @@ describe("messages typed during a handoff", () => {
     expect(switched(host)?.continueWithSeed).toBe(true);
   });
 
-  it("carries attached images on the seed", async () => {
+  it("sends a message with images as a user message after the seed, with its images", async () => {
     const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
-    host.input("", { images: [IMAGE] });
+    host.input("look at this", { images: [IMAGE] });
     saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
-    expect(switched(host)?.seed?.images).toEqual([IMAGE]);
-    expect(switched(host)?.seed?.text).toContain(`${USER_HEADING}\n\n(an image, attached to this message)`);
+    expect(switched(host)?.seed?.text).not.toContain("look at this");
+    expect(switched(host)?.followUps).toEqual([{ text: "look at this", images: [IMAGE] }]);
+  });
+
+  it("carries a message typed while the old session shuts down into the new one", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.duringSwitch = () => {
+      host.input("one more thing");
+      host.input("/review it");
+    };
+    host.settle();
+    await flush();
+
+    expect(switched(host)?.seed?.text).toContain("one more thing");
+    expect(switched(host)?.followUps).toEqual([{ text: "/review it", images: [] }]);
+    expect(host.editorText).toBe("");
   });
 
   it("prefills the new session's editor after a manual handoff and drops images with a notice", async () => {
@@ -1537,9 +1557,8 @@ describe("messages typed during a handoff", () => {
 
     expect(switched(host)?.continueWithSeed).toBe(false);
     expect(switched(host)?.editorText).toBe("/review the plan\n\nthen the tests");
-    expect(switched(host)?.followUps).toEqual([]);
-    expect(switched(host)?.seed?.images).toEqual([]);
-    expect(switched(host)?.seed?.text).not.toContain(USER_HEADING);
+    expect(switched(host)?.followUps ?? []).toEqual([]);
+    expect(switched(host)?.seed?.text).not.toContain("then the tests");
     expect(host.notices.at(-1)).toEqual({
       message:
         "An image attached during the handoff cannot go into the new session's editor; attach it again.",
@@ -1585,6 +1604,36 @@ describe("messages typed during a handoff", () => {
     await flush();
 
     expect(host.editorText).toBe("keep going");
+  });
+
+  it("puts kept messages back in the editor when the new session fails", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    host.newSessionResult = new Error("disk full");
+    turn(76_000);
+    host.input("keep going");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.editorText).toBe("keep going");
+  });
+
+  it("gives up a stalled switch when the user types, lets the message through and restores the kept ones", async () => {
+    const { host, turn, saveHandoff, notice } = setup();
+
+    host.commands.set(HANDOFF_COMMAND, { description: "", run: () => undefined });
+    turn(76_000);
+    host.input("first");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.input("are you there?")).toBe(false);
+    expect(host.forwarded.map((input) => input.text)).toEqual(["are you there?"]);
+    expect(host.editorText).toBe("first");
+    expect(notice()).toBe(`<error>✗ handoff failed · run /${HANDOFF_COMMAND}`);
+    expect(host.newSessions).toEqual([]);
   });
 
   it("puts kept messages back in the editor when a manual handoff is cancelled", async () => {
