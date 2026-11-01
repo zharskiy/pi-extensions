@@ -31,6 +31,8 @@ const startHandoffRuntime = async (settings: object = {}) => {
   modelRuntime.registerNativeProvider(faux.provider);
   modelRuntime.registerNativeProvider(locked.provider);
 
+  await modelRuntime.refresh({ allowNetwork: false });
+
   const settingsManager = pi.SettingsManager.inMemory({
     defaultProvider: "acme",
     defaultModel: "small",

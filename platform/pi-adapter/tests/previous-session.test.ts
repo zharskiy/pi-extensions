@@ -34,6 +34,8 @@ const startRuntime = async () => {
 
   modelRuntime.registerNativeProvider(faux.provider);
 
+  await modelRuntime.refresh({ allowNetwork: false });
+
   const reply = (text: string) => (context: unknown) => {
     requests.push(structuredClone(context));
 
