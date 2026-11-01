@@ -9,11 +9,12 @@ export type ViewData = {
   session?: SessionRecord;
   linkItems?: number[];
   error?: string;
+  pending?: string;
 };
 
 type CachedSession = { size: number; mtimeMs: number; session: SessionRecord };
 
-type LinkRead = { session?: SessionRecord; error?: string };
+type LinkRead = { session?: SessionRecord; error?: string; waiting?: boolean };
 
 type AgentSourceDeps = {
   runtime: AgentRuntime;
@@ -54,7 +55,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
       try {
         const session = link.sessionFile ? readSession(link.sessionFile) : undefined;
 
-        return session ? { session } : { error: "session file not written yet" };
+        return session ? { session } : { error: "session file not written yet", waiting: true };
       } catch (error) {
         return { error: `cannot read session: ${errorText(error)}` };
       }
@@ -71,8 +72,12 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
       const last = reads.at(-1);
 
       if (sessions.length === 0) {
-        return { record, chain, error: last?.error };
+        return { record, chain, error: reads.find((read) => read.error)?.error };
       }
+
+      const error =
+        reads.slice(0, -1).find((read) => read.error)?.error ?? (last?.waiting ? undefined : last?.error);
+      const pending = error === undefined && last?.waiting ? last.error : undefined;
 
       const session: SessionRecord = {
         providerPayload: last?.session?.providerPayload,
@@ -80,7 +85,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
         items: sessions.flatMap((read) => read.items),
       };
 
-      return { record, chain, session, linkItems, error: last?.error };
+      return { record, chain, session, linkItems, error, pending };
     };
   };
 

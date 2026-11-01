@@ -27,6 +27,9 @@ type RendererDeps = {
 const isPreviousSession = (value: unknown): value is PreviousSession =>
   typeof (value as Partial<PreviousSession> | undefined)?.file === "string";
 
+const labelOf = (previous: PreviousSession) =>
+  typeof previous.label === "string" ? previous.label : DEFAULT_LABEL;
+
 const readBranch = (previous: PreviousSession) => {
   if (!existsSync(previous.file)) {
     return undefined;
@@ -67,39 +70,35 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
     },
   } as unknown as TUI;
 
-  const sessionParts = (previous: PreviousSession, seen: string[]): { parts: Part[]; read: boolean } => {
+  const sessionParts = (previous: PreviousSession, seen: string[]): Part[] => {
     if (seen.includes(previous.file) || seen.length >= MAX_SESSIONS) {
-      return { parts: [{ token: "dim", label: "earlier sessions not shown" }], read: true };
+      return [{ token: "dim", label: "earlier sessions not shown" }];
     }
 
-    const items = readBranch(previous);
+    const branch = readBranch(previous);
 
-    if (!items) {
-      return { parts: [{ token: "warning", label: "previous session not found" }], read: false };
+    if (!branch) {
+      return [{ token: "warning", label: "previous session not found" }];
     }
 
-    const earlier = items
-      .flatMap((item) =>
-        item.kind === "entry" && item.customType === PREVIOUS_SESSION_TYPE ? [item.data] : [],
-      )
+    const earlier = branch.custom
+      .filter((entry) => entry.customType === PREVIOUS_SESSION_TYPE)
+      .map((entry) => entry.data)
       .find(isPreviousSession);
 
-    const nested = earlier ? sessionParts(earlier, [...seen, previous.file]).parts : [];
+    const nested = earlier ? sessionParts(earlier, [...seen, previous.file]) : [];
     const pane = createTranscriptPane(tui, deps.cwd(), {
       tools: deps.tools(),
       theme: () => current,
     });
 
-    pane.sync(items);
+    pane.sync(branch.items);
 
-    return {
-      parts: [...nested, { token: "dim", label: previous.label ?? DEFAULT_LABEL, pane }],
-      read: true,
-    };
+    return [...nested, { token: "dim", label: labelOf(previous), pane }];
   };
 
   const partsFor = (previous: PreviousSession) => {
-    const key = `${previous.file}\n${previous.leafId}`;
+    const key = `${previous.file}\n${previous.leafId}\n${labelOf(previous)}`;
     const cached = cache.get(key);
 
     if (cached) {
@@ -109,11 +108,9 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
     building = true;
 
     try {
-      const { parts, read } = sessionParts(previous, []);
+      const parts = sessionParts(previous, []);
 
-      if (read) {
-        cache.set(key, parts);
-      }
+      cache.set(key, parts);
 
       return parts;
     } finally {
@@ -126,10 +123,10 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
       return [];
     }
 
+    current = theme;
+
     const parts = partsFor(data);
     const margin = " ".repeat(pad);
-
-    current = theme;
 
     return parts.flatMap(({ token, label, pane }) => {
       if (pane && applied.get(pane) !== expanded) {
@@ -142,7 +139,7 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
       return [
         ...lines,
         ...(lines.length > 0 ? [""] : []),
-        `${margin}${labelledRule(theme, Math.max(1, width - pad), label, token)}`,
+        `${margin}${labelledRule(theme, width - pad, label, token)}`,
       ];
     });
   };

@@ -1152,12 +1152,69 @@ describe("agent view past sessions", () => {
       sessions: { "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY) },
     });
 
-    const text = plainLines((await harness.openView("explorer-old2")).view.render(200)).join("\n");
+    await harness.services.require("agentView").open("explorer-old2");
+
+    const { view } = openLastOverlay(harness.host, 200, tokenTaggingTheme({ bold: true }));
+    const lines = view.render(200);
+    const text = plainLines(lines).join("\n");
 
     expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
     expect(text.indexOf("session file not written yet")).toBeGreaterThan(
       text.indexOf("Find the login handler"),
     );
+    expect(lines).toContain(" <dim>session file not written yet</>");
+  });
+
+  it("shows a middle link's read error under the transcript of the links it can read", async () => {
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          successorId: "explorer-old3",
+          sessionFile: "old-2.jsonl",
+        },
+        {
+          id: "explorer-old3",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 3,
+          predecessorId: "explorer-old2",
+          sessionFile: "old-3.jsonl",
+        },
+      ],
+      sessions: {
+        "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY),
+        "old-3.jsonl": parseSessionLines([userLine("Trace the token refresh")], RECORD_ENTRY),
+      },
+    });
+
+    harness.runtime.sessions.delete(join(harness.root, "old-2.jsonl"));
+
+    await harness.services.require("agentView").open("explorer-old3");
+
+    const { view } = openLastOverlay(harness.host, 200, tokenTaggingTheme({ bold: true }));
+    const lines = view.render(200);
+    const text = plainLines(lines).join("\n");
+    const error = `cannot read session: no session ${join(harness.root, "old-2.jsonl")}`;
+
+    expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Trace the token refresh")).toBeGreaterThan(text.indexOf("Find the login handler"));
+    expect(text.indexOf(error)).toBeGreaterThan(text.indexOf("Trace the token refresh"));
+    expect(lines.some((line) => line.startsWith(" <warning>cannot read session"))).toBe(true);
   });
 
   it("follows a chain of an earlier session to its last link", async () => {

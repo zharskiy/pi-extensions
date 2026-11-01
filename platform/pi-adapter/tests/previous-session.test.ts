@@ -21,6 +21,8 @@ const NOTE = "test:note";
 
 const KEPT = "test:kept";
 
+const SEAM = /^\s*── .* ─+$/;
+
 const startRuntime = async () => {
   const dir = temp.make("pi-previous-session-");
 
@@ -38,7 +40,11 @@ const startRuntime = async () => {
     return fauxAssistantMessage(fauxText(text));
   };
 
-  faux.setResponses(["first", "second", "third", "fourth"].map((turn) => reply(`${turn} answer`)));
+  faux.setResponses(
+    ["first", "second", "third", "fourth", "fifth", "sixth", "seventh"].map((turn) =>
+      reply(`${turn} answer`),
+    ),
+  );
 
   const settingsManager = pi.SettingsManager.inMemory({ defaultProvider: "acme", defaultModel: "small" });
 
@@ -253,9 +259,70 @@ describe("showing the previous session after a handoff", () => {
       "── second seam ─",
     ].map((text) => drawn.indexOf(text));
 
-    expect(drawn.split("── ")).toHaveLength(3);
+    expect(drawn.split("\n").filter((row) => SEAM.test(row))).toHaveLength(2);
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    await session.runtime.dispose();
+  });
+
+  it("follows the chain through a link that was compacted after its handoff", async () => {
+    const session = await handOff("show");
+    const manager = session.runtime.session.sessionManager;
+    const question = manager
+      .getEntries()
+      .find(
+        (entry) =>
+          entry.type === "message" &&
+          entry.message.role === "user" &&
+          JSON.stringify(entry).includes("second question"),
+      );
+
+    manager.appendCompaction("the middle summary", question?.id ?? null, 1234);
+
+    await session.runtime.session.prompt("/handoff as second seam");
+
+    const drawn = session.draw(session.previousEntry());
+    const order = [
+      "first question",
+      "first answer",
+      "── continued from previous session ─",
+      "[compaction]",
+      "second question",
+      "── second seam ─",
+    ].map((text) => drawn.indexOf(text));
+
+    expect(drawn).not.toContain("earlier sessions not shown");
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    await session.runtime.dispose();
+  });
+
+  it("stops a chain longer than the limit with one rule above the sessions it draws", async () => {
+    const session = await handOff("show");
+
+    await ["2", "3", "4", "5", "6"].reduce(async (done, seam) => {
+      await done;
+      await session.runtime.session.prompt(`/handoff as seam ${seam}`);
+      await session.runtime.session.prompt(`question after seam ${seam}`);
+    }, Promise.resolve());
+
+    const drawn = session.draw(session.previousEntry());
+    const rules = drawn
+      .split("\n")
+      .filter((row) => SEAM.test(row))
+      .map((row) => row.trim().replace(/ ─+$/, ""));
+
+    expect(rules).toEqual([
+      "── earlier sessions not shown",
+      "── seam 2",
+      "── seam 3",
+      "── seam 4",
+      "── seam 5",
+      "── seam 6",
+    ]);
+    expect(drawn).not.toContain("first question");
 
     await session.runtime.dispose();
   });

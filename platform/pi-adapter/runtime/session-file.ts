@@ -185,12 +185,26 @@ const branchItems = (entry: RawEntry): TranscriptItem[] => {
   return item ? [item] : [];
 };
 
-export const readSessionBranch = (file: string, leafId: string | null): TranscriptItem[] => {
+type SessionBranch = { items: TranscriptItem[]; custom: { customType: string; data: unknown }[] };
+
+const leafPath = (entries: SessionEntry[], leafId: string | null) =>
+  buildContextEntries(
+    entries.map((entry) =>
+      entry.type === "compaction" ? ({ ...entry, type: "leaf" } as unknown as SessionEntry) : entry,
+    ),
+    leafId,
+  ) as RawEntry[];
+
+export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
 
   migrateSessionEntries(entries);
 
   const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
 
-  return branch.flatMap(branchItems);
+  const custom = leafPath(entries as SessionEntry[], leafId)
+    .filter((entry) => entry.type === "custom")
+    .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
+
+  return { items: branch.flatMap(branchItems), custom };
 };

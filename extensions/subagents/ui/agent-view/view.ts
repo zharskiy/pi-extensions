@@ -210,12 +210,17 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const request = [...requestLines(payload(), isOpen(), requestExpanded, width, theme), ""];
     const lines = transcript.render(width);
     const warning = data.error === undefined ? [] : [padLine(theme, "warning", data.error, inner)];
+    const pending = data.pending === undefined ? [] : [padLine(theme, "dim", data.pending, inner)];
 
     if (lines.length === 0) {
-      return { request, lines: [PAD + theme.fg("dim", "(no transcript yet)"), ...warning], clickable: 0 };
+      return {
+        request,
+        lines: [PAD + theme.fg("dim", "(no transcript yet)"), ...warning, ...pending],
+        clickable: 0,
+      };
     }
 
-    return { request, lines: [...lines, ...warning], clickable: lines.length };
+    return { request, lines: [...lines, ...warning, ...pending], clickable: lines.length };
   };
 
   const hintTiers = (): KeyHint[][] => {
