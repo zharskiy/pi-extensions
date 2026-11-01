@@ -1,17 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
-import {
-  type EntryRenderer,
-  getMarkdownTheme,
-  type Theme,
-  UserMessageComponent,
-} from "@earendil-works/pi-coding-agent";
+import { type EntryRenderer, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import type { EntryRender } from "../../../platform/pi-adapter/index.ts";
 import { entryHost } from "../../../platform/pi-adapter/tools/entry-renderers.ts";
-import { initPiRenderTheme } from "./render-theme.ts";
-
-const themes = await import(
-  new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
-);
+import { initPiRenderTheme, livePiTheme } from "./render-theme.ts";
 
 const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
 
@@ -35,7 +26,7 @@ export const renderPiEntry = (
   const component = registered[0]?.(
     { type: "custom", customType: "framework:entry", data, id: "entry", parentId: null, timestamp: "" },
     { expanded: false },
-    themes.theme as Theme,
+    livePiTheme,
   );
 
   return plainLines(component?.render(width) ?? []);
