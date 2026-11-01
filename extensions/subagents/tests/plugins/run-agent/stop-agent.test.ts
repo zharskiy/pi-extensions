@@ -16,9 +16,6 @@ import type {
 } from "../../../core/run-agent/tools.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
-const WAKE_NOTE =
-  "You are still woken with the batch result, including any partial output, once the whole batch is done; do not restart these agents or check on them.";
-
 const childTool = <P, D>(child: FakeChildSession, name: string) => {
   const tool = child.spec.customTools?.find((spec) => spec.name === name);
 
@@ -68,8 +65,8 @@ describe("stop_agent", () => {
     const result = await stop([record.id], "the user dropped the task");
 
     expect(result.isError).toBeUndefined();
-    expect(result.text).toBe([`Stopped ${record.id}.`, WAKE_NOTE].join("\n"));
-    expect(result.details).toEqual({ stopped: [record.id], skipped: [] });
+    expect(result.text.split("\n")[0]).toBe(`Stopped ${record.id}.`);
+    expect(result.text).toContain("still woken");
     expect(child.aborted).toBe(true);
     expect(registry.get(record.id)).toMatchObject({
       state: "stopped",
@@ -117,8 +114,8 @@ describe("stop_agent", () => {
     expect(hiddenMessageTexts(host)[0]).toContain("second result");
   });
 
-  it("closes a queued agent at once and leaves the running one alone", async () => {
-    const { runMain, stop, registry } = setup({ maxConcurrent: 1 });
+  it("closes a queued agent at once, never launches it and wakes once when the batch is done", async () => {
+    const { runMain, stop, registry, runtime, host } = setup({ maxConcurrent: 1 });
     const [first, second] = await runMain([
       { agent: "scout", task: "one" },
       { agent: "scout", task: "two" },
@@ -131,6 +128,42 @@ describe("stop_agent", () => {
     expect(result.text).toContain(`Stopped ${second.id}.`);
     expect(registry.get(second.id)?.state).toBe("stopped");
     expect(registry.get(first.id)?.state).toBe("running");
+
+    runtime.child(first.id).finish("first result");
+    await flushMicrotasks();
+
+    expect(runtime.children.map((child) => child.id)).toEqual([first.id]);
+    expect(hiddenMessageTexts(host)).toHaveLength(1);
+    expect(hiddenMessageTexts(host)[0]).toContain("finished: 1 done, 1 stopped.");
+  });
+
+  it("answers duplicate ids with one line", async () => {
+    const { runMain, stop } = setup();
+    const [record] = await runMain([{ agent: "scout", task: "one" }]);
+
+    const result = await stop([record.id, record.id]);
+
+    expect(result.text.split("\n").filter((line) => line.includes(record.id))).toEqual([
+      `Stopped ${record.id}.`,
+    ]);
+  });
+
+  it("closes an agent in the user's grace period at once with the model's reason", async () => {
+    const { runMain, stop, registry, services, host } = setup();
+    const [record] = await runMain([{ agent: "scout", task: "one" }]);
+
+    await services.require("runner").stop(record.id);
+
+    expect(registry.get(record.id)?.state).toBe("grace");
+
+    const result = await stop([record.id], "no longer needed");
+
+    expect(result.text).toContain(`Stopped ${record.id}.`);
+    expect(registry.get(record.id)).toMatchObject({
+      state: "stopped",
+      error: "stopped by the main session: no longer needed",
+    });
+    expect(hiddenMessageTexts(host)).toHaveLength(1);
   });
 
   it("refuses unknown and closed ids with an error and changes nothing", async () => {
@@ -149,13 +182,6 @@ describe("stop_agent", () => {
     expect(result.text).toBe(
       ["Not stopped ghost: unknown agent.", `Not stopped ${finished.id}: already closed (done).`].join("\n"),
     );
-    expect(result.details).toEqual({
-      stopped: [],
-      skipped: [
-        { id: "ghost", reason: "unknown agent" },
-        { id: finished.id, reason: "already closed (done)" },
-      ],
-    });
     expect(registry.get(finished.id)?.state).toBe("done");
     expect(registry.get(running.id)?.state).toBe("running");
     expect(hiddenMessageTexts(host)).toEqual([]);
@@ -168,24 +194,32 @@ describe("stop_agent", () => {
     const result = await stop([record.id, "ghost"]);
 
     expect(result.isError).toBeUndefined();
-    expect(result.text).toBe(
-      [`Stopped ${record.id}.`, "Not stopped ghost: unknown agent.", WAKE_NOTE].join("\n"),
-    );
+    expect(result.text.split("\n").slice(0, 2)).toEqual([
+      `Stopped ${record.id}.`,
+      "Not stopped ghost: unknown agent.",
+    ]);
+    expect(result.text).toContain("still woken");
   });
 
-  it("renders nothing when it stops and one error row when it stops nothing", async () => {
+  it("renders nothing when every id stops and one error row naming each refused id otherwise", async () => {
     const { runMain, stop, host } = setup();
-    const [record] = await runMain([{ agent: "scout", task: "one" }]);
+    const [first, second] = await runMain([
+      { agent: "scout", task: "one" },
+      { agent: "scout", task: "two" },
+    ]);
 
-    const stopped = await stop([record.id]);
+    const stopped = await stop([first.id]);
+    const mixed = await stop([second.id, "ghost"]);
     const refused = await stop(["ghost"]);
 
-    const quiet = host.renderTool("stop_agent", { call: { ids: [record.id] }, result: stopped });
+    const quiet = host.renderTool("stop_agent", { call: { ids: [first.id] }, result: stopped });
+    const partly = host.renderTool("stop_agent", { call: { ids: [second.id, "ghost"] }, result: mixed });
     const failed = host.renderTool("stop_agent", { call: { ids: ["ghost"] }, result: refused });
 
     expect(quiet.call).toBe("");
     expect(quiet.result).toBe("");
-    expect(failed.result).toBe("✗ stop_agent ghost · ghost: unknown agent");
+    expect(partly.result).toBe("✗ stop_agent · ghost: unknown agent");
+    expect(failed.result).toBe("✗ stop_agent · ghost: unknown agent");
   });
 });
 
@@ -261,7 +295,10 @@ describe("stop_agent in nested agents", () => {
     await harness.stop([record.id]);
 
     expect(harness.registry.get(record.id)?.state).toBe("stopped");
-    expect(harness.registry.get(helper.id)?.state).toBe("stopped");
+    expect(harness.registry.get(helper.id)).toMatchObject({
+      state: "stopped",
+      error: `stopped with its caller ${record.id}`,
+    });
     expect(hiddenMessageTexts(harness.host)).toHaveLength(1);
   });
 });

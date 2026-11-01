@@ -108,7 +108,6 @@ type Live = {
   unsubscribe?: () => void;
   release?: () => void;
   graceTimer?: ReturnType<typeof setTimeout>;
-  stopReason?: string;
   answering: boolean;
   turn: "idle" | "waiting" | "running" | "held";
   handoff?: HeldHandoff;
@@ -222,7 +221,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       .list()
       .filter((child) => child.callerId === record.id && !isClosed(child.state))
       .forEach((child) => {
-        void stop(child.id, { immediate: true });
+        void stop(child.id, { immediate: true, reason: `stopped with its caller ${record.id}` });
       });
   };
 
@@ -592,7 +591,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    closeStopped(record, lives.get(id)?.stopReason ?? USER_STOP);
+    closeStopped(record, USER_STOP);
     await releaseLive(id);
   };
 
@@ -1024,6 +1023,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const live = lives.get(id);
 
+    if (live?.turn === "held" && options.immediate === true) {
+      live.turn = "idle";
+      live.handoff = undefined;
+
+      return stopNow(record, options.reason ?? USER_STOP);
+    }
+
     if (live?.turn === "held") {
       await unhold(record, live);
       return true;
@@ -1033,13 +1039,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const immediate =
       options.immediate === true || record.state !== "running" || deps.settings.stopGraceSeconds === 0;
 
-    const reason = options.reason ?? USER_STOP;
-
     if (immediate || !live || !child) {
-      return stopNow(record, reason);
+      return stopNow(record, options.reason ?? USER_STOP);
     }
-
-    live.stopReason = reason;
 
     releaseSlot(live);
     deps.registry.update(id, { state: "grace", graceEndsAt: undefined });
@@ -1115,9 +1117,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     open.forEach((record) => {
       if (record.state === "grace") {
-        const stopReason = lives.get(record.id)?.stopReason ?? USER_STOP;
-
-        closeStopped(record, `${stopReason}; ${reason} ended the grace period`);
+        closeStopped(record, `${USER_STOP}; ${reason} ended the grace period`);
         return;
       }
 

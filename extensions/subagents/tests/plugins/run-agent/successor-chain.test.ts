@@ -633,6 +633,31 @@ describe("successor chain", () => {
       expect(registry.list()).toHaveLength(2);
     });
 
+    it("closes as stopped, not handoff, and stops its batch when stop_agent stops it while waiting", async () => {
+      const { first, current, caller, start, handOffNow, host, registry } = await holdingSetup();
+      const a = await start("find a");
+
+      await handOffNow();
+
+      const result = await host
+        .tool<StopAgentParams, StopAgentDetails>("stop_agent")
+        .execute({ ids: [first.id], reason: "the user dropped it" }, {});
+      await flushMicrotasks();
+
+      expect(result.text).toContain(`Stopped ${first.id}.`);
+      expect(current(first.id)).toMatchObject({
+        state: "stopped",
+        error: "stopped by the main session: the user dropped it",
+      });
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(current(a.id)).toMatchObject({ state: "stopped", error: `stopped with its caller ${first.id}` });
+      expect(caller.disposed).toBe(true);
+      expect(registry.list()).toHaveLength(2);
+      expect(hiddenMessageTexts(host)).toHaveLength(1);
+      expect(hiddenMessageTexts(host)[0]).toContain(`## ${first.id} (general) - stopped`);
+      expect(hiddenMessageTexts(host)[0]).not.toContain("- handoff");
+    });
+
     it("closes and disposes a waiting agent on shutdown", async () => {
       const { first, current, caller, start, handOffNow, host, registry } = await holdingSetup();
       const a = await start("find a");

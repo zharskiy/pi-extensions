@@ -4,7 +4,6 @@ import {
   type AgentRegistry,
   chainTerminal,
   grantText,
-  isClosed,
   isNone,
   MAIN_CALLER,
 } from "../model/agent-record.ts";
@@ -25,7 +24,7 @@ type MessageAgentDetails = { delivery?: string };
 
 export type StopAgentParams = { ids: string[]; reason?: string };
 
-export type StopAgentDetails = { stopped: string[]; skipped: { id: string; reason: string }[] };
+export type StopAgentDetails = { skipped: { id: string; reason: string }[] };
 
 type ResultRender<P, D> = NonNullable<ToolSpec<P, D>["renderResult"]>;
 
@@ -275,18 +274,19 @@ const stopAgentParameters = {
 const STOP_WAKE_NOTE =
   "You are still woken with the batch result, including any partial output, once the whole batch is done; do not restart these agents or check on them.";
 
-const stopperName = (callerId: string) => (callerId === MAIN_CALLER ? "the main session" : callerId);
-
 const stopReasonText = (callerId: string, reason: string | undefined) => {
-  const by = `stopped by ${stopperName(callerId)}`;
+  const by = `stopped by ${callerId === MAIN_CALLER ? "the main session" : callerId}`;
   const why = reason?.trim();
 
   return why ? `${by}: ${why}` : by;
 };
 
-type StopOutcome =
-  | { id: string; stopped: true; line: string }
-  | { id: string; stopped: false; reason: string };
+type StopOutcome = { line: string; skipped?: { id: string; reason: string } };
+
+const skippedOutcome = (id: string, reason: string): StopOutcome => ({
+  line: `Not stopped ${id}: ${reason}.`,
+  skipped: { id, reason },
+});
 
 export const stopAgentTool = (
   deps: Pick<ToolDeps, "runner" | "registry" | "rows">,
@@ -296,7 +296,7 @@ export const stopAgentTool = (
   label: "Stop agent",
   description:
     "Stop one or several running or queued agents you started, at once and without a grace period. Returns one line per id; the batch result, with any partial output, still arrives in the usual wake, so do not restart or poll them.",
-  promptSnippet: "stop agents you started when the user asks or their work is no longer needed",
+  promptSnippet: "stop agents you started whose work is no longer needed",
   parameters: stopAgentParameters,
   execute: async (params) => {
     const reason = stopReasonText(callerId, params.reason);
@@ -305,46 +305,34 @@ export const stopAgentTool = (
       const record = deps.registry.get(id);
 
       if (!record) {
-        return { id, stopped: false, reason: "unknown agent" };
+        return skippedOutcome(id, "unknown agent");
       }
 
       if (record.callerId !== callerId) {
-        return { id, stopped: false, reason: "only the caller that started it may stop it" };
-      }
-
-      const terminal = chainTerminal(deps.registry, record);
-
-      if (isClosed(terminal.state)) {
-        return { id, stopped: false, reason: `already closed (${terminal.state})` };
+        return skippedOutcome(id, "only the caller that started it may stop it");
       }
 
       const stopped = await deps.runner.stop(id, { immediate: true, reason });
+      const terminal = chainTerminal(deps.registry, record);
 
       if (!stopped) {
-        return { id, stopped: false, reason: `already closed (${deps.registry.get(terminal.id)?.state})` };
+        return skippedOutcome(id, `already closed (${terminal.state})`);
       }
 
-      const line = terminal.id === id ? `Stopped ${id}.` : `Stopped ${terminal.id}, the live link of ${id}.`;
-
-      return { id, stopped: true, line };
+      return {
+        line: terminal.id === id ? `Stopped ${id}.` : `Stopped ${terminal.id}, the live link of ${id}.`,
+      };
     };
 
     const outcomes = await Promise.all([...new Set(params.ids)].map(stopOne));
+    const lines = outcomes.map((outcome) => outcome.line);
+    const skipped = outcomes.flatMap((outcome) => (outcome.skipped ? [outcome.skipped] : []));
 
-    const lines = outcomes.map((outcome) =>
-      outcome.stopped ? outcome.line : `Not stopped ${outcome.id}: ${outcome.reason}.`,
-    );
-    const stopped = outcomes.flatMap((outcome) => (outcome.stopped ? [outcome.id] : []));
-    const skipped = outcomes.flatMap((outcome) =>
-      outcome.stopped ? [] : [{ id: outcome.id, reason: outcome.reason }],
-    );
-    const details = { stopped, skipped };
-
-    if (stopped.length === 0) {
-      return { text: lines.join("\n"), details, isError: true };
+    if (skipped.length === outcomes.length) {
+      return { text: lines.join("\n"), details: { skipped }, isError: true };
     }
 
-    return { text: [...lines, STOP_WAKE_NOTE].join("\n"), details };
+    return { text: [...lines, STOP_WAKE_NOTE].join("\n"), details: { skipped } };
   },
   renderShell: "row",
   renderCall: () => "",

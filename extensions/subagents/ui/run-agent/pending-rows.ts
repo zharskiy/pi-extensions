@@ -1,11 +1,7 @@
+import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
 import { failureSuffix, row, type TitleParts } from "../../../../platform/ui-kit/index.ts";
 import type { AgentRegistry } from "../../core/model/agent-record.ts";
-import type {
-  MessageAgentParams,
-  RunAgentParams,
-  StopAgentParams,
-  ToolRows,
-} from "../../core/run-agent/tools.ts";
+import type { MessageAgentParams, RunAgentParams, ToolRows } from "../../core/run-agent/tools.ts";
 import { type BlockHints, renderBlock } from "./render.ts";
 
 type RowDeps = {
@@ -14,13 +10,11 @@ type RowDeps = {
   onRendered?: (batchId: string, invalidate: () => void) => void;
 };
 
-type RowTheme = Parameters<ToolRows["messageAgent"]>[2];
-
-const errorRow = (tool: string, target: string, error: string, theme: RowTheme) => {
+const errorRow = (tool: string, target: string | undefined, error: string, theme: ThemeLike) => {
   const parts: TitleParts = {
     mark: "error",
     verb: (paint) => paint.bold(tool),
-    target: { text: target },
+    target: target === undefined ? undefined : { text: target },
   };
 
   return (width: number) => {
@@ -57,15 +51,15 @@ export const pendingRows = (deps: RowDeps): ToolRows => ({
 
     return errorRow("message_agent", id, result.text.replace(/^Error:\s*/, "").trim(), theme);
   },
-  stopAgent: (result, state, theme) => {
-    if (!result.isError) {
+  stopAgent: (result, _state, theme) => {
+    const skipped = result.details?.skipped ?? [];
+
+    if (skipped.length === 0) {
       return "";
     }
 
-    const ids = (state.args as StopAgentParams | undefined)?.ids ?? [];
-    const skipped = result.details?.skipped ?? [];
-    const error = skipped.map((entry) => `${entry.id}: ${entry.reason}`).join("; ") || result.text;
+    const error = skipped.map((entry) => `${entry.id}: ${entry.reason}`).join("; ");
 
-    return errorRow("stop_agent", ids.join(", "), error, theme);
+    return errorRow("stop_agent", undefined, error, theme);
   },
 });
