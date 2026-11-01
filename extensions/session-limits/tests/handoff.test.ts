@@ -80,10 +80,10 @@ describe("sessionPreface", () => {
     expect(text).not.toContain(".jsonl");
   });
 
-  it("names /session-handoff and repeats the focus only for a manual handoff", () => {
+  it("names /handoff and repeats the focus only for a manual handoff", () => {
     const manual = sessionPreface({ manual: true, focus: "ship the release" });
 
-    expect(manual).toContain("which the user handed off with /session-handoff");
+    expect(manual).toContain("which the user handed off with /handoff");
     expect(manual).toContain("The user said this session is for: ship the release.");
     expect(sessionPreface({ manual: true })).not.toContain("this session is for");
     expect(sessionPreface({ manual: false, focus: "x" })).not.toContain("this session is for");

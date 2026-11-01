@@ -5,7 +5,7 @@ import {
   validateHandoff,
 } from "../../../platform/shared/index.ts";
 
-export const HANDOFF_COMMAND = "session-handoff";
+export const HANDOFF_COMMAND = "handoff";
 
 export const MAIN_AUDIENCE: HandoffAudience = {
   statuses: ["done", "partial", "blocked"],

@@ -22,7 +22,7 @@ When the main session has been idle long enough that the provider's prompt cache
 | Fire time | Idle time + lifetime − `idleMarginSeconds`, when the lifetime is at least 30 minutes. With pi's idle warming on, the first `cache_warming_decision` with action `stop` (pi's own, after its 30-minute horizon, or one returned by an extension) fires instead. With a 5-minute lifetime and no warming: nothing; this is intended, the saving is too small for the detail lost, and `PI_CACHE_RETENTION=long` is the lever. |
 | Cancel | Any user input, a new run, a dialog, a busy source on `pi:busy` (agents running), or a session switch disarms the timer; it re-arms at the next idle. Agents still running at fire time mean skip, not wait. |
 | Fire | Send the existing `prompts/handoff.md` instruction; the model writes the six-section file while the cache is warm. The footer segment says `idle handoff`. |
-| Switch | The existing flow validates the file and runs `/session-handoff` when the session settles, seeding the new session. No turn starts; the next prompt goes to the new session. |
+| Switch | The existing flow validates the file and runs `/handoff` when the session settles, seeding the new session. No turn starts; the next prompt goes to the new session. |
 | Failure | The existing resend and `stuck` rules apply; an invalid file means no switch and a warning. |
 
 Numbers to ship: `idleRatio` 0.4, `idleMarginSeconds` 60, lifetime floor 30 minutes (fixed, from the research: long retention or the warming horizon). Both thresholds sit below `hardRatio` 0.75, so the size handoff still wins when it comes first.

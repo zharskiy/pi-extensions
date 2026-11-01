@@ -11,7 +11,7 @@ const setup = (mode: RunMode) => {
   host.onSessionStart((info) => seen.push(`start ${info.mode}`));
   host.onTurnEnd((context) => seen.push(`turn ${context.tokens}`));
   host.onIdle(() => seen.push("idle"));
-  host.registerCommand("session-handoff", { description: "switch", run: () => void seen.push("command") });
+  host.registerCommand("handoff", { description: "switch", run: () => void seen.push("command") });
 
   return { fake, host, seen };
 };
@@ -23,7 +23,7 @@ describe("conversationOnly", () => {
     tui.fake.start();
     tui.fake.turnEnd({ tokens: 1_000, window: 100_000 });
     tui.fake.settle();
-    await tui.fake.runCommand("session-handoff");
+    await tui.fake.runCommand("handoff");
 
     expect(tui.seen).toEqual(["start tui", "turn 1000", "idle", "command"]);
   });
@@ -36,7 +36,7 @@ describe("conversationOnly", () => {
         fake.start();
         fake.turnEnd({ tokens: 1_000, window: 100_000 });
         fake.settle();
-        await fake.runCommand("session-handoff");
+        await fake.runCommand("handoff");
       }),
     );
 
