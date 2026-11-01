@@ -203,6 +203,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   entries.registerEntryRenderer(PREVIOUS_SESSION_TYPE, previous.render, {
     flush: true,
+    previousSession: false,
     invalidate: previous.invalidate,
   });
 

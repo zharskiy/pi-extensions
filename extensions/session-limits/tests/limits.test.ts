@@ -1493,6 +1493,13 @@ describe("messages typed during a handoff", () => {
     expect(chat(host)).toEqual([KEPT, "first", "second | 2 images"]);
   });
 
+  it("keeps the kept rule and message out of the previous session a handoff shows", () => {
+    const { host } = setup();
+
+    expect(host.inPreviousSession("pi-session-limits:kept-rule")).toBe(false);
+    expect(host.inPreviousSession("pi-session-limits:kept-message")).toBe(false);
+  });
+
   it("draws a kept message flush with the chat, its text after pi's pad", () => {
     const { host, turn } = setup();
 

@@ -20,7 +20,7 @@
 - `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, its restore of the model and thinking level on `session_start`, and the restored-selection marker the `model_select` and `thinking_level_select` filters match against.
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
-- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or one branch through pi's context entries), context tokens.
+- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or one branch through pi's context entries, with its custom entries and compaction or branch summaries), context tokens.
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with displayed custom messages as run starts), `formatRoutedMessage`.
 - `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
@@ -50,7 +50,7 @@
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
-- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups).
 - `tools/transcript.ts`: the transcript pane and pi renderer capture.
 - `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer over `registerEntryRenderer`'s `flush` option, which draws the previous sessions of a handoff chain with the transcript pane.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
@@ -86,7 +86,7 @@
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
 - `tests/transcript.test.ts`: `tools/transcript.ts`.
-- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, the redraw in a new theme after pi invalidates the entry, and the model's requests unchanged by the entry, on later turns and after a resume too.
+- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, the old session's custom entries (drawn, or kept out with `previousSession: false`), its compaction summary first, the redraw in a new theme after pi invalidates the entry, and the model's requests unchanged by the entry, on later turns and after a resume too.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.
 - `tests/main-prompt.test.ts`: `prompt/main-prompt.ts`.

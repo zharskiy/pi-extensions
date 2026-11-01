@@ -1,5 +1,7 @@
 import {
   AssistantMessageComponent,
+  BranchSummaryMessageComponent,
+  CompactionSummaryMessageComponent,
   CustomMessageComponent,
   createBashToolDefinition,
   createCodemodeExtension,
@@ -19,10 +21,11 @@ import {
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
+import type { ThemeLike } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
-import { messageRendererFor } from "./entry-renderers.ts";
+import { messageRendererFor, previousEntryComponent } from "./entry-renderers.ts";
 import { toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
 
@@ -84,6 +87,7 @@ const defaultPiRenderers = () => {
 
 export type TranscriptPaneOptions = {
   tools?: AnyToolSpec[];
+  theme?: () => ThemeLike;
 };
 
 export const createTranscriptPane = (
@@ -191,6 +195,27 @@ export const createTranscriptPane = (
     if (item.kind === "tool") {
       pendingTools.get(item.toolCallId)?.updateResult(item.raw as never);
       pendingTools.delete(item.toolCallId);
+      return;
+    }
+
+    if (item.kind === "entry") {
+      const component = options.theme && previousEntryComponent(item.customType, item.data, options.theme);
+
+      if (component) {
+        container.addChild(new Spacer(1));
+        addExpandable(component);
+      }
+
+      return;
+    }
+
+    if (item.kind === "summary") {
+      const message = item.raw as { role: string };
+      const Summary =
+        message.role === "branchSummary" ? BranchSummaryMessageComponent : CompactionSummaryMessageComponent;
+
+      container.addChild(new Spacer(1));
+      addExpandable(new Summary(item.raw as never, getMarkdownTheme()));
       return;
     }
 

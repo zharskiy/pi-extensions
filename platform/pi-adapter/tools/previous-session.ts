@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import type { ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { readSessionBranch } from "../runtime/session-file.ts";
-import type { ThemeToken } from "../types/theme.ts";
+import type { ThemeLike, ThemeToken } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { EntryRender } from "../types/view.ts";
 import { createTranscriptPane } from "./transcript.ts";
@@ -60,6 +60,7 @@ export const showPreviousSession = (ctx: ExtensionContext) => {
 export const previousSessionRenderer = (deps: RendererDeps) => {
   const cache = new Map<string, Part[]>();
   const tui = { requestRender: () => deps.requestRender() } as unknown as TUI;
+  let current: ThemeLike;
 
   const sessionParts = (previous: PreviousSession, seen: string[]): Part[] => {
     const path = shownPath(previous.file);
@@ -80,7 +81,10 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
       .find(isPreviousSession);
 
     const nested = earlier ? sessionParts(earlier, [...seen, previous.file]) : [];
-    const pane = createTranscriptPane(tui, deps.cwd(), { tools: deps.tools() });
+    const pane = createTranscriptPane(tui, deps.cwd(), {
+      tools: deps.tools(),
+      theme: () => current,
+    });
 
     pane.sync(branch.items);
 
@@ -95,6 +99,8 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
     const key = `${data.file}\n${data.leafId}`;
     const parts = cache.get(key) ?? sessionParts(data, []);
     const margin = " ".repeat(pad);
+
+    current = theme;
 
     if (existsSync(data.file)) {
       cache.set(key, parts);

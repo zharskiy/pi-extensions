@@ -13,7 +13,9 @@ export type TranscriptItem =
   | { kind: "user"; text: string }
   | { kind: "assistant"; raw: unknown }
   | { kind: "tool"; toolCallId: string; raw: unknown }
-  | { kind: "custom"; raw: unknown };
+  | { kind: "custom"; raw: unknown }
+  | { kind: "entry"; customType: string; data: unknown }
+  | { kind: "summary"; raw: unknown };
 
 export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;
@@ -88,7 +90,7 @@ export type EntryRender = (
   pad: number,
 ) => string[];
 
-export type EntryOptions = { flush?: boolean };
+export type EntryOptions = { flush?: boolean; previousSession?: boolean };
 
 export type MessageRender = (
   message: { text: string; details?: unknown },

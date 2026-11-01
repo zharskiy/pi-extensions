@@ -5,6 +5,7 @@ import {
   migrateSessionEntries,
   parseSessionEntries,
   type SessionEntry,
+  sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
 import type { TranscriptItem } from "../types/view.ts";
@@ -166,6 +167,24 @@ type CustomEntryData = { customType: string; data: unknown };
 
 type SessionBranch = { items: TranscriptItem[]; customEntries: CustomEntryData[] };
 
+const SUMMARY_ROLES = ["compactionSummary", "branchSummary"];
+
+const branchItems = (entry: RawEntry): TranscriptItem[] => {
+  if (entry.type === "custom") {
+    return [{ kind: "entry", customType: entry.customType ?? "", data: entry.data }];
+  }
+
+  if (entry.type === "compaction" || entry.type === "branch_summary") {
+    return sessionEntryToContextMessages(entry as SessionEntry)
+      .filter((message) => SUMMARY_ROLES.includes(message.role))
+      .map((raw) => ({ kind: "summary", raw }));
+  }
+
+  const item = transcriptItem(entry);
+
+  return item ? [item] : [];
+};
+
 export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
 
@@ -173,7 +192,7 @@ export const readSessionBranch = (file: string, leafId: string | null): SessionB
 
   const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
 
-  const items = branch.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
+  const items = branch.flatMap(branchItems);
 
   const customEntries = branch
     .filter((entry) => entry.type === "custom")

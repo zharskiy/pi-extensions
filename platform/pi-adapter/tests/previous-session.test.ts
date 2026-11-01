@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
 import { initPiRenderTheme, livePiTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
+import { sharedPad } from "../tools/row-component.ts";
 
 initPiRenderTheme();
 
@@ -13,6 +14,10 @@ const temp = useTempDirs();
 const SEED = { customType: "handoff-seed", text: "carry on from the handoff" };
 
 const PREVIOUS = "pi-adapter:previous-session";
+
+const NOTE = "test:note";
+
+const KEPT = "test:kept";
 
 const startRuntime = async () => {
   const dir = temp.make("pi-previous-session-");
@@ -37,6 +42,19 @@ const startRuntime = async () => {
 
   const handoff: pi.ExtensionFactory = (api) => {
     const host = createPiHost(api, { tools: new Map() });
+
+    host.registerEntryRenderer(NOTE, (data) => [`note: ${(data as { text: string }).text}`]);
+    host.registerEntryRenderer(KEPT, (data) => [`kept: ${(data as { text: string }).text}`], {
+      previousSession: false,
+    });
+
+    host.registerCommand("entries", {
+      description: "append entries",
+      run: async () => {
+        host.appendEntry(NOTE, { text: "a drawn note" });
+        host.appendEntry(KEPT, { text: "a kept message" });
+      },
+    });
 
     host.registerCommand("handoff", {
       description: "hand off",
@@ -232,6 +250,47 @@ describe("showing the previous session after a handoff", () => {
     expect(line(dark, "first question")).toBeDefined();
     expect(line(light, "first question")).not.toBe(line(dark, "first question"));
     expect(line(light, "» previous session · ")).not.toBe(line(dark, "» previous session · "));
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the old session's custom entries with their renderers, except those kept out of it", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+    await session.runtime.session.prompt("/entries");
+    await session.runtime.session.prompt("/handoff show");
+
+    const drawn = session.draw(session.previousEntry());
+
+    expect(drawn).toContain(`${" ".repeat(sharedPad())}note: a drawn note`);
+    expect(drawn.indexOf("note: a drawn note")).toBeGreaterThan(drawn.indexOf("first answer"));
+    expect(drawn).not.toContain("kept: a kept message");
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the old session's compaction summary at the top of its transcript", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+
+    const manager = session.runtime.session.sessionManager;
+    const question = manager
+      .getEntries()
+      .find((entry) => entry.type === "message" && entry.message.role === "user");
+
+    manager.appendCompaction("the compacted summary", question?.id ?? null, 1234);
+
+    await session.runtime.session.prompt("/handoff show");
+
+    const drawn = session.draw(session.previousEntry());
+    const boundary = drawn.indexOf("» previous session · ");
+    const summary = drawn.indexOf("[compaction]");
+
+    expect(summary).toBeGreaterThan(boundary);
+    expect(drawn).toContain("Compacted from 1,234 tokens");
+    expect(drawn.indexOf("first question")).toBeGreaterThan(summary);
 
     await session.runtime.dispose();
   });
