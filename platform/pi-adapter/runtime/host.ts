@@ -2,13 +2,20 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { contextHost } from "../context/context-facts.ts";
 import { contextOf, sumUsage } from "../context/usage-math.ts";
 import { createEditorHooks } from "../editor/editor.ts";
+import { captureTui } from "../editor/input.ts";
 import { replaceMainPrompt } from "../prompt/main-prompt.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
+import {
+  PREVIOUS_SESSION_TYPE,
+  previousSessionRenderer,
+  showPreviousSession,
+} from "../tools/previous-session.ts";
 import { recordPad } from "../tools/row-component.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
@@ -34,6 +41,7 @@ import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
 import { writeDefaultModel, writeDefaultThinkingLevel } from "./default-model.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
+import { globalRecord } from "./global-record.ts";
 import {
   claimKeptSelection,
   forgetSessionSelection,
@@ -112,10 +120,18 @@ const fillSession = async (
 };
 
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, keepSelection: keep, continueWithSeed, fill }) => {
+  newSession: async ({ parentSession, keepSelection: keep, showPrevious, continueWithSeed, fill }) => {
+    const kept = keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined;
+    const shown = showPrevious ? showPreviousSession(ctx, showPrevious.label) : undefined;
+
+    const setup = async (sessionManager: SessionManager) => {
+      await kept?.(sessionManager);
+      await shown?.(sessionManager);
+    };
+
     const result = await ctx.newSession({
       parentSession,
-      setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
+      setup: kept || shown ? setup : undefined,
       withSession: (fresh) => fillSession(fresh, fill(), continueWithSeed === true),
     });
 
@@ -136,6 +152,8 @@ type HeldCustom = { customType: string; content: string; display: boolean; detai
 const HELD_POLL_MS = 100;
 
 const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
+
+const hostStates = () => globalRecord<Set<HostState>>("host-states", () => new Set());
 
 const modelRef = (model: ExtensionContext["model"]) => model && `${model.provider}/${model.id}`;
 
@@ -165,7 +183,29 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const entries = entryHost(pi);
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
   let created = false;
+  let previousTui: ReturnType<typeof captureTui>;
   let currentModel: string | undefined;
+
+  hostStates().add(state);
+
+  const previous = previousSessionRenderer({
+    cwd: () => state.ctx?.cwd ?? process.cwd(),
+    tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
+    requestRender: () => {
+      const ctx = tuiContext(state);
+
+      if (ctx) {
+        previousTui ??= captureTui(ctx);
+        previousTui?.requestRender();
+      }
+    },
+  });
+
+  entries.registerEntryRenderer(PREVIOUS_SESSION_TYPE, previous.render, {
+    flush: true,
+    previousSession: false,
+    invalidate: previous.invalidate,
+  });
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;
@@ -336,6 +376,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     toolRows.release();
     entries.release();
     thinkingLabel.release();
+    hostStates().delete(state);
     state.ctx = undefined;
 
     if (errors.length > 0) {

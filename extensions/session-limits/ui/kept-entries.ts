@@ -1,6 +1,5 @@
-import type { EntryRender, ThemeLike } from "../../../platform/pi-adapter/index.ts";
+import { type EntryRender, labelledRule, type ThemeLike } from "../../../platform/pi-adapter/index.ts";
 import { counted, DOT } from "../../../platform/shared/index.ts";
-import { labelledRule } from "../../../platform/ui-kit/index.ts";
 import { HANDOFF_COMMAND } from "../core/handoff.ts";
 import { type KeptRule, parseKeptMessage, parseKeptRule } from "../core/kept-entries.ts";
 

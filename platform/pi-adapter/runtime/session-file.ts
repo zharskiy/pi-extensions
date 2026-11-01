@@ -1,5 +1,12 @@
 import { readFileSync } from "node:fs";
-import { calculateContextTokens } from "@earendil-works/pi-coding-agent";
+import {
+  buildContextEntries,
+  calculateContextTokens,
+  migrateSessionEntries,
+  parseSessionEntries,
+  type SessionEntry,
+  sessionEntryToContextMessages,
+} from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
 import type { TranscriptItem } from "../types/view.ts";
 import { messageText } from "./message-text.ts";
@@ -20,6 +27,8 @@ type RawMessage = {
 };
 
 type RawEntry = {
+  id?: string;
+  parentId?: string | null;
   type?: string;
   customType?: string;
   data?: unknown;
@@ -155,3 +164,66 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
   parseSessionLines(readLines(file), recordEntry);
+
+const SUMMARY_ROLES = ["compactionSummary", "branchSummary"];
+
+const branchItems = (entry: RawEntry): TranscriptItem[] => {
+  if (entry.type === "custom") {
+    return [{ kind: "entry", customType: entry.customType ?? "", data: entry.data }];
+  }
+
+  if (entry.type === "compaction" || entry.type === "branch_summary") {
+    return sessionEntryToContextMessages(entry as SessionEntry)
+      .filter((message) => SUMMARY_ROLES.includes(message.role))
+      .map((raw) => ({ kind: "summary", raw }));
+  }
+
+  if (entry.type === "message" && entry.message?.role === "bashExecution") {
+    return [{ kind: "bash", raw: entry.message }];
+  }
+
+  const item = transcriptItem(entry);
+
+  return item ? [item] : [];
+};
+
+type SessionBranch = { items: TranscriptItem[]; custom: { customType: string; data: unknown }[] };
+
+const leafOf = (entries: RawEntry[], byId: Map<string | undefined, RawEntry>, leafId: string | null) => {
+  if (leafId === null) {
+    return undefined;
+  }
+
+  return byId.get(leafId) ?? entries.at(-1);
+};
+
+const leafPath = (entries: RawEntry[], leafId: string | null) => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const parentOf = (entry: RawEntry) => (entry.parentId ? byId.get(entry.parentId) : undefined);
+
+  const step = ({ at, path }: { at?: RawEntry; path: RawEntry[] }) => {
+    if (!at) {
+      return { path };
+    }
+
+    path.push(at);
+
+    return { at: parentOf(at), path };
+  };
+
+  return entries.reduce(step, { at: leafOf(entries, byId, leafId), path: [] }).path.reverse();
+};
+
+export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
+  const entries = parseSessionEntries(readFileSync(file, "utf8"));
+
+  migrateSessionEntries(entries);
+
+  const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
+
+  const custom = leafPath(entries as RawEntry[], leafId)
+    .filter((entry) => entry.type === "custom")
+    .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
+
+  return { items: branch.flatMap(branchItems), custom };
+};

@@ -4,7 +4,7 @@
 - `row.ts`: the pi-native row layout: the 0/2/4 grid, `row`/`rowChildren`, `titleLine`, `failureSuffix`, `wrapChild`, `preview`, `rowText`.
 - `handoff-rows.ts`: `handoffRequestMessage`, `handoffSeedMessage`, `handoffToolRows`.
 - `glyphs.ts`: the state marks `MARKS` (`◌ ✓ ✗ ⊘ » ↳ › ∴`), `Mark`, `markGlyph`, `markOf`, `pointerMark`.
-- `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `expandHint`, `appendHint`, `countLine`, `keyHints`, `labelledRule` (a dim rule with a label), `hintRow` (one hint row cut to the width) and the private `hintLines` (bottom strips), `framed` (rule, lines, hints, rule; `{ oneRow: true }` cuts the hints to one row).
+- `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `expandHint`, `appendHint`, `countLine`, `keyHints`, `hintRow` (one hint row cut to the width) and the private `hintLines` (bottom strips), `framed` (rule, lines, hints, rule, with the accent `rule` it keeps to itself; `{ oneRow: true }` cuts the hints to one row).
 - `list.ts`: the selectable list: lines, keys, the shared hints.
 - `select.ts`: `selectForm`; a single-choice form over the list.
 - `tabs.ts`: the tab bar, the grouped tab bar and Tab/←→ keys (questionnaire, `/agents setup`).

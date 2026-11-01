@@ -57,7 +57,7 @@ const afterHandoff = (seed = "") => {
 };
 
 const NOTICE_KEY = "pi-session-limits";
-const HANDOFF_COMMAND = "session-handoff";
+const HANDOFF_COMMAND = "handoff";
 const HANDOFF_TYPE = "pi-handoff-seed";
 
 const RELEASE_MS = 1_000;
@@ -157,7 +157,7 @@ describe("session limits", () => {
     expect(requests()[0].startsWith("Your context window is nearly full.")).toBe(true);
     expect(requests()[0]).not.toContain("{{");
     expect(requests()[0]).not.toContain("next session is for");
-    expect(requests()[0]).not.toContain("/session-handoff");
+    expect(requests()[0]).not.toContain("/handoff");
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
     expect(host.notices).toEqual([]);
   });
@@ -174,9 +174,13 @@ describe("session limits", () => {
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].parentSession).toBe(host.info.file);
     expect(host.newSessions[0].keepSelection).toBe(true);
+    expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · context limit" });
     expect(host.newSessions[0].continueWithSeed).toBe(true);
     expect(host.newSessions[0].seed?.customType).toBe(HANDOFF_TYPE);
-    expect(host.newSessions[0].seed?.text).toContain(`the previous session ${host.info.file}`);
+    expect(host.newSessions[0].seed?.text).toContain(
+      "continues the previous session, which reached its context limit",
+    );
+    expect(host.newSessions[0].seed?.text).not.toContain(host.info.file);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
     expect(host.confirmations).toEqual([]);
     expect(requests()).toHaveLength(1);
@@ -567,7 +571,7 @@ describe("session limits", () => {
   });
 });
 
-describe("/session-handoff on demand", () => {
+describe("/handoff on demand", () => {
   const FOCUS = "fix the flaky login test";
 
   it("asks the model for a handoff with the focus and says so", async () => {
@@ -580,9 +584,7 @@ describe("/session-handoff on demand", () => {
     expect(requests()).toHaveLength(1);
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
     expect(requests()[0]).toContain(handoffPath);
-    expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
-      true,
-    );
+    expect(requests()[0].startsWith("The user ran /handoff to continue in a fresh session.")).toBe(true);
     expect(requests()[0]).toContain(
       `The user says the next session is for: ${FOCUS}. Shape Outcome and Next around that`,
     );
@@ -647,8 +649,9 @@ describe("/session-handoff on demand", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].keepSelection).toBe(true);
+    expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · /handoff" });
     expect(host.newSessions[0].continueWithSeed).toBe(false);
-    expect(host.newSessions[0].seed?.text).toContain("which the user handed off with /session-handoff");
+    expect(host.newSessions[0].seed?.text).toContain("which the user handed off with /handoff");
     expect(host.newSessions[0].seed?.text).toContain(`The user said this session is for: ${FOCUS}.`);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
   });
@@ -829,7 +832,7 @@ describe("/session-handoff on demand", () => {
   });
 });
 
-describe("/session-handoff during a turn", () => {
+describe("/handoff during a turn", () => {
   const FOCUS = "fix the flaky login test";
   const QUEUED = "The session handoff starts when the current turn ends; stopping the turn (esc) cancels it.";
 
@@ -855,9 +858,7 @@ describe("/session-handoff during a turn", () => {
 
     expect(requests()).toHaveLength(1);
     expect(host.messages[0].delivery).toBe("run");
-    expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
-      true,
-    );
+    expect(requests()[0].startsWith("The user ran /handoff to continue in a fresh session.")).toBe(true);
     expect(requests()[0]).toContain(`The user says the next session is for: ${FOCUS}.`);
     expect(host.notices).toEqual([{ message: QUEUED, level: "info" }]);
     expect(notice()).toBeUndefined();
@@ -929,9 +930,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(1);
-    expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
-      true,
-    );
+    expect(requests()[0].startsWith("The user ran /handoff to continue in a fresh session.")).toBe(true);
     expect(requests()[0]).toContain(FOCUS);
     expect(host.notices.filter((notice) => notice.message.startsWith("Context is nearly full"))).toEqual([]);
     expect(notice()).toBe("<warning>» handoff at 60k tokens · 76.0k used");
@@ -1024,7 +1023,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(3);
-    expect(requests()[2].startsWith("The user ran /session-handoff")).toBe(true);
+    expect(requests()[2].startsWith("The user ran /handoff")).toBe(true);
   });
 
   it("drops a handoff queued while stuck when the turn is aborted", async () => {
@@ -1094,7 +1093,7 @@ describe("/session-handoff during a turn", () => {
 
     expect(requests()).toHaveLength(2);
     expect(warnings()).toHaveLength(1);
-    expect(notice()).toBe("<error>✗ handoff failed · run /session-handoff");
+    expect(notice()).toBe("<error>✗ handoff failed · run /handoff");
   });
 });
 
@@ -1263,7 +1262,7 @@ describe("handoff request message", () => {
 
     expect(manual.host.messages[0].message.details).toEqual({
       reason: "manual",
-      command: "/session-handoff",
+      command: "/handoff",
     });
   });
 
@@ -1491,6 +1490,13 @@ describe("messages typed during a handoff", () => {
     expect(chat(host)).toEqual([KEPT, "first", "second | 2 images"]);
   });
 
+  it("keeps the kept rule and message out of the previous session a handoff shows", () => {
+    const { host } = setup();
+
+    expect(host.inPreviousSession("pi-session-limits:kept-rule")).toBe(false);
+    expect(host.inPreviousSession("pi-session-limits:kept-message")).toBe(false);
+  });
+
   it("draws a kept message flush with the chat, its text after pi's pad", () => {
     const { host, turn } = setup();
 
@@ -1536,7 +1542,7 @@ describe("messages typed during a handoff", () => {
     expect(chat(host)).toEqual([KEPT, "first", "second"]);
   });
 
-  it("says the messages go to the new session's editor after /session-handoff and skips an images-only one", async () => {
+  it("says the messages go to the new session's editor after /handoff and skips an images-only one", async () => {
     const { host } = setup();
 
     await host.runCommand(HANDOFF_COMMAND, "");
@@ -1547,7 +1553,7 @@ describe("messages typed during a handoff", () => {
     expect(host.notices.at(-1)?.level).toBe("warning");
   });
 
-  it("draws a new rule when /session-handoff with a focus asks again while the switch waits", async () => {
+  it("draws a new rule when /handoff with a focus asks again while the switch waits", async () => {
     const { host, turn, saveHandoff, busy } = setup();
 
     busy(true);

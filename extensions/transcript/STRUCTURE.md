@@ -11,7 +11,7 @@ extensions/transcript/
 │   ├── tool-kinds.ts               call classification: arguments, read range, listed counts, missing file, edit diff text, duration
 │   └── word-spans.ts               changed-word spans of a removed/added line pair
 ├── ui/
-│   ├── answer-rule.ts              answerRule: the dim labelled rule of an answer entry
+│   ├── answer-rule.ts              answerRule: the dim labelled rule of an answer entry (the adapter's labelledRule)
 │   ├── tools.ts                    transcriptRows: look per tool, title, outcome and hint of every row
 │   ├── tool-look.ts                Look, Context, Outcome types and the shared look helpers
 │   ├── skill.ts                    collapsed skill-read row: [skill] label, name, range, one-line failure

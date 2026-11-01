@@ -32,6 +32,7 @@ export const createOverlayApi = ({ rows = 200, theme = plainTheme, host }: Overl
     createTranscript: (): TranscriptPane => {
       const pane = createTranscriptPane({ requestRender } as never, "/repo", {
         tools: [...(host?.tools.values() ?? [])] as AnyToolSpec[],
+        theme: () => theme,
       });
 
       transcripts.push(pane);

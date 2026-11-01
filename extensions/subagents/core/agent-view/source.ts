@@ -1,16 +1,22 @@
 import { statSync } from "node:fs";
-import type { AgentRuntime, SessionRecord } from "../../../../platform/pi-adapter/index.ts";
-import { errorText } from "../../../../platform/shared/index.ts";
+import type { AgentRuntime, SessionRecord, TranscriptItem } from "../../../../platform/pi-adapter/index.ts";
+import { errorText, LIMIT_SEAM } from "../../../../platform/shared/index.ts";
 import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../model/agent-record.ts";
 
 export type ViewData = {
   record: AgentRecord;
   chain: string[];
   session?: SessionRecord;
+  linkItems?: number[];
   error?: string;
+  pending?: string;
 };
 
-type CachedSession = { file: string; size: number; mtimeMs: number; session: SessionRecord };
+const SEAM: TranscriptItem = { kind: "rule", label: LIMIT_SEAM };
+
+type CachedSession = { size: number; mtimeMs: number; session: SessionRecord };
+
+type LinkRead = { session?: SessionRecord; error?: string; waiting?: boolean };
 
 type AgentSourceDeps = {
   runtime: AgentRuntime;
@@ -25,7 +31,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
   };
 
   const loader = (id: string, found: AgentRecord) => {
-    let cached: CachedSession | undefined;
+    const cache = new Map<string, CachedSession>();
 
     const readSession = (file: string) => {
       const stat = statSync(file, { throwIfNoEntry: false });
@@ -34,31 +40,63 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
         return undefined;
       }
 
-      if (cached?.file === file && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+      const cached = cache.get(file);
+
+      if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
         return cached.session;
       }
 
       const session = runtime.readSession(file);
 
-      cached = { file, size: stat.size, mtimeMs: stat.mtimeMs, session };
+      cache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, session });
 
       return session;
+    };
+
+    const readLink = (link: AgentRecord): LinkRead => {
+      try {
+        const session = link.sessionFile ? readSession(link.sessionFile) : undefined;
+
+        return session ? { session } : { error: "session file not written yet", waiting: true };
+      } catch (error) {
+        return { error: `cannot read session: ${errorText(error)}` };
+      }
     };
 
     return (): ViewData => {
       const live = registry.get(id);
       const record = live ? chainTerminal(registry, live) : found;
-      const chain = chainLinks(registry, record).map((link) => link.id);
+      const links = chainLinks(registry, record);
+      const chain = links.map((link) => link.id);
+      const reads = links.map(readLink);
+      const sessions = reads.flatMap((read) => (read.session ? [read.session] : []));
+      const parts = reads.map((read, index) => {
+        if (!read.session) {
+          return [];
+        }
 
-      try {
-        const session = record.sessionFile ? readSession(record.sessionFile) : undefined;
+        const after = reads.slice(0, index).some((earlier) => earlier.session);
 
-        return session
-          ? { record, chain, session }
-          : { record, chain, error: "session file not written yet" };
-      } catch (error) {
-        return { record, chain, error: `cannot read session: ${errorText(error)}` };
+        return after ? [SEAM, ...read.session.items] : read.session.items;
+      });
+      const linkItems = parts.map((part) => part.length);
+      const last = reads.at(-1);
+
+      if (sessions.length === 0) {
+        return { record, chain, error: reads.find((read) => read.error)?.error };
       }
+
+      const error =
+        reads.slice(0, -1).find((read) => read.error)?.error ?? (last?.waiting ? undefined : last?.error);
+      const pending = error === undefined && last?.waiting ? last.error : undefined;
+
+      const session: SessionRecord = {
+        providerPayload: last?.session?.providerPayload,
+        contextTokens: last?.session?.contextTokens,
+        items: parts.flat(),
+      };
+
+      return { record, chain, session, linkItems, error, pending };
     };
   };
 

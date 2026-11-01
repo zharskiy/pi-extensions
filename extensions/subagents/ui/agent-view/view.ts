@@ -139,14 +139,11 @@ export const headerLines = (
   ];
 };
 
-const transcriptKeyOf = (data: ViewData) => `${data.record.id}\n${data.record.sessionFile ?? ""}`;
-
 export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent => {
   const scroll = api.createScroll();
   let loadedAt = Date.now();
   let data = deps.load();
   let transcript = api.createTranscript();
-  let transcriptKey = transcriptKeyOf(data);
   let toolsExpanded = false;
   let requestExpanded = false;
   let pendingTop = false;
@@ -161,12 +158,17 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
   const isOpen = () => !isClosed(data.record.state);
 
-  const syncTranscript = () => {
-    const key = transcriptKeyOf(data);
+  const syncTranscript = (previous: ViewData) => {
+    const before = previous.linkItems ?? [];
+    const shifted = (data.linkItems ?? [])
+      .slice(0, -1)
+      .some((count, index) => count !== (before[index] ?? 0));
 
-    if (key !== transcriptKey) {
-      transcriptKey = key;
+    if (previous.record.id !== data.record.id) {
       requestExpanded = false;
+    }
+
+    if (shifted) {
       transcript = api.createTranscript();
       transcript.setToolsExpanded(toolsExpanded);
     }
@@ -174,16 +176,18 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     transcript.sync(data.session?.items ?? []);
   };
 
-  syncTranscript();
+  syncTranscript(data);
 
   const reload = () => {
     if (disposed) {
       return;
     }
 
+    const previous = data;
+
     loadedAt = Date.now();
     data = deps.load();
-    syncTranscript();
+    syncTranscript(previous);
     api.requestRender();
   };
 
@@ -195,7 +199,7 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const theme = api.theme;
     const inner = innerWidth(width);
 
-    if (data.error !== undefined) {
+    if (data.error !== undefined && !data.session) {
       return {
         request: [],
         lines: [padLine(theme, "warning", data.error, inner)],
@@ -205,12 +209,18 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
 
     const request = [...requestLines(payload(), isOpen(), requestExpanded, width, theme), ""];
     const lines = transcript.render(width);
+    const warning = data.error === undefined ? [] : [padLine(theme, "warning", data.error, inner)];
+    const pending = data.pending === undefined ? [] : [padLine(theme, "dim", data.pending, inner)];
 
     if (lines.length === 0) {
-      return { request, lines: [PAD + theme.fg("dim", "(no transcript yet)")], clickable: 0 };
+      return {
+        request,
+        lines: [PAD + theme.fg("dim", "(no transcript yet)"), ...warning, ...pending],
+        clickable: 0,
+      };
     }
 
-    return { request, lines, clickable: lines.length };
+    return { request, lines: [...lines, ...warning, ...pending], clickable: lines.length };
   };
 
   const hintTiers = (): KeyHint[][] => {

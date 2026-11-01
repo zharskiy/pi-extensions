@@ -130,6 +130,7 @@ export type FakeHost = Host & {
     message: { text: string; details?: unknown },
     options?: { width?: number; expanded?: boolean; theme?: ThemeLike },
   ): string[];
+  inPreviousSession(customType: string): boolean | undefined;
   renderEntry(
     customType: string,
     data: unknown,
@@ -164,7 +165,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   const emptyDownHandlers = new Set<() => void>();
   const emptyEscapeHandlers = new Set<() => boolean>();
-  const entryRenderers = new Map<string, { render: EntryRender; flush: boolean }>();
+  const entryRenderers = new Map<string, { render: EntryRender; flush: boolean; previousSession: boolean }>();
   const messageRenderers = new Map<string, MessageRender>();
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: string[] = [];
@@ -699,9 +700,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
-    registerEntryRenderer: (customType, render, { flush = false } = {}) => {
-      entryRenderers.set(customType, { render, flush });
+    registerEntryRenderer: (customType, render, { flush = false, previousSession = true } = {}) => {
+      entryRenderers.set(customType, { render, flush, previousSession });
     },
+    inPreviousSession: (customType) => entryRenderers.get(customType)?.previousSession,
     registerToolRows: (rows) => {
       host.toolRows = rows;
     },

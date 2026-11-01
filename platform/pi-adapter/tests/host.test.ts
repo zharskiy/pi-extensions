@@ -1080,7 +1080,7 @@ describe("pi adapter", () => {
 
     host.registerEntryRenderer("x:entry", () => ["line"]);
 
-    expect(renderers).toEqual(["x:entry"]);
+    expect(renderers).toEqual(["pi-adapter:previous-session", "x:entry"]);
   });
 
   it("runs shutdown handlers one after another in registration order", async () => {

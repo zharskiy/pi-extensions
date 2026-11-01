@@ -85,4 +85,5 @@ export type {
   WidgetHandle,
 } from "./types/view.ts";
 export { CHILD_COLUMN, CHILD_MARK, childLead, isBlankLine, PAD } from "./ui/row-layout.ts";
+export { labelledRule } from "./ui/rules.ts";
 export { textMetrics } from "./ui/theme-bridge.ts";

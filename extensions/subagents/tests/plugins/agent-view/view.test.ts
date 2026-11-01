@@ -16,6 +16,7 @@ import {
   plainTheme,
   tokenTaggingTheme,
   usageTotals,
+  userLine,
 } from "../../../../../test/framework/index.ts";
 import {
   createOverlayApi,
@@ -332,26 +333,56 @@ describe("agent view", () => {
     expect(body()).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
   });
 
-  it("starts a fresh transcript when the view follows a successor with another session file", () => {
+  it("keeps the transcript when the view follows a successor and appends the successor's messages", () => {
     const full = fixture();
     const head = { ...full, items: full.items.slice(0, 2) };
-    const tail = { ...full, items: full.items.slice(-2) };
     const first = agentRecord({ id: "explorer-1", state: "done", endedAt: 0, sessionFile: "/first.jsonl" });
-    const { view, update, lines, transcripts } = viewOf(head, { rows: 40, record: first });
-    const body = (all: string[]) => all.slice(6).join("\n");
-    const before = body(lines());
+    const second = agentRecord({ id: "explorer-2", state: "running", sessionFile: "/second.jsonl" });
+    const { view, update, lines, transcripts } = viewOf(head, { record: first });
+    const request = () => lines().find((line) => line.startsWith(" Request"));
+    const body = () =>
+      (
+        lines()
+          .join("\n")
+          .split(request() ?? "")[1] ?? ""
+      )
+        .split(" esc to close")[0]
+        ?.trimEnd() ?? "";
+    const before = body();
 
     view.handleKey(char("r"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
+    expect(request()).toBe(" Request · 12 lines (r to collapse)");
 
-    update({ record: { ...first, sessionFile: "/other.jsonl" }, session: tail });
+    update({
+      record: second,
+      chain: [first.id, second.id],
+      session: { ...full, items: [...head.items, { kind: "user", text: "Continue with the tests" }] },
+    });
 
-    const after = lines();
+    expect(request()).toBe(" Request · 12 lines (r to expand)");
+    expect(body().startsWith(before)).toBe(true);
+    expect(body().indexOf("Continue with the tests")).toBeGreaterThan(before.length);
+    expect(transcripts).toHaveLength(1);
+  });
 
-    expect(after[5]).toBe(" Request · 12 lines (r to expand)");
-    expect(body(after)).not.toEqual(before);
-    expect(body(after)).toEqual(body(viewOf(tail, { rows: 40, record: first }).lines()));
+  it("redraws the chain's transcript when an earlier link's messages change", () => {
+    const full = fixture();
+    const first = agentRecord({ id: "explorer-1", state: "handoff", sessionFile: "/first.jsonl" });
+    const second = agentRecord({ id: "explorer-2", state: "running", sessionFile: "/second.jsonl" });
+    const earlier: SessionRecord["items"] = [{ kind: "user", text: "Find the login handler" }];
+    const later: SessionRecord["items"] = [{ kind: "user", text: "Trace the token refresh" }];
+    const { update, lines, transcripts } = viewOf({ ...full, items: later }, { record: second });
+    const body = () => lines().join("\n");
+
+    update({ chain: [first.id, second.id], linkItems: [0, 1] });
+    update({ session: { ...full, items: [...earlier, ...later] }, linkItems: [1, 1] });
+
+    expect(body().indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(body().indexOf("Trace the token refresh")).toBeGreaterThan(
+      body().indexOf("Find the login handler"),
+    );
+    expect(body().split("Trace the token refresh")).toHaveLength(2);
     expect(transcripts).toHaveLength(2);
   });
 
@@ -952,7 +983,11 @@ describe("agent view with live agents", () => {
 });
 
 describe("agent view past sessions", () => {
-  type Past = { manifests: Record<string, unknown>[]; cost?: number };
+  type Past = {
+    manifests: Record<string, unknown>[];
+    cost?: number;
+    sessions?: Record<string, SessionRecord>;
+  };
 
   const writeManifest = (host: FakeHost, manifest: Record<string, unknown>) => {
     const dir = join(agentsDirFor(host.info), String(manifest.id));
@@ -961,7 +996,7 @@ describe("agent view past sessions", () => {
     writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest));
   };
 
-  const restarted = ({ manifests, cost }: Past) =>
+  const restarted = ({ manifests, cost, sessions = {} }: Past) =>
     setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
       beforeStart: ({ root, host, runtime }) => {
         manifests.forEach((manifest) => {
@@ -970,7 +1005,7 @@ describe("agent view past sessions", () => {
 
           if (file) {
             writeFileSync(file, "");
-            runtime.sessions.set(file, fixture());
+            runtime.sessions.set(file, sessions[name] ?? fixture());
           }
 
           if (file && cost !== undefined) {
@@ -1044,6 +1079,208 @@ describe("agent view past sessions", () => {
     });
 
     expect(lines[2]).toBe(" 3s");
+  });
+
+  const seedLine = JSON.stringify({
+    type: "custom_message",
+    customType: "pi-handoff-seed",
+    content: "Pick up the token refresh trace.",
+    display: true,
+    details: { from: "agent", id: "explorer-old1", link: 2 },
+  });
+
+  const chained = (secondFile: string | undefined, sessions: Past["sessions"]) =>
+    restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          sessionFile: secondFile,
+        },
+      ],
+      sessions,
+    });
+
+  const seam = (lines: string[]) =>
+    plainLines(lines).findIndex((line) => line.includes("── handed off · context limit ─"));
+
+  it("shows every link of a chain in order, the handoff seam rule and the successor's seed between them", async () => {
+    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = chained("old-2.jsonl", {
+      "old-1.jsonl": session([userLine("Find the login handler")]),
+      "old-2.jsonl": session([seedLine, userLine("Trace the token refresh")]),
+    });
+
+    const drawn = async (id: string) => plainLines((await harness.openView(id)).view.render(200)).join("\n");
+    const text = await drawn("explorer-old1");
+    const order = [
+      "Find the login handler",
+      "── handed off · context limit ─",
+      "Pick up the token refresh trace.",
+      "Trace the token refresh",
+    ].map((part) => text.indexOf(part));
+
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(await drawn("explorer-old2")).toBe(text);
+
+    const rows = (await harness.openView("explorer-old2")).view.render(200);
+    const rule = seam(rows);
+    const blank = (row: string | undefined) => row === "";
+
+    expect(rule).toBeGreaterThan(0);
+    expect(plainLines(rows)[rule]?.endsWith("─")).toBe(true);
+    expect([rows[rule - 2], rows[rule - 1], rows[rule + 1], rows[rule + 2]].map(blank)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(rows.slice(rule + 1, rule + 4).some((row) => row.includes("pi-handoff-seed"))).toBe(true);
+    expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+  });
+
+  it("draws no seam rule while the last link has no session file", async () => {
+    const harness = chained(undefined, {
+      "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY),
+    });
+
+    const rows = (await harness.openView("explorer-old2")).view.render(200);
+
+    expect(plainLines(rows).join("\n")).toContain("Find the login handler");
+    expect(seam(rows)).toBe(-1);
+  });
+
+  it("keeps the chain's transcript pane while the last link grows", async () => {
+    useFakeTime();
+
+    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = chained("old-2.jsonl", {
+      "old-1.jsonl": session([userLine("Find the login handler")]),
+      "old-2.jsonl": session([seedLine, userLine("Trace the token refresh")]),
+    });
+    const { view, transcripts } = await harness.openView("explorer-old2");
+    const file = join(harness.root, "old-2.jsonl");
+    const changed = () => {
+      harness.bus.emit("agent:changed", harness.registry.get("explorer-old2") as AgentRecord);
+      vi.advanceTimersByTime(1_000);
+    };
+
+    view.render(200);
+    changed();
+    changed();
+    appendFileSync(file, "{}\n");
+    harness.runtime.sessions.set(
+      file,
+      session([seedLine, userLine("Trace the token refresh"), userLine("Check the refresh tests")]),
+    );
+    changed();
+
+    const rows = view.render(200);
+
+    expect(plainLines(rows).join("\n")).toContain("Check the refresh tests");
+    expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+    expect(transcripts).toHaveLength(1);
+  });
+
+  it("shows the last link's read error under the earlier links' transcript", async () => {
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+        },
+      ],
+      sessions: { "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY) },
+    });
+
+    await harness.services.require("agentView").open("explorer-old2");
+
+    const { view } = openLastOverlay(harness.host, 200, tokenTaggingTheme({ bold: true }));
+    const lines = view.render(200);
+    const text = plainLines(lines).join("\n");
+
+    expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("session file not written yet")).toBeGreaterThan(
+      text.indexOf("Find the login handler"),
+    );
+    expect(lines).toContain(" <dim>session file not written yet</>");
+  });
+
+  it("shows a middle link's read error under the transcript of the links it can read", async () => {
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          successorId: "explorer-old3",
+          sessionFile: "old-2.jsonl",
+        },
+        {
+          id: "explorer-old3",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 3,
+          predecessorId: "explorer-old2",
+          sessionFile: "old-3.jsonl",
+        },
+      ],
+      sessions: {
+        "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY),
+        "old-3.jsonl": parseSessionLines([userLine("Trace the token refresh")], RECORD_ENTRY),
+      },
+    });
+
+    harness.runtime.sessions.delete(join(harness.root, "old-2.jsonl"));
+
+    await harness.services.require("agentView").open("explorer-old3");
+
+    const { view } = openLastOverlay(harness.host, 200, tokenTaggingTheme({ bold: true }));
+    const lines = view.render(200);
+    const text = plainLines(lines).join("\n");
+    const error = `cannot read session: no session ${join(harness.root, "old-2.jsonl")}`;
+
+    expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Trace the token refresh")).toBeGreaterThan(text.indexOf("Find the login handler"));
+    expect(text.indexOf(error)).toBeGreaterThan(text.indexOf("Trace the token refresh"));
+    expect(lines.some((line) => line.startsWith(" <warning>cannot read session"))).toBe(true);
   });
 
   it("follows a chain of an earlier session to its last link", async () => {

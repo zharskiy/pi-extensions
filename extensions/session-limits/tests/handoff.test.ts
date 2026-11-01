@@ -73,17 +73,17 @@ describe("main handoff instruction", () => {
 });
 
 describe("sessionPreface", () => {
-  it("names the previous session file or says the previous session", () => {
-    expect(sessionPreface({ file: "/sessions/main.jsonl", manual: false })).toContain(
-      "the previous session /sessions/main.jsonl, which reached its context limit",
-    );
-    expect(sessionPreface({ manual: false })).toContain("continues the previous session, which");
+  it("says the previous session reached its context limit, without a path", () => {
+    const text = sessionPreface({ manual: false });
+
+    expect(text).toContain("continues the previous session, which reached its context limit");
+    expect(text).not.toContain(".jsonl");
   });
 
-  it("names /session-handoff and repeats the focus only for a manual handoff", () => {
+  it("names /handoff and repeats the focus only for a manual handoff", () => {
     const manual = sessionPreface({ manual: true, focus: "ship the release" });
 
-    expect(manual).toContain("which the user handed off with /session-handoff");
+    expect(manual).toContain("which the user handed off with /handoff");
     expect(manual).toContain("The user said this session is for: ship the release.");
     expect(sessionPreface({ manual: true })).not.toContain("this session is for");
     expect(sessionPreface({ manual: false, focus: "x" })).not.toContain("this session is for");

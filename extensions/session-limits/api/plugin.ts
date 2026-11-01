@@ -29,8 +29,8 @@ export const createLimits = ({ host, limits, releaseDelayMs }: LimitsOptions) =>
 
   host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
   host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
-  host.registerEntryRenderer(KEPT_RULE_ENTRY, keptRule);
-  host.registerEntryRenderer(KEPT_MESSAGE_ENTRY, keptMessage, { flush: true });
+  host.registerEntryRenderer(KEPT_RULE_ENTRY, keptRule, { previousSession: false });
+  host.registerEntryRenderer(KEPT_MESSAGE_ENTRY, keptMessage, { flush: true, previousSession: false });
 
   const saving = watchLimits({ host, limits, segment: segmentFor, releaseDelayMs });
 

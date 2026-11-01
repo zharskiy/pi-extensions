@@ -34,7 +34,7 @@ A turn in the main session's transcript:
  The mean skipped the first value; both tests pass now.
 ```
 
-`ctrl+t` folds or shows the thinking, and pi remembers the choice. Once the work is done, a dim rule above the final answer says how long it took and sets the answer apart from the steps before it, if at least one tool ran; a turn that only answers gets none. Work you started in the background, such as subagents, belongs to the same turn: replies the model gives while agents still run get no rule, the answer to the last results does, and a prompt you type meanwhile joins the turn. Stopping the run with Esc ends the turn without a rule; a turn that ends on an error still gets one, under the error, since there is no answer to put it above. A skill read keeps pi's `[skill]` look.
+`ctrl+t` folds or shows the thinking, and pi remembers the choice. Once the work is done, a dim rule above the final answer says how long it took and sets the answer apart from the steps before it, if at least one tool ran; a turn that only answers gets none. It is drawn with the adapter's `labelledRule`, the same dim labelled line as session-limits' kept rule and the seam above a handed-off session. Work you started in the background, such as subagents, belongs to the same turn: replies the model gives while agents still run get no rule, the answer to the last results does, and a prompt you type meanwhile joins the turn. Stopping the run with Esc ends the turn without a rule; a turn that ends on an error still gets one, under the error, since there is no answer to put it above. A skill read keeps pi's `[skill]` look.
 
 ## Quick start
 

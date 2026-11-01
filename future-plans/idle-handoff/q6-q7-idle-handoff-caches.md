@@ -9,7 +9,7 @@ Pi version: `@earendil-works/pi-coding-agent` 1.3.0. CW = `node_modules/@earendi
 2. Fire (03:20): idle + lifetime − 60 s, only when lifetime ≥ 30 min. With `cacheWarming: idle`, first `stop` decision fires instead. 5 min lifetime, no warming: nothing.
 3. Cancel (03:21): input, run, dialog, `pi:busy`, session switch.
 4. Fire (03:22): sends `prompts/handoff.md` through `limits.ts:79-105`.
-5. Switch: on settle, `check(true)` (`limits.ts:367-376`) sees a valid file and dispatches `/session-handoff` (`limits.ts:148-153, 176-187`); `performSwitch` calls `control.newSession({parentSession, seed})` (`limits.ts:235-277`).
+5. Switch: on settle, `check(true)` (`limits.ts:367-376`) sees a valid file and dispatches `/handoff` (`limits.ts:148-153, 176-187`); `performSwitch` calls `control.newSession({parentSession, seed})` (`limits.ts:235-277`).
 6. Seeded session: adapter writes the seed with `triggerTurn: false` (`core/adapter/pi-adapter.ts:55-66`). No provider request; pi's warmer starts only on a real request (`sdk.js:262-271`). The new session costs nothing until the user types. This half of the expectation is met.
 
 ### Findings

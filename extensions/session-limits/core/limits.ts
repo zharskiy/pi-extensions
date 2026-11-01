@@ -17,11 +17,13 @@ import {
   HELD_RESULTS_CHANNEL,
   handoffInstruction,
   handoffRetry,
+  LIMIT_SEAM,
   type Limits,
   limitLevel,
   mainLimit,
   parseBusySignal,
   parseHeldResults,
+  seamLabel,
   seedText,
 } from "../../../platform/shared/index.ts";
 import {
@@ -58,6 +60,8 @@ const IDLE_POLL_MS = 250;
 const SAVING_PHASES: readonly Phase[] = ["requested", "waiting", "stuck"];
 
 const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
+
+const MANUAL_SEAM = seamLabel(`/${HANDOFF_COMMAND}`);
 
 type Segment = { token: ThemeToken; text: string };
 
@@ -363,7 +367,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
 
     const previous = host.session().file;
     const handedOff = state.handedOff;
-    const preface = sessionPreface({ file: previous, manual: handedOff, focus: state.focus });
+    const preface = sessionPreface({ manual: handedOff, focus: state.focus });
 
     const fill = () => {
       const messages = captured.splice(0);
@@ -379,7 +383,13 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     };
 
     const accepted = await control
-      .newSession({ parentSession: previous, keepSelection: true, continueWithSeed: !handedOff, fill })
+      .newSession({
+        parentSession: previous,
+        keepSelection: true,
+        showPrevious: { label: handedOff ? MANUAL_SEAM : LIMIT_SEAM },
+        continueWithSeed: !handedOff,
+        fill,
+      })
       .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
 
     if (accepted instanceof Error) {
