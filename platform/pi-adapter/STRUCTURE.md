@@ -20,7 +20,7 @@
 - `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, its restore of the model and thinking level on `session_start`, and the restored-selection marker the `model_select` and `thinking_level_select` filters match against.
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
-- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or one branch through pi's context entries, with its custom entries, compaction or branch summaries and bash executions), context tokens.
+- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or one branch through pi's context entries, with its custom entries, compaction or branch summaries and bash executions).
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`.
 - `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.

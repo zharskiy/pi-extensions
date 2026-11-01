@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import {
   buildContextEntries,
-  calculateContextTokens,
   migrateSessionEntries,
   parseSessionEntries,
   type SessionEntry,
@@ -22,8 +21,6 @@ type RawMessage = {
   sections?: Record<string, string | null>;
   toolsAdded?: PromptTool[];
   toolsRemoved?: { name: string }[];
-  stopReason?: string;
-  usage?: Parameters<typeof calculateContextTokens>[0];
 };
 
 type RawEntry = {
@@ -114,19 +111,6 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
   return { kind: "assistant", raw: message };
 };
 
-const measuredContext = (message: RawMessage | undefined) => {
-  const usage = message?.role === "assistant" ? message.usage : undefined;
-  const failed = message?.stopReason === "aborted" || message?.stopReason === "error";
-
-  if (!usage || failed) {
-    return undefined;
-  }
-
-  const tokens = calculateContextTokens(usage);
-
-  return tokens > 0 ? tokens : undefined;
-};
-
 const parseEntries = (lines: readonly string[]): RawEntry[] =>
   lines
     .filter((line) => line.trim().length > 0)
@@ -153,13 +137,7 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 
   const items = entries.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
 
-  const contextTokens = entries
-    .filter((entry) => entry.type === "message")
-    .map((entry) => measuredContext(entry.message))
-    .filter((tokens) => tokens !== undefined)
-    .at(-1);
-
-  return { providerPayload: recordData?.providerPayload, items, contextTokens };
+  return { providerPayload: recordData?.providerPayload, items };
 };
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>

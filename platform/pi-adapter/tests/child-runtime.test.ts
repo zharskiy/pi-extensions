@@ -550,14 +550,20 @@ describe("child prompting", () => {
   });
 
   it("re-queues a hidden message, still hidden, ahead of the text left in pi's queue at settle", async () => {
-    const { child, calls, events, settle, leaveQueued } = await spawnScripted();
+    const { child, calls, events, settle, leaveQueued, session } = await spawnScripted();
 
     child.start("task");
     leaveQueued("late");
+    session.isStreaming = true;
     await child.sendHidden(wake("results"));
+    session.isStreaming = false;
     settle();
 
-    expect(calls.slice(-2)).toEqual(["custom pi-subagents:wake nextTurn results (hidden)", "prompt late"]);
+    expect(calls.slice(-3)).toEqual([
+      "custom pi-subagents:wake followUp results (hidden)",
+      "custom pi-subagents:wake nextTurn results (hidden)",
+      "prompt late",
+    ]);
     expect(events).toEqual([]);
   });
 

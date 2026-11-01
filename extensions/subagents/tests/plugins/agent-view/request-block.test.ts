@@ -33,6 +33,14 @@ describe("request block", () => {
     ]);
   });
 
+  it("keeps the r hint without the copy key when both do not fit, and drops it only when r does not fit either", () => {
+    const twelve = { a: 1, b: 2, c: { d: 3, e: [1, 2] }, f: "x" };
+
+    expect(requestLines(twelve, true, false, 40, plainTheme)).toEqual([" Request · 12 lines (r to expand)"]);
+    expect(requestLines(twelve, true, true, 42, plainTheme)[0]).toBe(" Request · 12 lines (r to collapse)");
+    expect(requestLines(twelve, true, false, 30, plainTheme)).toEqual([" Request · 12 lines"]);
+  });
+
   it("says not sent yet when open and not recorded when closed", () => {
     expect(requestLines(undefined, true, false, 80, plainTheme)).toEqual([" Request · not sent yet"]);
     expect(requestLines(undefined, false, false, 80, plainTheme)).toEqual([" Request · not recorded"]);

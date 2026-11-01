@@ -133,7 +133,8 @@ describe("successor chain", () => {
     expect(text).toContain(`continue the work of agent ${first.id} as link 2`);
     expect(text).toContain("- trace token refresh");
     expect(text.split("Original task:")).toHaveLength(2);
-    expect(text.indexOf(first.handoffPath)).toBeGreaterThanOrEqual(0);
+    expect(text).toContain(first.handoffPath);
+    expect(text).toContain(`Agent folder: ${current(second).dir}`);
     expect(text.indexOf(first.handoffPath)).toBeLessThan(original);
 
     runtime.child(second).emit({ type: "tool_start", toolName: "read" });
