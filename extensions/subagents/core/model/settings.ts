@@ -35,6 +35,7 @@ export type Settings = {
   fetchTimeoutSeconds: number;
   fetchMaxBytes: number;
   fetchMaxChars: number;
+  retentionDays: number;
   agents: AgentOverrides;
 };
 
@@ -57,6 +58,7 @@ export const defaultSettings = (): Settings => ({
   fetchTimeoutSeconds: 20,
   fetchMaxBytes: 5_000_000,
   fetchMaxChars: 40_000,
+  retentionDays: 60,
   agents: {},
 });
 
@@ -123,6 +125,7 @@ const settingsSchema: SettingsSchema<Settings> = {
   fetchTimeoutSeconds: range(1, 300),
   fetchMaxBytes: range(10_000, 100_000_000),
   fetchMaxChars: range(1_000, 1_000_000),
+  retentionDays: range(0, 36_500),
   agents: { type: "object", of: "agent overrides", parse: parseOverrides },
 };
 
@@ -138,18 +141,20 @@ const readUser = (agentDir: string) =>
 
 export const disabledPlugins = (agentDir: string) => readUser(agentDir).patch.disabledPlugins ?? [];
 
+const USER_ONLY = ["disabledPlugins", "retentionDays"] as const;
+
 export const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
   const projectPath = settingsPaths({ agentDir, cwd }).project;
   const user = readUser(agentDir);
   const project: SettingsParse<Settings> = projectTrusted
     ? readSettingsFile(settingsSchema, projectPath)
     : { patch: {}, errors: [] };
-  const { disabledPlugins: ignored, ...projectPatch } = project.patch;
+  const { disabledPlugins: _plugins, retentionDays: _retention, ...projectPatch } = project.patch;
   const errors = [...user.errors, ...project.errors];
 
-  if (ignored !== undefined) {
-    errors.push(`${projectPath}: disabledPlugins is read from the user settings file only`);
-  }
+  USER_ONLY.filter((key) => project.patch[key] !== undefined).forEach((key) => {
+    errors.push(`${projectPath}: ${key} is read from the user settings file only`);
+  });
 
   const agents = mergeOverrides(user.patch.agents, projectPatch.agents);
 

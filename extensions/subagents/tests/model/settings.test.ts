@@ -60,6 +60,14 @@ describe("subagents settings", () => {
     expect(defaultSettings()).toMatchObject({ maxChainLength: 3 });
   });
 
+  it("accepts a retentionDays of 0 to keep agent runs forever", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, { retentionDays: 0 });
+
+    expect(loadSettings(agentDir, cwd, false).settings.retentionDays).toBe(0);
+  });
+
   it("defaults the panel lingers", () => {
     expect(defaultSettings()).toMatchObject({
       doneLingerMs: 10_000,
@@ -231,6 +239,18 @@ describe("subagents settings", () => {
     expect(loaded.errors).toEqual([
       `${projectFile}: disabledPlugins is read from the user settings file only`,
     ]);
+  });
+
+  it("reads retentionDays from the user file only and warns when the project file sets it", () => {
+    const { agentDir, cwd, userFile, projectFile } = dirs();
+
+    writeJson(userFile, { retentionDays: 30 });
+    writeJson(projectFile, { retentionDays: 1 });
+
+    const loaded = loadSettings(agentDir, cwd, true);
+
+    expect(loaded.settings.retentionDays).toBe(30);
+    expect(loaded.errors).toEqual([`${projectFile}: retentionDays is read from the user settings file only`]);
   });
 });
 
