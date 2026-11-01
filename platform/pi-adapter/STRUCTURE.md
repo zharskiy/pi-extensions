@@ -43,7 +43,7 @@
 - `ui/working-message.ts`: the working message and its visibility.
 - `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours, background tokens to pi's diff and user message backgrounds), `textMetrics` (width, truncate, wrap), `fitLines`.
 - `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
-- `ui/rules.ts`: `labelledRule` (with a token, dim by default), exported through `index.ts` for the previous-session seam, session-limits' kept rule and the transcript's answer rule.
+- `ui/rules.ts`: `labelledRule` (with a token, dim by default), exported through `index.ts` for the previous-session seam and the transcript pane's `rule` item, session-limits' kept rule and the transcript's answer rule.
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
 - `editor/input.ts`: the editor submit key, command completion, re-submit.
@@ -52,7 +52,7 @@
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
 - `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups).
-- `tools/transcript.ts`: the transcript pane and pi renderer capture.
+- `tools/transcript.ts`: the transcript pane (including the `rule` item, a `labelledRule` after the shared pad) and pi renderer capture.
 - `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer over `registerEntryRenderer`'s `flush` option, which draws the previous sessions of a handoff chain with the transcript pane.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
 - `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
@@ -87,7 +87,7 @@
 - `tests/tool-rows.test.ts`: `tools/tool-rows.ts` and `tools/row-component.ts`.
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
-- `tests/transcript.test.ts`: `tools/transcript.ts`.
+- `tests/transcript.test.ts`: `tools/transcript.ts`, its `rule` item included.
 - `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the seam rule (label, one blank row each side, no path), the drawn chain with a rule per seam, the not-found and earlier-sessions rules, the old session's custom entries (drawn, or kept out with `previousSession: false`), its compaction summary first, its bash executions, the redraw in a new theme after pi invalidates the entry, and the model's requests unchanged by the entry, on later turns and after a resume too.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.

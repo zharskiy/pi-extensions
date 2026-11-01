@@ -16,7 +16,8 @@ export type TranscriptItem =
   | { kind: "custom"; raw: unknown }
   | { kind: "entry"; customType: string; data: unknown }
   | { kind: "summary"; raw: unknown }
-  | { kind: "bash"; raw: unknown };
+  | { kind: "bash"; raw: unknown }
+  | { kind: "rule"; label: string };
 
 export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;

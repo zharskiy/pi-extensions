@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { plainLines } from "../../../test/framework/index.ts";
+import { plainLines, plainTheme } from "../../../test/framework/index.ts";
 import { initPiRenderTheme, renderPaneToolRows, visible } from "../../../test/framework/pi/index.ts";
 import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../index.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
@@ -55,6 +55,49 @@ describe("transcript pane spacing", () => {
     expect(lines[1]).toContain("find the files");
     expect(lines.findIndex((line) => line.includes("and the tests"))).toBeGreaterThan(3);
     expect(lines[lines.findIndex((line) => line.includes("and the tests")) - 2]).toBe("");
+  });
+});
+
+describe("transcript pane rules", () => {
+  const theme = () => plainTheme;
+
+  it("draws a labelled rule at the pane width, a blank row above it after other items", () => {
+    const pane = createTranscriptPane(tui, "/repo", { theme });
+
+    pane.sync([
+      {
+        kind: "assistant",
+        raw: { role: "assistant", content: [{ type: "text", text: "found the files" }], stopReason: "stop" },
+      },
+      { kind: "rule", label: "handed off · context limit" },
+    ]);
+
+    const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
+    const rule = lines.at(-1) ?? "";
+
+    expect(rule.trim().startsWith("── handed off · context limit ─")).toBe(true);
+    expect(rule).toHaveLength(60);
+    expect(lines.at(-2)).toBe("");
+    expect(lines.at(-3)).toContain("found the files");
+  });
+
+  it("draws no blank row above a rule that opens the pane", () => {
+    const pane = createTranscriptPane(tui, "/repo", { theme });
+
+    pane.sync([{ kind: "rule", label: "handed off · context limit" }]);
+
+    const lines = pane.render(60).map((line) => stripVTControlCharacters(line));
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.trim().startsWith("── handed off · context limit ─")).toBe(true);
+  });
+
+  it("draws no rule without a theme", () => {
+    const pane = createTranscriptPane(tui, "/repo");
+
+    pane.sync([{ kind: "rule", label: "handed off · context limit" }]);
+
+    expect(pane.render(60)).toEqual([]);
   });
 });
 

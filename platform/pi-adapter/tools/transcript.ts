@@ -25,8 +25,10 @@ import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-
 import type { ThemeLike } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
+import { labelledRule } from "../ui/rules.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 import { messageRendererFor, previousEntryComponent } from "./entry-renderers.ts";
+import { sharedPad } from "./row-component.ts";
 import { toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
 
@@ -234,6 +236,28 @@ export const createTranscriptPane = (
       );
       container.addChild(new Spacer(1));
       addExpandable(component);
+      return;
+    }
+
+    if (item.kind === "rule") {
+      const theme = options.theme;
+
+      if (!theme) {
+        return;
+      }
+
+      if (container.children.length > 0) {
+        container.addChild(new Spacer(1));
+      }
+
+      container.addChild({
+        render: (width) => {
+          const pad = sharedPad();
+
+          return [`${" ".repeat(pad)}${labelledRule(theme(), width - pad, item.label)}`];
+        },
+        invalidate: () => {},
+      });
       return;
     }
 

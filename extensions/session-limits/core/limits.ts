@@ -7,7 +7,6 @@ import type {
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
-  DOT,
   HANDOFF_PENDING_CHANNEL,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
@@ -18,11 +17,13 @@ import {
   HELD_RESULTS_CHANNEL,
   handoffInstruction,
   handoffRetry,
+  LIMIT_SEAM,
   type Limits,
   limitLevel,
   mainLimit,
   parseBusySignal,
   parseHeldResults,
+  seamLabel,
   seedText,
 } from "../../../platform/shared/index.ts";
 import {
@@ -60,9 +61,7 @@ const SAVING_PHASES: readonly Phase[] = ["requested", "waiting", "stuck"];
 
 const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
 
-const AUTOMATIC_SEAM = `handed off${DOT}context limit`;
-
-const MANUAL_SEAM = `handed off${DOT}/${HANDOFF_COMMAND}`;
+const MANUAL_SEAM = seamLabel(`/${HANDOFF_COMMAND}`);
 
 type Segment = { token: ThemeToken; text: string };
 
@@ -387,7 +386,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       .newSession({
         parentSession: previous,
         keepSelection: true,
-        showPrevious: { label: handedOff ? MANUAL_SEAM : AUTOMATIC_SEAM },
+        showPrevious: { label: handedOff ? MANUAL_SEAM : LIMIT_SEAM },
         continueWithSeed: !handedOff,
         fill,
       })

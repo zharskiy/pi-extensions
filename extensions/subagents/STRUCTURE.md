@@ -85,7 +85,7 @@ extensions/subagents/
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
-│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file, re-parsing on change, and joins their transcripts with each link's item count, the first link error, and a pending note while the last link's file is not written yet
+│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file, re-parsing on change, and joins their transcripts with a handoff seam rule item in front of each drawn link after the first, each link's item count (rule included), the first link error, and a pending note while the last link's file is not written yet
 │   │   └── list-model.ts                  # list sections, subtitle (with the counts), clearTargets, MAX_CLOSED_ROOTS
 │   └── fetch-tool/
 │       ├── fetch.ts                       # fetchPage: request, limits, redirects

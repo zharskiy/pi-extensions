@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
-import type { AgentRuntime, SessionRecord } from "../../../../platform/pi-adapter/index.ts";
-import { errorText } from "../../../../platform/shared/index.ts";
+import type { AgentRuntime, SessionRecord, TranscriptItem } from "../../../../platform/pi-adapter/index.ts";
+import { errorText, LIMIT_SEAM } from "../../../../platform/shared/index.ts";
 import { type AgentRecord, type AgentRegistry, chainLinks, chainTerminal } from "../model/agent-record.ts";
 
 export type ViewData = {
@@ -11,6 +11,8 @@ export type ViewData = {
   error?: string;
   pending?: string;
 };
+
+const SEAM: TranscriptItem = { kind: "rule", label: LIMIT_SEAM };
 
 type CachedSession = { size: number; mtimeMs: number; session: SessionRecord };
 
@@ -68,7 +70,16 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
       const chain = links.map((link) => link.id);
       const reads = links.map(readLink);
       const sessions = reads.flatMap((read) => (read.session ? [read.session] : []));
-      const linkItems = reads.map((read) => read.session?.items.length ?? 0);
+      const parts = reads.map((read, index) => {
+        if (!read.session) {
+          return [];
+        }
+
+        const after = reads.slice(0, index).some((earlier) => earlier.session);
+
+        return after ? [SEAM, ...read.session.items] : read.session.items;
+      });
+      const linkItems = parts.map((part) => part.length);
       const last = reads.at(-1);
 
       if (sessions.length === 0) {
@@ -82,7 +93,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
       const session: SessionRecord = {
         providerPayload: last?.session?.providerPayload,
         contextTokens: last?.session?.contextTokens,
-        items: sessions.flatMap((read) => read.items),
+        items: parts.flat(),
       };
 
       return { record, chain, session, linkItems, error, pending };

@@ -45,6 +45,7 @@ export {
   handoffRetry,
   seedText,
 } from "./handoff/handoff-prompt.ts";
+export { LIMIT_SEAM, seamLabel } from "./handoff/handoff-seam.ts";
 export { type HandoffTarget, handoffTool } from "./handoff/handoff-tool.ts";
 export { isPlainObject } from "./plain-object.ts";
 export type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "./plugin/plugin-contract.ts";

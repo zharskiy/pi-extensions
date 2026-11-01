@@ -1081,16 +1081,16 @@ describe("agent view past sessions", () => {
     expect(lines[2]).toBe(" 3s");
   });
 
-  it("shows every link of a chain in order, the successor's handoff seed between them", async () => {
-    const seed = JSON.stringify({
-      type: "custom_message",
-      customType: "pi-handoff-seed",
-      content: "Pick up the token refresh trace.",
-      display: true,
-      details: { from: "agent", id: "explorer-old1", link: 2 },
-    });
-    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
-    const harness = restarted({
+  const seedLine = JSON.stringify({
+    type: "custom_message",
+    customType: "pi-handoff-seed",
+    content: "Pick up the token refresh trace.",
+    display: true,
+    details: { from: "agent", id: "explorer-old1", link: 2 },
+  });
+
+  const chained = (secondFile: string | undefined, sessions: Past["sessions"]) =>
+    restarted({
       manifests: [
         {
           id: "explorer-old1",
@@ -1107,19 +1107,27 @@ describe("agent view past sessions", () => {
           state: "done",
           chainIndex: 2,
           predecessorId: "explorer-old1",
-          sessionFile: "old-2.jsonl",
+          sessionFile: secondFile,
         },
       ],
-      sessions: {
-        "old-1.jsonl": session([userLine("Find the login handler")]),
-        "old-2.jsonl": session([seed, userLine("Trace the token refresh")]),
-      },
+      sessions,
+    });
+
+  const seam = (lines: string[]) =>
+    plainLines(lines).findIndex((line) => line.includes("── handed off · context limit ─"));
+
+  it("shows every link of a chain in order, the handoff seam rule and the successor's seed between them", async () => {
+    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = chained("old-2.jsonl", {
+      "old-1.jsonl": session([userLine("Find the login handler")]),
+      "old-2.jsonl": session([seedLine, userLine("Trace the token refresh")]),
     });
 
     const drawn = async (id: string) => plainLines((await harness.openView(id)).view.render(200)).join("\n");
     const text = await drawn("explorer-old1");
     const order = [
       "Find the login handler",
+      "── handed off · context limit ─",
       "Pick up the token refresh trace.",
       "Trace the token refresh",
     ].map((part) => text.indexOf(part));
@@ -1127,6 +1135,64 @@ describe("agent view past sessions", () => {
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(await drawn("explorer-old2")).toBe(text);
+
+    const rows = (await harness.openView("explorer-old2")).view.render(200);
+    const rule = seam(rows);
+    const blank = (row: string | undefined) => row === "";
+
+    expect(rule).toBeGreaterThan(0);
+    expect(plainLines(rows)[rule]?.endsWith("─")).toBe(true);
+    expect([rows[rule - 2], rows[rule - 1], rows[rule + 1], rows[rule + 2]].map(blank)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(rows.slice(rule + 1, rule + 4).some((row) => row.includes("pi-handoff-seed"))).toBe(true);
+    expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+  });
+
+  it("draws no seam rule while the last link has no session file", async () => {
+    const harness = chained(undefined, {
+      "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY),
+    });
+
+    const rows = (await harness.openView("explorer-old2")).view.render(200);
+
+    expect(plainLines(rows).join("\n")).toContain("Find the login handler");
+    expect(seam(rows)).toBe(-1);
+  });
+
+  it("keeps the chain's transcript pane while the last link grows", async () => {
+    useFakeTime();
+
+    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = chained("old-2.jsonl", {
+      "old-1.jsonl": session([userLine("Find the login handler")]),
+      "old-2.jsonl": session([seedLine, userLine("Trace the token refresh")]),
+    });
+    const { view, transcripts } = await harness.openView("explorer-old2");
+    const file = join(harness.root, "old-2.jsonl");
+    const changed = () => {
+      harness.bus.emit("agent:changed", harness.registry.get("explorer-old2") as AgentRecord);
+      vi.advanceTimersByTime(1_000);
+    };
+
+    view.render(200);
+    changed();
+    changed();
+    appendFileSync(file, "{}\n");
+    harness.runtime.sessions.set(
+      file,
+      session([seedLine, userLine("Trace the token refresh"), userLine("Check the refresh tests")]),
+    );
+    changed();
+
+    const rows = view.render(200);
+
+    expect(plainLines(rows).join("\n")).toContain("Check the refresh tests");
+    expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+    expect(transcripts).toHaveLength(1);
   });
 
   it("shows the last link's read error under the earlier links' transcript", async () => {
