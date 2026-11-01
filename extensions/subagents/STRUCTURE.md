@@ -67,7 +67,6 @@ extensions/subagents/
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
 │   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage
 │   │   ├── task.ts                        # composeTask: the child's first message (no handoff path; the handoff is the seed; batch results held during the predecessor's handoff)
-
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/

@@ -9,7 +9,7 @@ const AGENT_AUDIENCE: HandoffAudience = {
   statusHint: "",
   reader: "the agent that continues this work",
   extraRules: [
-    "Batches you started that are still running keep running, and the handoff waits for them: list each under Evidence with its batch id, the question it answers and what its result is for, and put that use under Next. Results that arrive later are attached to your successor's task.",
+    "Batches you started that are still running keep running while a valid partial handoff waits for them, otherwise they are stopped: list each under Evidence with its batch id, the question it answers and what its result is for, and put that use under Next. Results that arrive later are attached to your successor's task.",
   ],
   nextHint: "",
 };

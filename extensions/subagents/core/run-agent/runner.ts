@@ -441,10 +441,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return continues && slot && batch ? { slot, batch } : undefined;
   };
 
-  const heldHandoff = (record: AgentRecord, live: Live, aborted: boolean): HeldHandoff | undefined => {
-    const stopped = aborted && live.abortReason === undefined;
-
-    if (stopped || !record.handoffRequested || isClosed(record.state) || !hasOpenBatches(record.id)) {
+  const heldHandoff = (record: AgentRecord, live: Live): HeldHandoff | undefined => {
+    if (!record.handoffRequested || isClosed(record.state) || !hasOpenBatches(record.id)) {
       return undefined;
     }
 
@@ -677,7 +675,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         return;
       }
 
-      const held = heldHandoff(record, live, event.aborted);
+      const held = heldHandoff(record, live);
 
       if (held) {
         live.turn = "held";
@@ -1088,7 +1086,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const record = terminalOf(requestedId);
     const live = record && lives.get(record.id);
 
-    if (!record || isClosed(record.state) || !live?.child || live.turn === "held") {
+    if (!record || isClosed(record.state) || !live?.child) {
       return;
     }
 
