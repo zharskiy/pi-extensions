@@ -108,11 +108,13 @@ type Live = {
   release?: () => void;
   graceTimer?: ReturnType<typeof setTimeout>;
   answering: boolean;
-  turn: "idle" | "waiting" | "running";
-  holding: boolean;
+  turn: "idle" | "waiting" | "running" | "held";
+  handoff?: HeldHandoff;
   outbox?: Outbox;
   idleHandlers: (() => void)[];
 };
+
+type HeldHandoff = { text: string; validation: HandoffValidation };
 
 const failedStop = (reason: StopReason | undefined) => reason === "error" || reason === "aborted";
 
@@ -147,7 +149,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       pending: [],
       answering: false,
       turn: "idle",
-      holding: false,
       idleHandlers: [],
     };
 
@@ -186,21 +187,30 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const releaseHold = (id: string) => {
     const live = lives.get(id);
 
-    if (!live?.holding || hasOpenBatches(id)) {
+    if (live?.turn !== "held" || hasOpenBatches(id)) {
       return;
     }
 
     queueMicrotask(() => {
       const record = deps.registry.get(id);
 
-      if (!live.holding || !record) {
-        return;
+      if (live.turn === "held" && record) {
+        void unhold(record, live);
       }
-
-      live.holding = false;
-      finish(record, live, false);
-      void releaseLive(id);
     });
+  };
+
+  const unhold = (record: AgentRecord, live: Live) => {
+    const held = live.handoff;
+
+    live.turn = "idle";
+    live.handoff = undefined;
+
+    if (held && !isClosed(record.state)) {
+      closeHandoff(record, live, held.text, held.validation);
+    }
+
+    return releaseLive(record.id);
   };
 
   const stopChildrenOf = (record: AgentRecord) => {
@@ -281,7 +291,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     live.outbox ??= createOutbox({
-      isBusy: () => live.turn !== "idle" || live.holding,
+      isBusy: () => live.turn !== "idle",
       deliver: (items) => {
         void resume(callerId, (child) => child.wake(joinTexts(items)));
       },
@@ -387,17 +397,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
   };
 
-  const finishHandoff = (record: AgentRecord, live: Live) => {
+  const handoffDoc = (record: AgentRecord, live: Live) => {
     const saved = readText(record.handoffPath);
-    const { text, error } =
-      saved === undefined ? saveReplyHandoff(record, live) : { text: saved, error: undefined };
 
-    if (text === undefined) {
-      return deps.registry.close(record.id, { state: "failed", error });
-    }
+    return saved === undefined ? saveReplyHandoff(record, live) : { text: saved, error: undefined };
+  };
 
-    const validation = handoffService.validate(text);
-
+  const closeHandoff = (record: AgentRecord, live: Live, text: string, validation: HandoffValidation) => {
     if (!validation.ok) {
       return deps.registry.close(record.id, {
         state: "handoff",
@@ -417,6 +423,16 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return deps.registry.close(record.id, { state: "handoff", resultText: text });
   };
 
+  const finishHandoff = (record: AgentRecord, live: Live) => {
+    const { text, error } = handoffDoc(record, live);
+
+    if (text === undefined) {
+      return deps.registry.close(record.id, { state: "failed", error });
+    }
+
+    return closeHandoff(record, live, text, handoffService.validate(text));
+  };
+
   const chainOf = (record: AgentRecord, validation: HandoffValidation) => {
     const slot = launches.get(record.id);
     const batch = batches.get(record.batchId);
@@ -425,18 +441,22 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return continues && slot && batch ? { slot, batch } : undefined;
   };
 
-  const holdsHandoff = (record: AgentRecord, live: Live, aborted: boolean) => {
-    if (aborted || live.abortReason !== undefined || !record.handoffRequested || isClosed(record.state)) {
-      return false;
+  const heldHandoff = (record: AgentRecord, live: Live, aborted: boolean): HeldHandoff | undefined => {
+    const stopped = aborted && live.abortReason === undefined;
+
+    if (stopped || !record.handoffRequested || isClosed(record.state) || !hasOpenBatches(record.id)) {
+      return undefined;
     }
 
-    const text = readText(record.handoffPath) ?? replyHandoff(live);
+    const { text } = handoffDoc(record, live);
 
-    return (
-      text !== undefined &&
-      chainOf(record, handoffService.validate(text)) !== undefined &&
-      hasOpenBatches(record.id)
-    );
+    if (text === undefined) {
+      return undefined;
+    }
+
+    const validation = handoffService.validate(text);
+
+    return chainOf(record, validation) ? { text, validation } : undefined;
   };
 
   const canContinue = (record: AgentRecord) =>
@@ -657,8 +677,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         return;
       }
 
-      if (holdsHandoff(record, live, event.aborted)) {
-        live.holding = true;
+      const held = heldHandoff(record, live, event.aborted);
+
+      if (held) {
+        live.turn = "held";
+        live.handoff = held;
         deps.registry.update(id, { activity: "handoff: waiting for batches" });
         releaseSlot(live);
         return;
@@ -994,10 +1017,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const live = lives.get(id);
 
-    if (live?.holding) {
-      live.holding = false;
-      finish(record, live, false);
-      await releaseLive(id);
+    if (live?.turn === "held") {
+      await unhold(record, live);
       return true;
     }
 
@@ -1042,7 +1063,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const live = liveOf(id);
 
-    if (record.state === "queued" || !live.child || live.turn === "waiting" || live.holding) {
+    if (record.state === "queued" || !live.child || live.turn === "waiting" || live.turn === "held") {
       live.pending.push(message);
       return { ok: true, delivery: "held" };
     }
@@ -1067,7 +1088,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const record = terminalOf(requestedId);
     const live = record && lives.get(record.id);
 
-    if (!record || isClosed(record.state) || !live?.child || live.holding) {
+    if (!record || isClosed(record.state) || !live?.child || live.turn === "held") {
       return;
     }
 

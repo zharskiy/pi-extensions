@@ -59,7 +59,7 @@ extensions/subagents/
 │   ├── agent-registry/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events
 │   ├── run-agent/
-│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details, the handoff hold until the agent's own batches settle (holdsHandoff, releaseHold)
+│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn)
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, describeRunAgent
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
