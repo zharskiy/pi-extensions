@@ -366,6 +366,26 @@ describe("agent view", () => {
     expect(transcripts).toHaveLength(1);
   });
 
+  it("redraws the chain's transcript when an earlier link's messages change", () => {
+    const full = fixture();
+    const first = agentRecord({ id: "explorer-1", state: "handoff", sessionFile: "/first.jsonl" });
+    const second = agentRecord({ id: "explorer-2", state: "running", sessionFile: "/second.jsonl" });
+    const earlier: SessionRecord["items"] = [{ kind: "user", text: "Find the login handler" }];
+    const later: SessionRecord["items"] = [{ kind: "user", text: "Trace the token refresh" }];
+    const { update, lines, transcripts } = viewOf({ ...full, items: later }, { record: second });
+    const body = () => lines().join("\n");
+
+    update({ chain: [first.id, second.id], linkItems: [0, 1] });
+    update({ session: { ...full, items: [...earlier, ...later] }, linkItems: [1, 1] });
+
+    expect(body().indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(body().indexOf("Trace the token refresh")).toBeGreaterThan(
+      body().indexOf("Find the login handler"),
+    );
+    expect(body().split("Trace the token refresh")).toHaveLength(2);
+    expect(transcripts).toHaveLength(2);
+  });
+
   it("stops the agent with the x key in a Cyrillic layout", async () => {
     const { harness, record } = await runningAgent();
     const { view } = await harness.openView(record.id);
@@ -1107,6 +1127,37 @@ describe("agent view past sessions", () => {
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(await drawn("explorer-old2")).toBe(text);
+  });
+
+  it("shows the last link's read error under the earlier links' transcript", async () => {
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+        },
+      ],
+      sessions: { "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY) },
+    });
+
+    const text = plainLines((await harness.openView("explorer-old2")).view.render(200)).join("\n");
+
+    expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("session file not written yet")).toBeGreaterThan(
+      text.indexOf("Find the login handler"),
+    );
   });
 
   it("follows a chain of an earlier session to its last link", async () => {

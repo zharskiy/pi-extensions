@@ -1,5 +1,6 @@
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
   BranchSummaryMessageComponent,
   CompactionSummaryMessageComponent,
   CustomMessageComponent,
@@ -206,6 +207,33 @@ export const createTranscriptPane = (
         addExpandable(component);
       }
 
+      return;
+    }
+
+    if (item.kind === "bash") {
+      const run = item.raw as {
+        command: string;
+        output?: string;
+        exitCode?: number;
+        cancelled?: boolean;
+        truncated?: boolean;
+        fullOutputPath?: string;
+        excludeFromContext?: boolean;
+      };
+      const component = new BashExecutionComponent(run.command, tui, run.excludeFromContext);
+
+      if (run.output) {
+        component.appendOutput(run.output);
+      }
+
+      component.setComplete(
+        run.exitCode,
+        run.cancelled === true,
+        run.truncated ? ({ truncated: true } as never) : undefined,
+        run.fullOutputPath,
+      );
+      container.addChild(new Spacer(1));
+      addExpandable(component);
       return;
     }
 

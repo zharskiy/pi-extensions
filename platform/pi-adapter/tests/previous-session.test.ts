@@ -295,6 +295,33 @@ describe("showing the previous session after a handoff", () => {
     await session.runtime.dispose();
   });
 
+  it("draws the old session's bash executions with pi's own component", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+
+    session.runtime.session.sessionManager.appendMessage({
+      role: "bashExecution",
+      command: "echo from-the-shell",
+      output: "from-the-shell",
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+      timestamp: Date.now(),
+    });
+
+    await session.runtime.session.prompt("/handoff show");
+
+    const drawn = session.draw(session.previousEntry());
+
+    const rows = drawn.split("\n").map((row) => row.trim());
+
+    expect(rows.indexOf("$ echo from-the-shell")).toBeGreaterThan(rows.indexOf("first answer"));
+    expect(rows.indexOf("from-the-shell")).toBeGreaterThan(rows.indexOf("$ echo from-the-shell"));
+
+    await session.runtime.dispose();
+  });
+
   it("draws a not-found line when the previous session file is gone", async () => {
     const session = await startRuntime();
     const missing = "/nowhere/gone.jsonl";

@@ -7,6 +7,7 @@ export type ViewData = {
   record: AgentRecord;
   chain: string[];
   session?: SessionRecord;
+  linkItems?: number[];
   error?: string;
 };
 
@@ -66,6 +67,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
       const chain = links.map((link) => link.id);
       const reads = links.map(readLink);
       const sessions = reads.flatMap((read) => (read.session ? [read.session] : []));
+      const linkItems = reads.map((read) => read.session?.items.length ?? 0);
       const last = reads.at(-1);
 
       if (sessions.length === 0) {
@@ -78,7 +80,7 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
         items: sessions.flatMap((read) => read.items),
       };
 
-      return { record, chain, session };
+      return { record, chain, session, linkItems, error: last?.error };
     };
   };
 

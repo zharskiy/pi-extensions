@@ -163,10 +163,6 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
   parseSessionLines(readLines(file), recordEntry);
 
-type CustomEntryData = { customType: string; data: unknown };
-
-type SessionBranch = { items: TranscriptItem[]; customEntries: CustomEntryData[] };
-
 const SUMMARY_ROLES = ["compactionSummary", "branchSummary"];
 
 const branchItems = (entry: RawEntry): TranscriptItem[] => {
@@ -180,23 +176,21 @@ const branchItems = (entry: RawEntry): TranscriptItem[] => {
       .map((raw) => ({ kind: "summary", raw }));
   }
 
+  if (entry.type === "message" && entry.message?.role === "bashExecution") {
+    return [{ kind: "bash", raw: entry.message }];
+  }
+
   const item = transcriptItem(entry);
 
   return item ? [item] : [];
 };
 
-export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
+export const readSessionBranch = (file: string, leafId: string | null): TranscriptItem[] => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
 
   migrateSessionEntries(entries);
 
   const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
 
-  const items = branch.flatMap(branchItems);
-
-  const customEntries = branch
-    .filter((entry) => entry.type === "custom")
-    .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
-
-  return { items, customEntries };
+  return branch.flatMap(branchItems);
 };

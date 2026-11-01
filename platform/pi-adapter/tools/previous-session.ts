@@ -59,36 +59,69 @@ export const showPreviousSession = (ctx: ExtensionContext) => {
 
 export const previousSessionRenderer = (deps: RendererDeps) => {
   const cache = new Map<string, Part[]>();
-  const tui = { requestRender: () => deps.requestRender() } as unknown as TUI;
+  const applied = new WeakMap<object, boolean>();
+  let building = false;
   let current: ThemeLike;
 
-  const sessionParts = (previous: PreviousSession, seen: string[]): Part[] => {
+  const tui = {
+    requestRender: () => {
+      if (!building) {
+        deps.requestRender();
+      }
+    },
+  } as unknown as TUI;
+
+  const sessionParts = (previous: PreviousSession, seen: string[]): { parts: Part[]; read: boolean } => {
     const path = shownPath(previous.file);
 
     if (seen.includes(previous.file) || seen.length >= MAX_SESSIONS) {
-      return [{ token: "dim", text: `» earlier sessions not shown · ${path}` }];
+      return { parts: [{ token: "dim", text: `» earlier sessions not shown · ${path}` }], read: true };
     }
 
-    const branch = readBranch(previous);
+    const items = readBranch(previous);
 
-    if (!branch) {
-      return [{ token: "warning", text: `» previous session not found · ${path}` }];
+    if (!items) {
+      return { parts: [{ token: "warning", text: `» previous session not found · ${path}` }], read: false };
     }
 
-    const earlier = branch.customEntries
-      .filter((entry) => entry.customType === PREVIOUS_SESSION_TYPE)
-      .map((entry) => entry.data)
+    const earlier = items
+      .flatMap((item) =>
+        item.kind === "entry" && item.customType === PREVIOUS_SESSION_TYPE ? [item.data] : [],
+      )
       .find(isPreviousSession);
 
-    const nested = earlier ? sessionParts(earlier, [...seen, previous.file]) : [];
+    const nested = earlier ? sessionParts(earlier, [...seen, previous.file]).parts : [];
     const pane = createTranscriptPane(tui, deps.cwd(), {
       tools: deps.tools(),
       theme: () => current,
     });
 
-    pane.sync(branch.items);
+    pane.sync(items);
 
-    return [...nested, { token: "dim", text: `» previous session · ${path}`, pane }];
+    return { parts: [...nested, { token: "dim", text: `» previous session · ${path}`, pane }], read: true };
+  };
+
+  const partsFor = (previous: PreviousSession) => {
+    const key = `${previous.file}\n${previous.leafId}`;
+    const cached = cache.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    building = true;
+
+    try {
+      const { parts, read } = sessionParts(previous, []);
+
+      if (read) {
+        cache.set(key, parts);
+      }
+
+      return parts;
+    } finally {
+      building = false;
+    }
   };
 
   const render: EntryRender = (data, width, expanded, theme, pad) => {
@@ -96,18 +129,16 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
       return [];
     }
 
-    const key = `${data.file}\n${data.leafId}`;
-    const parts = cache.get(key) ?? sessionParts(data, []);
+    const parts = partsFor(data);
     const margin = " ".repeat(pad);
 
     current = theme;
 
-    if (existsSync(data.file)) {
-      cache.set(key, parts);
-    }
-
     return parts.flatMap(({ token, text, pane }, index) => {
-      pane?.setToolsExpanded(expanded);
+      if (pane && applied.get(pane) !== expanded) {
+        applied.set(pane, expanded);
+        pane.setToolsExpanded(expanded);
+      }
 
       return [
         ...(index > 0 ? [""] : []),
