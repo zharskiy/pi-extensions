@@ -2,9 +2,17 @@ import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { padded, prefixed } from "../../shared/index.ts";
-import { framed, hintRow, keyHints } from "../key-hints.ts";
+import { framed, hintRow, keyHints, rule } from "../key-hints.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
+
+describe("rule", () => {
+  it("draws an accent line across the width, at least one column wide", () => {
+    expect(rule(plainTheme, 5)).toBe("─────");
+    expect(rule(plainTheme, 0)).toBe("─");
+    expect(rule(tagged, 3)).toContain("<accent>");
+  });
+});
 
 describe("prefixed", () => {
   it("puts the prefix before the first line and indents the wrapped rest under it", () => {

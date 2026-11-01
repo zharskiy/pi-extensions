@@ -51,6 +51,7 @@ const startRuntime = async () => {
   const handoff: pi.ExtensionFactory = (api) => {
     const host = createPiHost(api, { tools: new Map() });
 
+    host.registerMessageRenderer(SEED.customType, (message) => [`seed: ${message.text}`]);
     host.registerEntryRenderer(NOTE, (data) => [`note: ${(data as { text: string }).text}`]);
     host.registerEntryRenderer(KEPT, (data) => [`kept: ${(data as { text: string }).text}`], {
       previousSession: false,
@@ -67,9 +68,11 @@ const startRuntime = async () => {
     host.registerCommand("handoff", {
       description: "hand off",
       run: async (args, control) => {
+        const shown = args.startsWith("as ") ? { label: args.slice(3) } : {};
+
         await control.newSession({
           parentSession: host.session().file,
-          showPrevious: args.startsWith("as ") ? { label: args.slice(3) } : args === "show",
+          showPrevious: args === "" ? undefined : shown,
           fill: () => ({ seed: SEED }),
         });
       },
@@ -212,7 +215,7 @@ describe("showing the previous session after a handoff", () => {
     const drawn = session.draw(session.previousEntry());
     const seed = new pi.CustomMessageComponent(
       { role: "custom", customType: SEED.customType, content: SEED.text, display: true, timestamp: 0 },
-      undefined,
+      session.runtime.session.extensionRunner.getMessageRenderer(SEED.customType),
     ).render(100);
     const rows = [...drawn.split("\n"), ...seed.map((row) => stripVTControlCharacters(row))];
     const seam = rows.findIndex((row) => row.includes("── continued from previous session ─"));
@@ -229,6 +232,7 @@ describe("showing the previous session after a handoff", () => {
       true,
       false,
     ]);
+    expect(rows[seam + 2]?.trim()).toBe(`seed: ${SEED.text}`);
     expect(drawn).not.toContain(session.dir);
     expect(drawn).not.toContain("second question");
 
@@ -386,9 +390,9 @@ describe("showing the previous session after a handoff", () => {
 
     const drawn = session.draw(session.previousEntry());
     const summary = drawn.indexOf("[compaction]");
+    const first = drawn.split("\n").find((row) => row.trim() !== "");
 
-    expect(summary).toBeGreaterThanOrEqual(0);
-    expect(drawn.indexOf("Find")).toBe(-1);
+    expect(first?.trim()).toBe("[compaction]");
     expect(drawn).toContain("Compacted from 1,234 tokens");
     expect(drawn.indexOf("first question")).toBeGreaterThan(summary);
 
@@ -429,7 +433,17 @@ describe("showing the previous session after a handoff", () => {
 
     const drawn = session.draw({ ...entry, id: "e", parentId: null, timestamp: "" } as pi.CustomEntry);
 
+    const tagging = {
+      ...plainPiTheme,
+      fg: (token: string, text: string) => `<${token}>${text}</>`,
+    } as pi.Theme;
+    const tagged = session
+      .component({ ...entry, id: "e", parentId: null, timestamp: "" } as pi.CustomEntry, tagging)
+      ?.render(100)
+      .join("\n");
+
     expect(drawn.trim()).toMatch(/^── previous session not found ─+$/);
+    expect(tagged?.trim()).toMatch(/^<warning>── previous session not found ─/);
     expect(drawn).not.toContain(missing);
 
     await session.runtime.dispose();

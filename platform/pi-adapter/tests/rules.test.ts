@@ -1,17 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../index.ts";
-import { labelledRule, rule } from "../ui/rules.ts";
+import { labelledRule } from "../ui/rules.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
-
-describe("rule", () => {
-  it("draws an accent line across the width, at least one column wide", () => {
-    expect(rule(plainTheme, 5)).toBe("─────");
-    expect(rule(plainTheme, 0)).toBe("─");
-    expect(rule(tagged, 3)).toContain("<accent>");
-  });
-});
 
 describe("labelledRule", () => {
   it("fills the width after the label and paints it dim", () => {

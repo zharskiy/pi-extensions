@@ -14,7 +14,7 @@ extensions/session-limits/
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, withLateResults (held results under a fixed heading), userPrompts (kept messages as the new session's user prompts), handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
-│   ├── kept-entries.ts         keptRule (labelled rule and its labels) and keptMessage (pi's user message look, full width with pi's pad as its margin) entry renderers
+│   ├── kept-entries.ts         keptRule (the adapter's labelledRule and its labels) and keptMessage (pi's user message look, full width with pi's pad as its margin) entry renderers
 │   └── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly

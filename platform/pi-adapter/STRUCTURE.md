@@ -43,7 +43,7 @@
 - `ui/working-message.ts`: the working message and its visibility.
 - `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours, background tokens to pi's diff and user message backgrounds), `textMetrics` (width, truncate, wrap), `fitLines`.
 - `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
-- `ui/rules.ts`: `rule` and `labelledRule` (with a token, dim by default), re-exported by `platform/ui-kit`.
+- `ui/rules.ts`: `labelledRule` (with a token, dim by default), exported through `index.ts` for the previous-session seam, session-limits' kept rule and the transcript's answer rule.
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
 - `editor/input.ts`: the editor submit key, command completion, re-submit.

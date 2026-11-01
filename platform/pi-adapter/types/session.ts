@@ -21,7 +21,7 @@ export type SessionFill = { seed: CustomMessage; followUps?: UserMessage[]; edit
 export type NewSessionOptions = {
   parentSession?: string;
   keepSelection?: boolean;
-  showPrevious?: boolean | { label: string };
+  showPrevious?: { label?: string };
   continueWithSeed?: boolean;
   fill: () => SessionFill;
 };
