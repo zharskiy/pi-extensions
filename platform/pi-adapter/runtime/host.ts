@@ -14,7 +14,7 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec, CustomMessage } from "../types/messages.ts";
+import type { CommandSpec, CustomMessage, UserMessage } from "../types/messages.ts";
 import { isThinkingLevel } from "../types/model.ts";
 import type {
   AssistantEnd,
@@ -22,8 +22,10 @@ import type {
   IdleInfo,
   Phase,
   SessionControl,
+  SessionFill,
   SessionInfo,
   ShutdownReason,
+  UserInput,
 } from "../types/session.ts";
 import type { AnyToolSpec, ToolSpec } from "../types/tools.ts";
 import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
@@ -65,29 +67,56 @@ type NewSessionRequest = NonNullable<Parameters<ExtensionCommandContext["newSess
 
 type FreshSession = Parameters<NonNullable<NewSessionRequest["withSession"]>>[0];
 
-const sendSeed = async (fresh: FreshSession, seed: CustomMessage, run: boolean) => {
-  const message = { customType: seed.customType, content: seed.text, display: true, details: seed.details };
+const warnOf = (fresh: FreshSession, lead: string) => (error: unknown) => {
+  const reason = error instanceof Error ? error.message : String(error);
 
-  if (!run) {
-    await fresh.sendMessage(message, { triggerTurn: false });
-    return;
+  fresh.ui.notify(`${lead}: ${reason}`, "warning");
+};
+
+const sendFollowUps = (fresh: FreshSession, followUps: UserMessage[]) => {
+  void followUps
+    .reduce<Promise<void>>(
+      (chain, { text, images }) =>
+        chain.then(() =>
+          fresh.sendUserMessage(
+            [{ type: "text", text }, ...images.map((image) => ({ type: "image" as const, ...image }))],
+            { deliverAs: "followUp", expandPromptTemplates: true },
+          ),
+        ),
+      Promise.resolve(),
+    )
+    .catch(warnOf(fresh, "A message kept for the new session could not be sent"));
+};
+
+const fillSession = async (
+  fresh: FreshSession,
+  { seed, followUps = [], editorText }: SessionFill,
+  run: boolean,
+) => {
+  if (editorText) {
+    fresh.ui.setEditorText(editorText);
   }
 
-  const { ui } = fresh;
+  const sent = fresh.sendMessage(
+    { customType: seed.customType, content: seed.text, display: true, details: seed.details },
+    { triggerTurn: run },
+  );
 
-  void fresh.sendMessage(message, { triggerTurn: true }).catch((error: unknown) => {
-    const reason = error instanceof Error ? error.message : String(error);
+  if (run) {
+    void sent.catch(warnOf(fresh, "The new session could not continue the handoff"));
+  } else {
+    await sent;
+  }
 
-    ui.notify(`The new session could not continue the handoff: ${reason}`, "warning");
-  });
+  sendFollowUps(fresh, followUps);
 };
 
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, seed, keepSelection: keep, continueWithSeed }) => {
+  newSession: async ({ parentSession, keepSelection: keep, continueWithSeed, fill }) => {
     const result = await ctx.newSession({
       parentSession,
       setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-      withSession: seed ? (fresh) => sendSeed(fresh, seed, continueWithSeed === true) : undefined,
+      withSession: (fresh) => fillSession(fresh, fill(), continueWithSeed === true),
     });
 
     return !result.cancelled;
@@ -117,6 +146,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const inputHandlers: ((input: UserInput) => boolean)[] = [];
   const agentStartHandlers: (() => void)[] = [];
   const assistantStartHandlers: (() => void)[] = [];
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
@@ -426,6 +456,18 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
+  pi.on("input", (event, ctx) => {
+    capture(ctx);
+
+    const input: UserInput = {
+      text: event.text,
+      images: (event.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })),
+      source: event.source,
+    };
+
+    return inputHandlers.some((handler) => handler(input)) ? { action: "handled" } : { action: "continue" };
+  });
+
   pi.on("session_compact", (_event, ctx) => {
     capture(ctx);
 
@@ -565,6 +607,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     onCompact: (handler) => {
       compactHandlers.push(handler);
+    },
+    onInput: (handler) => {
+      inputHandlers.push(handler);
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {

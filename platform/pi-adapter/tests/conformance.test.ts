@@ -21,8 +21,9 @@ import { childSettings, childToolNames } from "../child/child-runtime.ts";
 import { CODEMODE_WORKERS_SETTING } from "../child/codemode.ts";
 import { availableModels } from "../child/model-catalog.ts";
 import { discoverSkills } from "../child/skills.ts";
-import { THINKING_LEVELS } from "../index.ts";
+import { type SessionFill, THINKING_LEVELS } from "../index.ts";
 import { mcpBuiltinLoaded, sessionSkillFiles } from "../runtime/extension.ts";
+import { createPiHost } from "../runtime/host.ts";
 import { finalRunTexts } from "../runtime/message-text.ts";
 import { ASSISTANT_DELTA_TYPES } from "../runtime/phase.ts";
 import { promptRecordEntry } from "../runtime/session-file.ts";
@@ -702,6 +703,201 @@ describe("pi adapter conformance", () => {
       session.dispose();
     });
 
+    const fillNewSession = async (fill: () => SessionFill, replies: string[]) => {
+      const dir = temp.make("pi-session-fill-");
+      const edited: string[] = [];
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+      mkdirSync(join(dir, "prompts"));
+      writeFileSync(join(dir, "prompts", "review.md"), "Review $1 closely.");
+
+      const faux = fauxProvider();
+      const modelRuntime = await pi.ModelRuntime.create();
+
+      modelRuntime.registerNativeProvider(faux.provider);
+      faux.setResponses(replies.map((reply) => fauxAssistantMessage(fauxText(reply))));
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+
+      const handoff: pi.ExtensionFactory = (api) => {
+        createPiHost(api, { tools: new Map() }).registerCommand("handoff", {
+          description: "hand off",
+          run: async (_args, control) => {
+            await control.newSession({ continueWithSeed: true, fill });
+          },
+        });
+      };
+
+      const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
+        cwd,
+        agentDir,
+        sessionManager,
+        sessionStartEvent,
+      }) => {
+        const services = await pi.createAgentSessionServices({
+          cwd,
+          agentDir,
+          settingsManager,
+          modelRuntime,
+          resourceLoaderOptions: { extensionFactories: [{ name: "handoff", factory: handoff }] },
+        });
+        const created = await pi.createAgentSessionFromServices({
+          services,
+          sessionManager,
+          sessionStartEvent,
+          model: faux.getModel() as never,
+        });
+
+        return { ...created, services, diagnostics: services.diagnostics };
+      };
+
+      const runtime = await pi.createAgentSessionRuntime(createRuntime, {
+        cwd: dir,
+        agentDir: dir,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      const uiContext = {
+        notify: () => {},
+        setEditorText: (text: string) => {
+          edited.push(text);
+        },
+      } as unknown as pi.ExtensionUIContext;
+
+      const bind = async () => {
+        await runtime.session.bindExtensions({
+          mode: "print",
+          uiContext,
+          commandContextActions: {
+            waitForIdle: () => runtime.session.waitForIdle(),
+            newSession: (options) => runtime.newSession(options),
+            fork: (entryId, options) => runtime.fork(entryId, options),
+            navigateTree: async () => ({ cancelled: true }),
+            switchSession: (sessionPath, options) => runtime.switchSession(sessionPath, options),
+            reload: async () => {},
+          },
+        });
+      };
+
+      runtime.setRebindSession(bind);
+      await bind();
+      await runtime.session.prompt("/handoff");
+      await vi.waitFor(() => {
+        expect(faux.state.callCount).toBe(replies.length);
+      });
+      await runtime.session.agent.waitForIdle();
+
+      const messages = runtime.session.sessionManager
+        .getEntries()
+        .flatMap((entry) =>
+          entry.type === "message"
+            ? [[entry.message.role, "content" in entry.message ? entry.message.content : undefined]]
+            : entry.type === "custom_message"
+              ? [["custom", entry.content]]
+              : [],
+        )
+        .filter(([role]) => role !== "system");
+
+      runtime.session.dispose();
+
+      return { edited, messages };
+    };
+
+    it("fills a new session through the adapter: editor text, the seed's run, then an expanded template follow-up with its image", async () => {
+      const image = { data: "aW1n", mimeType: "image/png" };
+      const { edited, messages } = await fillNewSession(
+        () => ({
+          seed: { customType: "seed", text: "handoff" },
+          followUps: [{ text: "/review src/a.ts", images: [image] }],
+          editorText: "draft",
+        }),
+        ["seeded", "ok"],
+      );
+
+      expect(edited).toEqual(["draft"]);
+      expect(messages.map(([role]) => role)).toEqual(["custom", "assistant", "user", "assistant"]);
+      expect(messages[0][1]).toBe("handoff");
+      expect(messages[2][1]).toEqual([
+        { type: "text", text: "Review src/a.ts closely." },
+        { type: "image", ...image },
+      ]);
+    });
+
+    it("delivers follow-ups queued behind the seed's run as user messages in order, one turn each", async () => {
+      const { messages } = await fillNewSession(
+        () => ({
+          seed: { customType: "seed", text: "handoff" },
+          followUps: [
+            { text: "first", images: [] },
+            { text: "second", images: [] },
+          ],
+        }),
+        ["seeded", "one", "two"],
+      );
+
+      expect(messages.map(([role]) => role)).toEqual([
+        "custom",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+      ]);
+      expect([messages[2][1], messages[4][1]]).toEqual([
+        [{ type: "text", text: "first" }],
+        [{ type: "text", text: "second" }],
+      ]);
+    });
+
+    it("lets an input handler swallow a prompt before it runs, with its text, images, source and streaming state", async () => {
+      const dir = temp.make("pi-input-");
+      const seen: unknown[] = [];
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "input-probe",
+            factory: (api) => {
+              api.on("input", (event) => {
+                seen.push([event.text, event.images, event.source, event.streamingBehavior]);
+
+                return { action: "handled" };
+              });
+            },
+          },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const image = { type: "image" as const, data: "aW1n", mimeType: "image/png" };
+
+      await session.prompt("/review later", { images: [image], source: "rpc" });
+
+      expect(seen).toEqual([["/review later", [image], "rpc", undefined]]);
+      expect(session.sessionManager.getEntries().filter((entry) => entry.type === "message")).toEqual([]);
+
+      session.dispose();
+    });
+
     it("emits message_start with the sent type and content, appends the entry and queues next-turn messages apart", async () => {
       const session = await offlineSession();
       const started: unknown[] = [];
@@ -1354,6 +1550,7 @@ describe("pi adapter conformance", () => {
         "toolDiffAdded",
         "toolDiffRemoved",
         "userMessageBg",
+        "userMessageText",
         "customMessageLabel",
         "customMessageText",
       ] as const;
@@ -1714,6 +1911,16 @@ describe("pi adapter conformance", () => {
       expect(
         lines.map((line) => line.replace(OSC133_ZONE_PREFIX, "")).some((line) => line.includes(`${ESC}]`)),
       ).toBe(false);
+    });
+
+    it("draws the user message as full-width rows with the output pad as its margin and a blank row above and below", () => {
+      initPiRenderTheme();
+
+      const lines = new pi.UserMessageComponent("hello", pi.getMarkdownTheme(), 2)
+        .render(12)
+        .map((line) => stripVTControlCharacters(line.replace(OSC133_ZONE_PREFIX, "")));
+
+      expect(lines).toEqual([" ".repeat(12), "  hello     ", " ".repeat(12)]);
     });
 
     it("routes clicks in a container by the child layout of the last render", () => {

@@ -9,6 +9,10 @@ export type CommandSpec = {
 
 export type CustomMessage = { customType: string; text: string; details?: unknown };
 
+type ImageAttachment = { data: string; mimeType: string };
+
+export type UserMessage = { text: string; images: ImageAttachment[] };
+
 export type RoutedMessage = { sender: string; text: string };
 
 export type PromptTool = { name: string; description: string; parameters: unknown };

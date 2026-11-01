@@ -11,7 +11,6 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
   initTheme,
-  type Theme,
   type ToolDefinition,
   ToolExecutionComponent,
   type ToolRenderers,
@@ -20,11 +19,7 @@ import type { ToolRows } from "../../../platform/pi-adapter/index.ts";
 import type { PiToolRenderContext } from "../../../platform/pi-adapter/tools/tool-bridge.ts";
 import { rowRenderers, toolRowsHost } from "../../../platform/pi-adapter/tools/tool-rows.ts";
 import { createTranscriptPane } from "../../../platform/pi-adapter/tools/transcript.ts";
-import { initPiRenderTheme } from "./render-theme.ts";
-
-const themes = await import(
-  new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
-);
+import { initPiRenderTheme, livePiTheme } from "./render-theme.ts";
 
 const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
@@ -69,7 +64,7 @@ export const renderEditDiff = (rows: ToolRows, { diff, outputPad, width }: EditR
       ?.renderResult?.(
         { content: [{ type: "text", text: "ok" }], details: { diff } } as never,
         { expanded: true, isPartial: false },
-        themes.theme as Theme,
+        livePiTheme,
         piRenderContext({ args: { path: "/repo/a.ts" }, expanded: true, outputPad }),
       )
       .render(width) ?? [];

@@ -244,6 +244,10 @@ export const createUi = (
     copyText: (text) => copyToClipboard(text),
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
+    getEditorText: () => state.ctx?.ui.getEditorText() ?? "",
+    setEditorText: (text) => {
+      state.ctx?.ui.setEditorText(text);
+    },
     setEditorFrame: editor.setEditorFrame,
     onEmptyEditorLeft: editor.onEmptyEditorLeft,
     onEmptyEditorDown: editor.onEmptyEditorDown,

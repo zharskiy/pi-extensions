@@ -19,13 +19,13 @@ const fakeApi = () => {
 };
 
 describe("entryHost", () => {
-  it("registers an entry renderer that passes pi's data, expanded flag and theme and cuts lines to the width after the pad", () => {
+  it("registers an entry renderer that passes pi's data, expanded flag, theme and the pad and cuts lines to the width after the pad", () => {
     const { api, renderers } = fakeApi();
     const seen: unknown[] = [];
     const theme = { fg: (token: string, text: string) => `${token}:${text}`, bold: (text: string) => text };
 
-    entryHost(api, () => 1).registerEntryRenderer("x:entry", (data, width, expanded, themed) => {
-      seen.push({ data, width, expanded });
+    entryHost(api, () => 1).registerEntryRenderer("x:entry", (data, width, expanded, themed, pad) => {
+      seen.push({ data, width, expanded, pad });
       return [themed.fg("accent", "0123456789"), "ok"];
     });
 
@@ -36,7 +36,31 @@ describe("entryHost", () => {
     );
 
     expect(component?.render(12).map(plainText)).toEqual([" accent:0...", " ok"]);
-    expect(seen).toEqual([{ data: { a: 1 }, width: 11, expanded: true }]);
+    expect(seen).toEqual([{ data: { a: 1 }, width: 11, expanded: true, pad: 1 }]);
+  });
+
+  it("draws a flush entry renderer from the first column at the full width and gives it the pad to draw itself", () => {
+    const { api, renderers } = fakeApi();
+    const seen: unknown[] = [];
+    const theme = { fg: (_token: string, text: string) => text, bold: (text: string) => text };
+
+    entryHost(api, () => 2).registerEntryRenderer(
+      "x:flush",
+      (_data, width, _expanded, _themed, pad) => {
+        seen.push({ width, pad });
+        return [`${" ".repeat(pad)}hi`.padEnd(width, "#"), "x".repeat(20)];
+      },
+      { flush: true },
+    );
+
+    const component = renderers.get("x:flush")?.(
+      { type: "custom", customType: "x:flush", data: {}, id: "e", parentId: null, timestamp: "" },
+      { expanded: false },
+      theme as unknown as pi.Theme,
+    );
+
+    expect(component?.render(8).map(plainText)).toEqual(["  hi####", "xxxxx..."]);
+    expect(seen).toEqual([{ width: 8, pad: 2 }]);
   });
 
   it("registers a message renderer that gets the message text and details inside pi's output pad", () => {

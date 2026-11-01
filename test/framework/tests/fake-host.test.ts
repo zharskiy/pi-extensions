@@ -100,3 +100,19 @@ describe("sendMessage", () => {
     expect(host.hidden).toEqual([]);
   });
 });
+
+describe("renderEntry", () => {
+  it("draws an entry after the pad at the width left, and a flush one at the full width, both given the pad", () => {
+    const host = createFakeHost();
+    const sized = (_data: unknown, width: number, _expanded: boolean, _theme: unknown, pad: number) => [
+      `${width}:${pad}`,
+    ];
+
+    host.registerEntryRenderer("x:padded", sized);
+    host.registerEntryRenderer("x:flush", sized, { flush: true });
+
+    expect(host.renderEntry("x:padded", {}, { width: 10, pad: 2 })).toEqual(["  8:2"]);
+    expect(host.renderEntry("x:flush", {}, { width: 10, pad: 2 })).toEqual(["10:2"]);
+    expect(host.renderEntry("x:padded", {}, { width: 10 })).toEqual(["10:0"]);
+  });
+});

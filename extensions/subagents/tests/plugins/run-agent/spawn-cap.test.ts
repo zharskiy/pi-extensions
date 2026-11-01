@@ -115,6 +115,11 @@ describe("per-agent spawn cap", () => {
     runtime.child(lead.id).finish(lead.handoffPath);
     await flushMicrotasks();
 
+    nested().forEach((scout) => {
+      runtime.child(scout.id).finish("looked");
+    });
+    await flushMicrotasks();
+
     const successor = (registry.get(lead.id) as AgentRecord).successorId as string;
 
     expect(successor).toBeDefined();

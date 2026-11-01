@@ -80,7 +80,15 @@ export type FooterData = { branch: string | null; statuses: ReadonlyMap<string, 
 
 export type FooterRender = (width: number, theme: ThemeLike, data: FooterData) => string[];
 
-export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
+export type EntryRender = (
+  data: unknown,
+  width: number,
+  expanded: boolean,
+  theme: ThemeLike,
+  pad: number,
+) => string[];
+
+export type EntryOptions = { flush?: boolean };
 
 export type MessageRender = (
   message: { text: string; details?: unknown },

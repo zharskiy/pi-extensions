@@ -40,6 +40,8 @@ export type EditorUi = {
   onEditorSubmit(rewrite: (text: string) => string | undefined): () => void;
   mapCommandCompletion(map: (command: string) => string | undefined): void;
   submitEditor(text: string): Promise<boolean>;
+  getEditorText(): string;
+  setEditorText(text: string): void;
   setEditorFrame(frame: EditorFrame | undefined): void;
   onEmptyEditorLeft(handler: () => void): () => void;
   onEmptyEditorDown(handler: () => void): () => void;

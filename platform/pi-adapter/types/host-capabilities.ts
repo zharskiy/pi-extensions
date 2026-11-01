@@ -2,10 +2,18 @@ import type { ContextFacts, ContextSnapshot, PromptTokens } from "./context.ts";
 import type { HostUi } from "./host-ui.ts";
 import type { CommandSpec, CustomMessage } from "./messages.ts";
 import type { ModelInfo } from "./model.ts";
-import type { AssistantEnd, DialogEvent, IdleInfo, Phase, SessionInfo, ShutdownReason } from "./session.ts";
+import type {
+  AssistantEnd,
+  DialogEvent,
+  IdleInfo,
+  Phase,
+  SessionInfo,
+  ShutdownReason,
+  UserInput,
+} from "./session.ts";
 import type { ToolRows, ToolSpec } from "./tools.ts";
 import type { UsageTotals } from "./usage.ts";
-import type { EntryRender, MessageRender } from "./view.ts";
+import type { EntryOptions, EntryRender, MessageRender } from "./view.ts";
 
 type ToolHost = {
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
@@ -24,6 +32,7 @@ type LifecycleHost = {
   onIdle(handler: (info: IdleInfo) => void): void;
   onTurnEnd(handler: (context: ContextSnapshot) => void): void;
   onCompact(handler: () => void): void;
+  onInput(handler: (input: UserInput) => boolean): void;
   onAgentStart(handler: () => void): void;
   onAssistantStart(handler: () => void): void;
   onAssistantEnd(handler: (info: AssistantEnd) => void): void;
@@ -43,7 +52,7 @@ type MessagingHost = {
 
 export type EntryHost = {
   appendEntry(customType: string, data: unknown): void;
-  registerEntryRenderer(customType: string, render: EntryRender): void;
+  registerEntryRenderer(customType: string, render: EntryRender, options?: EntryOptions): void;
   registerToolRows(rows: ToolRows): void;
   registerMessageRenderer(customType: string, render: MessageRender): void;
   readEntries<T>(customType: string, file?: string): T[];
