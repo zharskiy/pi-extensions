@@ -58,7 +58,7 @@
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`, an `input` handler swallowing a prompt, and a new session filled through the adapter's `newSession`: editor text, the seed's run, then a `/template` follow-up expanded with its image behind it).
+- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`, an `input` handler swallowing a prompt, and a new session filled through the adapter's `newSession`: editor text, the seed's run, then a `/template` follow-up expanded with its image behind it, and two follow-ups delivered in order as separate user messages, one turn each).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
 - `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once, with no `onModelSelect` or `onThinkingSelect` call or default saved during the restore and later choices passed through, and the seed starting the first run with `continueWithSeed`.
 - `tests/phase.test.ts`: `runtime/phase.ts`.

@@ -16,7 +16,7 @@ import {
 } from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
-import { HELD_HEADING, USER_HEADING } from "../core/handoff.ts";
+import { HELD_HEADING } from "../core/handoff.ts";
 import { DEFAULT_LIMITS } from "../core/settings.ts";
 
 const temp = useTempDirs();
@@ -272,7 +272,7 @@ describe("session limits", () => {
     expect(requests()).toHaveLength(1);
     expect(host.forwarded).toEqual([]);
     expect(host.newSessions).toHaveLength(1);
-    expect(host.newSessions[0].seed?.text).toContain(`${USER_HEADING}\n\nalso update the changelog`);
+    expect(host.newSessions[0].followUps).toEqual([{ text: "also update the changelog", images: [] }]);
   });
 
   it("switches without a fresh request when only the instruction produced turns", async () => {
@@ -1462,8 +1462,9 @@ describe("messages typed during a handoff", () => {
     await flush();
     await flush();
 
-    expect(switched(host)?.seed?.text).toContain(`${USER_HEADING}\n\nfirst\n\nsecond`);
-    expect(switched(host)?.followUps).toEqual([]);
+    expect(switched(host)?.seed?.text).not.toContain("first");
+    expect(switched(host)?.followUps).toEqual([{ text: "first\n\nsecond", images: [] }]);
+    expect(switched(host)?.continueWithSeed).toBe(true);
   });
 
   it("lets messages through while no handoff is pending", () => {
@@ -1484,7 +1485,7 @@ describe("messages typed during a handoff", () => {
     expect(host.forwarded.map((input) => input.text)).toEqual(["from a plugin"]);
   });
 
-  it("puts kept messages after the held batch results in the seed", async () => {
+  it("keeps the held batch results in the seed and the kept messages out of it", async () => {
     const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
@@ -1494,12 +1495,12 @@ describe("messages typed during a handoff", () => {
     host.settle();
     await flush();
 
-    expect(switched(host)?.seed?.text).toContain(
-      `${VALID_HANDOFF}\n\n${HELD_HEADING}\n\nlate result\n\n${USER_HEADING}\n\nuse the faster option`,
-    );
+    expect(switched(host)?.seed?.text).toContain(`${VALID_HANDOFF}\n\n${HELD_HEADING}\n\nlate result`);
+    expect(switched(host)?.seed?.text).not.toContain("use the faster option");
+    expect(switched(host)?.followUps).toEqual([{ text: "use the faster option", images: [] }]);
   });
 
-  it("sends a slash message as a user message after the seed instead of inlining it", async () => {
+  it("sends a slash message as a user message of its own, before the text typed after it", async () => {
     const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
@@ -1510,22 +1511,26 @@ describe("messages typed during a handoff", () => {
     await flush();
 
     expect(switched(host)?.seed?.text).not.toContain("/review");
-    expect(switched(host)?.seed?.text).toContain(`${USER_HEADING}\n\nand keep it short`);
-    expect(switched(host)?.followUps).toEqual([{ text: "/review the auth module", images: [] }]);
+    expect(switched(host)?.seed?.text).not.toContain("keep it short");
+    expect(switched(host)?.followUps).toEqual([
+      { text: "/review the auth module", images: [] },
+      { text: "and keep it short", images: [] },
+    ]);
     expect(switched(host)?.continueWithSeed).toBe(true);
   });
 
-  it("sends a message with images as a user message after the seed, with its images", async () => {
+  it("sends messages with images as one user message after the seed, with all their images", async () => {
     const { host, turn, saveHandoff } = setup();
 
     turn(76_000);
     host.input("look at this", { images: [IMAGE] });
+    host.input("and this", { images: [IMAGE] });
     saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
 
     expect(switched(host)?.seed?.text).not.toContain("look at this");
-    expect(switched(host)?.followUps).toEqual([{ text: "look at this", images: [IMAGE] }]);
+    expect(switched(host)?.followUps).toEqual([{ text: "look at this\n\nand this", images: [IMAGE, IMAGE] }]);
   });
 
   it("carries a message typed while the old session shuts down into the new one", async () => {
@@ -1540,8 +1545,11 @@ describe("messages typed during a handoff", () => {
     host.settle();
     await flush();
 
-    expect(switched(host)?.seed?.text).toContain("one more thing");
-    expect(switched(host)?.followUps).toEqual([{ text: "/review it", images: [] }]);
+    expect(switched(host)?.seed?.text).not.toContain("one more thing");
+    expect(switched(host)?.followUps).toEqual([
+      { text: "one more thing", images: [] },
+      { text: "/review it", images: [] },
+    ]);
     expect(host.editorText).toBe("");
   });
 

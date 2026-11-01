@@ -30,8 +30,8 @@ import {
   joinParagraphs,
   MAIN_AUDIENCE,
   sessionPreface,
+  userPrompts,
   withLateResults,
-  withUserMessages,
 } from "./handoff.ts";
 import {
   type ContextTokens,
@@ -78,9 +78,6 @@ type LimitsState = {
 };
 
 type RequestOrigin = { manual: boolean; handedOff?: boolean; focus?: string };
-
-const isFollowUp = (message: UserMessage) =>
-  message.text.trimStart().startsWith("/") || message.images.length > 0;
 
 const textsOf = (messages: UserMessage[]) => messages.map((message) => message.text);
 
@@ -322,26 +319,17 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     const handedOff = state.handedOff;
     const preface = sessionPreface({ file: previous, manual: handedOff, focus: state.focus });
 
-    const seed = (messages: UserMessage[]) => ({
-      customType: HANDOFF_SEED_TYPE,
-      details: { from: "session" } satisfies HandoffSeedDetails,
-      text: seedText(
-        preface,
-        withUserMessages(withLateResults(saved.text, Array.from(held.values())), textsOf(messages)),
-      ),
-    });
-
     const fill = () => {
       const messages = captured.splice(0);
-
-      if (handedOff) {
-        return { seed: seed([]), editorText: joinParagraphs(textsOf(messages)) };
-      }
-
-      return {
-        seed: seed(messages.filter((message) => !isFollowUp(message))),
-        followUps: messages.filter(isFollowUp),
+      const seed = {
+        customType: HANDOFF_SEED_TYPE,
+        details: { from: "session" } satisfies HandoffSeedDetails,
+        text: seedText(preface, withLateResults(saved.text, Array.from(held.values()))),
       };
+
+      return handedOff
+        ? { seed, editorText: joinParagraphs(textsOf(messages)) }
+        : { seed, followUps: userPrompts(messages) };
     };
 
     const accepted = await control

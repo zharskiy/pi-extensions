@@ -21,7 +21,7 @@ import { childSettings, childToolNames } from "../child/child-runtime.ts";
 import { CODEMODE_WORKERS_SETTING } from "../child/codemode.ts";
 import { availableModels } from "../child/model-catalog.ts";
 import { discoverSkills } from "../child/skills.ts";
-import { THINKING_LEVELS } from "../index.ts";
+import { type SessionFill, THINKING_LEVELS } from "../index.ts";
 import { mcpBuiltinLoaded, sessionSkillFiles } from "../runtime/extension.ts";
 import { createPiHost } from "../runtime/host.ts";
 import { finalRunTexts } from "../runtime/message-text.ts";
@@ -703,9 +703,8 @@ describe("pi adapter conformance", () => {
       session.dispose();
     });
 
-    it("fills a new session through the adapter: editor text, the seed's run, then an expanded template follow-up with its image", async () => {
+    const fillNewSession = async (fill: () => SessionFill, replies: string[]) => {
       const dir = temp.make("pi-session-fill-");
-      const image = { data: "aW1n", mimeType: "image/png" };
       const edited: string[] = [];
 
       vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -716,7 +715,7 @@ describe("pi adapter conformance", () => {
       const modelRuntime = await pi.ModelRuntime.create();
 
       modelRuntime.registerNativeProvider(faux.provider);
-      faux.setResponses([fauxAssistantMessage(fauxText("seeded")), fauxAssistantMessage(fauxText("ok"))]);
+      faux.setResponses(replies.map((reply) => fauxAssistantMessage(fauxText(reply))));
 
       const settingsManager = pi.SettingsManager.inMemory({});
 
@@ -724,14 +723,7 @@ describe("pi adapter conformance", () => {
         createPiHost(api, { tools: new Map() }).registerCommand("handoff", {
           description: "hand off",
           run: async (_args, control) => {
-            await control.newSession({
-              continueWithSeed: true,
-              fill: () => ({
-                seed: { customType: "seed", text: "handoff" },
-                followUps: [{ text: "/review src/a.ts", images: [image] }],
-                editorText: "draft",
-              }),
-            });
+            await control.newSession({ continueWithSeed: true, fill });
           },
         });
       };
@@ -791,7 +783,7 @@ describe("pi adapter conformance", () => {
       await bind();
       await runtime.session.prompt("/handoff");
       await vi.waitFor(() => {
-        expect(faux.state.callCount).toBe(2);
+        expect(faux.state.callCount).toBe(replies.length);
       });
       await runtime.session.agent.waitForIdle();
 
@@ -806,6 +798,22 @@ describe("pi adapter conformance", () => {
         )
         .filter(([role]) => role !== "system");
 
+      runtime.session.dispose();
+
+      return { edited, messages };
+    };
+
+    it("fills a new session through the adapter: editor text, the seed's run, then an expanded template follow-up with its image", async () => {
+      const image = { data: "aW1n", mimeType: "image/png" };
+      const { edited, messages } = await fillNewSession(
+        () => ({
+          seed: { customType: "seed", text: "handoff" },
+          followUps: [{ text: "/review src/a.ts", images: [image] }],
+          editorText: "draft",
+        }),
+        ["seeded", "ok"],
+      );
+
       expect(edited).toEqual(["draft"]);
       expect(messages.map(([role]) => role)).toEqual(["custom", "assistant", "user", "assistant"]);
       expect(messages[0][1]).toBe("handoff");
@@ -813,8 +821,32 @@ describe("pi adapter conformance", () => {
         { type: "text", text: "Review src/a.ts closely." },
         { type: "image", ...image },
       ]);
+    });
 
-      runtime.session.dispose();
+    it("delivers follow-ups queued behind the seed's run as user messages in order, one turn each", async () => {
+      const { messages } = await fillNewSession(
+        () => ({
+          seed: { customType: "seed", text: "handoff" },
+          followUps: [
+            { text: "first", images: [] },
+            { text: "second", images: [] },
+          ],
+        }),
+        ["seeded", "one", "two"],
+      );
+
+      expect(messages.map(([role]) => role)).toEqual([
+        "custom",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+      ]);
+      expect([messages[2][1], messages[4][1]]).toEqual([
+        [{ type: "text", text: "first" }],
+        [{ type: "text", text: "second" }],
+      ]);
     });
 
     it("lets an input handler swallow a prompt before it runs, with its text, images, source and streaming state", async () => {

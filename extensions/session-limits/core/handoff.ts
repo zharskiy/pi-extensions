@@ -1,4 +1,4 @@
-import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
+import type { SessionInfo, UserMessage } from "../../../platform/pi-adapter/index.ts";
 import {
   type HandoffAudience,
   handoffPath as sharedHandoffPath,
@@ -23,19 +23,30 @@ export const HELD_HEADING = "Batch results that arrived while the handoff was pe
 export const withLateResults = (text: string, late: string[]) =>
   late.length === 0 ? text : [text.trim(), HELD_HEADING, ...late].join("\n\n");
 
-export const USER_HEADING =
-  "Messages the user sent while the handoff was pending. They are the user's latest instructions and take precedence over the handoff's Next section:";
-
 export const joinParagraphs = (texts: string[]) =>
   texts
     .map((text) => text.trim())
     .filter(Boolean)
     .join("\n\n");
 
-export const withUserMessages = (text: string, messages: string[]) => {
-  const joined = joinParagraphs(messages);
+const isCommand = (text: string) => text.trimStart().startsWith("/");
 
-  return joined ? [text.trim(), USER_HEADING, joined].join("\n\n") : text;
+const asSent = (message: UserMessage): UserMessage =>
+  isCommand(message.text) ? { ...message, text: message.text.trimStart() } : message;
+
+const merged = (first: UserMessage, next: UserMessage): UserMessage => ({
+  text: joinParagraphs([first.text, next.text]),
+  images: [...first.images, ...next.images],
+});
+
+const startsPrompt = (message: UserMessage, index: number, messages: UserMessage[]) =>
+  index === 0 || isCommand(message.text) || isCommand(messages[index - 1]?.text ?? "");
+
+export const userPrompts = (messages: UserMessage[]) => {
+  const sent = messages.map(asSent);
+  const starts = sent.flatMap((message, index) => (startsPrompt(message, index, sent) ? [index] : []));
+
+  return starts.map((start, at) => sent.slice(start, starts[at + 1]).reduce(merged));
 };
 
 type SessionSource = { file?: string; manual: boolean; focus?: string };

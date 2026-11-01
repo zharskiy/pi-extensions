@@ -8,9 +8,9 @@ import {
   handoffPath,
   MAIN_AUDIENCE,
   sessionPreface,
+  userPrompts,
   validateMainHandoff,
   withLateResults,
-  withUserMessages,
 } from "../core/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
@@ -109,19 +109,47 @@ describe("withLateResults", () => {
   });
 });
 
-describe("withUserMessages", () => {
-  it("leaves the handoff alone without user messages", () => {
-    expect(withUserMessages("## Status\ndone\n", [])).toBe("## Status\ndone\n");
+describe("userPrompts", () => {
+  const image = { data: "aW1n", mimeType: "image/png" };
+
+  it("joins plain messages into one prompt, in order, with every image", () => {
+    expect(
+      userPrompts([
+        { text: " a ", images: [image] },
+        { text: "", images: [image] },
+        { text: "b", images: [] },
+      ]),
+    ).toEqual([{ text: "a\n\nb", images: [image, image] }]);
   });
 
-  it("appends the user's trimmed, non-empty messages after the handoff, in order", () => {
-    const text = withUserMessages("## Status\ndone\n", [" a ", "", "b"]);
+  it("keeps a slash command as a prompt of its own so pi still expands it", () => {
+    const prompts = userPrompts([
+      { text: "a", images: [] },
+      { text: "/review x", images: [] },
+      { text: "b", images: [] },
+      { text: "c", images: [] },
+    ]);
 
-    expect(text.startsWith("## Status\ndone\n\n")).toBe(true);
-    expect(text.endsWith("\n\na\n\nb")).toBe(true);
+    expect(prompts.map((prompt) => prompt.text)).toEqual(["a", "/review x", "b\n\nc"]);
   });
 
-  it("leaves the handoff alone when every message is blank", () => {
-    expect(withUserMessages("x", [" ", ""])).toBe("x");
+  it("keeps an images-only message after a slash command as a prompt of its own", () => {
+    expect(
+      userPrompts([
+        { text: "/review x", images: [] },
+        { text: "", images: [image] },
+      ]),
+    ).toEqual([
+      { text: "/review x", images: [] },
+      { text: "", images: [image] },
+    ]);
+  });
+
+  it("sends a slash command typed after spaces from its slash, so pi expands it", () => {
+    expect(userPrompts([{ text: "  /review x", images: [] }])).toEqual([{ text: "/review x", images: [] }]);
+  });
+
+  it("sends nothing without messages", () => {
+    expect(userPrompts([])).toEqual([]);
   });
 });
