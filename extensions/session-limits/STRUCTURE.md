@@ -18,7 +18,7 @@ extensions/session-limits/
 │   └── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
-│   ├── kept-entries.test.ts    the kept-message block (background from the first column, text after the pad, full-width rows) and the kept entries' fallbacks
+│   ├── kept-entries.test.ts    the kept-message block (background from the first column, text after the pad, full-width rows, the same rows as pi's user message through the adapter) and the kept entries' fallbacks
 │   ├── handoff.test.ts         path, validation, main audience, session preface, late results and user messages
 │   ├── limits.test.ts          the flow on a fake host, including the instruction's no-reply closing, the pending signal, held results in the seed and user messages kept during a handoff (chat entries, notices, new session prompts, editor restore)
 │   ├── publish.test.ts         the limits published on session start

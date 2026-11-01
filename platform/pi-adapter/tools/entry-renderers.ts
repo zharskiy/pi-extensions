@@ -16,11 +16,16 @@ const indentLines = (lines: string[], pad: number, width: number) => {
   );
 };
 
-const paddedComponent = (pad: () => number, draw: (width: number) => string[]): Component => ({
+const paddedComponent = (
+  pad: () => number,
+  flush: boolean,
+  draw: (width: number, pad: number) => string[],
+): Component => ({
   render: (width) => {
-    const shift = pad();
+    const read = pad();
+    const shift = flush ? 0 : read;
 
-    return indentLines(draw(Math.max(1, width - shift)), shift, width);
+    return indentLines(draw(Math.max(1, width - shift), read), shift, width);
   },
   invalidate: () => {},
 });
@@ -48,17 +53,17 @@ export const entryHost = (
       shared.entries = shared.entries.filter((entry) => entry.owner !== owner);
     },
     registerEntryRenderer: (customType, render: EntryRender, { flush = false }: EntryOptions = {}) => {
-      pi.registerEntryRenderer(customType, (entry, options, theme: Theme) => {
-        const draw = (width: number) =>
-          render(entry.data, width, options.expanded, themeLike(theme), entryPad());
-
-        return paddedComponent(flush ? () => 0 : entryPad, draw);
-      });
+      pi.registerEntryRenderer(customType, (entry, options, theme: Theme) =>
+        paddedComponent(entryPad, flush, (width, pad) =>
+          render(entry.data, width, options.expanded, themeLike(theme), pad),
+        ),
+      );
     },
     registerMessageRenderer: (customType, render: MessageRender) => {
       const piRender: PiMessageRenderer = (message, options, theme: Theme) =>
         paddedComponent(
           () => options.outputPad,
+          false,
           (width) =>
             render(
               { text: messageText(message.content), details: message.details },

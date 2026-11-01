@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 import type { RunMode, ToolSpec } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
@@ -1498,10 +1498,14 @@ describe("messages typed during a handoff", () => {
     host.input("first");
 
     const entry = host.chat.at(-1);
-    const lines =
-      entry?.kind === "entry" ? host.renderEntry(entry.customType, entry.data, { width: 20, pad: 2 }) : [];
 
-    expect(lines).toEqual(["".padEnd(20), "  first".padEnd(20), "".padEnd(20)]);
+    assert(entry?.kind === "entry");
+
+    expect(host.renderEntry(entry.customType, entry.data, { width: 20, pad: 2 })).toEqual([
+      "".padEnd(20),
+      "  first".padEnd(20),
+      "".padEnd(20),
+    ]);
   });
 
   it("draws one rule for several messages kept while the switch waits", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
+import { renderPiEntry, renderPiUserMessage } from "../../../test/framework/pi/index.ts";
 import { keptMessage, keptRule } from "../ui/kept-entries.ts";
 
 const backgroundTheme: ThemeLike = {
@@ -15,6 +16,14 @@ describe("kept message", () => {
     expect(lines.every((line) => line.startsWith("[userMessage]") && line.endsWith("[/]"))).toBe(true);
     expect(lines[0]).toBe(`[userMessage]${" ".repeat(10)}[/]`);
     expect(lines[1]?.startsWith("[userMessage] <userMessageText>hi</>")).toBe(true);
+  });
+
+  it("draws the same rows as pi's own user message through the adapter", () => {
+    [1, 2].forEach((pad) => {
+      expect(
+        renderPiEntry(keptMessage, { text: "hello there", images: 0 }, { width: 24, pad, flush: true }),
+      ).toEqual(renderPiUserMessage("hello there", { width: 24, pad }));
+    });
   });
 
   it("starts the text after pi's pad and keeps a blank row above and below", () => {
