@@ -1491,6 +1491,19 @@ describe("messages typed during a handoff", () => {
     expect(chat(host)).toEqual([KEPT, "first", "second | 2 images"]);
   });
 
+  it("draws a kept message flush with the chat, its text after pi's pad", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("first");
+
+    const entry = host.chat.at(-1);
+    const lines =
+      entry?.kind === "entry" ? host.renderEntry(entry.customType, entry.data, { width: 20, pad: 2 }) : [];
+
+    expect(lines).toEqual(["".padEnd(20), "  first".padEnd(20), "".padEnd(20)]);
+  });
+
   it("draws one rule for several messages kept while the switch waits", () => {
     const { host, turn, saveHandoff, busy } = setup();
 

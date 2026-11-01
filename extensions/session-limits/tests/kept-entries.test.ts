@@ -9,24 +9,30 @@ const backgroundTheme: ThemeLike = {
 };
 
 describe("kept message", () => {
-  it("draws the text on pi's user message background, every row as wide as the entry", () => {
-    const lines = keptMessage({ text: "hi", images: 0 }, 10, false, backgroundTheme);
+  it("paints pi's user message background over every full-width row, from the first column", () => {
+    const lines = keptMessage({ text: "hi", images: 0 }, 10, false, backgroundTheme, 1);
 
     expect(lines.every((line) => line.startsWith("[userMessage]") && line.endsWith("[/]"))).toBe(true);
-    expect(lines.join("\n")).toContain("<userMessageText>hi</>");
-    expect(keptMessage({ text: "hi", images: 0 }, 10, false, plainTheme).map((line) => line.length)).toEqual([
-      10, 10, 10,
+    expect(lines[0]).toBe(`[userMessage]${" ".repeat(10)}[/]`);
+    expect(lines[1]?.startsWith("[userMessage] <userMessageText>hi</>")).toBe(true);
+  });
+
+  it("starts the text after pi's pad and keeps a blank row above and below", () => {
+    expect(keptMessage({ text: "hi", images: 0 }, 10, false, plainTheme, 2)).toEqual([
+      " ".repeat(10),
+      "  hi      ",
+      " ".repeat(10),
     ]);
   });
 
-  it("wraps long text and adds a muted image count", () => {
-    const lines = keptMessage({ text: "one two three", images: 2 }, 10, false, plainTheme);
+  it("wraps long text inside the pad on both sides and adds a muted image count", () => {
+    const lines = keptMessage({ text: "one two three", images: 2 }, 10, false, plainTheme, 1);
 
-    expect(lines.map((line) => line.trim()).filter(Boolean)).toEqual(["one two", "three", "2 images"]);
+    expect(lines).toEqual([" ".repeat(10), " one two  ", " three    ", " 2 images ", " ".repeat(10)]);
   });
 
   it("draws nothing for data it does not know", () => {
-    expect(keptMessage({ text: 1 }, 10, false, plainTheme)).toEqual([]);
-    expect(keptRule({ state: "other" }, 10, false, plainTheme)).toEqual([]);
+    expect(keptMessage({ text: 1 }, 10, false, plainTheme, 1)).toEqual([]);
+    expect(keptRule({ state: "other" }, 10, false, plainTheme, 1)).toEqual([]);
   });
 });
