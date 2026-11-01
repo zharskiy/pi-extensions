@@ -4,6 +4,7 @@ import type {
   CustomMessage,
   RoutedMessage,
 } from "../../../../platform/pi-adapter/index.ts";
+import { counted } from "../../../../platform/shared/index.ts";
 import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
@@ -11,6 +12,16 @@ export const MAIN_CALLER = "main";
 export type AgentState = "queued" | "running" | "grace" | "done" | "failed" | "stopped" | "handoff";
 
 export const isClosed = (state: AgentState) => state !== "queued" && state !== "running" && state !== "grace";
+
+const WAITING = "waiting for";
+
+export const HELD_ACTIVITY = `handoff: ${WAITING} batches`;
+
+export const waitingActivity = (ids: string[]) =>
+  ids.length > 0 ? `${WAITING} ${counted(ids.length, "agent")}: ${ids.join(", ")}` : undefined;
+
+export const isWaitingActivity = (activity: string | undefined) =>
+  activity?.startsWith(`${WAITING} `) === true;
 
 export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord => {
   const successor = record.successorId ? registry.get(record.successorId) : undefined;

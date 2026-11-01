@@ -28,6 +28,7 @@ export const createLiveAgentRuntime = (
       sessionSkillFiles: () => parent.skillFiles ?? [],
       activeTools: () => PI_DEFAULT_TOOLS.map((name) => ({ name, path: `builtin:${name}` })),
       mcpDisabled: () => false,
+      reportError: (message) => console.error(message),
     },
     options,
   );

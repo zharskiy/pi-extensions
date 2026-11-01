@@ -45,6 +45,23 @@ describe("usage", () => {
     expect(totals.totalTokens).toBe(10);
   });
 
+  it("counts a usage entry without cost or token fields as zero instead of throwing", () => {
+    const totals = sumUsage([
+      { type: "message", message: { role: "assistant", usage: usage(1) } },
+      { type: "message", message: { role: "assistant", usage: { input: 3, output: 2 } } },
+      { type: "usage", usage: { cost: { total: 2 } } },
+    ]);
+
+    expect(totals).toEqual({
+      input: 4,
+      output: 3,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 3 },
+    });
+  });
+
   it("sums only assistant messages for the request usage, leaving warm-ups, summaries and tool results out", () => {
     const request = (input: number) => ({ ...usage(0), input, cacheRead: input * 2, cacheWrite: 1 });
 
