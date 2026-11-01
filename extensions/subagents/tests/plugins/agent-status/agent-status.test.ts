@@ -32,7 +32,9 @@ describe("agent_status", () => {
     const registry = harness.services.require("registry");
     const [record] = registry.list();
 
-    expect(snapshotLine(snapshotOf(record, Date.now()))).toContain(`(scout, ${record.model}) running`);
+    expect(snapshotLine(snapshotOf(record, Date.now(), { limit: 100_000 }))).toContain(
+      `(scout, ${record.model}) running`,
+    );
   });
 
   it("returns a snapshot for one or several agents in one call", async () => {
@@ -72,14 +74,14 @@ describe("agent_status", () => {
       state: "running",
       tokens: 2_000,
       toolCalls: 1,
-      contextPercent: 15,
+      context: { tokens: 30_000, limit: 100_000 },
       lastLine: "found the handler",
     });
     expect(Object.keys(snapshot ?? {}).sort()).toEqual(
       [
         "agent",
         "chainIndex",
-        "contextPercent",
+        "context",
         "cost",
         "description",
         "elapsedMs",
@@ -101,7 +103,7 @@ describe("agent_status", () => {
     expect(result.details?.agents).toHaveLength(2);
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
     expect(result.text).toContain(`${first.id} (scout, ${first.model}) running`);
-    expect(result.text).toContain(" · 1 call · 2.0k tokens · 15% context");
+    expect(result.text).toContain(" · 1 call · 2.0k tokens · working context 30.0k of 100k");
     expect(result.text).toContain(" · 0 calls · 0 tokens · context n/a");
     expect(result.text).toContain("ghost-0000: unknown agent");
 
@@ -216,7 +218,7 @@ describe("agent_status rows", () => {
     tokens: 12_300,
     toolCalls: 4,
     cost: 0.04,
-    contextPercent: 20,
+    context: { tokens: 20_000, limit: 100_000 },
     lastLine: "",
     chainIndex: 1,
     ...patch,

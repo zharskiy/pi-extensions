@@ -6,14 +6,8 @@ import {
   type ThemeLike,
   type ThemeToken,
 } from "../../../platform/pi-adapter/index.ts";
-import {
-  DOT,
-  formatMoney,
-  formatTokens,
-  formatWindow,
-  type SpendingTotals,
-} from "../../../platform/shared/index.ts";
-import { keyHints } from "../../../platform/ui-kit/index.ts";
+import { DOT, formatMoney, formatTokens, type SpendingTotals } from "../../../platform/shared/index.ts";
+import { keyHints, limitFigure, limitTail } from "../../../platform/ui-kit/index.ts";
 import {
   type ContextBase,
   contextBase,
@@ -72,20 +66,9 @@ const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: Conte
     return [{ text: `${label} ${theme.fg("muted", "?")}`, drop: NEVER }];
   }
 
-  const count = formatTokens(context.tokens);
-  const of = `of ${formatWindow(base.base)}`;
-
-  const tone = base.level === "hard" ? "error" : base.level === "soft" ? "warning" : undefined;
-
-  const figure = (text: string) => {
-    const painted = theme.fg(tone ?? "text", text);
-
-    return tone === "error" ? theme.bold(painted) : painted;
-  };
-
   return [
-    { text: `${label} ${figure(count)}`, drop: NEVER },
-    { text: theme.fg(tone ?? "dim", of), drop: 5, tight: true },
+    { text: `${label} ${limitFigure(theme, base.level, formatTokens(context.tokens))}`, drop: NEVER },
+    { text: limitTail(theme, base.level, base.base), drop: 5, tight: true },
   ];
 };
 

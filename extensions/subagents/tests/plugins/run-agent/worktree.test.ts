@@ -190,7 +190,7 @@ describe("worktree agents", () => {
       base,
       cwd: path,
     });
-    expect(snapshotLine(snapshotOf(current(record.id), Date.now()))).toContain(
+    expect(snapshotLine(snapshotOf(current(record.id), Date.now(), { limit: 100_000 }))).toContain(
       `  worktree: ${path} (branch ${branch})`,
     );
   });
@@ -206,7 +206,9 @@ describe("worktree agents", () => {
       "removed",
     );
     expect(hiddenMessageTexts(host)[0]).toContain("Worktree: removed");
-    expect(snapshotLine(snapshotOf(current(record.id), Date.now()))).toContain("  worktree: removed");
+    expect(snapshotLine(snapshotOf(current(record.id), Date.now(), { limit: 100_000 }))).toContain(
+      "  worktree: removed",
+    );
   });
 
   it("removes the worktree but keeps the branch when the agent committed", async () => {

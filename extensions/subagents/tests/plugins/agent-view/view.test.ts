@@ -39,7 +39,9 @@ import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { ViewData } from "../../../core/agent-view/source.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
+import { agentLimit } from "../../../core/model/context-limit.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../core/model/paths.ts";
+import { defaultSettings } from "../../../core/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createAgentView, headerLines } from "../../../ui/agent-view/view.ts";
 import { agentRecord, newAgentInput } from "../../support/agent-records.ts";
@@ -49,6 +51,9 @@ import { createHarness, spawnAgents } from "../../support/subagents-harness.ts";
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
 
 const RECORD_ENTRY = promptRecordEntry(NAMESPACE);
+
+const limitOf = (record: AgentRecord) =>
+  agentLimit(record.contextLimit, record.context?.window ?? 0, { ...defaultSettings(), reserveTokens: 0 });
 
 initPiRenderTheme();
 initPiKeybindings();
@@ -159,7 +164,7 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
           return current;
         },
         back: options.back ?? false,
-        reserveTokens: 0,
+        limit: limitOf,
         stop: options.stop ?? (() => undefined),
         watch: (_tickMs, onChange) => {
           changed = onChange;
@@ -460,7 +465,7 @@ describe("agent view header", () => {
     });
 
   const header = (record: AgentRecord, theme: ThemeLike = plainTheme, width = 100, chain: string[] = []) =>
-    headerLines({ record, chain }, theme, width, 0, 0);
+    headerLines({ record, chain }, theme, width, 0, limitOf);
 
   it("renders the header per state", () => {
     const table: [Partial<AgentRecord>, string, string][] = [
@@ -516,7 +521,7 @@ describe("agent view header", () => {
     ]);
   });
 
-  it("wraps a long error and adds the context share to the receipt", () => {
+  it("wraps a long error and adds the working context to the receipt", () => {
     const error =
       "npm test failed twice after the redirect change; the session cookie is not set on the callback route";
     const record = base({
@@ -530,7 +535,7 @@ describe("agent view header", () => {
     });
 
     expect(header(record, plainTheme, 80).slice(1, 5)).toEqual([
-      " 2m 10s · 31 calls · 52.4k tokens · $0.21 · 64% context",
+      " 2m 10s · 31 calls · 52.4k tokens · $0.21 · working context 64.0k of 100k",
       " provider/model · id explorer-1",
       " npm test failed twice after the redirect change; the session cookie is not set",
       " on the callback route",
@@ -601,7 +606,7 @@ describe("agent view header", () => {
     expect(lines.at(-1)).toBe(RULE(40));
   });
 
-  it("omits zero tokens and an unknown context share", () => {
+  it("omits zero tokens and an unknown working context", () => {
     const record = base({
       toolCalls: 4,
       tokens: 0,
@@ -625,9 +630,68 @@ describe("agent view header", () => {
     expect(lines()[1]).toBe(" ⠋ explorer #2  Map the auth module");
     expect(lines()[3]).toBe(" model n/a · id explorer-1");
 
-    const chained = headerLines({ record, chain: ["explorer-0001", record.id] }, plainTheme, 100, 0, 0);
+    const chained = headerLines({ record, chain: ["explorer-0001", record.id] }, plainTheme, 100, 0, limitOf);
 
     expect(chained).toContain(" Chain explorer → explorer #2 (2 sessions) · viewing explorer #2");
+  });
+});
+
+describe("agent view context level", () => {
+  const atTokens = (tokens: number, patch: Partial<AgentRecord> = {}) =>
+    agentRecord({
+      id: "explorer-1",
+      toolCalls: 31,
+      tokens: 52_400,
+      cost: 0.21,
+      context: { tokens, window: 200_000, percent: tokens / 2_000 },
+      ...patch,
+    });
+
+  const receipt = (tokens: number, theme: ThemeLike = tokenTaggingTheme({ bold: true }), width = 200) =>
+    headerLines({ record: atTokens(tokens), chain: [] }, theme, width, 0, limitOf)[1];
+
+  const notice = (record: AgentRecord) =>
+    viewOf(fixture(), { record, theme: tokenTaggingTheme() }).lines().at(-3);
+
+  it("paints the working context as the main footer does: text, warning at the soft level, bold error at the limit", () => {
+    expect(receipt(50_000)).toMatch(/<dim>working context<\/> <text>50\.0k<\/> <dim>of 100k<\/>$/);
+    expect(receipt(85_000)).toMatch(/<dim>working context<\/> <warning>85\.0k<\/> <warning>of 100k<\/>$/);
+    expect(receipt(100_500)).toMatch(
+      /<dim>working context<\/> <b><error>100\.5k<\/><\/b> <error>of 100k<\/>$/,
+    );
+  });
+
+  it("drops the cost, calls and tokens before the working context on a narrow header", () => {
+    const narrow = receipt(85_000, plainTheme, 50);
+
+    expect(narrow).toBe(" Elapsed 0s · working context 85.0k of 100k");
+    expect(narrow).not.toContain("$0.21");
+  });
+
+  it("shows the main session's handoff notice above the hints at the soft level and at the limit", () => {
+    expect(notice(atTokens(50_000))).toBe("");
+    expect(notice(atTokens(85_000))).toBe(" <warning>» handoff at 100k tokens · 85.0k used</>");
+    expect(notice(atTokens(100_500))).toBe(" <warning>» handoff at 100k tokens · 100.5k used</>");
+  });
+
+  it("shows no handoff notice for a closed agent", () => {
+    expect(notice(atTokens(100_500, { state: "done", endedAt: 0 }))).toBe("");
+  });
+
+  it("lets a transient notice take the row while it lasts, then shows the handoff notice again", async () => {
+    const { view, lines } = viewOf(requestSession(), {
+      record: atTokens(85_000),
+      theme: tokenTaggingTheme(),
+    });
+
+    view.handleKey(char("c"));
+    await flushMicrotasks();
+
+    expect(lines().at(-3)).toBe(" <success>Copied the request</>");
+
+    view.handleKey(char("r"));
+
+    expect(lines().at(-3)).toBe(" <warning>» handoff at 100k tokens · 85.0k used</>");
   });
 });
 
@@ -980,7 +1044,7 @@ describe("agent view with live agents", () => {
     await flushMicrotasks();
     vi.advanceTimersByTime(350);
 
-    expect(plainLines(view.render(100))[2]).toMatch(/ · 85% context$/);
+    expect(plainLines(view.render(100))[2]).toMatch(/ · working context 85\.0k of 100k$/);
   });
 });
 
@@ -1033,7 +1097,7 @@ describe("agent view past sessions", () => {
     const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
     const unknown = await openFromManifest({ id: "explorer-dead", agent: "scout" });
 
-    expect(stored[2]).toMatch(/ · 3% context$/);
+    expect(stored[2]).toMatch(/ · working context [\d.]+k of 70k$/);
     expect(unknown[2]).not.toContain("context");
   });
 

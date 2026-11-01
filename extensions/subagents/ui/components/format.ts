@@ -2,7 +2,7 @@ import { PAD, type ThemeLike, type ThemeToken } from "../../../../platform/pi-ad
 import { DOT } from "../../../../platform/shared/index.ts";
 import { plainReceipt, type ReceiptKind, type ReceiptSegment } from "../../core/components/receipt.ts";
 
-const DROP_ORDER: readonly ReceiptKind[] = ["activity", "cost", "calls", "tokens"];
+const DROP_ORDER: readonly ReceiptKind[] = ["activity", "cost", "calls", "tokens", "context"];
 
 const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
   DROP_ORDER.reduce<readonly ReceiptSegment[]>(
@@ -13,7 +13,7 @@ const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: Th
 
 export const receiptText = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
   fitReceipt(segments, room, theme)
-    .map((part) => theme.fg(part.token, part.text))
+    .map((part) => part.painted ?? theme.fg(part.token, part.text))
     .join(theme.fg("muted", DOT));
 
 type Painted = readonly [text: string, paint: (text: string) => string];

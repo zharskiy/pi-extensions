@@ -7,12 +7,14 @@ import {
   snapshotOf,
   unknownText,
 } from "../../core/agent-status/snapshot.ts";
-import { type AgentRegistry, chainTerminal } from "../../core/model/agent-record.ts";
+import { type AgentRecord, type AgentRegistry, chainTerminal } from "../../core/model/agent-record.ts";
+import { agentLimit } from "../../core/model/context-limit.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { statusCall, statusResult } from "../../ui/agent-status/status-text.ts";
 
 type StatusScope = {
   registry: AgentRegistry;
+  limit: (record: AgentRecord) => number;
   callerId?: string;
   expandKey: () => string;
 };
@@ -50,7 +52,9 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
       .flatMap((id) => {
         const record = scope.registry.get(id);
 
-        return record ? [snapshotOf(chainTerminal(scope.registry, record), now, id)] : [];
+        const terminal = record && chainTerminal(scope.registry, record);
+
+        return terminal ? [snapshotOf(terminal, now, { limit: scope.limit(terminal), requestedId: id })] : [];
       })
       .filter((snapshot, index, all) => all.findIndex((other) => other.id === snapshot.id) === index);
 
@@ -67,14 +71,16 @@ const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatus
 export const agentStatusPlugin: Plugin = {
   id: "agent-status",
   requires: ["agent-registry"],
-  enable: ({ host, services }) => {
+  enable: ({ host, settings, services }) => {
     const registry = services.require("registry");
     const expandKey = () => host.ui.keyText(EXPAND_BINDING);
+    const limit = (record: AgentRecord) =>
+      agentLimit(record.contextLimit, record.context?.window ?? 0, settings).request;
 
-    host.registerTool(statusTool({ registry, expandKey }));
+    host.registerTool(statusTool({ registry, limit, expandKey }));
 
     services.provide("agentStatus", {
-      toolFor: (callerId): AnyToolSpec => statusTool({ registry, callerId, expandKey }),
+      toolFor: (callerId): AnyToolSpec => statusTool({ registry, limit, callerId, expandKey }),
     });
   },
 };

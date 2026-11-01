@@ -4,9 +4,9 @@ import type { AgentRecord, AgentState } from "../model/agent-record.ts";
 
 export const formatCalls = (count: number): string => counted(count, "call");
 
-export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity";
+export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity" | "context";
 
-export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken };
+export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken; painted?: string };
 
 type ReceiptFacts = {
   word?: string;
@@ -73,9 +73,6 @@ export const receipt = (facts: ReceiptFacts): ReceiptSegment[] => {
 
 export const plainReceipt = (segments: readonly ReceiptSegment[]) =>
   segments.map((part) => part.text).join(DOT);
-
-export const formatCtx = (percent: number | null | undefined): string | undefined =>
-  percent === null || percent === undefined ? undefined : `${Math.round(percent)}% context`;
 
 export const singleLine = (text: string): string => text.replace(/\s+/g, " ").trim();
 

@@ -48,7 +48,7 @@ extensions/subagents/
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
-│   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
+│   │   ├── receipt.ts                     # formatCalls, receipt segments (a pre-painted one allowed), plainReceipt, agentReceipt, firstLine, cutChars
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
@@ -70,7 +70,7 @@ extensions/subagents/
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
-│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf, snapshotLine, agent_status params and details, unknownText
+│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf (with the effective limit), snapshotLine (working context X of Y), agent_status params and details, unknownText
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
@@ -90,7 +90,7 @@ extensions/subagents/
 │       └── text.ts                        # readableText, pageText, supported content types
 ├── ui/
 │   ├── components/
-│   │   ├── format.ts                      # receiptText, truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
+│   │   ├── format.ts                      # receiptText (drops activity, cost, calls, tokens, then context), truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
 │   │   ├── state-text.ts                  # state marks, glyphs, spinner, state words, stopWords
 │   │   ├── agent-row.ts                   # the shared agent row: rowLayout, renderRow, renderRows, modelLabel
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
@@ -113,7 +113,7 @@ extensions/subagents/
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
 │       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
 │       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
-│       ├── view.ts                        # createAgentView, headerLines: one agent's chain transcript in one pane, rebuilt when an earlier link's items change (notice row always reserved, clipboard dep, c key)
+│       ├── view.ts                        # createAgentView, headerLines: one agent's chain transcript in one pane, rebuilt when an earlier link's items change (notice row always reserved, the handoff notice at the soft level, the working context in the receipt, limit and clipboard deps, c key)
 │       └── request-block.ts               # requestLines, requestText: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order

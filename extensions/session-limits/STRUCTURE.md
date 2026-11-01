@@ -15,7 +15,7 @@ extensions/session-limits/
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
 │   ├── kept-entries.ts         keptRule (the adapter's labelledRule and its labels) and keptMessage (pi's user message look, full width with pi's pad as its margin) entry renderers
-│   └── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
+│   └── threshold-text.ts       segmentFor: threshold warning (ui-kit handoffNotice) and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── kept-entries.test.ts    the kept-message block (background from the first column, text after the pad, full-width rows, the same rows as pi's user message through the adapter) and the kept entries' fallbacks

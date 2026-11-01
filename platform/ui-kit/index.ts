@@ -11,6 +11,7 @@ export {
   type KeyHint,
   keyHints,
 } from "./key-hints.ts";
+export { handoffNotice, limitFigure, limitTail, showsHandoffNotice } from "./limit-tone.ts";
 export {
   CANCEL_HINT,
   clampIndex,

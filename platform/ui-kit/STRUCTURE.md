@@ -10,6 +10,7 @@
 - `tabs.ts`: the tab bar, the grouped tab bar and Tab/←→ keys (questionnaire, `/agents setup`).
 - `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window, `{ slots: true, empty }` for a fixed-height window with its `(none available)` or other empty text, `moreRow` for one `↑ N more`/`↓ N more` row) and `multiSelectForm`; `initialMulti`, `scrollWindow` and the hints are private to the file.
 - `cache-tone.ts`: the cache rate's colour thresholds and the coloured percentage.
+- `limit-tone.ts`: the context limit's look shared by the footer, session-limits and the subagents agent view: `limitTone` (`warning` at soft, `error` at hard), `limitFigure` (the token figure, bold at hard), `limitTail` (`of <limit>`), `showsHandoffNotice` and `handoffNotice` (`» handoff at <limit> tokens · <used> used`, `warning`).
 - `tests/handoff-rows.test.ts`: `handoff-rows.ts`.
 - `tests/row.test.ts`: `row.ts` and `glyphs.ts`.
 - `tests/layout.test.ts`: `key-hints.ts` and the `shared` text layout it builds on.
@@ -19,3 +20,4 @@
 - `tests/multi-select.test.ts`: the `multi-select.ts` lines and keys.
 - `tests/multi-select-form.test.ts`: `multiSelectForm`.
 - `tests/cache.test.ts`: `cache-tone.ts` and the `shared` cache hit rate.
+- `tests/limit-tone.test.ts`: `limit-tone.ts`.
