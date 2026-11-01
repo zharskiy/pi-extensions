@@ -16,7 +16,7 @@ const SEED_TITLE = "handoff";
 
 const SESSION_SEED_TITLE = "handoff from the previous session";
 
-export const firstSentence = (text: string) => {
+const firstSentence = (text: string) => {
   const [line = ""] = text.trim().split("\n");
   const end = /[.!?](\s|$)/.exec(line);
 

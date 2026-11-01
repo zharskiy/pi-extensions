@@ -9,9 +9,9 @@ export type StepLimit = HandoffLimit & {
   maxTurnsAfterRequest: number;
 };
 
-type LimitState = { warned: boolean; requested: boolean; turnsSinceRequest: number };
+type LimitState = { requested: boolean; turnsSinceRequest: number };
 
-type LimitStep = "none" | "warn" | "request" | "abort";
+type LimitStep = "none" | "request" | "abort";
 
 export const effectiveContextLimit = (limit: number, window: number, reserveTokens: number) => {
   if (window <= 0 || limit <= UNKNOWN_LIMIT) {
@@ -48,9 +48,5 @@ export const limitStep = (tokens: number, limit: StepLimit, state: LimitState): 
     return shouldAbort(tokens, limit, state.turnsSinceRequest) ? "abort" : "none";
   }
 
-  if (tokens >= limit.request) {
-    return "request";
-  }
-
-  return !state.warned && tokens >= limit.warn ? "warn" : "none";
+  return tokens >= limit.request ? "request" : "none";
 };

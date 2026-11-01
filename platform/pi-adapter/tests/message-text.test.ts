@@ -64,14 +64,14 @@ describe("finalRunTexts with custom messages", () => {
     expect(finalRunTexts(entries)).toEqual(["first", "done"]);
   });
 
-  it("ignores a hidden custom message as a run boundary", () => {
+  it("starts a run at a hidden custom message, so a wake's run leaves out the previous reply", () => {
     const entries = [
       message("assistant", text("old answer")),
       custom(false),
       message("assistant", text("next")),
     ];
 
-    expect(finalRunTexts(entries)).toEqual(["old answer", "next"]);
+    expect(finalRunTexts(entries)).toEqual(["next"]);
   });
 });
 

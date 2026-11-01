@@ -11,7 +11,6 @@ import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { routedOf, wakesOf } from "../../support/child-messages.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const plugins = [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentStatusPlugin];
@@ -116,14 +115,15 @@ describe("nested agents", () => {
     runtime.child(scout.id).finish("a is in src/a.ts");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toEqual([]);
+    expect(child.wakes).toEqual([]);
 
     runtime.child(reviewer.id).finish("b looks fine");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toHaveLength(1);
-    expect(wakesOf(child)[0]).toContain("a is in src/a.ts");
-    expect(wakesOf(child)[0]).toContain("b looks fine");
+    expect(child.wakes).toHaveLength(1);
+    expect(child.wakes[0]?.customType).toBe("pi-subagents:wake");
+    expect(child.wakes[0]?.text).toContain("a is in src/a.ts");
+    expect(child.wakes[0]?.text).toContain("b looks fine");
     expect(hiddenMessageTexts(host)).toEqual([]);
 
     host.settle();
@@ -133,7 +133,7 @@ describe("nested agents", () => {
     expect(registry.get(record.id)?.state).toBe("done");
     expect(hiddenMessageTexts(host)).toHaveLength(1);
     expect(hiddenMessageTexts(host)[0]).toContain("fixed it");
-    expect(wakesOf(child)).toHaveLength(1);
+    expect(child.wakes).toHaveLength(1);
   });
 
   it("clears the activity while an agent waits for its own batch", async () => {
@@ -163,12 +163,12 @@ describe("nested agents", () => {
     runtime.child(scout.id).finish("found a");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toEqual([]);
+    expect(child.wakes).toEqual([]);
 
     child.finish("turn over");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toHaveLength(1);
+    expect(child.wakes).toHaveLength(1);
     expect(registry.get(record.id)?.state).toBe("running");
   });
 
@@ -192,7 +192,7 @@ describe("nested agents", () => {
     runtime.child(scout.id).finish("found a");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toHaveLength(1);
+    expect(child.wakes).toHaveLength(1);
 
     host.settle();
     child.finish("all done");
@@ -233,13 +233,13 @@ describe("nested agents", () => {
     await flushMicrotasks();
 
     expect(registry.get(scout.id)?.state).toBe("stopped");
-    expect(wakesOf(child)).toEqual([]);
+    expect(child.wakes).toEqual([]);
 
     child.finish("turn over");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toHaveLength(1);
-    expect(wakesOf(child)[0]).toContain(`${scout.id} (scout) - stopped`);
+    expect(child.wakes).toHaveLength(1);
+    expect(child.wakes[0]?.text).toContain(`${scout.id} (scout) - stopped`);
 
     await runMain([{ agent: "scout", task: "later" }]);
 
@@ -253,7 +253,7 @@ describe("nested agents", () => {
     expect(registry.get(record.id)?.state).toBe("done");
     expect(registry.get(later.id)?.state).toBe("running");
     expect(runtime.children).toHaveLength(2);
-    expect(wakesOf(child)).toHaveLength(1);
+    expect(child.wakes).toHaveLength(1);
   });
 
   it("never wakes a child caller whose batch is open at shutdown", async () => {
@@ -267,7 +267,7 @@ describe("nested agents", () => {
     await host.shutdown("quit");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toEqual([]);
+    expect(child.wakes).toEqual([]);
   });
 
   it("records nested agents as interrupted, not stopped by the user, at shutdown", async () => {
@@ -303,17 +303,17 @@ describe("nested agents", () => {
     runtime.child(scout.id).finish("found a");
     await flushMicrotasks();
 
-    expect(routedOf(child).map((entry) => [entry.message.text, entry.delivery])).toEqual([
+    expect(child.messages.map((entry) => [entry.message.text, entry.delivery])).toEqual([
       ["first", "followUp"],
       ["second", "steer"],
     ]);
-    expect(wakesOf(child)).toEqual([]);
+    expect(child.wakes).toEqual([]);
 
     child.finish("read the messages");
     await flushMicrotasks();
 
-    expect(wakesOf(child)).toHaveLength(1);
-    expect(wakesOf(child)[0]).toContain("found a");
+    expect(child.wakes).toHaveLength(1);
+    expect(child.wakes[0]?.text).toContain("found a");
   });
 
   it("lets a child message only the agents it started", async () => {

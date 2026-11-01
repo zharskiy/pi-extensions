@@ -353,8 +353,17 @@ const scriptedSession = () => {
       options: { deliverAs?: string; triggerTurn?: boolean },
     ) => {
       const mode = options.deliverAs ?? (options.triggerTurn ? "trigger" : "append");
+      const hidden = message.display ? "" : " (hidden)";
 
-      calls.push(`custom ${message.customType} ${mode} ${message.content}`);
+      calls.push(`custom ${message.customType} ${mode} ${message.content}${hidden}`);
+
+      const error = mode === "trigger" ? promptError : undefined;
+
+      promptError = mode === "trigger" ? undefined : promptError;
+
+      if (error) {
+        throw error;
+      }
 
       if (mode === "steer" || mode === "followUp") {
         agentQueue.push(`${message.customType} ${message.content}`);
@@ -395,7 +404,7 @@ const scriptedSession = () => {
     leaveQueued: (text: string) => {
       queued.push(text);
     },
-    failNextPrompt: (error: Error) => {
+    failNextRun: (error: Error) => {
       promptError = error;
     },
     failBind: (error: Error) => {
@@ -424,28 +433,50 @@ describe("child prompting", () => {
     return { ...scripted, child, events };
   };
 
+  const wake = (text: string) => ({ customType: "pi-subagents:wake", text });
+
   it("queues messages on the running prompt even before pi reports streaming", async () => {
-    const { child, calls, settle } = await spawnScripted();
+    const { child, calls } = await spawnScripted();
 
     child.start("task");
     await child.send({ sender: "main", text: "hi" }, "steer");
-    await child.wake("more");
+    await child.wake(wake("more"));
 
-    expect(calls).toEqual(["prompt task", expect.stringMatching(/^steer .*hi/s), "followUp more"]);
-
-    settle();
-    await child.wake("again");
-
-    expect(calls.at(-1)).toBe("prompt again");
+    expect(calls).toEqual([
+      "prompt task",
+      expect.stringMatching(/^steer .*hi/s),
+      "custom pi-subagents:wake nextTurn more (hidden)",
+    ]);
   });
 
-  it("reports a wake whose prompt fails after the first turn", async () => {
-    const { child, events, settle, failNextPrompt } = await spawnScripted();
+  it("wakes an idle child with a hidden custom message that starts a run", async () => {
+    const { child, calls, settle } = await spawnScripted();
 
     child.start("task");
     settle();
-    failNextPrompt(new Error("auth expired"));
-    await child.wake("go on");
+    await child.wake(wake("again"));
+
+    expect(calls.at(-1)).toBe("custom pi-subagents:wake trigger again (hidden)");
+  });
+
+  it("re-sends a hidden wake still queued at settle as hidden", async () => {
+    const { child, calls, events, settle } = await spawnScripted();
+
+    child.start("task");
+    await child.wake(wake("more"));
+    settle();
+
+    expect(calls.at(-1)).toBe("custom pi-subagents:wake trigger more (hidden)");
+    expect(events).toEqual([]);
+  });
+
+  it("reports a wake whose run fails after the first turn", async () => {
+    const { child, events, settle, failNextRun } = await spawnScripted();
+
+    child.start("task");
+    settle();
+    failNextRun(new Error("auth expired"));
+    await child.wake(wake("go on"));
     await flushMicrotasks(1);
 
     expect(events).toEqual(["settled", "error Error: auth expired", "settled"]);
@@ -578,7 +609,7 @@ describe("child prompting", () => {
     const { child, calls } = await spawnScripted();
 
     await child.dispose();
-    await child.wake("too late");
+    await child.wake(wake("too late"));
     await child.send({ sender: "main", text: "hi" }, "steer");
 
     expect(calls).toEqual(["emit session_shutdown", "dispose"]);

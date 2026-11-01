@@ -1,6 +1,6 @@
 export { cachePercentText } from "./cache-tone.ts";
 export { MARKS, type Mark, markGlyph, markOf, pointerMark } from "./glyphs.ts";
-export { firstSentence, handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "./handoff-rows.ts";
+export { handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "./handoff-rows.ts";
 export {
   appendHint,
   countLine,

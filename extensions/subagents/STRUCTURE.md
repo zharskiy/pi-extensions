@@ -43,8 +43,7 @@ extensions/subagents/
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
-│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, StepLimit, limitStep (warn, request or abort)
-│   │   ├── child-messages.ts              # ROUTED_TYPE, BATCH_TYPE, NOTICE_SENDER, routedMessage, routedBody, details parsers: the custom messages the runner sends an agent
+│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
@@ -60,20 +59,18 @@ extensions/subagents/
 │   ├── agent-registry/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events
 │   ├── run-agent/
-│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (every message through sendCustom, routed ones as routedMessage), batch wakes as batchWake, the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn)
+│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn)
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, describeRunAgent
-│   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
+│   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
-│   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage, batchWake (the pi-subagents:batch wake with its batch ids and counts)
+│   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage
 │   │   ├── task.ts                        # composeTask: a first link's prompt, and the tail of a successor's seed (no handoff path; `Original task:`; batch results held during the predecessor's handoff)
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
 │   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf, snapshotLine, agent_status params and details, unknownText
-│   ├── limits/
-│   │   └── warning.ts                     # softWarning
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
@@ -99,8 +96,7 @@ extensions/subagents/
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
 │   ├── run-agent/
 │   │   ├── render.ts                      # renderBlock: the run_agent block, BlockHints
-│   │   ├── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
-│   │   └── message-rows.ts                # routedMessageRow, batchResultMessage: the agent view's rows for routed messages, the limit warning and batch wakes
+│   │   └── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
@@ -150,7 +146,6 @@ extensions/subagents/
         ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test/framework
         ├── live-harness.ts                # createLiveHarness over the default export: seed, agents, wakes, chains
         ├── routing-session.ts             # mainSessionPrompt, recordingTools: the routing eval's main prompt and run_agent stubs
-        ├── child-messages.ts              # wakesOf, routedOf: the batch wakes and routed messages a fake child received
         ├── agent-records.ts               # agentRecord, newAgentInput fixtures; AgentRecord and chain helpers for evals
         ├── agent-patch.ts                 # patchAgentFile, shippedGroup, modelForGroup: agent files for live tests
         ├── agent-patch.test.ts            # the agent file patcher

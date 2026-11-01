@@ -38,7 +38,7 @@ export type ChildSession = {
   ownUsage(): UsageTotals;
   lastText(): string;
   runTexts(): string[];
-  wake(text: string): Promise<void>;
+  wake(message: CustomMessage): Promise<void>;
 };
 
 export type SpawnSpec = {

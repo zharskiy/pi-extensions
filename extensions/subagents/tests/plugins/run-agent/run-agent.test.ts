@@ -10,7 +10,6 @@ import { createOutbox, joinTexts } from "../../../core/run-agent/outbox.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import { createSemaphore } from "../../../core/run-agent/semaphore.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { wakesOf } from "../../support/child-messages.ts";
 import { createHarness, PACKAGE_ROOT } from "../../support/subagents-harness.ts";
 
 const setup = (overrides = {}) => {
@@ -165,7 +164,7 @@ describe("run_agent batches", () => {
 
     expect(registry.list()[0].resultText).toBe("**Status:** done\nthe report");
     expect(hiddenMessageTexts(host)[0]).not.toContain("(shape: no Status line)");
-    expect(wakesOf(child)).toEqual([]);
+    expect(child.wakes).toEqual([]);
   });
 
   it("marks a result without a Status line with a shape note", async () => {

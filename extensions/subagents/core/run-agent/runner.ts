@@ -38,15 +38,14 @@ import {
   subagentNames,
 } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL } from "../model/agent-schema.ts";
-import { routedMessage } from "../model/child-messages.ts";
 import type { Bus } from "../model/events.ts";
 import { handoffService } from "../model/handoff.ts";
 import { agentsDirFor } from "../model/paths.ts";
 import type { Settings } from "../model/settings.ts";
 import { resolutionError } from "./model-text.ts";
-import { createOutbox, type Outbox } from "./outbox.ts";
+import { createOutbox, type Outbox, wakeMessage } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
-import { batchMessage, batchWake, pickResult, storeResult } from "./result.ts";
+import { batchMessage, pickResult, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
 import { composeTask } from "./task.ts";
 
@@ -243,7 +242,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     Array.from(batches.values()).some((batch) => batch.callerId === callerId);
 
   const deliver = (child: ChildSession, message: AgentMessage, delivery: MessageDelivery) =>
-    child.sendCustom("customType" in message ? message : routedMessage(message), delivery);
+    "customType" in message ? child.sendCustom(message, delivery) : child.send(message, delivery);
 
   const sendHeld = (live: Live, child: ChildSession) =>
     Promise.all(live.pending.splice(0).map((message) => deliver(child, message, "steer")));
@@ -294,7 +293,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.outbox ??= createOutbox({
       isBusy: () => live.turn !== "idle",
       deliver: (items) => {
-        void resume(callerId, (child) => child.sendCustom(batchWake(items), "followUp"));
+        void resume(callerId, (child) => child.wake(wakeMessage(items)));
       },
       onIdle: (handler) => {
         live.idleHandlers.push(handler);
