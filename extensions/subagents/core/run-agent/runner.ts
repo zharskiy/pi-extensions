@@ -74,9 +74,11 @@ type BatchOptions = { callerId: string };
 
 type StartedBatch = { batchId: string; records: AgentRecord[] };
 
+type StopOptions = { immediate?: boolean; reason?: string };
+
 export type Runner = AgentRunner & {
   startBatch(items: BatchItem[], options: BatchOptions): StartedBatch;
-  stop(id: string, options?: { immediate?: boolean }): Promise<boolean>;
+  stop(id: string, options?: StopOptions): Promise<boolean>;
   shutdown(reason: string): Promise<void>;
 };
 
@@ -106,6 +108,7 @@ type Live = {
   unsubscribe?: () => void;
   release?: () => void;
   graceTimer?: ReturnType<typeof setTimeout>;
+  stopReason?: string;
   answering: boolean;
   turn: "idle" | "waiting" | "running" | "held";
   handoff?: HeldHandoff;
@@ -118,6 +121,8 @@ type HeldHandoff = { text: string; validation: HandoffValidation };
 const failedStop = (reason: StopReason | undefined) => reason === "error" || reason === "aborted";
 
 const ABORT_WAIT_MS = 5_000;
+
+const USER_STOP = "stopped by the user";
 
 const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
@@ -587,7 +592,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    closeStopped(record, "stopped by the user");
+    closeStopped(record, lives.get(id)?.stopReason ?? USER_STOP);
     await releaseLive(id);
   };
 
@@ -982,12 +987,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return { batchId, records };
   };
 
-  const stopNow = async (record: AgentRecord) => {
+  const stopNow = async (record: AgentRecord, reason: string) => {
     const live = lives.get(record.id);
     const child = live?.child;
     const waitingForSlot = live !== undefined && !child && !live.release;
 
-    closeStopped(record, "stopped by the user");
+    closeStopped(record, reason);
 
     if (child) {
       await abortChild(child);
@@ -1006,7 +1011,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return record && chainTerminal(deps.registry, record);
   };
 
-  const stop = async (requestedId: string, options: { immediate?: boolean } = {}) => {
+  const stop = async (requestedId: string, options: StopOptions = {}) => {
     const record = terminalOf(requestedId);
 
     if (!record || isClosed(record.state)) {
@@ -1028,9 +1033,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const immediate =
       options.immediate === true || record.state !== "running" || deps.settings.stopGraceSeconds === 0;
 
+    const reason = options.reason ?? USER_STOP;
+
     if (immediate || !live || !child) {
-      return stopNow(record);
+      return stopNow(record, reason);
     }
+
+    live.stopReason = reason;
 
     releaseSlot(live);
     deps.registry.update(id, { state: "grace", graceEndsAt: undefined });
@@ -1106,7 +1115,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     open.forEach((record) => {
       if (record.state === "grace") {
-        closeStopped(record, `stopped by the user; ${reason} ended the grace period`);
+        const stopReason = lives.get(record.id)?.stopReason ?? USER_STOP;
+
+        closeStopped(record, `${stopReason}; ${reason} ended the grace period`);
         return;
       }
 

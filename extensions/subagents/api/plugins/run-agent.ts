@@ -31,7 +31,12 @@ import type { Plugin } from "../../core/model/plugin.ts";
 import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts, wakeMessage } from "../../core/run-agent/outbox.ts";
 import { createRunner } from "../../core/run-agent/runner.ts";
-import { describeRunAgent, messageAgentTool, runAgentTool } from "../../core/run-agent/tools.ts";
+import {
+  describeRunAgent,
+  messageAgentTool,
+  runAgentTool,
+  stopAgentTool,
+} from "../../core/run-agent/tools.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
 
 const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
@@ -140,6 +145,7 @@ export const runAgentPlugin: Plugin = {
         ...extra,
         runAgentTool(childDeps, description, record.id),
         messageAgentTool(childDeps, record.id),
+        stopAgentTool(childDeps, record.id),
       ];
 
       if (services.has("agentStatus")) {
@@ -237,6 +243,7 @@ export const runAgentPlugin: Plugin = {
 
     registerRunAgent();
     host.registerTool(messageAgentTool(toolDeps));
+    host.registerTool(stopAgentTool(toolDeps));
     host.onSessionStart(() => {
       registerRunAgent();
       host.setMainPrompt(services.has("agentStatus") ? `${mainPrompt}\n\n${statusPrompt}` : mainPrompt);

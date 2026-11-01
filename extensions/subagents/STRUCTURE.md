@@ -25,7 +25,7 @@ extensions/subagents/
 │   └── plugins/
 │       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
-│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count (answered at any assistant start), wakes held while a main-session handoff is pending (pi:handoff-pending, pi:held-results), main prompt, block invalidation
+│       ├── run-agent.ts                   # runner, run_agent/message_agent/stop_agent/handoff tools, outbox, background-work count (answered at any assistant start), wakes held while a main-session handoff is pending (pi:handoff-pending, pi:held-results), main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
@@ -60,7 +60,7 @@ extensions/subagents/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn)
-│   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, describeRunAgent
+│   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
@@ -96,7 +96,7 @@ extensions/subagents/
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
 │   ├── run-agent/
 │   │   ├── render.ts                      # renderBlock: the run_agent block, BlockHints
-│   │   └── pending-rows.ts                # pendingRows: run_agent and message_agent renderResult over renderBlock
+│   │   └── pending-rows.ts                # pendingRows: run_agent renderResult over renderBlock, message_agent and stop_agent error rows
 │   ├── agent-status/
 │   │   └── status-text.ts                 # statusCall, statusResult: the agent_status rows
 │   ├── agent-panel/
@@ -139,7 +139,7 @@ extensions/subagents/
     │   ├── interrupt/                     # interrupt.test.ts
     │   ├── limits/                        # limits.test.ts
     │   ├── run-agent/                     # run-agent, describe-run-agent, render, handoff, nesting, skills, models,
-    │   │                                  #   mcp, message-agent, spawn-cap, stop-grace, successor-chain, worktree, fetch-grant, background-work tests
+    │   │                                  #   mcp, message-agent, spawn-cap, stop-agent, stop-grace, successor-chain, worktree, fetch-grant, background-work tests
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
     └── support/                           # the one support folder test/evals/subagents/ may import
