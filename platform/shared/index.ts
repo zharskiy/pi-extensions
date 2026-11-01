@@ -38,6 +38,8 @@ export {
   type Limits,
   limitLevel,
   mainLimit,
+  WORKING_CONTEXT,
+  workingContextText,
 } from "./handoff/handoff-limit.ts";
 export {
   type HandoffAudience,

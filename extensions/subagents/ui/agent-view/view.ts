@@ -7,13 +7,21 @@ import {
   type ThemeToken,
   type ViewComponent,
 } from "../../../../platform/pi-adapter/index.ts";
-import { DOT, errorText } from "../../../../platform/shared/index.ts";
-import { countLine, type KeyHint, keyHints, preview, wrapChild } from "../../../../platform/ui-kit/index.ts";
+import { DOT, errorText, type HandoffLimit, workingContextText } from "../../../../platform/shared/index.ts";
+import {
+  countLine,
+  handoffNotice,
+  type KeyHint,
+  keyHints,
+  limitLine,
+  preview,
+  wrapChild,
+} from "../../../../platform/ui-kit/index.ts";
 import type { ViewData } from "../../core/agent-view/source.ts";
-import { agentReceipt, formatCtx, type ReceiptSegment, singleLine } from "../../core/components/receipt.ts";
+import { agentReceipt, type ReceiptSegment, singleLine } from "../../core/components/receipt.ts";
 import { tickFor } from "../../core/components/refresh.ts";
 import { type AgentRecord, isClosed, type Worktree } from "../../core/model/agent-record.ts";
-import { effectiveContextLimit } from "../../core/model/context-limit.ts";
+import { type ContextUse, contextUse } from "../../core/model/context-limit.ts";
 import { agentName } from "../components/agent-row.ts";
 import { alignRight, innerWidth, padLine, receiptText, truncatePainted } from "../components/format.ts";
 import { stateGlyph, stateToken, stopWords } from "../components/state-text.ts";
@@ -22,7 +30,7 @@ import { requestLineCount, requestLines, requestText } from "./request-block.ts"
 type ViewDeps = {
   load(): ViewData;
   back: boolean;
-  reserveTokens: number;
+  limit(record: AgentRecord): HandoffLimit;
   stop(): Promise<unknown> | undefined;
   watch(tickMs: () => number | undefined, onChange: () => void, onTick: () => void): () => void;
   leave(): void;
@@ -35,13 +43,8 @@ const GAP = "  ";
 
 const CHROME_ROWS = 5;
 
-const ctxPercent = (data: ViewData, reserveTokens: number) => {
-  const { record } = data;
-  const tokens = record.context?.tokens ?? data.session?.contextTokens;
-  const limit = effectiveContextLimit(record.contextLimit, record.context?.window ?? 0, reserveTokens);
-
-  return tokens === null || tokens === undefined || limit <= 0 ? undefined : (tokens / limit) * 100;
-};
+const contextNotice = (record: AgentRecord, use: ContextUse | undefined) =>
+  use && !isClosed(record.state) ? handoffNotice(use.level, use.tokens, use.request) : undefined;
 
 const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) =>
   PAD +
@@ -56,14 +59,23 @@ const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: nu
     inner,
   );
 
-const receiptLine = (data: ViewData, theme: ThemeLike, inner: number, now: number, reserveTokens: number) => {
-  const context = formatCtx(ctxPercent(data, reserveTokens));
-  const segments: ReceiptSegment[] = [
+const receiptLine = (
+  data: ViewData,
+  theme: ThemeLike,
+  inner: number,
+  now: number,
+  use: ContextUse | undefined,
+) => {
+  const context: ReceiptSegment[] = use
+    ? [{ kind: "context", text: workingContextText(use.tokens, use.request), token: "dim" }]
+    : [];
+  const segments = [
     ...agentReceipt({ ...data.record, activity: undefined }, now, { live: true }),
-    ...(context ? [{ kind: "activity" as const, text: context, token: "muted" as const }] : []),
+    ...context,
   ];
+  const painters = use ? { context: () => limitLine(theme, use.level, use.tokens, use.request) } : {};
 
-  return PAD + theme.truncate(receiptText(segments, inner, theme), inner);
+  return PAD + theme.truncate(receiptText(segments, inner, theme, painters), inner);
 };
 
 const chainName = (record: AgentRecord, index: number) =>
@@ -119,7 +131,7 @@ export const headerLines = (
   theme: ThemeLike,
   width: number,
   now: number,
-  reserveTokens: number,
+  use: ContextUse | undefined,
 ): string[] => {
   const { record, chain } = data;
   const inner = innerWidth(width);
@@ -129,7 +141,7 @@ export const headerLines = (
 
   return [
     titleLine(record, theme, inner, now),
-    receiptLine(data, theme, inner, now, reserveTokens),
+    receiptLine(data, theme, inner, now, use),
     dim(`${record.model ?? "model n/a"}${DOT}id ${record.id}`),
     ...errorLines(record, theme, inner),
     ...(chain.length > 1 ? [dim(chainText)] : []),
@@ -228,14 +240,14 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const exit: KeyHint = ["esc", deps.back ? "to go back" : "to close"];
     const stop: KeyHint[] = isOpen() ? [["x", stopWords(record.state)]] : [];
     const request: KeyHint[] = hasRequest()
-      ? [["r", requestExpanded ? "to hide the request" : "to show the request"]]
+      ? [["r", requestExpanded ? "to hide request" : "to show request"]]
       : [];
     const tools: KeyHint = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"];
     const copy: KeyHint[] = request.length ? [["c", "to copy request"]] : [];
 
     const lead = [exit, ...stop, ...request];
 
-    return [[...lead, tools, ...copy], [...lead, tools], lead];
+    return [[...lead, ...copy, tools], [...lead, tools], lead];
   };
 
   const positionText = () => {
@@ -267,8 +279,10 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const render = (width: number) => {
     const theme = api.theme;
     const inner = innerWidth(width);
-    const header = headerLines(data, theme, width, Date.now(), deps.reserveTokens);
-    const footer = notice ? padLine(theme, notice.token, notice.text, inner) : "";
+    const use = contextUse(data.record.context?.tokens, deps.limit(data.record));
+    const header = headerLines(data, theme, width, Date.now(), use);
+    const shown = notice ?? contextNotice(data.record, use);
+    const footer = shown ? padLine(theme, shown.token, shown.text, inner) : "";
     const height = Math.max(3, api.rows() - header.length - CHROME_ROWS);
     const { request, lines, clickable } = bodyLines(width);
     const body = request.concat(lines);

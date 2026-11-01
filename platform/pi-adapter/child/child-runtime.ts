@@ -34,7 +34,14 @@ import { availableModels, resolutionFailure, resolveFromCatalog } from "./model-
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
-type QueuedCustom = { customType: string; content: string; details?: unknown };
+type QueuedCustom = { customType: string; content: string; details?: unknown; display: boolean };
+
+const queuedCustom = (message: CustomMessage, display: boolean): QueuedCustom => ({
+  customType: message.customType,
+  content: message.text,
+  details: message.details,
+  display,
+});
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
@@ -230,7 +237,7 @@ export const createPiRuntime = (
 
     const resumeWith = (texts: string, customs: QueuedCustom[]) => {
       const queueNext = (custom: QueuedCustom) => {
-        void session.sendCustomMessage({ ...custom, display: true }, { deliverAs: "nextTurn" });
+        void session.sendCustomMessage(custom, { deliverAs: "nextTurn" });
       };
 
       if (texts) {
@@ -314,26 +321,16 @@ export const createPiRuntime = (
 
     const sendCustomNow = (custom: QueuedCustom) => {
       running = true;
-      session.sendCustomMessage({ ...custom, display: true }, { triggerTurn: true }).catch(failStart);
+      session.sendCustomMessage(custom, { triggerTurn: true }).catch(failStart);
     };
 
-    const appendSeed = (seed: CustomMessage) =>
-      session.sendCustomMessage(
-        { customType: seed.customType, content: seed.text, details: seed.details, display: true },
-        { triggerTurn: false },
-      );
-
-    const start = (task: string, seed?: CustomMessage) => {
-      if (!seed) {
-        prompt(task);
+    const start = (opening: string | CustomMessage) => {
+      if (typeof opening === "string") {
+        prompt(opening);
         return;
       }
 
-      running = true;
-
-      appendSeed(seed)
-        .then(() => prompt(task))
-        .catch(failStart);
+      sendCustomNow(queuedCustom(opening, true));
     };
 
     const deliver = async (text: string, delivery: MessageDelivery) => {
@@ -354,16 +351,10 @@ export const createPiRuntime = (
       await session.followUp(text, undefined, { source: "extension" });
     };
 
-    const deliverCustom = async (message: CustomMessage, delivery: MessageDelivery) => {
+    const deliverCustom = async (custom: QueuedCustom, delivery: MessageDelivery) => {
       if (disposed) {
         return;
       }
-
-      const custom: QueuedCustom = {
-        customType: message.customType,
-        content: message.text,
-        details: message.details,
-      };
 
       if (!running && !session.isStreaming) {
         sendCustomNow(custom);
@@ -377,7 +368,7 @@ export const createPiRuntime = (
         : ({ deliverAs: "nextTurn" } as const);
 
       try {
-        await session.sendCustomMessage({ ...custom, display: true }, options);
+        await session.sendCustomMessage(custom, options);
       } catch (error) {
         removeFromPiQueue(custom);
         throw error;
@@ -398,8 +389,8 @@ export const createPiRuntime = (
         };
       },
       send: (message, delivery) => deliver(formatRoutedMessage(message), delivery),
-      sendCustom: deliverCustom,
-      wake: (text) => deliver(text, "followUp"),
+      sendCustom: (message, delivery) => deliverCustom(queuedCustom(message, true), delivery),
+      sendHidden: (message) => deliverCustom(queuedCustom(message, false), "followUp"),
       abort: () => session.abort(),
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),

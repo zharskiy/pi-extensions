@@ -65,10 +65,10 @@ export const requestLines = (
 ): string[] => {
   const inner = innerWidth(width);
   const count = requestLineCount(payload);
-  const line = (text: string, hint?: string) => {
-    const full = hint ? `${text} ${hint}` : text;
+  const line = (text: string, hints: string[] = []) => {
+    const hint = hints.find((candidate) => theme.width(`${text} ${candidate}`) <= inner);
 
-    if (!hint || theme.width(full) > inner) {
+    if (!hint) {
       return padLine(theme, "muted", text, inner);
     }
 
@@ -82,8 +82,11 @@ export const requestLines = (
   const title = `Request · ${counted(count, "line")}`;
 
   if (!expanded) {
-    return [line(title, "(r to expand)")];
+    return [line(title, ["(r to expand, c to copy)", "(r to expand)"])];
   }
 
-  return [line(title, "(r to collapse)"), ...wrappedLines(payload, Math.max(1, inner - 2), theme)];
+  return [
+    line(title, ["(r to collapse, c to copy)", "(r to collapse)"]),
+    ...wrappedLines(payload, Math.max(1, inner - 2), theme),
+  ];
 };

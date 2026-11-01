@@ -40,6 +40,7 @@ const writeManifestFile = (record: AgentRecord) => {
     model: record.model,
     worktree: record.worktree,
     contextLimit: record.contextLimit,
+    context: record.context,
     turns: record.turns,
     toolCalls: record.toolCalls,
     tokens: record.tokens,
@@ -108,7 +109,7 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
   const update = (id: string, patch: Partial<AgentRecord>) => {
     const record = require(id);
     const stateChanged = patch.state !== undefined && patch.state !== record.state;
-    const manifestChanged = stateChanged || "worktree" in patch;
+    const manifestChanged = stateChanged || "worktree" in patch || "context" in patch;
 
     Object.assign(record, patch);
 

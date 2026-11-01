@@ -1,6 +1,13 @@
-import { DOT, formatDuration, formatTokens } from "../../../../platform/shared/index.ts";
-import { cutChars, elapsedOf, formatCalls, formatCtx, singleLine } from "../components/receipt.ts";
+import {
+  DOT,
+  formatDuration,
+  formatTokens,
+  type HandoffLimit,
+  workingContextText,
+} from "../../../../platform/shared/index.ts";
+import { cutChars, elapsedOf, formatCalls, singleLine } from "../components/receipt.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../model/agent-record.ts";
+import { contextUse } from "../model/context-limit.ts";
 
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
   if (record.state !== "grace" || record.graceEndsAt === undefined) {
@@ -20,7 +27,7 @@ export type AgentSnapshot = {
   tokens: number;
   toolCalls: number;
   cost?: number;
-  contextPercent: number | null;
+  context: { tokens: number; limit: number } | null;
   lastLine: string;
   resultPath?: string;
   handoffPath?: string;
@@ -53,7 +60,20 @@ const stateLabel = (snapshot: AgentSnapshot) => {
   return `grace (closes in ${snapshot.graceSecondsLeft}s unless messaged)`;
 };
 
-export const snapshotOf = (record: AgentRecord, now: number, requestedId?: string): AgentSnapshot => ({
+const contextOf = (record: AgentRecord, limit: HandoffLimit) => {
+  const use = contextUse(record.context?.tokens, limit);
+
+  return use ? { tokens: use.tokens, limit: use.request } : null;
+};
+
+const contextText = (context: AgentSnapshot["context"]) =>
+  context ? workingContextText(context.tokens, context.limit) : "context n/a";
+
+export const snapshotOf = (
+  record: AgentRecord,
+  now: number,
+  options: { limit: HandoffLimit; requestedId?: string },
+): AgentSnapshot => ({
   id: record.id,
   agent: record.agent,
   model: record.model,
@@ -63,7 +83,7 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   tokens: record.tokens,
   toolCalls: record.toolCalls,
   cost: record.cost,
-  contextPercent: record.context?.percent ?? null,
+  context: contextOf(record, options.limit),
   lastLine: lastLineOf(record.lastText),
   resultPath: record.resultPath,
   handoffPath: record.state === "handoff" ? record.handoffPath : undefined,
@@ -71,7 +91,7 @@ export const snapshotOf = (record: AgentRecord, now: number, requestedId?: strin
   graceSecondsLeft: graceSecondsLeft(record, now),
   chainIndex: record.chainIndex,
   predecessorId: record.predecessorId,
-  requestedId: requestedId === record.id ? undefined : requestedId,
+  requestedId: options.requestedId === record.id ? undefined : options.requestedId,
   worktree: record.worktree,
 });
 
@@ -91,7 +111,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
     formatDuration(snapshot.elapsedMs),
     formatCalls(snapshot.toolCalls),
     `${formatTokens(snapshot.tokens)} tokens`,
-    formatCtx(snapshot.contextPercent) ?? "context n/a",
+    contextText(snapshot.context),
   ];
 
   const extras = [

@@ -1,10 +1,24 @@
 import { stripVTControlCharacters } from "node:util";
-import { type EntryRenderer, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
-import type { EntryRender } from "../../../platform/pi-adapter/index.ts";
+import {
+  type EntryRenderer,
+  type ExtensionAPI,
+  getMarkdownTheme,
+  UserMessageComponent,
+} from "@earendil-works/pi-coding-agent";
+import type { EntryRender, MessageRender } from "../../../platform/pi-adapter/index.ts";
 import { entryHost } from "../../../platform/pi-adapter/tools/entry-renderers.ts";
 import { initPiRenderTheme, livePiTheme } from "./render-theme.ts";
 
 const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
+
+type RendererApi = Pick<ExtensionAPI, "registerEntryRenderer" | "registerMessageRenderer">;
+
+const rendererApi = (onEntry: (renderer: EntryRenderer) => void = () => {}): RendererApi => ({
+  registerEntryRenderer: (_type, renderer) => {
+    onEntry(renderer as EntryRenderer);
+  },
+  registerMessageRenderer: () => {},
+});
 
 export const renderPiEntry = (
   render: EntryRender,
@@ -14,14 +28,11 @@ export const renderPiEntry = (
   initPiRenderTheme();
 
   const registered: EntryRenderer[] = [];
-  const api = {
-    registerEntryRenderer: (_type: string, renderer: EntryRenderer) => {
-      registered.push(renderer);
-    },
-    registerMessageRenderer: () => {},
-  };
+  const api = rendererApi((renderer) => {
+    registered.push(renderer);
+  });
 
-  entryHost(api as never, () => pad).registerEntryRenderer("framework:entry", render, { flush });
+  entryHost(api, () => pad).registerEntryRenderer("framework:entry", render, { flush });
 
   const component = registered[0]?.(
     { type: "custom", customType: "framework:entry", data, id: "entry", parentId: null, timestamp: "" },
@@ -36,4 +47,12 @@ export const renderPiUserMessage = (text: string, { width, pad }: { width: numbe
   initPiRenderTheme();
 
   return plainLines(new UserMessageComponent(text, getMarkdownTheme(), pad).render(width));
+};
+
+export const registerPiMessageRenderer = (customType: string, render: MessageRender) => {
+  const host = entryHost(rendererApi());
+
+  host.registerMessageRenderer(customType, render);
+
+  return host.release;
 };

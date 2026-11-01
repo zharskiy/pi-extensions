@@ -24,7 +24,7 @@ This extension replaces pi's footer with a status block right below the editor. 
 
 ```
 
-Everything is neutral grey: folder, branch, session and model are `muted`, labels and separators `dim`, the context token count and the total cost plain text. The thinking level carries the one accent, in the colour of its level. Colour otherwise marks state only: the context count turns warning at the soft threshold and error at the hard one of [session-limits](../session-limits/README.md), judged exactly as session-limits judges them. With it installed the figure counts toward its handoff point (`working context 13.0k of 163k`, so the 163k is not mistaken for the model window); without it the label is `context`, the figure is measured against the window and stays plain.
+Everything is neutral grey: folder, branch, session and model are `muted`, labels and separators `dim`, the context token count and the total cost plain text. The thinking level carries the one accent, in the colour of its level. Colour otherwise marks state only: the context count turns warning at the soft threshold and error at the hard one of [session-limits](../session-limits/README.md), judged exactly as session-limits judges them; the subagents agent view draws an agent's working context with the same colours. With it installed the figure counts toward its handoff point (`working context 13.0k of 163k`, so the 163k is not mistaken for the model window); without it the label is `context`, the figure is measured against the window and stays plain.
 
 ## Quick start
 

@@ -92,7 +92,6 @@ export const createAgentSource = ({ runtime, registry }: AgentSourceDeps) => {
 
       const session: SessionRecord = {
         providerPayload: last?.session?.providerPayload,
-        contextTokens: last?.session?.contextTokens,
         items: parts.flat(),
       };
 

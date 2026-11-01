@@ -25,9 +25,9 @@
 - `eval-runs/pass-threshold.ts`: `expectPassRate`, `MAJORITY`.
 - `eval-runs/eval-report.ts`: `reportRun`, `reportEval` (console, `PI_EVAL_REPORT`).
 - `eval-runs/eval-results.ts`: `observations.jsonl` and failed-session snapshots under `PI_EVAL_RESULTS`.
-- `pi/index.ts`: the surface of the helpers that load pi offline.
+- `pi/index.ts`: the surface of the helpers that load pi offline, plus the adapter's `formatRoutedMessage`, so extension tests build a routed message the way a child receives it.
 - `pi/render-theme.ts`: `initPiRenderTheme`, `initPiKeybindings`, `plainPiTheme`.
-- `pi/entry-rendering.ts`: `renderPiEntry` (an entry renderer drawn through the adapter's entry host with pi's theme) and `renderPiUserMessage` (pi's own user message), both without ANSI codes.
+- `pi/entry-rendering.ts`: `renderPiEntry` (an entry renderer drawn through the adapter's entry host with pi's theme) and `renderPiUserMessage` (pi's own user message), both without ANSI codes, and `registerPiMessageRenderer` (a message renderer put in the adapter's renderer record; returns its release). Both build on one typed stub of pi's renderer registration.
 - `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory, plus any `extraFactories`.
 - `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
 - `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.

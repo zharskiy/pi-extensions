@@ -53,36 +53,30 @@ const setup = async (overrides = {}, agent = "scout") => {
 };
 
 describe("limits plugin", () => {
-  it("triggers the warning and the handoff on the turns that cross the lines, through the message route", async () => {
+  it("sends the model nothing below the limit and requests the handoff on the turn that crosses it", async () => {
     const { child, turn, record, services } = await setup();
 
     await turn(50_000);
+    await turn(81_000);
+    await turn(99_000);
 
     expect(child.messages).toEqual([]);
 
-    await turn(81_000);
-
-    expect(child.messages).toHaveLength(1);
-    expect(child.messages[0].message).toMatchObject({ sender: "pi-subagents" });
-    expect(child.messages[0].message.text).toContain("Context limit warning");
-    expect(child.messages[0].delivery).toBe("steer");
-
-    await turn(90_000);
-
-    expect(child.messages).toHaveLength(1);
-
     await turn(100_500);
 
-    expect(child.messages).toHaveLength(2);
-    expect(child.messages[1].message.text).toContain(record.handoffPath);
-    expect(child.messages[1].message.text).toContain("## Files touched");
-    expect(child.messages[1].message).toMatchObject({
+    expect(child.messages).toHaveLength(1);
+    expect(child.messages[0].message.text).toContain(record.handoffPath);
+    expect(child.messages[0].message.text).toContain("## Files touched");
+    expect(child.messages[0].message).toMatchObject({
       customType: "pi-handoff-request",
       details: { reason: "limit", tokens: 100_500, request: 100_000 },
     });
-    expect(child.messages[1].delivery).toBe("steer");
-    expect(child.messages[0].message).not.toHaveProperty("customType");
+    expect(child.messages[0].delivery).toBe("steer");
     expect(services.require("registry").get(record.id)?.handoffRequested).toBe(true);
+
+    await turn(101_000);
+
+    expect(child.messages).toHaveLength(1);
   });
 
   it("delivers the handoff request as the same custom message to an agent that was held in the queue", async () => {
@@ -209,42 +203,33 @@ describe("limits plugin", () => {
     });
   });
 
-  it("sends the warning and the handoff only on turns that continue with tool calls", async () => {
+  it("requests the handoff only on a turn that continues with tool calls", async () => {
     const { child, turn, record } = await setup();
-
-    await turn(81_000, "stop");
-
-    expect(child.messages).toEqual([]);
-
-    await turn(82_000);
-
-    expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Context limit warning"),
-    ]);
 
     await turn(100_500, "stop");
 
-    expect(child.messages).toHaveLength(1);
+    expect(child.messages).toEqual([]);
 
     await turn(100_600);
 
-    expect(child.messages).toHaveLength(2);
-    expect(child.messages[1].message.text).toContain(record.handoffPath);
+    expect(child.messages.map((entry) => entry.message.text)).toEqual([
+      expect.stringContaining(record.handoffPath),
+    ]);
   });
 
   it("counts a turn as continuing from its tool calls, not from the stop reason", async () => {
-    const { child, turn } = await setup();
+    const { child, turn, record } = await setup();
 
-    await turn(81_000, "toolUse", 0);
-    await turn(81_500, "error", 1);
-    await turn(81_800, "aborted", 1);
+    await turn(100_500, "toolUse", 0);
+    await turn(100_600, "error", 1);
+    await turn(100_700, "aborted", 1);
 
     expect(child.messages).toEqual([]);
 
-    await turn(82_000, "length", 1);
+    await turn(100_800, "length", 1);
 
     expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Context limit warning"),
+      expect.stringContaining(record.handoffPath),
     ]);
   });
 
@@ -268,7 +253,7 @@ describe("limits plugin", () => {
     runtime.child(registry.list()[1].id).finish("found it in src/a.ts");
     await flushMicrotasks();
 
-    expect(child.wakes).toHaveLength(1);
+    expect(child.hidden).toHaveLength(1);
 
     await turn(101_000);
 
@@ -304,14 +289,22 @@ describe("limits plugin", () => {
     );
   });
 
-  it("respects a smaller model window", async () => {
+  it("requests the handoff at the model window less the reserve when the limit is larger", async () => {
     const { child } = await setup({ reserveTokens: 16_384 }, "wide");
 
-    child.turn({ tokens: 310_000, window: 400_000, percent: 77.5 });
+    child.turn({ tokens: 383_000, window: 400_000, percent: 95.75 });
     await flushMicrotasks();
 
-    expect(child.messages.map((entry) => entry.message.text)).toEqual([
-      expect.stringContaining("Context limit warning"),
+    expect(child.messages).toEqual([]);
+
+    child.turn({ tokens: 384_000, window: 400_000, percent: 96 });
+    await flushMicrotasks();
+
+    expect(child.messages.map((entry) => entry.message)).toEqual([
+      expect.objectContaining({
+        customType: "pi-handoff-request",
+        details: { reason: "limit", tokens: 384_000, request: 383_616 },
+      }),
     ]);
   });
 });

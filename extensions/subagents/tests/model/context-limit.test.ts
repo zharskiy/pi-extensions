@@ -41,16 +41,15 @@ const agent: StepLimit = {
   maxTurnsAfterRequest: 3,
 };
 
-const fresh = { warned: false, requested: false, turnsSinceRequest: 0 };
+const fresh = { requested: false, turnsSinceRequest: 0 };
 
-const requestedFor = (turnsSinceRequest: number) => ({ warned: true, requested: true, turnsSinceRequest });
+const requestedFor = (turnsSinceRequest: number) => ({ requested: true, turnsSinceRequest });
 
 describe("limit step before the request", () => {
-  it("requests at the request line, warns once at the warn line and is quiet below it", () => {
+  it("requests at the request line and does nothing below it, soft level included", () => {
     expect(limitStep(79_999, agent, fresh)).toBe("none");
-    expect(limitStep(80_000, agent, fresh)).toBe("warn");
-    expect(limitStep(85_000, agent, { ...fresh, warned: true })).toBe("none");
-    expect(limitStep(100_000, agent, { ...fresh, warned: true })).toBe("request");
+    expect(limitStep(85_000, agent, fresh)).toBe("none");
+    expect(limitStep(99_999, agent, fresh)).toBe("none");
     expect(limitStep(100_000, agent, fresh)).toBe("request");
   });
 });

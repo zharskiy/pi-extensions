@@ -190,9 +190,9 @@ describe("worktree agents", () => {
       base,
       cwd: path,
     });
-    expect(snapshotLine(snapshotOf(current(record.id), Date.now()))).toContain(
-      `  worktree: ${path} (branch ${branch})`,
-    );
+    expect(
+      snapshotLine(snapshotOf(current(record.id), Date.now(), { limit: { request: 100_000, warn: 80_000 } })),
+    ).toContain(`  worktree: ${path} (branch ${branch})`);
   });
 
   it("removes a clean worktree and its branch when the agent is done", async () => {
@@ -206,7 +206,9 @@ describe("worktree agents", () => {
       "removed",
     );
     expect(hiddenMessageTexts(host)[0]).toContain("Worktree: removed");
-    expect(snapshotLine(snapshotOf(current(record.id), Date.now()))).toContain("  worktree: removed");
+    expect(
+      snapshotLine(snapshotOf(current(record.id), Date.now(), { limit: { request: 100_000, warn: 80_000 } })),
+    ).toContain("  worktree: removed");
   });
 
   it("removes the worktree but keeps the branch when the agent committed", async () => {

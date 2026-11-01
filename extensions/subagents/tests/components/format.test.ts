@@ -6,7 +6,6 @@ import {
   cutChars,
   firstLine,
   formatCalls,
-  formatCtx,
   receipt,
   singleLine,
 } from "../../core/components/receipt.ts";
@@ -65,11 +64,6 @@ describe("format helpers", () => {
 
     expect(pieces.every((piece) => plainTheme.width(piece) <= 38)).toBe(true);
     expect(pieces.join("")).toBe("漢字".repeat(60));
-  });
-
-  it("shows the context share as a word", () => {
-    expect(formatCtx(31.4)).toBe("31% context");
-    expect(formatCtx(null)).toBeUndefined();
   });
 
   it("composes one receipt per agent state", () => {

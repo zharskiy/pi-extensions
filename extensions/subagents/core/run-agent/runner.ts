@@ -20,7 +20,6 @@ import {
   type HandoffSeedDetails,
   type HandoffValidation,
   readText,
-  seedText,
 } from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
@@ -43,11 +42,11 @@ import { handoffService } from "../model/handoff.ts";
 import { agentsDirFor } from "../model/paths.ts";
 import type { Settings } from "../model/settings.ts";
 import { resolutionError } from "./model-text.ts";
-import { createOutbox, joinTexts, type Outbox } from "./outbox.ts";
+import { createOutbox, type Outbox, wakeMessage } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
 import { batchMessage, pickResult, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
-import { composeTask } from "./task.ts";
+import { composeTask, successorSeed } from "./task.ts";
 
 type ModelPlan = { model: string; thinking: string; label: string };
 
@@ -293,7 +292,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.outbox ??= createOutbox({
       isBusy: () => live.turn !== "idle",
       deliver: (items) => {
-        void resume(callerId, (child) => child.wake(joinTexts(items)));
+        void resume(callerId, (child) => child.sendHidden(wakeMessage(items)));
       },
       onIdle: (handler) => {
         live.idleHandlers.push(handler);
@@ -491,7 +490,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       ...slot,
       seed: {
         customType: HANDOFF_SEED_TYPE,
-        text: seedText(handoffService.preface({ ...link, path: record.handoffPath }), text),
+        text: successorSeed(
+          { preface: handoffService.preface({ ...link, path: record.handoffPath }), text },
+          successor,
+          slot.item,
+          slot.undelivered,
+        ),
         details: { from: "agent", ...link } satisfies HandoffSeedDetails,
       },
     };
@@ -782,7 +786,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.turn = "running";
 
     try {
-      child.start(composeTask(record, slot.item, slot.undelivered), slot.seed);
+      child.start(slot.seed ?? composeTask(record, slot.item, slot.undelivered));
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });

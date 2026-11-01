@@ -1,3 +1,6 @@
+import type { CustomMessage } from "../../../../platform/pi-adapter/index.ts";
+import { NAMESPACE } from "../model/paths.ts";
+
 type CallerChannel = {
   isBusy(): boolean;
   deliver(texts: string[]): void;
@@ -11,6 +14,11 @@ export type Outbox = {
 };
 
 export const joinTexts = (texts: string[]) => texts.join("\n\n---\n\n");
+
+export const wakeMessage = (texts: string[]): CustomMessage => ({
+  customType: `${NAMESPACE}:wake`,
+  text: joinTexts(texts),
+});
 
 export const createOutbox = (channel: CallerChannel): Outbox => {
   const held: string[] = [];

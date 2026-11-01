@@ -29,7 +29,7 @@ export type MessageDelivery = "steer" | "followUp";
 export type ChildSession = {
   readonly id: string;
   readonly sessionFile: string | undefined;
-  start(task: string, seed?: CustomMessage): void;
+  start(opening: string | CustomMessage): void;
   subscribe(listener: (event: ChildEvent) => void): () => void;
   send(message: RoutedMessage, delivery: MessageDelivery): Promise<void>;
   sendCustom(message: CustomMessage, delivery: MessageDelivery): Promise<void>;
@@ -38,7 +38,7 @@ export type ChildSession = {
   ownUsage(): UsageTotals;
   lastText(): string;
   runTexts(): string[];
-  wake(text: string): Promise<void>;
+  sendHidden(message: CustomMessage): Promise<void>;
 };
 
 export type SpawnSpec = {

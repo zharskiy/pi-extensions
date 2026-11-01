@@ -2,9 +2,11 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../platform/extension-manager/index.ts";
+import { usageTotals } from "../../../../../test/framework/index.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
 import { MAIN_CALLER } from "../../../core/model/agent-record.ts";
 import type { BusEvents } from "../../../core/model/events.ts";
+import { pastRecords } from "../../../core/model/manifest.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
@@ -72,7 +74,7 @@ describe("agent registry", () => {
     expect(registry.create(newAgent(tempDir())).id).toMatch(/^scout-[0-9a-f]{12}$/);
   });
 
-  it("writes the final turns, tool calls and tokens to the manifest on close", () => {
+  it("writes the final turns, tool calls, tokens and context to the manifest on close", () => {
     const registry = createRegistry({
       bus: createBus<BusEvents>(),
       handoffPath: (id) => `/tmp/${id}-handoff.md`,
@@ -80,11 +82,35 @@ describe("agent registry", () => {
     const record = registry.create(newAgent(tempDir()));
 
     registry.update(record.id, { state: "running" });
-    registry.update(record.id, { turns: 3, toolCalls: 4, tokens: 12_300 });
+    const context = { tokens: 21_000, window: 200_000, percent: 10.5 };
+
+    registry.update(record.id, { turns: 3, toolCalls: 4, tokens: 12_300, context });
     registry.close(record.id, { state: "done" });
 
     const manifest = JSON.parse(readFileSync(join(record.dir, MANIFEST_FILE), "utf8"));
 
-    expect(manifest).toMatchObject({ turns: 3, toolCalls: 4, tokens: 12_300, state: "done" });
+    expect(manifest).toMatchObject({ turns: 3, toolCalls: 4, tokens: 12_300, context, state: "done" });
+  });
+
+  it("keeps each turn's context in the manifest, so a restore after a hard kill has the latest figure", () => {
+    const registry = createRegistry({
+      bus: createBus<BusEvents>(),
+      handoffPath: (id) => `/tmp/${id}-handoff.md`,
+    });
+    const agentsDir = tempDir();
+    const record = registry.create(newAgent(agentsDir));
+    const latest = { tokens: 64_000, window: 200_000, percent: 32 };
+
+    registry.update(record.id, { state: "running" });
+    registry.update(record.id, { context: { tokens: 21_000, window: 200_000, percent: 10.5 } });
+    registry.update(record.id, { context: latest });
+
+    const restored = pastRecords({ sessionUsage: () => usageTotals(0) }, agentsDir, (dir) => ({
+      dir,
+      handoffPath: "/tmp/handoff.md",
+      contextLimit: 100_000,
+    }));
+
+    expect(restored.find((past) => past.id === record.id)?.context).toEqual(latest);
   });
 });

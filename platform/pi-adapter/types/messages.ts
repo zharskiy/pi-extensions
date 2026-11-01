@@ -27,7 +27,6 @@ export type SkillInfo = {
 export type SessionRecord = {
   providerPayload?: unknown;
   items: TranscriptItem[];
-  contextTokens?: number;
 };
 
 export type CodemodeShortfall = { setting: string; workers: number; wanted: number };
