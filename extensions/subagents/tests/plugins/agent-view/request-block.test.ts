@@ -25,9 +25,11 @@ describe("request block", () => {
     const twelve = { a: 1, b: 2, c: { d: 3, e: [1, 2] }, f: "x" };
 
     expect(pretty(twelve)).toHaveLength(12);
-    expect(requestLines(twelve, true, false, 80, plainTheme)).toEqual([" Request · 12 lines (r to expand)"]);
+    expect(requestLines(twelve, true, false, 80, plainTheme)).toEqual([
+      " Request · 12 lines (r to expand, c to copy)",
+    ]);
     expect(requestLines(twelve, true, false, 80, tokenTaggingTheme({ bold: true }))).toEqual([
-      " <muted>Request · 12 lines</> <dim>(r to expand)</>",
+      " <muted>Request · 12 lines</> <dim>(r to expand, c to copy)</>",
     ]);
   });
 
@@ -42,7 +44,7 @@ describe("request block", () => {
     const value = payload();
     const lines = requestLines(value, false, true, 120, plainTheme);
 
-    expect(lines[0]).toBe(` Request · ${pretty(value).length} lines (r to collapse)`);
+    expect(lines[0]).toBe(` Request · ${pretty(value).length} lines (r to collapse, c to copy)`);
     expect(lines.slice(1)).toEqual(pretty(value).map((line) => `   ${line}`));
   });
 

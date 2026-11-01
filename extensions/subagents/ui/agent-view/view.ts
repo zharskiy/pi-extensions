@@ -240,14 +240,14 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
     const exit: KeyHint = ["esc", deps.back ? "to go back" : "to close"];
     const stop: KeyHint[] = isOpen() ? [["x", stopWords(record.state)]] : [];
     const request: KeyHint[] = hasRequest()
-      ? [["r", requestExpanded ? "to hide the request" : "to show the request"]]
+      ? [["r", requestExpanded ? "to hide request" : "to show request"]]
       : [];
     const tools: KeyHint = [api.toolsKey, toolsExpanded ? "to collapse tools" : "to expand tools"];
     const copy: KeyHint[] = request.length ? [["c", "to copy request"]] : [];
 
     const lead = [exit, ...stop, ...request];
 
-    return [[...lead, tools, ...copy], [...lead, tools], lead];
+    return [[...lead, ...copy, tools], [...lead, tools], lead];
   };
 
   const positionText = () => {

@@ -233,14 +233,14 @@ describe("agent view", () => {
     expect(lines[2]).toMatch(/^ \d+s/);
     expect(lines[3]).toBe(` ${record.model} · id ${record.id}`);
     expect(lines[4]).toBe(RULE(100));
-    expect(lines[5]).toMatch(/^ Request · \d+ lines \(r to expand\)$/);
+    expect(lines[5]).toMatch(/^ Request · \d+ lines \(r to expand, c to copy\)$/);
     expect(lines[6]).toBe("");
     expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
     expect(
       lines
         .at(-2)
-        ?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools · c to copy request"),
+        ?.startsWith(" esc to close · r to show request · c to copy request · ctrl+o to expand tools"),
     ).toBe(true);
     expect(lines.at(-3)).toBe("");
     expect(lines.at(-1)).toBe("");
@@ -308,7 +308,7 @@ describe("agent view", () => {
 
     view.handleKey(key("home"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand, c to copy)");
     expect(firstTextAfter(lines(), 5)).toBe(" Task from main (agent id explorer-cb2e):");
     expect(lines().at(-2)).toMatch(/ 1-\d+\/\d+ · end to follow$/);
 
@@ -364,7 +364,7 @@ describe("agent view", () => {
 
     view.handleKey(char("r"));
 
-    expect(request()).toBe(" Request · 12 lines (r to collapse)");
+    expect(request()).toBe(" Request · 12 lines (r to collapse, c to copy)");
 
     update({
       record: second,
@@ -372,7 +372,7 @@ describe("agent view", () => {
       session: { ...full, items: [...head.items, { kind: "user", text: "Continue with the tests" }] },
     });
 
-    expect(request()).toBe(" Request · 12 lines (r to expand)");
+    expect(request()).toBe(" Request · 12 lines (r to expand, c to copy)");
     expect(body().startsWith(before)).toBe(true);
     expect(body().indexOf("Continue with the tests")).toBeGreaterThan(before.length);
     expect(transcripts).toHaveLength(1);
@@ -716,11 +716,11 @@ describe("agent view copy", () => {
 
     view.handleKey(typed("к"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse, c to copy)");
 
     view.handleKey(typed("к"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand, c to copy)");
   });
 
   it("copies the request with the c key in a Cyrillic layout", async () => {
@@ -763,10 +763,10 @@ describe("agent view hint", () => {
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
     expect(hint(hintOf(open))).toBe(
-      " esc to close · x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
+      " esc to close · x to stop · r to show request · c to copy request · ctrl+o to expand tools",
     );
     expect(hint(hintOf(closed, { back: true }))).toBe(
-      " esc to go back · r to show the request · ctrl+o to expand tools · c to copy request",
+      " esc to go back · r to show request · c to copy request · ctrl+o to expand tools",
     );
     expect(hint(hintOf(open, { session: noRequest }))).toBe(
       " esc to close · x to stop · ctrl+o to expand tools",
@@ -777,7 +777,7 @@ describe("agent view hint", () => {
     expanded.view.handleKey(char("r"));
 
     expect(hint(expanded)).toBe(
-      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools · c to copy request",
+      " esc to go back · x to close now · r to hide request · c to copy request · ctrl+o to expand tools",
     );
 
     [open, grace, closed].forEach((record) => {
@@ -803,13 +803,13 @@ describe("agent view hint", () => {
     }));
     const long = viewOf(
       { ...fixture(), items },
-      { record: agentRecord({ id: "explorer-1", state: "grace" }), back: true, rows: 20, width: 80 },
+      { record: agentRecord({ id: "explorer-1", state: "grace" }), back: true, rows: 20, width: 76 },
     );
 
     long.view.handleKey(char("r"));
     long.view.handleKey(key("home"));
 
-    expect(long.lines().at(-2)).toBe(" esc to go back · x to close now · r to hide the request");
+    expect(long.lines().at(-2)).toBe(" esc to go back · x to close now · r to hide request");
   });
 
   it("pads every line and keeps the last column blank", () => {
@@ -1854,10 +1854,12 @@ describe("agent view request block", () => {
     const { lines } = viewOf(requestSession(), { record: openRecord });
     const all = lines();
 
-    expect(all[all.indexOf(RULE(100)) + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
+    expect(all[all.indexOf(RULE(100)) + 1]).toBe(
+      ` Request · ${PAYLOAD_LINES} lines (r to expand, c to copy)`,
+    );
     expect(all.join("\n")).not.toContain('"model": "provider/model"');
     expect(lines(120).at(-2)).toContain(
-      "x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
+      "x to stop · r to show request · c to copy request · ctrl+o to expand tools",
     );
   });
 
@@ -1883,10 +1885,10 @@ describe("agent view request block", () => {
     const all = lines();
     const rule = all.indexOf(RULE(100));
 
-    expect(all[rule + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to collapse)`);
+    expect(all[rule + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to collapse, c to copy)`);
     expect(all[rule + 2]).toBe("   {");
     expect(all.at(-2)).toMatch(/ 1-\d+\/\d+ · end to follow$/);
-    expect(all.at(-2)).toContain("r to hide the request");
+    expect(all.at(-2)).toContain("r to hide request");
 
     update({ session: requestSession(31) });
 
@@ -1932,7 +1934,9 @@ describe("agent view request block", () => {
     view.handleKey(key("enter"));
     view.handleKey(char("r"));
 
-    expect(plainLines(view.render(100))).toContain(` Request · ${PAYLOAD_LINES} lines (r to collapse)`);
+    expect(plainLines(view.render(100))).toContain(
+      ` Request · ${PAYLOAD_LINES} lines (r to collapse, c to copy)`,
+    );
 
     view.handleKey(key("escape"));
 
@@ -1940,7 +1944,9 @@ describe("agent view request block", () => {
 
     view.handleKey(key("enter"));
 
-    expect(plainLines(view.render(100))).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
+    expect(plainLines(view.render(100))).toContain(
+      ` Request · ${PAYLOAD_LINES} lines (r to expand, c to copy)`,
+    );
   });
 
   it("says not sent yet while the agent is open without a request", () => {
@@ -1993,7 +1999,7 @@ describe("agent view request block", () => {
 
     view.handleKey(key("toggleTools"));
 
-    expect(lines()).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
+    expect(lines()).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand, c to copy)`);
 
     view.handleKey(char("r"));
 
@@ -2071,11 +2077,11 @@ describe("agent view clicks", () => {
     const row = requestIndex(lines());
 
     expect(view.handleClick?.(3, row)).toBe(true);
-    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to collapse\)$/);
-    expect(lines().at(-2)).toContain("r to hide the request");
+    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to collapse, c to copy\)$/);
+    expect(lines().at(-2)).toContain("r to hide request");
     expect(view.handleClick?.(3, row + 1)).toBe(false);
     expect(view.handleClick?.(3, row)).toBe(true);
-    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to expand\)$/);
+    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to expand, c to copy\)$/);
   });
 
   it("keeps the clicked call in place instead of following the tail", () => {

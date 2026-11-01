@@ -82,8 +82,8 @@ export const requestLines = (
   const title = `Request · ${counted(count, "line")}`;
 
   if (!expanded) {
-    return [line(title, "(r to expand)")];
+    return [line(title, "(r to expand, c to copy)")];
   }
 
-  return [line(title, "(r to collapse)"), ...wrappedLines(payload, Math.max(1, inner - 2), theme)];
+  return [line(title, "(r to collapse, c to copy)"), ...wrappedLines(payload, Math.max(1, inner - 2), theme)];
 };
