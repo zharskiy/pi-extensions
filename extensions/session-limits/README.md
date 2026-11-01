@@ -23,7 +23,7 @@ A long session eventually fills the model's context window. Before that happens,
    ↳ Saved ~/…
 
  » handoff from the previous session
-   ↳ This session continues the previous session /s/main.j... (ctrl+o to expand)
+   ↳ This session continues the previous session, which reached its context limit. (ctrl+o to expand)
 ```
 
 ## Quick start

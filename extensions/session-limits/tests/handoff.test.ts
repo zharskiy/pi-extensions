@@ -73,11 +73,11 @@ describe("main handoff instruction", () => {
 });
 
 describe("sessionPreface", () => {
-  it("names the previous session file or says the previous session", () => {
-    expect(sessionPreface({ file: "/sessions/main.jsonl", manual: false })).toContain(
-      "the previous session /sessions/main.jsonl, which reached its context limit",
-    );
-    expect(sessionPreface({ manual: false })).toContain("continues the previous session, which");
+  it("says the previous session reached its context limit, without a path", () => {
+    const text = sessionPreface({ manual: false });
+
+    expect(text).toContain("continues the previous session, which reached its context limit");
+    expect(text).not.toContain(".jsonl");
   });
 
   it("names /session-handoff and repeats the focus only for a manual handoff", () => {

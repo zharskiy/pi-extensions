@@ -49,14 +49,13 @@ export const userPrompts = (messages: UserMessage[]) => {
   return starts.map((start, at) => sent.slice(start, starts[at + 1]).reduce(merged));
 };
 
-type SessionSource = { file?: string; manual: boolean; focus?: string };
+type SessionSource = { manual: boolean; focus?: string };
 
-export const sessionPreface = ({ file, manual, focus }: SessionSource) => {
-  const previous = file ? `the previous session ${file}` : "the previous session";
+export const sessionPreface = ({ manual, focus }: SessionSource) => {
   const cause = manual
     ? `which the user handed off with /${HANDOFF_COMMAND}`
     : "which reached its context limit";
-  const lead = `This session continues ${previous}, ${cause}. Its handoff follows; use it as your context and keep helping the user from where it left off. Continue from its Next section without asking the user to repeat.`;
+  const lead = `This session continues the previous session, ${cause}. Its handoff follows; use it as your context and keep helping the user from where it left off. Continue from its Next section without asking the user to repeat.`;
   const focusLine = manual && focus ? [`The user said this session is for: ${focus}.`] : [];
 
   return [lead, ...focusLine].join("\n");

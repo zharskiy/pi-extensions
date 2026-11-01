@@ -177,7 +177,10 @@ describe("session limits", () => {
     expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · context limit" });
     expect(host.newSessions[0].continueWithSeed).toBe(true);
     expect(host.newSessions[0].seed?.customType).toBe(HANDOFF_TYPE);
-    expect(host.newSessions[0].seed?.text).toContain(`the previous session ${host.info.file}`);
+    expect(host.newSessions[0].seed?.text).toContain(
+      "continues the previous session, which reached its context limit",
+    );
+    expect(host.newSessions[0].seed?.text).not.toContain(host.info.file);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
     expect(host.confirmations).toEqual([]);
     expect(requests()).toHaveLength(1);

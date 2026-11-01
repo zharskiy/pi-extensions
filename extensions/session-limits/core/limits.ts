@@ -368,7 +368,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
 
     const previous = host.session().file;
     const handedOff = state.handedOff;
-    const preface = sessionPreface({ file: previous, manual: handedOff, focus: state.focus });
+    const preface = sessionPreface({ manual: handedOff, focus: state.focus });
 
     const fill = () => {
       const messages = captured.splice(0);
