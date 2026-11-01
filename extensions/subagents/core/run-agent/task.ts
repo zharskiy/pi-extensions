@@ -21,7 +21,7 @@ export const composeTask = (record: AgentRecord, item: TaskInput, undelivered: s
   }
 
   if (undelivered.length > 0) {
-    lines.push("", "Batch results that reached your predecessor after it stopped for the handoff:", "");
+    lines.push("", "Batch results that arrived while your predecessor's handoff was pending:", "");
     lines.push(undelivered.join("\n\n---\n\n"));
   }
 

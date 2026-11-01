@@ -18,6 +18,7 @@ import {
   errorText,
   HANDOFF_SEED_TYPE,
   type HandoffSeedDetails,
+  type HandoffValidation,
   readText,
   seedText,
 } from "../../../../platform/shared/index.ts";
@@ -108,6 +109,7 @@ type Live = {
   graceTimer?: ReturnType<typeof setTimeout>;
   answering: boolean;
   turn: "idle" | "waiting" | "running";
+  holding: boolean;
   outbox?: Outbox;
   idleHandlers: (() => void)[];
 };
@@ -145,6 +147,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       pending: [],
       answering: false,
       turn: "idle",
+      holding: false,
       idleHandlers: [],
     };
 
@@ -176,6 +179,28 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     callerOutbox(batch.callerId)?.post(
       batchMessage(batch.id, deps.registry.batch(batch.id), deps.settings.inlineResultChars),
     );
+
+    releaseHold(batch.callerId);
+  };
+
+  const releaseHold = (id: string) => {
+    const live = lives.get(id);
+
+    if (!live?.holding || hasOpenBatches(id)) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      const record = deps.registry.get(id);
+
+      if (!live.holding || !record) {
+        return;
+      }
+
+      live.holding = false;
+      finish(record, live, false);
+      void releaseLive(id);
+    });
   };
 
   const stopChildrenOf = (record: AgentRecord) => {
@@ -256,7 +281,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     live.outbox ??= createOutbox({
-      isBusy: () => live.turn !== "idle",
+      isBusy: () => live.turn !== "idle" || live.holding,
       deliver: (items) => {
         void resume(callerId, (child) => child.wake(joinTexts(items)));
       },
@@ -381,14 +406,37 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       });
     }
 
-    const slot = launches.get(record.id);
-    const batch = batches.get(record.batchId);
+    const chain = chainOf(record, validation);
 
-    if (validation.status === "partial" && slot && batch && canContinue(record)) {
-      return continueChain(record, text, { ...slot, undelivered: live.outbox?.clear() }, batch);
+    if (chain) {
+      const slot = { ...chain.slot, undelivered: live.outbox?.clear() };
+
+      return continueChain(record, text, slot, chain.batch, live.pending.splice(0));
     }
 
     return deps.registry.close(record.id, { state: "handoff", resultText: text });
+  };
+
+  const chainOf = (record: AgentRecord, validation: HandoffValidation) => {
+    const slot = launches.get(record.id);
+    const batch = batches.get(record.batchId);
+    const continues = validation.ok && validation.status === "partial" && canContinue(record);
+
+    return continues && slot && batch ? { slot, batch } : undefined;
+  };
+
+  const holdsHandoff = (record: AgentRecord, live: Live, aborted: boolean) => {
+    if (aborted || live.abortReason !== undefined || !record.handoffRequested || isClosed(record.state)) {
+      return false;
+    }
+
+    const text = readText(record.handoffPath) ?? replyHandoff(live);
+
+    return (
+      text !== undefined &&
+      chainOf(record, handoffService.validate(text)) !== undefined &&
+      hasOpenBatches(record.id)
+    );
   };
 
   const canContinue = (record: AgentRecord) =>
@@ -397,7 +445,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     !userStopped.has(record.id) &&
     !shuttingDown;
 
-  const continueChain = (record: AgentRecord, text: string, slot: LaunchSlot, batch: Batch) => {
+  const continueChain = (
+    record: AgentRecord,
+    text: string,
+    slot: LaunchSlot,
+    batch: Batch,
+    held: AgentMessage[],
+  ) => {
     const successor = deps.registry.create({
       agent: record.agent,
       description: record.description,
@@ -425,6 +479,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     };
 
     launches.set(successor.id, successorSlot);
+    liveOf(successor.id).pending.push(...held);
 
     batch.ids.push(successor.id);
 
@@ -599,6 +654,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
       if (record.state === "grace") {
         settleGrace(record, live);
+        return;
+      }
+
+      if (holdsHandoff(record, live, event.aborted)) {
+        live.holding = true;
+        deps.registry.update(id, { activity: "handoff: waiting for batches" });
+        releaseSlot(live);
         return;
       }
 
@@ -931,6 +993,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     userStopped.add(id);
 
     const live = lives.get(id);
+
+    if (live?.holding) {
+      live.holding = false;
+      finish(record, live, false);
+      await releaseLive(id);
+      return true;
+    }
+
     const child = live?.child;
     const immediate =
       options.immediate === true || record.state !== "running" || deps.settings.stopGraceSeconds === 0;
@@ -972,7 +1042,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const live = liveOf(id);
 
-    if (record.state === "queued" || !live.child || live.turn === "waiting") {
+    if (record.state === "queued" || !live.child || live.turn === "waiting" || live.holding) {
       live.pending.push(message);
       return { ok: true, delivery: "held" };
     }
@@ -997,7 +1067,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const record = terminalOf(requestedId);
     const live = record && lives.get(record.id);
 
-    if (!record || isClosed(record.state) || !live?.child) {
+    if (!record || isClosed(record.state) || !live?.child || live.holding) {
       return;
     }
 
