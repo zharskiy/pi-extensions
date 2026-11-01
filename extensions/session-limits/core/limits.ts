@@ -84,7 +84,7 @@ type LimitsState = {
   focus?: string;
 };
 
-type RequestOrigin = { manual: boolean; handedOff?: boolean; focus?: string };
+type RequestOrigin = { manual: boolean; focus?: string };
 
 const textsOf = (messages: UserMessage[]) => messages.map((message) => message.text);
 
@@ -226,7 +226,9 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     host.ui.setNotice(NAMESPACE, notice ? host.ui.style(notice.token, notice.text) : undefined);
   };
 
-  const sendRequest = (path: string, origin: RequestOrigin) => {
+  const request = (origin: RequestOrigin) => {
+    const path = handoffPath(host.session());
+
     state = {
       ...state,
       phase: "requested",
@@ -234,16 +236,11 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       path,
       saved: undefined,
       manual: origin.manual,
-      handedOff: origin.handedOff ?? origin.manual,
+      handedOff: origin.manual,
       focus: origin.focus,
     };
 
     sendInstruction(currentInstruction(path));
-    syncPending();
-  };
-
-  const request = (origin: RequestOrigin) => {
-    sendRequest(handoffPath(host.session()), origin);
   };
 
   const errorsOf = () => {

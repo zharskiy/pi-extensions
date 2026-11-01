@@ -18,7 +18,7 @@ export const MAIN_AUDIENCE: HandoffAudience = {
     "When skills of this session fit those steps, end with a line `Skills: <names>` so the next session reads them first.",
 };
 
-export const HELD_HEADING = "Batch results that arrived while the handoff was pending:";
+const HELD_HEADING = "Batch results that arrived while the handoff was pending:";
 
 export const withLateResults = (text: string, late: string[]) =>
   late.length === 0 ? text : [text.trim(), HELD_HEADING, ...late].join("\n\n");

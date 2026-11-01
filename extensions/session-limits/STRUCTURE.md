@@ -11,7 +11,7 @@ extensions/session-limits/
 │   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level, continues after every automatic handoff), busy channel, pi:handoff-pending published, pi:held-results and the user messages kept through onInput carried into the new session's user prompts or editor through the lazy fill and shown in the TUI chat as kept-rule and kept-message entries (a request shows only the transcript row, no toast)
 │   ├── thresholds.ts           handoff step, retry decisions
 │   ├── kept-entries.ts         kept-rule and kept-message entry names, data types, parsers and keptRuleFor (which rule the state calls for)
-│   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, HELD_HEADING and withLateResults, userPrompts (kept messages as the new session's user prompts), handoff path, handoff validation
+│   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, withLateResults (held results under a fixed heading), userPrompts (kept messages as the new session's user prompts), handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
 │   ├── kept-entries.ts         keptRule (labelled rule and its labels) and keptMessage (pi's user message look) entry renderers

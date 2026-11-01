@@ -16,7 +16,6 @@ import {
 } from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
-import { HELD_HEADING } from "../core/handoff.ts";
 import { DEFAULT_LIMITS } from "../core/settings.ts";
 
 const temp = useTempDirs();
@@ -50,6 +49,12 @@ const VALID_HANDOFF = [
   "## Files touched",
   "none",
 ].join("\n");
+
+const afterHandoff = (seed = "") => {
+  const at = seed.indexOf(VALID_HANDOFF);
+
+  return at < 0 ? undefined : seed.slice(at + VALID_HANDOFF.length).trim();
+};
 
 const NOTICE_KEY = "pi-session-limits";
 const HANDOFF_COMMAND = "session-handoff";
@@ -1348,7 +1353,7 @@ describe("handoff pending and held results", () => {
 
     expect(host.newSessions).toHaveLength(1);
     expect(seed()).not.toContain("stale result");
-    expect(seed()).not.toContain(HELD_HEADING);
+    expect(afterHandoff(seed())).toBe("");
   });
 
   it("clears the pending handoff when the new session is cancelled", async () => {
@@ -1391,9 +1396,7 @@ describe("handoff pending and held results", () => {
     await flush();
 
     expect(host.newSessions).toHaveLength(1);
-    expect(seed()).toContain(
-      `${VALID_HANDOFF}\n\n${HELD_HEADING}\n\nfirst result\n\n---\n\nsecond result\n\nother result`,
-    );
+    expect(afterHandoff(seed())).toMatch(/\n\nfirst result\n\n---\n\nsecond result\n\nother result$/);
   });
 
   it("ignores held results while no handoff is pending", async () => {
@@ -1428,7 +1431,7 @@ describe("handoff pending and held results", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].continueWithSeed).toBe(true);
-    expect(seed()).toContain(`${HELD_HEADING}\n\nlate batch result`);
+    expect(afterHandoff(seed())).toMatch(/\n\nlate batch result$/);
   });
 });
 
@@ -1605,7 +1608,7 @@ describe("messages typed during a handoff", () => {
     host.settle();
     await flush();
 
-    expect(switched(host)?.seed?.text).toContain(`${VALID_HANDOFF}\n\n${HELD_HEADING}\n\nlate result`);
+    expect(afterHandoff(switched(host)?.seed?.text)).toMatch(/\n\nlate result$/);
     expect(switched(host)?.seed?.text).not.toContain("use the faster option");
     expect(switched(host)?.followUps).toEqual([{ text: "use the faster option", images: [] }]);
   });

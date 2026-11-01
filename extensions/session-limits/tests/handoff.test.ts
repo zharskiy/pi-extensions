@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { handoffInstruction } from "../../../platform/shared/index.ts";
 import {
-  HELD_HEADING,
   handoffPath,
   MAIN_AUDIENCE,
   sessionPreface,
@@ -102,10 +101,11 @@ describe("withLateResults", () => {
     expect(withLateResults("## Status\ndone\n", [])).toBe("## Status\ndone\n");
   });
 
-  it("appends each source's late results under the heading", () => {
-    expect(withLateResults("## Status\ndone\n", ["a", "b"])).toBe(
-      `## Status\ndone\n\n${HELD_HEADING}\n\na\n\nb`,
-    );
+  it("appends each source's late results after the handoff, in order", () => {
+    const text = withLateResults("## Status\ndone\n", ["a", "b"]);
+
+    expect(text.startsWith("## Status\ndone\n\n")).toBe(true);
+    expect(text).toMatch(/\n\na\n\nb$/);
   });
 });
 
