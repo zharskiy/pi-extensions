@@ -8,7 +8,7 @@ import { MANIFEST_FILE } from "../../../core/model/paths.ts";
 import { startPlugins, tempDir } from "../../support/subagents-harness.ts";
 
 const DAY_MS = 86_400_000;
-const NOW = Date.now();
+const NOW = Math.floor(Date.now() / 1000) * 1000;
 const daysAgo = (days: number) => NOW - days * DAY_MS;
 const OLD = daysAgo(90);
 const RECENT = daysAgo(5);
