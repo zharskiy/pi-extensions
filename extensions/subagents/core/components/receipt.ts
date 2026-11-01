@@ -6,7 +6,7 @@ export const formatCalls = (count: number): string => counted(count, "call");
 
 export type ReceiptKind = "word" | "reason" | "time" | "calls" | "tokens" | "cost" | "activity" | "context";
 
-export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken; painted?: string };
+export type ReceiptSegment = { kind: ReceiptKind; text: string; token: ThemeToken };
 
 type ReceiptFacts = {
   word?: string;

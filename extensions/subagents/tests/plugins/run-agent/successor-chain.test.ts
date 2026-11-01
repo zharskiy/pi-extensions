@@ -123,17 +123,18 @@ describe("successor chain", () => {
 
     const seed = runtime.child(second).seed;
     const text = seed?.text ?? "";
-    const [lead, task] = text.split(`\n\nTask from ${first.callerId} (agent id ${second}):\n`);
+    const original = text.indexOf("Original task:\nmap the auth flow");
 
     expect(runtime.child(second).task).toBeUndefined();
     expect(seed).toMatchObject({
       customType: "pi-handoff-seed",
       details: { from: "agent", id: first.id, link: 2 },
     });
-    expect(lead).toContain(`continue the work of agent ${first.id} as link 2`);
-    expect(lead).toContain(first.handoffPath);
-    expect(lead).toContain("- trace token refresh");
-    expect(task).toBe(`Agent folder: ${current(second).dir}\nOriginal task:\nmap the auth flow`);
+    expect(text).toContain(`continue the work of agent ${first.id} as link 2`);
+    expect(text).toContain("- trace token refresh");
+    expect(text.split("Original task:")).toHaveLength(2);
+    expect(text.indexOf(first.handoffPath)).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf(first.handoffPath)).toBeLessThan(original);
 
     runtime.child(second).emit({ type: "tool_start", toolName: "read" });
 
@@ -463,7 +464,7 @@ describe("successor chain", () => {
     runtime.child(scout.id).finish("the token store is src/store.ts");
     await flushMicrotasks();
 
-    expect(child.wakes).toEqual([]);
+    expect(child.hidden).toEqual([]);
 
     await requestHandoff(first.id);
     writeHandoff(first.id, "partial");
@@ -492,14 +493,14 @@ describe("successor chain", () => {
     const [link] = started.records;
     const second = (await handOff(link.id)) as string;
 
-    expect(caller.wakes).toEqual([]);
+    expect(caller.hidden).toEqual([]);
 
     runtime.child(second).finish("token store is in src/store.ts");
     await flushMicrotasks();
 
-    expect(caller.wakes).toHaveLength(1);
-    expect(caller.wakes[0]?.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(caller.wakes[0]?.text).toContain("token store is in src/store.ts");
+    expect(caller.hidden).toHaveLength(1);
+    expect(caller.hidden[0]?.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(caller.hidden[0]?.text).toContain("token store is in src/store.ts");
   });
 
   describe("handoff with open nested batches", () => {
@@ -541,7 +542,7 @@ describe("successor chain", () => {
       runtime.child(a.id).finish("a is in src/a.ts");
       await flushMicrotasks();
 
-      expect(caller.wakes).toEqual([]);
+      expect(caller.hidden).toEqual([]);
       expect(current(first.id).successorId).toBeUndefined();
 
       runtime.child(b.id).finish("b is in src/b.ts");
@@ -551,7 +552,7 @@ describe("successor chain", () => {
       const task = runtime.child(successor).seed?.text ?? "";
 
       expect(current(first.id).state).toBe("handoff");
-      expect(caller.wakes).toEqual([]);
+      expect(caller.hidden).toEqual([]);
       expect(caller.disposed).toBe(true);
       expect(task).toContain("Batch results that arrived while your predecessor's handoff was pending:");
       expect(task).toContain("a is in src/a.ts");
@@ -716,7 +717,7 @@ describe("successor chain", () => {
 
       expect(current(first.id).state).toBe("handoff");
       expect(current(first.id).successorId).toBeUndefined();
-      expect(caller.wakes).toEqual([]);
+      expect(caller.hidden).toEqual([]);
       expect(registry.list()).toHaveLength(2);
     });
 

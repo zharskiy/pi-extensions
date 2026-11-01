@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type {
+  CustomMessage,
   SessionRecord,
   ThemeLike,
   ToolSpec,
@@ -22,6 +23,7 @@ import {
 import {
   createOverlayApi,
   disposeOverlays,
+  formatRoutedMessage,
   initPiKeybindings,
   initPiRenderTheme,
   openLastOverlay,
@@ -39,9 +41,10 @@ import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { ViewData } from "../../../core/agent-view/source.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
-import { agentLimit } from "../../../core/model/context-limit.ts";
+import { agentLimit, contextUse } from "../../../core/model/context-limit.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../core/model/paths.ts";
 import { defaultSettings } from "../../../core/model/settings.ts";
+import { wakeMessage } from "../../../core/run-agent/outbox.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createAgentView, headerLines } from "../../../ui/agent-view/view.ts";
 import { agentRecord, newAgentInput } from "../../support/agent-records.ts";
@@ -54,6 +57,8 @@ const RECORD_ENTRY = promptRecordEntry(NAMESPACE);
 
 const limitOf = (record: AgentRecord) =>
   agentLimit(record.contextLimit, record.context?.window ?? 0, { ...defaultSettings(), reserveTokens: 0 });
+
+const useOf = (record: AgentRecord) => contextUse(record.context?.tokens, limitOf(record));
 
 initPiRenderTheme();
 initPiKeybindings();
@@ -465,7 +470,7 @@ describe("agent view header", () => {
     });
 
   const header = (record: AgentRecord, theme: ThemeLike = plainTheme, width = 100, chain: string[] = []) =>
-    headerLines({ record, chain }, theme, width, 0, limitOf);
+    headerLines({ record, chain }, theme, width, 0, useOf(record));
 
   it("renders the header per state", () => {
     const table: [Partial<AgentRecord>, string, string][] = [
@@ -630,7 +635,13 @@ describe("agent view header", () => {
     expect(lines()[1]).toBe(" ⠋ explorer #2  Map the auth module");
     expect(lines()[3]).toBe(" model n/a · id explorer-1");
 
-    const chained = headerLines({ record, chain: ["explorer-0001", record.id] }, plainTheme, 100, 0, limitOf);
+    const chained = headerLines(
+      { record, chain: ["explorer-0001", record.id] },
+      plainTheme,
+      100,
+      0,
+      useOf(record),
+    );
 
     expect(chained).toContain(" Chain explorer → explorer #2 (2 sessions) · viewing explorer #2");
   });
@@ -647,8 +658,11 @@ describe("agent view context level", () => {
       ...patch,
     });
 
-  const receipt = (tokens: number, theme: ThemeLike = tokenTaggingTheme({ bold: true }), width = 200) =>
-    headerLines({ record: atTokens(tokens), chain: [] }, theme, width, 0, limitOf)[1];
+  const receipt = (tokens: number, theme: ThemeLike = tokenTaggingTheme({ bold: true }), width = 200) => {
+    const record = atTokens(tokens);
+
+    return headerLines({ record, chain: [] }, theme, width, 0, useOf(record))[1];
+  };
 
   const notice = (record: AgentRecord) =>
     viewOf(fixture(), { record, theme: tokenTaggingTheme() }).lines().at(-3);
@@ -1034,17 +1048,25 @@ describe("agent view with live agents", () => {
     expect(state.renders - renders).toBeGreaterThanOrEqual(9);
   });
 
-  it("refreshes the header stats with the live turn context", async () => {
+  it("refreshes the header stats with the live turn context and shows the handoff notice past the soft level", async () => {
     useFakeTime();
 
     const { harness, record } = await runningAgent();
     const { view } = await harness.openView(record.id);
+    const notice = () => plainLines(view.render(100)).at(-3);
+
+    harness.runtime.child(record.id).turn({ tokens: 50_000, window: 200_000, percent: 25 });
+    await flushMicrotasks();
+    vi.advanceTimersByTime(350);
+
+    expect(notice()).toBe("");
 
     harness.runtime.child(record.id).turn({ tokens: 85_000, window: 200_000, percent: 42 });
     await flushMicrotasks();
     vi.advanceTimersByTime(350);
 
     expect(plainLines(view.render(100))[2]).toMatch(/ · working context 85\.0k of 100k$/);
+    expect(notice()).toBe(" » handoff at 100k tokens · 85.0k used");
   });
 });
 
@@ -1063,7 +1085,7 @@ describe("agent view past sessions", () => {
   };
 
   const restarted = ({ manifests, cost, sessions = {} }: Past) =>
-    setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+    setup([agentRegistryPlugin, agentDefinitionsPlugin, agentStatusPlugin, agentViewPlugin], {
       beforeStart: ({ root, host, runtime }) => {
         manifests.forEach((manifest) => {
           const name = manifest.sessionFile as string | undefined;
@@ -1093,12 +1115,31 @@ describe("agent view past sessions", () => {
     return plainLines(view.render(100));
   };
 
-  it("shows the context limit stored in the manifest, and no context without one", async () => {
-    const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
-    const unknown = await openFromManifest({ id: "explorer-dead", agent: "scout" });
+  it("shows the working context stored in the manifest as agent_status does, and none without it", async () => {
+    const context = { tokens: 21_000, window: 200_000, percent: 10.5 };
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          contextLimit: 70_000,
+          context,
+        },
+        { id: "explorer-dead", agent: "scout", description: "old", state: "done", contextLimit: 70_000 },
+      ],
+    });
+    const header = async (id: string) => plainLines((await harness.openView(id)).view.render(100))[2];
+    const status = await harness.host
+      .tool<{ ids: string[] }, unknown>("agent_status")
+      .execute({ ids: ["explorer-old", "explorer-dead"] }, {});
+    const [stored, unknown] = status.text.split("\n").filter((line) => line.startsWith("explorer-"));
 
-    expect(stored[2]).toMatch(/ · working context [\d.]+k of 70k$/);
-    expect(unknown[2]).not.toContain("context");
+    expect(await header("explorer-old")).toMatch(/ · working context 21\.0k of 70k$/);
+    expect(stored).toMatch(/ · working context 21\.0k of 70k$/);
+    expect(await header("explorer-dead")).not.toContain("context");
+    expect(unknown).toMatch(/ · context n\/a$/);
   });
 
   it("shows persisted counters for agents of an earlier session", async () => {
@@ -1668,15 +1709,19 @@ describe("agent view nested run_agent calls", () => {
     expect(shown).toContain("Starting");
   });
 
-  it("draws no row for the batch wake and redraws the block as finished, as the main session does", async () => {
-    const { running, show, text, finishAll, child } = await nestedSetup();
-    const result = await running;
-    const wake = JSON.stringify({
+  const hiddenLine = (message: CustomMessage) =>
+    JSON.stringify({
       type: "custom_message",
-      customType: "pi-subagents:wake",
-      content: "[pi-subagents] Batch b-1 finished: 2 done.",
+      customType: message.customType,
+      content: message.text,
+      details: message.details,
       display: false,
     });
+
+  it("draws no row for the hidden batch wake, as the main session does, and the block shows the finished batch", async () => {
+    const { running, show, text, finishAll, child } = await nestedSetup();
+    const result = await running;
+    const wake = hiddenLine(wakeMessage(["[pi-subagents] Batch b-1 finished: 2 done."]));
     const reply = line({
       role: "assistant",
       content: [{ type: "text", text: "Both found." }],
@@ -1692,7 +1737,7 @@ describe("agent view nested run_agent calls", () => {
     child.finish("Started batch, waiting.");
     await finishAll();
 
-    expect(child.wakes.map((wake) => wake.customType)).toEqual(["pi-subagents:wake"]);
+    expect(child.hidden.map((wake) => wake.customType)).toEqual(["pi-subagents:wake"]);
     expect(shown()).toContain(" ✓ 2 scout agents");
     expect(shown()).not.toContain("◌");
     expect(shown()).not.toContain("[pi-subagents] Batch");
@@ -1792,7 +1837,7 @@ describe("agent view request block", () => {
     const session = parseSessionLines(
       [
         userLine("Task from main (agent id explorer-1): Map the auth module"),
-        userLine("[message from main]\nAlso check logout."),
+        userLine(formatRoutedMessage({ sender: "main", text: "Also check logout." })),
       ],
       RECORD_ENTRY,
     );

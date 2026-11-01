@@ -37,13 +37,13 @@ describe("finalRunTexts", () => {
 });
 
 describe("finalRunTexts with custom messages", () => {
-  const custom = (display?: boolean) => ({ type: "custom_message", customType: "req", display });
+  const custom = { type: "custom_message", customType: "req" };
 
-  it("starts a run at a displayed custom message, so only its own texts return", () => {
+  it("starts a run at any custom message, so only its own texts return", () => {
     const entries = [
       message("user", "task"),
       message("assistant", text("old answer")),
-      custom(true),
+      custom,
       message("assistant", toolCall("working")),
       message("toolResult", text("result")),
       message("assistant", text("saved")),
@@ -57,21 +57,11 @@ describe("finalRunTexts with custom messages", () => {
       message("user", "task"),
       message("assistant", toolCall("first")),
       message("toolResult", text("result")),
-      custom(true),
+      custom,
       message("assistant", text("done")),
     ];
 
     expect(finalRunTexts(entries)).toEqual(["first", "done"]);
-  });
-
-  it("starts a run at a hidden custom message, so a wake's run leaves out the previous reply", () => {
-    const entries = [
-      message("assistant", text("old answer")),
-      custom(false),
-      message("assistant", text("next")),
-    ];
-
-    expect(finalRunTexts(entries)).toEqual(["next"]);
   });
 });
 

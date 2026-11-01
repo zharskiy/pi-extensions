@@ -1,3 +1,4 @@
+import { seedText } from "../../../../platform/shared/index.ts";
 import type { AgentRecord } from "../model/agent-record.ts";
 import { joinTexts } from "./outbox.ts";
 
@@ -28,3 +29,10 @@ export const composeTask = (record: AgentRecord, item: TaskInput, undelivered: s
 
   return lines.join("\n");
 };
+
+export const successorSeed = (
+  handoff: { preface: string; text: string },
+  record: AgentRecord,
+  item: TaskInput,
+  undelivered: string[] = [],
+) => [seedText(handoff.preface, handoff.text), "", composeTask(record, item, undelivered)].join("\n");

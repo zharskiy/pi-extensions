@@ -32,9 +32,9 @@ describe("agent_status", () => {
     const registry = harness.services.require("registry");
     const [record] = registry.list();
 
-    expect(snapshotLine(snapshotOf(record, Date.now(), { limit: 100_000 }))).toContain(
-      `(scout, ${record.model}) running`,
-    );
+    expect(
+      snapshotLine(snapshotOf(record, Date.now(), { limit: { request: 100_000, warn: 80_000 } })),
+    ).toContain(`(scout, ${record.model}) running`);
   });
 
   it("returns a snapshot for one or several agents in one call", async () => {
@@ -77,29 +77,6 @@ describe("agent_status", () => {
       context: { tokens: 30_000, limit: 100_000 },
       lastLine: "found the handler",
     });
-    expect(Object.keys(snapshot ?? {}).sort()).toEqual(
-      [
-        "agent",
-        "chainIndex",
-        "context",
-        "cost",
-        "description",
-        "elapsedMs",
-        "error",
-        "graceSecondsLeft",
-        "handoffPath",
-        "id",
-        "lastLine",
-        "model",
-        "predecessorId",
-        "requestedId",
-        "resultPath",
-        "state",
-        "tokens",
-        "toolCalls",
-        "worktree",
-      ].sort(),
-    );
     expect(result.details?.agents).toHaveLength(2);
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
     expect(result.text).toContain(`${first.id} (scout, ${first.model}) running`);

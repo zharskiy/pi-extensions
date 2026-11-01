@@ -11,9 +11,16 @@ const fitReceipt = (segments: readonly ReceiptSegment[], room: number, theme: Th
     segments,
   );
 
-export const receiptText = (segments: readonly ReceiptSegment[], room: number, theme: ThemeLike) =>
+type ReceiptPainters = Partial<Record<ReceiptKind, () => string>>;
+
+export const receiptText = (
+  segments: readonly ReceiptSegment[],
+  room: number,
+  theme: ThemeLike,
+  painters: ReceiptPainters = {},
+) =>
   fitReceipt(segments, room, theme)
-    .map((part) => part.painted ?? theme.fg(part.token, part.text))
+    .map((part) => painters[part.kind]?.() ?? theme.fg(part.token, part.text))
     .join(theme.fg("muted", DOT));
 
 type Painted = readonly [text: string, paint: (text: string) => string];

@@ -1,4 +1,5 @@
 import type { AnyToolSpec, ToolSpec } from "../../../../platform/pi-adapter/index.ts";
+import type { HandoffLimit } from "../../../../platform/shared/index.ts";
 import { EXPAND_BINDING } from "../../../../platform/ui-kit/index.ts";
 import {
   type AgentStatusDetails,
@@ -8,13 +9,13 @@ import {
   unknownText,
 } from "../../core/agent-status/snapshot.ts";
 import { type AgentRecord, type AgentRegistry, chainTerminal } from "../../core/model/agent-record.ts";
-import { agentLimit } from "../../core/model/context-limit.ts";
+import { recordLimit } from "../../core/model/context-limit.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { statusCall, statusResult } from "../../ui/agent-status/status-text.ts";
 
 type StatusScope = {
   registry: AgentRegistry;
-  limit: (record: AgentRecord) => number;
+  limit: (record: AgentRecord) => HandoffLimit;
   callerId?: string;
   expandKey: () => string;
 };
@@ -74,8 +75,7 @@ export const agentStatusPlugin: Plugin = {
   enable: ({ host, settings, services }) => {
     const registry = services.require("registry");
     const expandKey = () => host.ui.keyText(EXPAND_BINDING);
-    const limit = (record: AgentRecord) =>
-      agentLimit(record.contextLimit, record.context?.window ?? 0, settings).request;
+    const limit = (record: AgentRecord) => recordLimit(record, settings);
 
     host.registerTool(statusTool({ registry, limit, expandKey }));
 

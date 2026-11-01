@@ -1,6 +1,13 @@
-import { DOT, formatDuration, formatTokens, formatWindow } from "../../../../platform/shared/index.ts";
+import {
+  DOT,
+  formatDuration,
+  formatTokens,
+  type HandoffLimit,
+  workingContextText,
+} from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, formatCalls, singleLine } from "../components/receipt.ts";
 import { type AgentRecord, type Worktree, worktreeText } from "../model/agent-record.ts";
+import { contextUse } from "../model/context-limit.ts";
 
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
   if (record.state !== "grace" || record.graceEndsAt === undefined) {
@@ -53,21 +60,19 @@ const stateLabel = (snapshot: AgentSnapshot) => {
   return `grace (closes in ${snapshot.graceSecondsLeft}s unless messaged)`;
 };
 
-const contextOf = (record: AgentRecord, limit: number) => {
-  const tokens = record.context?.tokens;
+const contextOf = (record: AgentRecord, limit: HandoffLimit) => {
+  const use = contextUse(record.context?.tokens, limit);
 
-  return tokens === null || tokens === undefined || limit <= 0 ? null : { tokens, limit };
+  return use ? { tokens: use.tokens, limit: use.request } : null;
 };
 
 const contextText = (context: AgentSnapshot["context"]) =>
-  context
-    ? `working context ${formatTokens(context.tokens)} of ${formatWindow(context.limit)}`
-    : "context n/a";
+  context ? workingContextText(context.tokens, context.limit) : "context n/a";
 
 export const snapshotOf = (
   record: AgentRecord,
   now: number,
-  options: { limit: number; requestedId?: string },
+  options: { limit: HandoffLimit; requestedId?: string },
 ): AgentSnapshot => ({
   id: record.id,
   agent: record.agent,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { limitLevel, mainLimit } from "../handoff/handoff-limit.ts";
+import { limitLevel, mainLimit, workingContextText } from "../handoff/handoff-limit.ts";
 
 const limit = { request: 100_000, warn: 80_000 };
 
@@ -40,5 +40,11 @@ describe("mainLimit", () => {
 
   it("is undefined for an unknown window", () => {
     expect(mainLimit(0, limits)).toBeUndefined();
+  });
+});
+
+describe("working context text", () => {
+  it("reads the tokens against the handoff point", () => {
+    expect(workingContextText(81_200, 100_000)).toBe("working context 81.2k of 100k");
   });
 });

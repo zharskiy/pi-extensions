@@ -40,6 +40,7 @@ const writeManifestFile = (record: AgentRecord) => {
     model: record.model,
     worktree: record.worktree,
     contextLimit: record.contextLimit,
+    context: record.context,
     turns: record.turns,
     toolCalls: record.toolCalls,
     tokens: record.tokens,

@@ -6,7 +6,13 @@ import {
   type ThemeLike,
   type ThemeToken,
 } from "../../../platform/pi-adapter/index.ts";
-import { DOT, formatMoney, formatTokens, type SpendingTotals } from "../../../platform/shared/index.ts";
+import {
+  DOT,
+  formatMoney,
+  formatTokens,
+  type SpendingTotals,
+  WORKING_CONTEXT,
+} from "../../../platform/shared/index.ts";
 import { keyHints, limitFigure, limitTail } from "../../../platform/ui-kit/index.ts";
 import {
   type ContextBase,
@@ -60,14 +66,14 @@ const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking:
 };
 
 const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: ContextBase): Segment[] => {
-  const label = theme.fg("dim", base.level ? "working context" : "context");
+  const label = theme.fg("dim", base.level ? WORKING_CONTEXT : "context");
 
   if (context.tokens === null || base.base <= 0) {
     return [{ text: `${label} ${theme.fg("muted", "?")}`, drop: NEVER }];
   }
 
   return [
-    { text: `${label} ${limitFigure(theme, base.level, formatTokens(context.tokens))}`, drop: NEVER },
+    { text: `${label} ${limitFigure(theme, base.level, context.tokens)}`, drop: NEVER },
     { text: limitTail(theme, base.level, base.base), drop: 5, tight: true },
   ];
 };

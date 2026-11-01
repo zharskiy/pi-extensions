@@ -253,7 +253,7 @@ describe("limits plugin", () => {
     runtime.child(registry.list()[1].id).finish("found it in src/a.ts");
     await flushMicrotasks();
 
-    expect(child.wakes).toHaveLength(1);
+    expect(child.hidden).toHaveLength(1);
 
     await turn(101_000);
 

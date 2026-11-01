@@ -20,7 +20,6 @@ import {
   type HandoffSeedDetails,
   type HandoffValidation,
   readText,
-  seedText,
 } from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
@@ -47,7 +46,7 @@ import { createOutbox, type Outbox, wakeMessage } from "./outbox.ts";
 import { createPlacer } from "./placement.ts";
 import { batchMessage, pickResult, storeResult } from "./result.ts";
 import { createSemaphore } from "./semaphore.ts";
-import { composeTask } from "./task.ts";
+import { composeTask, successorSeed } from "./task.ts";
 
 type ModelPlan = { model: string; thinking: string; label: string };
 
@@ -293,7 +292,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.outbox ??= createOutbox({
       isBusy: () => live.turn !== "idle",
       deliver: (items) => {
-        void resume(callerId, (child) => child.wake(wakeMessage(items)));
+        void resume(callerId, (child) => child.sendHidden(wakeMessage(items)));
       },
       onIdle: (handler) => {
         live.idleHandlers.push(handler);
@@ -491,11 +490,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       ...slot,
       seed: {
         customType: HANDOFF_SEED_TYPE,
-        text: [
-          seedText(handoffService.preface({ ...link, path: record.handoffPath }), text),
-          "",
-          composeTask(successor, slot.item, slot.undelivered),
-        ].join("\n"),
+        text: successorSeed(
+          { preface: handoffService.preface({ ...link, path: record.handoffPath }), text },
+          successor,
+          slot.item,
+          slot.undelivered,
+        ),
         details: { from: "agent", ...link } satisfies HandoffSeedDetails,
       },
     };

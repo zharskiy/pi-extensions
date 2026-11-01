@@ -7,30 +7,21 @@ import {
   type ThemeToken,
   type ViewComponent,
 } from "../../../../platform/pi-adapter/index.ts";
-import {
-  DOT,
-  errorText,
-  formatTokens,
-  formatWindow,
-  type HandoffLimit,
-  type LimitLevel,
-  limitLevel,
-} from "../../../../platform/shared/index.ts";
+import { DOT, errorText, type HandoffLimit, workingContextText } from "../../../../platform/shared/index.ts";
 import {
   countLine,
   handoffNotice,
   type KeyHint,
   keyHints,
-  limitFigure,
-  limitTail,
+  limitLine,
   preview,
-  showsHandoffNotice,
   wrapChild,
 } from "../../../../platform/ui-kit/index.ts";
 import type { ViewData } from "../../core/agent-view/source.ts";
 import { agentReceipt, type ReceiptSegment, singleLine } from "../../core/components/receipt.ts";
 import { tickFor } from "../../core/components/refresh.ts";
 import { type AgentRecord, isClosed, type Worktree } from "../../core/model/agent-record.ts";
+import { type ContextUse, contextUse } from "../../core/model/context-limit.ts";
 import { agentName } from "../components/agent-row.ts";
 import { alignRight, innerWidth, padLine, receiptText, truncatePainted } from "../components/format.ts";
 import { stateGlyph, stateToken, stopWords } from "../components/state-text.ts";
@@ -52,37 +43,8 @@ const GAP = "  ";
 
 const CHROME_ROWS = 5;
 
-type ContextUse = { tokens: number; request: number; level: LimitLevel };
-
-const contextUse = (data: ViewData, limitOf: ViewDeps["limit"]): ContextUse | undefined => {
-  const { record } = data;
-  const tokens = record.context?.tokens ?? data.session?.contextTokens;
-  const limit = limitOf(record);
-
-  if (tokens === null || tokens === undefined || limit.request <= 0) {
-    return undefined;
-  }
-
-  return { tokens, request: limit.request, level: limitLevel(tokens, limit) };
-};
-
-const contextSegment = (use: ContextUse, theme: ThemeLike): ReceiptSegment => {
-  const figure = formatTokens(use.tokens);
-  const tail = `of ${formatWindow(use.request)}`;
-
-  return {
-    kind: "context",
-    text: `working context ${figure} ${tail}`,
-    token: "dim",
-    painted: `${theme.fg("dim", "working context")} ${limitFigure(theme, use.level, figure)} ${limitTail(theme, use.level, use.request)}`,
-  };
-};
-
-const contextNotice = (data: ViewData, limitOf: ViewDeps["limit"]) => {
-  const use = isClosed(data.record.state) ? undefined : contextUse(data, limitOf);
-
-  return use && showsHandoffNotice(use.level) ? handoffNotice(use.tokens, use.request) : undefined;
-};
+const contextNotice = (record: AgentRecord, use: ContextUse | undefined) =>
+  use && !isClosed(record.state) ? handoffNotice(use.level, use.tokens, use.request) : undefined;
 
 const titleLine = (record: AgentRecord, theme: ThemeLike, inner: number, now: number) =>
   PAD +
@@ -102,15 +64,18 @@ const receiptLine = (
   theme: ThemeLike,
   inner: number,
   now: number,
-  limitOf: ViewDeps["limit"],
+  use: ContextUse | undefined,
 ) => {
-  const use = contextUse(data, limitOf);
-  const segments: ReceiptSegment[] = [
+  const context: ReceiptSegment[] = use
+    ? [{ kind: "context", text: workingContextText(use.tokens, use.request), token: "dim" }]
+    : [];
+  const segments = [
     ...agentReceipt({ ...data.record, activity: undefined }, now, { live: true }),
-    ...(use ? [contextSegment(use, theme)] : []),
+    ...context,
   ];
+  const painters = use ? { context: () => limitLine(theme, use.level, use.tokens, use.request) } : {};
 
-  return PAD + theme.truncate(receiptText(segments, inner, theme), inner);
+  return PAD + theme.truncate(receiptText(segments, inner, theme, painters), inner);
 };
 
 const chainName = (record: AgentRecord, index: number) =>
@@ -166,7 +131,7 @@ export const headerLines = (
   theme: ThemeLike,
   width: number,
   now: number,
-  limitOf: ViewDeps["limit"],
+  use: ContextUse | undefined,
 ): string[] => {
   const { record, chain } = data;
   const inner = innerWidth(width);
@@ -176,7 +141,7 @@ export const headerLines = (
 
   return [
     titleLine(record, theme, inner, now),
-    receiptLine(data, theme, inner, now, limitOf),
+    receiptLine(data, theme, inner, now, use),
     dim(`${record.model ?? "model n/a"}${DOT}id ${record.id}`),
     ...errorLines(record, theme, inner),
     ...(chain.length > 1 ? [dim(chainText)] : []),
@@ -314,8 +279,9 @@ export const createAgentView = (deps: ViewDeps, api: OverlayApi): ViewComponent 
   const render = (width: number) => {
     const theme = api.theme;
     const inner = innerWidth(width);
-    const header = headerLines(data, theme, width, Date.now(), deps.limit);
-    const shown = notice ?? contextNotice(data, deps.limit);
+    const use = contextUse(data.record.context?.tokens, deps.limit(data.record));
+    const header = headerLines(data, theme, width, Date.now(), use);
+    const shown = notice ?? contextNotice(data.record, use);
     const footer = shown ? padLine(theme, shown.token, shown.text, inner) : "";
     const height = Math.max(3, api.rows() - header.length - CHROME_ROWS);
     const { request, lines, clickable } = bodyLines(width);

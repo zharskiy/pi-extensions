@@ -390,7 +390,7 @@ export const createPiRuntime = (
       },
       send: (message, delivery) => deliver(formatRoutedMessage(message), delivery),
       sendCustom: (message, delivery) => deliverCustom(queuedCustom(message, true), delivery),
-      wake: (message) => deliverCustom(queuedCustom(message, false), "followUp"),
+      sendHidden: (message) => deliverCustom(queuedCustom(message, false), "followUp"),
       abort: () => session.abort(),
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),

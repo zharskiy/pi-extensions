@@ -1,6 +1,6 @@
 import type { ThemeToken } from "../../../platform/pi-adapter/index.ts";
 import { DOT, type Limits, limitLevel, mainLimit } from "../../../platform/shared/index.ts";
-import { handoffNotice, MARKS, showsHandoffNotice } from "../../../platform/ui-kit/index.ts";
+import { handoffNotice, MARKS } from "../../../platform/ui-kit/index.ts";
 import type { ContextTokens } from "../core/thresholds.ts";
 
 export const segmentFor = (
@@ -19,9 +19,5 @@ export const segmentFor = (
 
   const limit = mainLimit(context.window, limits);
 
-  if (!limit || !showsHandoffNotice(limitLevel(context.tokens, limit))) {
-    return undefined;
-  }
-
-  return handoffNotice(context.tokens, limit.request);
+  return limit && handoffNotice(limitLevel(context.tokens, limit), context.tokens, limit.request);
 };

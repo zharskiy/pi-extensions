@@ -1,4 +1,5 @@
-import type { HandoffLimit } from "../../../../platform/shared/index.ts";
+import { type HandoffLimit, type LimitLevel, limitLevel } from "../../../../platform/shared/index.ts";
+import type { AgentRecord } from "./agent-record.ts";
 import type { Settings } from "./settings.ts";
 
 const UNKNOWN_LIMIT = 0;
@@ -21,11 +22,9 @@ export const effectiveContextLimit = (limit: number, window: number, reserveToke
   return Math.max(1, Math.min(limit, window - reserveTokens));
 };
 
-export const agentLimit = (
-  definitionLimit: number,
-  window: number,
-  settings: Pick<Settings, "reserveTokens" | "softContextRatio" | "hardContextRatio">,
-): StepLimit => {
+type LimitSettings = Pick<Settings, "reserveTokens" | "softContextRatio" | "hardContextRatio">;
+
+export const agentLimit = (definitionLimit: number, window: number, settings: LimitSettings): StepLimit => {
   const request = effectiveContextLimit(definitionLimit, window, settings.reserveTokens);
 
   return {
@@ -35,6 +34,22 @@ export const agentLimit = (
     graceTurns: 2,
     maxTurnsAfterRequest: 3,
   };
+};
+
+export const recordLimit = (record: Pick<AgentRecord, "contextLimit" | "context">, settings: LimitSettings) =>
+  agentLimit(record.contextLimit, record.context?.window ?? 0, settings);
+
+export type ContextUse = { tokens: number; request: number; level: LimitLevel };
+
+export const contextUse = (
+  tokens: number | null | undefined,
+  limit: HandoffLimit,
+): ContextUse | undefined => {
+  if (tokens === null || tokens === undefined || limit.request <= 0) {
+    return undefined;
+  }
+
+  return { tokens, request: limit.request, level: limitLevel(tokens, limit) };
 };
 
 const shouldAbort = (tokens: number, limit: StepLimit, turnsSinceRequest: number) => {

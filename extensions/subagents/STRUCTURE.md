@@ -43,12 +43,12 @@ extensions/subagents/
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
-│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, StepLimit, limitStep (request or abort; nothing below the limit)
+│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
-│   │   ├── receipt.ts                     # formatCalls, receipt segments (a pre-painted one allowed), plainReceipt, agentReceipt, firstLine, cutChars
+│   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
@@ -66,7 +66,7 @@ extensions/subagents/
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
 │   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage
-│   │   ├── task.ts                        # composeTask: a first link's prompt, and the tail of a successor's seed (no handoff path; `Original task:`; batch results held during the predecessor's handoff)
+│   │   ├── task.ts                        # composeTask: a first link's prompt, and the tail of a successor's seed (no handoff path; `Original task:`; batch results held during the predecessor's handoff); successorSeed: the handoff preface and text, then that task
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
@@ -90,7 +90,7 @@ extensions/subagents/
 │       └── text.ts                        # readableText, pageText, supported content types
 ├── ui/
 │   ├── components/
-│   │   ├── format.ts                      # receiptText (drops activity, cost, calls, tokens, then context), truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
+│   │   ├── format.ts                      # receiptText (per-kind painters; drops activity, cost, calls, tokens, then context), truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
 │   │   ├── state-text.ts                  # state marks, glyphs, spinner, state words, stopWords
 │   │   ├── agent-row.ts                   # the shared agent row: rowLayout, renderRow, renderRows, modelLabel
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs

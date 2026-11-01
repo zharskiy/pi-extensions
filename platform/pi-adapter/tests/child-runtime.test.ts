@@ -440,7 +440,7 @@ describe("child prompting", () => {
 
     child.start("task");
     await child.send({ sender: "main", text: "hi" }, "steer");
-    await child.wake(wake("more"));
+    await child.sendHidden(wake("more"));
 
     expect(calls).toEqual([
       "prompt task",
@@ -454,7 +454,7 @@ describe("child prompting", () => {
 
     child.start("task");
     settle();
-    await child.wake(wake("again"));
+    await child.sendHidden(wake("again"));
 
     expect(calls.at(-1)).toBe("custom pi-subagents:wake trigger again (hidden)");
   });
@@ -463,7 +463,7 @@ describe("child prompting", () => {
     const { child, calls, events, settle } = await spawnScripted();
 
     child.start("task");
-    await child.wake(wake("more"));
+    await child.sendHidden(wake("more"));
     settle();
 
     expect(calls.at(-1)).toBe("custom pi-subagents:wake trigger more (hidden)");
@@ -476,7 +476,7 @@ describe("child prompting", () => {
     child.start("task");
     settle();
     failNextRun(new Error("auth expired"));
-    await child.wake(wake("go on"));
+    await child.sendHidden(wake("go on"));
     await flushMicrotasks(1);
 
     expect(events).toEqual(["settled", "error Error: auth expired", "settled"]);
@@ -549,6 +549,18 @@ describe("child prompting", () => {
     expect(events).toEqual([]);
   });
 
+  it("re-queues a hidden message, still hidden, ahead of the text left in pi's queue at settle", async () => {
+    const { child, calls, events, settle, leaveQueued } = await spawnScripted();
+
+    child.start("task");
+    leaveQueued("late");
+    await child.sendHidden(wake("results"));
+    settle();
+
+    expect(calls.slice(-2)).toEqual(["custom pi-subagents:wake nextTurn results (hidden)", "prompt late"]);
+    expect(events).toEqual([]);
+  });
+
   it("starts the next run with a custom message that is the only thing pending at settle", async () => {
     const { child, calls, events, settle } = await spawnScripted();
 
@@ -609,7 +621,7 @@ describe("child prompting", () => {
     const { child, calls } = await spawnScripted();
 
     await child.dispose();
-    await child.wake(wake("too late"));
+    await child.sendHidden(wake("too late"));
     await child.send({ sender: "main", text: "hi" }, "steer");
 
     expect(calls).toEqual(["emit session_shutdown", "dispose"]);
