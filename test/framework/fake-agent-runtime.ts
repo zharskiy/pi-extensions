@@ -52,9 +52,13 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
     disposed: false,
     usage: emptyUsage(),
     text: "",
-    start: (task, seed) => {
-      child.task = task;
-      child.seed = seed;
+    start: (opening) => {
+      if (typeof opening === "string") {
+        child.task = opening;
+        return;
+      }
+
+      child.seed = opening;
     },
     subscribe: (listener) => {
       listeners.add(listener);

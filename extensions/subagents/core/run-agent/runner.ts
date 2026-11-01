@@ -491,7 +491,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       ...slot,
       seed: {
         customType: HANDOFF_SEED_TYPE,
-        text: seedText(handoffService.preface({ ...link, path: record.handoffPath }), text),
+        text: [
+          seedText(handoffService.preface({ ...link, path: record.handoffPath }), text),
+          "",
+          composeTask(successor, slot.item, slot.undelivered),
+        ].join("\n"),
         details: { from: "agent", ...link } satisfies HandoffSeedDetails,
       },
     };
@@ -782,7 +786,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.turn = "running";
 
     try {
-      child.start(composeTask(record, slot.item, slot.undelivered), slot.seed);
+      child.start(slot.seed ?? composeTask(record, slot.item, slot.undelivered));
       await sendHeld(live, child);
     } catch (error) {
       deps.registry.close(record.id, { state: "failed", error: `start failed: ${errorText(error)}` });

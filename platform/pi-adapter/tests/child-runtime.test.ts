@@ -556,10 +556,10 @@ describe("child prompting", () => {
     expect(calls.some((call) => call.includes("trigger") || call.includes("nextTurn"))).toBe(false);
   });
 
-  it("appends the seed before the task prompt and queues, not prompts, the messages sent in between", async () => {
+  it("starts from a seed alone and queues, not prompts, the messages sent while it runs", async () => {
     const { child, calls } = await spawnScripted();
 
-    child.start("task", { customType: "pi-handoff-seed", text: "the handoff", details: { from: "agent" } });
+    child.start({ customType: "pi-handoff-seed", text: "the handoff", details: { from: "agent" } });
     await Promise.all([
       child.send({ sender: "main", text: "hi" }, "steer"),
       child.sendCustom(request, "steer"),
@@ -567,11 +567,11 @@ describe("child prompting", () => {
     await flushMicrotasks(2);
 
     expect(calls).toEqual([
-      "custom pi-handoff-seed append the handoff",
+      "custom pi-handoff-seed trigger the handoff",
       expect.stringMatching(/^steer .*hi/s),
       "custom pi-handoff-request nextTurn hand off",
-      "prompt task",
     ]);
+    expect(calls.some((call) => call.startsWith("prompt"))).toBe(false);
   });
 
   it("never prompts a disposed session", async () => {

@@ -1,12 +1,13 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type {
   SessionRecord,
   ThemeLike,
   ToolSpec,
   ViewComponent,
 } from "../../../../../platform/pi-adapter/index.ts";
+import { handoffSeedMessage } from "../../../../../platform/ui-kit/index.ts";
 import {
   char,
   type FakeHost,
@@ -27,6 +28,7 @@ import {
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
+  registerPiMessageRenderer,
   typed,
 } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
@@ -1081,10 +1083,26 @@ describe("agent view past sessions", () => {
     expect(lines[2]).toBe(" 3s");
   });
 
+  const replyLine = (text: string) =>
+    line({ role: "assistant", content: [{ type: "text", text }], stopReason: "stop" });
+
+  const firstTask =
+    "Task from main (agent id explorer-old1):\nAgent folder: /agents/explorer-old1\nFind the login handler";
+
   const seedLine = JSON.stringify({
     type: "custom_message",
     customType: "pi-handoff-seed",
-    content: "Pick up the token refresh trace.",
+    content: [
+      "You continue the work of agent explorer-old1 as link 2 of its chain. Carry on from its Next section.",
+      "",
+      "## Next",
+      "- Pick up the token refresh trace.",
+      "",
+      "Task from main (agent id explorer-old2):",
+      "Agent folder: /agents/explorer-old2",
+      "Original task:",
+      "Find the login handler",
+    ].join("\n"),
     display: true,
     details: { from: "agent", id: "explorer-old1", link: 2 },
   });
@@ -1116,27 +1134,39 @@ describe("agent view past sessions", () => {
   const seam = (lines: string[]) =>
     plainLines(lines).findIndex((line) => line.includes("── handed off · context limit ─"));
 
-  it("shows every link of a chain in order, the handoff seam rule and the successor's seed between them", async () => {
+  it("shows every link of a chain in order with the seam rule, the successor's seed after it and the task once", async () => {
+    const release = registerPiMessageRenderer(
+      "pi-handoff-seed",
+      handoffSeedMessage(() => "ctrl+o"),
+    );
+
+    onTestFinished(release);
+
     const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
     const harness = chained("old-2.jsonl", {
-      "old-1.jsonl": session([userLine("Find the login handler")]),
-      "old-2.jsonl": session([seedLine, userLine("Trace the token refresh")]),
+      "old-1.jsonl": session([userLine(firstTask), replyLine("The handler is in src/auth.ts.")]),
+      "old-2.jsonl": session([seedLine, replyLine("Refresh lives in src/token.ts.")]),
     });
 
     const drawn = async (id: string) => plainLines((await harness.openView(id)).view.render(200)).join("\n");
     const text = await drawn("explorer-old1");
     const order = [
       "Find the login handler",
+      "The handler is in src/auth.ts.",
       "── handed off · context limit ─",
-      "Pick up the token refresh trace.",
-      "Trace the token refresh",
+      "handoff from agent explorer-old1 · link 2",
+      "You continue the work of agent explorer-old1 as link 2 of its chain.",
+      "Refresh lives in src/token.ts.",
     ].map((part) => text.indexOf(part));
 
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(text.split("Find the login handler")).toHaveLength(2);
+    expect(text).not.toContain("Original task:");
     expect(await drawn("explorer-old2")).toBe(text);
 
-    const rows = (await harness.openView("explorer-old2")).view.render(200);
+    const { view } = await harness.openView("explorer-old2");
+    const rows = view.render(200);
     const rule = seam(rows);
     const blank = (row: string | undefined) => row === "";
 
@@ -1148,8 +1178,17 @@ describe("agent view past sessions", () => {
       true,
       false,
     ]);
-    expect(rows.slice(rule + 1, rule + 4).some((row) => row.includes("pi-handoff-seed"))).toBe(true);
+    expect(plainLines(rows)[rule + 2]).toContain("handoff from agent explorer-old1 · link 2");
     expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+
+    view.handleKey(key("toggleTools"));
+
+    const expanded = plainLines(view.render(200)).join("\n");
+
+    expect(expanded).toMatch(/Original task:\n\s+Find the login handler/);
+    expect(expanded.indexOf("- Pick up the token refresh trace.")).toBeLessThan(
+      expanded.indexOf("Original task:"),
+    );
   });
 
   it("draws no seam rule while the last link has no session file", async () => {

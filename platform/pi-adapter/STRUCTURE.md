@@ -24,7 +24,7 @@
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with displayed custom messages as run starts), `formatRoutedMessage`.
 - `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
-- `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones and their re-queue at settle, the seeded start).
+- `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones and their re-queue at settle, `start` from a task or from a seed alone).
 - `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource`.
 - `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery, each with its scope and path.
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.

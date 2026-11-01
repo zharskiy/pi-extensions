@@ -317,23 +317,13 @@ export const createPiRuntime = (
       session.sendCustomMessage({ ...custom, display: true }, { triggerTurn: true }).catch(failStart);
     };
 
-    const appendSeed = (seed: CustomMessage) =>
-      session.sendCustomMessage(
-        { customType: seed.customType, content: seed.text, details: seed.details, display: true },
-        { triggerTurn: false },
-      );
-
-    const start = (task: string, seed?: CustomMessage) => {
-      if (!seed) {
-        prompt(task);
+    const start = (opening: string | CustomMessage) => {
+      if (typeof opening === "string") {
+        prompt(opening);
         return;
       }
 
-      running = true;
-
-      appendSeed(seed)
-        .then(() => prompt(task))
-        .catch(failStart);
+      sendCustomNow({ customType: opening.customType, content: opening.text, details: opening.details });
     };
 
     const deliver = async (text: string, delivery: MessageDelivery) => {
