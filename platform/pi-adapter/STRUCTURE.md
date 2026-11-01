@@ -52,7 +52,7 @@
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
 - `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
 - `tools/transcript.ts`: the transcript pane and pi renderer capture.
-- `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer, which draws the previous sessions of a handoff chain with the transcript pane.
+- `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer over `registerEntryRenderer`'s `flush` option, which draws the previous sessions of a handoff chain with the transcript pane.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
 - `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
 - `context/context-messages.ts`: per-message and per-block token estimates.
@@ -86,7 +86,7 @@
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
 - `tests/transcript.test.ts`: `tools/transcript.ts`.
-- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, and the model's requests unchanged by the entry, on later turns and after a resume too.
+- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, the redraw in a new theme after pi invalidates the entry, and the model's requests unchanged by the entry, on later turns and after a resume too.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.
 - `tests/main-prompt.test.ts`: `prompt/main-prompt.ts`.

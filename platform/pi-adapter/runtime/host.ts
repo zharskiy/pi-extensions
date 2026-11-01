@@ -71,23 +71,6 @@ const sessionInfo = (ctx: ExtensionContext, created: boolean): SessionInfo => ({
   mode: ctx.mode,
 });
 
-type SessionSetup = ((sessionManager: SessionManager) => Promise<void>) | undefined;
-
-const setupAll = (...setups: SessionSetup[]): SessionSetup => {
-  const steps = setups.filter((step) => step !== undefined);
-
-  if (steps.length === 0) {
-    return undefined;
-  }
-
-  return async (sessionManager) => {
-    await steps.reduce<Promise<void>>(
-      (chain, step) => chain.then(() => step(sessionManager)),
-      Promise.resolve(),
-    );
-  };
-};
-
 type NewSessionRequest = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
 
 type FreshSession = Parameters<NonNullable<NewSessionRequest["withSession"]>>[0];
@@ -138,12 +121,17 @@ const fillSession = async (
 
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
   newSession: async ({ parentSession, keepSelection: keep, showPrevious, continueWithSeed, fill }) => {
+    const kept = keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined;
+    const shown = showPrevious ? showPreviousSession(ctx) : undefined;
+
+    const setup = async (sessionManager: SessionManager) => {
+      await kept?.(sessionManager);
+      await shown?.(sessionManager);
+    };
+
     const result = await ctx.newSession({
       parentSession,
-      setup: setupAll(
-        keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-        showPrevious ? showPreviousSession(ctx) : undefined,
-      ),
+      setup: kept || shown ? setup : undefined,
       withSession: (fresh) => fillSession(fresh, fill(), continueWithSeed === true),
     });
 
@@ -200,21 +188,23 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
 
   hostStates().add(state);
 
-  pi.registerEntryRenderer(
-    PREVIOUS_SESSION_TYPE,
-    previousSessionRenderer({
-      cwd: () => state.ctx?.cwd ?? process.cwd(),
-      tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
-      requestRender: () => {
-        const ctx = tuiContext(state);
+  const previous = previousSessionRenderer({
+    cwd: () => state.ctx?.cwd ?? process.cwd(),
+    tools: () => [...hostStates()].flatMap((host) => [...host.tools.values()]),
+    requestRender: () => {
+      const ctx = tuiContext(state);
 
-        if (ctx) {
-          previousTui ??= captureTui(ctx);
-          previousTui?.requestRender();
-        }
-      },
-    }),
-  );
+      if (ctx) {
+        previousTui ??= captureTui(ctx);
+        previousTui?.requestRender();
+      }
+    },
+  });
+
+  entries.registerEntryRenderer(PREVIOUS_SESSION_TYPE, previous.render, {
+    flush: true,
+    invalidate: previous.invalidate,
+  });
 
   const capture = (ctx: ExtensionContext) => {
     state.ctx = ctx;

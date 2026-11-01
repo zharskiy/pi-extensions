@@ -16,10 +16,11 @@ const indentLines = (lines: string[], pad: number, width: number) => {
   );
 };
 
-export const paddedComponent = (
+const paddedComponent = (
   pad: () => number,
   flush: boolean,
   draw: (width: number, pad: number) => string[],
+  invalidate: () => void = () => {},
 ): Component => ({
   render: (width) => {
     const read = pad();
@@ -27,8 +28,10 @@ export const paddedComponent = (
 
     return indentLines(draw(Math.max(1, width - shift), read), shift, width);
   },
-  invalidate: () => {},
+  invalidate,
 });
+
+type RailOptions = EntryOptions & { invalidate?: () => void };
 
 type PiMessageRenderer = Parameters<ExtensionAPI["registerMessageRenderer"]>[1];
 
@@ -43,7 +46,10 @@ export const messageRendererFor = (customType: string): PiMessageRenderer | unde
 export const entryHost = (
   pi: Pick<ExtensionAPI, "registerEntryRenderer" | "registerMessageRenderer">,
   entryPad: () => number = sharedPad,
-): Pick<EntryHost, "registerEntryRenderer" | "registerMessageRenderer"> & { release: () => void } => {
+): Pick<EntryHost, "registerMessageRenderer"> & {
+  registerEntryRenderer(customType: string, render: EntryRender, options?: RailOptions): void;
+  release: () => void;
+} => {
   const owner = {};
 
   return {
@@ -52,10 +58,13 @@ export const entryHost = (
 
       shared.entries = shared.entries.filter((entry) => entry.owner !== owner);
     },
-    registerEntryRenderer: (customType, render: EntryRender, { flush = false }: EntryOptions = {}) => {
+    registerEntryRenderer: (customType, render, { flush = false, invalidate }: RailOptions = {}) => {
       pi.registerEntryRenderer(customType, (entry, options, theme: Theme) =>
-        paddedComponent(entryPad, flush, (width, pad) =>
-          render(entry.data, width, options.expanded, themeLike(theme), pad),
+        paddedComponent(
+          entryPad,
+          flush,
+          (width, pad) => render(entry.data, width, options.expanded, themeLike(theme), pad),
+          invalidate,
         ),
       );
     },

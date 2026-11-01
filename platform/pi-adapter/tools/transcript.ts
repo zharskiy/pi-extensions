@@ -90,7 +90,7 @@ export const createTranscriptPane = (
   tui: TUI,
   cwd: string,
   options: TranscriptPaneOptions = {},
-): TranscriptPane => {
+): TranscriptPane & { invalidate(): void } => {
   const container = new Container();
   const pendingTools = new Map<string, ToolExecutionComponent>();
   const definitions = new Map<string, object | undefined>();
@@ -232,6 +232,9 @@ export const createTranscriptPane = (
       rendered = lines.length;
 
       return lines;
+    },
+    invalidate: () => {
+      container.invalidate();
     },
     click: (line, column, width) => {
       const result = container.handleMouse({

@@ -1,7 +1,7 @@
 export { renderPiEntry, renderPiUserMessage } from "./entry-rendering.ts";
 export { startPiSession } from "./offline-session.ts";
 export { createOverlayApi, disposeOverlays, openLastOverlay } from "./overlay-api.ts";
-export { initPiKeybindings, initPiRenderTheme, plainPiTheme } from "./render-theme.ts";
+export { initPiKeybindings, initPiRenderTheme, livePiTheme, plainPiTheme } from "./render-theme.ts";
 export {
   parseSessionLines,
   promptRecordEntry,

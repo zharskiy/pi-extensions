@@ -3,7 +3,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
+import { initPiRenderTheme, livePiTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
 
 initPiRenderTheme();
@@ -97,11 +97,16 @@ const startRuntime = async () => {
       .getEntries()
       .find((entry): entry is pi.CustomEntry => entry.type === "custom" && entry.customType === PREVIOUS);
 
-  const draw = (entry: pi.CustomEntry | undefined) => {
+  const component = (entry: pi.CustomEntry | undefined, theme: pi.Theme) => {
     const renderer = runtime.session.extensionRunner.getEntryRenderer(PREVIOUS);
-    const component = entry && renderer?.(entry, { expanded: false }, plainPiTheme);
 
-    return stripVTControlCharacters(component?.render(100).join("\n") ?? "");
+    return entry && renderer?.(entry, { expanded: false }, theme);
+  };
+
+  const draw = (entry: pi.CustomEntry | undefined) => {
+    const drawn = component(entry, plainPiTheme);
+
+    return stripVTControlCharacters(drawn?.render(100).join("\n") ?? "");
   };
 
   const normalized = (request: unknown) =>
@@ -111,7 +116,7 @@ const startRuntime = async () => {
       ).replaceAll(dir, "<dir>"),
     );
 
-  return { runtime, requests, dir, previousEntry, draw, normalized };
+  return { runtime, requests, dir, previousEntry, component, draw, normalized };
 };
 
 const handOff = async (args: string) => {
@@ -202,6 +207,31 @@ describe("showing the previous session after a handoff", () => {
     expect(drawn.split("» previous session · ")).toHaveLength(3);
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    await session.runtime.dispose();
+  });
+
+  it("redraws the previous session in the new theme once pi invalidates the entry", async () => {
+    const session = await handOff("show");
+    const entry = session.previousEntry();
+    const line = (lines: string[] | undefined, text: string) =>
+      lines?.find((row) => stripVTControlCharacters(row).includes(text));
+
+    pi.initTheme("dark");
+
+    const first = session.component(entry, livePiTheme);
+    const dark = first?.render(100);
+
+    pi.initTheme("light");
+    first?.invalidate();
+
+    const light = session.component(entry, livePiTheme)?.render(100);
+
+    initPiRenderTheme();
+
+    expect(line(dark, "first question")).toBeDefined();
+    expect(line(light, "first question")).not.toBe(line(dark, "first question"));
+    expect(line(light, "» previous session · ")).not.toBe(line(dark, "» previous session · "));
 
     await session.runtime.dispose();
   });

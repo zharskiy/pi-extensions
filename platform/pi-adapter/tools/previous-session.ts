@@ -1,13 +1,11 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import type { EntryRenderer, ExtensionContext, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
+import type { ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
 import { readSessionBranch } from "../runtime/session-file.ts";
 import type { ThemeToken } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
-import { themeLike } from "../ui/theme-bridge.ts";
-import { paddedComponent } from "./entry-renderers.ts";
-import { sharedPad } from "./row-component.ts";
+import type { EntryRender } from "../types/view.ts";
 import { createTranscriptPane } from "./transcript.ts";
 
 export const PREVIOUS_SESSION_TYPE = "pi-adapter:previous-session";
@@ -16,7 +14,7 @@ const MAX_SESSIONS = 5;
 
 type PreviousSession = { file: string; leafId: string | null };
 
-type Block = { component: Component; setExpanded(expanded: boolean): void };
+type Part = { token: ThemeToken; text: string; pane?: ReturnType<typeof createTranscriptPane> };
 
 type RendererDeps = {
   cwd(): string;
@@ -59,26 +57,21 @@ export const showPreviousSession = (ctx: ExtensionContext) => {
   };
 };
 
-export const previousSessionRenderer = (deps: RendererDeps): EntryRenderer => {
-  const cache = new Map<string, Block>();
+export const previousSessionRenderer = (deps: RendererDeps) => {
+  const cache = new Map<string, Part[]>();
   const tui = { requestRender: () => deps.requestRender() } as unknown as TUI;
 
-  const line = (theme: Theme, token: ThemeToken, text: string) =>
-    paddedComponent(sharedPad, false, () => [themeLike(theme).fg(token, text)]);
-
-  const noteBlock = (component: Component): Block => ({ component, setExpanded: () => {} });
-
-  const sessionBlock = (previous: PreviousSession, theme: Theme, seen: string[]): Block => {
+  const sessionParts = (previous: PreviousSession, seen: string[]): Part[] => {
     const path = shownPath(previous.file);
 
     if (seen.includes(previous.file) || seen.length >= MAX_SESSIONS) {
-      return noteBlock(line(theme, "dim", `» earlier sessions not shown · ${path}`));
+      return [{ token: "dim", text: `» earlier sessions not shown · ${path}` }];
     }
 
     const branch = readBranch(previous);
 
     if (!branch) {
-      return noteBlock(line(theme, "warning", `» previous session not found · ${path}`));
+      return [{ token: "warning", text: `» previous session not found · ${path}` }];
     }
 
     const earlier = branch.customEntries
@@ -86,45 +79,45 @@ export const previousSessionRenderer = (deps: RendererDeps): EntryRenderer => {
       .map((entry) => entry.data)
       .find(isPreviousSession);
 
-    const nested = earlier ? sessionBlock(earlier, theme, [...seen, previous.file]) : undefined;
+    const nested = earlier ? sessionParts(earlier, [...seen, previous.file]) : [];
     const pane = createTranscriptPane(tui, deps.cwd(), { tools: deps.tools() });
-    const container = new Container();
 
     pane.sync(branch.items);
 
-    if (nested) {
-      container.addChild(nested.component);
-      container.addChild(new Spacer(1));
-    }
-
-    container.addChild(line(theme, "dim", `» previous session · ${path}`));
-    container.addChild({ render: (width) => pane.render(width), invalidate: () => {} });
-
-    return {
-      component: container,
-      setExpanded: (expanded) => {
-        nested?.setExpanded(expanded);
-        pane.setToolsExpanded(expanded);
-      },
-    };
+    return [...nested, { token: "dim", text: `» previous session · ${path}`, pane }];
   };
 
-  return (entry, options, theme) => {
-    const previous = entry.data;
-
-    if (!isPreviousSession(previous)) {
-      return undefined;
+  const render: EntryRender = (data, width, expanded, theme, pad) => {
+    if (!isPreviousSession(data)) {
+      return [];
     }
 
-    const key = `${previous.file}\n${previous.leafId}`;
-    const block = cache.get(key) ?? sessionBlock(previous, theme, []);
+    const key = `${data.file}\n${data.leafId}`;
+    const parts = cache.get(key) ?? sessionParts(data, []);
+    const margin = " ".repeat(pad);
 
-    if (existsSync(previous.file)) {
-      cache.set(key, block);
+    if (existsSync(data.file)) {
+      cache.set(key, parts);
     }
 
-    block.setExpanded(options.expanded);
+    return parts.flatMap(({ token, text, pane }, index) => {
+      pane?.setToolsExpanded(expanded);
 
-    return block.component;
+      return [
+        ...(index > 0 ? [""] : []),
+        `${margin}${theme.fg(token, text)}`,
+        ...(pane?.render(width) ?? []),
+      ];
+    });
   };
+
+  const invalidate = () => {
+    cache.forEach((parts) => {
+      parts.forEach(({ pane }) => {
+        pane?.invalidate();
+      });
+    });
+  };
+
+  return { render, invalidate };
 };
