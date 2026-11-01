@@ -1550,6 +1550,7 @@ describe("pi adapter conformance", () => {
         "toolDiffAdded",
         "toolDiffRemoved",
         "userMessageBg",
+        "userMessageText",
         "customMessageLabel",
         "customMessageText",
       ] as const;

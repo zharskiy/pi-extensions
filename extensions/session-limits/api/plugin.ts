@@ -13,7 +13,9 @@ import {
   handoffToolRows,
 } from "../../../platform/ui-kit/index.ts";
 import { validateMainHandoff } from "../core/handoff.ts";
+import { KEPT_MESSAGE_ENTRY, KEPT_RULE_ENTRY } from "../core/kept-entries.ts";
 import { watchLimits } from "../core/limits.ts";
+import { keptMessage, keptRule } from "../ui/kept-entries.ts";
 import { segmentFor } from "../ui/threshold-text.ts";
 
 type LimitsOptions = {
@@ -27,6 +29,8 @@ export const createLimits = ({ host, limits, releaseDelayMs }: LimitsOptions) =>
 
   host.registerMessageRenderer(HANDOFF_REQUEST_TYPE, handoffRequestMessage(keyText));
   host.registerMessageRenderer(HANDOFF_SEED_TYPE, handoffSeedMessage(keyText));
+  host.registerEntryRenderer(KEPT_RULE_ENTRY, keptRule);
+  host.registerEntryRenderer(KEPT_MESSAGE_ENTRY, keptMessage);
 
   const saving = watchLimits({ host, limits, segment: segmentFor, releaseDelayMs });
 

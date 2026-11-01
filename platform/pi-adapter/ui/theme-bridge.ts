@@ -24,7 +24,7 @@ const WORD_MIX = 0.4;
 
 const NO_BG = "\x1b[49m";
 
-const LINE_BGS = { added: "toolSuccessBg", removed: "toolErrorBg" } as const;
+const LINE_BGS = { added: "toolSuccessBg", removed: "toolErrorBg", userMessage: "userMessageBg" } as const;
 
 const WORD_BGS = {
   addedWord: ["toolSuccessBg", "toolDiffAdded"],
@@ -32,13 +32,13 @@ const WORD_BGS = {
 } as const;
 
 const piBg = (theme: Theme, token: BgToken) => {
-  if (token === "added" || token === "removed") {
-    return LINE_BGS[token];
+  if (token === "addedWord" || token === "removedWord") {
+    const [line, word] = WORD_BGS[token];
+
+    return mixColors(theme.colors[line], theme.colors[word], WORD_MIX);
   }
 
-  const [line, word] = WORD_BGS[token];
-
-  return mixColors(theme.colors[line], theme.colors[word], WORD_MIX);
+  return LINE_BGS[token];
 };
 
 export const themeLike = (theme: Theme): ThemeLike => ({

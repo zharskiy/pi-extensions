@@ -1437,6 +1437,22 @@ describe("messages typed during a handoff", () => {
 
   const switched = (host: ReturnType<typeof setup>["host"]) => host.newSessions[0];
 
+  const chat = (host: ReturnType<typeof setup>["host"]) =>
+    host.chat.map((item) =>
+      item.kind === "assistant"
+        ? item.text
+        : host
+            .renderEntry(item.customType, item.data, { width: 100 })
+            .map((line) => line.replaceAll("─", "").trim())
+            .filter(Boolean)
+            .join(" | "),
+    );
+
+  const KEPT = "handing off, messages below go to the new session";
+  const WAITING = `${KEPT} · /${HANDOFF_COMMAND} switches now`;
+  const EDITOR = `${KEPT}'s editor`;
+  const RETURNED = "handoff abandoned, messages are back in the editor";
+
   it("keeps a message typed while the request is written or the switch waits and forwards nothing", async () => {
     const { host, turn, saveHandoff, busy } = setup();
 
@@ -1450,13 +1466,8 @@ describe("messages typed during a handoff", () => {
 
     expect(host.input("second")).toBe(true);
     expect(host.forwarded).toEqual([]);
-    expect(host.notices).toEqual([
-      { message: "Kept for the new session: this message goes there with the handoff.", level: "info" },
-      {
-        message: `Kept for the new session: this message goes there with the handoff. Run /${HANDOFF_COMMAND} to switch now.`,
-        level: "info",
-      },
-    ]);
+    expect(chat(host)).toEqual([KEPT, "first", WAITING, "second"]);
+    expect(host.notices).toEqual([]);
 
     busy(false);
     await flush();
@@ -1465,6 +1476,105 @@ describe("messages typed during a handoff", () => {
     expect(switched(host)?.seed?.text).not.toContain("first");
     expect(switched(host)?.followUps).toEqual([{ text: "first\n\nsecond", images: [] }]);
     expect(switched(host)?.continueWithSeed).toBe(true);
+  });
+
+  it("shows a rule and then each kept message in the chat", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("first");
+    host.input("second", { images: [IMAGE, IMAGE] });
+
+    expect(chat(host)).toEqual([KEPT, "first", "second | 2 images"]);
+  });
+
+  it("draws one rule for several messages kept while the switch waits", () => {
+    const { host, turn, saveHandoff, busy } = setup();
+
+    busy(true);
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    host.input("first");
+    host.input("second");
+
+    expect(chat(host)).toEqual([WAITING, "first", "second"]);
+  });
+
+  it("adds no rule for a message typed while the old session shuts down", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    host.input("first");
+    saveHandoff(VALID_HANDOFF);
+    host.duringSwitch = () => {
+      host.input("second");
+    };
+    host.settle();
+    await flush();
+
+    expect(chat(host)).toEqual([KEPT, "first", "second"]);
+  });
+
+  it("says the messages go to the new session's editor after /session-handoff and skips an images-only one", async () => {
+    const { host } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("the plan");
+    host.input("", { images: [IMAGE] });
+
+    expect(chat(host)).toEqual([EDITOR, "the plan"]);
+    expect(host.notices.at(-1)?.level).toBe("warning");
+  });
+
+  it("draws a new rule when /session-handoff with a focus asks again while the switch waits", async () => {
+    const { host, turn, saveHandoff, busy } = setup();
+
+    busy(true);
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    host.input("first");
+    await host.runCommand(HANDOFF_COMMAND, "the tests");
+    host.input("second");
+
+    expect(chat(host)).toEqual([WAITING, "first", EDITOR, "second"]);
+  });
+
+  it("starts the next handoff with a new rule after one was abandoned", async () => {
+    const { host } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("never mind");
+    host.settle({ aborted: true });
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("again");
+
+    expect(chat(host)).toEqual([EDITOR, "never mind", RETURNED, EDITOR, "again"]);
+  });
+
+  it("closes the kept messages with the abandoned rule even when only images were kept", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("", { images: [IMAGE] });
+    host.settle();
+    host.settle();
+
+    expect(chat(host)).toEqual([KEPT, "1 image", RETURNED]);
+    expect(host.notices.at(-1)?.message).toContain("could not be put back in the editor");
+  });
+
+  it("draws nothing outside the TUI and says where the message goes in a notice instead", () => {
+    const { host, turn } = setup(0, LIMITS, "rpc");
+
+    turn(76_000);
+
+    expect(host.input("first")).toBe(true);
+    expect(host.chat).toEqual([]);
+    expect(host.notices).toEqual([
+      { message: "Kept for the new session: this message goes there with the handoff.", level: "info" },
+    ]);
   });
 
   it("lets messages through while no handoff is pending", () => {
@@ -1525,6 +1635,9 @@ describe("messages typed during a handoff", () => {
     turn(76_000);
     host.input("look at this", { images: [IMAGE] });
     host.input("and this", { images: [IMAGE] });
+
+    expect(chat(host)).toEqual([KEPT, "look at this | 1 image", "and this | 1 image"]);
+
     saveHandoff(VALID_HANDOFF);
     host.settle();
     await flush();
@@ -1585,13 +1698,9 @@ describe("messages typed during a handoff", () => {
     host.settle();
 
     expect(host.editorText).toBe("do this next\n\nand this\n\ndraft");
-    expect(host.notices.slice(-3)).toEqual([
+    expect(chat(host)).toEqual([KEPT, "do this next", "and this | 2 images", RETURNED]);
+    expect(host.notices.slice(-2)).toEqual([
       expect.objectContaining({ level: "warning" }),
-      {
-        message:
-          "No new session was started; the messages you typed during the handoff are back in the editor.",
-        level: "info",
-      },
       {
         message:
           "2 images attached during the handoff could not be put back in the editor; attach them again.",
@@ -1612,6 +1721,7 @@ describe("messages typed during a handoff", () => {
     await flush();
 
     expect(host.editorText).toBe("keep going");
+    expect(chat(host).at(-1)).toBe(RETURNED);
   });
 
   it("puts kept messages back in the editor when the new session fails", async () => {
@@ -1652,5 +1762,7 @@ describe("messages typed during a handoff", () => {
     host.settle({ aborted: true });
 
     expect(host.editorText).toBe("never mind");
+    expect(host.notices.at(-1)).toEqual({ message: "Session handoff cancelled.", level: "info" });
+    expect(chat(host)).toEqual([EDITOR, "never mind", RETURNED]);
   });
 });

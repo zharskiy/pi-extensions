@@ -41,7 +41,7 @@
 - `ui/notices.ts`: `HostUi.setNotice`; one-line notices between the editor and the footer.
 - `ui/thinking-label.ts`: the hidden thinking label: composed hint, record on `globalThis`, OSC 133 prefix.
 - `ui/working-message.ts`: the working message and its visibility.
-- `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours), `textMetrics` (width, truncate, wrap), `fitLines`.
+- `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours, background tokens to pi's diff and user message backgrounds), `textMetrics` (width, truncate, wrap), `fitLines`.
 - `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.

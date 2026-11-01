@@ -6,11 +6,11 @@ export type StatusToken = "success" | "warning" | "error";
 
 type ThinkingToken = `thinking${Capitalize<ThinkingLevel>}`;
 
-type MessageToken = "customMessageLabel" | "customMessageText";
+type MessageToken = "customMessageLabel" | "customMessageText" | "userMessageText";
 
 export type ThemeToken = PaintToken | StatusToken | ThinkingToken | MessageToken;
 
-export type BgToken = "added" | "removed" | "addedWord" | "removedWord";
+export type BgToken = "added" | "removed" | "addedWord" | "removedWord" | "userMessage";
 
 export type ThemeLike = {
   fg(token: ThemeToken, text: string): string;

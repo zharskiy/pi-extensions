@@ -34,6 +34,13 @@ import {
   withLateResults,
 } from "./handoff.ts";
 import {
+  KEPT_MESSAGE_ENTRY,
+  KEPT_RULE_ENTRY,
+  type KeptMessage,
+  type KeptRule,
+  keptRuleFor,
+} from "./kept-entries.ts";
+import {
   type ContextTokens,
   handoffInFlight,
   handoffStep,
@@ -97,6 +104,8 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
   let announced = false;
+  let ruled: KeptRule["state"] | undefined;
+  let tui = false;
 
   const currentInstruction = (path: string) =>
     handoffInstruction({
@@ -136,13 +145,53 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     );
   };
 
+  const appendRule = (rule: KeptRule["state"]) => {
+    host.appendEntry(KEPT_RULE_ENTRY, { state: rule } satisfies KeptRule);
+  };
+
+  const showKept = (message: UserMessage) => {
+    if (!message.text.trim() && message.images.length === 0) {
+      return;
+    }
+
+    const rule = keptRuleFor(state.handedOff, state.phase === "waiting");
+
+    if (rule !== ruled) {
+      ruled = rule;
+      appendRule(rule);
+    }
+
+    host.appendEntry(KEPT_MESSAGE_ENTRY, {
+      text: message.text,
+      images: message.images.length,
+    } satisfies KeptMessage);
+  };
+
+  const notifyKept = () => {
+    const destination = state.handedOff
+      ? "this message will be in its editor"
+      : "this message goes there with the handoff";
+    const switchHint = state.phase === "waiting" ? ` Run /${HANDOFF_COMMAND} to switch now.` : "";
+
+    host.ui.notify(`Kept for the new session: ${destination}.${switchHint}`, "info");
+  };
+
   const restoreCaptured = () => {
     const messages = captured.splice(0);
     const text = joinParagraphs(textsOf(messages));
+    const shown = ruled !== undefined;
+
+    ruled = undefined;
 
     if (text) {
       host.ui.setEditorText(joinParagraphs([text, host.ui.getEditorText()]));
+    }
 
+    if (shown) {
+      appendRule("returned");
+    }
+
+    if (text && !tui) {
       host.ui.notify(
         "No new session was started; the messages you typed during the handoff are back in the editor.",
         "info",
@@ -498,14 +547,15 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       return false;
     }
 
-    captured.push({ text: input.text, images: state.handedOff ? [] : input.images });
+    const message = { text: input.text, images: state.handedOff ? [] : input.images };
 
-    const destination = state.handedOff
-      ? "this message will be in its editor"
-      : "this message goes there with the handoff";
-    const switchHint = state.phase === "waiting" ? ` Run /${HANDOFF_COMMAND} to switch now.` : "";
+    captured.push(message);
 
-    host.ui.notify(`Kept for the new session: ${destination}.${switchHint}`, "info");
+    if (tui) {
+      showKept(message);
+    } else {
+      notifyKept();
+    }
 
     if (state.handedOff) {
       dropImages([input], "cannot go into the new session's editor");
@@ -524,7 +574,8 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     held.set(results.source, results.text);
   });
 
-  host.onSessionStart(() => {
+  host.onSessionStart((info) => {
+    tui = info.mode === "tui";
     announce();
   });
 
