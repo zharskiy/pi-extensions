@@ -1913,6 +1913,16 @@ describe("pi adapter conformance", () => {
       ).toBe(false);
     });
 
+    it("draws the user message as full-width rows with the output pad as its margin and a blank row above and below", () => {
+      initPiRenderTheme();
+
+      const lines = new pi.UserMessageComponent("hello", pi.getMarkdownTheme(), 2)
+        .render(12)
+        .map((line) => stripVTControlCharacters(line.replace(OSC133_ZONE_PREFIX, "")));
+
+      expect(lines).toEqual([" ".repeat(12), "  hello     ", " ".repeat(12)]);
+    });
+
     it("routes clicks in a container by the child layout of the last render", () => {
       expect(typeof tui.Container.prototype.handleMouse).toBe("function");
     });

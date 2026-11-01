@@ -133,7 +133,7 @@ export type FakeHost = Host & {
   renderEntry(
     customType: string,
     data: unknown,
-    options?: { width?: number; expanded?: boolean; theme?: ThemeLike },
+    options?: { width?: number; expanded?: boolean; theme?: ThemeLike; pad?: number },
   ): string[];
   facts?: ContextFacts;
   lastUsage?: PromptTokens;
@@ -164,7 +164,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   const emptyDownHandlers = new Set<() => void>();
   const emptyEscapeHandlers = new Set<() => boolean>();
-  const entryRenderers = new Map<string, EntryRender>();
+  const entryRenderers = new Map<string, { render: EntryRender; flush: boolean }>();
   const messageRenderers = new Map<string, MessageRender>();
   const channels = new Map<string, Set<(data: unknown) => void>>();
   const deferred: string[] = [];
@@ -699,8 +699,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     model: () => host.activeModel,
     thinkingLevel: () => host.thinking,
     sessionName: () => host.sessionTitle,
-    registerEntryRenderer: (customType, render) => {
-      entryRenderers.set(customType, render);
+    registerEntryRenderer: (customType, render, { flush = false } = {}) => {
+      entryRenderers.set(customType, { render, flush });
     },
     registerToolRows: (rows) => {
       host.toolRows = rows;
@@ -720,14 +720,17 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         theme.truncate(line, width),
       );
     },
-    renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme } = {}) => {
-      const render = entryRenderers.get(customType);
+    renderEntry: (customType, data, { width = 80, expanded = false, theme = plainTheme, pad = 0 } = {}) => {
+      const renderer = entryRenderers.get(customType);
 
-      if (!render) {
+      if (!renderer) {
         throw new Error(`entry renderer ${customType} not registered`);
       }
 
-      return render(structuredClone(data), width, expanded, theme).map((line) => theme.truncate(line, width));
+      const shift = renderer.flush ? 0 : pad;
+      const lines = renderer.render(structuredClone(data), Math.max(1, width - shift), expanded, theme, pad);
+
+      return lines.map((line) => theme.truncate(`${" ".repeat(shift)}${line}`, width));
     },
     mainUsage: promptTokens(),
     contextFacts: () => (host.facts ? structuredClone(host.facts) : undefined),

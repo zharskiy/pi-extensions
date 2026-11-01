@@ -13,7 +13,7 @@ import type {
 } from "./session.ts";
 import type { ToolRows, ToolSpec } from "./tools.ts";
 import type { UsageTotals } from "./usage.ts";
-import type { EntryRender, MessageRender } from "./view.ts";
+import type { EntryOptions, EntryRender, MessageRender } from "./view.ts";
 
 type ToolHost = {
   registerTool<P, D>(spec: ToolSpec<P, D>): void;
@@ -52,7 +52,7 @@ type MessagingHost = {
 
 export type EntryHost = {
   appendEntry(customType: string, data: unknown): void;
-  registerEntryRenderer(customType: string, render: EntryRender): void;
+  registerEntryRenderer(customType: string, render: EntryRender, options?: EntryOptions): void;
   registerToolRows(rows: ToolRows): void;
   registerMessageRenderer(customType: string, render: MessageRender): void;
   readEntries<T>(customType: string, file?: string): T[];

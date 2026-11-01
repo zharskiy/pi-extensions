@@ -11,7 +11,7 @@
 - `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the `fill` thunk returning a `SessionFill`: the seed, optional follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.
 - `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
-- `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.
+- `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers (`EntryRender`, `EntryOptions`).
 - `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `ImageAttachment` and `UserMessage` (a user's text with its images; the seed carries none), `RoutedMessage` (sender and text), `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
 - `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
 - `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages, the input hook, the new session's fill (editor text, seed, follow-ups) run inside `withSession`.
@@ -50,7 +50,7 @@
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
-- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
 - `tools/transcript.ts`: the transcript pane and pi renderer capture.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
 - `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
