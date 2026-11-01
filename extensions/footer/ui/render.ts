@@ -10,10 +10,10 @@ import {
   DOT,
   formatMoney,
   formatTokens,
-  formatWindow,
   type SpendingTotals,
+  WORKING_CONTEXT,
 } from "../../../platform/shared/index.ts";
-import { keyHints } from "../../../platform/ui-kit/index.ts";
+import { keyHints, limitFigure, limitTail } from "../../../platform/ui-kit/index.ts";
 import {
   type ContextBase,
   contextBase,
@@ -66,26 +66,15 @@ const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking:
 };
 
 const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: ContextBase): Segment[] => {
-  const label = theme.fg("dim", base.level ? "working context" : "context");
+  const label = theme.fg("dim", base.level ? WORKING_CONTEXT : "context");
 
   if (context.tokens === null || base.base <= 0) {
     return [{ text: `${label} ${theme.fg("muted", "?")}`, drop: NEVER }];
   }
 
-  const count = formatTokens(context.tokens);
-  const of = `of ${formatWindow(base.base)}`;
-
-  const tone = base.level === "hard" ? "error" : base.level === "soft" ? "warning" : undefined;
-
-  const figure = (text: string) => {
-    const painted = theme.fg(tone ?? "text", text);
-
-    return tone === "error" ? theme.bold(painted) : painted;
-  };
-
   return [
-    { text: `${label} ${figure(count)}`, drop: NEVER },
-    { text: theme.fg(tone ?? "dim", of), drop: 5, tight: true },
+    { text: `${label} ${limitFigure(theme, base.level, context.tokens)}`, drop: NEVER },
+    { text: limitTail(theme, base.level, base.base), drop: 5, tight: true },
   ];
 };
 

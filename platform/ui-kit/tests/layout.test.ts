@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../../pi-adapter/index.ts";
 import { padded, prefixed } from "../../shared/index.ts";
-import { framed, hintRow, keyHints, labelledRule, rule } from "../key-hints.ts";
+import { framed, hintRow, keyHints, rule } from "../key-hints.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
 
@@ -11,28 +11,6 @@ describe("rule", () => {
     expect(rule(plainTheme, 5)).toBe("─────");
     expect(rule(plainTheme, 0)).toBe("─");
     expect(rule(tagged, 3)).toContain("<accent>");
-  });
-});
-
-describe("labelledRule", () => {
-  it("fills the width after the label and paints it dim", () => {
-    const line = labelledRule(plainTheme, 60, "worked 42s");
-
-    expect(line.startsWith("── worked 42s ─")).toBe(true);
-    expect(plainTheme.width(line)).toBe(60);
-    expect(labelledRule(tagged, 60, "worked 42s")).toMatch(/^<dim>── worked 42s /);
-  });
-
-  it("cuts a label that does not fit and keeps the width", () => {
-    const line = labelledRule(plainTheme, 12, "worked 42s");
-
-    expect(line).toContain("...");
-    expect(plainTheme.width(line)).toBe(12);
-  });
-
-  it("draws only the line below six columns", () => {
-    expect(labelledRule(plainTheme, 4, "worked 42s")).toBe("────");
-    expect(labelledRule(plainTheme, 0, "worked 42s")).toBe("─");
   });
 });
 

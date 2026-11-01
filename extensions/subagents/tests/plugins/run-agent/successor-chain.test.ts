@@ -121,19 +121,21 @@ describe("successor chain", () => {
     });
     expect(hiddenMessageTexts(host)).toEqual([]);
 
-    const task = runtime.child(second).task ?? "";
     const seed = runtime.child(second).seed;
+    const text = seed?.text ?? "";
+    const original = text.indexOf("Original task:\nmap the auth flow");
 
+    expect(runtime.child(second).task).toBeUndefined();
     expect(seed).toMatchObject({
       customType: "pi-handoff-seed",
       details: { from: "agent", id: first.id, link: 2 },
     });
-    expect(seed?.text).toContain(`continue the work of agent ${first.id} as link 2`);
-    expect(seed?.text).toContain(first.handoffPath);
-    expect(seed?.text).toContain("- trace token refresh");
-    expect(task).toContain("Original task:\nmap the auth flow");
-    expect(task).not.toContain("Input files");
-    expect(task).not.toContain(first.handoffPath);
+    expect(text).toContain(`continue the work of agent ${first.id} as link 2`);
+    expect(text).toContain("- trace token refresh");
+    expect(text.split("Original task:")).toHaveLength(2);
+    expect(text).toContain(first.handoffPath);
+    expect(text).toContain(`Agent folder: ${current(second).dir}`);
+    expect(text.indexOf(first.handoffPath)).toBeLessThan(original);
 
     runtime.child(second).emit({ type: "tool_start", toolName: "read" });
 
@@ -200,7 +202,7 @@ describe("successor chain", () => {
     expect(current(second)).toMatchObject({ state: "running", chainIndex: 2, predecessorId: first.id });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
     expect(runtime.child(second).seed?.text).toContain("- trace token refresh");
-    expect(runtime.child(second).task).not.toContain("Input files");
+    expect(runtime.child(second).seed?.text).not.toContain("Input files");
     expect(registry.list()).toHaveLength(2);
   });
 
@@ -231,7 +233,7 @@ describe("successor chain", () => {
     expect(result).toEqual({ text: `Handoff saved at ${first.handoffPath}` });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${handoffText("partial")}\n`);
 
-    child.finish("handoff saved");
+    child.finish("");
     await flushMicrotasks();
 
     const second = current(first.id).successorId as string;
@@ -239,7 +241,7 @@ describe("successor chain", () => {
     expect(current(first.id)).toMatchObject({ state: "handoff", resultText: `${handoffText("partial")}\n` });
     expect(current(second)).toMatchObject({ state: "running", chainIndex: 2, predecessorId: first.id });
     expect(runtime.child(second).seed?.text).toContain("- trace token refresh");
-    expect(runtime.child(second).task).not.toContain("Input files");
+    expect(runtime.child(second).seed?.text).not.toContain("Input files");
     expect(registry.list()).toHaveLength(2);
   });
 
@@ -266,7 +268,7 @@ describe("successor chain", () => {
     });
     expect(readFileSync(first.handoffPath, "utf8")).toBe(`${invalid}\n`);
 
-    child.finish("handoff saved");
+    child.finish("");
     await flushMicrotasks();
 
     expect(current(first.id)).toMatchObject({
@@ -463,7 +465,7 @@ describe("successor chain", () => {
     runtime.child(scout.id).finish("the token store is src/store.ts");
     await flushMicrotasks();
 
-    expect(child.wakes).toEqual([]);
+    expect(child.hidden).toEqual([]);
 
     await requestHandoff(first.id);
     writeHandoff(first.id, "partial");
@@ -471,9 +473,9 @@ describe("successor chain", () => {
     await flushMicrotasks();
 
     const successor = current(first.id).successorId as string;
-    const task = runtime.child(successor).task ?? "";
+    const task = runtime.child(successor).seed?.text ?? "";
 
-    expect(task).toContain("Batch results that reached your predecessor after it stopped for the handoff:");
+    expect(task).toContain("Batch results that arrived while your predecessor's handoff was pending:");
     expect(task).toContain(`Batch ${scout.batchId} finished: 1 done.`);
     expect(task).toContain("the token store is src/store.ts");
   });
@@ -492,13 +494,247 @@ describe("successor chain", () => {
     const [link] = started.records;
     const second = (await handOff(link.id)) as string;
 
-    expect(caller.wakes).toEqual([]);
+    expect(caller.hidden).toEqual([]);
 
     runtime.child(second).finish("token store is in src/store.ts");
     await flushMicrotasks();
 
-    expect(caller.wakes).toHaveLength(1);
-    expect(caller.wakes[0]).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(caller.wakes[0]).toContain("token store is in src/store.ts");
+    expect(caller.hidden).toHaveLength(1);
+    expect(caller.hidden[0]?.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(caller.hidden[0]?.text).toContain("token store is in src/store.ts");
+  });
+
+  describe("handoff with open nested batches", () => {
+    const holdingSetup = async (overrides = {}) => {
+      const harness = await setup(overrides, "general");
+      const { first, current, requestHandoff, writeHandoff, runner, runtime } = harness;
+      const caller = runtime.child(first.id);
+
+      const start = async (task: string) => {
+        const started = runner.startBatch([{ agent: "scout", task }], { callerId: first.id });
+
+        await flushMicrotasks();
+
+        return { batchId: started.batchId, id: started.records[0].id };
+      };
+
+      const handOffNow = async () => {
+        await requestHandoff(first.id);
+        writeHandoff(first.id, "partial");
+        caller.finish(current(first.id).handoffPath);
+        await flushMicrotasks();
+      };
+
+      return { ...harness, caller, start, handOffNow };
+    };
+
+    it("waits for every open batch and hands all their results to the successor", async () => {
+      const { first, current, caller, start, handOffNow, runtime } = await holdingSetup();
+      const a = await start("find a");
+      const b = await start("find b");
+
+      await handOffNow();
+
+      expect(current(first.id).state).toBe("running");
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(caller.disposed).toBe(false);
+      expect(current(a.id).state).toBe("running");
+
+      runtime.child(a.id).finish("a is in src/a.ts");
+      await flushMicrotasks();
+
+      expect(caller.hidden).toEqual([]);
+      expect(current(first.id).successorId).toBeUndefined();
+
+      runtime.child(b.id).finish("b is in src/b.ts");
+      await flushMicrotasks();
+
+      const successor = current(first.id).successorId as string;
+      const task = runtime.child(successor).seed?.text ?? "";
+
+      expect(current(first.id).state).toBe("handoff");
+      expect(caller.hidden).toEqual([]);
+      expect(caller.disposed).toBe(true);
+      expect(task).toContain("Batch results that arrived while your predecessor's handoff was pending:");
+      expect(task).toContain("a is in src/a.ts");
+      expect(task).toContain("b is in src/b.ts");
+      expect(task.indexOf(`Batch ${a.batchId}`)).toBeLessThan(task.indexOf(`Batch ${b.batchId}`));
+    });
+
+    it("frees its slot while waiting, so its batch runs with one slot", async () => {
+      const { first, current, start, handOffNow, runtime } = await holdingSetup({ maxConcurrent: 1 });
+      const a = await start("find a");
+
+      expect(current(a.id).state).toBe("queued");
+
+      await handOffNow();
+
+      expect(current(a.id).state).toBe("running");
+
+      runtime.child(a.id).finish("a is in src/a.ts");
+      await flushMicrotasks();
+
+      const successor = current(first.id).successorId as string;
+
+      expect(current(successor).state).toBe("running");
+      expect(runtime.child(successor).seed?.text).toContain("a is in src/a.ts");
+    });
+
+    it("holds a routed message for the successor", async () => {
+      const { first, current, caller, start, handOffNow, runner, runtime } = await holdingSetup();
+      const a = await start("find a");
+
+      await handOffNow();
+
+      const routed = await runner.route(first.id, { sender: "main", text: "also check logout" });
+
+      expect(routed).toEqual({ ok: true, delivery: "held" });
+      expect(caller.messages.map((entry) => entry.message.text)).not.toContain("also check logout");
+
+      runtime.child(a.id).finish("a is in src/a.ts");
+      await flushMicrotasks();
+
+      const successor = current(first.id).successorId as string;
+
+      expect(runtime.child(successor).messages.map((entry) => entry.message.text)).toEqual([
+        "also check logout",
+      ]);
+    });
+
+    it("closes as handoff and stops its batch when stopped while waiting", async () => {
+      const { first, current, caller, start, handOffNow, runner, registry } = await holdingSetup();
+      const a = await start("find a");
+
+      await handOffNow();
+
+      expect(await runner.stop(first.id)).toBe(true);
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("handoff");
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(current(first.id).resultText).toContain("- trace token refresh");
+      expect(current(a.id).state).toBe("stopped");
+      expect(caller.disposed).toBe(true);
+      expect(registry.list()).toHaveLength(2);
+    });
+
+    it("closes and disposes a waiting agent on shutdown", async () => {
+      const { first, current, caller, start, handOffNow, host, registry } = await holdingSetup();
+      const a = await start("find a");
+
+      await handOffNow();
+      await host.shutdown("reload");
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("failed");
+      expect(current(a.id).state).toBe("failed");
+      expect(caller.disposed).toBe(true);
+      expect(registry.list()).toHaveLength(2);
+    });
+
+    it("waits for its batches when a limit aborts it after a valid partial handoff", async () => {
+      const { first, current, caller, start, requestHandoff, writeHandoff, runner, runtime } =
+        await holdingSetup();
+      const a = await start("find a");
+
+      await requestHandoff(first.id);
+      writeHandoff(first.id, "partial");
+      await runner.abort(first.id, "context hard limit reached before the handoff was finished");
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("running");
+      expect(current(a.id).state).toBe("running");
+      expect(caller.disposed).toBe(false);
+
+      runtime.child(a.id).finish("a is in src/a.ts");
+      await flushMicrotasks();
+
+      const successor = current(first.id).successorId as string;
+
+      expect(current(first.id).state).toBe("handoff");
+      expect(current(first.id).error).toBeUndefined();
+      expect(runtime.child(successor).seed?.text).toContain("a is in src/a.ts");
+    });
+
+    it("fails at once and stops its batch when a limit aborts it before any handoff", async () => {
+      const { first, current, start, requestHandoff, runner } = await holdingSetup();
+      const a = await start("find a");
+
+      await requestHandoff(first.id);
+      await runner.abort(first.id, "context hard limit reached before the handoff was finished");
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("failed");
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(current(a.id).state).toBe("stopped");
+    });
+
+    it("closes a blocked handoff at once and stops its batch", async () => {
+      const { first, current, caller, start, requestHandoff, writeHandoff, runtime } = await holdingSetup();
+      const a = await start("find a");
+
+      await requestHandoff(first.id);
+      writeHandoff(first.id, "blocked");
+      caller.finish(current(first.id).handoffPath);
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("handoff");
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(current(a.id).state).toBe("stopped");
+      expect(runtime.children).toHaveLength(2);
+    });
+
+    it("waits with a handoff given only as the final reply and continues from it", async () => {
+      const { first, current, caller, start, requestHandoff, runtime } = await holdingSetup();
+      const a = await start("find a");
+
+      await requestHandoff(first.id);
+      caller.finish(handoffText("partial"));
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("running");
+      expect(current(first.id).successorId).toBeUndefined();
+
+      runtime.child(a.id).finish("a is in src/a.ts");
+      await flushMicrotasks();
+
+      const successor = current(first.id).successorId as string;
+
+      expect(existsSync(first.handoffPath)).toBe(true);
+      expect(runtime.child(successor).seed?.text).toContain("- trace token refresh");
+      expect(runtime.child(successor).seed?.text).toContain("a is in src/a.ts");
+    });
+
+    it("ignores a batch that finishes after the waiting agent was stopped", async () => {
+      const { first, current, caller, start, handOffNow, runner, runtime, registry } = await holdingSetup();
+      const a = await start("find a");
+
+      await handOffNow();
+      await runner.stop(first.id);
+      await flushMicrotasks();
+
+      runtime.child(a.id).finish("a is in src/a.ts");
+      await flushMicrotasks();
+
+      expect(current(first.id).state).toBe("handoff");
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(caller.hidden).toEqual([]);
+      expect(registry.list()).toHaveLength(2);
+    });
+
+    it("does not wait when the chain length cap is reached", async () => {
+      const { first, current, caller, start, handOffNow, registry } = await holdingSetup({
+        maxChainLength: 1,
+      });
+      const a = await start("find a");
+
+      await handOffNow();
+
+      expect(current(first.id).state).toBe("handoff");
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(current(a.id).state).toBe("stopped");
+      expect(caller.disposed).toBe(true);
+      expect(registry.list()).toHaveLength(2);
+    });
   });
 });

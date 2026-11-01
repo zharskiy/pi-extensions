@@ -13,7 +13,11 @@ export type TranscriptItem =
   | { kind: "user"; text: string }
   | { kind: "assistant"; raw: unknown }
   | { kind: "tool"; toolCallId: string; raw: unknown }
-  | { kind: "custom"; raw: unknown };
+  | { kind: "custom"; raw: unknown }
+  | { kind: "entry"; customType: string; data: unknown }
+  | { kind: "summary"; raw: unknown }
+  | { kind: "bash"; raw: unknown }
+  | { kind: "rule"; label: string };
 
 export type TranscriptPane = {
   sync(items: TranscriptItem[]): void;
@@ -80,7 +84,15 @@ export type FooterData = { branch: string | null; statuses: ReadonlyMap<string, 
 
 export type FooterRender = (width: number, theme: ThemeLike, data: FooterData) => string[];
 
-export type EntryRender = (data: unknown, width: number, expanded: boolean, theme: ThemeLike) => string[];
+export type EntryRender = (
+  data: unknown,
+  width: number,
+  expanded: boolean,
+  theme: ThemeLike,
+  pad: number,
+) => string[];
+
+export type EntryOptions = { flush?: boolean; previousSession?: boolean };
 
 export type MessageRender = (
   message: { text: string; details?: unknown },

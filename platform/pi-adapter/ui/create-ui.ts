@@ -169,13 +169,15 @@ export const createUi = (
       (tui, theme, keybindings, done) => {
         lastTui = tui;
 
+        const overlayTheme = themeLike(theme);
         const view = factory({
-          theme: themeLike(theme),
+          theme: overlayTheme,
           rows: () => tui.terminal.rows,
           close: () => done(),
           requestRender: () => tui.requestRender(),
           toolsKey: keyText("app.tools.expand"),
-          createTranscript: () => createTranscriptPane(tui, cwd, { tools: [...state.tools.values()] }),
+          createTranscript: () =>
+            createTranscriptPane(tui, cwd, { tools: [...state.tools.values()], theme: () => overlayTheme }),
           createScroll: () => createScrollPane(() => tui.requestRender()),
         });
 
@@ -244,6 +246,10 @@ export const createUi = (
     copyText: (text) => copyToClipboard(text),
     ...createWorkingUi(tuiCtx),
     ...createEditorInput(tuiCtx),
+    getEditorText: () => state.ctx?.ui.getEditorText() ?? "",
+    setEditorText: (text) => {
+      state.ctx?.ui.setEditorText(text);
+    },
     setEditorFrame: editor.setEditorFrame,
     onEmptyEditorLeft: editor.onEmptyEditorLeft,
     onEmptyEditorDown: editor.onEmptyEditorDown,

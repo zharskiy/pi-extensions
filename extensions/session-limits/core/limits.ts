@@ -3,34 +3,55 @@ import type {
   Host,
   SessionControl,
   ThemeToken,
+  UserMessage,
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
   type HandoffRequestDetails,
   type HandoffSeedDetails,
   type HandoffTarget,
   type HandoffValidation,
+  HELD_RESULTS_CHANNEL,
   handoffInstruction,
   handoffRetry,
+  LIMIT_SEAM,
   type Limits,
   limitLevel,
   mainLimit,
   parseBusySignal,
+  parseHeldResults,
+  seamLabel,
   seedText,
 } from "../../../platform/shared/index.ts";
-import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface } from "./handoff.ts";
+import {
+  HANDOFF_COMMAND,
+  handoffPath,
+  joinParagraphs,
+  MAIN_AUDIENCE,
+  sessionPreface,
+  userPrompts,
+  withLateResults,
+} from "./handoff.ts";
+import {
+  KEPT_MESSAGE_ENTRY,
+  KEPT_RULE_ENTRY,
+  type KeptMessage,
+  type KeptRule,
+  keptRuleFor,
+} from "./kept-entries.ts";
 import {
   type ContextTokens,
+  handoffInFlight,
   handoffStep,
-  isPending,
   MAX_INSTRUCTIONS,
   type Phase,
   shouldRequest,
 } from "./thresholds.ts";
 
-const NOTICE_KEY = "pi-session-limits";
+const NAMESPACE = "pi-session-limits";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 
@@ -39,6 +60,8 @@ const IDLE_POLL_MS = 250;
 const SAVING_PHASES: readonly Phase[] = ["requested", "waiting", "stuck"];
 
 const MANUAL_REASON = `The user ran /${HANDOFF_COMMAND} to continue in a fresh session.`;
+
+const MANUAL_SEAM = seamLabel(`/${HANDOFF_COMMAND}`);
 
 type Segment = { token: ThemeToken; text: string };
 
@@ -60,8 +83,6 @@ type LimitsState = {
   path?: string;
   saved?: { text: string; validation: HandoffValidation };
   context?: ContextSnapshot;
-  settledSinceInstruction: boolean;
-  userActive: boolean;
   manual: boolean;
   handedOff: boolean;
   focus?: string;
@@ -69,13 +90,15 @@ type LimitsState = {
 
 type RequestOrigin = { manual: boolean; focus?: string };
 
+const textsOf = (messages: UserMessage[]) => messages.map((message) => message.text);
+
 export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
   const sources = new Set<string>();
+  const held = new Map<string, string>();
+  const captured: UserMessage[] = [];
   let state: LimitsState = {
     phase: "watching",
     instructions: 0,
-    settledSinceInstruction: false,
-    userActive: false,
     manual: false,
     handedOff: false,
   };
@@ -84,6 +107,9 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   let switchRunning = false;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
   let idlePoll: ReturnType<typeof setTimeout> | undefined;
+  let announced = false;
+  let ruled: KeptRule["state"] | undefined;
+  let tui = false;
 
   const currentInstruction = (path: string) =>
     handoffInstruction({
@@ -106,31 +132,119 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     host.sendMessage({ customType: HANDOFF_REQUEST_TYPE, text, details: requestDetails() });
   };
 
-  const refresh = () => {
-    const notice = segment(state.context, state.phase === "stuck", limits(), HANDOFF_COMMAND);
-
-    host.ui.setNotice(NOTICE_KEY, notice ? host.ui.style(notice.token, notice.text) : undefined);
+  const announce = () => {
+    host.publish(HANDOFF_PENDING_CHANNEL, { source: NAMESPACE, pending: announced });
   };
 
-  const sendRequest = (path: string, origin: RequestOrigin) => {
+  const dropImages = (messages: UserMessage[], reason: string) => {
+    const count = messages.reduce((sum, message) => sum + message.images.length, 0);
+
+    if (count === 0) {
+      return;
+    }
+
+    host.ui.notify(
+      `${count === 1 ? "An image" : `${count} images`} attached during the handoff ${reason}; attach ${count === 1 ? "it" : "them"} again.`,
+      "warning",
+    );
+  };
+
+  const appendRule = (rule: KeptRule["state"]) => {
+    host.appendEntry(KEPT_RULE_ENTRY, { state: rule } satisfies KeptRule);
+  };
+
+  const showKept = (message: UserMessage) => {
+    if (!message.text.trim() && message.images.length === 0) {
+      return;
+    }
+
+    const rule = keptRuleFor(state.handedOff, state.phase === "waiting");
+
+    if (rule !== ruled) {
+      ruled = rule;
+      appendRule(rule);
+    }
+
+    host.appendEntry(KEPT_MESSAGE_ENTRY, {
+      text: message.text,
+      images: message.images.length,
+    } satisfies KeptMessage);
+  };
+
+  const notifyKept = () => {
+    const destination = state.handedOff
+      ? "this message will be in its editor"
+      : "this message goes there with the handoff";
+    const switchHint = state.phase === "waiting" ? ` Run /${HANDOFF_COMMAND} to switch now.` : "";
+
+    host.ui.notify(`Kept for the new session: ${destination}.${switchHint}`, "info");
+  };
+
+  const restoreCaptured = () => {
+    const messages = captured.splice(0);
+    const text = joinParagraphs(textsOf(messages));
+    const shown = ruled !== undefined;
+
+    ruled = undefined;
+
+    if (text) {
+      host.ui.setEditorText(joinParagraphs([text, host.ui.getEditorText()]));
+    }
+
+    if (shown) {
+      appendRule("returned");
+    }
+
+    if (text && !tui) {
+      host.ui.notify(
+        "No new session was started; the messages you typed during the handoff are back in the editor.",
+        "info",
+      );
+    }
+
+    dropImages(messages, "could not be put back in the editor");
+  };
+
+  const syncPending = () => {
+    const pending = handoffInFlight(state.phase);
+
+    if (pending === announced) {
+      return;
+    }
+
+    announced = pending;
+
+    if (!pending) {
+      held.clear();
+      restoreCaptured();
+    }
+
+    announce();
+  };
+
+  const refresh = () => {
+    syncPending();
+
+    const notice = segment(state.context, state.phase === "stuck", limits(), HANDOFF_COMMAND);
+
+    host.ui.setNotice(NAMESPACE, notice ? host.ui.style(notice.token, notice.text) : undefined);
+  };
+
+  const request = (origin: RequestOrigin) => {
+    const path = handoffPath(host.session());
+
     state = {
       ...state,
       phase: "requested",
       instructions: 1,
       path,
       saved: undefined,
-      settledSinceInstruction: false,
-      userActive: false,
       manual: origin.manual,
       handedOff: origin.manual,
       focus: origin.focus,
     };
 
     sendInstruction(currentInstruction(path));
-  };
-
-  const request = (origin: RequestOrigin) => {
-    sendRequest(handoffPath(host.session()), origin);
   };
 
   const errorsOf = () => {
@@ -149,12 +263,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const resend = (path: string) => {
-    state = {
-      ...state,
-      instructions: state.instructions + 1,
-      settledSinceInstruction: false,
-      userActive: false,
-    };
+    state = { ...state, instructions: state.instructions + 1 };
 
     sendInstruction(handoffRetry(currentInstruction(path), errorsOf()));
   };
@@ -187,11 +296,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         return;
       case "switch":
         if (!host.isIdle()) {
-          return;
-        }
-
-        if (state.userActive) {
-          sendRequest(path, { manual: state.manual, focus: state.focus });
           return;
         }
 
@@ -262,24 +366,29 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     }
 
     const previous = host.session().file;
+    const handedOff = state.handedOff;
+    const preface = sessionPreface({ manual: handedOff, focus: state.focus });
+
+    const fill = () => {
+      const messages = captured.splice(0);
+      const seed = {
+        customType: HANDOFF_SEED_TYPE,
+        details: { from: "session" } satisfies HandoffSeedDetails,
+        text: seedText(preface, withLateResults(saved.text, Array.from(held.values()))),
+      };
+
+      return handedOff
+        ? { seed, editorText: joinParagraphs(textsOf(messages)) }
+        : { seed, followUps: userPrompts(messages) };
+    };
 
     const accepted = await control
       .newSession({
         parentSession: previous,
         keepSelection: true,
-        showPrevious: true,
-        seed: {
-          customType: HANDOFF_SEED_TYPE,
-          details: { from: "session" } satisfies HandoffSeedDetails,
-          text: seedText(
-            sessionPreface({
-              file: previous,
-              manual: state.handedOff,
-              focus: state.focus,
-            }),
-            saved.text,
-          ),
-        },
+        showPrevious: { label: handedOff ? MANUAL_SEAM : LIMIT_SEAM },
+        continueWithSeed: !handedOff,
+        fill,
       })
       .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
 
@@ -310,9 +419,12 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const abandonStalledSwitch = () => {
-    if (state.phase === "switching" && !switchRunning) {
-      state = { ...state, phase: "stuck" };
+    if (state.phase !== "switching" || switchRunning) {
+      return;
     }
+
+    state = { ...state, phase: "stuck" };
+    refresh();
   };
 
   const cancelRelease = () => {
@@ -435,14 +547,49 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     }
   });
 
+  host.onInput((input) => {
+    abandonStalledSwitch();
+
+    if (!handoffInFlight(state.phase) || input.source === "extension") {
+      return false;
+    }
+
+    const message = { text: input.text, images: state.handedOff ? [] : input.images };
+
+    captured.push(message);
+
+    if (tui) {
+      showKept(message);
+    } else {
+      notifyKept();
+    }
+
+    if (state.handedOff) {
+      dropImages([input], "cannot go into the new session's editor");
+    }
+
+    return true;
+  });
+
+  host.subscribe(HELD_RESULTS_CHANNEL, (data) => {
+    const results = parseHeldResults(data);
+
+    if (!results || !announced) {
+      return;
+    }
+
+    held.set(results.source, results.text);
+  });
+
+  host.onSessionStart((info) => {
+    tui = info.mode === "tui";
+    announce();
+  });
+
   host.onTurnEnd((context) => {
     turns += 1;
 
     abandonStalledSwitch();
-
-    if (isPending(state.phase) && state.settledSinceInstruction) {
-      state = { ...state, userActive: true };
-    }
 
     const level = limitLevel(context.tokens, mainLimit(context.window, limits()));
 
@@ -463,8 +610,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       instructions: 0,
       path: undefined,
       saved: undefined,
-      settledSinceInstruction: false,
-      userActive: false,
       manual: false,
       handedOff: false,
       focus: undefined,
@@ -520,10 +665,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     if (info.aborted && state.phase === "requested" && state.handedOff) {
       cancelManual();
       return;
-    }
-
-    if (isPending(state.phase)) {
-      state = { ...state, settledSinceInstruction: true };
     }
 
     check(true);

@@ -1,12 +1,14 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type {
+  CustomMessage,
   SessionRecord,
   ThemeLike,
   ToolSpec,
   ViewComponent,
 } from "../../../../../platform/pi-adapter/index.ts";
+import { handoffSeedMessage } from "../../../../../platform/ui-kit/index.ts";
 import {
   char,
   type FakeHost,
@@ -21,12 +23,14 @@ import {
 import {
   createOverlayApi,
   disposeOverlays,
+  formatRoutedMessage,
   initPiKeybindings,
   initPiRenderTheme,
   openLastOverlay,
   parseSessionLines,
   promptRecordEntry,
   readSessionFile,
+  registerPiMessageRenderer,
   typed,
 } from "../../../../../test/framework/pi/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
@@ -37,7 +41,10 @@ import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { ViewData } from "../../../core/agent-view/source.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
+import { agentLimit, contextUse } from "../../../core/model/context-limit.ts";
 import { agentsDirFor, MANIFEST_FILE, NAMESPACE } from "../../../core/model/paths.ts";
+import { defaultSettings } from "../../../core/model/settings.ts";
+import { wakeMessage } from "../../../core/run-agent/outbox.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createAgentView, headerLines } from "../../../ui/agent-view/view.ts";
 import { agentRecord, newAgentInput } from "../../support/agent-records.ts";
@@ -47,6 +54,11 @@ import { createHarness, spawnAgents } from "../../support/subagents-harness.ts";
 const FIXTURE = join(import.meta.dirname, "fixtures", "recorded-session.jsonl");
 
 const RECORD_ENTRY = promptRecordEntry(NAMESPACE);
+
+const limitOf = (record: AgentRecord) =>
+  agentLimit(record.contextLimit, record.context?.window ?? 0, { ...defaultSettings(), reserveTokens: 0 });
+
+const useOf = (record: AgentRecord) => contextUse(record.context?.tokens, limitOf(record));
 
 initPiRenderTheme();
 initPiKeybindings();
@@ -157,7 +169,7 @@ const viewOf = (session: SessionRecord | undefined, options: ViewOptions = {}) =
           return current;
         },
         back: options.back ?? false,
-        reserveTokens: 0,
+        limit: limitOf,
         stop: options.stop ?? (() => undefined),
         watch: (_tickMs, onChange) => {
           changed = onChange;
@@ -221,14 +233,14 @@ describe("agent view", () => {
     expect(lines[2]).toMatch(/^ \d+s/);
     expect(lines[3]).toBe(` ${record.model} · id ${record.id}`);
     expect(lines[4]).toBe(RULE(100));
-    expect(lines[5]).toMatch(/^ Request · \d+ lines \(r to expand\)$/);
+    expect(lines[5]).toMatch(/^ Request · \d+ lines \(r to expand, c to copy\)$/);
     expect(lines[6]).toBe("");
     expect(lines.slice(7).find((line) => line.trim() !== "")).toContain("Task from");
     expect(lines).toContain(" Three files: explorer.md, implementer.md, reviewer.md.");
     expect(
       lines
         .at(-2)
-        ?.startsWith(" esc to close · r to show the request · ctrl+o to expand tools · c to copy request"),
+        ?.startsWith(" esc to close · r to show request · c to copy request · ctrl+o to expand tools"),
     ).toBe(true);
     expect(lines.at(-3)).toBe("");
     expect(lines.at(-1)).toBe("");
@@ -296,7 +308,7 @@ describe("agent view", () => {
 
     view.handleKey(key("home"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand, c to copy)");
     expect(firstTextAfter(lines(), 5)).toBe(" Task from main (agent id explorer-cb2e):");
     expect(lines().at(-2)).toMatch(/ 1-\d+\/\d+ · end to follow$/);
 
@@ -352,7 +364,7 @@ describe("agent view", () => {
 
     view.handleKey(char("r"));
 
-    expect(request()).toBe(" Request · 12 lines (r to collapse)");
+    expect(request()).toBe(" Request · 12 lines (r to collapse, c to copy)");
 
     update({
       record: second,
@@ -360,10 +372,30 @@ describe("agent view", () => {
       session: { ...full, items: [...head.items, { kind: "user", text: "Continue with the tests" }] },
     });
 
-    expect(request()).toBe(" Request · 12 lines (r to expand)");
+    expect(request()).toBe(" Request · 12 lines (r to expand, c to copy)");
     expect(body().startsWith(before)).toBe(true);
     expect(body().indexOf("Continue with the tests")).toBeGreaterThan(before.length);
     expect(transcripts).toHaveLength(1);
+  });
+
+  it("redraws the chain's transcript when an earlier link's messages change", () => {
+    const full = fixture();
+    const first = agentRecord({ id: "explorer-1", state: "handoff", sessionFile: "/first.jsonl" });
+    const second = agentRecord({ id: "explorer-2", state: "running", sessionFile: "/second.jsonl" });
+    const earlier: SessionRecord["items"] = [{ kind: "user", text: "Find the login handler" }];
+    const later: SessionRecord["items"] = [{ kind: "user", text: "Trace the token refresh" }];
+    const { update, lines, transcripts } = viewOf({ ...full, items: later }, { record: second });
+    const body = () => lines().join("\n");
+
+    update({ chain: [first.id, second.id], linkItems: [0, 1] });
+    update({ session: { ...full, items: [...earlier, ...later] }, linkItems: [1, 1] });
+
+    expect(body().indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(body().indexOf("Trace the token refresh")).toBeGreaterThan(
+      body().indexOf("Find the login handler"),
+    );
+    expect(body().split("Trace the token refresh")).toHaveLength(2);
+    expect(transcripts).toHaveLength(2);
   });
 
   it("stops the agent with the x key in a Cyrillic layout", async () => {
@@ -438,7 +470,7 @@ describe("agent view header", () => {
     });
 
   const header = (record: AgentRecord, theme: ThemeLike = plainTheme, width = 100, chain: string[] = []) =>
-    headerLines({ record, chain }, theme, width, 0, 0);
+    headerLines({ record, chain }, theme, width, 0, useOf(record));
 
   it("renders the header per state", () => {
     const table: [Partial<AgentRecord>, string, string][] = [
@@ -494,7 +526,7 @@ describe("agent view header", () => {
     ]);
   });
 
-  it("wraps a long error and adds the context share to the receipt", () => {
+  it("wraps a long error and adds the working context to the receipt", () => {
     const error =
       "npm test failed twice after the redirect change; the session cookie is not set on the callback route";
     const record = base({
@@ -508,7 +540,7 @@ describe("agent view header", () => {
     });
 
     expect(header(record, plainTheme, 80).slice(1, 5)).toEqual([
-      " 2m 10s · 31 calls · 52.4k tokens · $0.21 · 64% context",
+      " 2m 10s · 31 calls · 52.4k tokens · $0.21 · working context 64.0k of 100k",
       " provider/model · id explorer-1",
       " npm test failed twice after the redirect change; the session cookie is not set",
       " on the callback route",
@@ -579,7 +611,7 @@ describe("agent view header", () => {
     expect(lines.at(-1)).toBe(RULE(40));
   });
 
-  it("omits zero tokens and an unknown context share", () => {
+  it("omits zero tokens and an unknown working context", () => {
     const record = base({
       toolCalls: 4,
       tokens: 0,
@@ -603,9 +635,77 @@ describe("agent view header", () => {
     expect(lines()[1]).toBe(" ⠋ explorer #2  Map the auth module");
     expect(lines()[3]).toBe(" model n/a · id explorer-1");
 
-    const chained = headerLines({ record, chain: ["explorer-0001", record.id] }, plainTheme, 100, 0, 0);
+    const chained = headerLines(
+      { record, chain: ["explorer-0001", record.id] },
+      plainTheme,
+      100,
+      0,
+      useOf(record),
+    );
 
     expect(chained).toContain(" Chain explorer → explorer #2 (2 sessions) · viewing explorer #2");
+  });
+});
+
+describe("agent view context level", () => {
+  const atTokens = (tokens: number, patch: Partial<AgentRecord> = {}) =>
+    agentRecord({
+      id: "explorer-1",
+      toolCalls: 31,
+      tokens: 52_400,
+      cost: 0.21,
+      context: { tokens, window: 200_000, percent: tokens / 2_000 },
+      ...patch,
+    });
+
+  const receipt = (tokens: number, theme: ThemeLike = tokenTaggingTheme({ bold: true }), width = 200) => {
+    const record = atTokens(tokens);
+
+    return headerLines({ record, chain: [] }, theme, width, 0, useOf(record))[1];
+  };
+
+  const notice = (record: AgentRecord) =>
+    viewOf(fixture(), { record, theme: tokenTaggingTheme() }).lines().at(-3);
+
+  it("paints the working context as the main footer does: text, warning at the soft level, bold error at the limit", () => {
+    expect(receipt(50_000)).toMatch(/<dim>working context<\/> <text>50\.0k<\/> <dim>of 100k<\/>$/);
+    expect(receipt(85_000)).toMatch(/<dim>working context<\/> <warning>85\.0k<\/> <warning>of 100k<\/>$/);
+    expect(receipt(100_500)).toMatch(
+      /<dim>working context<\/> <b><error>100\.5k<\/><\/b> <error>of 100k<\/>$/,
+    );
+  });
+
+  it("drops the cost, calls and tokens before the working context on a narrow header", () => {
+    const narrow = receipt(85_000, plainTheme, 50);
+
+    expect(narrow).toBe(" Elapsed 0s · working context 85.0k of 100k");
+    expect(narrow).not.toContain("$0.21");
+  });
+
+  it("shows the main session's handoff notice above the hints at the soft level and at the limit", () => {
+    expect(notice(atTokens(50_000))).toBe("");
+    expect(notice(atTokens(85_000))).toBe(" <warning>» handoff at 100k tokens · 85.0k used</>");
+    expect(notice(atTokens(100_500))).toBe(" <warning>» handoff at 100k tokens · 100.5k used</>");
+  });
+
+  it("shows no handoff notice for a closed agent", () => {
+    expect(notice(atTokens(100_500, { state: "done", endedAt: 0 }))).toBe("");
+  });
+
+  it("lets a transient notice take the row while it lasts, then shows the handoff notice again", async () => {
+    const { view, lines } = viewOf(requestSession(), {
+      record: atTokens(85_000),
+      theme: tokenTaggingTheme(),
+    });
+
+    view.handleKey(char("c"));
+    await flushMicrotasks();
+
+    expect(lines().at(-3)).toBe(" <success>Copied the request</>");
+
+    view.handleKey(char("r"));
+
+    expect(lines().at(-3)).toBe(" <warning>» handoff at 100k tokens · 85.0k used</>");
   });
 });
 
@@ -616,11 +716,11 @@ describe("agent view copy", () => {
 
     view.handleKey(typed("к"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse)");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to collapse, c to copy)");
 
     view.handleKey(typed("к"));
 
-    expect(lines()[5]).toBe(" Request · 12 lines (r to expand)");
+    expect(lines()[5]).toBe(" Request · 12 lines (r to expand, c to copy)");
   });
 
   it("copies the request with the c key in a Cyrillic layout", async () => {
@@ -663,10 +763,10 @@ describe("agent view hint", () => {
     const hint = (view: ReturnType<typeof hintOf>) => (view.lines().at(-2) ?? "").replace(/ {2,}\S+$/, "");
 
     expect(hint(hintOf(open))).toBe(
-      " esc to close · x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
+      " esc to close · x to stop · r to show request · c to copy request · ctrl+o to expand tools",
     );
     expect(hint(hintOf(closed, { back: true }))).toBe(
-      " esc to go back · r to show the request · ctrl+o to expand tools · c to copy request",
+      " esc to go back · r to show request · c to copy request · ctrl+o to expand tools",
     );
     expect(hint(hintOf(open, { session: noRequest }))).toBe(
       " esc to close · x to stop · ctrl+o to expand tools",
@@ -677,7 +777,7 @@ describe("agent view hint", () => {
     expanded.view.handleKey(char("r"));
 
     expect(hint(expanded)).toBe(
-      " esc to go back · x to close now · r to hide the request · ctrl+o to expand tools · c to copy request",
+      " esc to go back · x to close now · r to hide request · c to copy request · ctrl+o to expand tools",
     );
 
     [open, grace, closed].forEach((record) => {
@@ -703,13 +803,13 @@ describe("agent view hint", () => {
     }));
     const long = viewOf(
       { ...fixture(), items },
-      { record: agentRecord({ id: "explorer-1", state: "grace" }), back: true, rows: 20, width: 80 },
+      { record: agentRecord({ id: "explorer-1", state: "grace" }), back: true, rows: 20, width: 76 },
     );
 
     long.view.handleKey(char("r"));
     long.view.handleKey(key("home"));
 
-    expect(long.lines().at(-2)).toBe(" esc to go back · x to close now · r to hide the request");
+    expect(long.lines().at(-2)).toBe(" esc to go back · x to close now · r to hide request");
   });
 
   it("pads every line and keeps the last column blank", () => {
@@ -948,17 +1048,25 @@ describe("agent view with live agents", () => {
     expect(state.renders - renders).toBeGreaterThanOrEqual(9);
   });
 
-  it("refreshes the header stats with the live turn context", async () => {
+  it("refreshes the header stats with the live turn context and shows the handoff notice past the soft level", async () => {
     useFakeTime();
 
     const { harness, record } = await runningAgent();
     const { view } = await harness.openView(record.id);
+    const notice = () => plainLines(view.render(100)).at(-3);
+
+    harness.runtime.child(record.id).turn({ tokens: 50_000, window: 200_000, percent: 25 });
+    await flushMicrotasks();
+    vi.advanceTimersByTime(350);
+
+    expect(notice()).toBe("");
 
     harness.runtime.child(record.id).turn({ tokens: 85_000, window: 200_000, percent: 42 });
     await flushMicrotasks();
     vi.advanceTimersByTime(350);
 
-    expect(plainLines(view.render(100))[2]).toMatch(/ · 85% context$/);
+    expect(plainLines(view.render(100))[2]).toMatch(/ · working context 85\.0k of 100k$/);
+    expect(notice()).toBe(" » handoff at 100k tokens · 85.0k used");
   });
 });
 
@@ -977,7 +1085,7 @@ describe("agent view past sessions", () => {
   };
 
   const restarted = ({ manifests, cost, sessions = {} }: Past) =>
-    setup([agentRegistryPlugin, agentDefinitionsPlugin, agentViewPlugin], {
+    setup([agentRegistryPlugin, agentDefinitionsPlugin, agentStatusPlugin, agentViewPlugin], {
       beforeStart: ({ root, host, runtime }) => {
         manifests.forEach((manifest) => {
           const name = manifest.sessionFile as string | undefined;
@@ -1007,12 +1115,31 @@ describe("agent view past sessions", () => {
     return plainLines(view.render(100));
   };
 
-  it("shows the context limit stored in the manifest, and no context without one", async () => {
-    const stored = await openFromManifest({ id: "explorer-old", agent: "scout", contextLimit: 70_000 });
-    const unknown = await openFromManifest({ id: "explorer-dead", agent: "scout" });
+  it("shows the working context stored in the manifest as agent_status does, and none without it", async () => {
+    const context = { tokens: 21_000, window: 200_000, percent: 10.5 };
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          contextLimit: 70_000,
+          context,
+        },
+        { id: "explorer-dead", agent: "scout", description: "old", state: "done", contextLimit: 70_000 },
+      ],
+    });
+    const header = async (id: string) => plainLines((await harness.openView(id)).view.render(100))[2];
+    const status = await harness.host
+      .tool<{ ids: string[] }, unknown>("agent_status")
+      .execute({ ids: ["explorer-old", "explorer-dead"] }, {});
+    const [stored, unknown] = status.text.split("\n").filter((line) => line.startsWith("explorer-"));
 
-    expect(stored[2]).toMatch(/ · 3% context$/);
-    expect(unknown[2]).not.toContain("context");
+    expect(await header("explorer-old")).toMatch(/ · working context 21\.0k of 70k$/);
+    expect(stored).toMatch(/ · working context 21\.0k of 70k$/);
+    expect(await header("explorer-dead")).not.toContain("context");
+    expect(unknown).toMatch(/ · context n\/a$/);
   });
 
   it("shows persisted counters for agents of an earlier session", async () => {
@@ -1061,15 +1188,158 @@ describe("agent view past sessions", () => {
     expect(lines[2]).toBe(" 3s");
   });
 
-  it("shows every link of a chain in order, the successor's handoff seed between them", async () => {
-    const seed = JSON.stringify({
-      type: "custom_message",
-      customType: "pi-handoff-seed",
-      content: "Pick up the token refresh trace.",
-      display: true,
-      details: { from: "agent", id: "explorer-old1", link: 2 },
+  const replyLine = (text: string) =>
+    line({ role: "assistant", content: [{ type: "text", text }], stopReason: "stop" });
+
+  const firstTask =
+    "Task from main (agent id explorer-old1):\nAgent folder: /agents/explorer-old1\nFind the login handler";
+
+  const seedLine = JSON.stringify({
+    type: "custom_message",
+    customType: "pi-handoff-seed",
+    content: [
+      "You continue the work of agent explorer-old1 as link 2 of its chain. Carry on from its Next section.",
+      "",
+      "## Next",
+      "- Pick up the token refresh trace.",
+      "",
+      "Task from main (agent id explorer-old2):",
+      "Agent folder: /agents/explorer-old2",
+      "Original task:",
+      "Find the login handler",
+    ].join("\n"),
+    display: true,
+    details: { from: "agent", id: "explorer-old1", link: 2 },
+  });
+
+  const chained = (secondFile: string | undefined, sessions: Past["sessions"]) =>
+    restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          sessionFile: secondFile,
+        },
+      ],
+      sessions,
     });
+
+  const seam = (lines: string[]) =>
+    plainLines(lines).findIndex((line) => line.includes("── handed off · context limit ─"));
+
+  it("shows every link of a chain in order with the seam rule, the successor's seed after it and the task once", async () => {
+    const release = registerPiMessageRenderer(
+      "pi-handoff-seed",
+      handoffSeedMessage(() => "ctrl+o"),
+    );
+
+    onTestFinished(release);
+
     const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = chained("old-2.jsonl", {
+      "old-1.jsonl": session([userLine(firstTask), replyLine("The handler is in src/auth.ts.")]),
+      "old-2.jsonl": session([seedLine, replyLine("Refresh lives in src/token.ts.")]),
+    });
+
+    const drawn = async (id: string) => plainLines((await harness.openView(id)).view.render(200)).join("\n");
+    const text = await drawn("explorer-old1");
+    const order = [
+      "Find the login handler",
+      "The handler is in src/auth.ts.",
+      "── handed off · context limit ─",
+      "handoff from agent explorer-old1 · link 2",
+      "You continue the work of agent explorer-old1 as link 2 of its chain.",
+      "Refresh lives in src/token.ts.",
+    ].map((part) => text.indexOf(part));
+
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(text.split("Find the login handler")).toHaveLength(2);
+    expect(text).not.toContain("Original task:");
+    expect(await drawn("explorer-old2")).toBe(text);
+
+    const { view } = await harness.openView("explorer-old2");
+    const rows = view.render(200);
+    const rule = seam(rows);
+    const blank = (row: string | undefined) => row === "";
+
+    expect(rule).toBeGreaterThan(0);
+    expect(plainLines(rows)[rule]?.endsWith("─")).toBe(true);
+    expect([rows[rule - 2], rows[rule - 1], rows[rule + 1], rows[rule + 2]].map(blank)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(plainLines(rows)[rule + 2]).toContain("handoff from agent explorer-old1 · link 2");
+    expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+
+    view.handleKey(key("toggleTools"));
+
+    const expanded = plainLines(view.render(200)).join("\n");
+
+    expect(expanded).toMatch(/Original task:\n\s+Find the login handler/);
+    expect(expanded.indexOf("- Pick up the token refresh trace.")).toBeLessThan(
+      expanded.indexOf("Original task:"),
+    );
+  });
+
+  it("draws no seam rule while the last link has no session file", async () => {
+    const harness = chained(undefined, {
+      "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY),
+    });
+
+    const rows = (await harness.openView("explorer-old2")).view.render(200);
+
+    expect(plainLines(rows).join("\n")).toContain("Find the login handler");
+    expect(seam(rows)).toBe(-1);
+  });
+
+  it("keeps the chain's transcript pane while the last link grows", async () => {
+    useFakeTime();
+
+    const session = (lines: string[]) => parseSessionLines(lines, RECORD_ENTRY);
+    const harness = chained("old-2.jsonl", {
+      "old-1.jsonl": session([userLine("Find the login handler")]),
+      "old-2.jsonl": session([seedLine, userLine("Trace the token refresh")]),
+    });
+    const { view, transcripts } = await harness.openView("explorer-old2");
+    const file = join(harness.root, "old-2.jsonl");
+    const changed = () => {
+      harness.bus.emit("agent:changed", harness.registry.get("explorer-old2") as AgentRecord);
+      vi.advanceTimersByTime(1_000);
+    };
+
+    view.render(200);
+    changed();
+    changed();
+    appendFileSync(file, "{}\n");
+    harness.runtime.sessions.set(
+      file,
+      session([seedLine, userLine("Trace the token refresh"), userLine("Check the refresh tests")]),
+    );
+    changed();
+
+    const rows = view.render(200);
+
+    expect(plainLines(rows).join("\n")).toContain("Check the refresh tests");
+    expect(rows.filter((row) => row.includes("handed off · context limit"))).toHaveLength(1);
+    expect(transcripts).toHaveLength(1);
+  });
+
+  it("shows the last link's read error under the earlier links' transcript", async () => {
     const harness = restarted({
       manifests: [
         {
@@ -1087,26 +1357,74 @@ describe("agent view past sessions", () => {
           state: "done",
           chainIndex: 2,
           predecessorId: "explorer-old1",
+        },
+      ],
+      sessions: { "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY) },
+    });
+
+    await harness.services.require("agentView").open("explorer-old2");
+
+    const { view } = openLastOverlay(harness.host, 200, tokenTaggingTheme({ bold: true }));
+    const lines = view.render(200);
+    const text = plainLines(lines).join("\n");
+
+    expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("session file not written yet")).toBeGreaterThan(
+      text.indexOf("Find the login handler"),
+    );
+    expect(lines).toContain(" <dim>session file not written yet</>");
+  });
+
+  it("shows a middle link's read error under the transcript of the links it can read", async () => {
+    const harness = restarted({
+      manifests: [
+        {
+          id: "explorer-old1",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          successorId: "explorer-old2",
+          sessionFile: "old-1.jsonl",
+        },
+        {
+          id: "explorer-old2",
+          agent: "scout",
+          description: "old",
+          state: "handoff",
+          chainIndex: 2,
+          predecessorId: "explorer-old1",
+          successorId: "explorer-old3",
           sessionFile: "old-2.jsonl",
+        },
+        {
+          id: "explorer-old3",
+          agent: "scout",
+          description: "old",
+          state: "done",
+          chainIndex: 3,
+          predecessorId: "explorer-old2",
+          sessionFile: "old-3.jsonl",
         },
       ],
       sessions: {
-        "old-1.jsonl": session([userLine("Find the login handler")]),
-        "old-2.jsonl": session([seed, userLine("Trace the token refresh")]),
+        "old-1.jsonl": parseSessionLines([userLine("Find the login handler")], RECORD_ENTRY),
+        "old-3.jsonl": parseSessionLines([userLine("Trace the token refresh")], RECORD_ENTRY),
       },
     });
 
-    const drawn = async (id: string) => plainLines((await harness.openView(id)).view.render(200)).join("\n");
-    const text = await drawn("explorer-old1");
-    const order = [
-      "Find the login handler",
-      "Pick up the token refresh trace.",
-      "Trace the token refresh",
-    ].map((part) => text.indexOf(part));
+    harness.runtime.sessions.delete(join(harness.root, "old-2.jsonl"));
 
-    expect(order.every((index) => index >= 0)).toBe(true);
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(await drawn("explorer-old2")).toBe(text);
+    await harness.services.require("agentView").open("explorer-old3");
+
+    const { view } = openLastOverlay(harness.host, 200, tokenTaggingTheme({ bold: true }));
+    const lines = view.render(200);
+    const text = plainLines(lines).join("\n");
+    const error = `cannot read session: no session ${join(harness.root, "old-2.jsonl")}`;
+
+    expect(text.indexOf("Find the login handler")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Trace the token refresh")).toBeGreaterThan(text.indexOf("Find the login handler"));
+    expect(text.indexOf(error)).toBeGreaterThan(text.indexOf("Trace the token refresh"));
+    expect(lines.some((line) => line.startsWith(" <warning>cannot read session"))).toBe(true);
   });
 
   it("follows a chain of an earlier session to its last link", async () => {
@@ -1252,7 +1570,11 @@ const ARGS = {
   ],
 };
 
-const nestedSession = (args: Record<string, unknown>, result: { text: string; details?: RunAgentDetails }) =>
+const nestedSession = (
+  args: Record<string, unknown>,
+  result: { text: string; details?: RunAgentDetails },
+  after: string[] = [],
+) =>
   parseSessionLines(
     [
       line({ role: "user", content: [{ type: "text", text: "Task from main (agent id explorer-1): Nest" }] }),
@@ -1269,6 +1591,7 @@ const nestedSession = (args: Record<string, unknown>, result: { text: string; de
         details: result.details,
         isError: false,
       }),
+      ...after,
     ],
     RECORD_ENTRY,
   );
@@ -1313,7 +1636,17 @@ const nestedSetup = async () => {
     return () => lines().join("\n");
   };
 
-  return { running, show, text };
+  const finishAll = async () => {
+    harness.registry
+      .list()
+      .filter((record) => record.callerId === parent.id)
+      .forEach((record) => {
+        harness.runtime.child(record.id).finish(`${record.id} found it`);
+      });
+    await flushMicrotasks();
+  };
+
+  return { running, show, text, finishAll, child: harness.runtime.child(parent.id) };
 };
 
 describe("agent view nested run_agent calls", () => {
@@ -1374,6 +1707,42 @@ describe("agent view nested run_agent calls", () => {
     expect(shown).toContain("scout  find callers");
     expect(shown).toContain("scout  find tests");
     expect(shown).toContain("Starting");
+  });
+
+  const hiddenLine = (message: CustomMessage) =>
+    JSON.stringify({
+      type: "custom_message",
+      customType: message.customType,
+      content: message.text,
+      details: message.details,
+      display: false,
+    });
+
+  it("draws no row for the hidden batch wake, as the main session does, and the block shows the finished batch", async () => {
+    const { running, show, text, finishAll, child } = await nestedSetup();
+    const result = await running;
+    const wake = hiddenLine(wakeMessage(["[pi-subagents] Batch b-1 finished: 2 done."]));
+    const reply = line({
+      role: "assistant",
+      content: [{ type: "text", text: "Both found." }],
+      stopReason: "stop",
+    });
+
+    show(nestedSession(ARGS, result, [wake, reply]), "written");
+
+    const shown = await text();
+
+    expect(shown()).toContain(" ◌ 2 scout agents");
+
+    child.finish("Started batch, waiting.");
+    await finishAll();
+
+    expect(child.hidden.map((wake) => wake.customType)).toEqual(["pi-subagents:wake"]);
+    expect(shown()).toContain(" ✓ 2 scout agents");
+    expect(shown()).not.toContain("◌");
+    expect(shown()).not.toContain("[pi-subagents] Batch");
+    expect(shown()).not.toContain("finished: 2 done");
+    expect(shown()).toContain("Both found.");
   });
 });
 
@@ -1464,14 +1833,33 @@ describe("agent view request block", () => {
     );
   });
 
+  it("draws a message from the caller as a user row, like the task", () => {
+    const session = parseSessionLines(
+      [
+        userLine("Task from main (agent id explorer-1): Map the auth module"),
+        userLine(formatRoutedMessage({ sender: "main", text: "Also check logout." })),
+      ],
+      RECORD_ENTRY,
+    );
+    const all = viewOf(session, { record: openRecord }).lines();
+    const task = all.findIndex((entry) => entry.startsWith(" Task from main"));
+    const message = all.findIndex((entry) => entry.startsWith(" [message from main]"));
+
+    expect(message).toBeGreaterThan(task);
+    expect(all[message + 1]?.trimEnd()).toBe(" Also check logout.");
+    expect([all[message - 1], all[message + 2]]).toEqual([all[task - 1], all[task + 1]]);
+  });
+
   it("shows the request collapsed on open", () => {
     const { lines } = viewOf(requestSession(), { record: openRecord });
     const all = lines();
 
-    expect(all[all.indexOf(RULE(100)) + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
+    expect(all[all.indexOf(RULE(100)) + 1]).toBe(
+      ` Request · ${PAYLOAD_LINES} lines (r to expand, c to copy)`,
+    );
     expect(all.join("\n")).not.toContain('"model": "provider/model"');
     expect(lines(120).at(-2)).toContain(
-      "x to stop · r to show the request · ctrl+o to expand tools · c to copy request",
+      "x to stop · r to show request · c to copy request · ctrl+o to expand tools",
     );
   });
 
@@ -1497,10 +1885,10 @@ describe("agent view request block", () => {
     const all = lines();
     const rule = all.indexOf(RULE(100));
 
-    expect(all[rule + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to collapse)`);
+    expect(all[rule + 1]).toBe(` Request · ${PAYLOAD_LINES} lines (r to collapse, c to copy)`);
     expect(all[rule + 2]).toBe("   {");
     expect(all.at(-2)).toMatch(/ 1-\d+\/\d+ · end to follow$/);
-    expect(all.at(-2)).toContain("r to hide the request");
+    expect(all.at(-2)).toContain("r to hide request");
 
     update({ session: requestSession(31) });
 
@@ -1546,7 +1934,9 @@ describe("agent view request block", () => {
     view.handleKey(key("enter"));
     view.handleKey(char("r"));
 
-    expect(plainLines(view.render(100))).toContain(` Request · ${PAYLOAD_LINES} lines (r to collapse)`);
+    expect(plainLines(view.render(100))).toContain(
+      ` Request · ${PAYLOAD_LINES} lines (r to collapse, c to copy)`,
+    );
 
     view.handleKey(key("escape"));
 
@@ -1554,7 +1944,9 @@ describe("agent view request block", () => {
 
     view.handleKey(key("enter"));
 
-    expect(plainLines(view.render(100))).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
+    expect(plainLines(view.render(100))).toContain(
+      ` Request · ${PAYLOAD_LINES} lines (r to expand, c to copy)`,
+    );
   });
 
   it("says not sent yet while the agent is open without a request", () => {
@@ -1607,7 +1999,7 @@ describe("agent view request block", () => {
 
     view.handleKey(key("toggleTools"));
 
-    expect(lines()).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand)`);
+    expect(lines()).toContain(` Request · ${PAYLOAD_LINES} lines (r to expand, c to copy)`);
 
     view.handleKey(char("r"));
 
@@ -1685,11 +2077,11 @@ describe("agent view clicks", () => {
     const row = requestIndex(lines());
 
     expect(view.handleClick?.(3, row)).toBe(true);
-    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to collapse\)$/);
-    expect(lines().at(-2)).toContain("r to hide the request");
+    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to collapse, c to copy\)$/);
+    expect(lines().at(-2)).toContain("r to hide request");
     expect(view.handleClick?.(3, row + 1)).toBe(false);
     expect(view.handleClick?.(3, row)).toBe(true);
-    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to expand\)$/);
+    expect(lines()[row]).toMatch(/^ Request · \d+ lines \(r to expand, c to copy\)$/);
   });
 
   it("keeps the clicked call in place instead of following the tail", () => {

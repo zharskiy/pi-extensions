@@ -23,7 +23,7 @@ export type FakeChildSession = ChildSession & {
   task?: string;
   seed?: CustomMessage;
   messages: { message: RoutedMessage | CustomMessage; delivery: MessageDelivery }[];
-  wakes: string[];
+  hidden: CustomMessage[];
   aborted: boolean;
   abortDelayMs?: number;
   abortHangs?: boolean;
@@ -47,14 +47,18 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
     sessionFile: `${spec.sessionDir}/session.jsonl`,
     spec,
     messages: [],
-    wakes: [],
+    hidden: [],
     aborted: false,
     disposed: false,
     usage: emptyUsage(),
     text: "",
-    start: (task, seed) => {
-      child.task = task;
-      child.seed = seed;
+    start: (opening) => {
+      if (typeof opening === "string") {
+        child.task = opening;
+        return;
+      }
+
+      child.seed = opening;
     },
     subscribe: (listener) => {
       listeners.add(listener);
@@ -68,8 +72,8 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
     sendCustom: async (message, delivery) => {
       child.messages.push({ message, delivery });
     },
-    wake: async (text) => {
-      child.wakes.push(text);
+    sendHidden: async (message) => {
+      child.hidden.push(message);
     },
     abort: async () => {
       if (child.abortHangs) {

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import {
-  calculateContextTokens,
   migrateSessionEntries,
   parseSessionEntries,
+  type SessionEntry,
+  sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
 import type { TranscriptItem } from "../types/view.ts";
@@ -19,11 +20,11 @@ type RawMessage = {
   sections?: Record<string, string | null>;
   toolsAdded?: PromptTool[];
   toolsRemoved?: { name: string }[];
-  stopReason?: string;
-  usage?: Parameters<typeof calculateContextTokens>[0];
 };
 
 type RawEntry = {
+  id?: string;
+  parentId?: string | null;
   type?: string;
   customType?: string;
   data?: unknown;
@@ -109,19 +110,6 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
   return { kind: "assistant", raw: message };
 };
 
-const measuredContext = (message: RawMessage | undefined) => {
-  const usage = message?.role === "assistant" ? message.usage : undefined;
-  const failed = message?.stopReason === "aborted" || message?.stopReason === "error";
-
-  if (!usage || failed) {
-    return undefined;
-  }
-
-  const tokens = calculateContextTokens(usage);
-
-  return tokens > 0 ? tokens : undefined;
-};
-
 const parseEntries = (lines: readonly string[]): RawEntry[] =>
   lines
     .filter((line) => line.trim().length > 0)
@@ -148,66 +136,91 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
 
   const items = entries.map(transcriptItem).filter((item): item is TranscriptItem => item !== undefined);
 
-  const contextTokens = entries
-    .filter((entry) => entry.type === "message")
-    .map((entry) => measuredContext(entry.message))
-    .filter((tokens) => tokens !== undefined)
-    .at(-1);
-
-  return { providerPayload: recordData?.providerPayload, items, contextTokens };
+  return { providerPayload: recordData?.providerPayload, items };
 };
 
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
   parseSessionLines(readLines(file), recordEntry);
 
-type PathEntry = RawEntry & { id?: string; parentId?: string | null };
+const SUMMARY_ROLES = ["compactionSummary", "branchSummary"];
+
+const summaryItems = (entry: RawEntry): TranscriptItem[] =>
+  sessionEntryToContextMessages(entry as SessionEntry)
+    .filter((message) => SUMMARY_ROLES.includes(message.role))
+    .map((raw) => ({ kind: "summary", raw }));
+
+const pathItems = (entry: RawEntry): TranscriptItem[] => {
+  if (entry.type === "custom") {
+    return [{ kind: "entry", customType: entry.customType ?? "", data: entry.data }];
+  }
+
+  if (entry.type === "branch_summary") {
+    return summaryItems(entry);
+  }
+
+  if (entry.type === "message" && entry.message?.role === "bashExecution") {
+    return [{ kind: "bash", raw: entry.message }];
+  }
+
+  const item = transcriptItem(entry);
+
+  return item ? [item] : [];
+};
 
 type CustomEntryData = { customType: string; data: unknown };
 
 export type SessionPath = { segments: TranscriptItem[][]; customEntries: CustomEntryData[] };
 
-export const readSessionTree = (file: string): PathEntry[] => {
+export const readSessionTree = (file: string): RawEntry[] => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
 
   migrateSessionEntries(entries);
 
-  return entries as PathEntry[];
+  return entries as RawEntry[];
 };
 
-const pathTo = (entries: readonly PathEntry[], leafId: string | null): PathEntry[] => {
-  const walk = entries.reduceRight(
-    (state, entry) => {
-      if (entry.id === undefined || entry.id !== state.next) {
-        return state;
-      }
+const leafOf = (
+  entries: readonly RawEntry[],
+  byId: Map<string | undefined, RawEntry>,
+  leafId: string | null,
+) => {
+  if (leafId === null) {
+    return undefined;
+  }
 
-      state.path.push(entry);
-
-      return { next: entry.parentId ?? null, path: state.path };
-    },
-    { next: leafId, path: [] as PathEntry[] },
-  );
-
-  return walk.path.reverse();
+  return byId.get(leafId) ?? entries.at(-1);
 };
 
-export const sessionPath = (entries: readonly PathEntry[], leafId: string | null): SessionPath => {
+const pathTo = (entries: readonly RawEntry[], leafId: string | null) => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const parentOf = (entry: RawEntry) => (entry.parentId ? byId.get(entry.parentId) : undefined);
+
+  const step = ({ at, path }: { at?: RawEntry; path: RawEntry[] }) => {
+    if (!at) {
+      return { path };
+    }
+
+    path.push(at);
+
+    return { at: parentOf(at), path };
+  };
+
+  return entries.reduce(step, { at: leafOf(entries, byId, leafId), path: [] }).path.reverse();
+};
+
+export const sessionPath = (entries: readonly RawEntry[], leafId: string | null): SessionPath => {
   const path = pathTo(entries, leafId);
 
   const segments = path
     .reduce<TranscriptItem[][]>(
       (split, entry) => {
         if (entry.type === "compaction") {
-          split.push([]);
+          split.push(summaryItems(entry));
 
           return split;
         }
 
-        const item = transcriptItem(entry);
-
-        if (item) {
-          split.at(-1)?.push(item);
-        }
+        split.at(-1)?.push(...pathItems(entry));
 
         return split;
       },

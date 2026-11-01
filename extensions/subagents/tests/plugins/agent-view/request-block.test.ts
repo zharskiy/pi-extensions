@@ -25,10 +25,20 @@ describe("request block", () => {
     const twelve = { a: 1, b: 2, c: { d: 3, e: [1, 2] }, f: "x" };
 
     expect(pretty(twelve)).toHaveLength(12);
-    expect(requestLines(twelve, true, false, 80, plainTheme)).toEqual([" Request · 12 lines (r to expand)"]);
-    expect(requestLines(twelve, true, false, 80, tokenTaggingTheme({ bold: true }))).toEqual([
-      " <muted>Request · 12 lines</> <dim>(r to expand)</>",
+    expect(requestLines(twelve, true, false, 80, plainTheme)).toEqual([
+      " Request · 12 lines (r to expand, c to copy)",
     ]);
+    expect(requestLines(twelve, true, false, 80, tokenTaggingTheme({ bold: true }))).toEqual([
+      " <muted>Request · 12 lines</> <dim>(r to expand, c to copy)</>",
+    ]);
+  });
+
+  it("keeps the r hint without the copy key when both do not fit, and drops it only when r does not fit either", () => {
+    const twelve = { a: 1, b: 2, c: { d: 3, e: [1, 2] }, f: "x" };
+
+    expect(requestLines(twelve, true, false, 40, plainTheme)).toEqual([" Request · 12 lines (r to expand)"]);
+    expect(requestLines(twelve, true, true, 42, plainTheme)[0]).toBe(" Request · 12 lines (r to collapse)");
+    expect(requestLines(twelve, true, false, 30, plainTheme)).toEqual([" Request · 12 lines"]);
   });
 
   it("says not sent yet when open and not recorded when closed", () => {
@@ -42,7 +52,7 @@ describe("request block", () => {
     const value = payload();
     const lines = requestLines(value, false, true, 120, plainTheme);
 
-    expect(lines[0]).toBe(` Request · ${pretty(value).length} lines (r to collapse)`);
+    expect(lines[0]).toBe(` Request · ${pretty(value).length} lines (r to collapse, c to copy)`);
     expect(lines.slice(1)).toEqual(pretty(value).map((line) => `   ${line}`));
   });
 

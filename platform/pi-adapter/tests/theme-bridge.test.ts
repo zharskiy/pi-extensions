@@ -35,6 +35,7 @@ describe("themeLike colours", () => {
       thinkingMax: true,
       customMessageLabel: true,
       customMessageText: true,
+      userMessageText: true,
     } satisfies Record<ThemeToken, true>) as ThemeToken[];
 
     expect(tokens.map((token) => like.fg(token, "x"))).toEqual(tokens.map((token) => `<${token}>x`));
@@ -102,7 +103,7 @@ describe("themeLike backgrounds", () => {
     return module.theme as Theme;
   };
 
-  it("paints diff lines on pi's tool success and error backgrounds", () => {
+  it("paints diff lines on pi's tool success and error backgrounds and user rows on pi's user message background", () => {
     const styled: unknown[] = [];
     const recording = {
       style: (text: string, options: unknown) => {
@@ -113,8 +114,9 @@ describe("themeLike backgrounds", () => {
 
     themeLike(recording).bg("added", "x");
     themeLike(recording).bg("removed", "x");
+    themeLike(recording).bg("userMessage", "x");
 
-    expect(styled).toEqual([{ bg: "toolSuccessBg" }, { bg: "toolErrorBg" }]);
+    expect(styled).toEqual([{ bg: "toolSuccessBg" }, { bg: "toolErrorBg" }, { bg: "userMessageBg" }]);
   });
 
   it("paints changed words on a background mixed from the line background and the diff colour", async () => {

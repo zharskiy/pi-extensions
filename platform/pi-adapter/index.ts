@@ -21,6 +21,7 @@ export type {
   RoutedMessage,
   SessionRecord,
   SkillInfo,
+  UserMessage,
 } from "./types/messages.ts";
 export {
   type AvailableModel,
@@ -48,8 +49,10 @@ export type {
   Phase,
   RunMode,
   SessionControl,
+  SessionFill,
   SessionInfo,
   ShutdownReason,
+  UserInput,
 } from "./types/session.ts";
 export type { StatusToken, ThemeLike, ThemeToken } from "./types/theme.ts";
 export type {
@@ -83,4 +86,5 @@ export type {
   WidgetHandle,
 } from "./types/view.ts";
 export { CHILD_COLUMN, CHILD_MARK, childLead, isBlankLine, PAD } from "./ui/row-layout.ts";
+export { labelledRule } from "./ui/rules.ts";
 export { textMetrics } from "./ui/theme-bridge.ts";

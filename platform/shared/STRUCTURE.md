@@ -10,11 +10,12 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`, `writeSettingsFile`.
 - `handoff/`: the handoff format session-limits and subagents share.
   - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details types and their parsers `parseSeedDetails` and `parseRequestDetails`, `handoffPath`.
-  - `handoff-limit.ts`: `Limits`, `HandoffLimit` (request and warn lines), `mainLimit`, `limitLevel`.
+  - `handoff-limit.ts`: `Limits`, `HandoffLimit` (request and warn lines), `mainLimit`, `limitLevel`, `WORKING_CONTEXT`, `workingContextText`.
   - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template, `HandoffAudience` and the builder, retry text and seed text.
+  - `handoff-seam.ts`: `seamLabel` and `LIMIT_SEAM`, the handoff seam rule's label.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `channels/`: how extensions talk without importing each other.
-  - `host-channels.ts`: the busy and background-work (side by side), awaiting-input, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
+  - `host-channels.ts`: the busy and background-work (side by side), awaiting-input, handoff-pending and held-results, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
   - `status-keys.ts`: `HINT_STATUS_PREFIX`, `MIRROR_STATUS_PREFIX`, the status-key roles the footer reads.
 - `text/`: theme-free text helpers.
   - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
@@ -23,7 +24,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `plain-object.ts`: `isPlainObject`.
 - `project-dir.ts`: `projectPath`, `ensureProjectSubdir`, `writeProjectFile`; the `.pi/.gitignore` of a new `.pi/`.
 - `tests/format.test.ts`: `format.ts`.
-- `tests/handoff-limit.test.ts`: `limitLevel` and `mainLimit`.
+- `tests/handoff-limit.test.ts`: `limitLevel`, `mainLimit` and `workingContextText`.
 - `tests/handoff-tool.test.ts`: `handoffTool`.
 - `tests/handoff-prompt.test.ts`: the instruction over test audiences, retry and seed text.
 - `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.

@@ -8,30 +8,31 @@
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
-- `types/session.ts`: `SessionInfo`, `SessionControl`, `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), dialog and idle events.
+- `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the `fill` thunk returning a `SessionFill`: the seed, optional follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.
 - `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
-- `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.
-- `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `RoutedMessage` (sender and text), `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
+- `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers (`EntryRender`, `EntryOptions`).
+- `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `ImageAttachment` and `UserMessage` (a user's text with its images; the seed carries none), `RoutedMessage` (sender and text), `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
 - `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
-- `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages.
+- `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages, the input hook, the new session's fill (editor text, seed, follow-ups) run inside `withSession`.
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).
 - `runtime/child-scope.ts`: the child scope in which no extension boots.
-- `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, and its restore of the model and thinking level on `session_start`.
+- `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, its restore of the model and thinking level on `session_start`, and the restored-selection marker the `model_select` and `thinking_level_select` filters match against.
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
-- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or the full root-to-leaf path of one leaf), context tokens.
+- `runtime/session-file.ts`: reads session `.jsonl` files: entries, transcripts (whole, or the full root-to-leaf path of one leaf, split at its compactions, with its custom entries, compaction or branch summaries and bash executions).
 - `runtime/lineage-walk.ts`: pi-free `walkLineage` (links oldest first, cycle guard, depth cap), `linkKey` and `createFileReader` (a per-file read cached by size and mtime, failures as data); exported through `index.ts` for the subagents chain.
 - `runtime/lineage.ts`: the `pi-adapter:lineage` entry type (and its earlier name `pi-adapter:previous-session`), `lineageEntryOf`, and `createLineageReader`, which resolves a link `{ file, leafId }` to its transcript and walks the lineage.
-- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with displayed custom messages as run starts), `formatRoutedMessage`.
+- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`.
+- `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
-- `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones and their re-queue at settle, the seeded start).
+- `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones, `sendHidden` for a hidden one, and their re-queue at settle, `start` from a task or from a seed alone).
 - `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource`.
 - `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery, each with its scope and path.
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
 - `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.
-- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, columns.
+- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, editor text, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
 - `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.
@@ -42,8 +43,9 @@
 - `ui/notices.ts`: `HostUi.setNotice`; one-line notices between the editor and the footer.
 - `ui/thinking-label.ts`: the hidden thinking label: composed hint, record on `globalThis`, OSC 133 prefix.
 - `ui/working-message.ts`: the working message and its visibility.
-- `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours), `textMetrics` (width, truncate, wrap), `fitLines`.
+- `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours, background tokens to pi's diff and user message backgrounds), `textMetrics` (width, truncate, wrap), `fitLines`.
 - `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
+- `ui/rules.ts`: `labelledRule` (with a token, dim by default), exported through `index.ts` for the lineage seam rules and the transcript pane's `rule` item, session-limits' kept rule and the transcript's answer rule.
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
 - `editor/input.ts`: the editor submit key, command completion, re-submit.
@@ -51,22 +53,23 @@
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
-- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` and `registerMessageRenderer` over pi's renderers, the owner-keyed message renderer record and `messageRendererFor` (the transcript pane's lookup).
-- `tools/transcript.ts`: the transcript pane and pi renderer capture.
-- `tools/lineage-entry.ts`: the lineage entries `newSession({ showPrevious })` and `session_compact` write, with their `/tree` labels, and their renderer, which draws the lineage with the transcript pane (whole after a handoff, one collapsed line after a compaction).
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups).
+- `tools/transcript.ts`: the transcript pane (including the `rule` item, a `labelledRule` after the shared pad) and pi renderer capture.
+- `tools/lineage-entry.ts`: the lineage entries `newSession({ showPrevious })` and `session_compact` write, with their `/tree` labels, and their renderer over `registerEntryRenderer`'s `flush` option, which draws the lineage with the transcript pane, each link closed by a labelled seam rule (whole after a handoff, one collapsed rule after a compaction).
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
 - `context/context-prompt.ts`: prompt sections and tools with their source and exposure.
 - `context/context-messages.ts`: per-message and per-block token estimates.
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline.
+- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`, an `input` handler swallowing a prompt, and a new session filled through the adapter's `newSession`: editor text, the seed's run, then a `/template` follow-up expanded with its image behind it, and two follow-ups delivered in order as separate user messages, one turn each).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
-- `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once.
+- `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once, with no `onModelSelect` or `onThinkingSelect` call or default saved during the restore and later choices passed through, and the seed starting the first run with `continueWithSeed`.
 - `tests/phase.test.ts`: `runtime/phase.ts`.
 - `tests/child-scope.test.ts`: `runtime/child-scope.ts`.
 - `tests/session-file.test.ts`: `runtime/session-file.ts`.
 - `tests/message-text.test.ts`: `runtime/message-text.ts`.
+- `tests/default-model.test.ts`: `Host.onModelSelect`, `Host.saveDefaultModel`, `Host.onThinkingSelect` (without the reset of a model switch) and `Host.saveDefaultThinkingLevel` over a real pi session and a temp `settings.json`.
 - `tests/settle-within.test.ts`: `runtime/settle-within.ts`.
 - `tests/child-runtime.test.ts`: `child/child-runtime.ts` and `child/child-extension.ts`.
 - `tests/skills.test.ts`: `child/skills.ts`.
@@ -78,6 +81,7 @@
 - `tests/key-events.test.ts`: `ui/key-events.ts` and `ui/key-layout.ts`.
 - `tests/footer.test.ts`: `ui/footer.ts` and `ui/notices.ts`.
 - `tests/theme-bridge.test.ts`: `ui/theme-bridge.ts`.
+- `tests/rules.test.ts`: `ui/rules.ts`.
 - `tests/working-message.test.ts`: `ui/working-message.ts`.
 - `tests/editor.test.ts`: `editor/editor.ts`, its hooks and the shared history.
 - `tests/input.test.ts`: `editor/input.ts`.
@@ -85,8 +89,8 @@
 - `tests/tool-rows.test.ts`: `tools/tool-rows.ts` and `tools/row-component.ts`.
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
-- `tests/transcript.test.ts`: `tools/transcript.ts`.
-- `tests/lineage-entry.test.ts`: `tools/lineage-entry.ts` over a real pi session runtime: the drawn handoff chain, the earlier entry name, the not-found line, the compaction marker collapsed and expanded, pi's `session_compact` order, the `/tree` labels, and the model's requests unchanged by the entries, on later turns, after a resume and over two compactions.
+- `tests/transcript.test.ts`: `tools/transcript.ts`, its `rule` item included.
+- `tests/lineage-entry.test.ts`: `tools/lineage-entry.ts` over a real pi session runtime: the seam rule (label, one blank row each side, no path), the drawn handoff chain with a rule per seam, through a compacted link and up to the depth limit, the earlier entry name, the not-found and earlier-sessions rules, the old session's custom entries (drawn, or kept out with `previousSession: false`), its compaction summary where the compaction sat, its bash executions, the redraw in a new theme after pi invalidates the entry, the compaction marker collapsed and expanded, pi's `session_compact` order, the `/tree` labels, and the model's requests unchanged by the entries, on later turns, after a resume and over two compactions.
 - `tests/lineage-walk.test.ts`: `runtime/lineage-walk.ts`: order, cycle guard, depth cap and the cached file reader.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.

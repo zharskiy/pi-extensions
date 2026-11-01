@@ -1,3 +1,5 @@
+import { formatTokens, formatWindow } from "../text/format.ts";
+
 export type Limits = { softRatio: number; hardRatio: number; softTokens: number; hardTokens: number };
 
 export type HandoffLimit = { request: number; warn: number };
@@ -26,3 +28,8 @@ export const limitLevel = (tokens: number | null, limit: HandoffLimit | undefine
 
   return tokens >= limit.warn ? "soft" : "normal";
 };
+
+export const WORKING_CONTEXT = "working context";
+
+export const workingContextText = (tokens: number, request: number) =>
+  `${WORKING_CONTEXT} ${formatTokens(tokens)} of ${formatWindow(request)}`;

@@ -1,8 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, assert, describe, expect, it, vi } from "vitest";
 import type { RunMode, ToolSpec } from "../../../platform/pi-adapter/index.ts";
-import { BUSY_CHANNEL, handoffPath as pathFor } from "../../../platform/shared/index.ts";
+import {
+  BUSY_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
+  HELD_RESULTS_CHANNEL,
+  handoffPath as pathFor,
+} from "../../../platform/shared/index.ts";
 import {
   createFakeHost,
   flushTimers as flush,
@@ -45,8 +50,14 @@ const VALID_HANDOFF = [
   "none",
 ].join("\n");
 
+const afterHandoff = (seed = "") => {
+  const at = seed.indexOf(VALID_HANDOFF);
+
+  return at < 0 ? undefined : seed.slice(at + VALID_HANDOFF.length).trim();
+};
+
 const NOTICE_KEY = "pi-session-limits";
-const HANDOFF_COMMAND = "session-handoff";
+const HANDOFF_COMMAND = "handoff";
 const HANDOFF_TYPE = "pi-handoff-seed";
 
 const RELEASE_MS = 1_000;
@@ -141,12 +152,12 @@ describe("session limits", () => {
     expect(requests()[0]).toContain("Call the `handoff` tool");
     expect(requests()[0]).toContain("If it reports errors, fix them and call it again.");
     expect(requests()[0]).not.toContain("write tool");
-    expect(requests()[0].endsWith("reply with one line: `handoff saved`.")).toBe(true);
+    expect(requests()[0].endsWith("end your turn without replying.")).toBe(true);
     expect(requests()[0]).not.toMatch(/agent/i);
     expect(requests()[0].startsWith("Your context window is nearly full.")).toBe(true);
     expect(requests()[0]).not.toContain("{{");
     expect(requests()[0]).not.toContain("next session is for");
-    expect(requests()[0]).not.toContain("/session-handoff");
+    expect(requests()[0]).not.toContain("/handoff");
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
     expect(host.notices).toEqual([]);
   });
@@ -163,13 +174,29 @@ describe("session limits", () => {
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].parentSession).toBe(host.info.file);
     expect(host.newSessions[0].keepSelection).toBe(true);
-    expect(host.newSessions[0].showPrevious).toBe(true);
+    expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · context limit" });
+    expect(host.newSessions[0].continueWithSeed).toBe(true);
     expect(host.newSessions[0].seed?.customType).toBe(HANDOFF_TYPE);
-    expect(host.newSessions[0].seed?.text).toContain(`the previous session ${host.info.file}`);
+    expect(host.newSessions[0].seed?.text).toContain(
+      "continues the previous session, which reached its context limit",
+    );
+    expect(host.newSessions[0].seed?.text).not.toContain(host.info.file);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
     expect(host.confirmations).toEqual([]);
     expect(requests()).toHaveLength(1);
     expect(notice()).toBe("<warning>» handoff at 60k tokens · 76.0k used");
+  });
+
+  it.each(["done", "blocked"])("continues the work after an automatic %s handoff too", async (status) => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF.replace("partial", status));
+    host.settle();
+    await flush();
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].continueWithSeed).toBe(true);
   });
 
   it("waits while a source reports running work and switches once it is released", async () => {
@@ -232,42 +259,29 @@ describe("session limits", () => {
     host.settle();
     await flush();
 
-    expect(requests()).toHaveLength(2);
-    expect(host.dispatched).toEqual([]);
-
-    turn(78_000);
-    saveHandoff(VALID_HANDOFF.replace("write the test plan", "write the release notes"));
-    host.settle();
-    await flush();
-
+    expect(requests()).toHaveLength(1);
+    expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
-    expect(host.newSessions[0].seed?.text).toContain("write the release notes");
   });
 
-  it("asks for a fresh handoff when the user spoke while the switch waited", async () => {
+  it("switches with the saved handoff and the message the user typed while the switch waited", async () => {
     const { host, requests, turn, saveHandoff, busy } = setup();
 
     busy(true);
     turn(76_000);
     saveHandoff(VALID_HANDOFF);
     host.settle();
-    turn(78_000);
-    host.settle();
+
+    expect(host.input("also update the changelog")).toBe(true);
+
     busy(false);
     await flush();
     await flush();
 
-    expect(requests()).toHaveLength(2);
-    expect(host.dispatched).toEqual([]);
-
-    turn(80_000);
-    saveHandoff(VALID_HANDOFF.replace("write the test plan", "write the release notes"));
-    host.settle();
-    await flush();
-
-    expect(host.dispatched).toHaveLength(1);
-    expect(host.newSessions[0].seed?.text).toContain("write the release notes");
-    expect(requests()).toHaveLength(2);
+    expect(requests()).toHaveLength(1);
+    expect(host.forwarded).toEqual([]);
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].followUps).toEqual([{ text: "also update the changelog", images: [] }]);
   });
 
   it("switches without a fresh request when only the instruction produced turns", async () => {
@@ -284,27 +298,6 @@ describe("session limits", () => {
 
     expect(requests()).toHaveLength(1);
     expect(host.newSessions).toHaveLength(1);
-  });
-
-  it("keeps the single resend after a fresh request", async () => {
-    const { host, requests, turn, saveHandoff, busy } = setup();
-
-    busy(true);
-    turn(76_000);
-    saveHandoff(VALID_HANDOFF);
-    host.settle();
-    turn(78_000);
-    busy(false);
-    host.settle();
-    saveHandoff("## Status\npartial\n");
-    host.settle();
-    await flush();
-
-    expect(requests()).toHaveLength(3);
-    expect(requests()[2]).toContain("missing sections");
-    expect(host.notices.filter((notice) => notice.level === "warning")).toEqual([]);
-    expect(host.notices).toEqual([]);
-    expect(host.dispatched).toEqual([]);
   });
 
   it("returns an invalid save to the model at once, resends once at the settle, then warns and stops", async () => {
@@ -578,7 +571,7 @@ describe("session limits", () => {
   });
 });
 
-describe("/session-handoff on demand", () => {
+describe("/handoff on demand", () => {
   const FOCUS = "fix the flaky login test";
 
   it("asks the model for a handoff with the focus and says so", async () => {
@@ -591,9 +584,7 @@ describe("/session-handoff on demand", () => {
     expect(requests()).toHaveLength(1);
     expect(host.messages[0].message.customType).toBe("pi-handoff-request");
     expect(requests()[0]).toContain(handoffPath);
-    expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
-      true,
-    );
+    expect(requests()[0].startsWith("The user ran /handoff to continue in a fresh session.")).toBe(true);
     expect(requests()[0]).toContain(
       `The user says the next session is for: ${FOCUS}. Shape Outcome and Next around that`,
     );
@@ -658,8 +649,9 @@ describe("/session-handoff on demand", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].keepSelection).toBe(true);
-    expect(host.newSessions[0].showPrevious).toBe(true);
-    expect(host.newSessions[0].seed?.text).toContain("which the user handed off with /session-handoff");
+    expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · /handoff" });
+    expect(host.newSessions[0].continueWithSeed).toBe(false);
+    expect(host.newSessions[0].seed?.text).toContain("which the user handed off with /handoff");
     expect(host.newSessions[0].seed?.text).toContain(`The user said this session is for: ${FOCUS}.`);
     expect(host.newSessions[0].seed?.text).toContain(VALID_HANDOFF);
   });
@@ -718,6 +710,28 @@ describe("/session-handoff on demand", () => {
     expect(host.confirmations).toHaveLength(1);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].seed?.text).toContain(`The user said this session is for: ${FOCUS}.`);
+  });
+
+  it("keeps a declined manual handoff manual when the user speaks before the switch", async () => {
+    const { host, saveHandoff, busy } = setup();
+
+    busy(true);
+    host.confirmAnswer = false;
+    await host.runCommand(HANDOFF_COMMAND, "");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.input("then ship it")).toBe(true);
+
+    busy(false);
+    await flush();
+    await flush();
+
+    expect(host.messages).toHaveLength(1);
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].continueWithSeed).toBe(false);
+    expect(host.newSessions[0].editorText).toBe("then ship it");
   });
 
   it("switches at once after a cancelled switch when the file is still valid", async () => {
@@ -818,7 +832,7 @@ describe("/session-handoff on demand", () => {
   });
 });
 
-describe("/session-handoff during a turn", () => {
+describe("/handoff during a turn", () => {
   const FOCUS = "fix the flaky login test";
   const QUEUED = "The session handoff starts when the current turn ends; stopping the turn (esc) cancels it.";
 
@@ -844,9 +858,7 @@ describe("/session-handoff during a turn", () => {
 
     expect(requests()).toHaveLength(1);
     expect(host.messages[0].delivery).toBe("run");
-    expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
-      true,
-    );
+    expect(requests()[0].startsWith("The user ran /handoff to continue in a fresh session.")).toBe(true);
     expect(requests()[0]).toContain(`The user says the next session is for: ${FOCUS}.`);
     expect(host.notices).toEqual([{ message: QUEUED, level: "info" }]);
     expect(notice()).toBeUndefined();
@@ -918,9 +930,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(1);
-    expect(requests()[0].startsWith("The user ran /session-handoff to continue in a fresh session.")).toBe(
-      true,
-    );
+    expect(requests()[0].startsWith("The user ran /handoff to continue in a fresh session.")).toBe(true);
     expect(requests()[0]).toContain(FOCUS);
     expect(host.notices.filter((notice) => notice.message.startsWith("Context is nearly full"))).toEqual([]);
     expect(notice()).toBe("<warning>» handoff at 60k tokens · 76.0k used");
@@ -1013,7 +1023,7 @@ describe("/session-handoff during a turn", () => {
     host.settle();
 
     expect(requests()).toHaveLength(3);
-    expect(requests()[2].startsWith("The user ran /session-handoff")).toBe(true);
+    expect(requests()[2].startsWith("The user ran /handoff")).toBe(true);
   });
 
   it("drops a handoff queued while stuck when the turn is aborted", async () => {
@@ -1083,7 +1093,7 @@ describe("/session-handoff during a turn", () => {
 
     expect(requests()).toHaveLength(2);
     expect(warnings()).toHaveLength(1);
-    expect(notice()).toBe("<error>✗ handoff failed · run /session-handoff");
+    expect(notice()).toBe("<error>✗ handoff failed · run /handoff");
   });
 });
 
@@ -1252,7 +1262,7 @@ describe("handoff request message", () => {
 
     expect(manual.host.messages[0].message.details).toEqual({
       reason: "manual",
-      command: "/session-handoff",
+      command: "/handoff",
     });
   });
 
@@ -1277,5 +1287,508 @@ describe("handoff request message", () => {
         details: { reason: "limit", tokens: 176_000, request: 175_000 },
       }),
     ).toEqual(["» handoff requested · 176k of 175k tokens (<app.tools.expand> to expand)"]);
+  });
+});
+
+describe("handoff pending and held results", () => {
+  const watch = () => {
+    const limits = setup();
+
+    const pendings = () =>
+      limits.host.published
+        .filter((entry) => entry.channel === HANDOFF_PENDING_CHANNEL)
+        .map((entry) => (entry.data as { pending: boolean }).pending);
+
+    const hold = (text: string, source = "pi-subagents") =>
+      limits.host.emit(HELD_RESULTS_CHANNEL, { source, text });
+
+    const seed = () => limits.host.newSessions[0]?.seed?.text ?? "";
+
+    return { ...limits, pendings, hold, seed };
+  };
+
+  it("announces no pending handoff at session start", () => {
+    const { pendings } = watch();
+
+    expect(pendings()).toEqual([false]);
+  });
+
+  it("announces the pending handoff when the request is sent and keeps it through the resend", () => {
+    const { host, turn, pendings, requests } = watch();
+
+    turn(76_000);
+
+    expect(pendings()).toEqual([false, true]);
+
+    host.settle();
+
+    expect(requests()).toHaveLength(2);
+    expect(pendings()).toEqual([false, true]);
+  });
+
+  it("clears the pending handoff when the session gives up", () => {
+    const { host, turn, pendings } = watch();
+
+    turn(76_000);
+    host.settle();
+    host.settle();
+
+    expect(pendings()).toEqual([false, true, false]);
+  });
+
+  it("clears the pending handoff and the held results when the user cancels a manual handoff", async () => {
+    const { host, pendings, hold, saveHandoff, seed } = watch();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    hold("stale result");
+    host.settle({ aborted: true });
+
+    expect(pendings()).toEqual([false, true, false]);
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(seed()).not.toContain("stale result");
+    expect(afterHandoff(seed())).toBe("");
+  });
+
+  it("clears the pending handoff when the new session is cancelled", async () => {
+    const { host, turn, saveHandoff, pendings } = watch();
+
+    host.newSessionResult = false;
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(pendings()).toEqual([false, true, false]);
+  });
+
+  it("clears the pending handoff when the dispatched switch never runs", async () => {
+    const { host, turn, saveHandoff, pendings } = watch();
+
+    host.commands.set(HANDOFF_COMMAND, { description: "", run: () => undefined });
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(pendings()).toEqual([false, true]);
+
+    host.settle();
+
+    expect(pendings()).toEqual([false, true, false]);
+  });
+
+  it("carries held results into the new session's seed after the handoff", async () => {
+    const { host, turn, saveHandoff, hold, seed } = watch();
+
+    turn(76_000);
+    hold("first result");
+    hold("first result\n\n---\n\nsecond result");
+    hold("other result", "other-source");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.newSessions).toHaveLength(1);
+    expect(afterHandoff(seed())).toMatch(/\n\nfirst result\n\n---\n\nsecond result\n\nother result$/);
+  });
+
+  it("ignores held results while no handoff is pending", async () => {
+    const { host, turn, saveHandoff, hold, seed } = watch();
+
+    hold("before the request");
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(seed()).not.toContain("before the request");
+  });
+
+  it("switches with a result that finished after the save once the batch's busy signal drops", async () => {
+    const { host, turn, saveHandoff, busy, hold, seed, requests } = watch();
+
+    busy(true);
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.dispatched).toEqual([]);
+
+    busy(false);
+    hold("late batch result");
+    await flush();
+    await flush();
+
+    expect(requests()).toHaveLength(1);
+    expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
+    expect(host.newSessions).toHaveLength(1);
+    expect(host.newSessions[0].continueWithSeed).toBe(true);
+    expect(afterHandoff(seed())).toMatch(/\n\nlate batch result$/);
+  });
+});
+
+describe("messages typed during a handoff", () => {
+  const IMAGE = { data: "aW1hZ2U=", mimeType: "image/png" };
+
+  const switched = (host: ReturnType<typeof setup>["host"]) => host.newSessions[0];
+
+  const chat = (host: ReturnType<typeof setup>["host"]) =>
+    host.chat.map((item) =>
+      item.kind === "assistant"
+        ? item.text
+        : host
+            .renderEntry(item.customType, item.data, { width: 100 })
+            .map((line) => line.replaceAll("─", "").trim())
+            .filter(Boolean)
+            .join(" | "),
+    );
+
+  const KEPT = "handing off, messages below go to the new session";
+  const WAITING = `${KEPT} · /${HANDOFF_COMMAND} switches now`;
+  const EDITOR = `${KEPT}'s editor`;
+  const RETURNED = "handoff abandoned, messages are back in the editor";
+
+  it("keeps a message typed while the request is written or the switch waits and forwards nothing", async () => {
+    const { host, turn, saveHandoff, busy } = setup();
+
+    busy(true);
+    turn(76_000);
+
+    expect(host.input("first")).toBe(true);
+
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+
+    expect(host.input("second")).toBe(true);
+    expect(host.forwarded).toEqual([]);
+    expect(chat(host)).toEqual([KEPT, "first", WAITING, "second"]);
+    expect(host.notices).toEqual([]);
+
+    busy(false);
+    await flush();
+    await flush();
+
+    expect(switched(host)?.seed?.text).not.toContain("first");
+    expect(switched(host)?.followUps).toEqual([{ text: "first\n\nsecond", images: [] }]);
+    expect(switched(host)?.continueWithSeed).toBe(true);
+  });
+
+  it("shows a rule and then each kept message in the chat", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("first");
+    host.input("second", { images: [IMAGE, IMAGE] });
+
+    expect(chat(host)).toEqual([KEPT, "first", "second | 2 images"]);
+  });
+
+  it("keeps the kept rule and message out of the previous session a handoff shows", () => {
+    const { host } = setup();
+
+    expect(host.inPreviousSession("pi-session-limits:kept-rule")).toBe(false);
+    expect(host.inPreviousSession("pi-session-limits:kept-message")).toBe(false);
+  });
+
+  it("draws a kept message flush with the chat, its text after pi's pad", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("first");
+
+    const entry = host.chat.at(-1);
+
+    assert(entry?.kind === "entry");
+
+    expect(host.renderEntry(entry.customType, entry.data, { width: 20, pad: 2 })).toEqual([
+      "".padEnd(20),
+      "  first".padEnd(20),
+      "".padEnd(20),
+    ]);
+  });
+
+  it("draws one rule for several messages kept while the switch waits", () => {
+    const { host, turn, saveHandoff, busy } = setup();
+
+    busy(true);
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    host.input("first");
+    host.input("second");
+
+    expect(chat(host)).toEqual([WAITING, "first", "second"]);
+  });
+
+  it("adds no rule for a message typed while the old session shuts down", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    host.input("first");
+    saveHandoff(VALID_HANDOFF);
+    host.duringSwitch = () => {
+      host.input("second");
+    };
+    host.settle();
+    await flush();
+
+    expect(chat(host)).toEqual([KEPT, "first", "second"]);
+  });
+
+  it("says the messages go to the new session's editor after /handoff and skips an images-only one", async () => {
+    const { host } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("the plan");
+    host.input("", { images: [IMAGE] });
+
+    expect(chat(host)).toEqual([EDITOR, "the plan"]);
+    expect(host.notices.at(-1)?.level).toBe("warning");
+  });
+
+  it("draws a new rule when /handoff with a focus asks again while the switch waits", async () => {
+    const { host, turn, saveHandoff, busy } = setup();
+
+    busy(true);
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    host.input("first");
+    await host.runCommand(HANDOFF_COMMAND, "the tests");
+    host.input("second");
+
+    expect(chat(host)).toEqual([WAITING, "first", EDITOR, "second"]);
+  });
+
+  it("starts the next handoff with a new rule after one was abandoned", async () => {
+    const { host } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("never mind");
+    host.settle({ aborted: true });
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("again");
+
+    expect(chat(host)).toEqual([EDITOR, "never mind", RETURNED, EDITOR, "again"]);
+  });
+
+  it("closes the kept messages with the abandoned rule even when only images were kept", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("", { images: [IMAGE] });
+    host.settle();
+    host.settle();
+
+    expect(chat(host)).toEqual([KEPT, "1 image", RETURNED]);
+    expect(host.notices.at(-1)?.message).toContain("could not be put back in the editor");
+  });
+
+  it("draws nothing outside the TUI and says where the message goes in a notice instead", () => {
+    const { host, turn } = setup(0, LIMITS, "rpc");
+
+    turn(76_000);
+
+    expect(host.input("first")).toBe(true);
+    expect(host.chat).toEqual([]);
+    expect(host.notices).toEqual([
+      { message: "Kept for the new session: this message goes there with the handoff.", level: "info" },
+    ]);
+  });
+
+  it("lets messages through while no handoff is pending", () => {
+    const { host, turn } = setup();
+
+    turn(50_000);
+
+    expect(host.input("hello")).toBe(false);
+    expect(host.forwarded.map((input) => input.text)).toEqual(["hello"]);
+  });
+
+  it("lets messages other extensions send through during a handoff", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+
+    expect(host.input("from a plugin", { source: "extension" })).toBe(false);
+    expect(host.forwarded.map((input) => input.text)).toEqual(["from a plugin"]);
+  });
+
+  it("keeps the held batch results in the seed and the kept messages out of it", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    host.emit(HELD_RESULTS_CHANNEL, { source: "pi-subagents", text: "late result" });
+    host.input("use the faster option");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(afterHandoff(switched(host)?.seed?.text)).toMatch(/\n\nlate result$/);
+    expect(switched(host)?.seed?.text).not.toContain("use the faster option");
+    expect(switched(host)?.followUps).toEqual([{ text: "use the faster option", images: [] }]);
+  });
+
+  it("sends a slash message as a user message of its own, before the text typed after it", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    host.input("/review the auth module");
+    host.input("and keep it short");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(switched(host)?.seed?.text).not.toContain("/review");
+    expect(switched(host)?.seed?.text).not.toContain("keep it short");
+    expect(switched(host)?.followUps).toEqual([
+      { text: "/review the auth module", images: [] },
+      { text: "and keep it short", images: [] },
+    ]);
+    expect(switched(host)?.continueWithSeed).toBe(true);
+  });
+
+  it("sends messages with images as one user message after the seed, with all their images", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    host.input("look at this", { images: [IMAGE] });
+    host.input("and this", { images: [IMAGE] });
+
+    expect(chat(host)).toEqual([KEPT, "look at this | 1 image", "and this | 1 image"]);
+
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(switched(host)?.seed?.text).not.toContain("look at this");
+    expect(switched(host)?.followUps).toEqual([{ text: "look at this\n\nand this", images: [IMAGE, IMAGE] }]);
+  });
+
+  it("carries a message typed while the old session shuts down into the new one", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    turn(76_000);
+    saveHandoff(VALID_HANDOFF);
+    host.duringSwitch = () => {
+      host.input("one more thing");
+      host.input("/review it");
+    };
+    host.settle();
+    await flush();
+
+    expect(switched(host)?.seed?.text).not.toContain("one more thing");
+    expect(switched(host)?.followUps).toEqual([
+      { text: "one more thing", images: [] },
+      { text: "/review it", images: [] },
+    ]);
+    expect(host.editorText).toBe("");
+  });
+
+  it("prefills the new session's editor after a manual handoff and drops images with a notice", async () => {
+    const { host, saveHandoff } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("/review the plan");
+    host.input("then the tests", { images: [IMAGE] });
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(switched(host)?.continueWithSeed).toBe(false);
+    expect(switched(host)?.editorText).toBe("/review the plan\n\nthen the tests");
+    expect(switched(host)?.followUps ?? []).toEqual([]);
+    expect(switched(host)?.seed?.text).not.toContain("then the tests");
+    expect(host.notices.at(-1)).toEqual({
+      message:
+        "An image attached during the handoff cannot go into the new session's editor; attach it again.",
+      level: "warning",
+    });
+  });
+
+  it("puts kept messages back in the editor when the handoff is given up", () => {
+    const { host, turn } = setup();
+
+    turn(76_000);
+    host.input("do this next");
+    host.input("and this", { images: [IMAGE, IMAGE] });
+    host.editorText = "draft";
+    host.settle();
+    host.settle();
+
+    expect(host.editorText).toBe("do this next\n\nand this\n\ndraft");
+    expect(chat(host)).toEqual([KEPT, "do this next", "and this | 2 images", RETURNED]);
+    expect(host.notices.slice(-2)).toEqual([
+      expect.objectContaining({ level: "warning" }),
+      {
+        message:
+          "2 images attached during the handoff could not be put back in the editor; attach them again.",
+        level: "warning",
+      },
+    ]);
+    expect(host.input("now it goes through")).toBe(false);
+  });
+
+  it("puts kept messages back in the editor when the new session is cancelled", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    host.newSessionResult = false;
+    turn(76_000);
+    host.input("keep going");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.editorText).toBe("keep going");
+    expect(chat(host).at(-1)).toBe(RETURNED);
+  });
+
+  it("puts kept messages back in the editor when the new session fails", async () => {
+    const { host, turn, saveHandoff } = setup();
+
+    host.newSessionResult = new Error("disk full");
+    turn(76_000);
+    host.input("keep going");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.editorText).toBe("keep going");
+  });
+
+  it("gives up a stalled switch when the user types, lets the message through and restores the kept ones", async () => {
+    const { host, turn, saveHandoff, notice } = setup();
+
+    host.commands.set(HANDOFF_COMMAND, { description: "", run: () => undefined });
+    turn(76_000);
+    host.input("first");
+    saveHandoff(VALID_HANDOFF);
+    host.settle();
+    await flush();
+
+    expect(host.input("are you there?")).toBe(false);
+    expect(host.forwarded.map((input) => input.text)).toEqual(["are you there?"]);
+    expect(host.editorText).toBe("first");
+    expect(notice()).toBe(`<error>✗ handoff failed · run /${HANDOFF_COMMAND}`);
+    expect(host.newSessions).toEqual([]);
+  });
+
+  it("puts kept messages back in the editor when a manual handoff is cancelled", async () => {
+    const { host } = setup();
+
+    await host.runCommand(HANDOFF_COMMAND, "");
+    host.input("never mind");
+    host.settle({ aborted: true });
+
+    expect(host.editorText).toBe("never mind");
+    expect(host.notices.at(-1)).toEqual({ message: "Session handoff cancelled.", level: "info" });
+    expect(chat(host)).toEqual([EDITOR, "never mind", RETURNED]);
   });
 });

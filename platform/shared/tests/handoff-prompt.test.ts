@@ -34,7 +34,7 @@ describe("handoff instruction", () => {
   it.each([
     ["rich", rich()],
     ["plain", plain()],
-  ])("tells the %s audience to call the tool, lists the sections and ends with the reply line", (_, text) => {
+  ])("tells the %s audience to call the tool, lists the sections and ends without a reply", (_, text) => {
     const positions = SECTIONS.map((section) => text.indexOf(`## ${section}`));
 
     expect(text).toContain(PATH);
@@ -44,7 +44,8 @@ describe("handoff instruction", () => {
     expect(text).toContain("unverified");
     expect(text).toContain("[redacted]");
     expect(text).not.toContain("{{");
-    expect(text.endsWith("reply with one line: `handoff saved`.")).toBe(true);
+    expect(text.endsWith("end your turn without replying.")).toBe(true);
+    expect(text).not.toMatch(/reply with/i);
   });
 
   it("lists the audience's statuses with its hint", () => {

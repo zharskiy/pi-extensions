@@ -8,7 +8,7 @@ export const LEGACY_LINEAGE_TYPE = "pi-adapter:previous-session";
 
 type LineageReason = "handoff" | "compaction";
 
-export type LineageEntry = { file: string; leafId: string | null; reason: LineageReason };
+export type LineageEntry = { file: string; leafId: string | null; reason: LineageReason; label?: string };
 
 export type LineageLinkRead = { link: LineageEntry; read: LinkRead<TranscriptItem[][]> };
 
@@ -29,8 +29,9 @@ export const lineageEntryOf = (customType: string | undefined, data: unknown): L
 
   const leafId = typeof fields.leafId === "string" ? fields.leafId : null;
   const reason = fields.reason === "compaction" ? "compaction" : "handoff";
+  const label = typeof fields.label === "string" ? { label: fields.label } : {};
 
-  return { file: fields.file, leafId, reason };
+  return { file: fields.file, leafId, reason, ...label };
 };
 
 export const createLineageReader = () => {

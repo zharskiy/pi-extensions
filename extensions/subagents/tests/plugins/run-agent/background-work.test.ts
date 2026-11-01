@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ToolSpec } from "../../../../../platform/pi-adapter/index.ts";
-import { BACKGROUND_WORK_CHANNEL } from "../../../../../platform/shared/index.ts";
+import {
+  BACKGROUND_WORK_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
+  HELD_RESULTS_CHANNEL,
+} from "../../../../../platform/shared/index.ts";
 import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
@@ -143,5 +147,88 @@ describe("background work", () => {
     await flushMicrotasks();
 
     expect(counts()).toEqual([1]);
+  });
+});
+
+describe("held results while a handoff is pending", () => {
+  const holding = () => {
+    const harness = setup();
+
+    const pending = (value: boolean) =>
+      harness.host.emit(HANDOFF_PENDING_CHANNEL, { source: "pi-session-limits", pending: value });
+
+    const held = () =>
+      harness.host.published
+        .filter((entry) => entry.channel === HELD_RESULTS_CHANNEL)
+        .map((entry) => entry.data as { source: string; text: string });
+
+    const finish = async (index: number, text: string) => {
+      harness.runtime.children[index].finish(text);
+      await flushMicrotasks();
+    };
+
+    return { ...harness, pending, held, finish };
+  };
+
+  it("holds a result instead of waking the session and publishes it", async () => {
+    const { run, host, pending, held, finish, counts } = holding();
+
+    await run(1);
+    host.settle();
+    pending(true);
+    await finish(0, "held result");
+
+    expect(host.hidden).toEqual([]);
+    expect(held()).toEqual([{ source: "pi-subagents", text: expect.stringContaining("held result") }]);
+    expect(counts()).toEqual([1]);
+  });
+
+  it("publishes every held result each time another one arrives", async () => {
+    const { run, host, pending, held, finish } = holding();
+
+    await run(1);
+    await run(1);
+    host.settle();
+    pending(true);
+    await finish(0, "first result");
+    await finish(1, "second result");
+
+    expect(held()).toHaveLength(2);
+    expect(held()[0].text).not.toContain("second result");
+    expect(held()[1].text).toMatch(/first result[\s\S]*\n\n---\n\n[\s\S]*second result/);
+  });
+
+  it("wakes the session once with the held results when the handoff is no longer pending", async () => {
+    const { run, host, pending, finish, counts, answer } = holding();
+
+    await run(1);
+    host.settle();
+    pending(true);
+    await finish(0, "held result");
+    pending(false);
+    await flushMicrotasks();
+
+    expect(host.hidden).toHaveLength(1);
+    expect(host.hidden[0].message.text).toContain("held result");
+
+    answer();
+    pending(true);
+    pending(false);
+    await flushMicrotasks();
+
+    expect(host.hidden).toHaveLength(1);
+    expect(counts()).toEqual([1, 0]);
+  });
+
+  it("publishes nothing held when no result arrived while the handoff was pending", async () => {
+    const { run, host, pending, held } = holding();
+
+    await run(1);
+    pending(true);
+    pending(false);
+    await flushMicrotasks();
+
+    expect(held()).toEqual([]);
+    expect(host.hidden).toEqual([]);
   });
 });

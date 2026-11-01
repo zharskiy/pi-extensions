@@ -164,7 +164,7 @@ describe("run_agent batches", () => {
 
     expect(registry.list()[0].resultText).toBe("**Status:** done\nthe report");
     expect(hiddenMessageTexts(host)[0]).not.toContain("(shape: no Status line)");
-    expect(child.wakes).toEqual([]);
+    expect(child.hidden).toEqual([]);
   });
 
   it("marks a result without a Status line with a shape note", async () => {

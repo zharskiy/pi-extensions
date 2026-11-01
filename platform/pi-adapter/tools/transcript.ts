@@ -1,5 +1,8 @@
 import {
   AssistantMessageComponent,
+  BashExecutionComponent,
+  BranchSummaryMessageComponent,
+  CompactionSummaryMessageComponent,
   CustomMessageComponent,
   createBashToolDefinition,
   createCodemodeExtension,
@@ -19,10 +22,13 @@ import {
   UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
+import type { ThemeLike } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
+import { labelledRule } from "../ui/rules.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
-import { messageRendererFor } from "./entry-renderers.ts";
+import { messageRendererFor, previousEntryComponent } from "./entry-renderers.ts";
+import { sharedPad } from "./row-component.ts";
 import { toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
 
@@ -84,13 +90,14 @@ const defaultPiRenderers = () => {
 
 export type TranscriptPaneOptions = {
   tools?: AnyToolSpec[];
+  theme?: () => ThemeLike;
 };
 
 export const createTranscriptPane = (
   tui: TUI,
   cwd: string,
   options: TranscriptPaneOptions = {},
-): TranscriptPane => {
+): TranscriptPane & { invalidate(): void } => {
   const container = new Container();
   const pendingTools = new Map<string, ToolExecutionComponent>();
   const definitions = new Map<string, object | undefined>();
@@ -194,6 +201,76 @@ export const createTranscriptPane = (
       return;
     }
 
+    if (item.kind === "entry") {
+      const component = options.theme && previousEntryComponent(item.customType, item.data, options.theme);
+
+      if (component) {
+        container.addChild(new Spacer(1));
+        addExpandable(component);
+      }
+
+      return;
+    }
+
+    if (item.kind === "bash") {
+      const run = item.raw as {
+        command: string;
+        output?: string;
+        exitCode?: number;
+        cancelled?: boolean;
+        truncated?: boolean;
+        fullOutputPath?: string;
+        excludeFromContext?: boolean;
+      };
+      const component = new BashExecutionComponent(run.command, tui, run.excludeFromContext);
+
+      if (run.output) {
+        component.appendOutput(run.output);
+      }
+
+      component.setComplete(
+        run.exitCode,
+        run.cancelled === true,
+        run.truncated ? ({ truncated: true } as never) : undefined,
+        run.fullOutputPath,
+      );
+      container.addChild(new Spacer(1));
+      addExpandable(component);
+      return;
+    }
+
+    if (item.kind === "rule") {
+      const theme = options.theme;
+
+      if (!theme) {
+        return;
+      }
+
+      if (container.children.length > 0) {
+        container.addChild(new Spacer(1));
+      }
+
+      container.addChild({
+        render: (width) => {
+          const pad = sharedPad();
+
+          return [`${" ".repeat(pad)}${labelledRule(theme(), width - pad, item.label)}`];
+        },
+        invalidate: () => {},
+      });
+      return;
+    }
+
+    if (item.kind === "summary") {
+      const message = item.raw as { role: string };
+      const Summary =
+        message.role === "branchSummary" ? BranchSummaryMessageComponent : CompactionSummaryMessageComponent;
+
+      container.addChild(new Spacer(1));
+      addExpandable(new Summary(item.raw as never, getMarkdownTheme()));
+      return;
+    }
+
     if ((item.raw as { display?: boolean }).display !== false) {
       const { customType } = item.raw as { customType: string };
 
@@ -232,6 +309,9 @@ export const createTranscriptPane = (
       rendered = lines.length;
 
       return lines;
+    },
+    invalidate: () => {
+      container.invalidate();
     },
     click: (line, column, width) => {
       const result = container.handleMouse({

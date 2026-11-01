@@ -16,7 +16,7 @@ extensions/subagents/
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section
 │   ├── main-session-agent-status.md       # added when the agent-status plugin is on
-│   ├── base-system-prompt.md              # shared agent rules and the result contract
+│   ├── base-system-prompt.md              # shared agent rules and the result contract (a handoff replaces it: no reply)
 │   ├── create-agent.md                    # the /agents create brief
 │   └── autosetup-skills.md                # the /agents setup skills brief
 ├── api/
@@ -25,7 +25,7 @@ extensions/subagents/
 │   └── plugins/
 │       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
-│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count (answered at any assistant start), main prompt, block invalidation
+│       ├── run-agent.ts                   # runner, run_agent/message_agent/handoff tools, outbox, background-work count (answered at any assistant start), wakes held while a main-session handoff is pending (pi:handoff-pending, pi:held-results), main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
 │       ├── agent-status.ts                # the agent_status tool
 │       ├── limits.ts                      # per-agent context limit steps, handoff request and abort
@@ -43,7 +43,7 @@ extensions/subagents/
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
-│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, StepLimit, limitStep (warn, request or abort)
+│   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
@@ -59,20 +59,18 @@ extensions/subagents/
 │   ├── agent-registry/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events
 │   ├── run-agent/
-│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details
+│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn)
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, describeRunAgent
-│   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers
+│   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
 │   │   ├── placement.ts                   # createPlacer: an agent's dir and cwd, worktree placement
 │   │   ├── worktree.ts                    # createWorktree, removeWorktree
 │   │   ├── result.ts                      # storeResult, pickResult, chainTotals, batchMessage
-│   │   ├── task.ts                        # composeTask: the child's first message (no handoff path; the handoff is the seed)
+│   │   ├── task.ts                        # composeTask: a first link's prompt, and the tail of a successor's seed (no handoff path; `Original task:`; batch results held during the predecessor's handoff); successorSeed: the handoff preface and text, then that task
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
-│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf, snapshotLine, agent_status params and details, unknownText
-│   ├── limits/
-│   │   └── warning.ts                     # softWarning
+│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf (with the effective limit), snapshotLine (working context X of Y), agent_status params and details, unknownText
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
@@ -85,14 +83,14 @@ extensions/subagents/
 │   │   ├── agent-template.ts              # agentTemplate: the lead and chore skeletons the brief embeds
 │   │   └── template.ts                    # fillTemplate: the {{key}} fill of the briefs
 │   ├── agent-view/
-│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file through the adapter's cached file reader and joins their transcripts
+│   │   ├── source.ts                      # createAgentSource: reads every chain link's session file through the adapter's cached file reader and joins their transcripts with a handoff seam rule item in front of each drawn link after the first, each link's item count (rule included), the first link error, and a pending note while the last link's file is not written yet
 │   │   └── list-model.ts                  # list sections, subtitle (with the counts), clearTargets, MAX_CLOSED_ROOTS
 │   └── fetch-tool/
 │       ├── fetch.ts                       # fetchPage: request, limits, redirects
 │       └── text.ts                        # readableText, pageText, supported content types
 ├── ui/
 │   ├── components/
-│   │   ├── format.ts                      # receiptText, truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
+│   │   ├── format.ts                      # receiptText (per-kind painters; drops activity, cost, calls, tokens, then context), truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
 │   │   ├── state-text.ts                  # state marks, glyphs, spinner, state words, stopWords
 │   │   ├── agent-row.ts                   # the shared agent row: rowLayout, renderRow, renderRows, modelLabel
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
@@ -115,7 +113,7 @@ extensions/subagents/
 │       ├── overlay.ts                     # createAgentsOverlay: the list/view host
 │       ├── list.ts                        # createAgentList: the agents list (feedback row always reserved)
 │       ├── list-hints.ts                  # listHint: the list's key hints (exits first)
-│       ├── view.ts                        # createAgentView, headerLines: one agent's chain transcript in one pane (notice row always reserved, clipboard dep, c key)
+│       ├── view.ts                        # createAgentView, headerLines: one agent's chain transcript in one pane, rebuilt when an earlier link's items change (notice row always reserved, the handoff notice at the soft level, the working context in the receipt, limit and clipboard deps, c key)
 │       └── request-block.ts               # requestLines, requestText: the collapsed Request block
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order

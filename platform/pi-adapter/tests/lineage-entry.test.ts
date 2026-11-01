@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
@@ -5,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
 import { initPiRenderTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
+import { sharedPad } from "../tools/row-component.ts";
 
 initPiRenderTheme();
 
@@ -15,6 +18,12 @@ const SEED = { customType: "handoff-seed", text: "carry on from the handoff" };
 const LINEAGE = "pi-adapter:lineage";
 
 const LEGACY = "pi-adapter:previous-session";
+
+const NOTE = "test:note";
+
+const KEPT = "test:kept";
+
+const SEAM = /^\s*── .* ─+$/;
 
 const TURNS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
 
@@ -79,13 +88,29 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
   const handoff: pi.ExtensionFactory = (api) => {
     const piHost = createPiHost(api, { tools: new Map() });
 
+    piHost.registerMessageRenderer(SEED.customType, (message) => [`seed: ${message.text}`]);
+    piHost.registerEntryRenderer(NOTE, (data) => [`note: ${(data as { text: string }).text}`]);
+    piHost.registerEntryRenderer(KEPT, (data) => [`kept: ${(data as { text: string }).text}`], {
+      previousSession: false,
+    });
+
+    piHost.registerCommand("entries", {
+      description: "append entries",
+      run: async () => {
+        piHost.appendEntry(NOTE, { text: "a drawn note" });
+        piHost.appendEntry(KEPT, { text: "a kept message" });
+      },
+    });
+
     piHost.registerCommand("handoff", {
       description: "hand off",
       run: async (args, control) => {
+        const shown = args.startsWith("as ") ? { label: args.slice(3) } : {};
+
         await control.newSession({
           parentSession: piHost.session().file,
-          showPrevious: args === "show",
-          seed: SEED,
+          showPrevious: args === "" ? undefined : shown,
+          fill: () => ({ seed: SEED }),
         });
       },
     });
@@ -162,12 +187,14 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
   const lineageEntry = (reason: string) =>
     lineageEntries().find((entry) => (entry.data as { reason?: string }).reason === reason);
 
-  const draw = (entry: pi.CustomEntry | undefined, expanded = false) => {
+  const component = (entry: pi.CustomEntry | undefined, theme: pi.Theme, expanded = false) => {
     const renderer = entry && runtime.session.extensionRunner.getEntryRenderer(entry.customType);
-    const component = entry && renderer?.(entry, { expanded }, plainPiTheme);
 
-    return stripVTControlCharacters(component?.render(100).join("\n") ?? "");
+    return entry && renderer?.(entry, { expanded }, theme);
   };
+
+  const draw = (entry: pi.CustomEntry | undefined, expanded = false) =>
+    stripVTControlCharacters(component(entry, plainPiTheme, expanded)?.render(100).join("\n") ?? "");
 
   const normalized = (request: unknown) =>
     JSON.parse(
@@ -196,6 +223,7 @@ const startRuntime = async ({ host = true, piSummary = false }: RuntimeOptions =
     manager,
     lineageEntries,
     lineageEntry,
+    component,
     draw,
     normalized,
     keepFrom,
@@ -291,15 +319,40 @@ describe("showing the previous session after a handoff", () => {
     await hidden.runtime.dispose();
   });
 
-  it("draws the previous session's transcript under a boundary line", async () => {
+  it("draws the previous session's transcript above a rule at the seam, a blank row on each side", async () => {
     const session = await handOff("show");
     const drawn = session.draw(session.lineageEntry("handoff"));
-    const boundary = drawn.indexOf("» previous session · ");
+    const seed = new pi.CustomMessageComponent(
+      { role: "custom", customType: SEED.customType, content: SEED.text, display: true, timestamp: 0 },
+      session.runtime.session.extensionRunner.getMessageRenderer(SEED.customType),
+    ).render(100);
+    const rows = [...drawn.split("\n"), ...seed.map((row) => stripVTControlCharacters(row))];
+    const seam = rows.findIndex((row) => row.includes("── continued from previous session ─"));
+    const blank = (row: string | undefined) => row === "";
 
-    expect(boundary).toBeGreaterThanOrEqual(0);
-    expect(drawn.indexOf("first question")).toBeGreaterThan(boundary);
+    expect(drawn.indexOf("first question")).toBeGreaterThanOrEqual(0);
     expect(drawn.indexOf("first answer")).toBeGreaterThan(drawn.indexOf("first question"));
+    expect(seam).toBe(drawn.split("\n").length - 1);
+    expect(rows[seam]?.trimEnd().endsWith("─")).toBe(true);
+    expect(rows[seam]?.length).toBe(100);
+    expect([rows[seam - 2], rows[seam - 1], rows[seam + 1], rows[seam + 2]].map(blank)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(rows[seam + 2]?.trim()).toBe(`seed: ${SEED.text}`);
+    expect(drawn).not.toContain(session.dir);
     expect(drawn).not.toContain("second question");
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the label the caller passed in the rule", async () => {
+    const session = await handOff("as handed off · context limit");
+
+    expect(session.lineageEntry("handoff")?.data).toMatchObject({ label: "handed off · context limit" });
+    expect(session.draw(session.lineageEntry("handoff"))).toContain("── handed off · context limit ─");
 
     await session.runtime.dispose();
   });
@@ -307,16 +360,186 @@ describe("showing the previous session after a handoff", () => {
   it("draws every session of a chain of handoffs, oldest first, with the handoff between them", async () => {
     const session = await handOff("show");
 
+    await session.runtime.session.prompt("/handoff as second seam");
+
+    const drawn = session.draw(session.lineageEntry("handoff"));
+    const order = [
+      "first question",
+      "first answer",
+      "── continued from previous session ─",
+      SEED.text,
+      "second question",
+      "second answer",
+      "── second seam ─",
+    ].map((text) => drawn.indexOf(text));
+
+    expect(drawn.split("\n").filter((row) => SEAM.test(row))).toHaveLength(2);
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    await session.runtime.dispose();
+  });
+
+  it("follows the chain through a link that was compacted after its handoff", async () => {
+    const session = await handOff("show");
+    const manager = session.manager();
+    const question = manager
+      .getEntries()
+      .find(
+        (entry) =>
+          entry.type === "message" &&
+          entry.message.role === "user" &&
+          JSON.stringify(entry).includes("second question"),
+      );
+
+    manager.appendCompaction("the middle summary", question?.id ?? null, 1234);
+
+    await session.runtime.session.prompt("/handoff as second seam");
+
+    const drawn = session.draw(session.lineageEntry("handoff"));
+    const order = [
+      "first question",
+      "first answer",
+      "── continued from previous session ─",
+      "second question",
+      "── compacted here ─",
+      "[compaction]",
+      "── second seam ─",
+    ].map((text) => drawn.indexOf(text));
+
+    expect(drawn).not.toContain("earlier sessions not shown");
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    await session.runtime.dispose();
+  });
+
+  it("stops a chain longer than the limit with one rule above the sessions it draws", async () => {
+    const session = await handOff("show");
+
+    await ["2", "3", "4", "5", "6"].reduce(async (done, seam) => {
+      await done;
+      await session.runtime.session.prompt(`/handoff as seam ${seam}`);
+      await session.runtime.session.prompt(`question after seam ${seam}`);
+    }, Promise.resolve());
+
+    const drawn = session.draw(session.lineageEntry("handoff"));
+    const rules = drawn
+      .split("\n")
+      .filter((row) => SEAM.test(row))
+      .map((row) => row.trim().replace(/ ─+$/, ""));
+
+    expect(rules).toEqual([
+      "── earlier sessions not shown",
+      "── seam 2",
+      "── seam 3",
+      "── seam 4",
+      "── seam 5",
+      "── seam 6",
+    ]);
+    expect(drawn).not.toContain("first question");
+
+    await session.runtime.dispose();
+  });
+
+  it("redraws the previous session in the new theme once pi invalidates the entry", async () => {
+    const session = await handOff("show");
+    const entry = session.lineageEntry("handoff");
+    const line = (lines: string[] | undefined, text: string) =>
+      lines?.find((row) => stripVTControlCharacters(row).includes(text));
+
+    let skin = "dark";
+    pi.initTheme("dark");
+    const tagging = {
+      ...plainPiTheme,
+      fg: (token: string, text: string) => `<${skin}:${token}>${text}</>`,
+    } as pi.Theme;
+
+    const first = session.component(entry, tagging);
+    const dark = first?.render(100);
+
+    skin = "light";
+    pi.initTheme("light");
+    first?.invalidate();
+
+    const light = session.component(entry, tagging)?.render(100);
+
+    initPiRenderTheme();
+
+    expect(line(dark, "first question")).toBeDefined();
+    expect(line(light, "first question")).not.toBe(line(dark, "first question"));
+    expect(line(dark, "continued from previous session")).toContain("<dark:dim>");
+    expect(line(light, "continued from previous session")).toContain("<light:dim>");
+    expect(line(light, "continued from previous session")).not.toContain("<dark:");
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the old session's custom entries with their renderers, except those kept out of it", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+    await session.runtime.session.prompt("/entries");
     await session.runtime.session.prompt("/handoff show");
 
     const drawn = session.draw(session.lineageEntry("handoff"));
-    const order = ["first question", "first answer", SEED.text, "second question", "second answer"].map(
-      (text) => drawn.indexOf(text),
+
+    expect(drawn).toContain(`${" ".repeat(sharedPad())}note: a drawn note`);
+    expect(drawn.indexOf("note: a drawn note")).toBeGreaterThan(drawn.indexOf("first answer"));
+    expect(drawn).not.toContain("kept: a kept message");
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the old session's compaction summary where the compaction sat in its history", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+
+    const manager = session.manager();
+    const question = manager
+      .getEntries()
+      .find((entry) => entry.type === "message" && entry.message.role === "user");
+
+    manager.appendCompaction("the compacted summary", question?.id ?? null, 1234);
+
+    await session.runtime.session.prompt("/handoff show");
+
+    const drawn = session.draw(session.lineageEntry("handoff"));
+    const order = ["first question", "first answer", "── compacted here ─", "[compaction]"].map((text) =>
+      drawn.indexOf(text),
     );
 
-    expect(drawn.split("» previous session · ")).toHaveLength(3);
+    expect(drawn).toContain("Compacted from 1,234 tokens");
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the old session's bash executions with pi's own component", async () => {
+    const session = await startRuntime();
+
+    await session.runtime.session.prompt("first question");
+
+    session.manager().appendMessage({
+      role: "bashExecution",
+      command: "echo from-the-shell",
+      output: "from-the-shell",
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+      timestamp: Date.now(),
+    });
+
+    await session.runtime.session.prompt("/handoff show");
+
+    const drawn = session.draw(session.lineageEntry("handoff"));
+
+    const rows = drawn.split("\n").map((row) => row.trim());
+
+    expect(rows.indexOf("$ echo from-the-shell")).toBeGreaterThan(rows.indexOf("first answer"));
+    expect(rows.indexOf("from-the-shell")).toBeGreaterThan(rows.indexOf("$ echo from-the-shell"));
 
     await session.runtime.dispose();
   });
@@ -329,20 +552,69 @@ describe("showing the previous session after a handoff", () => {
 
     const drawn = session.draw(legacy as pi.CustomEntry);
 
-    expect(drawn).toContain("» previous session · ");
+    expect(drawn).toContain("── continued from previous session ─");
     expect(drawn).toContain("first question");
 
     await session.runtime.dispose();
   });
 
-  it("draws a not-found line when the previous session file is gone", async () => {
+  it("draws a not-found rule when the previous session file is gone", async () => {
     const session = await startRuntime();
     const missing = "/nowhere/gone.jsonl";
-    const entry = { type: "custom", customType: LINEAGE, data: { file: missing, leafId: null } };
+    const entry = {
+      type: "custom",
+      customType: LINEAGE,
+      data: { file: missing, leafId: null },
+      id: "e",
+      parentId: null,
+      timestamp: "",
+    } as pi.CustomEntry;
 
+    const drawn = session.draw(entry);
+
+    const tagging = {
+      ...plainPiTheme,
+      fg: (token: string, text: string) => `<${token}>${text}</>`,
+    } as pi.Theme;
+    const tagged = session.component(entry, tagging)?.render(100).join("\n");
+
+    expect(drawn.trim()).toMatch(/^── previous session not found ─+$/);
+    expect(tagged?.trim()).toMatch(/^<warning>── previous session not found ─/);
+    expect(drawn).not.toContain(missing);
+
+    await session.runtime.dispose();
+  });
+
+  it("draws a rule instead of sessions it already drew", async () => {
+    const session = await startRuntime();
+    const file = join(session.dir, "looped.jsonl");
+    const at = "2026-01-01T00:00:00.000Z";
+
+    writeFileSync(
+      file,
+      [
+        { type: "session", version: 3, id: "looped", timestamp: at, cwd: session.dir },
+        {
+          type: "custom",
+          customType: LINEAGE,
+          data: { file, leafId: "a", reason: "handoff" },
+          id: "a",
+          parentId: null,
+          timestamp: at,
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n"),
+    );
+
+    const entry = { type: "custom", customType: LINEAGE, data: { file, leafId: "a", reason: "handoff" } };
     const drawn = session.draw({ ...entry, id: "e", parentId: null, timestamp: "" } as pi.CustomEntry);
+    const rules = drawn.split("\n").filter((row) => row.includes("── "));
 
-    expect(drawn.trim()).toBe(`» previous session not found · ${missing}`);
+    expect(rules.map((row) => row.trim().replace(/ ─+$/, ""))).toEqual([
+      "── earlier sessions not shown",
+      "── continued from previous session",
+    ]);
 
     await session.runtime.dispose();
   });
@@ -396,10 +668,13 @@ describe("keeping the history a compaction drops", () => {
     const expanded = session.draw(entry, true);
 
     expect(collapsed.trim().split("\n")).toHaveLength(1);
-    expect(collapsed).toMatch(/» 2 earlier messages, compacted/);
+    expect(collapsed).toMatch(/── 2 earlier messages, compacted/);
     expect(expanded).toContain("first question");
     expect(expanded).toContain("first answer");
     expect(expanded.indexOf("first answer")).toBeGreaterThan(expanded.indexOf("first question"));
+    expect(expanded.indexOf("── 2 earlier messages, compacted ─")).toBeGreaterThan(
+      expanded.indexOf("first answer"),
+    );
     expect(expanded).not.toContain("second question");
 
     await session.runtime.dispose();
@@ -474,15 +749,15 @@ describe("keeping the history a compaction drops", () => {
       "first answer",
       "second question",
       "second answer",
-      "» compacted here",
+      "── compacted here ─",
       "third question",
       "third answer",
     ].map((text) => expanded.indexOf(text));
 
-    expect(session.draw(latest)).toMatch(/» 6 earlier messages, compacted/);
+    expect(session.draw(latest)).toMatch(/── 6 earlier messages, compacted/);
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(expanded.split("» compacted here")).toHaveLength(2);
+    expect(expanded.split("── compacted here ─")).toHaveLength(2);
     expect(expanded).not.toContain("fourth question");
 
     await session.runtime.dispose();
@@ -507,9 +782,9 @@ describe("keeping the history a compaction drops", () => {
 
     expect(session.manager().getSessionFile()).not.toBe(original);
     expect(latest?.data).toMatchObject({ file: session.manager().getSessionFile(), reason: "compaction" });
-    expect(session.draw(latest)).toMatch(/» 6 earlier messages, compacted/);
+    expect(session.draw(latest)).toMatch(/── 6 earlier messages, compacted/);
     expect(texts.map((text) => expanded.split(text).length - 1)).toEqual([1, 1, 1, 1, 1]);
-    expect(expanded).not.toContain("» previous session");
+    expect(expanded).not.toContain("continued from previous session");
     expect(expanded).not.toContain("fourth question");
     expect(session.draw(session.lineageEntries()[0], true)).toBe("");
 
@@ -530,13 +805,13 @@ describe("keeping the history a compaction drops", () => {
     const expanded = session.draw(session.lineageEntry("compaction"), true);
 
     const order = [
-      "» previous session · ",
       "first question",
       "first answer",
-      "» 3 earlier messages, compacted",
+      "── continued from previous session ─",
       SEED.text,
       "second question",
       "second answer",
+      "── 5 earlier messages, compacted ─",
     ].map((text) => expanded.indexOf(text));
 
     expect(handoffDrawn).toBe(false);

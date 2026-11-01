@@ -24,4 +24,4 @@ jobs:
         run: |
           npm pack --dry-run 2>&1 | tee pack.txt
           ! grep -E '/tests?/|test/framework/|test/evals/|\.snap|fixtures|\.eval\.ts' pack.txt
-          test "$(grep -c 'extensions/[a-z-]*/index.ts' pack.txt)" = 13
+          test "$(grep -c 'extensions/[a-z-]*/index.ts' pack.txt)" = 14

@@ -3,7 +3,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { handoffInstruction } from "../../../platform/shared/index.ts";
-import { handoffPath, MAIN_AUDIENCE, sessionPreface, validateMainHandoff } from "../core/handoff.ts";
+import {
+  handoffPath,
+  MAIN_AUDIENCE,
+  sessionPreface,
+  userPrompts,
+  validateMainHandoff,
+  withLateResults,
+} from "../core/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
   id: "s1",
@@ -60,23 +67,23 @@ describe("main handoff instruction", () => {
 
   it("offers done for the user's goal and adds the background-work and skills rules", () => {
     expect(text).toContain("for the user's current goal: done, partial or blocked");
-    expect(text).toContain("the switch to the new session waits for it");
+    expect(text).toContain("attached to the new session's seed");
     expect(text).toContain("`Skills: <names>`");
   });
 });
 
 describe("sessionPreface", () => {
-  it("names the previous session file or says the previous session", () => {
-    expect(sessionPreface({ file: "/sessions/main.jsonl", manual: false })).toContain(
-      "the previous session /sessions/main.jsonl, which reached its context limit",
-    );
-    expect(sessionPreface({ manual: false })).toContain("continues the previous session, which");
+  it("says the previous session reached its context limit, without a path", () => {
+    const text = sessionPreface({ manual: false });
+
+    expect(text).toContain("continues the previous session, which reached its context limit");
+    expect(text).not.toContain(".jsonl");
   });
 
-  it("names /session-handoff and repeats the focus only for a manual handoff", () => {
+  it("names /handoff and repeats the focus only for a manual handoff", () => {
     const manual = sessionPreface({ manual: true, focus: "ship the release" });
 
-    expect(manual).toContain("which the user handed off with /session-handoff");
+    expect(manual).toContain("which the user handed off with /handoff");
     expect(manual).toContain("The user said this session is for: ship the release.");
     expect(sessionPreface({ manual: true })).not.toContain("this session is for");
     expect(sessionPreface({ manual: false, focus: "x" })).not.toContain("this session is for");
@@ -86,5 +93,63 @@ describe("sessionPreface", () => {
     const first = sessionPreface({ manual: false }).split("\n")[0];
 
     expect(first.endsWith("Continue from its Next section without asking the user to repeat.")).toBe(true);
+  });
+});
+
+describe("withLateResults", () => {
+  it("leaves the handoff alone without late results", () => {
+    expect(withLateResults("## Status\ndone\n", [])).toBe("## Status\ndone\n");
+  });
+
+  it("appends each source's late results after the handoff, in order", () => {
+    const text = withLateResults("## Status\ndone\n", ["a", "b"]);
+
+    expect(text.startsWith("## Status\ndone\n\n")).toBe(true);
+    expect(text).toMatch(/\n\na\n\nb$/);
+  });
+});
+
+describe("userPrompts", () => {
+  const image = { data: "aW1n", mimeType: "image/png" };
+
+  it("joins plain messages into one prompt, in order, with every image", () => {
+    expect(
+      userPrompts([
+        { text: " a ", images: [image] },
+        { text: "", images: [image] },
+        { text: "b", images: [] },
+      ]),
+    ).toEqual([{ text: "a\n\nb", images: [image, image] }]);
+  });
+
+  it("keeps a slash command as a prompt of its own so pi still expands it", () => {
+    const prompts = userPrompts([
+      { text: "a", images: [] },
+      { text: "/review x", images: [] },
+      { text: "b", images: [] },
+      { text: "c", images: [] },
+    ]);
+
+    expect(prompts.map((prompt) => prompt.text)).toEqual(["a", "/review x", "b\n\nc"]);
+  });
+
+  it("keeps an images-only message after a slash command as a prompt of its own", () => {
+    expect(
+      userPrompts([
+        { text: "/review x", images: [] },
+        { text: "", images: [image] },
+      ]),
+    ).toEqual([
+      { text: "/review x", images: [] },
+      { text: "", images: [image] },
+    ]);
+  });
+
+  it("sends a slash command typed after spaces from its slash, so pi expands it", () => {
+    expect(userPrompts([{ text: "  /review x", images: [] }])).toEqual([{ text: "/review x", images: [] }]);
+  });
+
+  it("sends nothing without messages", () => {
+    expect(userPrompts([])).toEqual([]);
   });
 });

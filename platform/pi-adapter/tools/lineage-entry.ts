@@ -1,36 +1,31 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import {
-  type EntryRenderer,
   type ExtensionAPI,
   type ExtensionContext,
   getLatestCompactionEntry,
   keyText,
   type SessionEntry,
   type SessionManager,
-  type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
-import {
-  createLineageReader,
-  LINEAGE_TYPE,
-  type LineageEntry,
-  type LineageLinkRead,
-  lineageEntryOf,
-} from "../runtime/lineage.ts";
+import type { TUI } from "@earendil-works/pi-tui";
+import { createLineageReader, LINEAGE_TYPE, type LineageEntry, lineageEntryOf } from "../runtime/lineage.ts";
 import { linkKey } from "../runtime/lineage-walk.ts";
-import type { ThemeToken } from "../types/theme.ts";
+import type { ThemeLike, ThemeToken } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
-import { themeLike } from "../ui/theme-bridge.ts";
-import { paddedComponent } from "./entry-renderers.ts";
-import { sharedPad } from "./row-component.ts";
+import type { EntryRender, TranscriptItem } from "../types/view.ts";
+import { labelledRule } from "../ui/rules.ts";
 import { createTranscriptPane } from "./transcript.ts";
 
-const COMPACTED_HERE = "» compacted here";
+const DEFAULT_LABEL = "continued from previous session";
+
+const COMPACTED_HERE = "compacted here";
 
 const LINEAGE_LABELS = { handoff: "lineage: handoff", compaction: "lineage: compaction" } as const;
 
-type Block = { component: Component; setExpanded(expanded: boolean): void };
+type Pane = ReturnType<typeof createTranscriptPane>;
+
+type Part = { token: ThemeToken; label: string; pane?: Pane };
+
+type Block = { parts: Part[]; count: number };
 
 type RendererDeps = {
   branch(): readonly SessionEntry[];
@@ -39,22 +34,21 @@ type RendererDeps = {
   requestRender(): void;
 };
 
-const shownPath = (file: string) => {
-  const home = homedir();
-
-  return file.startsWith(`${home}/`) ? `~${file.slice(home.length)}` : file;
-};
+const UNCOUNTED: TranscriptItem["kind"][] = ["summary", "entry"];
 
 const messageCount = (count: number) => `${count} earlier ${count === 1 ? "message" : "messages"}`;
 
-export const showLineage = (ctx: ExtensionContext) => {
+const counted = (items: readonly TranscriptItem[]) =>
+  items.filter((item) => !UNCOUNTED.includes(item.kind)).length;
+
+export const showLineage = (ctx: ExtensionContext, label?: string) => {
   const file = ctx.sessionManager.getSessionFile();
 
   if (!file) {
     return undefined;
   }
 
-  const lineage: LineageEntry = { file, leafId: ctx.sessionManager.getLeafId(), reason: "handoff" };
+  const lineage: LineageEntry = { file, leafId: ctx.sessionManager.getLeafId(), reason: "handoff", label };
 
   return async (sessionManager: SessionManager) => {
     const id = sessionManager.appendCustomEntry(LINEAGE_TYPE, lineage);
@@ -95,134 +89,163 @@ export const recordCompaction = (pi: ExtensionAPI, ctx: ExtensionContext) => {
   }
 };
 
-export const lineageRenderer = (deps: RendererDeps): EntryRenderer => {
+const sameLink = (a: LineageEntry, b: LineageEntry) =>
+  a.reason === b.reason && a.file === b.file && a.leafId === b.leafId;
+
+export const lineageRenderer = (deps: RendererDeps) => {
   const readLineage = createLineageReader();
   const cache = new Map<string, Block>();
-  const tui = { requestRender: () => deps.requestRender() } as unknown as TUI;
+  const applied = new WeakMap<object, boolean>();
+  let building = false;
+  let current: ThemeLike;
 
-  const line = (theme: Theme, token: ThemeToken, text: string) =>
-    paddedComponent(sharedPad, () => [themeLike(theme).fg(token, text)]);
-
-  const linkBlock = (theme: Theme, start: LineageEntry) => (view: LineageLinkRead) => {
-    const path = shownPath(view.link.file);
-
-    if (view.read.status === "missing") {
-      return { component: line(theme, "warning", `» previous session not found · ${path}`) };
-    }
-
-    if (view.read.status === "failed") {
-      return {
-        component: line(theme, "warning", `» previous session not readable · ${path} · ${view.read.error}`),
-      };
-    }
-
-    const segments = view.read.value;
-    const count = segments.reduce((sum, segment) => sum + segment.length, 0);
-    const compacted = view.link === start && start.reason === "compaction";
-    const heading = compacted ? `» ${messageCount(count)}, compacted` : `» previous session · ${path}`;
-    const container = new Container();
-
-    container.addChild(line(theme, "dim", heading));
-
-    const panes = segments.map((segment, index) => {
-      const pane = createTranscriptPane(tui, deps.cwd(), { tools: deps.tools() });
-
-      pane.sync(segment);
-
-      if (index > 0) {
-        container.addChild(line(theme, "dim", COMPACTED_HERE));
+  const tui = {
+    requestRender: () => {
+      if (!building) {
+        deps.requestRender();
       }
+    },
+  } as unknown as TUI;
 
-      container.addChild({ render: (width) => pane.render(width), invalidate: () => {} });
+  const paneOf = (items: TranscriptItem[]) => {
+    const pane = createTranscriptPane(tui, deps.cwd(), { tools: deps.tools(), theme: () => current });
 
-      return pane;
-    });
+    pane.sync(items);
 
-    return { component: container, panes, count };
+    return pane;
   };
 
-  const lineageBlock = (lineage: LineageEntry, theme: Theme): Block => {
-    const read = readLineage(lineage);
-    const blocks = read.links.map(linkBlock(theme, lineage));
-    const full = new Container();
+  const linkParts = (
+    start: LineageEntry,
+    link: LineageEntry,
+    segments: TranscriptItem[][],
+    total: number,
+  ) => {
+    const label =
+      link === start && start.reason === "compaction"
+        ? `${messageCount(total)}, compacted`
+        : (link.label ?? DEFAULT_LABEL);
 
-    if (read.truncated) {
-      full.addChild(line(theme, "dim", "» earlier sessions not shown"));
-      full.addChild(new Spacer(1));
-    }
-
-    blocks.forEach((block, index) => {
-      if (index > 0) {
-        full.addChild(new Spacer(1));
-      }
-
-      full.addChild(block.component);
-    });
-
-    const setToolsExpanded = (expanded: boolean) => {
-      blocks.forEach((block) => {
-        block.panes?.forEach((pane) => {
-          pane.setToolsExpanded(expanded);
-        });
-      });
-    };
-
-    if (lineage.reason === "handoff") {
-      return { component: full, setExpanded: setToolsExpanded };
-    }
-
-    const count = blocks.reduce((sum, block) => sum + (block.count ?? 0), 0);
-    const key = keyText("app.tools.expand");
-    const hint = key ? ` (${key} to expand)` : "";
-    const collapsed = line(theme, "dim", `» ${messageCount(count)}, compacted${hint}`);
-    let expanded = false;
-
-    return {
-      component: {
-        render: (width) => (expanded ? full.render(width) : collapsed.render(width)),
-        invalidate: () => {},
-      },
-      setExpanded: (next) => {
-        expanded = next;
-        setToolsExpanded(next);
-      },
-    };
-  };
-
-  const laterCompactionOnBranch = (entryId: string) => {
-    const branch = deps.branch();
-    const position = branch.findIndex((item) => item.id === entryId);
-
-    return (
-      position >= 0 &&
-      branch.slice(position + 1).some((later) => {
-        const next = later.type === "custom" ? lineageEntryOf(later.customType, later.data) : undefined;
-
-        return next?.reason === "compaction";
-      })
+    return segments.map(
+      (segment, index): Part => ({
+        token: "dim",
+        label: index === segments.length - 1 ? label : COMPACTED_HERE,
+        pane: paneOf(segment),
+      }),
     );
   };
 
-  return (entry, options, theme) => {
-    const lineage = lineageEntryOf(entry.customType, entry.data);
+  const buildBlock = (lineage: LineageEntry): Block => {
+    const read = readLineage(lineage);
+    const total = read.links.reduce(
+      (sum, { read: linkRead }) =>
+        sum +
+        (linkRead.status === "read"
+          ? linkRead.value.reduce((count, segment) => count + counted(segment), 0)
+          : 0),
+      0,
+    );
+
+    const parts = read.links.flatMap(({ link, read: linkRead }): Part[] => {
+      if (linkRead.status === "missing") {
+        return [{ token: "warning", label: "previous session not found" }];
+      }
+
+      if (linkRead.status === "failed") {
+        return [{ token: "warning", label: "previous session not readable" }];
+      }
+
+      return linkParts(lineage, link, linkRead.value, total);
+    });
+
+    const truncated: Part[] = read.truncated ? [{ token: "dim", label: "earlier sessions not shown" }] : [];
+
+    return { parts: [...truncated, ...parts], count: total };
+  };
+
+  const blockFor = (lineage: LineageEntry) => {
+    const key = `${linkKey(lineage)}\n${lineage.reason}\n${lineage.label ?? ""}`;
+    const cached = cache.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    building = true;
+
+    try {
+      const block = buildBlock(lineage);
+
+      cache.set(key, block);
+
+      return block;
+    } finally {
+      building = false;
+    }
+  };
+
+  const laterCompactionOnBranch = (lineage: LineageEntry) => {
+    const lineages = deps
+      .branch()
+      .map((entry) => (entry.type === "custom" ? lineageEntryOf(entry.customType, entry.data) : undefined));
+    const position = lineages.findLastIndex((entry) => entry !== undefined && sameLink(entry, lineage));
+
+    return position >= 0 && lineages.slice(position + 1).some((entry) => entry?.reason === "compaction");
+  };
+
+  const drawParts = (parts: Part[], width: number, expanded: boolean, theme: ThemeLike, pad: number) => {
+    const margin = " ".repeat(pad);
+
+    return parts.flatMap(({ token, label, pane }) => {
+      if (pane && applied.get(pane) !== expanded) {
+        applied.set(pane, expanded);
+        pane.setToolsExpanded(expanded);
+      }
+
+      const lines = pane?.render(width) ?? [];
+
+      return [
+        ...lines,
+        ...(lines.length > 0 ? [""] : []),
+        `${margin}${labelledRule(theme, width - pad, label, token)}`,
+      ];
+    });
+  };
+
+  const render: EntryRender = (data, width, expanded, theme, pad) => {
+    const lineage = lineageEntryOf(LINEAGE_TYPE, data);
 
     if (!lineage) {
-      return undefined;
+      return [];
     }
 
-    if (lineage.reason === "compaction" && laterCompactionOnBranch(entry.id)) {
-      return undefined;
+    if (lineage.reason === "compaction" && laterCompactionOnBranch(lineage)) {
+      return [];
     }
 
-    const key = `${linkKey(lineage)}\n${lineage.reason}`;
-    const block = cache.get(key) ?? lineageBlock(lineage, theme);
+    current = theme;
 
-    if (existsSync(lineage.file)) {
-      cache.set(key, block);
+    const block = blockFor(lineage);
+
+    if (lineage.reason === "handoff" || expanded) {
+      return drawParts(block.parts, width, expanded, theme, pad);
     }
 
-    block.setExpanded(options.expanded);
+    const key = keyText("app.tools.expand");
+    const hint = key ? ` (${key} to expand)` : "";
 
-    return block.component;
+    return [
+      `${" ".repeat(pad)}${labelledRule(theme, width - pad, `${messageCount(block.count)}, compacted${hint}`)}`,
+    ];
   };
+
+  const invalidate = () => {
+    cache.forEach((block) => {
+      block.parts.forEach(({ pane }) => {
+        pane?.invalidate();
+      });
+    });
+  };
+
+  return { render, invalidate };
 };
