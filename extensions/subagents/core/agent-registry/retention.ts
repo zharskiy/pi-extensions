@@ -1,9 +1,14 @@
 import { lstat, readdir, rm, rmdir } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { MANIFEST_FILE } from "../model/paths.ts";
 
 const DAY_MS = 86_400_000;
 
-type Retention = { sessionsRoot: string; retentionDays: number; keep: string[]; now?: number };
+type Retention = { sessionsRoot: string; retentionDays: number; keepSessions: string[]; now?: number };
+
+const ignore = () => undefined;
+
+const sessionKey = (file: string) => join(basename(dirname(file)), basename(file));
 
 const subdirs = async (dir: string) => {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -17,63 +22,73 @@ const isRealDir = (dir: string) =>
     () => false,
   );
 
-const newestMtime = async (dir: string) => {
-  const names = await readdir(dir);
-  const stats = await Promise.all([dir, ...names.map((name) => join(dir, name))].map((path) => lstat(path)));
-
-  return Math.max(...stats.map((stat) => stat.mtimeMs));
-};
+const mtime = (path: string) =>
+  lstat(path).then(
+    (stat) => stat.mtimeMs,
+    () => 0,
+  );
 
 const pruneRun = async (run: string, cutoff: number) => {
   try {
-    const touched = await newestMtime(run);
+    const names = await readdir(run);
+
+    if (!names.includes(MANIFEST_FILE)) {
+      return false;
+    }
+
+    const stats = await Promise.all(
+      [run, ...names.map((name) => join(run, name))].map((path) => lstat(path)),
+    );
+    const touched = Math.max(...stats.map((stat) => stat.mtimeMs));
 
     if (touched >= cutoff) {
-      return [];
+      return false;
     }
 
     await rm(run, { recursive: true, force: true });
 
-    return [run];
+    return true;
   } catch {
-    return [];
+    return false;
   }
 };
 
-const pruneAgentsDir = async (agentsDir: string, cutoff: number) => {
-  if (!(await isRealDir(agentsDir))) {
-    return [];
+const pruneAgentsDir = async (stem: string, cutoff: number) => {
+  const agentsDir = join(stem, "agents");
+  const sessionTouched = await mtime(`${stem}.jsonl`);
+
+  if (sessionTouched >= cutoff || !(await isRealDir(agentsDir))) {
+    return;
   }
 
   const runs = await subdirs(agentsDir);
   const removed = await Promise.all(runs.map((run) => pruneRun(run, cutoff)));
 
-  await rmdir(agentsDir).catch(() => undefined);
-  await rmdir(dirname(agentsDir)).catch(() => undefined);
+  if (!removed.includes(true)) {
+    return;
+  }
 
-  return removed.flat();
+  await rmdir(agentsDir).catch(ignore);
+  await rmdir(stem).catch(ignore);
 };
 
-const inSequence = (dirs: string[], step: (dir: string) => Promise<string[]>) =>
-  dirs.reduce<Promise<string[]>>(
-    async (done, dir) => [...(await done), ...(await step(dir))],
-    Promise.resolve([]),
-  );
-
-export const pruneAgentRuns = async ({ sessionsRoot, retentionDays, keep, now = Date.now() }: Retention) => {
+export const pruneAgentRuns = async ({
+  sessionsRoot,
+  retentionDays,
+  keepSessions,
+  now = Date.now(),
+}: Retention) => {
   if (retentionDays <= 0) {
-    return [];
+    return;
   }
 
   const cutoff = now - retentionDays * DAY_MS;
-  const kept = new Set(keep.map((dir) => resolve(dir)));
+  const kept = new Set(keepSessions.map(sessionKey));
   const slugs = await subdirs(sessionsRoot);
   const stems = await Promise.all(slugs.map(subdirs));
 
-  const agentsDirs = stems
+  await stems
     .flat()
-    .map((stem) => join(stem, "agents"))
-    .filter((dir) => !kept.has(resolve(dir)));
-
-  return inSequence(agentsDirs, (dir) => pruneAgentsDir(dir, cutoff));
+    .filter((stem) => !kept.has(sessionKey(`${stem}.jsonl`)))
+    .reduce((done, stem) => done.then(() => pruneAgentsDir(stem, cutoff)), Promise.resolve());
 };

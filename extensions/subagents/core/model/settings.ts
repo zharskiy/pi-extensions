@@ -141,20 +141,20 @@ const readUser = (agentDir: string) =>
 
 export const disabledPlugins = (agentDir: string) => readUser(agentDir).patch.disabledPlugins ?? [];
 
+const USER_ONLY = ["disabledPlugins", "retentionDays"] as const;
+
 export const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
   const projectPath = settingsPaths({ agentDir, cwd }).project;
   const user = readUser(agentDir);
   const project: SettingsParse<Settings> = projectTrusted
     ? readSettingsFile(settingsSchema, projectPath)
     : { patch: {}, errors: [] };
-  const { disabledPlugins: projectPlugins, retentionDays: projectRetention, ...projectPatch } = project.patch;
+  const { disabledPlugins: _plugins, retentionDays: _retention, ...projectPatch } = project.patch;
   const errors = [...user.errors, ...project.errors];
-  const userOnly = Object.entries({
-    disabledPlugins: projectPlugins,
-    retentionDays: projectRetention,
-  }).filter(([, value]) => value !== undefined);
 
-  errors.push(...userOnly.map(([key]) => `${projectPath}: ${key} is read from the user settings file only`));
+  USER_ONLY.filter((key) => project.patch[key] !== undefined).forEach((key) => {
+    errors.push(`${projectPath}: ${key} is read from the user settings file only`);
+  });
 
   const agents = mergeOverrides(user.patch.agents, projectPatch.agents);
 

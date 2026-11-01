@@ -43,16 +43,14 @@ export const agentRegistryPlugin: Plugin = {
       const parent = info.parentSession ? [{ ...info, file: info.parentSession }] : [];
       const owners = [info, ...parent];
 
-      owners.forEach((owner) => {
-        registry.restore(pastIn(owner));
-      });
+      owners.map(pastIn).forEach(registry.restore);
 
       publish(hasOpenAgents(registry));
 
       pruneAgentRuns({
         sessionsRoot: sessionsRootFor(info),
         retentionDays: settings.retentionDays,
-        keep: owners.map(agentsDirFor),
+        keepSessions: owners.flatMap((owner) => (owner.file ? [owner.file] : [])),
       }).catch(() => undefined);
     });
 

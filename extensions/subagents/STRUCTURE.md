@@ -58,7 +58,7 @@ extensions/subagents/
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
 │   ├── agent-registry/
 │   │   ├── registry.ts                    # createRegistry: records, manifests, events
-│   │   └── retention.ts                   # pruneAgentRuns: removes agent dirs untouched for more than retentionDays
+│   │   └── retention.ts                   # pruneAgentRuns: removes agent dirs whose run and session are untouched for more than retentionDays
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn)
 │   │   ├── tools.ts                       # run_agent and message_agent specs, params and details types, describeRunAgent
