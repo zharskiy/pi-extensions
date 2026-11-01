@@ -38,7 +38,7 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers, grantText, grantOrNone, sameGrant, isLead, the waiting activities (waitingActivity, isWaitingActivity, HELD_ACTIVITY)
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers, grantText, grantOrNone, sameGrant, isLead, the waiting activities (WAITING prefix, waitingActivity, HELD_ACTIVITY)
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills

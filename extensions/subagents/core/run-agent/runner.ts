@@ -33,7 +33,6 @@ import {
   chainTerminal,
   HELD_ACTIVITY,
   isClosed,
-  isWaitingActivity,
   MAIN_CALLER,
   type RouteResult,
   subagentNames,
@@ -261,7 +260,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const refreshWaiting = (callerId: string) => {
     const caller = deps.registry.get(callerId);
 
-    if (caller?.state === "running" && isWaitingActivity(caller.activity)) {
+    if (caller?.state === "running" && lives.get(callerId)?.turn === "idle") {
       showWaiting(callerId);
     }
   };
@@ -293,6 +292,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     live.release = release;
     live.turn = "running";
+    deps.registry.update(id, { activity: undefined });
 
     try {
       await send(child);
@@ -366,9 +366,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.child = undefined;
 
     if (child) {
-      await Promise.resolve()
-        .then(() => noteUsage(id, child.ownUsage()))
-        .catch(() => undefined);
+      try {
+        noteUsage(id, child.ownUsage());
+      } catch {}
+
       await child.dispose().catch(() => undefined);
     }
   };

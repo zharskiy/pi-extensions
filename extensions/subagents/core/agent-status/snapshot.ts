@@ -6,13 +6,7 @@ import {
   workingContextText,
 } from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, formatCalls, singleLine } from "../components/receipt.ts";
-import {
-  type AgentRecord,
-  HELD_ACTIVITY,
-  isWaitingActivity,
-  type Worktree,
-  worktreeText,
-} from "../model/agent-record.ts";
+import { type AgentRecord, WAITING, type Worktree, worktreeText } from "../model/agent-record.ts";
 import { contextUse } from "../model/context-limit.ts";
 
 const graceSecondsLeft = (record: AgentRecord, now: number) => {
@@ -68,9 +62,9 @@ const stateLabel = (snapshot: AgentSnapshot) => {
 };
 
 const waitingOf = (record: AgentRecord) => {
-  const shown = record.activity === HELD_ACTIVITY || isWaitingActivity(record.activity);
+  const shown = record.state === "running" && record.activity?.startsWith(`${WAITING} `);
 
-  return record.state === "running" && shown ? record.activity : undefined;
+  return shown ? record.activity : undefined;
 };
 
 const contextOf = (record: AgentRecord, limit: HandoffLimit) => {

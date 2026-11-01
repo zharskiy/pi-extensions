@@ -504,6 +504,26 @@ describe("successor chain", () => {
     expect(caller.hidden[0]?.text).toContain("token store is in src/store.ts");
   });
 
+  it("fails a successor whose launch throws and still wakes the caller with the failed link", async () => {
+    const { first, current, handOff, services, host } = await setup({ maxChainLength: 3 });
+    const definitions = services.require("definitions");
+    const promptAppend = definitions.promptAppend;
+
+    definitions.promptAppend = () => {
+      throw new Error("prompt file missing");
+    };
+
+    const second = (await handOff(first.id)) as string;
+
+    definitions.promptAppend = promptAppend;
+    host.settle();
+
+    expect(current(first.id).state).toBe("handoff");
+    expect(current(second)).toMatchObject({ state: "failed", error: "launch failed: prompt file missing" });
+    expect(hiddenMessageTexts(host)).toHaveLength(1);
+    expect(hiddenMessageTexts(host)[0]).toContain("launch failed: prompt file missing");
+  });
+
   describe("handoff with open nested batches", () => {
     const holdingSetup = async (overrides = {}) => {
       const harness = await setup(overrides, "general");
@@ -559,6 +579,43 @@ describe("successor chain", () => {
       expect(task).toContain("a is in src/a.ts");
       expect(task).toContain("b is in src/b.ts");
       expect(task.indexOf(`Batch ${a.batchId}`)).toBeLessThan(task.indexOf(`Batch ${b.batchId}`));
+    });
+
+    it("shows the held handoff as a waiting line in agent_status", async () => {
+      const { first, start, handOffNow, host } = await holdingSetup();
+
+      await start("find a");
+      await handOffNow();
+
+      const status = await host
+        .tool<AgentStatusParams, AgentStatusDetails>("agent_status")
+        .execute({ ids: [first.id] }, {});
+
+      expect(status.text).toContain("\n  waiting for batches before handoff");
+    });
+
+    it("fails a lead whose settle throws while its handoff would be held, and wakes the main session", async () => {
+      const { first, current, caller, start, requestHandoff, writeHandoff, host } = await holdingSetup();
+      const a = await start("find a");
+
+      await requestHandoff(first.id);
+      writeHandoff(first.id, "partial");
+
+      caller.ownUsage = () => {
+        throw new Error("usage entry without cost");
+      };
+      caller.finish(current(first.id).handoffPath);
+      await flushMicrotasks();
+      host.settle();
+
+      expect(current(first.id)).toMatchObject({
+        state: "failed",
+        error: "settle failed: usage entry without cost",
+      });
+      expect(current(a.id).state).toBe("stopped");
+      expect(caller.disposed).toBe(true);
+      expect(hiddenMessageTexts(host)).toHaveLength(1);
+      expect(hiddenMessageTexts(host)[0]).toContain(`## ${first.id} (general) - failed`);
     });
 
     it("frees its slot while waiting, so its batch runs with one slot", async () => {

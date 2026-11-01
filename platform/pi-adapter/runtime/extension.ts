@@ -62,7 +62,7 @@ export const createPiExtension =
         sessionSkillFiles: () => sessionSkillFiles(pi),
         activeTools: () => parentTools(pi),
         mcpDisabled: () => !mcpBuiltinLoaded(pi),
-        reportError: (message) => state.ctx?.ui.notify(message, "error"),
+        reportError: (message) => host.ui.notify(message, "error"),
       },
       { namespace: options.namespace, exclude: options.childExclude ?? [] },
     );

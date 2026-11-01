@@ -13,15 +13,12 @@ export type AgentState = "queued" | "running" | "grace" | "done" | "failed" | "s
 
 export const isClosed = (state: AgentState) => state !== "queued" && state !== "running" && state !== "grace";
 
-const WAITING = "waiting for";
+export const WAITING = "waiting for";
 
-export const HELD_ACTIVITY = `handoff: ${WAITING} batches`;
+export const HELD_ACTIVITY = `${WAITING} batches before handoff`;
 
 export const waitingActivity = (ids: string[]) =>
   ids.length > 0 ? `${WAITING} ${counted(ids.length, "agent")}: ${ids.join(", ")}` : undefined;
-
-export const isWaitingActivity = (activity: string | undefined) =>
-  activity?.startsWith(`${WAITING} `) === true;
 
 export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord => {
   const successor = record.successorId ? registry.get(record.successorId) : undefined;

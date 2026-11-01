@@ -310,6 +310,10 @@ export const createPiRuntime = (
     });
 
     const failStart = (error: unknown) => {
+      if (disposed) {
+        return;
+      }
+
       if (!running) {
         report("run failed after it settled", error);
         return;

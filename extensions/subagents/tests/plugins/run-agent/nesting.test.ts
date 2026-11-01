@@ -177,6 +177,41 @@ describe("nested agents", () => {
     expect((await status.execute({ ids: [record.id] }, {})).text).not.toContain("waiting for");
   });
 
+  it("drops the waiting text once a wake starts the lead's turn and leaves its own activity alone after", async () => {
+    const { startGeneral, spawnFrom, registry, runtime } = setup();
+    const { record, child } = await startGeneral();
+
+    await spawnFrom(child, [{ agent: "scout", task: "find a" }]);
+    await spawnFrom(child, [
+      { agent: "scout", task: "find b" },
+      { agent: "scout", task: "find c" },
+    ]);
+
+    const [, a, b, c] = registry.list();
+
+    child.finish("Status: done");
+    await flushMicrotasks();
+
+    expect(registry.get(record.id)?.activity).toBe(`waiting for 3 agents: ${a.id}, ${b.id}, ${c.id}`);
+
+    runtime.child(a.id).finish("a is in src/a.ts");
+    await flushMicrotasks();
+
+    expect(child.hidden).toHaveLength(1);
+    expect(registry.get(record.id)?.activity ?? "").not.toContain("waiting for");
+
+    child.emit({ type: "tool_start", toolName: "bash" });
+    runtime.child(b.id).finish("b is in src/b.ts");
+    await flushMicrotasks();
+
+    expect(registry.get(record.id)?.activity).toBe("bash");
+
+    child.finish("Status: done");
+    await flushMicrotasks();
+
+    expect(registry.get(record.id)?.activity).toBe(`waiting for 1 agent: ${c.id}`);
+  });
+
   it("holds a child's wake until its current turn ends", async () => {
     const { startGeneral, spawnFrom, registry, runtime } = setup();
     const { record, child } = await startGeneral();

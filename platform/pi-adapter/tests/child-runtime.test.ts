@@ -537,6 +537,18 @@ describe("child prompting", () => {
     expect(reported).toEqual(["test-ext: agent a1: run failed after it settled: auth expired"]);
   });
 
+  it("reports nothing for a run rejected because the child was disposed", async () => {
+    const { child, settle, failNextRun, reported } = await spawnReporting();
+
+    failNextRun(new Error("aborted"));
+    child.start("task");
+    settle();
+    await child.dispose();
+    await flushMicrotasks(1);
+
+    expect(reported).toEqual([]);
+  });
+
   it("runs messages left in pi's queue at settle instead of reporting settled", async () => {
     const { child, calls, events, settle, leaveQueued } = await spawnScripted();
 
