@@ -48,7 +48,8 @@ describe("agent handoff instruction", () => {
     expect(text).toContain("One word: partial or blocked.");
     expect(text).not.toContain("done");
     expect(text).not.toContain("Skills:");
-    expect(text).not.toContain("background keeps running");
+    expect(text).toContain("a valid partial handoff waits for them, otherwise they are stopped");
+    expect(text).toContain("attached to your successor's task");
   });
 });
 

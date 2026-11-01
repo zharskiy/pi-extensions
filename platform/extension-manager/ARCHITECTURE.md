@@ -14,7 +14,7 @@ The boot:
 4. Registers `disableAll()` on session shutdown.
 5. Rethrows errors unless `onError` is given; a plugin that throws while enabling fails the boot.
 
-Twelve extensions pass one plugin from `api/plugin.ts` whose `enable` wires host, core and ui; subagents passes eleven from `api/plugins.ts` with settings, `childExclude: [root]`, `skillInventory: true`, `disabled` and a notifying `onError`.
+Thirteen extensions pass one plugin from `api/plugin.ts` whose `enable` wires host, core and ui; subagents passes eleven from `api/plugins.ts` with settings, `childExclude: [root]`, `skillInventory: true`, `disabled` and a notifying `onError`.
 
 ## The manager
 

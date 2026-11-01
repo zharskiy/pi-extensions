@@ -3,9 +3,12 @@ import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import {
   BACKGROUND_WORK_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
+  HELD_RESULTS_CHANNEL,
   handoffTool,
+  parseHandoffPending,
 } from "../../../../platform/shared/index.ts";
 import {
   EXPAND_BINDING,
@@ -50,7 +53,18 @@ export const runAgentPlugin: Plugin = {
       expandKey: () => host.ui.keyText(EXPAND_BINDING),
     };
 
+    let handoffPending = false;
+
+    const hold = () => {
+      host.publish(HELD_RESULTS_CHANNEL, { source: NAMESPACE, text: joinTexts(waking) });
+    };
+
     const wake = () => {
+      if (handoffPending) {
+        hold();
+        return;
+      }
+
       const texts = waking.splice(0);
 
       if (texts.length > 0) {
@@ -61,13 +75,32 @@ export const runAgentPlugin: Plugin = {
 
     const outbox = {
       post: (text: string) => {
-        if (waking.length === 0) {
-          queueMicrotask(wake);
+        waking.push(text);
+
+        if (handoffPending) {
+          hold();
+          return;
         }
 
-        waking.push(text);
+        if (waking.length === 1) {
+          queueMicrotask(wake);
+        }
       },
     };
+
+    const offPending = host.subscribe(HANDOFF_PENDING_CHANNEL, (data) => {
+      const pending = parseHandoffPending(data)?.pending;
+
+      if (pending === undefined || pending === handoffPending) {
+        return;
+      }
+
+      handoffPending = pending;
+
+      if (!pending) {
+        wake();
+      }
+    });
 
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
       const own = definitions.get(record.agent);
@@ -215,6 +248,7 @@ export const runAgentPlugin: Plugin = {
     });
 
     return () => {
+      offPending();
       offChanged();
       offStarted();
       offSettled();

@@ -4,10 +4,14 @@ import {
   AWAITING_INPUT_CHANNEL,
   BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
+  HANDOFF_PENDING_CHANNEL,
+  HELD_RESULTS_CHANNEL,
   LIMITS_CHANNEL,
   parseAwaitingInput,
   parseBackgroundWork,
   parseBusySignal,
+  parseHandoffPending,
+  parseHeldResults,
   parseLimits,
   parseTotals,
   parseUsageReport,
@@ -49,6 +53,39 @@ describe("parseBackgroundWork", () => {
     expect(parseBackgroundWork({ source: "x", count: 1.5 })).toBeUndefined();
     expect(parseBackgroundWork({ source: "x", count: "1" })).toBeUndefined();
     expect(parseBackgroundWork(null)).toBeUndefined();
+  });
+});
+
+describe("parseHandoffPending", () => {
+  it("names the channel pi:handoff-pending", () => {
+    expect(HANDOFF_PENDING_CHANNEL).toBe("pi:handoff-pending");
+  });
+
+  it("accepts a source name and a pending flag only", () => {
+    expect(parseHandoffPending({ source: "pi-session-limits", pending: true })).toEqual({
+      source: "pi-session-limits",
+      pending: true,
+    });
+    expect(parseHandoffPending({ source: "", pending: false })).toBeUndefined();
+    expect(parseHandoffPending({ source: "x", pending: "yes" })).toBeUndefined();
+    expect(parseHandoffPending(null)).toBeUndefined();
+  });
+});
+
+describe("parseHeldResults", () => {
+  it("names the channel pi:held-results", () => {
+    expect(HELD_RESULTS_CHANNEL).toBe("pi:held-results");
+  });
+
+  it("accepts a source name and a non-empty text only", () => {
+    expect(parseHeldResults({ source: "pi-subagents", text: "a" })).toEqual({
+      source: "pi-subagents",
+      text: "a",
+    });
+    expect(parseHeldResults({ source: "", text: "a" })).toBeUndefined();
+    expect(parseHeldResults({ source: "x", text: "" })).toBeUndefined();
+    expect(parseHeldResults({ source: "x", text: ["a"] })).toBeUndefined();
+    expect(parseHeldResults(null)).toBeUndefined();
   });
 });
 

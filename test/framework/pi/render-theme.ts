@@ -1,6 +1,12 @@
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 
+const themes = await import(
+  new URL("modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+);
+
+export const livePiTheme = themes.theme as Theme;
+
 export const initPiRenderTheme = () => {
   initTheme(undefined, false);
 };

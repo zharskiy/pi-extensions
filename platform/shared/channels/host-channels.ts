@@ -10,11 +10,19 @@ export const USAGE_CHANNEL = "spending:usage";
 
 export const AWAITING_INPUT_CHANNEL = "pi:awaiting-input";
 
+export const HANDOFF_PENDING_CHANNEL = "pi:handoff-pending";
+
+export const HELD_RESULTS_CHANNEL = "pi:held-results";
+
 type BusySignal = { source: string; busy: boolean };
 
 export type AwaitingInput = { source: string; waiting: boolean; title?: string };
 
 type BackgroundWork = { source: string; count: number };
+
+type HandoffPending = { source: string; pending: boolean };
+
+type HeldResults = { source: string; text: string };
 
 export type UsageReport = { source: string; id: string; usage: UsageTotals };
 
@@ -72,6 +80,22 @@ export const parseAwaitingInput = (data: unknown): AwaitingInput | undefined => 
     waiting: data.waiting,
     ...(isLabel(data.title) ? { title: data.title } : {}),
   };
+};
+
+export const parseHandoffPending = (data: unknown): HandoffPending | undefined => {
+  if (!isPlainObject(data) || !isLabel(data.source) || typeof data.pending !== "boolean") {
+    return undefined;
+  }
+
+  return { source: data.source, pending: data.pending };
+};
+
+export const parseHeldResults = (data: unknown): HeldResults | undefined => {
+  if (!isPlainObject(data) || !isLabel(data.source) || !isLabel(data.text)) {
+    return undefined;
+  }
+
+  return { source: data.source, text: data.text };
 };
 
 export const parseUsageReport = (data: unknown): UsageReport | undefined => {

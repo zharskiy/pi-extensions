@@ -1,4 +1,5 @@
 import type { AgentRecord } from "../model/agent-record.ts";
+import { joinTexts } from "./outbox.ts";
 
 type TaskInput = { task: string; files?: string[] };
 
@@ -21,8 +22,8 @@ export const composeTask = (record: AgentRecord, item: TaskInput, undelivered: s
   }
 
   if (undelivered.length > 0) {
-    lines.push("", "Batch results that reached your predecessor after it stopped for the handoff:", "");
-    lines.push(undelivered.join("\n\n---\n\n"));
+    lines.push("", "Batch results that arrived while your predecessor's handoff was pending:", "");
+    lines.push(joinTexts(undelivered));
   }
 
   return lines.join("\n");

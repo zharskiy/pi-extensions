@@ -44,7 +44,7 @@ const startRuntime = async () => {
         await control.newSession({
           parentSession: host.session().file,
           showPrevious: args === "show",
-          seed: SEED,
+          fill: () => ({ seed: SEED }),
         });
       },
     });

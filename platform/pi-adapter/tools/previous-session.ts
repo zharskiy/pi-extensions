@@ -64,7 +64,7 @@ export const previousSessionRenderer = (deps: RendererDeps): EntryRenderer => {
   const tui = { requestRender: () => deps.requestRender() } as unknown as TUI;
 
   const line = (theme: Theme, token: ThemeToken, text: string) =>
-    paddedComponent(sharedPad, () => [themeLike(theme).fg(token, text)]);
+    paddedComponent(sharedPad, false, () => [themeLike(theme).fg(token, text)]);
 
   const noteBlock = (component: Component): Block => ({ component, setExpanded: () => {} });
 

@@ -33,4 +33,4 @@ Concrete next steps for {{reader}}, starting with the answer the user is waiting
 ## Files touched
 One path per line, or "none".
 
-After saving it, reply with one line: `handoff saved`.
+Once the tool saves it without errors, end your turn without replying.

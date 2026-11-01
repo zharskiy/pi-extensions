@@ -21,24 +21,35 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec, CustomMessage } from "../types/messages.ts";
+import type { CommandSpec, CustomMessage, UserMessage } from "../types/messages.ts";
+import { isThinkingLevel } from "../types/model.ts";
 import type {
   AssistantEnd,
   DialogEvent,
   IdleInfo,
   Phase,
   SessionControl,
+  SessionFill,
   SessionInfo,
   ShutdownReason,
+  UserInput,
 } from "../types/session.ts";
 import type { AnyToolSpec, ToolSpec } from "../types/tools.ts";
 import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
 import { footerHost } from "../ui/footer.ts";
 import { createNotices, syncNotices } from "../ui/notices.ts";
 import { type HostState, tuiContext } from "../ui/tui-context.ts";
+import { writeDefaultModel, writeDefaultThinkingLevel } from "./default-model.ts";
 import { dropFollowUps, followUpsQueued, queueFollowUp, takeFollowUp } from "./follow-ups.ts";
 import { globalRecord } from "./global-record.ts";
-import { claimKeptSelection, keepSelection, restoreSelection } from "./kept-selection.ts";
+import {
+  claimKeptSelection,
+  forgetSessionSelection,
+  keepSelection,
+  releaseRestoredSelection,
+  restoredSelection,
+  restoreSelection,
+} from "./kept-selection.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
@@ -77,22 +88,63 @@ const setupAll = (...setups: SessionSetup[]): SessionSetup => {
   };
 };
 
+type NewSessionRequest = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
+
+type FreshSession = Parameters<NonNullable<NewSessionRequest["withSession"]>>[0];
+
+const warnOf = (fresh: FreshSession, lead: string) => (error: unknown) => {
+  const reason = error instanceof Error ? error.message : String(error);
+
+  fresh.ui.notify(`${lead}: ${reason}`, "warning");
+};
+
+const sendFollowUps = (fresh: FreshSession, followUps: UserMessage[]) => {
+  void followUps
+    .reduce<Promise<void>>(
+      (chain, { text, images }) =>
+        chain.then(() =>
+          fresh.sendUserMessage(
+            [{ type: "text", text }, ...images.map((image) => ({ type: "image" as const, ...image }))],
+            { deliverAs: "followUp", expandPromptTemplates: true },
+          ),
+        ),
+      Promise.resolve(),
+    )
+    .catch(warnOf(fresh, "A message kept for the new session could not be sent"));
+};
+
+const fillSession = async (
+  fresh: FreshSession,
+  { seed, followUps = [], editorText }: SessionFill,
+  run: boolean,
+) => {
+  if (editorText) {
+    fresh.ui.setEditorText(editorText);
+  }
+
+  const sent = fresh.sendMessage(
+    { customType: seed.customType, content: seed.text, display: true, details: seed.details },
+    { triggerTurn: run },
+  );
+
+  if (run) {
+    void sent.catch(warnOf(fresh, "The new session could not continue the handoff"));
+  } else {
+    await sent;
+  }
+
+  sendFollowUps(fresh, followUps);
+};
+
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, seed, keepSelection: keep, showPrevious }) => {
+  newSession: async ({ parentSession, keepSelection: keep, showPrevious, continueWithSeed, fill }) => {
     const result = await ctx.newSession({
       parentSession,
       setup: setupAll(
         keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
         showPrevious ? showPreviousSession(ctx) : undefined,
       ),
-      withSession: seed
-        ? async (fresh) => {
-            await fresh.sendMessage(
-              { customType: seed.customType, content: seed.text, display: true, details: seed.details },
-              { triggerTurn: false },
-            );
-          }
-        : undefined,
+      withSession: (fresh) => fillSession(fresh, fill(), continueWithSeed === true),
     });
 
     return !result.cancelled;
@@ -115,6 +167,8 @@ const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
 const hostStates = () => globalRecord<Set<HostState>>("host-states", () => new Set());
 
+const modelRef = (model: ExtensionContext["model"]) => model && `${model.provider}/${model.id}`;
+
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
   const startHandlers: ((info: SessionInfo) => void)[] = [];
@@ -122,11 +176,14 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const inputHandlers: ((input: UserInput) => boolean)[] = [];
   const agentStartHandlers: (() => void)[] = [];
   const assistantStartHandlers: (() => void)[] = [];
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
   const phaseHandlers: ((phase: Phase) => void)[] = [];
   const dialogHandlers: ((event: DialogEvent) => void)[] = [];
+  const modelSelectHandlers: ((ref: string) => void | Promise<void>)[] = [];
+  const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
   const held: HeldCustom[] = [];
@@ -139,6 +196,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const thinkingLabel = createThinkingLabelUi(() => tuiContext(state));
   let created = false;
   let previousTui: ReturnType<typeof captureTui>;
+  let currentModel: string | undefined;
 
   hostStates().add(state);
 
@@ -286,6 +344,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     }
 
     created = event.reason === "new" || event.reason === "fork";
+    currentModel = modelRef(ctx.model);
 
     const info = sessionInfo(ctx, created);
 
@@ -300,10 +359,12 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     phaseState = initialPhase();
     runActive = false;
     held.length = 0;
+    currentModel = undefined;
     stopHeldPoll();
 
     if (state.ctx) {
       dropFollowUps(sessionOf(state.ctx));
+      forgetSessionSelection(state.ctx);
     }
 
     await shutdownHandlers.reduce<Promise<void>>(
@@ -445,6 +506,18 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
+  pi.on("input", (event, ctx) => {
+    capture(ctx);
+
+    const input: UserInput = {
+      text: event.text,
+      images: (event.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })),
+      source: event.source,
+    };
+
+    return inputHandlers.some((handler) => handler(input)) ? { action: "handled" } : { action: "continue" };
+  });
+
   pi.on("session_compact", (_event, ctx) => {
     capture(ctx);
 
@@ -480,6 +553,55 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     dialogHandlers.forEach((handler) => {
       handler({ phase: "end", kind: event.kind, title: event.title });
     });
+  });
+
+  pi.on("model_select", async (event, ctx) => {
+    capture(ctx);
+
+    currentModel = modelRef(event.model);
+
+    if (event.source === "restore") {
+      return;
+    }
+
+    const ref = `${event.model.provider}/${event.model.id}`;
+    const restored = restoredSelection(ctx);
+
+    if (restored?.model === ref) {
+      return;
+    }
+
+    if (restored) {
+      releaseRestoredSelection(ctx);
+    }
+
+    await Promise.all(modelSelectHandlers.map((handler) => handler(ref)));
+  });
+
+  pi.on("thinking_level_select", async (event, ctx) => {
+    capture(ctx);
+
+    const restored = restoredSelection(ctx);
+
+    if (restored && restored.model === modelRef(ctx.model)) {
+      const chosen =
+        restored.applied && event.level !== restored.thinking && event.level === pi.getThinkingLevel();
+
+      if (!chosen) {
+        return;
+      }
+
+      releaseRestoredSelection(ctx);
+    }
+
+    const switching = currentModel !== undefined && modelRef(ctx.model) !== currentModel;
+    const superseded = event.level !== pi.getThinkingLevel();
+
+    if (switching || superseded) {
+      return;
+    }
+
+    await Promise.all(thinkingSelectHandlers.map((handler) => handler(event.level)));
   });
 
   const registerTool = <P, D>(spec: ToolSpec<P, D>) => {
@@ -536,6 +658,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onCompact: (handler) => {
       compactHandlers.push(handler);
     },
+    onInput: (handler) => {
+      inputHandlers.push(handler);
+    },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {
       deliver(message, false);
@@ -579,6 +704,22 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     onDialog: (handler) => {
       dialogHandlers.push(handler);
     },
+    onModelSelect: (handler) => {
+      modelSelectHandlers.push(handler);
+    },
+    saveDefaultModel: (ref) => writeDefaultModel(liveCtx(state), ref),
+    onThinkingSelect: (handler) => {
+      thinkingSelectHandlers.push(handler);
+    },
+    setThinkingLevel: (level) => {
+      if (isThinkingLevel(level)) {
+        pi.setThinkingLevel(level);
+      }
+    },
+    saveDefaultThinkingLevel: async (level) =>
+      isThinkingLevel(level)
+        ? writeDefaultThinkingLevel(liveCtx(state), level)
+        : `${level} is not a thinking level`,
     ...footerHost(pi, state),
     ...contextHost(pi, state),
     registerEntryRenderer: entries.registerEntryRenderer,
