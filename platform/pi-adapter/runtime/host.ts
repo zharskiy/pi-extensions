@@ -97,15 +97,13 @@ const fillSession = async (
     fresh.ui.setEditorText(editorText);
   }
 
-  const sent = seed
-    ? fresh.sendMessage(
-        { customType: seed.customType, content: seed.text, display: true, details: seed.details },
-        { triggerTurn: run },
-      )
-    : undefined;
+  const sent = fresh.sendMessage(
+    { customType: seed.customType, content: seed.text, display: true, details: seed.details },
+    { triggerTurn: run },
+  );
 
   if (run) {
-    void sent?.catch(warnOf(fresh, "The new session could not continue the handoff"));
+    void sent.catch(warnOf(fresh, "The new session could not continue the handoff"));
   } else {
     await sent;
   }
@@ -118,7 +116,7 @@ const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): Session
     const result = await ctx.newSession({
       parentSession,
       setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-      withSession: (fresh) => fillSession(fresh, fill?.() ?? {}, continueWithSeed === true),
+      withSession: (fresh) => fillSession(fresh, fill(), continueWithSeed === true),
     });
 
     return !result.cancelled;

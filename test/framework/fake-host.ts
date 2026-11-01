@@ -43,7 +43,7 @@ type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage
 
 type ChatItem = { kind: "assistant"; text: string } | { kind: "entry"; customType: string; data: unknown };
 
-type FakeNewSession = Omit<NewSessionOptions, "fill"> & SessionFill;
+type FakeNewSession = Omit<NewSessionOptions, "fill"> & Partial<SessionFill>;
 
 export type FakeHost = Host & {
   tools: Map<string, ToolSpec<never, never>>;
@@ -200,7 +200,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
       }
 
       if (host.newSessionResult) {
-        Object.assign(recorded, fill?.());
+        Object.assign(recorded, fill());
       }
 
       return host.newSessionResult;

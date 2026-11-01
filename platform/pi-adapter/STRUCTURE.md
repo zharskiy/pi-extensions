@@ -8,7 +8,7 @@
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
-- `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the `fill` thunk returning a `SessionFill`: the seed, follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.
+- `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the `fill` thunk returning a `SessionFill`: the seed, optional follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.
 - `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
 - `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.

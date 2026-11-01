@@ -16,13 +16,13 @@ export type SessionInfo = {
 
 export type ShutdownReason = "quit" | "reload" | "new" | "resume" | "fork";
 
-export type SessionFill = { seed?: CustomMessage; followUps?: UserMessage[]; editorText?: string };
+export type SessionFill = { seed: CustomMessage; followUps?: UserMessage[]; editorText?: string };
 
 export type NewSessionOptions = {
   parentSession?: string;
   keepSelection?: boolean;
   continueWithSeed?: boolean;
-  fill?: () => SessionFill;
+  fill: () => SessionFill;
 };
 
 export type SessionControl = {

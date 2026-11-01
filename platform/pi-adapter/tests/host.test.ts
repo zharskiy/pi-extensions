@@ -666,15 +666,17 @@ describe("pi adapter", () => {
 
   it("composes the fill only when the new session is ready", async () => {
     const typed: string[] = [];
-    const calls = await filledSession({ fill: () => ({ editorText: typed.join(" ") }) }, () => {
-      typed.push("typed during teardown");
-    });
+    const calls = await filledSession(
+      { fill: () => ({ seed: { customType: "t", text: "hello" }, editorText: typed.join(" ") }) },
+      () => {
+        typed.push("typed during teardown");
+      },
+    );
 
-    expect(calls).toEqual([{ call: "setEditorText", text: "typed during teardown" }]);
-  });
-
-  it("leaves the new session untouched without a fill", async () => {
-    expect(await filledSession({ continueWithSeed: true })).toEqual([]);
+    expect(calls).toMatchObject([
+      { call: "setEditorText", text: "typed during teardown" },
+      { call: "sendMessage", message: { content: "hello" } },
+    ]);
   });
 
   it("forwards user input to the input handlers and reports a consumed message as handled", async () => {
