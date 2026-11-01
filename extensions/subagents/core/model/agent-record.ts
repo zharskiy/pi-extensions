@@ -12,20 +12,38 @@ export type AgentState = "queued" | "running" | "grace" | "done" | "failed" | "s
 
 export const isClosed = (state: AgentState) => state !== "queued" && state !== "running" && state !== "grace";
 
-export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord => {
+const terminalFrom = (
+  registry: Pick<AgentRegistry, "get">,
+  record: AgentRecord,
+  seen: Set<string>,
+): AgentRecord => {
+  seen.add(record.id);
+
   const successor = record.successorId ? registry.get(record.successorId) : undefined;
 
-  return successor ? chainTerminal(registry, successor) : record;
+  return successor && !seen.has(successor.id) ? terminalFrom(registry, successor, seen) : record;
 };
 
-export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] => {
+const linksTo = (
+  registry: Pick<AgentRegistry, "get">,
+  record: AgentRecord,
+  seen: Set<string>,
+): AgentRecord[] => {
+  seen.add(record.id);
+
   const predecessor = record.predecessorId ? registry.get(record.predecessorId) : undefined;
-  const earlier = predecessor ? chainLinks(registry, predecessor) : [];
+  const earlier = predecessor && !seen.has(predecessor.id) ? linksTo(registry, predecessor, seen) : [];
 
   earlier.push(record);
 
   return earlier;
 };
+
+export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord =>
+  terminalFrom(registry, record, new Set());
+
+export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] =>
+  linksTo(registry, record, new Set());
 
 export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 
