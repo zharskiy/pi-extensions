@@ -8,13 +8,13 @@
 - `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
-- `types/session.ts`: `SessionInfo`, `SessionControl`, `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), dialog and idle events.
+- `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the seed and its images, follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.
 - `types/context.ts`: `ContextSnapshot`, `ContextFacts` and its sections, tools and messages; `PromptTokens`.
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
 - `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers.
-- `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `RoutedMessage` (sender and text), `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
+- `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `ImageAttachment` and `UserMessage` (a user's text with its images), `RoutedMessage` (sender and text), `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
 - `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
-- `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages.
+- `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages, the input hook, the new session's seed, follow-ups and editor text.
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).
 - `runtime/child-scope.ts`: the child scope in which no extension boots.
 - `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, its restore of the model and thinking level on `session_start`, and the restored-selection marker the `model_select` and `thinking_level_select` filters match against.
@@ -30,7 +30,7 @@
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
 - `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.
-- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, columns.
+- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, editor text, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
 - `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.
@@ -58,7 +58,7 @@
 - `context/usage-math.ts`: usage sums.
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
-- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`).
+- `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`, an `input` handler swallowing a prompt, and a user message sent right after a run-starting seed queuing behind it).
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
 - `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once, with no `onModelSelect` or `onThinkingSelect` call or default saved during the restore and later choices passed through, and the seed starting the first run with `continueWithSeed`.
 - `tests/phase.test.ts`: `runtime/phase.ts`.

@@ -23,6 +23,16 @@ export const HELD_HEADING = "Batch results that arrived while the handoff was pe
 export const withLateResults = (text: string, late: string[]) =>
   late.length === 0 ? text : [text.trim(), HELD_HEADING, ...late].join("\n\n");
 
+export const USER_HEADING =
+  "Messages the user sent while the handoff was pending. They are the user's latest instructions and take precedence over the handoff's Next section:";
+
+const IMAGE_ONLY = "(an image, attached to this message)";
+
+export const withUserMessages = (text: string, messages: string[]) =>
+  messages.length === 0
+    ? text
+    : [text.trim(), USER_HEADING, ...messages.map((message) => message.trim() || IMAGE_ONLY)].join("\n\n");
+
 type SessionSource = { file?: string; manual: boolean; focus?: string };
 
 export const sessionPreface = ({ file, manual, focus }: SessionSource) => {

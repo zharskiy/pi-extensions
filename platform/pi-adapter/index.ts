@@ -20,6 +20,7 @@ export type {
   RoutedMessage,
   SessionRecord,
   SkillInfo,
+  UserMessage,
 } from "./types/messages.ts";
 export {
   type AvailableModel,
@@ -49,6 +50,7 @@ export type {
   SessionControl,
   SessionInfo,
   ShutdownReason,
+  UserInput,
 } from "./types/session.ts";
 export type { StatusToken, ThemeLike, ThemeToken } from "./types/theme.ts";
 export type {

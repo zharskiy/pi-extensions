@@ -8,8 +8,10 @@ import {
   handoffPath,
   MAIN_AUDIENCE,
   sessionPreface,
+  USER_HEADING,
   validateMainHandoff,
   withLateResults,
+  withUserMessages,
 } from "../core/handoff.ts";
 
 const info = (patch: Partial<SessionInfo>): SessionInfo => ({
@@ -105,5 +107,22 @@ describe("withLateResults", () => {
     expect(withLateResults("## Status\ndone\n", ["a", "b"])).toBe(
       `## Status\ndone\n\n${HELD_HEADING}\n\na\n\nb`,
     );
+  });
+});
+
+describe("withUserMessages", () => {
+  it("leaves the handoff alone without user messages", () => {
+    expect(withUserMessages("## Status\ndone\n", [])).toBe("## Status\ndone\n");
+  });
+
+  it("appends the user's messages under a heading that puts them before the Next section", () => {
+    expect(USER_HEADING).toContain("take precedence over the handoff's Next section");
+    expect(withUserMessages("## Status\ndone\n", [" a ", "b"])).toBe(
+      `## Status\ndone\n\n${USER_HEADING}\n\na\n\nb`,
+    );
+  });
+
+  it("names an image-only message", () => {
+    expect(withUserMessages("x", [""])).toBe(`x\n\n${USER_HEADING}\n\n(an image, attached to this message)`);
   });
 });

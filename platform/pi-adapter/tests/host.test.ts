@@ -9,6 +9,7 @@ import { initPiRenderTheme } from "../../../test/framework/pi/index.ts";
 import { createPiExtension, mcpBuiltinLoaded } from "../runtime/extension.ts";
 import { createPiHost } from "../runtime/host.ts";
 import { sharedPad } from "../tools/row-component.ts";
+import type { NewSessionOptions } from "../types/session.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -577,6 +578,132 @@ describe("pi adapter", () => {
     await Promise.resolve();
 
     expect(warnings).toEqual(["warning: The new session could not continue the handoff: no credentials"]);
+  });
+
+  const filledSession = async (options: NewSessionOptions) => {
+    const { pi, commands } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const calls: unknown[] = [];
+
+    host.registerCommand("session-handoff", {
+      description: "switch",
+      run: async (_args, control) => {
+        await control.newSession(options);
+      },
+    });
+
+    const ctx = {
+      ...fakeCtx("tui"),
+      newSession: async (request: { withSession?: (fresh: unknown) => Promise<void> }) => {
+        await request.withSession?.({
+          sendMessage: async (message: unknown, sent: unknown) => {
+            calls.push({ call: "sendMessage", message, options: sent });
+          },
+          sendUserMessage: async (content: unknown, sent: unknown) => {
+            calls.push({ call: "sendUserMessage", content, options: sent });
+          },
+          ui: {
+            notify: () => {},
+            setEditorText: (text: string) => {
+              calls.push({ call: "setEditorText", text });
+            },
+          },
+        });
+
+        return { cancelled: false };
+      },
+    };
+
+    await commands.get("session-handoff")?.handler("", ctx);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    return calls;
+  };
+
+  it("sends the seed with its images as a content array and the follow-ups after it as user messages", async () => {
+    const image = { data: "aW1n", mimeType: "image/png" };
+    const calls = await filledSession({
+      seed: { customType: "t", text: "hello", images: [image] },
+      continueWithSeed: true,
+      followUps: [
+        { text: "/review x", images: [] },
+        { text: "look", images: [image] },
+      ],
+    });
+
+    expect(calls).toEqual([
+      {
+        call: "sendMessage",
+        message: {
+          customType: "t",
+          content: [
+            { type: "text", text: "hello" },
+            { type: "image", data: "aW1n", mimeType: "image/png" },
+          ],
+          display: true,
+          details: undefined,
+        },
+        options: { triggerTurn: true },
+      },
+      {
+        call: "sendUserMessage",
+        content: "/review x",
+        options: { deliverAs: "followUp", expandPromptTemplates: true },
+      },
+      {
+        call: "sendUserMessage",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image", data: "aW1n", mimeType: "image/png" },
+        ],
+        options: { deliverAs: "followUp", expandPromptTemplates: true },
+      },
+    ]);
+  });
+
+  it("prefills the new session's editor before the seed", async () => {
+    const calls = await filledSession({ seed: { customType: "t", text: "hello" }, editorText: "next" });
+
+    expect(calls).toEqual([
+      { call: "setEditorText", text: "next" },
+      {
+        call: "sendMessage",
+        message: { customType: "t", content: "hello", display: true, details: undefined },
+        options: { triggerTurn: false },
+      },
+    ]);
+  });
+
+  it("forwards user input to the input handlers and reports a consumed message as handled", async () => {
+    const { pi, fire } = fakePi();
+    const host = createPiHost(pi, { tools: new Map() });
+    const seen: unknown[] = [];
+
+    host.onInput((input) => {
+      seen.push(input);
+
+      return input.text === "keep";
+    });
+
+    const kept = await fire("input", fakeCtx("tui"), {
+      text: "keep",
+      images: [{ type: "image", data: "aW1n", mimeType: "image/png" }],
+      source: "interactive",
+      streamingBehavior: "steer",
+    });
+    const passed = await fire("input", fakeCtx("tui"), { text: "pass", source: "rpc" });
+
+    expect(kept).toEqual([{ action: "handled" }]);
+    expect(passed).toEqual([{ action: "continue" }]);
+    expect(seen).toEqual([
+      {
+        text: "keep",
+        images: [{ data: "aW1n", mimeType: "image/png" }],
+        source: "interactive",
+        streaming: true,
+      },
+      { text: "pass", images: [], source: "rpc", streaming: false },
+    ]);
   });
 
   it("sends a hidden follow-up while a run is active", async () => {

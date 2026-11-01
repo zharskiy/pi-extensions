@@ -14,16 +14,18 @@ import { toPiTool } from "../tools/tool-bridge.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
-import type { CommandSpec, CustomMessage } from "../types/messages.ts";
+import type { CommandSpec, CustomMessage, ImageAttachment, UserMessage } from "../types/messages.ts";
 import { isThinkingLevel } from "../types/model.ts";
 import type {
   AssistantEnd,
   DialogEvent,
   IdleInfo,
+  NewSessionOptions,
   Phase,
   SessionControl,
   SessionInfo,
   ShutdownReason,
+  UserInput,
 } from "../types/session.ts";
 import type { AnyToolSpec, ToolSpec } from "../types/tools.ts";
 import { createThinkingLabelUi, createUi } from "../ui/create-ui.ts";
@@ -65,29 +67,74 @@ type NewSessionRequest = NonNullable<Parameters<ExtensionCommandContext["newSess
 
 type FreshSession = Parameters<NonNullable<NewSessionRequest["withSession"]>>[0];
 
-const sendSeed = async (fresh: FreshSession, seed: CustomMessage, run: boolean) => {
-  const message = { customType: seed.customType, content: seed.text, display: true, details: seed.details };
+const contentOf = (
+  text: string,
+  images: ImageAttachment[] = [],
+): Parameters<FreshSession["sendUserMessage"]>[0] =>
+  images.length === 0
+    ? text
+    : [{ type: "text", text }, ...images.map((image) => ({ type: "image" as const, ...image }))];
 
-  if (!run) {
-    await fresh.sendMessage(message, { triggerTurn: false });
+const warnOf = (fresh: FreshSession, lead: string) => (error: unknown) => {
+  const reason = error instanceof Error ? error.message : String(error);
+
+  fresh.ui.notify(`${lead}: ${reason}`, "warning");
+};
+
+const sendFollowUps = (fresh: FreshSession, followUps: UserMessage[]) => {
+  void followUps
+    .reduce<Promise<void>>(
+      (chain, followUp) =>
+        chain.then(() =>
+          fresh.sendUserMessage(contentOf(followUp.text, followUp.images), {
+            deliverAs: "followUp",
+            expandPromptTemplates: true,
+          }),
+        ),
+      Promise.resolve(),
+    )
+    .catch(warnOf(fresh, "A message kept for the new session could not be sent"));
+};
+
+const sendSeed = async (fresh: FreshSession, options: NewSessionOptions) => {
+  const { seed, continueWithSeed, followUps = [], editorText } = options;
+
+  if (editorText) {
+    fresh.ui.setEditorText(editorText);
+  }
+
+  if (!seed) {
+    sendFollowUps(fresh, followUps);
     return;
   }
 
-  const { ui } = fresh;
+  const message = {
+    customType: seed.customType,
+    content: contentOf(seed.text, seed.images),
+    display: true,
+    details: seed.details,
+  };
 
-  void fresh.sendMessage(message, { triggerTurn: true }).catch((error: unknown) => {
-    const reason = error instanceof Error ? error.message : String(error);
+  if (!continueWithSeed) {
+    await fresh.sendMessage(message, { triggerTurn: false });
+    sendFollowUps(fresh, followUps);
+    return;
+  }
 
-    ui.notify(`The new session could not continue the handoff: ${reason}`, "warning");
-  });
+  void fresh
+    .sendMessage(message, { triggerTurn: true })
+    .catch(warnOf(fresh, "The new session could not continue the handoff"));
+
+  sendFollowUps(fresh, followUps);
 };
 
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
-  newSession: async ({ parentSession, seed, keepSelection: keep, continueWithSeed }) => {
+  newSession: async (options) => {
+    const fills = options.seed || options.editorText || (options.followUps?.length ?? 0) > 0;
     const result = await ctx.newSession({
-      parentSession,
-      setup: keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
-      withSession: seed ? (fresh) => sendSeed(fresh, seed, continueWithSeed === true) : undefined,
+      parentSession: options.parentSession,
+      setup: options.keepSelection ? keepSelection(pi.getThinkingLevel(), ctx) : undefined,
+      withSession: fills ? (fresh) => sendSeed(fresh, options) : undefined,
     });
 
     return !result.cancelled;
@@ -117,6 +164,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnEndHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const inputHandlers: ((input: UserInput) => boolean)[] = [];
   const agentStartHandlers: (() => void)[] = [];
   const assistantStartHandlers: (() => void)[] = [];
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
@@ -426,6 +474,19 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     });
   });
 
+  pi.on("input", (event, ctx) => {
+    capture(ctx);
+
+    const input: UserInput = {
+      text: event.text,
+      images: (event.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })),
+      source: event.source,
+      streaming: event.streamingBehavior !== undefined,
+    };
+
+    return inputHandlers.some((handler) => handler(input)) ? { action: "handled" } : { action: "continue" };
+  });
+
   pi.on("session_compact", (_event, ctx) => {
     capture(ctx);
 
@@ -565,6 +626,9 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     onCompact: (handler) => {
       compactHandlers.push(handler);
+    },
+    onInput: (handler) => {
+      inputHandlers.push(handler);
     },
     isIdle: () => state.ctx?.isIdle() ?? false,
     sendHiddenMessage: (message) => {

@@ -702,6 +702,93 @@ describe("pi adapter conformance", () => {
       session.dispose();
     });
 
+    it("queues a user message sent right after a seed that starts a run behind that run, images included", async () => {
+      const session = await fauxSession([
+        fauxAssistantMessage(fauxText("seeded")),
+        fauxAssistantMessage(fauxText("ok")),
+      ]);
+      const fresh = session.createReplacedSessionContext();
+      const image = { type: "image" as const, data: "aW1n", mimeType: "image/png" };
+
+      const seeded = fresh.sendMessage(
+        { customType: "seed", content: [{ type: "text", text: "handoff" }, image], display: true },
+        { triggerTurn: true },
+      );
+
+      await fresh.sendUserMessage([{ type: "text", text: "next" }, image], {
+        deliverAs: "followUp",
+        expandPromptTemplates: true,
+      });
+      await seeded;
+      await session.agent.waitForIdle();
+
+      const messages = session.sessionManager
+        .getEntries()
+        .flatMap((entry) =>
+          entry.type === "message"
+            ? [[entry.message.role, "content" in entry.message ? entry.message.content : undefined]]
+            : entry.type === "custom_message"
+              ? [["custom", entry.content]]
+              : [],
+        )
+        .filter(([role]) => role !== "system");
+
+      expect(messages.map(([role]) => role)).toEqual(["custom", "assistant", "user", "assistant"]);
+      expect(messages[0][1]).toEqual([{ type: "text", text: "handoff" }, image]);
+      expect(messages[2][1]).toEqual([{ type: "text", text: "next" }, image]);
+
+      session.dispose();
+    });
+
+    it("lets an input handler swallow a prompt before it runs, with its text, images, source and streaming state", async () => {
+      const dir = temp.make("pi-input-");
+      const seen: unknown[] = [];
+
+      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+      const settingsManager = pi.SettingsManager.inMemory({});
+      const loader = new pi.DefaultResourceLoader({
+        cwd: dir,
+        agentDir: dir,
+        settingsManager,
+        extensionFactories: [
+          {
+            name: "input-probe",
+            factory: (api) => {
+              api.on("input", (event) => {
+                seen.push([event.text, event.images, event.source, event.streamingBehavior]);
+
+                return { action: "handled" };
+              });
+            },
+          },
+        ],
+      });
+
+      await loader.reload();
+
+      const { session } = await pi.createAgentSession({
+        cwd: dir,
+        agentDir: dir,
+        modelRuntime: await pi.ModelRuntime.create(),
+        model: offlineModel as never,
+        resourceLoader: loader,
+        settingsManager,
+        sessionManager: pi.SessionManager.inMemory(dir),
+      });
+
+      await session.bindExtensions({ mode: "print" });
+
+      const image = { type: "image" as const, data: "aW1n", mimeType: "image/png" };
+
+      await session.prompt("/review later", { images: [image], source: "rpc" });
+
+      expect(seen).toEqual([["/review later", [image], "rpc", undefined]]);
+      expect(session.sessionManager.getEntries().filter((entry) => entry.type === "message")).toEqual([]);
+
+      session.dispose();
+    });
+
     it("emits message_start with the sent type and content, appends the entry and queues next-turn messages apart", async () => {
       const session = await offlineSession();
       const started: unknown[] = [];

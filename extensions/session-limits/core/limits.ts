@@ -3,6 +3,7 @@ import type {
   Host,
   SessionControl,
   ThemeToken,
+  UserMessage,
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
@@ -23,12 +24,18 @@ import {
   parseHeldResults,
   seedText,
 } from "../../../platform/shared/index.ts";
-import { HANDOFF_COMMAND, handoffPath, MAIN_AUDIENCE, sessionPreface, withLateResults } from "./handoff.ts";
+import {
+  HANDOFF_COMMAND,
+  handoffPath,
+  MAIN_AUDIENCE,
+  sessionPreface,
+  withLateResults,
+  withUserMessages,
+} from "./handoff.ts";
 import {
   type ContextTokens,
   handoffInFlight,
   handoffStep,
-  isPending,
   MAX_INSTRUCTIONS,
   type Phase,
   shouldRequest,
@@ -64,8 +71,6 @@ type LimitsState = {
   path?: string;
   saved?: { text: string; validation: HandoffValidation };
   context?: ContextSnapshot;
-  settledSinceInstruction: boolean;
-  userActive: boolean;
   manual: boolean;
   handedOff: boolean;
   focus?: string;
@@ -73,14 +78,24 @@ type LimitsState = {
 
 type RequestOrigin = { manual: boolean; handedOff?: boolean; focus?: string };
 
+const isCommand = (message: UserMessage) => message.text.trimStart().startsWith("/");
+
+const joined = (messages: UserMessage[]) =>
+  messages
+    .map((message) => message.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+
+const imageCount = (messages: UserMessage[]) =>
+  messages.reduce((sum, message) => sum + message.images.length, 0);
+
 export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
   const sources = new Set<string>();
   const held = new Map<string, string>();
+  const captured: UserMessage[] = [];
   let state: LimitsState = {
     phase: "watching",
     instructions: 0,
-    settledSinceInstruction: false,
-    userActive: false,
     manual: false,
     handedOff: false,
   };
@@ -116,6 +131,36 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     host.publish(HANDOFF_PENDING_CHANNEL, { source: NAMESPACE, pending: announced });
   };
 
+  const dropImages = (messages: UserMessage[], reason: string) => {
+    const count = imageCount(messages);
+
+    if (count === 0) {
+      return;
+    }
+
+    host.ui.notify(
+      `${count === 1 ? "An image" : `${count} images`} attached during the handoff ${reason}; attach ${count === 1 ? "it" : "them"} again.`,
+      "warning",
+    );
+  };
+
+  const restoreCaptured = () => {
+    const messages = captured.splice(0);
+    const text = joined(messages);
+
+    if (text) {
+      const current = host.ui.getEditorText().trim();
+
+      host.ui.setEditorText([text, current].filter(Boolean).join("\n\n"));
+      host.ui.notify(
+        "No new session was started; the messages you typed during the handoff are back in the editor.",
+        "info",
+      );
+    }
+
+    dropImages(messages, "could not be put back in the editor");
+  };
+
   const syncPending = () => {
     const pending = handoffInFlight(state.phase);
 
@@ -127,6 +172,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
 
     if (!pending) {
       held.clear();
+      restoreCaptured();
     }
 
     announce();
@@ -147,8 +193,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       instructions: 1,
       path,
       saved: undefined,
-      settledSinceInstruction: false,
-      userActive: false,
       manual: origin.manual,
       handedOff: origin.handedOff ?? origin.manual,
       focus: origin.focus,
@@ -178,12 +222,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   };
 
   const resend = (path: string) => {
-    state = {
-      ...state,
-      instructions: state.instructions + 1,
-      settledSinceInstruction: false,
-      userActive: false,
-    };
+    state = { ...state, instructions: state.instructions + 1 };
 
     sendInstruction(handoffRetry(currentInstruction(path), errorsOf()));
   };
@@ -216,11 +255,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         return;
       case "switch":
         if (!host.isIdle()) {
-          return;
-        }
-
-        if (state.userActive) {
-          sendRequest(path, { manual: state.manual, handedOff: state.handedOff, focus: state.focus });
           return;
         }
 
@@ -291,25 +325,32 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     }
 
     const previous = host.session().file;
-    const handoff = withLateResults(saved.text, Array.from(held.values()));
+    const manual = state.handedOff;
+    const commands = manual ? [] : captured.filter(isCommand);
+    const plain = manual ? [] : captured.filter((message) => !isCommand(message));
+    const handoff = withUserMessages(
+      withLateResults(saved.text, Array.from(held.values())),
+      plain.map((message) => message.text),
+    );
+
+    if (manual) {
+      dropImages(captured, "cannot go into the new session's editor");
+      captured.splice(0, captured.length, ...captured.map((message) => ({ ...message, images: [] })));
+    }
 
     const accepted = await control
       .newSession({
         parentSession: previous,
         keepSelection: true,
-        continueWithSeed: !state.handedOff,
+        continueWithSeed: !manual,
         seed: {
           customType: HANDOFF_SEED_TYPE,
           details: { from: "session" } satisfies HandoffSeedDetails,
-          text: seedText(
-            sessionPreface({
-              file: previous,
-              manual: state.handedOff,
-              focus: state.focus,
-            }),
-            handoff,
-          ),
+          text: seedText(sessionPreface({ file: previous, manual, focus: state.focus }), handoff),
+          images: plain.flatMap((message) => message.images),
         },
+        followUps: commands,
+        editorText: manual ? joined(captured) || undefined : undefined,
       })
       .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
 
@@ -322,7 +363,10 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       failSwitch(
         `Switching to a new session was cancelled. The handoff stays at ${path}; run /${HANDOFF_COMMAND} to retry.`,
       );
+      return;
     }
+
+    captured.length = 0;
   };
 
   const runSwitch = async (control: SessionControl) => {
@@ -465,6 +509,22 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     }
   });
 
+  host.onInput((input) => {
+    if (!handoffInFlight(state.phase) || input.source === "extension") {
+      return false;
+    }
+
+    captured.push({ text: input.text, images: input.images });
+    host.ui.notify(
+      state.handedOff
+        ? "Kept for the new session: this message will be in its editor."
+        : "Kept for the new session: this message goes there with the handoff.",
+      "info",
+    );
+
+    return true;
+  });
+
   host.subscribe(HELD_RESULTS_CHANNEL, (data) => {
     const results = parseHeldResults(data);
 
@@ -483,10 +543,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     turns += 1;
 
     abandonStalledSwitch();
-
-    if (isPending(state.phase) && state.settledSinceInstruction) {
-      state = { ...state, userActive: true };
-    }
 
     const level = limitLevel(context.tokens, mainLimit(context.window, limits()));
 
@@ -507,8 +563,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
       instructions: 0,
       path: undefined,
       saved: undefined,
-      settledSinceInstruction: false,
-      userActive: false,
       manual: false,
       handedOff: false,
       focus: undefined,
@@ -564,10 +618,6 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     if (info.aborted && state.phase === "requested" && state.handedOff) {
       cancelManual();
       return;
-    }
-
-    if (isPending(state.phase)) {
-      state = { ...state, settledSinceInstruction: true };
     }
 
     check(true);

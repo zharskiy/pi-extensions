@@ -32,6 +32,7 @@ import {
   type ToolRows,
   type ToolSpec,
   type UsageTotals,
+  type UserInput,
 } from "../../platform/pi-adapter/index.ts";
 import { type FakeForm, openFakeForm } from "./fake-form.ts";
 import { plainTheme } from "./themes.ts";
@@ -107,6 +108,9 @@ export type FakeHost = Host & {
   completionMaps: ((command: string) => string | undefined)[];
   editorSubmissions: string[];
   editorReachable: boolean;
+  editorText: string;
+  forwarded: UserInput[];
+  input(text: string, options?: Partial<Omit<UserInput, "text">>): boolean;
   footer?: FooterRender;
   footerRefreshes: number;
   contextUsage: ContextSnapshot;
@@ -146,6 +150,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
   const idleHandlers: ((info: IdleInfo) => void)[] = [];
   const turnHandlers: ((context: ContextSnapshot) => void)[] = [];
   const compactHandlers: (() => void)[] = [];
+  const inputHandlers: ((input: UserInput) => boolean)[] = [];
   const agentStartHandlers: (() => void)[] = [];
   const assistantStartHandlers: (() => void)[] = [];
   const assistantEndHandlers: ((info: AssistantEnd) => void)[] = [];
@@ -277,6 +282,8 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     completionMaps: [],
     editorSubmissions: [],
     editorReachable: true,
+    editorText: "",
+    forwarded: [],
     info: {
       id: "main-session",
       file: undefined,
@@ -358,6 +365,10 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         host.editorSubmissions.push(text);
 
         return host.editorReachable;
+      },
+      getEditorText: () => host.editorText,
+      setEditorText: (text) => {
+        host.editorText = text;
       },
       setEditorFrame: (frame) => {
         if (host.foreignEditor) {
@@ -462,6 +473,25 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     },
     onCompact: (handler) => {
       compactHandlers.push(handler);
+    },
+    onInput: (handler) => {
+      inputHandlers.push(handler);
+    },
+    input: (text, options = {}) => {
+      const input: UserInput = {
+        text,
+        images: [],
+        source: "interactive",
+        streaming: !host.idle,
+        ...options,
+      };
+      const consumed = inputHandlers.some((handler) => handler(input));
+
+      if (!consumed) {
+        host.forwarded.push(input);
+      }
+
+      return consumed;
     },
     isIdle: () => started && host.idle,
     sendHiddenMessage: (message) => record(host.hidden, message),

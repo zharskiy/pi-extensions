@@ -8,16 +8,16 @@ extensions/session-limits/
 │   └── plugin.ts               sessionLimitsPlugin, createLimits: registers the `handoff` tool, the request and seed renderers (from ui-kit), starts watchLimits, publishes the settings on session start
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events (session info passed as is) and commands to tui and rpc
-│   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level, continues after every automatic handoff), busy channel, pi:handoff-pending published, pi:held-results carried into the seed (a request shows only the transcript row, no toast)
+│   ├── limits.ts               watchLimits: handoff state machine, /session-handoff, switch (seed details `{ from: "session" }`, keeps the model and thinking level, continues after every automatic handoff), busy channel, pi:handoff-pending published, pi:held-results and the user messages kept through onInput carried into the seed, follow-ups or editor (a request shows only the transcript row, no toast)
 │   ├── thresholds.ts           handoff step, retry decisions
-│   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, HELD_HEADING and withLateResults, handoff path, handoff validation
+│   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, HELD_HEADING and withLateResults, USER_HEADING and withUserMessages, handoff path, handoff validation
 │   └── settings.ts             settings file name, defaults and schema
 ├── ui/
 │   └── threshold-text.ts       segmentFor: threshold warning and failure notice text and token
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
-│   ├── handoff.test.ts         path, validation, main audience, session preface and late results
-│   ├── limits.test.ts          the flow on a fake host, including the instruction's no-reply closing, the pending signal and held results in the seed
+│   ├── handoff.test.ts         path, validation, main audience, session preface, late results and user messages
+│   ├── limits.test.ts          the flow on a fake host, including the instruction's no-reply closing, the pending signal, held results in the seed and user messages kept during a handoff
 │   ├── publish.test.ts         the limits published on session start
 │   ├── settings.test.ts        settings files
 │   └── thresholds.test.ts      decisions and notice text
