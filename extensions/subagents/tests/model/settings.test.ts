@@ -60,6 +60,22 @@ describe("subagents settings", () => {
     expect(defaultSettings()).toMatchObject({ maxChainLength: 3 });
   });
 
+  it("keeps agent runs for 60 days by default and accepts 0 to keep them forever", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    expect(defaultSettings()).toMatchObject({ retentionDays: 60 });
+
+    writeJson(userFile, { retentionDays: 0 });
+
+    expect(loadSettings(agentDir, cwd, false).settings.retentionDays).toBe(0);
+
+    writeJson(userFile, { retentionDays: -1 });
+
+    expect(loadSettings(agentDir, cwd, false).errors).toEqual([
+      `${userFile}: retentionDays must be a number between 0 and 36500`,
+    ]);
+  });
+
   it("defaults the panel lingers", () => {
     expect(defaultSettings()).toMatchObject({
       doneLingerMs: 10_000,

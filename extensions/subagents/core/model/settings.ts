@@ -35,6 +35,7 @@ export type Settings = {
   fetchTimeoutSeconds: number;
   fetchMaxBytes: number;
   fetchMaxChars: number;
+  retentionDays: number;
   agents: AgentOverrides;
 };
 
@@ -57,6 +58,7 @@ export const defaultSettings = (): Settings => ({
   fetchTimeoutSeconds: 20,
   fetchMaxBytes: 5_000_000,
   fetchMaxChars: 40_000,
+  retentionDays: 60,
   agents: {},
 });
 
@@ -123,6 +125,7 @@ const settingsSchema: SettingsSchema<Settings> = {
   fetchTimeoutSeconds: range(1, 300),
   fetchMaxBytes: range(10_000, 100_000_000),
   fetchMaxChars: range(1_000, 1_000_000),
+  retentionDays: range(0, 36_500),
   agents: { type: "object", of: "agent overrides", parse: parseOverrides },
 };
 

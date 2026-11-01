@@ -9,6 +9,8 @@ export const MANIFEST_FILE = "manifest.json";
 export const agentsDirFor = (info: SessionInfo) =>
   join(info.file ? info.file.replace(/\.jsonl$/, "") : join(info.agentDir, NAMESPACE, info.id), "agents");
 
+export const sessionsRootFor = (info: Pick<SessionInfo, "agentDir">) => join(info.agentDir, "sessions");
+
 export const handoffPathFor = (info: SessionInfo, agentId: string) => handoffPath(info.id, { agentId });
 
 export const userAgentsDir = (info: Pick<SessionInfo, "agentDir">) => join(info.agentDir, "agents");
