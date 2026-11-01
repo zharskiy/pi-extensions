@@ -27,6 +27,8 @@ type RawMessage = {
 };
 
 type RawEntry = {
+  id?: string;
+  parentId?: string | null;
   type?: string;
   customType?: string;
   data?: unknown;
@@ -187,13 +189,30 @@ const branchItems = (entry: RawEntry): TranscriptItem[] => {
 
 type SessionBranch = { items: TranscriptItem[]; custom: { customType: string; data: unknown }[] };
 
-const leafPath = (entries: SessionEntry[], leafId: string | null) =>
-  buildContextEntries(
-    entries.map((entry) =>
-      entry.type === "compaction" ? ({ ...entry, type: "leaf" } as unknown as SessionEntry) : entry,
-    ),
-    leafId,
-  ) as RawEntry[];
+const leafOf = (entries: RawEntry[], byId: Map<string | undefined, RawEntry>, leafId: string | null) => {
+  if (leafId === null) {
+    return undefined;
+  }
+
+  return byId.get(leafId) ?? entries.at(-1);
+};
+
+const leafPath = (entries: RawEntry[], leafId: string | null) => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const parentOf = (entry: RawEntry) => (entry.parentId ? byId.get(entry.parentId) : undefined);
+
+  const step = ({ at, path }: { at?: RawEntry; path: RawEntry[] }) => {
+    if (!at) {
+      return { path };
+    }
+
+    path.push(at);
+
+    return { at: parentOf(at), path };
+  };
+
+  return entries.reduce(step, { at: leafOf(entries, byId, leafId), path: [] }).path.reverse();
+};
 
 export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
   const entries = parseSessionEntries(readFileSync(file, "utf8"));
@@ -202,7 +221,7 @@ export const readSessionBranch = (file: string, leafId: string | null): SessionB
 
   const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
 
-  const custom = leafPath(entries as SessionEntry[], leafId)
+  const custom = leafPath(entries as RawEntry[], leafId)
     .filter((entry) => entry.type === "custom")
     .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
 
