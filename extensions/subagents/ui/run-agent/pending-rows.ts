@@ -1,3 +1,4 @@
+import type { ThemeLike } from "../../../../platform/pi-adapter/index.ts";
 import { failureSuffix, row, type TitleParts } from "../../../../platform/ui-kit/index.ts";
 import type { AgentRegistry } from "../../core/model/agent-record.ts";
 import type { MessageAgentParams, RunAgentParams, ToolRows } from "../../core/run-agent/tools.ts";
@@ -7,6 +8,23 @@ type RowDeps = {
   registry: Pick<AgentRegistry, "get" | "batch">;
   hints: BlockHints;
   onRendered?: (batchId: string, invalidate: () => void) => void;
+};
+
+const errorRow = (tool: string, target: string | undefined, error: string, theme: ThemeLike) => {
+  const parts: TitleParts = {
+    mark: "error",
+    verb: (paint) => paint.bold(tool),
+    target: target === undefined ? undefined : { text: target },
+  };
+
+  return (width: number) => {
+    const suffix = failureSuffix(error, parts, width, theme);
+    const spec = suffix
+      ? { mark: parts.mark, title: { ...parts, reason: { text: suffix } } }
+      : { mark: parts.mark, title: parts, children: [theme.fg("error", error)] };
+
+    return row(spec)(width, theme).join("\n");
+  };
 };
 
 export const pendingRows = (deps: RowDeps): ToolRows => ({
@@ -30,20 +48,18 @@ export const pendingRows = (deps: RowDeps): ToolRows => ({
     }
 
     const id = String((state.args as MessageAgentParams | undefined)?.id ?? "");
-    const error = result.text.replace(/^Error:\s*/, "").trim();
-    const parts: TitleParts = {
-      mark: "error",
-      verb: (paint) => paint.bold("message_agent"),
-      target: { text: id },
-    };
 
-    return (width: number) => {
-      const suffix = failureSuffix(error, parts, width, theme);
-      const spec = suffix
-        ? { mark: parts.mark, title: { ...parts, reason: { text: suffix } } }
-        : { mark: parts.mark, title: parts, children: [theme.fg("error", error)] };
+    return errorRow("message_agent", id, result.text.replace(/^Error:\s*/, "").trim(), theme);
+  },
+  stopAgent: (result, _state, theme) => {
+    const skipped = result.details?.skipped ?? [];
 
-      return row(spec)(width, theme).join("\n");
-    };
+    if (skipped.length === 0) {
+      return "";
+    }
+
+    const error = skipped.map((entry) => `${entry.id}: ${entry.reason}`).join("; ");
+
+    return errorRow("stop_agent", undefined, error, theme);
   },
 });

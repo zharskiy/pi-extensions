@@ -11,6 +11,7 @@ describe("subagents plugin set", () => {
     expect([...harness.host.tools.keys()]).toEqual([
       "run_agent",
       "message_agent",
+      "stop_agent",
       "agent_status",
       "agent_skills_proposal",
     ]);

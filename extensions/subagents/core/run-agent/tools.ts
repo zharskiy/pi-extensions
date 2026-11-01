@@ -2,6 +2,7 @@ import type { ToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import {
   type AgentInternals,
   type AgentRegistry,
+  chainTerminal,
   grantText,
   isNone,
   MAIN_CALLER,
@@ -21,11 +22,16 @@ export type MessageAgentParams = { id: string; message: string };
 
 type MessageAgentDetails = { delivery?: string };
 
+export type StopAgentParams = { ids: string[]; reason?: string };
+
+export type StopAgentDetails = { skipped: { id: string; reason: string }[] };
+
 type ResultRender<P, D> = NonNullable<ToolSpec<P, D>["renderResult"]>;
 
 export type ToolRows = {
   runAgent: ResultRender<RunAgentParams, RunAgentDetails>;
   messageAgent: ResultRender<MessageAgentParams, MessageAgentDetails>;
+  stopAgent: ResultRender<StopAgentParams, StopAgentDetails>;
 };
 
 type ToolDeps = {
@@ -248,4 +254,87 @@ export const messageAgentTool = (
   renderShell: "row",
   renderCall: () => "",
   renderResult: (result, state, theme) => deps.rows.messageAgent(result, state, theme),
+});
+
+const stopAgentParameters = {
+  type: "object",
+  properties: {
+    ids: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string" },
+      description: "Ids of running or queued agents you started.",
+    },
+    reason: { type: "string", description: "Why they are stopped, in a few words; shown with their result." },
+  },
+  required: ["ids"],
+  additionalProperties: false,
+};
+
+const STOP_WAKE_NOTE =
+  "You are still woken with the batch result, including any partial output, once the whole batch is done; do not restart these agents or check on them.";
+
+const stopReasonText = (callerId: string, reason: string | undefined) => {
+  const by = `stopped by ${callerId === MAIN_CALLER ? "the main session" : callerId}`;
+  const why = reason?.trim();
+
+  return why ? `${by}: ${why}` : by;
+};
+
+type StopOutcome = { line: string; skipped?: { id: string; reason: string } };
+
+const skippedOutcome = (id: string, reason: string): StopOutcome => ({
+  line: `Not stopped ${id}: ${reason}.`,
+  skipped: { id, reason },
+});
+
+export const stopAgentTool = (
+  deps: Pick<ToolDeps, "runner" | "registry" | "rows">,
+  callerId: string = MAIN_CALLER,
+): ToolSpec<StopAgentParams, StopAgentDetails> => ({
+  name: "stop_agent",
+  label: "Stop agent",
+  description:
+    "Stop one or several running or queued agents you started, at once and without a grace period. Returns one line per id; the batch result, with any partial output, still arrives in the usual wake, so do not restart or poll them.",
+  promptSnippet: "stop agents you started whose work is no longer needed",
+  parameters: stopAgentParameters,
+  execute: async (params) => {
+    const reason = stopReasonText(callerId, params.reason);
+
+    const stopOne = async (id: string): Promise<StopOutcome> => {
+      const record = deps.registry.get(id);
+
+      if (!record) {
+        return skippedOutcome(id, "unknown agent");
+      }
+
+      if (record.callerId !== callerId) {
+        return skippedOutcome(id, "only the caller that started it may stop it");
+      }
+
+      const stopped = await deps.runner.stop(id, { immediate: true, reason });
+      const terminal = chainTerminal(deps.registry, record);
+
+      if (!stopped) {
+        return skippedOutcome(id, `already closed (${terminal.state})`);
+      }
+
+      return {
+        line: terminal.id === id ? `Stopped ${id}.` : `Stopped ${terminal.id}, the live link of ${id}.`,
+      };
+    };
+
+    const outcomes = await Promise.all([...new Set(params.ids)].map(stopOne));
+    const lines = outcomes.map((outcome) => outcome.line);
+    const skipped = outcomes.flatMap((outcome) => (outcome.skipped ? [outcome.skipped] : []));
+
+    if (skipped.length === outcomes.length) {
+      return { text: lines.join("\n"), details: { skipped }, isError: true };
+    }
+
+    return { text: [...lines, STOP_WAKE_NOTE].join("\n"), details: { skipped } };
+  },
+  renderShell: "row",
+  renderCall: () => "",
+  renderResult: (result, state, theme) => deps.rows.stopAgent(result, state, theme),
 });

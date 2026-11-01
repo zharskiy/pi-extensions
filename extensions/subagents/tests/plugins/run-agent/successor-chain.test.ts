@@ -12,7 +12,7 @@ import type { AgentStatusDetails, AgentStatusParams } from "../../../core/agent-
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
-import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
+import type { RunAgentParams, StopAgentDetails, StopAgentParams } from "../../../core/run-agent/tools.ts";
 import { createHarness } from "../../support/subagents-harness.ts";
 
 const handoffText = (status: string) =>
@@ -430,6 +430,21 @@ describe("successor chain", () => {
     expect(await runner.stop(first.id)).toBe(false);
   });
 
+  it("stops the live successor when stop_agent gets a predecessor id", async () => {
+    const { first, current, handOff, host } = await setup();
+    const second = (await handOff(first.id)) as string;
+
+    const result = await host
+      .tool<StopAgentParams, StopAgentDetails>("stop_agent")
+      .execute({ ids: [first.id] }, {});
+    await flushMicrotasks();
+
+    expect(result.text).toContain(`Stopped ${second}, the live link of ${first.id}.`);
+    expect(current(second)).toMatchObject({ state: "stopped", error: "stopped by the main session" });
+    expect(hiddenMessageTexts(host)).toHaveLength(1);
+    expect(hiddenMessageTexts(host)[0]).toContain(`Chain: ${first.id} → ${second} (2 sessions)`);
+  });
+
   it("reports the terminal link in agent_status when asked with a predecessor id", async () => {
     const { first, handOff, host } = await setup();
     const second = (await handOff(first.id)) as string;
@@ -616,6 +631,31 @@ describe("successor chain", () => {
       expect(current(a.id).state).toBe("stopped");
       expect(caller.disposed).toBe(true);
       expect(registry.list()).toHaveLength(2);
+    });
+
+    it("closes as stopped, not handoff, and stops its batch when stop_agent stops it while waiting", async () => {
+      const { first, current, caller, start, handOffNow, host, registry } = await holdingSetup();
+      const a = await start("find a");
+
+      await handOffNow();
+
+      const result = await host
+        .tool<StopAgentParams, StopAgentDetails>("stop_agent")
+        .execute({ ids: [first.id], reason: "the user dropped it" }, {});
+      await flushMicrotasks();
+
+      expect(result.text).toContain(`Stopped ${first.id}.`);
+      expect(current(first.id)).toMatchObject({
+        state: "stopped",
+        error: "stopped by the main session: the user dropped it",
+      });
+      expect(current(first.id).successorId).toBeUndefined();
+      expect(current(a.id)).toMatchObject({ state: "stopped", error: `stopped with its caller ${first.id}` });
+      expect(caller.disposed).toBe(true);
+      expect(registry.list()).toHaveLength(2);
+      expect(hiddenMessageTexts(host)).toHaveLength(1);
+      expect(hiddenMessageTexts(host)[0]).toContain(`## ${first.id} (general) - stopped`);
+      expect(hiddenMessageTexts(host)[0]).not.toContain("- handoff");
     });
 
     it("closes and disposes a waiting agent on shutdown", async () => {
