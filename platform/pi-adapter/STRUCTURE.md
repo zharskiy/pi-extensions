@@ -43,6 +43,7 @@
 - `ui/working-message.ts`: the working message and its visibility.
 - `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours, background tokens to pi's diff and user message backgrounds), `textMetrics` (width, truncate, wrap), `fitLines`.
 - `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
+- `ui/rules.ts`: `rule` and `labelledRule` (with a token, dim by default), re-exported by `platform/ui-kit`.
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
 - `editor/input.ts`: the editor submit key, command completion, re-submit.
@@ -78,6 +79,7 @@
 - `tests/key-events.test.ts`: `ui/key-events.ts` and `ui/key-layout.ts`.
 - `tests/footer.test.ts`: `ui/footer.ts` and `ui/notices.ts`.
 - `tests/theme-bridge.test.ts`: `ui/theme-bridge.ts`.
+- `tests/rules.test.ts`: `ui/rules.ts`.
 - `tests/working-message.test.ts`: `ui/working-message.ts`.
 - `tests/editor.test.ts`: `editor/editor.ts`, its hooks and the shared history.
 - `tests/input.test.ts`: `editor/input.ts`.
@@ -86,7 +88,7 @@
 - `tests/skill-reads.test.ts`: `tools/skill-reads.ts`.
 - `tests/entry-renderers.test.ts`: `tools/entry-renderers.ts`.
 - `tests/transcript.test.ts`: `tools/transcript.ts`.
-- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the drawn chain, the not-found line, the old session's custom entries (drawn, or kept out with `previousSession: false`), its compaction summary first, its bash executions, the redraw in a new theme after pi invalidates the entry, and the model's requests unchanged by the entry, on later turns and after a resume too.
+- `tests/previous-session.test.ts`: `tools/previous-session.ts` over a real pi session runtime: the seam rule (label, one blank row each side, no path), the drawn chain with a rule per seam, the not-found and earlier-sessions rules, the old session's custom entries (drawn, or kept out with `previousSession: false`), its compaction summary first, its bash executions, the redraw in a new theme after pi invalidates the entry, and the model's requests unchanged by the entry, on later turns and after a resume too.
 - `tests/context-facts.test.ts`: the `context/` files.
 - `tests/usage-math.test.ts`: `context/usage-math.ts`.
 - `tests/main-prompt.test.ts`: `prompt/main-prompt.ts`.

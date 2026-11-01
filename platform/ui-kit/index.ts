@@ -1,3 +1,4 @@
+export { labelledRule } from "../pi-adapter/index.ts";
 export { cachePercentText } from "./cache-tone.ts";
 export { MARKS, type Mark, markGlyph, markOf, pointerMark } from "./glyphs.ts";
 export { handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "./handoff-rows.ts";
@@ -10,7 +11,6 @@ export {
   hintRow,
   type KeyHint,
   keyHints,
-  labelledRule,
 } from "./key-hints.ts";
 export {
   CANCEL_HINT,

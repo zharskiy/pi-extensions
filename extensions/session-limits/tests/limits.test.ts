@@ -174,7 +174,7 @@ describe("session limits", () => {
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].parentSession).toBe(host.info.file);
     expect(host.newSessions[0].keepSelection).toBe(true);
-    expect(host.newSessions[0].showPrevious).toBe(true);
+    expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · context limit" });
     expect(host.newSessions[0].continueWithSeed).toBe(true);
     expect(host.newSessions[0].seed?.customType).toBe(HANDOFF_TYPE);
     expect(host.newSessions[0].seed?.text).toContain(`the previous session ${host.info.file}`);
@@ -648,7 +648,7 @@ describe("/session-handoff on demand", () => {
     expect(host.dispatched).toEqual([HANDOFF_COMMAND]);
     expect(host.newSessions).toHaveLength(1);
     expect(host.newSessions[0].keepSelection).toBe(true);
-    expect(host.newSessions[0].showPrevious).toBe(true);
+    expect(host.newSessions[0].showPrevious).toEqual({ label: "handed off · /session-handoff" });
     expect(host.newSessions[0].continueWithSeed).toBe(false);
     expect(host.newSessions[0].seed?.text).toContain("which the user handed off with /session-handoff");
     expect(host.newSessions[0].seed?.text).toContain(`The user said this session is for: ${FOCUS}.`);

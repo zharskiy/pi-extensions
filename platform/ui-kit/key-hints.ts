@@ -1,4 +1,4 @@
-import { PAD, type ThemeLike } from "../pi-adapter/index.ts";
+import { PAD, rule, type ThemeLike } from "../pi-adapter/index.ts";
 import { DOT, ELLIPSIS, noun } from "../shared/index.ts";
 import type { Styled } from "./row.ts";
 
@@ -83,21 +83,6 @@ const hintLines = (theme: ThemeLike, hints: readonly KeyHint[], width: number) =
   }, []);
 
   return groups.map((pairs) => `${PAD}${theme.truncate(keyHints(pairs, theme), room)}`);
-};
-
-export const rule = (theme: ThemeLike, width: number) => theme.fg("accent", "─".repeat(Math.max(1, width)));
-
-const RULE_FRAME = 6;
-
-export const labelledRule = (theme: ThemeLike, width: number, label: string) => {
-  if (width < RULE_FRAME) {
-    return theme.fg("dim", "─".repeat(Math.max(1, width)));
-  }
-
-  const shown = theme.width(label) + RULE_FRAME > width ? theme.truncate(label, width - RULE_FRAME) : label;
-  const fill = "─".repeat(width - theme.width(shown) - 4);
-
-  return theme.fg("dim", `── ${shown} ${fill}`);
 };
 
 export const hintRow = (theme: ThemeLike, hints: readonly KeyHint[], width: number) =>

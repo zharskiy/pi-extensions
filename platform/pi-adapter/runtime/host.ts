@@ -122,7 +122,8 @@ const fillSession = async (
 const sessionControl = (pi: ExtensionAPI, ctx: ExtensionCommandContext): SessionControl => ({
   newSession: async ({ parentSession, keepSelection: keep, showPrevious, continueWithSeed, fill }) => {
     const kept = keep ? keepSelection(pi.getThinkingLevel(), ctx) : undefined;
-    const shown = showPrevious ? showPreviousSession(ctx) : undefined;
+    const label = typeof showPrevious === "object" ? showPrevious.label : undefined;
+    const shown = showPrevious ? showPreviousSession(ctx, label) : undefined;
 
     const setup = async (sessionManager: SessionManager) => {
       await kept?.(sessionManager);

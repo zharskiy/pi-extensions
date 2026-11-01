@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
@@ -61,7 +63,7 @@ const startRuntime = async () => {
       run: async (args, control) => {
         await control.newSession({
           parentSession: host.session().file,
-          showPrevious: args === "show",
+          showPrevious: args.startsWith("as ") ? { label: args.slice(3) } : args === "show",
           fill: () => ({ seed: SEED }),
         });
       },
@@ -199,15 +201,38 @@ describe("showing the previous session after a handoff", () => {
     await hidden.runtime.dispose();
   });
 
-  it("draws the previous session's transcript under a boundary line", async () => {
+  it("draws the previous session's transcript above a rule at the seam, a blank row on each side", async () => {
     const session = await handOff("show");
     const drawn = session.draw(session.previousEntry());
-    const boundary = drawn.indexOf("» previous session · ");
+    const seed = new pi.CustomMessageComponent(
+      { role: "custom", customType: SEED.customType, content: SEED.text, display: true, timestamp: 0 },
+      undefined,
+    ).render(100);
+    const rows = [...drawn.split("\n"), ...seed.map((row) => stripVTControlCharacters(row))];
+    const seam = rows.findIndex((row) => row.includes("── continued from previous session ─"));
+    const blank = (row: string | undefined) => row === "";
 
-    expect(boundary).toBeGreaterThanOrEqual(0);
-    expect(drawn.indexOf("first question")).toBeGreaterThan(boundary);
+    expect(drawn.indexOf("first question")).toBeGreaterThanOrEqual(0);
     expect(drawn.indexOf("first answer")).toBeGreaterThan(drawn.indexOf("first question"));
+    expect(seam).toBe(drawn.split("\n").length - 1);
+    expect(rows[seam]?.trimEnd().endsWith("─")).toBe(true);
+    expect(rows[seam]?.length).toBe(100);
+    expect([rows[seam - 2], rows[seam - 1], rows[seam + 1], rows[seam + 2]].map(blank)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(drawn).not.toContain(session.dir);
     expect(drawn).not.toContain("second question");
+
+    await session.runtime.dispose();
+  });
+
+  it("draws the label the caller passed in the rule", async () => {
+    const session = await handOff("as handed off · context limit");
+
+    expect(session.draw(session.previousEntry())).toContain("── handed off · context limit ─");
 
     await session.runtime.dispose();
   });
@@ -215,14 +240,20 @@ describe("showing the previous session after a handoff", () => {
   it("draws every session of a chain of handoffs, oldest first, with the handoff between them", async () => {
     const session = await handOff("show");
 
-    await session.runtime.session.prompt("/handoff show");
+    await session.runtime.session.prompt("/handoff as second seam");
 
     const drawn = session.draw(session.previousEntry());
-    const order = ["first question", "first answer", SEED.text, "second question", "second answer"].map(
-      (text) => drawn.indexOf(text),
-    );
+    const order = [
+      "first question",
+      "first answer",
+      "── continued from previous session ─",
+      SEED.text,
+      "second question",
+      "second answer",
+      "── second seam ─",
+    ].map((text) => drawn.indexOf(text));
 
-    expect(drawn.split("» previous session · ")).toHaveLength(3);
+    expect(drawn.split("── ")).toHaveLength(3);
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
 
@@ -249,7 +280,9 @@ describe("showing the previous session after a handoff", () => {
 
     expect(line(dark, "first question")).toBeDefined();
     expect(line(light, "first question")).not.toBe(line(dark, "first question"));
-    expect(line(light, "» previous session · ")).not.toBe(line(dark, "» previous session · "));
+    expect(line(light, "continued from previous session")).not.toBe(
+      line(dark, "continued from previous session"),
+    );
 
     await session.runtime.dispose();
   });
@@ -285,10 +318,10 @@ describe("showing the previous session after a handoff", () => {
     await session.runtime.session.prompt("/handoff show");
 
     const drawn = session.draw(session.previousEntry());
-    const boundary = drawn.indexOf("» previous session · ");
     const summary = drawn.indexOf("[compaction]");
 
-    expect(summary).toBeGreaterThan(boundary);
+    expect(summary).toBeGreaterThanOrEqual(0);
+    expect(drawn.indexOf("Find")).toBe(-1);
     expect(drawn).toContain("Compacted from 1,234 tokens");
     expect(drawn.indexOf("first question")).toBeGreaterThan(summary);
 
@@ -329,7 +362,42 @@ describe("showing the previous session after a handoff", () => {
 
     const drawn = session.draw({ ...entry, id: "e", parentId: null, timestamp: "" } as pi.CustomEntry);
 
-    expect(drawn.trim()).toBe(`» previous session not found · ${missing}`);
+    expect(drawn.trim()).toMatch(/^── previous session not found ─+$/);
+    expect(drawn).not.toContain(missing);
+
+    await session.runtime.dispose();
+  });
+
+  it("draws a rule instead of sessions it already drew", async () => {
+    const session = await startRuntime();
+    const file = join(session.dir, "looped.jsonl");
+    const at = "2026-01-01T00:00:00.000Z";
+
+    writeFileSync(
+      file,
+      [
+        { type: "session", version: 3, id: "looped", timestamp: at, cwd: session.dir },
+        {
+          type: "custom",
+          customType: PREVIOUS,
+          data: { file, leafId: "a" },
+          id: "a",
+          parentId: null,
+          timestamp: at,
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n"),
+    );
+
+    const entry = { type: "custom", customType: PREVIOUS, data: { file, leafId: "a" } };
+    const drawn = session.draw({ ...entry, id: "e", parentId: null, timestamp: "" } as pi.CustomEntry);
+    const rules = drawn.split("\n").filter((row) => row.includes("── "));
+
+    expect(rules.map((row) => row.trim().replace(/ ─+$/, ""))).toEqual([
+      "── earlier sessions not shown",
+      "── continued from previous session",
+    ]);
 
     await session.runtime.dispose();
   });
