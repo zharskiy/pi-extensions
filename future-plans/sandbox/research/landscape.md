@@ -1,79 +1,300 @@
 # Coding-agent sandboxing landscape
 
-Research date 2026-10-20, web. Entries marked (secondary) come from blogs or comparisons rather than vendor docs; verify before relying on them.
+Research date: 2026-11-02
 
-## How the agents sandbox themselves
+Method: vendor docs, GitHub READMEs, release notes and security advisories (GitHub API via `gh`), CVE.org records (cveawg.mitre.org API), NVIDIA's bulletin source in `NVIDIA/product-security`, plus web search. Every URL below was seen on 2026-11-02 unless a different date is given; "published" dates are the source's own. "(secondary)" marks blogs, aggregators or search summaries not confirmed at a primary source. "CHANGED" marks a correction or update against the 2026-10-20 pass.
 
-| Agent | Mechanism | Default | Network | Admin control |
-|---|---|---|---|---|
-| Claude Code (https://code.claude.com/docs/en/sandboxing) | Seatbelt on macOS; bubblewrap plus socat proxy on Linux and WSL2; shell commands only, file tools, MCP servers and hooks run outside | Off | Deny-by-default through a host proxy, empty allowlist | Managed settings, `allowUnsandboxedCommands:false`, `sandbox.failIfUnavailable` |
-| Anthropic sandbox-runtime `@anthropic-ai/sandbox-runtime` (https://github.com/anthropic-experimental/sandbox-runtime) | Seatbelt, or bubblewrap plus seccomp plus HTTP/SOCKS proxy; Windows alpha; in-process Node API `SandboxManager.wrapWithSandbox(cmd, {commandId})`, `registerCommandNetworkLists` | Library | Domain allow and deny lists per command, ask callback, optional TLS terminate | Apache-2.0, beta research preview |
-| OpenAI Codex CLI (https://learn.chatgpt.com/codex/sandboxing) | Seatbelt; bubblewrap with a bundled fallback on Linux and WSL2; own sandbox on Windows; modes `read-only`, `workspace-write`, `danger-full-access` | On | Off in workspace-write (secondary); experimental allowlist proxy | `requirements.toml` |
-| Gemini CLI (https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/sandbox.md) | Seatbelt profiles, Docker or Podman, gVisor on Linux, LXC experimental; icacls on Windows | Opt-in (`-s`, `GEMINI_SANDBOX`) | `-open` and `-proxied` profiles | |
-| Cursor agent (https://cursor.com/docs/agent/security/run-modes) | Seatbelt; Landlock plus seccomp on Linux 6.2+, else approval prompts | On in Auto-review and Allowlist modes | Blocked by default, `sandbox.json`, about 100 registry domains in the default mode | Team policy overrides local config |
-| GitHub Copilot CLI (https://github.blog/changelog/2026-10-07-local-sandboxing-for-github-copilot-now-generally-available/) | Microsoft MXC, one policy translated to native OS controls | GA 2026-10-07, default unstated | Internet, local network and git credentials policy-controlled | Enterprise-managed settings |
-| OpenHands, Devin, Jules, Aider (secondary) | Docker (self-hosted or cloud); cloud VM with "Outposts"; Google cloud VM; none | | | |
+Requirements used to judge relevance: R1 model tokens outside the boundary, R2 only cwd writable, R3 egress allowlist by domain, R4 central non-loosenable policy plus audit on macOS/Linux laptops, R5 `pi` just works with no visible container lifecycle.
 
-De facto standard, late 2026: local agents wrap each command in an OS sandbox (Seatbelt, bubblewrap or Landlock plus seccomp), confine writes to the workspace, and block network behind an allowlisting proxy. Codex and Cursor ship it on, Claude Code off. Anthropic says unattended runs belong inside a container, VM or sandbox-runtime (https://code.claude.com/docs/en/sandbox-environments).
+## A. How the agents sandbox today
 
-## Building blocks a Node program can drive
+### Claude Code (local CLI)
+- Docs: https://code.claude.com/docs/en/sandboxing
+- Mechanism: Seatbelt on macOS; bubblewrap plus a separate network namespace on Linux and WSL2 (needs `bubblewrap`, `socat`; optional seccomp filter blocks Unix sockets); native Windows is not sandboxed; WSL1 unsupported. Built on `@anthropic-ai/sandbox-runtime`.
+- Off by default (`/sandbox` or `"sandbox": {"enabled": true}`).
+- Scope: Bash, PowerShell and Monitor commands and their children. Outside the boundary: Read/Edit/Write, WebFetch, WebSearch, MCP servers, command hooks, plugin monitors, LSP servers, status line, `apiKeyHelper`, `!` commands, `excludedCommands`, unsandboxed retries. The Claude Code process and its model credential stay on the host.
+- Filesystem: writes allowed to cwd, a per-user temp dir and added dirs; reads allowed almost everywhere including `~/.ssh` and `~/.aws/credentials` unless denied. Protected (write-denied even inside cwd): `.claude` settings and hooks, `.mcp.json`, shell rc files, `.gitconfig`, `.git/hooks`, `.git/config`, `~/.claude`.
+- Network: no direct route; host proxy checks hostnames; allowlist starts empty. Keys: `sandbox.network.allowedDomains`, `deniedDomains`, `strictAllowlist` (v2.1.219+, deny instead of prompt), `allowManagedDomainsOnly`, `tlsTerminate` (experimental, off: no TLS inspection by default), `httpProxyPort`/`socksProxyPort` (hands filtering to your own proxy). Hosts resolving only to local addresses are refused.
+- CHANGED: credentials block `sandbox.credentials` with `files`/`envVars` in `mode: "deny"` or `mode: "mask"`. Mask gives the sandbox a per-session sentinel; the proxy substitutes the real value for `injectHosts`; needs `tlsTerminate`; on macOS `mask` file entries behave like `deny`; only honoured from user, managed or `--settings` scope; no built-in credential deny list. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` strips credentials from all subprocesses.
+- Enterprise: managed `failIfUnavailable`, `allowUnsandboxedCommands: false` (with it or `allowManagedDomainsOnly`, repo settings that loosen the sandbox are ignored), `allowManagedReadPathsOnly`, locks for `enableWeakerNestedSandbox`, `enableWeakerNetworkIsolation`, `allowAppleEvents`, `allowNestedUserNamespaces`.
+- Delivery of policy (https://code.claude.com/docs/en/server-managed-settings): server-managed (fetched at start, hourly refresh) or endpoint-managed (MDM plist, registry, `managed-settings.json`). Anthropic states server-managed settings are "a client-side control, not a security boundary"; a modified binary, older version, a third-party provider env var or a non-default `ANTHROPIC_BASE_URL` bypasses them. `forceRemoteSettingsRefresh: true` makes startup fail closed. Settings-change audit events via compliance API.
+- Latency: in-process wrapper per command; Seatbelt wrap measured locally at about 6 ms (`sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`, macOS 27.2 build 26B123, this machine, 2026-11-02).
+- UX: invisible; prompts for unlisted hosts unless strict.
 
-| Block | Isolation | macOS | Linux | License | Notes |
-|---|---|---|---|---|---|
-| Seatbelt `sandbox-exec` | Kernel MAC profiles | Yes | No | Apple | Deprecated CLI, still works on macOS 26 and 27, no removal notice found. Use deny-by-default profiles: an `(allow default)` profile was escaped in Antigravity (https://www.pillar.security/blog/escaping-antigravitys-allow-default-seatbelt) |
-| bubblewrap | User, mount and net namespaces | No | Yes (Ubuntu 24.04 needs an AppArmor userns tweak) | LGPL (from memory) | Mature, used by Claude Code and Codex |
-| Landlock plus seccomp | LSM plus syscall filter | No | 5.13+, Cursor needs 6.2+ | Kernel | Network rules are TCP ports only |
-| firejail, nsjail | Namespaces plus seccomp | No | Yes | GPL, Apache-2.0 (from memory) | No Node API |
-| gVisor `runsc` | User-space kernel | No | Yes | Apache-2.0 | Anthropic rates it "excellent with correct setup" (https://code.claude.com/docs/en/agent-sdk/secure-deployment) |
-| Firecracker, Kata, Cloud Hypervisor | KVM microVMs | No | Yes | Apache-2.0 | Used by E2B and Vercel, heavy to operate |
-| microsandbox (https://github.com/microsandbox/microsandbox) | libkrun microVM | Apple Silicon | KVM | Apache-2.0 | Beta, TypeScript SDK, host allowlists, secrets bound to the host |
-| Apple `container` (https://github.com/apple/container) | One VM per container, Virtualization.framework | Apple Silicon, macOS 26 | No | Apache-2.0 | Pre-1.0, network policy not checked |
-| Lima, Colima, Tart | Linux or macOS VM | Yes | Yes | Apache-2.0, MIT (from memory) | Heavy, strong boundary |
-| Docker, Podman rootless, devcontainers | Namespaces, shared kernel | Via VM | Yes | Apache-2.0 | Claude's devcontainer ships a default-deny iptables firewall |
-| Docker Sandboxes `sbx` (https://docs.docker.com/ai/sandboxes/) | microVM with its own kernel and daemon, credential-injecting proxy | Yes | Unstated | Free locally, source closed (secondary); org governance paid | Cloud Sandboxes announced 2026-09-24. Official pi kit at https://github.com/docker/sbx-kits-contrib/tree/main/pi |
+### Claude Code on the web / cloud sessions
+- Docs: https://code.claude.com/docs/en/claude-code-on-the-web
+- Each session runs in an isolated Anthropic-managed VM, or on the customer's self-hosted environment (isolation is then the customer's job).
+- Network: limited by default (Default environment uses "Trusted" access with a default allowed-domain list), can be disabled; the Anthropic API stays reachable even with network off ("may allow data to exit the VM").
+- Credentials: GitHub credentials stay encrypted on Anthropic servers and never enter the VM; a GitHub proxy attaches them server side. "Network secrets" added to an environment are also attached outside the VM. This is the R1 pattern applied to git and arbitrary secrets.
+- Not available for ZDR, HIPAA or CMEK orgs; org IP allowlisting breaks hosted sessions.
+- UX: the CLI shows a provisioning checklist; local checkout is cloned from GitHub or uploaded as a bundle (under 100 MB, untracked files excluded). Not a live mount of the local tree.
 
-## Hosted and remote sandboxes
+### Anthropic sandbox-runtime (`srt`)
+- Repo: https://github.com/anthropics/sandbox-runtime (CHANGED: now under `anthropics`, the old `anthropic-experimental` URL resolves to it). Apache-2.0. Beta research preview.
+- CHANGED version: 0.0.81 on npm, published 2026-10-20 (0.0.78 2026-09-30, 0.0.79 2026-10-07, 0.0.80 2026-10-16) per https://registry.npmjs.org/@anthropic-ai/sandbox-runtime ; repo pushed 2026-10-30.
+- macOS: `sandbox-exec` with generated Seatbelt profiles; violation monitoring reads the system sandbox log. Linux: bubblewrap, network namespace, host proxies over Unix sockets, seccomp blocks Unix sockets (x64/arm64). Windows alpha: dedicated `srt-sandbox` local account, WFP egress filter, write-restricted token, NTFS ACEs; Schannel tools (`curl.exe`, PowerShell, .NET HttpClient) do not work.
+- Network: HTTP/HTTPS plus SOCKS5 proxies enforce `allowedDomains`/`deniedDomains` (wildcards, `:port`); resolved-address check blocks allowed names resolving to loopback, link-local, metadata or private ranges. Experimental TLS termination lets `filterRequest` inspect and rewrite; `excludeDomains` tunnels pinned/mTLS hosts.
+- Credentials: `credentials.envVars`/`credentials.files` with `deny` or `mask`; mask needs `tlsTerminate` unless `allowPlaintextInject`; file masking Linux only.
+- Extras: `srt proxy` standalone proxy with external decider, `--control-fd` live config, library API with per-command network lists.
+- Advisories: one, GHSA-9gqj-5w7c-vx47 / CVE-2025-66479 (low): network sandbox not enforced when no allowed domains were configured; fixed v0.0.16 (https://github.com/anthropics/sandbox-runtime/security/advisories/GHSA-9gqj-5w7c-vx47).
 
-| Service | Isolation | Self-host | License | SDKs | Pricing (secondary) |
-|---|---|---|---|---|---|
-| E2B (https://github.com/e2b-dev/infra) | Firecracker, nftables egress, SNI and Host allow and deny | Yes: Docker Compose single node with KVM, or Terraform on GCP, AWS, Azure, Kubernetes | Apache-2.0 | Python, JS/TS | About $0.05 per vCPU-hour plus $0.016 per GiB-hour |
-| Daytona | OCI containers, Kata opt-in | Contradictory: one blog says production code went closed on 2026-06-11 with the AGPL repo frozen at v0.190.0 (https://bex.co/blog/2026/10/14/daytona-sandbox-vendor-buy-vs-build) | AGPL-3.0 | Yes | Usage |
-| Modal Sandboxes | gVisor | No | Closed | Python, JS, Go | About $0.142 per core-hour |
-| Vercel Sandbox (https://vercel.com/docs/vercel-sandbox) | Firecracker | No; SDK open (https://github.com/vercel/sandbox) | SDK open | JS/TS, Python | Active CPU plus memory |
-| Cloudflare Sandbox SDK (https://github.com/cloudflare/sandbox-sdk) | Cloudflare Containers behind Durable Objects | No | Apache-2.0 | TypeScript | $5 per month plus usage |
-| Northflank | Kata on Kubernetes | BYOC | Closed | REST, SDKs | About $0.0167 per vCPU-hour |
-| Blaxel, Runloop, Fly Sprites | microVMs | Unclear, VPC, no | Closed | TS, Python, REST | Usage |
-| Anthropic Managed Agents (https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes) | Anthropic sandboxes (gVisor per a third party); self-hosted sandboxes in public beta since May 2026 | Sandbox side only, the model loop stays at Anthropic; tool inputs and outputs still flow through Anthropic; not eligible for ZDR or HIPAA (secondary) | Proprietary | TS, Python, Go, Java, C#, PHP, Ruby | API usage |
-| Claude Code cloud sessions (https://code.claude.com/docs/en/sandbox-environments) | Anthropic VM, GitHub token held by a proxy outside | Self-hosted environment option exists (https://code.claude.com/docs/en/self-hosted-environments) | Proprietary | | Subscription |
+### OpenAI Codex CLI and Codex cloud
+- Docs: https://learn.chatgpt.com/docs/agent-approvals-security.md (CHANGED: developers.openai.com/codex now 308-redirects to learn.chatgpt.com).
+- Modes `read-only`, `workspace-write`, `danger-full-access`; Auto preset is `workspace-write` plus `on-request`.
+- macOS: Seatbelt via `sandbox-exec`. Linux: `bwrap` plus seccomp by default (a `codex sandbox landlock` alias still exists). CHANGED Windows: Microsoft MXC (`prefer_mxc = true` under `[features]`), `elevated`/`unelevated` as legacy fallbacks; WSL1 dropped from 0.115.
+- Network: off in `workspace-write` unless `[sandbox_workspace_write] network_access = true`. Proxy `[features.network_proxy]` with `domains` (allowlist-first; `*.x` subdomains, `**.x` includes apex; deny wins), `unix_sockets`, `allow_local_binding`, `enable_socks5`, `allow_upstream_proxy`. Docs: the proxy does not cover web search, app/MCP connections, "or the client's own model traffic".
+- Protected inside writable roots: `.git` (and resolved gitdir), `.codex`, `.agents`, `.aws`.
+- Enterprise: `requirements.toml`; MDM and legacy managed-device requirements take precedence over "Agent Security", which takes precedence over the system file; locked managed networking cannot be widened by user config (https://developers.openai.com/codex/config-reference, secondary search summary). Key naming conflicts between `experimental_network` and `application.network.domains` across OpenAI pages.
+- Credentials: model auth stays in the Codex process outside the command sandbox; Riptides found the token file, `~/.ssh` and `*TOKEN*` env vars reachable from sandboxed commands (see E).
+- Codex cloud: setup phase has network and secrets; secrets removed before the agent phase, which runs offline by default; per-environment internet toggle or domain allowlist.
+- Latest release rust-v0.166.0, 2026-10-29 (GitHub releases).
 
-## Research and guidance
+### Gemini CLI
+- Docs: https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/sandbox.md
+- Opt-in: `-s`/`--sandbox`, `GEMINI_SANDBOX=true|docker|podman|sandbox-exec|runsc|lxc`, or `tools.sandbox` in settings.
+- macOS Seatbelt profiles `permissive-open` (default), `permissive-proxied`, `restrictive-*`, `strict-*`; `-proxied` variants route network via a proxy. Docker/Podman image `ghcr.io/google/gemini-cli:latest` with cwd mounted at the same absolute path; `SANDBOX_MOUNTS` extra mounts (default ro). gVisor `runsc` on Linux (explicit), LXC experimental, Windows `icacls` low-integrity labels that persist after the session.
+- No documented credential separation or admin enforcement. Riptides: default macOS profile allows reads of `~/.ssh`, `~/.aws`, gcloud config; container mode mounts gcloud credentials read-only.
 
-1. SandboxEscapeBench, arXiv 2603.02277: nested-sandbox CTF; frontier models reliably exploit easy container misconfigurations, 0% on the hardest tiers (figures secondary).
-2. AI Code Sandboxes comparative security study, arXiv 2606.08433: microVM, user-space kernel and OCI classes separate cleanly on attack surface; version-pin policy matters most; downstream patch lag 0 to 471+ days.
-3. The Balkanization of Execution-Security Research for AI Coding Agents, arXiv 2607.05743: survey of isolation, access control and TOCTOU flaws including Claude Code CVEs.
-4. Pillar Security, Antigravity escape (2026-07-20): allow-default Seatbelt profiles are denylists; devfs plus Launch Services ran code outside.
-5. Claude Code sandbox CVEs (third-party databases): CVE-2026-39861 symlink escape, CVE-2026-25725 missing `settings.json` creatable from inside, CVE-2026-55607 git worktree and zsh startup. The boundary leaks through trusted-side files.
-6. Riptides, "Every AI Coding Agent Ships a Sandbox Now. Your Credentials Still Get In." (https://riptides.io/blog/ai-coding-agent-sandboxes-compared/): credentials reachable as files, inherited env vars or tokens in every agent tested; MCP servers often outside the sandbox. Vendor commentary.
-7. Anthropic, Claude Code sandboxing (https://www.anthropic.com/engineering/claude-code-sandboxing): filesystem and network isolation both required; 84% fewer permission prompts internally; git credentials behind a proxy.
-8. OWASP Top 10 for Agentic Applications (Dec 2025): ASI05 Unexpected Code Execution calls for isolated sandboxes, egress controls and a restricted working directory.
-9. NIST CAISI: RFI on securing AI agent systems (closed 2026-03-09) and an AI Agent Standards Initiative (2026-02-17). No sandbox standard yet.
-10. Prompt-injection benchmarks INFUSE (arXiv 2610.20776), IssueTrojanBench (arXiv 2607.20759), MCP tool poisoning across 7 clients (arXiv 2603.21642): injections land reliably, so a perimeter is needed.
-11. Anthropic, securely deploying agents (https://code.claude.com/docs/en/agent-sdk/secure-deployment): the proxy does no TLS inspection so domain fronting is possible; same-kernel sandboxes carry kernel-escape risk; Node `fetch()` ignores `HTTP_PROXY` unless `NODE_USE_ENV_PROXY=1` on Node 24+.
+### GitHub Copilot CLI and coding agent
+- Changelog (published 2026-10-07): https://github.blog/changelog/2026-10-07-local-sandboxing-for-github-copilot-now-generally-available/ says local sandboxing is GA for Copilot CLI, the Copilot app and VS Code Agent Host sessions, using MXC to translate one policy to native controls; no extra charge. Conflict: docs pages still say "public preview" (search summary of https://docs.github.com/en/copilot/how-tos/cloud-and-local-sandboxes/using-local-sandboxing).
+- CHANGED backends (docs): Seatbelt on macOS, bubblewrap 0.5.0+ plus `slirp4netns` on Linux, ProcessContainer BaseContainer tier on Windows 11 25H2/26H1 with specific KBs (https://docs.github.com/en/copilot/how-tos/cloud-and-local-sandboxes/configuring-local-sandbox-settings).
+- Defaults: app sandbox off unless enterprise requires it; CLI outbound internet on, local network off, no host rules ("other hosts remain allowed"); cwd and `.git` read-write.
+- Credentials: placeholder `GH_TOKEN`; a local proxy adds the real token only for `github.com`, `api.github.com`, `uploads.github.com`. Git and gh credentials on by default.
+- Enterprise: managed settings set a floor; "Enterprise rules can only narrow your allowlist, never widen it"; when required, `--no-sandbox` and `/sandbox disable` cannot turn it off.
+- Coding agent (cloud, Actions runner): firewall on by default with a recommended allowlist; applies only to processes the agent starts via its Bash tool, not to MCP servers or setup steps; org owners can stop repos adding rules (https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-firewall, search summary).
 
-## Enterprise checklist
+### Cursor
+- Docs: https://cursor.com/docs/agent/security/run-modes
+- macOS Seatbelt (Cursor 2.0+); Linux Landlock v3 plus seccomp, kernel 6.2+ and unprivileged userns, otherwise approval prompts; Windows not covered on that page.
+- Shell commands only; Auto-review sandboxes when possible; failed commands can be rerun outside after classifier review.
+- Writes: workspace plus temp; reads controlled separately (Read Allowlist, 3.23+). Network modes "sandbox.json Only", "sandbox.json + Defaults" (default, common registries and code hosts), "Allow All".
+- Protected: `.git/config`, `.git/hooks`, `.vscode`, `.cursorignore`, Cursor config. No credential protection documented for local runs; Riptides notes `~/.ssh` is always readable and secret redaction applies only to cloud agents.
+- Team policy overrides user and project config.
+- Cloud agents: one VM per agent on Firecracker microVMs in Cursor's AWS; egress modes allow all / default plus allowlist / allowlist only; internet on by default; secrets encrypted, redacted from the model, injected at agent start; self-hosted cloud agents since 2026-03-25 (https://cursor.com/docs/cloud-agent/security, https://cursor.com/changelog/03-25-26, search summary).
 
-- Egress: deny-by-default, per-agent or per-command lists, block metadata and internal addresses, TLS-terminating proxy where domain fronting matters.
-- Secrets: inject in a proxy outside the boundary (Envoy credential_injector, mitmproxy, LiteLLM, Docker Sandboxes proxy, OpenShell placeholders, sandbox-runtime credential masking); deny credential files; scrub env vars.
-- Policy developers cannot loosen: managed settings, `requirements.toml`, team policy, MDM. Disable unsandboxed retry.
-- Fail closed when the sandbox cannot start.
-- Cover everything that runs: MCP servers, hooks, file tools, extension tools. Wrap the whole process for that.
-- Isolation strength: same-kernel sandboxes are perimeters; untrusted repos, multi-tenant or compliance need gVisor or microVMs.
-- Audit at the proxy; collect sandbox violation events; no vendor-documented SIEM integration found.
-- SSO, SOC2, ISO: check each vendor's trust page; nothing verified here.
-- On-prem and air-gapped: E2B self-host, Anthropic self-hosted worker (still needs outbound HTTPS), gVisor, Kata or Firecracker on your cluster, Northflank BYOC. The model API must still be reachable.
-- Licensing: Apache-2.0 and MIT are safe to embed (sandbox-runtime, E2B infra, microsandbox, Cloudflare SDK, Apple container, OpenShell). AGPL (Daytona) imposes copyleft. Docker `sbx` is free locally with an unclear source license.
-- Laptop versus cluster: laptops use Seatbelt or bubblewrap with MDM policy; clusters use microVMs or gVisor with a proxy; Docker Sandboxes and Cloud Sandboxes are the hybrid. Reuse one policy schema in both.
+### Amp
+- Manual (https://ampcode.com/manual) documents no shell sandbox; agents run locally (CLI) or in Amp-created cloud machines ("orbs"), plus a "Use Your Mac as a Runner" mode. Enterprise sections list MCP registry allowlist, allowed models, minimal data retention. Third-party guides conflict on default approvals (secondary: https://www.verdent.ai/guides/agents/amp-coding-agent).
 
-## Unverified or contradictory
+### Goose (now AAIF)
+- CHANGED: the experimental macOS Seatbelt sandbox with egress proxy was removed in v1.25.0 (https://goose-docs.ai/blog/2026/02/23/goose-v1-25-0/ marks the section outdated). Issue #12805 (opened 2026-10-09, open): the server process and `shell` tool run with full user rights; a Linux prototype (PR #12545) is not a boundary; `GOOSE_MODE` prompts are not a sandbox (https://github.com/aaif-goose/goose/issues/12805). Advisory GHSA-r5pp-p5r8-466r / CVE-2026-72718 (2026-07-24): command execution via `goose review` and `core.fsmonitor`.
 
-Codex's Linux mechanism (docs say bubblewrap, blogs add Landlock and seccomp) and default network; Copilot's sandbox default and network default; Daytona's closure; the sandbox-runtime repo URL (`anthropic-experimental` versus `anthropics`); `sandbox-exec` longevity; Docker Sandboxes license, Linux support and policy surface; Apple container network policy; hosted vendors' details beyond secondary comparisons; SOC2 and ISO attestations.
+### OpenCode
+- No built-in OS sandbox found; community Docker wrappers only; issue #2242 discusses bubblewrap (https://github.com/anomalyco/opencode/issues/2242). Advisories are about its local HTTP server and web UI (CVE-2026-22812, CVE-2026-22813, 2026-01-12; GHSA-632h-h47v-g4x4, 2026-09-24).
+
+### Devin
+- Each session on its own isolated machine; "Devin Brain" container per session in Cognition's tenant; VPC/dedicated option puts the DevBox in the customer network with a websocket to the brain; secrets decrypted at session start into env vars and redacted in the UI; docs say egress is required and internet access "strongly recommended"; no fine-grained egress allowlist documented (https://docs.devin.ai/enterprise/vpc/overview, search summary).
+
+### Factory Droid
+- Docs: https://docs.factory.com/autonomy-and-safety/sandbox.md (CHANGED: docs.factory.ai redirects to docs.factory.com).
+- Seatbelt on macOS; bubblewrap plus seccomp on Linux/WSL2; blocks instead of running unisolated when primitives are missing.
+- `sandbox.mode`: `per-command` (default; main Droid process not isolated) or `whole-process` (whole Droid, MCP transports, subagents; Droid's own requests filtered against `allowedDomains`; refuses to start if the sandbox fails). This is the only vendor-documented whole-process local mode found.
+- Network deny by default except Factory and WorkOS domains; HTTP/SOCKS proxy. Settings merge org > project > user; `denyRead`/`denyWrite` union-merge so org denies cannot be removed; admins can set the mode org-wide.
+
+### Jules
+- "a secure, short-lived virtual machine" running Ubuntu per task (https://jules.google/docs/environment/); egress and secret handling not documented on that page.
+
+## B. Container and microVM runtimes for a laptop
+
+### Docker Sandboxes (`sbx`)
+- Docs: https://docs.docker.com/ai/sandboxes/ , /architecture/, /security/, /governance/, /install/
+- CHANGED status: CLI `sbx`, releases at https://github.com/docker/sbx-releases (v0.50.1 2026-10-28, v0.51.0-rc6 2026-10-30); repo license NOASSERTION (binary distribution, source not published). Docs do not say "GA".
+- Platforms: macOS Sonoma 14+ on Apple silicon; Windows 11 x64 with Windows Hypervisor Platform; Ubuntu 24.04+ with KVM (derivatives unsupported). Docker Desktop not needed. `sbx login` (Docker OAuth) required.
+- Isolation: one microVM per sandbox with its own Docker daemon and image cache; hypervisor not named per OS.
+- Workspace: direct mount at the same absolute path, "changes in either direction are instant", virtiofs caching on; also mountless mode and clone mode (host repo read-only, agent works in a private clone).
+- Network: all outbound TCP through a host-side proxy, deny-by-default; default allowed domains include broad wildcards like `*.googleapis.com`; `sbx policy ls`; upstream proxy chaining for HTTP/S only; ICMP blocked; UDP experimental.
+- Credentials: stay on host; agent sees a sentinel; proxy adds auth headers; "The raw credential values never enter the VM." Fits R1.
+- Agent has root inside VM; documented risks: direct-mode writes to git hooks, CI config and `package.json` scripts land on the host; local stdio MCP servers run on the host.
+- Governance: org-level network, filesystem and MCP policies in Docker Home or the Governance API; with org governance on, "only organization allow rules grant access" and local deny rules still apply; sign-in enforcement via endpoint management; audit logs; "separate paid subscription", price unpublished. Local CLI and compute free including commercial use.
+- Pi kit: https://github.com/docker/sbx-kits-contrib/tree/main/pi ; image `docker.io/sbx/pi-image` installs `@earendil-works/pi-coding-agent` at `latest`, rebuilt nightly; allowlist `api.anthropic.com`, `registry.npmjs.org`, `platform.claude.com:443`; `~/.pi/agent/auth.json` written with sentinels at sandbox start; "Do not authenticate from inside the sandbox". Run: `sbx run --kit docker.io/sbx/pi-kit:latest pi` (pi's own docs, below).
+- Startup: no official number; 2-5 s over native is a secondary estimate (https://codex.danielvaughan.com/2026/04/13/docker-sandboxes-codex-cli-microvm-isolation/).
+- CVEs: see E (six 2026 CVEs including a 9.4 macOS virtio-fs escape).
+
+### Pi's own guidance (new since October)
+- https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/containerization.md lists four methods: plain Docker (credentials passed in), Docker Sandboxes (provider credential on host, proxy substitution), OpenShell (`openshell sandbox create --name pi-sandbox --from pi -- pi`), and the Gondolin extension (host pi, built-in tools and `!` commands in a microVM; "Commands inside the VM inherit the host process environment", so not a credential boundary as shipped).
+- Gondolin: https://github.com/earendil-works/gondolin , Apache-2.0, "Experimental", v0.14.0 2026-10-22; QEMU by default, experimental libkrun backend; macOS and Linux; TypeScript control plane with `allowedHosts` and per-host secrets where "The guest only sees a placeholder token"; guest assets about 200 MB on first use.
+
+### Apple `container` and Containerization
+- https://github.com/apple/container , Apache-2.0. CHANGED: 1.0.0 shipped 2026-06-09; current 1.6.1 (2026-10-23); versions "are product versions, not semantic versions". Apple silicon, supported on macOS 26 (macOS 15 runs with limitations Apple will not fix).
+- One lightweight VM per container via Containerization and Virtualization.framework; vmnet networking; separate networks are isolated from each other (docs/technical-overview.md, docs/networking.md). No egress allowlist or proxy feature found in the docs.
+- 2026 advisories: CVE-2026-113951 (high, 2026-09-29) K8s plugin kubeconfig allows host command execution; CVE-2026-64786 env inheritance; CVE-2026-64777 build sync symlink disclosure; several containerization symlink issues (release notes 1.2.0 to 1.6.0).
+- Bind-mount performance: no public benchmark found (secondary: https://tech-insider.org/au/apple-containers-vs-docker-vs-orbstack-2026/).
+
+### NVIDIA OpenShell
+- See C.
+
+### OrbStack
+- Proprietary; commercial use needs a per-user license; 30-day Pro trial then personal-use tier (https://docs.orbstack.dev/licensing). Price about $8/user/month annual (secondary). 2025 benchmark: bind mount 4.22 s vs Docker VZ 9.53 s vs Lima 8.99 s (https://www.paolomainardi.com/posts/docker-performance-macos-2025/, secondary).
+
+### Colima and Lima
+- Lima v2.2.1 (2026-10-03), Apache-2.0, CNCF incubating. Colima v0.10.3 (2026-06-04), MIT; `--vm-type=vz` uses Virtualization.framework. No commercial support; no egress policy.
+
+### Podman Desktop
+- v1.30.5 (2026-10-13), Apache-2.0; Red Hat backs Podman. No agent-specific egress or credential features.
+
+### microsandbox
+- https://github.com/microsandbox/microsandbox , Apache-2.0, v0.7.13 (2026-11-01), "still beta software". libkrun microVMs; Apple silicon macOS, Linux KVM, CHANGED Windows WHP. Claims guest boot under 100 ms on M1. Host allowlists; secrets "never enter the VM", bound to hosts. TypeScript SDK `npm i microsandbox`.
+
+### Firecracker, gVisor, Kata
+- Firecracker v1.17.0 (2026-09-10), gVisor release-20261026.0 (2026-10-28), Kata 4.3.1 (2026-10-21); all Apache-2.0, all Linux-only (KVM or ptrace/KVM platforms). Relevant for servers, not directly for a macOS laptop except inside a Linux VM.
+
+### Docker Desktop Enhanced Container Isolation
+- Sysbox runtime, container root mapped to unprivileged VM user, blocks bind-mounting `/var/run/docker.sock` by default (https://docs.docker.com/enterprise/security/hardened-desktop/enhanced-container-isolation/). Business subscription (not stated on that page; from Docker pricing knowledge, not verified). Enforced with Settings Management. No egress allowlist or credential injection.
+
+### Dev Containers
+- devcontainer CLI MIT (https://github.com/devcontainers/cli). Claude Code reference container adds `init-firewall.sh` with `NET_ADMIN`/`NET_RAW`; warns that a malicious project can exfiltrate anything in the container "including the Claude Code credentials stored in `~/.claude`"; repo-held policy can be edited by anyone with write access (https://code.claude.com/docs/en/devcontainer). Credentials are inside.
+
+### Bind-mount performance on macOS
+- VirtioFS beats gRPC FUSE: 25.46 s vs 93.75 s on an npm-style test (https://www.jeffgeerling.com/blog/2022/new-docker-mac-virtiofs-file-sync-4x-faster/, 2022); bind mounts about 3x slower than native in 2025 vs 5-6x in 2023 (Mainardi, above). No 9p measurement found for current tools.
+- Landlock plus Docker Desktop VirtioFS is currently broken for OpenShell (issue #4733, below).
+
+### Seatbelt longevity
+- `/usr/bin/sandbox-exec` present on macOS 27.2 (build 26B123, file dated 2026-10-23) and working; no removal notice found. Goose issue #12805 notes it is deprecated.
+
+## C. NVIDIA OpenShell
+
+- Repo https://github.com/NVIDIA/OpenShell , Apache-2.0, about 21.0k stars, 2,057 forks, 583 open issues, pushed 2026-11-02.
+- CHANGED version and cadence: v0.1.6 (2026-10-27), v0.1.5 (10-20), v0.1.4 (10-13), v0.1.3 (10-09), v0.1.2 (09-28), v0.1.1 (09-26), v0.1.0 (09-25); before that v0.0.x almost daily (v0.0.109 to v0.0.116, 08-19 to 08-28). Roughly weekly releases with breaking upgrade notes.
+- v0.1.6 breaking notes: gateways refuse to start without OIDC, mTLS, or gateway JWT auth unless `allow_unauthenticated_users = true`; control connection direction reversed (upgrade supervisor and runtime together); new `sandbox suspend/resume`; gateway OCSF audit events for auth denials and credential use with a High finding when a credential "looks misused"; experimental shared supervisor on Kubernetes; GitHub private vulnerability reporting added (https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.6).
+- CVEs (primary: NVIDIA bulletin 5872 source https://github.com/NVIDIA/product-security/tree/main/2026/5872 and CVE.org records, published 2026-08-25; CHANGED from "reported 2026-08-27, affected unstated"):
+  - CVE-2026-65093, 9.9, CWE-427, sandbox escape (Linux).
+  - CVE-2026-65083, 9.9, CWE-184, provisioning API incomplete disallow list.
+  - CVE-2026-65091, 8.8, malicious gateway OS command injection (all platforms).
+  - CVE-2026-65092, 8.5, path traversal bypass of L7 REST policy.
+  - CVE-2026-65086, 6.8, exec handler command injection.
+  - CVE-2026-65085, 5.2, inference proxy output escaping.
+  - All six: affected "0 to 0.0.33", updated version v0.0.34. The other 12 bulletin entries are NemoClaw. Disclosure came well after the fix release (v0.0.34 predates v0.0.109 of 2026-08-19).
+- macOS: supported as "macOS Apple Silicon via Docker Desktop"; the kernel features run in Docker Desktop's Linux VM. CHANGED: the MicroVM runtime (libkrun; Hypervisor.framework on macOS) is now listed as supported, not experimental (https://docs.nvidia.com/openshell/latest/about/support-matrix , docs v0.1.6). No native macOS process sandbox. Native Windows via MXC on a separate `windows` branch; WSL 2 experimental.
+- Open macOS bugs: #4733 Landlock denies reads on Docker-driver bind mounts with Docker Desktop VirtioFS (silent; workaround switch to gRPC FUSE), #4683 0.1.4 Docker supervisor fails to fetch startup config on macOS, #3095 packaged macOS ARM64 VM runtime lacks usable Landlock ABI, #5015 VM socket path exceeds macOS `sun_path`, #4133 `doctor` does not check Docker Desktop prerequisites.
+- CHANGED workspace: Docker driver supports host bind mounts via `--driver-config-json` `docker.mounts` (issue #4733), and Podman `bind` mounts (#4579); the pi tutorial still uses `--upload`/`download`.
+- Credentials: profile supplies an opaque placeholder env var; "the proxy substitutes a real credential only after network policy and endpoint binding both pass"; credentials bound per endpoint (`credential_endpoint_mismatch`), although NVIDIA/OpenShell#896 (closed 2026-09-03, provider-profile proposal filed 2026-04) describes injection as endpoint-blind before that scoping and proposes the (credential, endpoint, binary) binding, so which injection paths the shipped binding covers is not verified; a running process does not see newly attached providers (https://docs.nvidia.com/openshell/latest/how-it-works/inference.md).
+- Network policy: per host, port, binary (`binaries`), L7 `protocol: rest` rules; enforcement field `enforce` vs `audit` (older best-practices doc says audit is the default when omitted; not re-verified).
+- Pi: tutorial https://docs.nvidia.com/openshell/latest/tutorials/run-pi-with-openrouter.md builds a local image from `@earendil-works/pi-coding-agent` on `node:24-bookworm-slim`, sets `PI_CODING_AGENT_DIR=/tmp/pi-agent`, profile allows only `openrouter.ai:443` and binary `/usr/local/bin/node`. Conflict: the tutorial says pi publishes no image; pi's own doc uses `--from pi` (community catalogue image).
+- SDKs: TypeScript `@nvidia/openshell-sdk` not on public npm (issue #2952 closed not planned 2026-09-21; `npm view` fails); Python SDK ships credential drivers in v0.1.6; Go SDK tagged `sdk/go/vX.Y.Z` from v0.1.6.
+- Telemetry: anonymous, on by default; `OPENSHELL_TELEMETRY_ENABLED=false` or Helm `server.telemetryEnabled=false`; can be compiled out (README).
+- Commercial: NVIDIA "OpenShell Reference Architecture" announced 2026-10-21 at GTC Berlin with Canonical, Red Hat, SUSE, Microsoft MXC, CrowdStrike, Palo Alto and others; release offers products "when-and-if-available" and mentions no support offering (https://nvidianews.nvidia.com/news/openshell-reference-architecture). Canonical Charmed OpenShell is alpha (2026-09-28, https://canonical.com/blog/charmed-openshell-alpha-release). No NVIDIA AI Enterprise coverage or SLA found.
+- Verdict for Nov 2026: not stable enough to depend on as the default laptop path. Pre-1.0, weekly breaking changes, mandatory gateway auth since v0.1.6, macOS only through Docker Desktop or a VM driver with open macOS bugs, six CVEs in its first disclosed batch, npm SDK unavailable. Reasonable as an optional backend or for Linux/Kubernetes pilots.
+
+## D. Hosted sandbox services (fit for an interactive TUI against a local checkout)
+
+None mounts a laptop checkout live; all need clone, upload or sync, and model keys would sit in the remote VM unless the service has a proxy. Ruled out as the default path; possible for remote subagents.
+- E2B: Firecracker, Apache-2.0 infra (2026.30, 2026-09-10) self-hostable; good for remote subagents, not for the local TUI.
+- Daytona: CHANGED: `daytonaio/daytona` repo archived, last release v0.190.0 (2026-06-23), license field now empty; confirms the move to closed source. Out.
+- Modal Sandboxes: gVisor, closed, Python/JS/Go SDKs; remote batch only.
+- Vercel Sandbox: Firecracker, SDK Apache-2.0 (`sandbox@4.11.1`, 2026-10-28); also backs Cursor self-hosted pools; remote only.
+- Cloudflare Sandbox SDK: `@cloudflare/sandbox@1.0.3` (2026-10-22) on Containers plus Durable Objects; pi ships a Cloudflare codemode example; remote only.
+- Fly Machines / Sprites: Firecracker VMs; remote dev box possible via SSH, no local mount.
+- Northflank: Kata/gVisor on Kubernetes, BYOC; enterprise remote, not laptop.
+- Runloop: devboxes, MIT TS client v3.0.0 (2026-10-23); remote only.
+- Blaxel: microVM sandboxes, MIT sandbox repo v0.2.75 (2026-10-29); remote only.
+- Anthropic Managed Agents self-hosted sandboxes and Claude Code self-hosted environments: Anthropic-loop specific; not usable for pi.
+
+## E. Security evidence 2025-2026
+
+### Claude Code (GitHub advisories, https://github.com/anthropics/claude-code/security/advisories)
+- CVE-2026-25725 (2026-02-06, high, fixed 2.1.2): bubblewrap did not protect a missing `.claude/settings.json`; sandboxed code created it with SessionStart hooks run on the host.
+- CVE-2026-39861 (2026-04-20, high, fixed 2.1.64): sandboxed process creates symlinks; unsandboxed parent writes through them.
+- CVE-2026-40068 (2026-04-24, high, fixed 2.1.84): trust dialog bypass via git worktree spoofing.
+- CVE-2026-55607 (2026-06-25, high, fixed 2.1.163): worktree named `.git` plus symlinks plus fsmonitor overwrote `.zshenv`, code ran outside Seatbelt (write-up https://github.com/Metnew/write-ups/tree/main/claude-code-worktree-sandbox-escape).
+- CHANGED, new: CVE-2026-103435 (2026-10-05, high, fixed 2.1.129): write-time symlink following TOCTOU. CVE-2026-46406 (2026-06-25, medium): insecure temp file in `/copy`. CVE-2026-33068 (2026-03-18): trust dialog bypass via repo settings file. Older: CVE-2026-25722/25723/24887/24053 command-injection write bypasses; CVE-2026-24052 domain validation bypass; CVE-2025-55284 permissive default allowlist enabled read plus exfiltration.
+
+### Codex CLI
+- CVE-2025-59532 (2025-09-19, high, fixed 0.39.0): sandbox bypass via path configuration bug (https://github.com/openai/codex/security/advisories/GHSA-w5fx-fh39-j5rw).
+- "GitPwned" (Pillar, July 2026): allowlisted `git show --output` wrote `.git/config`; fixed 0.95.0.
+- Host Docker socket reachable from the sandbox (Pillar/CSA): not fixed by OpenAI or Google per CSA.
+
+### Cursor
+- CVE-2026-48124 (CVSS 8.5): workspace `.claude/settings.local.json` Stop hook ran unsandboxed; fixed 3.0.0. venv interpreter replaced and run by an unsandboxed extension, fixed 3.1.2. Non-`.git` git dir with `core.fsmonitor`, patched 3.0.0. DuneSlide CVE-2026-50548/50549 (9.8) attacked sandbox logic itself (https://labs.cloudsecurityalliance.org/research/csa-research-note-ai-coding-agent-sandbox-escapes-20260722-c/, published 2026-07-22).
+
+### Antigravity
+- Allow-default Seatbelt profile escaped; `.vscode` task time bomb; Google rated both not-fix (https://www.pillar.security/blog/the-week-of-sandbox-escapes, published 2026-07-20).
+
+### Docker Sandboxes (CVE.org, assigner Docker)
+- CVE-2026-77179 (2026-09-15, 9.4, macOS, 0.28.0 to <0.42.0): virtio-fs host server follows symlinks; guest escapes the workspace, reads/modifies host files as the VMM user.
+- CVE-2026-79994 (2026-09-15, 8.7, 0.37.0 to <0.42.0): Unix-socket relay TOCTOU via symlinked directory.
+- CVE-2026-18171 (2026-08-12, 5.7, 0.35.0 to 0.38.0): read-only host mount writable at the virtio-fs export path.
+- CVE-2026-12039 (2026-06-18, 5.7, 0.13.0 to <0.33.0): DNS not covered by the HTTP/S allowlist, DNS-label exfiltration.
+- CVE-2026-12539 (2026-06-18, 5.1, 0.14.0 to <0.33.0): ICMP block not re-applied after daemon restart.
+- CVE-2026-17106 (2026-08-18, 7.1): moby/go-archive tar extraction; `sbx cp` copy-out affected (secondary says fixed 0.38.0).
+- Researcher write-up: https://accomplish.ai/blog/escaping-dockers-hypervisor/ (secondary).
+
+### OpenShell
+- Six CVEs, see C. Earlier independent test (sorami.com.au, v0.1.2) found leaks from operator defaults (audit mode, auto-approval), not from the boundary (prior pass, not re-verified).
+
+### Apple container
+- CVE-2026-113951 host command execution via guest-controlled kubeconfig (K8s plugin), plus symlink and env-inheritance issues (see B).
+
+### srt
+- CVE-2025-66479, empty allowlist meant no network enforcement (low, fixed 0.0.16).
+
+### Goose
+- CVE-2026-72718, `core.fsmonitor` command execution.
+
+### Recurring leak classes
+1. Trusted-side files written from inside: `.claude/settings*.json`, hooks, `.vscode` tasks, venv interpreters, shell rc files (CVE-2026-25725, CVE-2026-48124, Antigravity).
+2. Git metadata: `.git/config` (`core.fsmonitor`, `core.hooksPath`), `.git/hooks`, worktree `.git` pointer files, non-`.git` gitdirs (CVE-2026-55607, CVE-2026-40068, GitPwned, Cursor gitdir, Goose).
+3. Symlink and TOCTOU at the boundary, including in hypervisor file servers (CVE-2026-39861, CVE-2026-103435, CVE-2026-77179, CVE-2026-79994, Apple build sync).
+4. Inherited env vars and readable credential files (Riptides: every tested agent).
+5. Mounted daemon sockets: host Docker socket (Pillar), Unix-socket relays.
+6. Side channels the proxy ignores: DNS, ICMP, UDP (CVE-2026-12039, CVE-2026-12539).
+7. Denylist profiles (Antigravity allow-default Seatbelt).
+8. Components outside the per-command boundary: MCP servers, hooks, file tools, extensions, IDE plugins.
+CSA summary: "If an agent gets to write the future inputs of systems, it was never sandboxed in the first place."
+
+### Published evaluations
+- Riptides, "Every AI Coding Agent Ships a Sandbox Now. Your Credentials Still Get In.", Nandor Kracser, published 2026-10-05 (https://riptides.io/blog/ai-coding-agent-sandboxes-compared/). Ran one probe script on Ubuntu 26.04 against Claude Code (srt 0.0.78), Codex CLI (0.144.6 Linux, 0.159.2 Windows), Copilot CLI (1.0.89); Gemini CLI and Cursor from docs only. Findings: writes restricted well, reads and network weak; credentials reached commands in every tested agent; Copilot exports `GH_TOKEN` and ran unsandboxed on Windows Server with only a warning. Recommends a VM with only the project mounted and connection-level credential injection. Vendor (Riptides sells kernel-level credential injection).
+- Pillar Security, 14 sandbox products in four tiers (https://www.pillar.security/blog/your-ai-agent-will-run-untrusted-code-now-what, per-tier details not read).
+- arXiv 2606.08433 "AI Code Sandboxes: A Comparative Security Study, Part 1" and arXiv 2607.05743 "The Balkanization of Execution-Security Research for AI Coding Agents" exist (seen in search results); findings from the prior pass not re-verified.
+
+## F. Enterprise checklist
+
+What buyers ask and what vendors ship:
+- Central policy that developers cannot loosen: Claude Code managed settings (MDM plist, registry, `/etc/claude-code/managed-settings.json`, or server-managed; Anthropic calls server-managed "a client-side control, not a security boundary"); Codex `requirements.toml` with MDM precedence; Copilot enterprise floor ("can only narrow your allowlist, never widen it"); Cursor team policy; Factory org-level union-merged denies; Docker Sandboxes org governance ("only organization allow rules grant access", paid). Sources in A and B.
+- Fail closed: Claude Code `failIfUnavailable`, `forceRemoteSettingsRefresh`; Factory whole-process refuses to start; Copilot required mode cannot be disabled by flag.
+- Sign-in enforcement against personal accounts: Docker sign-in enforcement via endpoint management; Claude Code `forceLoginOrgUUID`.
+- Audit: Claude Code settings-change audit via compliance API and OpenTelemetry export; Docker governance audit logs; OpenShell OCSF JSONL, OTLP and v0.1.6 credential-misuse findings; CSA found no vendor alerting when an unsandboxed component consumes an agent-written file.
+- Egress: deny-by-default, metadata and private ranges blocked (srt, Codex proxy), TLS inspection where domain fronting matters (srt/Claude Code `tlsTerminate` experimental; Docker sandbox docs silent on TLS, but a user-filed issue shows a per-session "Docker Sandboxes Proxy CA" MITM CA exposed as `$PROXY_CA_CERT_B64` (https://github.com/docker/sbx-releases/issues/322, sbx v0.34.0); Northflank and agentcage checklists ask for TLS-inspecting egress, https://northflank.com/blog/ai-agent-sandbox-security-checklist, vendor).
+- Credentials outside the boundary: placeholder plus proxy injection now offered by Claude Code (mask), srt, Copilot (`GH_TOKEN`), Docker Sandboxes, OpenShell, Gondolin, microsandbox, Claude Code cloud network secrets, Cursor cloud (redaction). Short-lived tokens and OIDC federation (Cursor cloud).
+- Cover the whole agent: MCP servers, hooks, extensions and file tools (Factory whole-process, sbx and OpenShell whole-process; Claude Code, Codex, Cursor do not).
+- Inventory of downstream trusted components (git hooks, IDE extensions, task runners, sockets) and review of agent-written config (CSA recommendations).
+- Vendor attestations, SSO, data residency, ZDR/HIPAA: Claude Code cloud sessions excluded for ZDR, HIPAA, CMEK orgs; Devin VPC with PrivateLink; Cursor and Claude self-hosted options. SOC 2 reports not checked.
+- Air-gap: needs model endpoint reachable; Codex air-gapped deployments documented by third parties (https://codex.danielvaughan.com/2026/03/31/codex-cli-network-security-requirements-toml/, secondary); OpenShell VM sandboxes now boot digest-pinned images without a registry (v0.1.6); E2B self-host.
+- Platforms: macOS primary; Docker Sandboxes requires macOS 14+ Apple silicon (no Intel Macs); Apple container requires macOS 26 for full function; OpenShell macOS via Docker Desktop only.
+
+## Comparison table
+
+| Row | Boundary type | FS confinement | Network allowlist | Credentials outside? | macOS | Latency | Enterprise policy | License |
+|---|---|---|---|---|---|---|---|---|
+| Claude Code local | OS sandbox per shell command | Writes cwd+tmp; reads open unless denied; protected paths | Host proxy, empty default, managed-only option | Agent key on host outside; mask for listed secrets (needs TLS terminate, file mask Linux only) | Seatbelt | ms | MDM or server-managed, fail-closed flags | Proprietary |
+| Claude Code cloud | Anthropic VM | VM only, repo cloned/uploaded | Trusted default list, custom, none | Yes for git and network secrets | Browser/CLI | provisioning, seconds+ | Org settings, not for ZDR/HIPAA | Proprietary |
+| srt 0.0.81 | Seatbelt / bwrap+seccomp / Windows alpha | Allow-write list, deny-read list | HTTP+SOCKS proxy, private ranges blocked | Mask via proxy (TLS terminate) | Yes | ms | Library, caller enforces | Apache-2.0 |
+| Codex CLI 0.166 | OS sandbox per command | workspace-write; `.git` `.codex` `.agents` `.aws` read-only | `features.network_proxy` domains, off by default | Model auth outside but not via proxy; tokens readable (Riptides) | Seatbelt | ms | `requirements.toml`, MDM | Apache-2.0 |
+| Gemini CLI | Seatbelt or Docker/Podman/gVisor | Profile-dependent; cwd mount | `-proxied` profiles only | No | Seatbelt or Docker | ms or container start | None documented | Apache-2.0 |
+| Copilot CLI | MXC: Seatbelt/bwrap/ProcessContainer | cwd and `.git` rw | Host rules; default open outbound | GH_TOKEN placeholder via proxy | Yes | ms | Enterprise floor | Proprietary |
+| Cursor local | Seatbelt / Landlock+seccomp | Workspace+tmp, read allowlist | sandbox.json + defaults | No local masking | Yes | ms | Team policy | Proprietary |
+| Factory Droid | Seatbelt / bwrap, per-command or whole-process | cwd write, denyRead | Deny except Factory, proxy | Not documented | Yes | ms | Org union-merged denies | Proprietary |
+| Goose | None (removed v1.25.0) | None | None | No | n/a | n/a | None | Apache-2.0 |
+| Docker Sandboxes sbx 0.50 | microVM per sandbox, whole agent | Direct virtiofs mount of workspace, rest of host hidden | Host proxy deny-by-default, wildcard defaults | Yes, sentinel swap | macOS 14+ Apple silicon | seconds (unofficial 2-5 s) | Org governance, paid; sign-in enforcement | Closed binary, free locally |
+| OpenShell 0.1.6 | Container+Landlock+seccomp or libkrun VM, supervisor outside | Landlock; upload or driver bind mounts | Per host/port/binary/L7 | Yes, placeholder swap | Via Docker Desktop or VM driver, open bugs | 10-30 s first VM boot (prior pass) | YAML policy, prover, OCSF; gateway auth required | Apache-2.0 |
+| Gondolin 0.14 | QEMU or libkrun microVM | Host-controlled FS | `allowedHosts` hooks | Yes in library; pi extension inherits env | Yes (QEMU) | not measured | None | Apache-2.0 |
+| Apple container 1.6.1 | VM per container | Mounts you pass | None found | No | macOS 26 Apple silicon | not measured | None | Apache-2.0 |
+| microsandbox 0.7.13 | libkrun microVM | Volumes | Host allowlist | Yes, host-bound secrets | Apple silicon | <100 ms guest boot (vendor) | None | Apache-2.0 |
+| Docker Desktop ECI | Sysbox in Docker Desktop VM | Mounts you pass | None | No | Yes | container start | Settings Management (Business) | Proprietary |
+| Dev Containers | Container in Docker VM | Workspace bind mount | Optional iptables script | No | Via Docker | container start | Repo-held unless MDM | MIT (CLI) |
+| Lima/Colima | Full Linux VM | Mounts you pass | None | No | Yes | VM boot | None | Apache-2.0 / MIT |
+| OrbStack | Linux VM | Mounts you pass | None | No | Yes | fast (vendor) | Enterprise plan SSO (secondary) | Proprietary, paid commercial |
+| Hosted (E2B, Modal, Vercel, Cloudflare, Fly, Northflank, Runloop, Blaxel) | Remote microVM/gVisor | Remote FS only | Varies | Varies | n/a | remote | Varies | Mixed |
+
+## Not verified
+
+- Copilot local sandboxing GA (changelog 2026-10-07) vs "public preview" (docs); CLI default enablement.
+- Codex managed networking key names (`experimental_network` vs `application.network.domains`); OpenAI "Running Codex safely" post returned 403.
+- Docker Sandboxes: hypervisor per OS, official startup time, governance price, whether the source will be published, CA lifecycle (the proxy CA is seen only in a user-filed issue, not in the docs), fix version of CVE-2026-17106 for `sbx cp`.
+- OpenShell: default `enforcement` when omitted in v0.1.6; whether `--from pi` community image is current; NVIDIA commercial support; VM first-boot time on v0.1.6 (10-30 s figure is from the October pass).
+- Apple container bind-mount performance and any egress filtering beyond isolated networks.
+- Cursor cloud Firecracker and default-open egress (search summary of cursor.com docs, not fetched directly); Cursor native Windows sandbox.
+- Amp default approval behaviour; Jules egress and secrets.
+- Devin egress allowlisting granularity.
+- ECI subscription tier on the current docs page.
+- SOC 2 / ISO status of any vendor.
+- arXiv 2606.08433 and 2607.05743 findings (existence seen, contents not re-read).
+- OrbStack price and enterprise SSO (aggregators only).
