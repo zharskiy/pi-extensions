@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { EntryRender, MessageRender } from "../../../platform/pi-adapter/index.ts";
 import { entryHost } from "../../../platform/pi-adapter/tools/entry-renderers.ts";
-import { initPiRenderTheme, livePiTheme } from "./render-theme.ts";
+import { initPiRenderTheme, livePiTheme, piKeyHints } from "./render-theme.ts";
 
 const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
 
@@ -36,7 +36,7 @@ export const renderPiEntry = (
 
   const component = registered[0]?.(
     { type: "custom", customType: "framework:entry", data, id: "entry", parentId: null, timestamp: "" },
-    { expanded: false },
+    { expanded: false, ...piKeyHints },
     livePiTheme,
   );
 

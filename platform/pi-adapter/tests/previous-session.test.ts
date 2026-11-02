@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, plainPiTheme } from "../../../test/framework/pi/index.ts";
+import { initPiRenderTheme, piKeyHints, plainPiTheme } from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
 import { sharedPad } from "../tools/row-component.ts";
 
@@ -131,7 +131,7 @@ const startRuntime = async () => {
   const component = (entry: pi.CustomEntry | undefined, theme: pi.Theme) => {
     const renderer = runtime.session.extensionRunner.getEntryRenderer(PREVIOUS);
 
-    return entry && renderer?.(entry, { expanded: false }, theme);
+    return entry && renderer?.(entry, { expanded: false, ...piKeyHints }, theme);
   };
 
   const draw = (entry: pi.CustomEntry | undefined) => {
