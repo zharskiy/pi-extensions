@@ -31,12 +31,10 @@ import {
   allowlist,
   chainLinks,
   chainTerminal,
-  HELD_ACTIVITY,
   isClosed,
   MAIN_CALLER,
   type RouteResult,
   subagentNames,
-  waitingActivity,
 } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL } from "../model/agent-schema.ts";
 import type { Bus } from "../model/events.ts";
@@ -229,7 +227,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     checkBatch(record);
-    refreshWaiting(record.callerId);
     launches.delete(record.id);
     userStopped.delete(record.id);
 
@@ -242,28 +239,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
   const hasOpenBatches = (callerId: string) =>
     Array.from(batches.values()).some((batch) => batch.callerId === callerId);
-
-  const openHelpers = (callerId: string) =>
-    Array.from(batches.values())
-      .filter((batch) => batch.callerId === callerId)
-      .flatMap((batch) => batch.ids)
-      .filter((id) => {
-        const record = deps.registry.get(id);
-
-        return record !== undefined && !isClosed(record.state);
-      });
-
-  const showWaiting = (id: string) => {
-    deps.registry.update(id, { activity: waitingActivity(openHelpers(id)) });
-  };
-
-  const refreshWaiting = (callerId: string) => {
-    const caller = deps.registry.get(callerId);
-
-    if (caller?.state === "running" && lives.get(callerId)?.turn === "idle") {
-      showWaiting(callerId);
-    }
-  };
 
   const deliver = (child: ChildSession, message: AgentMessage, delivery: MessageDelivery) =>
     "customType" in message ? child.sendCustom(message, delivery) : child.send(message, delivery);
@@ -292,7 +267,6 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     live.release = release;
     live.turn = "running";
-    deps.registry.update(id, { activity: undefined });
 
     try {
       await send(child);
@@ -729,7 +703,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     if (held) {
       live.turn = "held";
       live.handoff = held;
-      deps.registry.update(id, { activity: HELD_ACTIVITY });
+      deps.registry.update(id, { activity: "handoff: waiting for batches" });
       releaseSlot(live);
       return;
     }
@@ -741,7 +715,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
 
     if (waiting) {
-      showWaiting(id);
+      deps.registry.update(id, { activity: undefined });
       goIdle(live);
       return;
     }

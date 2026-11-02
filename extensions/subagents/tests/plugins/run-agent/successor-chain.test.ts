@@ -581,19 +581,6 @@ describe("successor chain", () => {
       expect(task.indexOf(`Batch ${a.batchId}`)).toBeLessThan(task.indexOf(`Batch ${b.batchId}`));
     });
 
-    it("shows the held handoff as a waiting line in agent_status", async () => {
-      const { first, start, handOffNow, host } = await holdingSetup();
-
-      await start("find a");
-      await handOffNow();
-
-      const status = await host
-        .tool<AgentStatusParams, AgentStatusDetails>("agent_status")
-        .execute({ ids: [first.id] }, {});
-
-      expect(status.text).toContain("\n  waiting for batches before handoff");
-    });
-
     it("fails a lead whose settle throws while its handoff would be held, and wakes the main session", async () => {
       const { first, current, caller, start, requestHandoff, writeHandoff, host } = await holdingSetup();
       const a = await start("find a");
