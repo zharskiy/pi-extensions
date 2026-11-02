@@ -1,4 +1,10 @@
-import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import {
+  initTheme,
+  type KeybindingHints,
+  keyHint,
+  keyText,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 
 const themes = await import(
@@ -19,6 +25,8 @@ export const initPiKeybindings = () => {
     }),
   );
 };
+
+export const piKeyHints: KeybindingHints = { keyText, keyHint };
 
 export const plainPiTheme = {
   fg: (_token: string, text: string) => text,

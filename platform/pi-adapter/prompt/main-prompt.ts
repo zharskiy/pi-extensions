@@ -10,7 +10,7 @@ const toolsSection = (declaredTools: string[], toolSnippets: Record<string, stri
   const list =
     visible.length > 0 ? visible.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
 
-  return `${list}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
+  return `${list}\n\nAdditional tools may be available.`;
 };
 
 const fileToolRule = (declaredTools: string[]) => {
@@ -52,14 +52,13 @@ const rulesSection = (
 };
 
 const docsSection =
-  () => `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+  () => `Pi documentation (read only when the user asks about the harness itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: ${getReadmePath()}
 - Additional docs: ${getDocsPath()}
 - Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
 - When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
-- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
+- Before implementing harness changes, read the relevant docs and examples in full, following related cross-references.`;
 
 export const replaceMainPrompt = (options: NormalizedBuildSystemPromptOptions, prompt: string) => {
   const declaredTools = options.selectedTools.filter((name) => !options.hiddenTools.includes(name));
