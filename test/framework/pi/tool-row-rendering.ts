@@ -19,7 +19,7 @@ import type { ToolRows } from "../../../platform/pi-adapter/index.ts";
 import type { PiToolRenderContext } from "../../../platform/pi-adapter/tools/tool-bridge.ts";
 import { rowRenderers, toolRowsHost } from "../../../platform/pi-adapter/tools/tool-rows.ts";
 import { createTranscriptPane } from "../../../platform/pi-adapter/tools/transcript.ts";
-import { initPiRenderTheme, livePiTheme } from "./render-theme.ts";
+import { initPiRenderTheme, livePiTheme, piKeyHints } from "./render-theme.ts";
 
 const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
@@ -52,6 +52,7 @@ export const piRenderContext = (patch: Partial<PiToolRenderContext> = {}) =>
     showImages: false,
     isError: false,
     outputPad: 1,
+    ...piKeyHints,
     ...patch,
   }) as PiToolRenderContext;
 

@@ -1,6 +1,7 @@
 import type * as pi from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { plainText } from "../../../test/framework/index.ts";
+import { piKeyHints } from "../../../test/framework/pi/index.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
 
 const fakeApi = () => {
@@ -31,7 +32,7 @@ describe("entryHost", () => {
 
     const component = renderers.get("x:entry")?.(
       { type: "custom", customType: "x:entry", data: { a: 1 }, id: "e", parentId: null, timestamp: "" },
-      { expanded: true },
+      { expanded: true, ...piKeyHints },
       theme as unknown as pi.Theme,
     );
 
@@ -55,7 +56,7 @@ describe("entryHost", () => {
 
     const component = renderers.get("x:flush")?.(
       { type: "custom", customType: "x:flush", data: {}, id: "e", parentId: null, timestamp: "" },
-      { expanded: false },
+      { expanded: false, ...piKeyHints },
       theme as unknown as pi.Theme,
     );
 
@@ -84,7 +85,7 @@ describe("entryHost", () => {
             display: true,
             timestamp: 0,
           },
-          { expanded: false, outputPad },
+          { expanded: false, outputPad, ...piKeyHints },
           theme as unknown as pi.Theme,
         )
         ?.render(12)
