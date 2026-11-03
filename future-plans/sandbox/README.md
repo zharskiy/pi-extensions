@@ -143,7 +143,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 - One host bridge socket for host-only actions: `open`, `pbpaste` for image paste, desktop notifications, `code -g path:line`/editor; OAuth callback relay on 127.0.0.1:1455/8085/51121 only if a login flow is ever allowed.
 - Policy: a root-owned file managed by MDM (writable paths, allowlist, image digest, gateway URL), read by the shim only, mounted read-only into the guest; projects may only tighten. Optional `workspaceRoots: { roots: [...], outside: refuse | warn }` limits where `pi` may start (default unrestricted), so policy can forbid starting pi at `~` or `/`; it is independent of the `fallback` key below. Layers, profiles and settings are in decision 8. Fail closed when the runtime or proxy is missing or the policy is unreadable.
 - Host-only subcommands go through the image, not the developer: `pi update` and `pi install` of pi itself are answered with "new image digest from policy"; package installs of extensions happen inside under egress policy; the image updates by background pull of the pinned digest.
-- Cold path: one line ("preparing pi sandbox, one time"), never a build log; never auto-install a VM runtime.
+- Cold path: one line ("preparing pi sandbox, one time"), never a build log; the shim never auto-installs a VM runtime (that is `install.sh`, run once on the developer's or MDM's command, Phase 1).
 
 ### 6. Runtime backends behind one interface
 
@@ -151,7 +151,7 @@ Two adapters sit behind the interface: an OCI engine API client (the Docker-comp
 
 | Backend | Role | Why |
 |---|---|---|
-| Colima (dockerd in a Lima VM, OCI engine API adapter) | First class, supported from Phase 1 | MIT, free; real dockerd, so `exec -it`, same-path bind mounts and named volumes behave as on Docker; vz and virtiofs by default on macOS 13+, Intel and Apple silicon; `--ssh-agent`. Risks: one maintainer, ssh-agent breaks across VM restarts (#942) |
+| Colima (dockerd in a Lima VM, OCI engine API adapter) | First class, supported from Phase 1; the default when more than one backend is installed | MIT, free; real dockerd, so `exec -it`, same-path bind mounts and named volumes behave as on Docker; vz and virtiofs by default on macOS 13+, Intel and Apple silicon; `--ssh-agent`. Risks: one maintainer, ssh-agent breaks across VM restarts (#942) |
 | Apple `container` | First class, supported from Phase 1 | Apache-2.0, free, VM per container, `--ssh`, `--network none`, `--internal` host-only networks. Limits: macOS 26 and Apple silicon only, exec TTY bug #2299 open, breaking CLI changes in 1.0.0, 1.3.0 and 1.5.0 |
 | Podman (machine on macOS and Windows WSL2/Hyper-V, native rootless on Linux) | Third, same OCI engine API adapter; the Linux and Windows path | Apache-2.0; compat API v1.40; Red Hat sells support for Podman Desktop; on macOS no built-in ssh-agent forwarding (#23785) and a libkrun I/O report (#27216), so not first class there |
 | Lima | Base Colima sits on, not a separate backend | Apache-2.0, CNCF incubating; Colima adds the dockerd setup, socket and CLI |
@@ -162,6 +162,16 @@ Two adapters sit behind the interface: an OCI engine API client (the Docker-comp
 | OS sandbox (srt-style Seatbelt or bubblewrap around all of pi) | Fallback, only where policy allows it | Visible warning that credentials and the proxy then share the user account; never silent |
 
 The fallback and fail-closed rules meet through policy: `fallback: refuse` (enterprise default) makes the shim exit with the runtime IT must install; `fallback: os-sandbox` allows the weaker mode with the warning.
+
+Selection: `backend: auto | colima | apple | podman` in config (a convenience setting unless policy locks it); `auto` prefers Colima, then Apple `container`, then Podman. Moving a developer or a fleet from Colima to Apple `container` later is a configuration change, not a rewrite:
+
+- One `Backend` interface, small and fixed, is the only place a runtime is named. Operations: detect and health; ensure image by digest; find container by labels; create (mounts, network, user, labels); start; stop; remove; exec with PTY and resize; copy in and out; volume create, export and import; host-reachable proxy endpoint for the guest; ssh-agent socket path for the guest; status.
+- Everything above it (policy, config layers, image build, labels and hashes, proxy, host bridge, `pi sandbox` subcommands, acceptance tests) is runtime-agnostic and never imports a backend directly.
+- Two adapters from Phase 1: `oci-api` (Colima, Podman, Docker Engine over the Docker-compatible API) and `apple`.
+- Container state is disposable. All persistent state lives in named volumes or on host paths the launcher owns, so a switch is `pi sandbox migrate --to apple`: export the agent-state and cache volumes through the old adapter, import them through the new one, recreate the container.
+- The image is a plain OCI image, built once and loadable into either runtime.
+- Mount and network specs are the launcher's own types, translated per adapter; shared code never holds raw CLI flags.
+- Where a runtime lacks a feature its adapter declares it with capability flags (`hostSocket`, `singleFileMount`, `sshAgent`) and the launcher picks the workaround path, for example the `--internal` network proxy endpoint on Apple instead of a host socket relay (decision 3).
 
 ### 7. Per-agent layer inside the container
 
@@ -207,7 +217,18 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
 
 ### Phase 1: launcher package
 
-- Deliverables: the `pi` shim with the backend interface (OCI engine API adapter for Colima, Podman and Docker Engine on Linux; Apple `container` adapter), policy reader with MDM path and schema and JSON schema, the three layers and the shipped profiles of decision 8, `pi sandbox config` and `config set`, host proxy with CONNECT+SNI allowlist and gateway-only TLS termination, SSO token minting on the host, host bridge, cache and agent-state volumes, `pi sandbox status|gc|reset|config`, background image updates, completion that never starts the container.
+- Deliverables: the `pi` shim with the `Backend` interface and its two adapters of decision 6 (`oci-api` for Colima, Podman and Docker Engine on Linux; `apple`), `backend: auto | colima | apple | podman` selection, `pi sandbox migrate --to <backend>`, the backend conformance suite, `install.sh` and `uninstall` (below), policy reader with MDM path and schema and JSON schema, the three layers and the shipped profiles of decision 8, `pi sandbox config` and `config set`, host proxy with CONNECT+SNI allowlist and gateway-only TLS termination, SSO token minting on the host, host bridge, cache and agent-state volumes, `pi sandbox status|gc|reset|config`, background image updates, completion that never starts the container.
+- Setup script (`install.sh`, placeholder name). Run once, it leaves a machine where typing `pi` calls the launcher. `curl | sh` is not the enterprise path; the MDM package wraps the same steps. Every step is idempotent and prints one line:
+  1. Preflight: macOS version, chip, Homebrew present, no Docker Desktop requirement; refuse clearly when something is missing and say what to install.
+  2. Install Colima and the docker CLI client through Homebrew if absent, with a pinned minimum version; on Linux install Podman instead.
+  3. Create or update the Colima profile the launcher owns (its own name, not `default`): vz, virtiofs, ssh agent forwarding on, mounts limited to the allowed workspace roots or `$HOME`, CPU, memory and disk from config; start it.
+  4. Pull or build the pinned pi image (pi 1.5.0 plus this repo's extensions) and verify the digest.
+  5. Install the launcher package and put its `pi` first on PATH (shell rc snippet, or a symlink in a directory already first on PATH); if a host `pi` exists, say it is now shadowed and how to reach it when policy allows.
+  6. Write the user config layer from the chosen profile (`solo` by default, `enterprise` when an MDM policy file is present), including the credential source.
+  7. Start the host proxy and host bridge as user launch agents (launchd on macOS, systemd user units on Linux).
+  8. Run the smoke subset of the acceptance list: `pi --version` inside the container, credential sweep, no-route check, same-path mount check; one line per check.
+  9. Print the one next step: `cd <repo> && pi`.
+  - `uninstall` removes the shim, the launch agents, the launcher's Colima profile and its volumes, never the repos.
 - Acceptance:
   - [ ] Missing runtime, stopped proxy, unreadable or invalid policy, image digest mismatch: the shim refuses with a one-line reason (fail-closed tests).
   - [ ] Escape-class tests from inside: writes to `.git/hooks` and `.git/config` fail; a symlink to `~` dangles; no engine socket; DNS and ICMP blocked; a placeholder sent to an allowlisted non-gateway host is not swapped; OAuth token endpoints blocked.
@@ -218,6 +239,9 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
   - [ ] Credential sweep: a test dumps the running container's environment, `~/.pi/agent/auth.json`, `~/.npmrc`, `~/.gitconfig`, `~/.aws`, `~/.config` and the whole writable filesystem and finds no real credential.
   - [ ] A provider request captured from inside the container carries only the placeholder.
   - [ ] The whole list passes on both Colima and Apple `container`; an item one backend cannot pass is shown by `pi sandbox status` as a named gap.
+  - [ ] This acceptance list is the backend conformance suite, run against both adapters in CI where possible: Colima on a macOS runner; Apple `container` on macOS 26 runners when available, otherwise a manual release gate.
+  - [ ] `pi sandbox migrate --to apple` and back keeps sessions, trust and caches, and the suite passes after each move.
+  - [ ] Fresh Mac to working `pi` in one command (`install.sh`), under N minutes excluding the image pull, with no manual docker or colima command.
 
 ### Phase 2: `sandbox` extension for per-agent policy
 
@@ -244,6 +268,7 @@ Also deferred: running pi in a parent folder holding several repos so agents can
 | Placeholder format drift per provider | Pi rejects or misroutes a placeholder (Anthropic `sk-ant-oat` switches to OAuth mode) | Placeholders per provider in the image, tested against each pi upgrade; gateway path keeps one shape per provider |
 | Gateway cost and usage for `/spending` | Pi prices from its catalog times usage, so list price, not negotiated; translating gateways may drop cache fields | Pass-through gateway routes; model IDs matching pi's catalog; gateway spend logs as the source of truth |
 | Read-only `.git/config` | Agents cannot add remotes, set config or install hooks | Document; host-side `git` for those; revisit per project via policy |
+| Backend drift: shared code grows runtime-specific branches | Switching Colima to Apple `container` becomes a rewrite; one backend silently loses checks | The `Backend` interface is the only place a runtime is named, gaps are capability flags, and the conformance suite runs against both adapters |
 | Apple `container` exec TTY: host tty keeps `OPOST\|ONLCR`, every bare LF becomes CRLF, full-screen TUIs draw at column 0 (#2299, open since 2026-09-23) | Pi's TUI may misdraw on the Apple backend; a hard gap until fixed upstream if pi's renderer moves the cursor with bare LF | Phase 0 test; Colima as the backend meanwhile; the diagnosis in the issue points at `setraw()` in Containerization, so an upstream patch is a realistic contribution |
 | Apple `container` has no host-to-container socket relay (`--publish-socket` is container to host; #2101 fails with a read-only root) | The Colima relay-container pattern does not carry over | `--internal` host-only network with the proxy bound to the host side; verify no route beyond the host and bind nothing else there |
 | Apple `container` platform: macOS 26 and Apple silicon only; older macOS issues not addressed (README) | Intel Macs and macOS 15 cannot use it | Colima covers macOS 13+ on both architectures |
@@ -259,7 +284,7 @@ Also deferred: running pi in a parent folder holding several repos so agents can
 
 - Gateway vendor: LiteLLM, Bifrost, Agent Router, an existing internal gateway, or Radius; who runs it and where.
 - MDM product (Jamf, Kandji, Intune) and whether it can deliver a root-owned policy file and protect the shim binary.
-- Which first-class backend the launcher picks when both Colima and Apple `container` are installed, and whether IT accepts a single-maintainer runtime (Colima) or wants Podman with Red Hat's paid Podman Desktop support as the supported option.
+- Whether IT accepts a single-maintainer runtime (Colima, the default since 2026-11-03) or wants Podman with Red Hat's paid Podman Desktop support as the supported option.
 - macOS fleet version (Apple `container` needs macOS 26 and Apple silicon; Colima with vz needs macOS 13; Intel Macs remain).
 - Windows: WSL2 with the Linux shim, or out of scope.
 - SSO flow for the host token (OIDC device flow, MDM-issued device certificate) and its TTL.

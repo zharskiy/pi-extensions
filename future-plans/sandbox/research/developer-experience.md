@@ -157,6 +157,17 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - Docker Sandboxes `sbx`: CLI and local compute free incl. commercial; org governance (central network/filesystem/MCP policy) is a separate paid subscription; macOS 14+ Apple silicon, Windows 11 x64 with Hypervisor Platform, Linux needs KVM; does not require Docker Desktop. https://docs.docker.com/ai/sandboxes/faq/ ; https://docs.docker.com/ai/sandboxes/install/ .
     - Enterprise users found licensing unclear. https://forums.docker.com/t/docker-sandbox-pricing-unclear/151790
   - OpenShell: Apache-2.0; needs Docker, Podman or host virtualization; Linux and macOS Apple silicon; Windows via WSL2 (experimental) or MXC. https://github.com/NVIDIA/OpenShell
+- One-call setup (`install.sh`, placeholder name; full step list in the README, Phase 1). The developer, or the MDM package wrapping the same steps (not `curl | sh` in the enterprise path), runs it once; afterwards `pi` calls the launcher. Steps are idempotent and print one line each:
+  - preflight (macOS version, chip, Homebrew; no Docker Desktop needed; refuse and name what to install);
+  - Colima and the docker CLI client from Homebrew at a pinned minimum version (Podman on Linux);
+  - the launcher's own Colima profile, not `default`: vz, virtiofs, `--ssh-agent`, mounts limited to the workspace roots or `$HOME`, sizing from config; started;
+  - the pinned pi image pulled or built and its digest verified;
+  - the launcher's `pi` first on PATH, with a note when it shadows a host `pi`;
+  - the user config layer from the `solo` profile, or `enterprise` when an MDM policy file exists, including the credential source;
+  - host proxy and host bridge as user launch agents (launchd, systemd user units on Linux);
+  - a smoke run (`pi --version` inside, credential sweep, no-route check, same-path mount check);
+  - the next step, `cd <repo> && pi`.
+  - `uninstall` removes the shim, launch agents, the launcher's Colima profile and its volumes, never the repos.
 
 ## F. Policy delivery a developer cannot loosen
 
@@ -229,7 +240,7 @@ Hot path, target under 200 ms when warm:
 
 1. Resolve the project: `git rev-parse --show-toplevel` and `--git-common-dir` from cwd; fall back to cwd outside git. If policy sets the optional `workspaceRoots: { roots: [...], outside: refuse | warn }`, refuse or warn when the top-level is not under a declared root.
 2. Read the effective policy: MDM/system file first, then user file, then project file (tighten only); compute a policy hash.
-3. Detect the backend once and cache the answer, in the order policy sets: Colima's socket (`~/.colima/<profile>/docker.sock`), Apple `container` on macOS 26+ Apple silicon, then any other OCI engine API socket (Podman machine `ConnectionInfo.PodmanSocket`, Docker Engine on Linux; Docker Desktop and OrbStack work here too but are not recommended), else OS-sandbox fallback.
+3. Detect the backend once and cache the answer: `backend: auto | colima | apple | podman` from config, `auto` in this order: Colima's socket (`~/.colima/<profile>/docker.sock`), Apple `container` on macOS 26+ Apple silicon, then any other OCI engine API socket (Podman machine `ConnectionInfo.PodmanSocket`, Docker Engine on Linux; Docker Desktop and OrbStack work here too but are not recommended), else OS-sandbox fallback.
 4. Look up the per-project container by label (repo path hash); verify image digest and policy hash labels match.
 5. If running: `exec -it` with terminal env, working dir = host cwd (same absolute path), initial size, and SIGWINCH forwarding.
 6. If stopped: start it (no create), then exec. If missing or stale: create, then exec.
@@ -237,7 +248,7 @@ Hot path, target under 200 ms when warm:
 
 Cold path, first run on a machine (one visible line, never a build log):
 
-1. Runtime missing: print exactly which runtime the company policy expects and how IT installs it; never auto-install a VM runtime.
+1. Runtime missing: print exactly which runtime the company policy expects and how to install it (`install.sh` or the MDM package); the shim itself never auto-installs a VM runtime.
 2. Image missing: pull the pinned digest with a single progress line ("preparing pi sandbox, one time, 1.2 GB").
 3. Create the per-user cache volumes and the agent-state volume.
 4. Export the corporate CA bundle from the System keychain into the agent-state volume.
@@ -281,7 +292,7 @@ Failure modes the developer will actually hit, and the message they need:
 ## Recommendation for "type pi and it works"
 
 1. Ship a `pi` shim (the launcher) that is the only thing on PATH; the real pi lives in a pinned image, and the shim owns a small allowlist of host-side subcommands (`login`, `sandbox status|gc|reset`, completion).
-2. Two first-class backends: a warm per-project container on Colima through the OCI engine API (Docker-compatible; the same adapter drives Podman, Docker Engine on Linux and, unrecommended, Docker Desktop or OrbStack), and Apple `container` on macOS 26+ Apple silicon through its own CLI; Podman is the third backend and the Linux and Windows path; keep the backend behind one interface so OpenShell can be added when its file I/O matures. Docker Sandboxes stays a comparable only (R6).
+2. Two first-class backends, Colima the default (`backend: auto` prefers it): a warm per-project container on Colima through the OCI engine API (Docker-compatible; the same adapter drives Podman, Docker Engine on Linux and, unrecommended, Docker Desktop or OrbStack), and Apple `container` on macOS 26+ Apple silicon through its own CLI; Podman is the third backend and the Linux and Windows path; keep the backend behind one small `Backend` interface (adapters `oci-api` and `apple`, capability flags for gaps, launcher-owned mount and network types, all state in volumes) so moving Colima to Apple is configuration plus `pi sandbox migrate --to apple`, and OpenShell can be added when its file I/O matures. Docker Sandboxes stays a comparable only (R6).
 3. Container per repo top-level, named by path hash, kept running with an idle timeout; `pi` = `exec -it` into it, so warm start is one exec; first run shows one "preparing sandbox" line while pulling the image.
 4. Mount the repo top-level and the git common dir at identical absolute paths; deps and caches on named volumes; root filesystem read-only; `.git/hooks` and `.git/config` overlaid read-only.
 5. Pass terminal env as an explicit allowlist and nothing else, never the host `process.env` (`TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`; the reason Gondolin's env passthrough default is rejected), ship full terminfo, forward initial size explicitly and SIGWINCH, use an init process.
