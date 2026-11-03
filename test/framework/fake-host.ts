@@ -39,7 +39,7 @@ import { type FakeForm, openFakeForm } from "./fake-form.ts";
 import { plainTheme } from "./themes.ts";
 import { promptTokens } from "./usage-builders.ts";
 
-type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
+type FakeSessionFile = { id?: string; entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
 type ChatItem = { kind: "assistant"; text: string } | { kind: "entry"; customType: string; data: unknown };
 
@@ -548,6 +548,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         .entries.filter((entry) => entry.customType === customType)
         .map((entry) => entry.data as T),
     sessionUsage: (file) => sessionFile(file).usage,
+    sessionId: (file) => host.files.get(file)?.id,
     session: () => {
       if (!started) {
         throw new Error("no live pi session: called before session_start or after session_shutdown");

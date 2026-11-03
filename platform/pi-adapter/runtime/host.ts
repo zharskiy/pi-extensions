@@ -52,7 +52,7 @@ import {
 } from "./kept-selection.ts";
 import { toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
-import { readSessionEntries } from "./session-file.ts";
+import { readSessionEntries, readSessionId } from "./session-file.ts";
 
 const onSubscription = ({ model, modelRegistry }: ExtensionContext) =>
   model !== undefined &&
@@ -679,6 +679,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     },
     readEntries,
     sessionUsage: (file) => sumUsage(entriesOf(file)),
+    sessionId: readSessionId,
     session: () => sessionInfo(liveCtx(state), created),
     onAgentStart: (handler) => {
       agentStartHandlers.push(handler);

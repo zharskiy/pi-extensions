@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BUSY_CHANNEL } from "../../../../../platform/shared/index.ts";
-import { createFakeHost, flushMicrotasks } from "../../../../../test/framework/index.ts";
+import { BUSY_CHANNEL, handoffPath } from "../../../../../platform/shared/index.ts";
+import { createFakeHost, flushMicrotasks, usageTotals } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { agentStatusPlugin } from "../../../api/plugins/agent-status.ts";
@@ -260,5 +260,26 @@ describe("reload", () => {
     expect(kept.get(record.id)?.state).toBe("failed");
     expect(kept.get(record.id)?.description).toBe(record.description);
     expect(kept.list()).toHaveLength(1);
+  });
+
+  it("points a parent session's restored agent at the parent's handoff folder", async () => {
+    const harness = createHarness(plugins);
+    const [record] = await spawnAgents(harness, 1);
+    const parentFile = harness.host.info.file as string;
+
+    const child = createFakeHost({
+      ...harness.host.info,
+      id: "child-session",
+      file: join(harness.root, "sessions", "child.jsonl"),
+      parentSession: parentFile,
+    });
+
+    child.files.set(parentFile, { id: harness.host.info.id, entries: [], usage: usageTotals(0) });
+
+    const next = startPlugins(child, harness.runtime, plugins);
+
+    expect(next.services.require("registry").get(record.id)?.handoffPath).toBe(
+      handoffPath(harness.host.info.id, { agentId: record.id }),
+    );
   });
 });

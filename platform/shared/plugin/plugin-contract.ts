@@ -22,6 +22,7 @@ type PluginContext<E extends EventMap, S, C> = {
   runtime: AgentRuntime;
   bus: Bus<E>;
   settings: C;
+  settingsErrors(): readonly string[];
   services: Services<S>;
   paths: ExtensionPaths;
 };

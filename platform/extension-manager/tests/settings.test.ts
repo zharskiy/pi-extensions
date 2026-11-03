@@ -172,4 +172,23 @@ describe("settings files", () => {
       names: [],
     });
   });
+
+  it("ignores a trusted project file of a user-only settings file and reports it", () => {
+    const where = withFiles(true);
+    const project = projectSettingsPath(where.cwd, FILE);
+    const user = userSettingsPath(where.agentDir, FILE);
+
+    expect(loadSettingsFiles(schema, DEFAULTS, FILE, where, "user")).toEqual({
+      settings: { count: 2, ratio: 0.2, names: [] },
+      errors: [`${project}: ignored, ${FILE} is read only from ${user}`],
+    });
+  });
+
+  it("reports nothing for a user-only settings file without a project file", () => {
+    const where = location(true);
+
+    write(userSettingsPath(where.agentDir, FILE), { count: 3 });
+
+    expect(loadSettingsFiles(schema, DEFAULTS, FILE, where, "user").errors).toEqual([]);
+  });
 });

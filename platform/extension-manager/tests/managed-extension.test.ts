@@ -41,6 +41,29 @@ const managed = (plugins: TestPlugin[], extra: { onError?: (error: unknown) => v
   });
 
 describe("createManagedExtension", () => {
+  it("gives plugins the errors of the latest settings load", () => {
+    const seen: (readonly string[])[] = [];
+    const reader: TestPlugin = {
+      id: "reader",
+      enable: ({ host, settingsErrors }) => {
+        host.onSessionStart(() => {
+          seen.push([...settingsErrors()]);
+        });
+
+        return undefined;
+      },
+    };
+    const { host, runtime, paths } = sessionDirs({ count: 50 });
+    const file = join(paths.agentDir, "managed.json");
+
+    managed([reader]).boot(host, runtime, paths);
+    host.start();
+    writeFileSync(file, JSON.stringify({ count: 5 }));
+    host.start();
+
+    expect(seen).toEqual([[`${file}: count must be a number between 1 and 10`], []]);
+  });
+
   it("settings reload runs before plugin session-start handlers", () => {
     const seen: number[] = [];
     const reader: TestPlugin = {

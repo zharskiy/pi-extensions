@@ -1,8 +1,17 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseSessionLines, readSessionEntries, replaySystemMessages } from "../runtime/session-file.ts";
+import { useTempDirs } from "../../../test/framework/index.ts";
+import {
+  parseSessionLines,
+  readSessionEntries,
+  readSessionHeader,
+  readSessionId,
+  replaySystemMessages,
+} from "../runtime/session-file.ts";
+
+const temp = useTempDirs();
 
 const user = JSON.stringify({ type: "message", message: { role: "user", content: "hi" } });
 
@@ -99,5 +108,66 @@ describe("system message replay", () => {
     expect([...replay.tools.values()]).toEqual([
       { name: "read", description: "Read a file.", parameters: {} },
     ]);
+  });
+
+  it("reads the session id from the header and nothing from a missing or headerless file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-session-id-"));
+    const named = join(dir, "renamed.jsonl");
+    const headerless = join(dir, "headerless.jsonl");
+
+    writeFileSync(named, `${JSON.stringify({ type: "session", id: "s-1", cwd: "/repo" })}\n`);
+    writeFileSync(
+      headerless,
+      `${JSON.stringify({ type: "message", message: { role: "user", content: "hi" } })}\n`,
+    );
+
+    expect([named, headerless, join(dir, "missing.jsonl")].map(readSessionId)).toEqual([
+      "s-1",
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("reads the header id and parent from the first line", async () => {
+    const dir = temp.make("pi-session-header-");
+    const child = join(dir, "child.jsonl");
+    const root = join(dir, "root.jsonl");
+    const header = { type: "session", version: 3, id: "s-2", cwd: "/repo", parentSession: "/p.jsonl" };
+
+    writeFileSync(child, `${JSON.stringify(header)}\n${user}\n`);
+    writeFileSync(root, JSON.stringify({ type: "session", id: "s-1", cwd: "/repo" }));
+
+    expect(await readSessionHeader(child)).toEqual({ header: { id: "s-2", parentSession: "/p.jsonl" } });
+    expect(await readSessionHeader(root)).toEqual({ header: { id: "s-1" } });
+  });
+
+  it("reads no header from an empty, headerless or blank-first file, or one whose first line passes 64 KiB", async () => {
+    const dir = temp.make("pi-session-header-");
+    const header = JSON.stringify({ type: "session", id: "s-1", cwd: "x".repeat(64 * 1024) });
+    const files = { empty: "", headerless: `${user}\n`, blank: `\n${header}\n`, long: `${header}\n` };
+
+    Object.entries(files).forEach(([name, text]) => {
+      writeFileSync(join(dir, name), text);
+    });
+
+    const reads = await Promise.all(Object.keys(files).map((name) => readSessionHeader(join(dir, name))));
+
+    expect(reads).toEqual([
+      { header: undefined },
+      { header: undefined },
+      { header: undefined },
+      { header: undefined },
+    ]);
+  });
+
+  it.skipIf(process.getuid?.() === 0)("tells a vanished file from one it cannot read", async () => {
+    const dir = temp.make("pi-session-header-");
+    const locked = join(dir, "locked.jsonl");
+
+    writeFileSync(locked, `${JSON.stringify({ type: "session", id: "s-1" })}\n`);
+    chmodSync(locked, 0o000);
+
+    expect(await readSessionHeader(join(dir, "missing.jsonl"))).toEqual({ gone: true });
+    expect(await readSessionHeader(locked)).toEqual({ error: "EACCES" });
   });
 });

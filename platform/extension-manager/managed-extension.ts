@@ -3,6 +3,7 @@ import { type AgentRuntime, createPiExtension, type Host, type SessionInfo } fro
 import {
   type EventMap,
   type ExtensionPaths,
+  type FileScope,
   loadSettingsFiles,
   type Plugin,
   type SettingsSchema,
@@ -10,7 +11,7 @@ import {
 import { createExtensionManager, type ExtensionManager } from "./extension-manager.ts";
 import { reportSettingsErrors } from "./settings-errors.ts";
 
-type SettingsFiles<C> = { schema: SettingsSchema<C>; file: string };
+type SettingsFiles<C> = { schema: SettingsSchema<C>; file: string; scope?: FileScope };
 
 type SettingsReload<C> = {
   reload(settings: C, info: SessionInfo, runtime: AgentRuntime, notify: (message: string) => void): void;
@@ -53,29 +54,33 @@ const watchManagedSettings = <C>(
   spec: ManagedSettings<C>,
   paths: ExtensionPaths,
   overrides: Partial<C> = {},
-): C => {
+) => {
   const initial = spec.defaults(paths);
   const settings = Object.assign({}, initial, overrides);
   const report = reportSettingsErrors(host, label);
+  const errors: string[] = [];
 
   const notify = (message: string) => {
+    errors.push(message);
     report([message]);
   };
 
   host.onSessionStart((info) => {
+    errors.length = 0;
+
     if ("reload" in spec) {
       spec.reload(settings, info, runtime, notify);
     } else {
-      const loaded = loadSettingsFiles(spec.schema, initial, spec.file, info);
+      const loaded = loadSettingsFiles(spec.schema, initial, spec.file, info, spec.scope);
 
       Object.assign(settings, loaded.settings);
-      report(loaded.errors);
+      loaded.errors.forEach(notify);
     }
 
     Object.assign(settings, overrides);
   });
 
-  return settings;
+  return { settings, errors: () => errors };
 };
 
 export const createManagedExtension = <E extends EventMap, S, C = undefined>(
@@ -85,15 +90,17 @@ export const createManagedExtension = <E extends EventMap, S, C = undefined>(
 
   const boot: ManagedExtension<E, S, C>["boot"] = (piHost, runtime, paths, overrides = {}) => {
     const host = options.host ? options.host(piHost) : piHost;
-    const settings = options.settings
+    const watched = options.settings
       ? watchManagedSettings(host, runtime, options.namespace, options.settings, paths, overrides.settings)
-      : (undefined as C);
+      : { settings: undefined as C, errors: () => [] };
+    const settings = watched.settings;
     const onError = overrides.onError ?? ((error: unknown) => (options.onError ?? rethrow)(error, host));
 
     const manager = createExtensionManager({
       host,
       runtime,
       settings,
+      settingsErrors: watched.errors,
       plugins: options.plugins,
       paths,
       disabled: options.disabled?.(settings) ?? [],
