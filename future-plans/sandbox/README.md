@@ -14,7 +14,7 @@ Question: how pi and every extension in this repo run inside a sandbox that an e
 
 - **R1 Whole boundary.** Pi, all extensions from this repo, MCP servers and every subprocess run inside a container, microVM or OS sandbox.
 - **R2 Tokens outside.** No model-provider API key, OAuth token or refresh token is readable inside the boundary.
-- **R3 Per-agent cwd.** Each agent writes only to its own cwd or worktree (plus what git needs); the rest of the host is not visible.
+- **R3 Per-agent cwd.** Each agent writes only to its own cwd or worktree (plus what git needs); the rest of the host is not visible. An agent may also work in a different repo than the caller; the workspace folder, a parent folder holding several projects where the developer opens `pi`, is how that is met (decision 4, [../cwd/spec.md](../cwd/spec.md)).
 - **R4 Enterprise grade.** Deny-by-default URL allowlist, central policy the agent (and with MDM, the developer) cannot loosen, fail closed, per-user audit, macOS first, Linux second.
 - **R5 Zero friction.** The developer types `pi` in a project; no container commands, no image builds, warm start that feels native.
 
@@ -58,21 +58,21 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 ## Recommendation
 
 ```
- HOST (macOS, user account)        |  BOUNDARY (Linux VM / container)  |  GUEST (per-repo container)
+ HOST (macOS, user account)        |  BOUNDARY (Linux VM / container)  |  GUEST (per-cwd container)
                                    |                                   |
  MDM ── policy file (root-owned) ──┤                                   |
    writable paths, allowlist,      |                                   |
    image digest, gateway URL       |                                   |
             │                      |                                   |
  `pi` shim ─┼─ Docker API / Apple  |  no default route                 |  real pi + repo extensions
-   repo root, warm container       |  DNS: none, metadata IPs blocked  |  (PTY, TERM*, size, SIGWINCH)
-   named by repo path hash ────────┼── exec -it ───────────────────────┼─▶ models.json: baseUrl=gateway,
+   cwd top-level, warm container   |  DNS: none, metadata IPs blocked  |  (PTY, TERM*, size, SIGWINCH)
+   named by path hash ─────────────┼── exec -it ───────────────────────┼─▶ models.json: baseUrl=gateway,
             │                      |                                   |   placeholder key per provider
  host bridge (socket) ◀────────────┼── open, pbpaste, notify, editor ──┤  sandbox extension (Phase 2):
             │                      |                                   |   bwrap+Landlock per agent
  egress proxy ◀────────────────────┼── HTTPS_PROXY (only exit) ────────┤
    CONNECT + SNI allowlist         |                                   |  mounts at host paths:
-   TLS terminate: gateway host     |                                   |   repo top-level      rw
+   TLS terminate: gateway host     |                                   |   cwd top-level       rw
    swaps placeholder for SSO token |                                   |   git common dir      rw
             │                      |                                   |   .git/hooks, config  ro
  keychain / SSO ── per-user token  |                                   |   ~/.pi/agent  named volume
@@ -117,7 +117,8 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 ### 4. Files
 
-- Repo top-level (`git rev-parse --show-toplevel`) and its git common dir (`--git-common-dir`) mounted read-write at the same absolute paths as on the host. Reasons: sessions keyed by cwd, `trust.json` keyed by path, worktree metadata stores absolute paths, the subagents `.pi/worktrees` live under cwd, and a linked worktree otherwise cannot commit (the sbx failure) ([developer-experience.md](research/developer-experience.md) C).
+- The cwd top-level mounted read-write at its host absolute path: the git top-level (`git rev-parse --show-toplevel`) when cwd is inside a repo, otherwise cwd itself, the workspace folder. In a repo, its git common dir (`--git-common-dir`) is mounted at the same host path too. Reasons: sessions keyed by cwd, `trust.json` keyed by path, worktree metadata stores absolute paths, the subagents `.pi/worktrees` live under cwd, and a linked worktree otherwise cannot commit (the sbx failure) ([developer-experience.md](research/developer-experience.md) C).
+- Workspace folder: when `pi` starts in a folder that is not a repo but holds several, the whole folder is the mount, so every project under it is visible and an agent can work in another repo than the caller. The git common dir of each repo under it is inside the mount, so nothing extra is mounted. A linked worktree whose git common dir lies outside the workspace folder is unsupported inside the container. Everything under the folder is writable to the agent (see the blast-radius risk and the `workspaceRoots` policy entry). `.pi/` and its `.gitignore` are created in the workspace folder, outside any repo; harmless. Sessions and the trust prompt are keyed by cwd, so they belong to the workspace folder; per-target trust for agent cwds is in the cwd spec.
 - `.git/hooks` and `.git/config` overlaid read-only (`core.fsmonitor`, `core.hooksPath`, hooks are the documented attack path, finding 4). Cost: agents cannot run `git config`, add remotes or install hooks inside; worktree creation still works because it writes `.git/worktrees/`, not `config` (to be confirmed in Phase 0, see Not verified).
 - `~/.pi/agent` on a named volume per user, writable (sessions, trust, model-default, style, `/agents setup`), with `models.json` and `auth.json` overlaid read-only from the image. Sessions inside do not mix with host pi sessions.
 - `node_modules`, `.venv`, `target` and caches (`~/.npm`, `~/.cache/pip`) on named volumes when file-share speed demands it; host tools then see empty dirs there.
@@ -126,11 +127,11 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 ### 5. Launcher: a `pi` shim
 
-- A small package from this repo, first on PATH. Hot path (target under 200 ms warm): find repo root and common dir, read policy, find the per-repo container by label (repo path hash, image digest, policy hash), start or create it if needed, `exec -it` the real pi with working dir = host cwd.
+- A small package from this repo, first on PATH. Hot path (target under 200 ms warm): find the cwd top-level (git top-level inside a repo, cwd itself otherwise, the workspace case) and the common dir if any, read policy, check the top-level against the `workspaceRoots` policy, find the per-cwd-top-level container by label (path hash, image digest, policy hash), start or create it if needed, `exec -it` the real pi with working dir = host cwd.
 - Terminal: forward `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`; pass initial size and SIGWINCH (the 80x24 bug class in Docker and sbx); ship `ncurses-term`; run an init process; set `PI_CLIPBOARD_OSC52=1`.
 - Mounts the runtime's host ssh-agent socket (`/run/host-services/ssh-auth.sock` on Docker Desktop and OrbStack, `--ssh` on Apple `container`). The guest can use, not read, loaded keys; a filtered agent is a later option.
 - One host bridge socket for host-only actions: `open`, `pbpaste` for image paste, desktop notifications, `code -g path:line`/editor; OAuth callback relay on 127.0.0.1:1455/8085/51121 only if a login flow is ever allowed.
-- Policy: a root-owned file managed by MDM (writable paths, allowlist, image digest, gateway URL), read by the shim only, mounted read-only into the guest; projects may only tighten. Fail closed when the runtime or proxy is missing or the policy is unreadable.
+- Policy: a root-owned file managed by MDM (writable paths, `workspaceRoots`, allowlist, image digest, gateway URL), read by the shim only, mounted read-only into the guest; projects may only tighten. `workspaceRoots: { roots: [...], outside: refuse | warn }` lists the folders under which `pi` may start; when the cwd top-level is not under a declared root the shim refuses or warns per `outside` (enterprise default `refuse`), so policy can forbid starting pi at `~` or `/`. It is independent of the `fallback` key below. Fail closed when the runtime or proxy is missing or the policy is unreadable.
 - Host-only subcommands go through the image, not the developer: `pi update` and `pi install` of pi itself are answered with "new image digest from policy"; package installs of extensions happen inside under egress policy; the image updates by background pull of the pinned digest.
 - Cold path: one line ("preparing pi sandbox, one time"), never a build log; never auto-install a VM runtime.
 
@@ -151,7 +152,7 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
 
 - A `sandbox` extension (second layer, cheap because the guest is always Linux) reads a `sandbox:` frontmatter key per agent definition: writable paths (default: the agent's cwd or worktree plus the git common dir), a network allowlist (a subset of the container's), or `false`.
 - It overrides `bash`, `read`, `write`, `edit`, `grep`, `find`, `ls` with operations backends that run in bubblewrap plus Landlock bound to the child's `ctx.cwd`, covers `user_bash`, applies the allowlist and a private-address check to the subagents `fetch` tool (no allowlist or SSRF guard today, `extensions/subagents/core/fetch-tool/fetch.ts:94-110`), and scrubs env for MCP stdio servers.
-- Seams: inline child extension factories in `platform/pi-adapter/child/child-runtime.ts:172-179` (the loader already loads user extensions in every child, `:166-171`); `SpawnSpec` (`platform/pi-adapter/types/runtime.ts:44-69`) gets a policy field flowing from `extensions/subagents/core/run-agent/runner.ts:741-753`; [../cwd/spec.md](../cwd/spec.md) supplies the per-agent cwd value (it gives the value, not enforcement). [pi-and-harness.md](research/pi-and-harness.md) F "Seams", "future-plans/cwd/spec.md".
+- Seams: inline child extension factories in `platform/pi-adapter/child/child-runtime.ts:172-179` (the loader already loads user extensions in every child, `:166-171`); `SpawnSpec` (`platform/pi-adapter/types/runtime.ts:44-69`) gets a policy field flowing from `extensions/subagents/core/run-agent/runner.ts:741-753`; [../cwd/spec.md](../cwd/spec.md) supplies the per-agent cwd value (it gives the value, not enforcement). Its rule "session cwd or inside it" already admits agents in other repos under a workspace folder, so the cwd value needs no spec change; per-repo project resources for such children is an open item (Open questions). [pi-and-harness.md](research/pi-and-harness.md) F "Seams", "future-plans/cwd/spec.md".
 - Interim no-code seam: `shellPath` set to a wrapper that execs `bwrap` around the shell. Covers model bash and `!` in main and children; does not cover read, write, edit, grep, find, ls, MCP or extension tools; per-agent policy only by deriving it from `$PWD` or `PI_SESSION_FILE`; settable in project settings only after trust.
 - Related primitives in [../enterprise-workflow/harness/harness-side.md](../enterprise-workflow/harness/harness-side.md): 2.2 holds the `cwd` contract this layer confines to; 2.3, the per-agent MCP filter, is "a guard against accidental writes, not a sandbox" and stays that way.
 - Not a security boundary on its own (same process, finding 5); it limits what one agent can do to another agent's files and the network, inside a container that already holds no credentials.
@@ -170,6 +171,7 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
 - Proxy: mitmproxy addon (~30 lines) or a small Node proxy; LiteLLM as gateway with a test virtual key; decide build vs buy for the proxy at the end.
   - Build-vs-buy criteria: host-bound placeholder swap, SSE streaming without buffering, WebSocket upgrade, per-user log lines, MDM-deliverable config, signed updates.
 - Measure on the standard Mac per backend (Docker Desktop, OrbStack, Colima, Apple `container`): cold and warm start, `npm install` and `git status` on a large repo, worktree agent create and commit.
+- Workspace case: a folder with several repos as the mount; record exec latency and `git status` across the repos, and an agent started in a repo other than the caller's.
 - Run `sbx run --kit docker.io/sbx/pi-kit:latest pi` side by side with the same repo and record the same numbers.
 - Output: one table per backend (start times, file-share numbers, TUI defects, licensing) and a go or no-go for sbx as an optional backend.
 - Acceptance:
@@ -182,11 +184,12 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
 
 ### Phase 1: launcher package
 
-- Deliverables: the `pi` shim with the backend interface (Docker API, Apple `container`), policy reader with MDM path and schema, host proxy with CONNECT+SNI allowlist and gateway-only TLS termination, SSO token minting on the host, host bridge, cache and agent-state volumes, `pi sandbox status|gc|reset`, background image updates, completion that never starts the container.
+- Deliverables: the `pi` shim with the backend interface (Docker API, Apple `container`), policy reader with MDM path and schema (including the `workspaceRoots` entry and the shim check against it), host proxy with CONNECT+SNI allowlist and gateway-only TLS termination, SSO token minting on the host, host bridge, cache and agent-state volumes, `pi sandbox status|gc|reset`, background image updates, completion that never starts the container.
 - Acceptance:
   - [ ] Missing runtime, stopped proxy, unreadable or invalid policy, image digest mismatch: the shim refuses with a one-line reason (fail-closed tests).
   - [ ] Escape-class tests from inside: writes to `.git/hooks` and `.git/config` fail; a symlink to `~` dangles; no Docker socket; DNS and ICMP blocked; a placeholder sent to an allowlisted non-gateway host is not swapped; OAuth token endpoints blocked.
   - [ ] Linked worktree as project: commit works and host git sees it.
+  - [ ] Workspace folder with several repos: an agent in another repo than the caller reads, commits and creates a worktree there; a linked worktree whose common dir is outside the folder is refused with a one-line reason; a cwd top-level outside every allowed root is refused.
   - [ ] Corporate TLS inspection on: npm, pip, git and pi provider calls succeed.
   - [ ] Linux: files created inside are owned by the host UID.
 
@@ -212,6 +215,7 @@ One process per agent (decision 8), when multi-tenant or untrusted-repo needs ap
 | Corporate TLS-inspecting proxies | Nothing works on day one ("self-signed certificate in chain") | Export System keychain roots at start; set CA env vars; chain the host proxy upstream to the corporate one |
 | Placeholder format drift per provider | Pi rejects or misroutes a placeholder (Anthropic `sk-ant-oat` switches to OAuth mode) | Placeholders per provider in the image, tested against each pi upgrade; gateway path keeps one shape per provider |
 | Gateway cost and usage for `/spending` | Pi prices from its catalog times usage, so list price, not negotiated; translating gateways may drop cache fields | Pass-through gateway routes; model IDs matching pi's catalog; gateway spend logs as the source of truth |
+| Wide workspace folder (pi started at a folder holding many projects, or at `~`) | Every project under it is writable to every agent; larger blast radius than one repo | `workspaceRoots` in policy; the shim refuses or warns when the cwd top-level is not under a root; `~` and `/` never listed |
 | Read-only `.git/config` | Agents cannot add remotes, set config or install hooks | Document; host-side `git` for those; revisit per project via policy |
 | Docker Business licensing ($24/user/month above the SMB threshold) | Cost or procurement delay | Docker Engine API also serves OrbStack and Colima; Apple `container` on macOS 26 |
 | Runtime CVE cadence (sbx six 2026 CVEs, OpenShell six, Apple container advisories) | A boundary escape between patches | Pin runtime versions through MDM; credentials outside limit the blast radius; no Docker socket; track advisories |
@@ -226,6 +230,7 @@ One process per agent (decision 8), when multi-tenant or untrusted-repo needs ap
 - macOS fleet version (Apple `container` needs macOS 26; sbx needs 14+ on Apple silicon; Intel Macs remain).
 - Windows: WSL2 with the Linux shim, or out of scope.
 - SSO flow for the host token (OIDC device flow, MDM-issued device certificate) and its TTL.
+- cwd plan, project resources for children: a child whose cwd is a repo under the workspace should resolve that repo's `AGENTS.md`, `.pi/settings.json`, `.pi/agents`, skills, extensions and `.pi/mcp.json`. Pi collects context files (`AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`) by walking up from cwd through parent directories to the filesystem root, never down (`dist/core/resource-loader.js:130` and `:73-87`), and project `.pi/` resources come from `<cwd>/.pi`; so with pi started at the parent folder, repos under the workspace folder contribute nothing to the main session, which sees only the parent's config. [../cwd/spec.md](../cwd/spec.md) has to define this; this plan depends on it.
 - Which git remotes dominate (ssh agent vs HTTPS with injected tokens), and whether commit signing is required.
 
 ## Not verified
@@ -234,6 +239,7 @@ One process per agent (decision 8), when multi-tenant or untrusted-repo needs ap
 - Whether pi's undici dispatcher (`proxyTunnel: true`) trusts a TLS-terminating proxy through `NODE_EXTRA_CA_CERTS` (confirmed by Node docs, not exercised end to end).
 - Whether bubblewrap and Landlock run inside a container under the default seccomp profile without extra privileges (no research file covers it).
 - Whether `git worktree add` and normal commits succeed with `.git/config` read-only.
+- Exec latency and `git status` cost when the mount is a workspace folder with several repos (Phase 0 measures it).
 - Docker Sandboxes: hypervisor per OS, official startup time, governance price, source publication, CA lifecycle (the proxy CA is seen only in a user-filed issue), WebSocket upgrade injection, injection for arbitrary custom hosts, fix version of CVE-2026-17106, whether pi is first-class or kit-only.
 - OpenShell: default `enforcement` in v0.1.6, whether the endpoint binding that closed #896 (endpoint-blind injection) covers every injection path, whether `--from pi` still resolves after the catalog retirement, commercial support, VM first-boot time (10-30 s is from the October pass), inference-routing pages (404).
 - Gondolin's network model and secret binding (DeepWiki only); license is Apache-2.0.
