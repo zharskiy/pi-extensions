@@ -12,6 +12,7 @@ type ManagerOptions<E extends EventMap, S, C> = {
   host: Host;
   runtime: AgentRuntime;
   settings: C;
+  settingsErrors?: () => readonly string[];
   plugins: Plugin<E, S, C>[];
   paths: ExtensionPaths;
   disabled: Iterable<string>;
@@ -95,6 +96,7 @@ export const createExtensionManager = <E extends EventMap, S, C>(
       runtime: options.runtime,
       bus,
       settings: options.settings,
+      settingsErrors: options.settingsErrors ?? (() => []),
       services,
       paths: options.paths,
     });

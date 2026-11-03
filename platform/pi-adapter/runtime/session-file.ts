@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { open } from "node:fs/promises";
 import {
   buildContextEntries,
   migrateSessionEntries,
@@ -7,6 +8,7 @@ import {
   sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
+import type { HeaderRead, SessionHeader } from "../types/session.ts";
 import type { TranscriptItem } from "../types/view.ts";
 import { messageText } from "./message-text.ts";
 
@@ -25,6 +27,7 @@ type RawMessage = {
 
 type RawEntry = {
   id?: string;
+  parentSession?: string;
   parentId?: string | null;
   type?: string;
   customType?: string;
@@ -128,6 +131,47 @@ export const readSessionId = (file: string): string | undefined => {
     return typeof header?.id === "string" ? header.id : undefined;
   } catch {
     return undefined;
+  }
+};
+
+const HEADER_LIMIT = 64 * 1024;
+
+const headerOf = (line: string): SessionHeader | undefined => {
+  const [entry] = parseSessionEntries(line) as RawEntry[];
+
+  if (entry?.type !== "session" || typeof entry.id !== "string") {
+    return undefined;
+  }
+
+  return typeof entry.parentSession === "string"
+    ? { id: entry.id, parentSession: entry.parentSession }
+    : { id: entry.id };
+};
+
+const firstLine = async (file: string) => {
+  const handle = await open(file, "r");
+
+  try {
+    const { bytesRead, buffer } = await handle.read(Buffer.alloc(HEADER_LIMIT), 0, HEADER_LIMIT, 0);
+    const end = buffer.subarray(0, bytesRead).indexOf("\n");
+
+    if (end < 0 && bytesRead === HEADER_LIMIT) {
+      return "";
+    }
+
+    return buffer.subarray(0, end < 0 ? bytesRead : end).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+};
+
+export const readSessionHeader = async (file: string): Promise<HeaderRead> => {
+  try {
+    return { header: headerOf(await firstLine(file)) };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    return code === "ENOENT" ? { gone: true } : { error: code ?? String(error) };
   }
 };
 

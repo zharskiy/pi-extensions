@@ -28,6 +28,7 @@ export {
   type HandoffToolRows,
   type HandoffValidation,
   handoffPath,
+  handoffRoot,
   parseRequestDetails,
   parseSeedDetails,
   validateHandoff,
@@ -52,6 +53,7 @@ export { type HandoffTarget, handoffTool } from "./handoff/handoff-tool.ts";
 export { isPlainObject } from "./plain-object.ts";
 export type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "./plugin/plugin-contract.ts";
 export {
+  type FileScope,
   loadSettingsFiles,
   type ObjectParse,
   parseSettings,

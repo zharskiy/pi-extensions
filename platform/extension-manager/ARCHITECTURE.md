@@ -9,22 +9,22 @@ Each extension's `api/extension.ts` default-exports `createManagedExtension({ na
 The boot:
 
 1. Wraps the host when `host` is given (session-limits narrows it to the conversation).
-2. When `settings` is given, starts from `defaults(paths)` and registers the reload in `host.onSessionStart` before any plugin enables, so every plugin's session-start handler sees the new values. The reload is either the user-then-project file merge (`schema` and `file`, through `loadSettingsFiles`) or the extension's own `reload(settings, info, runtime, notify)`. It patches one settings object in place, so plugins read `ctx.settings.x` at use time; errors are warnings named `<namespace> settings: …`, each reported once. Boot `overrides.settings` are applied after every reload.
+2. When `settings` is given, starts from `defaults(paths)` and registers the reload in `host.onSessionStart` before any plugin enables, so every plugin's session-start handler sees the new values. The reload is either the user-then-project file merge (`schema`, `file` and an optional `scope: "user"` that ignores and reports a project file, through `loadSettingsFiles`) or the extension's own `reload(settings, info, runtime, notify)`. It patches one settings object in place, so plugins read `ctx.settings.x` at use time; errors are warnings named `<namespace> settings: …`, each reported once. Boot `overrides.settings` are applied after every reload.
 3. Builds the manager with the plugins, the settings, `paths` (`root`, `agentDir`) and the ids `disabled(settings)` returns.
 4. Registers `disableAll()` on session shutdown.
 5. Rethrows errors unless `onError` is given; a plugin that throws while enabling fails the boot.
 
-Thirteen extensions pass one plugin from `api/plugin.ts` whose `enable` wires host, core and ui; subagents passes eleven from `api/plugins.ts` with settings, `childExclude: [root]`, `skillInventory: true`, `disabled` and a notifying `onError`.
+Fourteen extensions pass one plugin from `api/plugin.ts` whose `enable` wires host, core and ui; subagents passes eleven from `api/plugins.ts` with settings, `childExclude: [root]`, `skillInventory: true`, `disabled` and a notifying `onError`.
 
 ## The manager
 
 `createExtensionManager` (`extension-manager.ts`):
 
-- A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host`, `runtime`, `bus`, `settings`, the service registry and `paths` (`root`, `agentDir`).
+- A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host`, `runtime`, `bus`, `settings`, `settingsErrors()` (the errors of the latest settings load, file or `reload` notices, empty without settings or for `createExtensionManager` callers that pass none; retention refuses to delete while any exist), the service registry and `paths` (`root`, `agentDir`).
 - Plugins are sorted topologically by `requires`; a cycle throws. A plugin in the disabled list is skipped silently; one whose required plugin is off or missing is skipped with one warning at session start.
 - Plugins talk two ways: the service registry (`provide`, `require`, `has`; `require` throws when no enabled plugin provided the key) and the typed in-process bus (`createBus` in `bus.ts`, keyed by the extension's event map type; subagents uses `agent:changed`, `agent:turn`, `agent:closed`, `agent:usage`, `batch:settled`). A throwing bus listener goes to `onError`.
 - `disableAll()` runs the disable callbacks in reverse order, one after another; a failing callback goes to `onError` and the rest still run.
 
 ## Settings
 
-Each extension's settings are `<agentDir>/<file>` (user) and `<cwd>/.pi/<file>` (project, read only when the project is trusted). `parseSettings` (`platform/shared/plugin/settings-files.ts`) validates each known key against a schema (number range, string list, choice of strings, or an object with its own `parse`); invalid keys are dropped and reported, the rest applies. Settings are read once per session start, defaults then user then project, because pi builds a new extension per session; nothing reloads live. `reportSettingsErrors` (`settings-errors.ts`) is the once-per-message warning.
+Each extension's settings are `<agentDir>/<file>` (user) and `<cwd>/.pi/<file>` (project, read only when the project is trusted and the settings are not `scope: "user"`). `parseSettings` (`platform/shared/plugin/settings-files.ts`) validates each known key against a schema (number range, string list, choice of strings, or an object with its own `parse`); invalid keys are dropped and reported, the rest applies. Settings are read once per session start, defaults then user then project, because pi builds a new extension per session; nothing reloads live. `reportSettingsErrors` (`settings-errors.ts`) is the once-per-message warning.
