@@ -4,7 +4,7 @@
 
 **Background agents, session awareness and a calmer terminal for the [pi coding agent](https://pi.dev).**
 
-Fourteen extensions in one pi package (`pi-extensions-mz`), built on one small shared platform.
+Fifteen extensions in one pi package (`pi-extensions-mz`), built on one small shared platform.
 
 [![CI](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -47,7 +47,7 @@ pi -e ./pi-extensions/extensions/<name>/index.ts   # one extension for a single 
 pi update --extensions                             # update a git install; for a checkout, git pull, then /reload in pi
 ```
 
-The package installs fourteen extensions:
+The package installs fifteen extensions:
 
 **Agents and tools**
 
@@ -62,6 +62,7 @@ The package installs fourteen extensions:
 - **[spending](extensions/spending/README.md)**: the session's total spend in the footer, subagents at every depth included.
 - **[context](extensions/context/README.md)**: `/context` shows what fills the context window, per category, with cache hit rates.
 - **[notifications](extensions/notifications/README.md)**: one terminal notification when pi waits for your input or a dialog waits unanswered.
+- **[retention](extensions/retention/README.md)**: removes sessions, agent runs and handoff folders untouched for 60 days (`retentionDays`), keeping open sessions and their parents; `/retention` shows what would go.
 - **[model-default](extensions/model-default/README.md)**: the model and thinking level you last picked (Enter in the selector, `/model <name>`, cycling, Shift+Tab) become pi's saved defaults, as Ctrl+S does, and a model switch keeps your thinking level.
 
 **Look and feel**
