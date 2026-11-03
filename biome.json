@@ -1,7 +1,16 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
-    "includes": ["**", "!node_modules", "!docs", "!future-plans", "!**/*.md", "!.claude", "!.pi"]
+    "includes": [
+      "**",
+      "!node_modules",
+      "!launcher/dist",
+      "!docs",
+      "!future-plans",
+      "!**/*.md",
+      "!.claude",
+      "!.pi"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
@@ -1203,6 +1212,43 @@
                   {
                     "group": ["**/evals/**"],
                     "message": "Nothing imports test/evals/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["launcher/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@earendil-works/*", "@earendil-works/*/**", "typebox", "typebox/**"],
+                    "message": "launcher/ is standalone: no pi packages."
+                  },
+                  {
+                    "group": [
+                      "**/platform/**",
+                      "**/pi-adapter/**",
+                      "**/extension-manager/**",
+                      "**/ui-kit/**"
+                    ],
+                    "message": "launcher/ never imports platform/."
+                  },
+                  {
+                    "group": ["**/extensions/**"],
+                    "message": "launcher/ never imports extensions/."
+                  },
+                  {
+                    "group": ["**/test/**", "**/evals/**"],
+                    "message": "launcher/ never imports test/."
                   }
                 ]
               }
