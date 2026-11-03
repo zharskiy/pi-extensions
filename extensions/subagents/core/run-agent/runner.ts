@@ -344,7 +344,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.child = undefined;
 
     if (child) {
-      noteUsage(id, child.ownUsage());
+      try {
+        noteUsage(id, child.ownUsage());
+      } catch {}
+
       await child.dispose().catch(() => undefined);
     }
   };
@@ -515,7 +518,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       successorId: successor.id,
     });
 
-    void launch(successor, successorSlot);
+    startLaunch(successor, successorSlot);
 
     return closed;
   };
@@ -676,38 +679,57 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         live.turn = "idle";
       }
 
-      noteUsage(id, child.ownUsage());
-
-      if (record.state === "grace") {
-        settleGrace(record, live);
-        return;
+      try {
+        settle(record, live, child, event.aborted);
+      } catch (error) {
+        failRun(id, "settle failed", error);
       }
-
-      const held = heldHandoff(record, live);
-
-      if (held) {
-        live.turn = "held";
-        live.handoff = held;
-        deps.registry.update(id, { activity: "handoff: waiting for batches" });
-        releaseSlot(live);
-        return;
-      }
-
-      const waiting =
-        !event.aborted &&
-        live.abortReason === undefined &&
-        !record.handoffRequested &&
-        (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
-
-      if (waiting) {
-        deps.registry.update(id, { activity: undefined });
-        goIdle(live);
-        return;
-      }
-
-      finish(record, live, event.aborted);
-      void releaseLive(id);
     }
+  };
+
+  const failRun = (id: string, step: string, error: unknown) => {
+    deps.registry.close(id, { state: "failed", error: `${step}: ${errorText(error)}` });
+    void releaseLive(id);
+  };
+
+  const settle = (record: AgentRecord, live: Live, child: ChildSession, aborted: boolean) => {
+    const id = record.id;
+
+    noteUsage(id, child.ownUsage());
+
+    if (record.state === "grace") {
+      settleGrace(record, live);
+      return;
+    }
+
+    const held = heldHandoff(record, live);
+
+    if (held) {
+      live.turn = "held";
+      live.handoff = held;
+      deps.registry.update(id, { activity: "handoff: waiting for batches" });
+      releaseSlot(live);
+      return;
+    }
+
+    const waiting =
+      !aborted &&
+      live.abortReason === undefined &&
+      !record.handoffRequested &&
+      (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
+
+    if (waiting) {
+      deps.registry.update(id, { activity: undefined });
+      goIdle(live);
+      return;
+    }
+
+    finish(record, live, aborted);
+    void releaseLive(id);
+  };
+
+  const startLaunch = (record: AgentRecord, slot: LaunchSlot) => {
+    void launch(record, slot).catch((error: unknown) => failRun(record.id, "launch failed", error));
   };
 
   const launch = async (record: AgentRecord, slot: LaunchSlot) => {
@@ -980,7 +1002,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     deps.bus.emit("batch:started", { batchId, callerId: options.callerId });
 
     records.forEach((record, index) => {
-      void launch(record, slots[index]);
+      startLaunch(record, slots[index]);
     });
 
     return { batchId, records };
