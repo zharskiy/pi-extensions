@@ -2,7 +2,12 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseSessionLines, readSessionEntries, replaySystemMessages } from "../runtime/session-file.ts";
+import {
+  parseSessionLines,
+  readSessionEntries,
+  readSessionId,
+  replaySystemMessages,
+} from "../runtime/session-file.ts";
 
 const user = JSON.stringify({ type: "message", message: { role: "user", content: "hi" } });
 
@@ -98,6 +103,24 @@ describe("system message replay", () => {
     expect([...replay.sections]).toEqual([["preamble", "You are explorer."]]);
     expect([...replay.tools.values()]).toEqual([
       { name: "read", description: "Read a file.", parameters: {} },
+    ]);
+  });
+
+  it("reads the session id from the header and nothing from a missing or headerless file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-session-id-"));
+    const named = join(dir, "renamed.jsonl");
+    const headerless = join(dir, "headerless.jsonl");
+
+    writeFileSync(named, `${JSON.stringify({ type: "session", id: "s-1", cwd: "/repo" })}\n`);
+    writeFileSync(
+      headerless,
+      `${JSON.stringify({ type: "message", message: { role: "user", content: "hi" } })}\n`,
+    );
+
+    expect([named, headerless, join(dir, "missing.jsonl")].map(readSessionId)).toEqual([
+      "s-1",
+      undefined,
+      undefined,
     ]);
   });
 });
