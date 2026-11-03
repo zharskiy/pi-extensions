@@ -55,7 +55,7 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 - Seatbelt, measured locally: `/usr/bin/true` 1.15 ms bare vs 4.87 ms under `sandbox-exec -f profile`; `node -e 0` showed no measurable added cost (noise 22-31 ms). So OS sandbox start is effectively free.
 - Conclusion: only two shapes feel instant on macOS. (a) OS sandbox on the host (~5 ms). (b) `exec` into an already-running container or microVM (expected tens to low hundreds of ms; not measured here, see Not verified).
   - Any shape that boots a VM engine on the critical path (Docker Desktop 15-20 s, Lima ~29 s) must keep the engine and the per-project container warm and hide first boot behind a one-time "preparing sandbox" message.
-- Warm per-project container lifecycle to design: create on first `pi` in a project (name = hash of the cwd top-level: the git top-level in a repo, cwd itself in a workspace folder), keep running with idle timeout (sbx uses explicit `stop`), recreate when image digest or policy hash changes, garbage-collect after N days unused.
+- Warm per-project container lifecycle to design: create on first `pi` in a project (name = hash of repo root), keep running with idle timeout (sbx uses explicit `stop`), recreate when image digest or policy hash changes, garbage-collect after N days unused.
 
 ### A3. OS sandbox only (Seatbelt / bubblewrap + Landlock)
 
@@ -100,10 +100,9 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - On Linux there is no translation: run the container as the host UID:GID (`--user $(id -u):$(id -g)`, Gemini's `SANDBOX_SET_UID_GID`) or rootless Podman with `--userns=keep-id`, else files created by pi end up root-owned in the repo.
 - Symlinks: a symlink in the repo pointing outside the mount dangles inside the sandbox; that is the desired security property, but pnpm stores, `npm link`, monorepo links to sibling checkouts and dotfile-managed configs break.
   - Shim should warn once with the list of external targets and offer an explicit read-only extra mount (`sbx run claude ~/proj ~/shared-library:ro` is the precedent).
-- Git layout: mount the repo top-level (`git rev-parse --show-toplevel`), not cwd, so `.git` is inside. Outside git, mount cwd itself: the workspace folder.
-  - Workspace folder: when `pi` starts in a parent folder holding several projects, the whole folder is mounted at its host path, so subagents can work in a different repo than the caller. Each repo's git common dir is inside the mount, so nothing extra is mounted. Linked worktrees whose common dir lies outside the folder are unsupported in the container. Cost: the mount is larger, so file-share and `git status` cost across repos is a Phase 0 measurement (Not verified); everything under the folder is writable, so policy sets `workspaceRoots: { roots: [...], outside: refuse | warn }` (default `refuse`) and the shim acts on a cwd top-level outside the roots (never list `~` or `/`).
+- Git layout: mount the repo top-level (`git rev-parse --show-toplevel`), not cwd, so `.git` is inside.
   - If the project is itself a linked worktree, `.git` is a file pointing at `<main>/.git/worktrees/<name>`, and the common dir is outside the mount; git fails inside. sbx hits this: a manually created worktree used as sandbox cannot commit "because the agent cannot reach the parent repository" (Andrew Lock post).
-  - Fix: also mount `git rev-parse --git-common-dir` (read-write, since commits write objects there), at the same absolute path. In the workspace case this applies only to a repo cwd; under a workspace folder the unsupported rule above holds.
+  - Fix: also mount `git rev-parse --git-common-dir` (read-write, since commits write objects there), at the same absolute path.
 - pi's own worktrees under `<cwd>/.pi/worktrees` are inside the mount, but `git worktree add` writes metadata into `.git/worktrees/` and the new worktree's `.git` file stores an absolute path to the main `.git`; with same-path mounting those paths are valid on host and in the sandbox.
   - With `/workspace` remapping (pi's Docker recipe, Gondolin, pi-gondolin) they are not, and host git sees broken worktrees. Strong argument for same-path mounts.
 - `.git` as attack surface: a writable `.git/hooks`, `.git/config` (`core.fsmonitor`, `core.hooksPath`, `credential.helper`, aliases), `.gitattributes` filters and `.envrc`/`.vscode/tasks.json` let the sandboxed agent plant code that the developer's host git or editor executes later.
@@ -164,6 +163,7 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - Agent cannot widen its own policy; developer can from a second terminal unless governance is on.
 - OpenShell: policy fixed at sandbox creation (Landlock for filesystem), a formal "prover" flags risky policy changes for human review. https://github.com/NVIDIA/OpenShell
 - Pattern for pi: (1) policy file in a root-owned system path (`/Library/Application Support/<vendor>/pi-sandbox.json`, `/etc/<vendor>/`) or an MDM plist domain, read by the host shim, never by anything inside the sandbox; (2) optionally a signed policy fetched from a company URL, cached, signature checked with a key pinned in the MDM file; (3) the sandbox receives the effective policy read-only (mounted ro) and the egress proxy enforcing it runs on the host or in a separate container the agent cannot touch; (4) project-level config may only tighten.
+  - Layers and settings: the README's decision 8 names three layers (system/MDM, user `sandbox.json`, project `.pi/sandbox.json`); security settings can only be tightened by lower layers, convenience settings (toolchain image, cache volumes, idle timeout, published ports) any layer may set; `pi sandbox config` shows the merge and which layer set each value, and a loosening edit is refused naming the locking layer.
   - A user-writable `~/.pi/agent` setting can never be the enforcement point because the shim runs as the user; the honest guarantee is "the agent cannot loosen it", while "the developer cannot loosen it" additionally needs MDM to protect the shim binary and the runtime settings (Docker Settings Management or sbx governance).
 
 ## G. Quality of life
@@ -171,14 +171,15 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 - Shell completion: generated by the host shim; must not start the sandbox to complete.
 - Host-side subcommands: `login` and OAuth (browser, localhost callback; mints or refreshes the SSO token the proxy uses), `pi update` (in the sandbox shape, updating means a new image digest, so the shim should intercept and explain), `pi install` of packages (pi packages are code that runs in the agent process: install inside the sandbox into the persisted agent dir, network via policy), `pi config`.
   - The shim needs an explicit allowlist of host-side subcommands; everything else goes into the sandbox.
+- Host install: pi itself is installed only in the image. The host installs the launcher package, which provides the `pi` command and must be first on PATH; an existing host pi is not required and is unused while the launcher is active (`pi --no-sandbox` only when policy allows). Host-side `pi login` is implemented by the launcher with pi's auth library, not a full pi install (which login flows `@earendil-works/pi-ai` exports for reuse: Not verified). This repo's extensions live in the image, so the image is rebuilt when the extensions package changes; the launcher pins the digest and updates in the background.
 - Editor: `$VISUAL`/`$EDITOR` for `/editor` runs inside the sandbox, so the image needs a terminal editor (vim/nano) or a bridge that opens the host editor and waits; VS Code `code` CLI only works from VS Code's own remote terminals; a small host RPC (socket mounted into the sandbox) for `open <url>`, `code -g path:line`, notifications and clipboard read is the cleanest single bridge, and same-path mounts make the paths valid on the host.
 - OAuth callbacks: enterprise path does login on the host, so no port is published. A non-enterprise profile may publish 127.0.0.1:1455/8085/51121 only during `/login`. Never bind them on 0.0.0.0.
 - Notifications: OSC 9/777 and BEL reach the host terminal through the PTY with no work; desktop notifications via `osascript` need the host bridge.
-- Subagents' worktrees in `<cwd>/.pi/worktrees`: inside the shared mount, fine, provided the mount is the cwd top-level and paths are identical (see C). `<cwd>/.pi/.gitignore` is written there too; in a workspace folder session `.pi/` and its `.gitignore` sit in the workspace folder, outside any repo, which is harmless.
+- Subagents' worktrees in `<cwd>/.pi/worktrees`: inside the shared repo mount, fine, provided the mount is the repo top-level and paths are identical (see C). `<cwd>/.pi/.gitignore` is written there too.
 - Handoff files in the OS temp dir (`pi-handoff/<session id>/...`): inside the container `$TMPDIR` is container-local; fine for in-process subagents (same container) and for later sessions only if `/tmp` survives between runs (it does in a long-lived container, not with `--rm` or tmpfs).
   - If the developer or a host editor should open them, set `TMPDIR` to a per-project dir on a volume or shared path.
   - `pi-bash-<hex>.log` files also land there with no cleanup (agent-safehouse).
-- Session files under `~/.pi/agent/sessions` contain absolute cwd paths; with same-path mounting, sessions created in the sandbox resume on the host and vice versa. Sessions and the trust prompt are keyed by cwd, so in a workspace folder session they belong to the workspace folder, not to each repo.
+- Session files under `~/.pi/agent/sessions` contain absolute cwd paths; with same-path mounting, sessions created in the sandbox resume on the host and vice versa.
 
 ## H. Concrete comparables
 
@@ -219,10 +220,10 @@ Windows (nice to have):
 
 Hot path, target under 200 ms when warm:
 
-1. Resolve the cwd top-level: `git rev-parse --show-toplevel` and `--git-common-dir` from cwd when inside a repo; outside git the top-level is cwd itself, the workspace folder case (a parent folder holding several projects, one container, every project under it visible). Check it against the policy's `workspaceRoots: { roots: [...], outside: refuse | warn }` (enterprise default `refuse`): when it is not under a declared root the shim refuses or warns per `outside`, so `pi` at `~` or `/` can be forbidden. Independent of the `fallback` key.
+1. Resolve the project: `git rev-parse --show-toplevel` and `--git-common-dir` from cwd; fall back to cwd outside git. If policy sets the optional `workspaceRoots: { roots: [...], outside: refuse | warn }`, refuse or warn when the top-level is not under a declared root.
 2. Read the effective policy: MDM/system file first, then user file, then project file (tighten only); compute a policy hash.
 3. Detect the backend once and cache the answer: Docker API socket (Docker Desktop, OrbStack, Colima), Apple `container` on macOS 26+, else OS-sandbox fallback.
-4. Look up the per-cwd-top-level container by label (path hash); verify image digest and policy hash labels match.
+4. Look up the per-project container by label (repo path hash); verify image digest and policy hash labels match.
 5. If running: `exec -it` with terminal env, working dir = host cwd (same absolute path), initial size, and SIGWINCH forwarding.
 6. If stopped: start it (no create), then exec. If missing or stale: create, then exec.
 7. Forward signals; on exit, return pi's exit code; leave the container running for the idle timer.
@@ -233,7 +234,7 @@ Cold path, first run on a machine (one visible line, never a build log):
 2. Image missing: pull the pinned digest with a single progress line ("preparing pi sandbox, one time, 1.2 GB").
 3. Create the per-user cache volumes and the agent-state volume.
 4. Export the corporate CA bundle from the System keychain into the agent-state volume.
-5. If no SSO token exists on the host: run `pi login` on the host side (mints the token the proxy uses), then continue. Nothing is written to the agent-state volume and there is no `/login` inside.
+5. If no credential exists on the host for the configured source: run `pi login` on the host side (obtains or refreshes the credential for the configured source and stores it host-side only), then continue. Nothing is written to the agent-state volume and there is no `/login` inside.
 
 Background, never on the hot path:
 
@@ -272,8 +273,8 @@ Failure modes the developer will actually hit, and the message they need:
 
 1. Ship a `pi` shim (the launcher) that is the only thing on PATH; the real pi lives in a pinned image, and the shim owns a small allowlist of host-side subcommands (`login`, `sandbox status|gc|reset`, completion).
 2. Default backend: warm per-project container through the Docker API (works unchanged on Docker Desktop, OrbStack, Colima), with Apple `container` as a second backend on macOS 26+; keep the backend behind one interface so sbx or OpenShell can be added when their file I/O and kit TTY path mature.
-3. Container per cwd top-level (git top-level inside a repo, cwd itself as the workspace folder otherwise), named by path hash, kept running with an idle timeout; `pi` = `exec -it` into it, so warm start is one exec; first run shows one "preparing sandbox" line while pulling the image.
-4. Mount the cwd top-level at its identical absolute path, plus the git common dir when cwd is inside a repo (inside a workspace folder each repo's common dir is already in the mount; linked worktrees with the common dir outside the folder are unsupported); deps and caches on named volumes; root filesystem read-only; `.git/hooks` and `.git/config` overlaid read-only.
+3. Container per repo top-level, named by path hash, kept running with an idle timeout; `pi` = `exec -it` into it, so warm start is one exec; first run shows one "preparing sandbox" line while pulling the image.
+4. Mount the repo top-level and the git common dir at identical absolute paths; deps and caches on named volumes; root filesystem read-only; `.git/hooks` and `.git/config` overlaid read-only.
 5. Pass terminal env as an explicit allowlist and nothing else, never the host `process.env` (`TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`; the reason Gondolin's env passthrough default is rejected), ship full terminfo, forward initial size explicitly and SIGWINCH, use an init process.
 6. One host bridge socket for `open`, OAuth callback relay, clipboard image read, editor-open and desktop notifications.
 7. Day-one credentials: provider auth never enters the container; the image's `models.json` carries placeholder keys and the host proxy swaps them for the gateway host only; MCP, git https and registry credentials get the same per-host header injection, corporate CA bundle exported from the System keychain plus `NODE_EXTRA_CA_CERTS`/proxy env, ssh agent via the runtime's host-services socket (the sole capability that crosses: use, not read; strict alternative is https git through the proxy, no agent socket); defer signing, cloud CLIs and private-registry token injection.
@@ -288,6 +289,7 @@ Failure modes the developer will actually hit, and the message they need:
 - Which kitty graphics transmission mode pi uses (inline base64 vs file); whether pi's Kitty keyboard protocol negotiation survives every runtime's exec path.
 - Inotify propagation of host edits into the guest for each runtime (OrbStack, Docker Desktop, Apple container, sbx).
 - UID/GID presentation of bind mounts under Apple `container` and sbx.
+- Which login flows `@earendil-works/pi-ai` exports for reuse by a launcher without a full pi install.
 - Apple `container` `--ssh` guest socket path (third-party sources disagree) and its TERM default.
 - Lima's ssh agent forwarding into containers (Colima `--ssh-agent`).
 - Docker `registry.json` sign-in enforcement details (stated from memory).
