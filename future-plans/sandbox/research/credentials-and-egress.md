@@ -73,7 +73,7 @@ Properties:
 
 ### A2. LLM gateway / reverse proxy via baseUrl with a dummy key
 
-Mechanism: pi's provider `baseUrl` points at a gateway (`https://llm-gw.corp/anthropic`); sandbox holds a gateway credential (virtual key) or nothing;
+Mechanism: pi's provider `baseUrl` points at a gateway (`https://llm-gw.corp/anthropic`); sandbox holds a placeholder (the enterprise profile) or, in a weaker profile, a gateway credential (virtual key);
 gateway holds provider keys and translates/forwards. No TLS interception needed: gateway has a real cert (or plain HTTP on a private hop).
 
 Options:
@@ -112,7 +112,7 @@ Properties:
 - Streaming: all listed gateways stream SSE. WebSocket support is uneven.
 - Latency: hosted gateway adds one network hop (tens of ms, region dependent); self-hosted on the same host or LAN: ~1 ms.
 - CA trust: none needed beyond the gateway's real cert.
-- Exfiltration: the virtual key is *in* the sandbox and is a bearer. It can be exfiltrated if any egress path exists to the gateway from elsewhere
+- Exfiltration (weaker profile only; the plan's enterprise profile keeps only a placeholder inside and the host proxy injects the key): the virtual key is *in* the sandbox and is a bearer. It can be exfiltrated if any egress path exists to the gateway from elsewhere
   (e.g. the gateway is internet-reachable). Mitigations: bind virtual keys to device identity (mTLS client cert held by host, or source network),
   short TTL keys minted per session by a host daemon, budgets. If the gateway is reachable only from the sandbox's network and the key is minted per
   session, exfiltration value is near zero. Can still spend budget (by design). Cannot reach non-allowlisted hosts via the gateway (it only talks to
@@ -128,7 +128,7 @@ signature schemes (SigV4, HMAC); for bearer providers it degenerates into shape 
 
 Pi already has a local-helper hook: `apiKey: "!command"` in models.json/auth.json runs a command and caches stdout for the process lifetime
 (`ca/docs/providers.md:73-82`, `ca/docs/custom-provider.md:128-133`). That puts the real key in pi's memory: not acceptable for requirement 1;
-acceptable only for a gateway virtual key.
+acceptable only for a gateway virtual key, and not in the enterprise profile where no token of any kind is inside.
 
 Properties: OAuth refresh in the daemon (host); SigV4 and GCP minting in the daemon; SSE fine; latency ~0.1-1 ms; no CA if plain HTTP over the socket
 (the socket is the trust boundary); exfiltration as in A2 local; the daemon can attribute by socket (one socket per sandbox per user). Per-user
@@ -334,7 +334,7 @@ verified).
 | Pattern | Tokens outside? | OAuth support | Per-provider auth coverage | Allowlist | Audit | Latency | Pi changes needed | Ops burden |
 |---|---|---|---|---|---|---|---|---|
 | A1 MITM injector (forward proxy) | Yes (placeholders only; must be host-bound) | Yes, proxy refreshes; placeholder must mimic token shape (`sk-ant-oat`, fake JWT for Codex) | Bearer/x-api-key yes; SigV4 needs re-sign; WS needs upgrade support | Same proxy enforces it (MITM model hosts, SNI-tunnel rest) | Self-built logs, full L7 visibility | +1 TLS handshake, ~ms | None (env + placeholder auth.json + CA) | CA distribution, per-provider refresh logic, pinning breakage |
-| A2 LLM gateway via baseUrl | Provider keys yes; virtual key inside unless injected by A1/A3 | Generally no for consumer subscriptions (and ToS forbids Anthropic's) | Best: SigV4, GCP, Azure handled by gateway | Not by itself; needs a network boundary | Best: per-key spend, budgets, dashboards | Local ~1 ms, hosted tens of ms | models.json `baseUrl` + dummy key per provider; `AWS_BEDROCK_SKIP_AUTH=1` | Run HA gateway, key lifecycle, supply-chain hardening |
+| A2 LLM gateway via baseUrl | Provider keys yes; virtual key inside only in a weaker profile (enterprise: placeholder, injected by A1/A3) | Generally no for consumer subscriptions (and ToS forbids Anthropic's) | Best: SigV4, GCP, Azure handled by gateway | Not by itself; needs a network boundary | Best: per-key spend, budgets, dashboards | Local ~1 ms, hosted tens of ms | models.json `baseUrl` + dummy key per provider; `AWS_BEDROCK_SKIP_AUTH=1` | Run HA gateway, key lifecycle, supply-chain hardening |
 | A3 Host daemon (socket/vsock) | Yes if it proxies; no if it returns bearer headers | Yes (host refresh) | As good as its implementation | Not by itself | Natural per-user (host identity) | ~0.1-1 ms | Same as A2, baseUrl to relay port | Ship and update a host daemon on every laptop |
 
 ## Recommended combination

@@ -117,10 +117,10 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 
 - SSH agent on macOS: Docker Desktop and OrbStack expose the host agent at the magic path `/run/host-services/ssh-auth.sock` (mount it, set `SSH_AUTH_SOCK`); OrbStack notes `-v $SSH_AUTH_SOCK:/agent.sock` works except for 1Password's agent. https://docs.orbstack.dev/docker/ ; https://github.com/docker/docs/pull/10184/files .
   - Apple container: `container run --ssh` forwards the agent (guest path reported as `/run/host-services/ssh-auth.sock` symlinked to `/var/host-services/ssh-auth.sock`, third-party docs, Not verified against Apple docs). https://instagit.com/apple/container/how-to-use-ssh-agent-forwarding-with-containers-ssh-flag/ . sbx: `ssh.agentForwardingEnabled`, `ssh.agentSocketPath`, needs `socat` in custom templates, `SSH_AUTH_SOCK` is exported even when the relay is not wired; SSH egress needs `sbx policy allow network "host:22"`; GPG/S-MIME keys unavailable; 1Password ssh-agent signing failed on Windows (Andrew Lock). https://docs.docker.com/ai/sandboxes/troubleshooting/
-- Agent forwarding means the sandbox can use (not read) every key loaded in the agent for the session. A policy-respecting design forwards a filtered agent (only the git host's key, or confirm-on-use keys) or does git push from the host.
-- git over HTTPS: host credential helpers (osxkeychain, GCM) do not exist inside; options are a proxied helper (container `credential.helper` talks to a host socket served by the shim), or a credential-injecting egress proxy like sbx (`sbx secret set github --command 'gh auth token'`, token "stays on your host") and OpenShell providers ("Agents never see real credentials", injected only toward approved endpoints). https://docs.docker.com/ai/sandboxes/get-started/ ; https://github.com/NVIDIA/OpenShell
-- `gh`: needs `GH_TOKEN`; inject via proxy or a scoped token. Under Seatbelt, Go binaries like `gh` fail TLS verification (Claude doc), a point for the container shape.
-- npm/pip private registries: `.npmrc`/`pip.conf` tokens live in the host HOME; copy only registry config (not tokens) into the sandbox and inject `Authorization` at the proxy, or mount read-only.
+- Agent forwarding means the sandbox can use (not read) every key loaded in the agent for the session. No key material enters; this is the sole credential-related capability that crosses the boundary. The strict alternative, a policy choice, is https git through the proxy with injected headers and no agent socket. A policy-respecting design forwards a filtered agent (only the git host's key, or confirm-on-use keys) or does git push from the host.
+- git over HTTPS: host credential helpers (osxkeychain, GCM) do not exist inside; the enterprise choice is a credential-injecting egress proxy like sbx (`sbx secret set github --command 'gh auth token'`, token "stays on your host") and OpenShell providers ("Agents never see real credentials", injected only toward approved endpoints). https://docs.docker.com/ai/sandboxes/get-started/ ; https://github.com/NVIDIA/OpenShell
+- `gh`: needs `GH_TOKEN`; inject the header at the proxy, no token inside. Under Seatbelt, Go binaries like `gh` fail TLS verification (Claude doc), a point for the container shape.
+- npm/pip private registries: `.npmrc`/`pip.conf` tokens live in the host HOME; copy only registry config (not tokens) into the sandbox and inject `Authorization` at the proxy; no `.npmrc` token inside.
   - Claude Code on the web shows the ordering trap: setup scripts run before the key-injecting proxy is connected, so private installs cannot happen there. https://wmedia.es/en/tips/claude-code-cloud-setup-script (2026-10-15, third party)
 - Corporate CA / TLS inspection (Zscaler): must be solved on day one or nothing works. sbx: install root CA as `.crt` + `update-ca-certificates` via a kit or `sbx cp`; "Don't point `SSL_CERT_FILE` at only your internal CA" (breaks its credential proxy); nested `docker build` does not inherit trust (`PROXY_CA_CERT_B64`, issue #322). https://docs.docker.com/ai/sandboxes/troubleshooting/ ; https://github.com/docker/sbx-releases/issues/322 .
   - Upstream proxy settings for HTTP/SOCKS5/PAC: https://collabnix.com/docker-sandboxes-upstream-proxy-sbx-settings/ .
@@ -128,9 +128,11 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - The shim should export the macOS System keychain roots (`security find-certificate -a -p /Library/Keychains/System.keychain`) into the sandbox bundle at start.
 - SSO/OAuth for pi providers: `/login` flows open a browser and some wait on 127.0.0.1:1455/8085/51121.
   - Inside a container `open` does not exist and the callback port is in the guest.
-  - Either run `/login` on the host (shim subcommand) and share `auth.json`, or publish the port and bridge `open` to the host. sbx keeps Claude's OAuth token on the host. https://docs.docker.com/ai/sandboxes/get-started/
+  - Enterprise path (R2 absolute, no token inside): no `/login` inside. `pi login` on the host (shim subcommand) mints or refreshes the SSO token the proxy uses; `auth.json` in the image holds placeholders and nothing is written to the agent-state volume. sbx likewise keeps Claude's OAuth token on the host. https://docs.docker.com/ai/sandboxes/get-started/
+  - Publishing the callback port and bridging `open` is only for a non-enterprise profile that accepts a token inside.
+- MCP server secrets: stdio MCP servers run inside and often need an API key. The proxy does per-host credential injection for allowed hosts (placeholder in the container, real header added by the proxy; OpenShell documents it as per-endpoint credential binding, Docker Sandboxes as credential swapping), so an MCP server is configured with a placeholder and never sees the real key. Servers whose protocol cannot be proxied this way (non-HTTP) are not supported in the enterprise profile.
 - Must solve for "just type pi": provider auth (pi's own), corporate CA + proxy env, git push for the dominant remote type (ssh agent on macOS is cheap with Docker Desktop/OrbStack/Apple container), `HTTP(S)_PROXY`/`NO_PROXY` passthrough.
-  - Can defer: commit signing (GPG unsupported even in sbx), `gh` beyond a token, private pip/npm token injection (start with read-only config mount), cloud CLIs (`~/.aws`, gcloud), SSO for internal services.
+  - Can defer: commit signing (GPG unsupported even in sbx), `gh` beyond proxy header injection, private pip/npm header injection (start with registry config only, no tokens), cloud CLIs (`~/.aws`, gcloud), SSO for internal services.
 
 ## E. Image and toolchain without the developer noticing
 
@@ -167,10 +169,10 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 ## G. Quality of life
 
 - Shell completion: generated by the host shim; must not start the sandbox to complete.
-- Host-side subcommands: `/login` and OAuth (browser, localhost callback), `pi update` (in the sandbox shape, updating means a new image digest, so the shim should intercept and explain), `pi install` of packages (pi packages are code that runs in the agent process: install inside the sandbox into the persisted agent dir, network via policy), `pi config`.
+- Host-side subcommands: `login` and OAuth (browser, localhost callback; mints or refreshes the SSO token the proxy uses), `pi update` (in the sandbox shape, updating means a new image digest, so the shim should intercept and explain), `pi install` of packages (pi packages are code that runs in the agent process: install inside the sandbox into the persisted agent dir, network via policy), `pi config`.
   - The shim needs an explicit allowlist of host-side subcommands; everything else goes into the sandbox.
 - Editor: `$VISUAL`/`$EDITOR` for `/editor` runs inside the sandbox, so the image needs a terminal editor (vim/nano) or a bridge that opens the host editor and waits; VS Code `code` CLI only works from VS Code's own remote terminals; a small host RPC (socket mounted into the sandbox) for `open <url>`, `code -g path:line`, notifications and clipboard read is the cleanest single bridge, and same-path mounts make the paths valid on the host.
-- OAuth callbacks: publish 127.0.0.1:1455/8085/51121 only during `/login`, or do login on the host. Never bind them on 0.0.0.0.
+- OAuth callbacks: enterprise path does login on the host, so no port is published. A non-enterprise profile may publish 127.0.0.1:1455/8085/51121 only during `/login`. Never bind them on 0.0.0.0.
 - Notifications: OSC 9/777 and BEL reach the host terminal through the PTY with no work; desktop notifications via `osascript` need the host bridge.
 - Subagents' worktrees in `<cwd>/.pi/worktrees`: inside the shared mount, fine, provided the mount is the cwd top-level and paths are identical (see C). `<cwd>/.pi/.gitignore` is written there too; in a workspace folder session `.pi/` and its `.gitignore` sit in the workspace folder, outside any repo, which is harmless.
 - Handoff files in the OS temp dir (`pi-handoff/<session id>/...`): inside the container `$TMPDIR` is container-local; fine for in-process subagents (same container) and for later sessions only if `/tmp` survives between runs (it does in a long-lived container, not with `--rm` or tmpfs).
@@ -231,7 +233,7 @@ Cold path, first run on a machine (one visible line, never a build log):
 2. Image missing: pull the pinned digest with a single progress line ("preparing pi sandbox, one time, 1.2 GB").
 3. Create the per-user cache volumes and the agent-state volume.
 4. Export the corporate CA bundle from the System keychain into the agent-state volume.
-5. If no provider auth exists: run `/login` on the host side, then continue.
+5. If no SSO token exists on the host: run `pi login` on the host side (mints the token the proxy uses), then continue. Nothing is written to the agent-state volume and there is no `/login` inside.
 
 Background, never on the hot path:
 
@@ -252,7 +254,7 @@ Failure modes the developer will actually hit, and the message they need:
 | `npm install`/build several times slower | virtiofs metadata latency | dependency dirs on volumes; report backend file-share mode in `pi sandbox status` |
 | host git sees broken worktree | `/workspace` path remap | same-path mounts only |
 | files owned by root in repo (Linux) | no UID mapping | run as host UID:GID or rootless userns keep-id |
-| `/login` browser never returns | callback port in guest | do login on host, or publish the port for the flow's duration only |
+| `/login` browser never returns | `/login` attempted inside; callback port in guest | do `pi login` on the host (enterprise path has no login inside) |
 
 ## Comparison of launcher shapes
 
@@ -272,9 +274,9 @@ Failure modes the developer will actually hit, and the message they need:
 2. Default backend: warm per-project container through the Docker API (works unchanged on Docker Desktop, OrbStack, Colima), with Apple `container` as a second backend on macOS 26+; keep the backend behind one interface so sbx or OpenShell can be added when their file I/O and kit TTY path mature.
 3. Container per cwd top-level (git top-level inside a repo, cwd itself as the workspace folder otherwise), named by path hash, kept running with an idle timeout; `pi` = `exec -it` into it, so warm start is one exec; first run shows one "preparing sandbox" line while pulling the image.
 4. Mount the cwd top-level at its identical absolute path, plus the git common dir when cwd is inside a repo (inside a workspace folder each repo's common dir is already in the mount; linked worktrees with the common dir outside the folder are unsupported); deps and caches on named volumes; root filesystem read-only; `.git/hooks` and `.git/config` overlaid read-only.
-5. Pass terminal env (`TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`), ship full terminfo, forward initial size explicitly and SIGWINCH, use an init process.
+5. Pass terminal env as an explicit allowlist and nothing else, never the host `process.env` (`TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`; the reason Gondolin's env passthrough default is rejected), ship full terminfo, forward initial size explicitly and SIGWINCH, use an init process.
 6. One host bridge socket for `open`, OAuth callback relay, clipboard image read, editor-open and desktop notifications.
-7. Day-one credentials: pi provider auth handled on the host side and injected, corporate CA bundle exported from the System keychain plus `NODE_EXTRA_CA_CERTS`/proxy env, ssh agent via the runtime's host-services socket; defer signing, cloud CLIs and private-registry token injection.
+7. Day-one credentials: provider auth never enters the container; the image's `models.json` carries placeholder keys and the host proxy swaps them for the gateway host only; MCP, git https and registry credentials get the same per-host header injection, corporate CA bundle exported from the System keychain plus `NODE_EXTRA_CA_CERTS`/proxy env, ssh agent via the runtime's host-services socket (the sole capability that crosses: use, not read; strict alternative is https git through the proxy, no agent socket); defer signing, cloud CLIs and private-registry token injection.
 8. Policy in an MDM-managed root-owned file read only by the shim; egress allowlist enforced by a host-side or sidecar proxy, never inside the agent container; projects may only tighten.
 9. Fallback when no container runtime is present: srt-style OS sandbox around the whole pi process, clearly labeled weaker, so `pi` never refuses to start unless policy says `failIfUnavailable`.
 10. Measure before committing: exec latency, `git status` and `npm install` on a large repo per backend on the company's standard Mac; file-share speed, not boot time, decides the experience.

@@ -13,7 +13,7 @@ Question: how pi and every extension in this repo run inside a sandbox that an e
 ## Requirements
 
 - **R1 Whole boundary.** Pi, all extensions from this repo, MCP servers and every subprocess run inside a container, microVM or OS sandbox.
-- **R2 Tokens outside.** No model-provider API key, OAuth token or refresh token is readable inside the boundary.
+- **R2 Tokens outside.** No token of any kind is readable inside the boundary, ever: no model-provider key, OAuth or refresh token, MCP server secret, registry token or git token. The one capability that crosses is use (not read) of ssh keys through the agent socket (decision 5).
 - **R3 Per-agent cwd.** Each agent writes only to its own cwd or worktree (plus what git needs); the rest of the host is not visible. An agent may also work in a different repo than the caller; the workspace folder, a parent folder holding several projects where the developer opens `pi`, is how that is met (decision 4, [../cwd/spec.md](../cwd/spec.md)).
 - **R4 Enterprise grade.** Deny-by-default URL allowlist, central policy the agent (and with MDM, the developer) cannot loosen, fail closed, per-user audit, macOS first, Linux second.
 - **R5 Zero friction.** The developer types `pi` in a project; no container commands, no image builds, warm start that feels native.
@@ -84,6 +84,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 - Pi, every extension, MCP stdio servers, codemode, bash children and the custom tools run in the guest; only the shim, proxy and bridge run on the host. This is the only shape that meets R1 (finding 2) and keeps every TUI feature, since RPC mode makes `custom()`, `setFooter` and `setEditorComponent` no-ops ([pi-and-harness.md](research/pi-and-harness.md) A "Other docs", G).
 - Rejected as the primary layer: per-command tool sandboxing (Claude Code, Codex style, or pi's Gondolin and `ssh.ts` operations backends). It leaves pi's process, its model key, MCP, `fetch`, `run_agent`, `handoff` and the extension bus on the host, and pi 1.5.0 removed its own OS-sandbox example ([pi-and-harness.md](research/pi-and-harness.md) A, F "What breaks where").
+- Rejected: open egress with the `fetch` tool removed. Removing `fetch` closes one door; bash (`curl`, `git`, `npm`, `pip`), package postinstall scripts, MCP servers and DNS stay open, and the host proxy is needed anyway for the token swap, so the allowlist is a config file on a component that exists regardless. Gateway-only egress (no allowlist, nothing but the LLM gateway reachable, git over ssh as the single extra rule) remains a valid stricter profile a company may choose; the plan's default is the allowlist.
 - Rejected: RPC-driven pi in a container with a host UI. Clean boundary, but this repo's footer, composer, agent view, transcript panes and forms would need a new client.
 
 ### 2. Credentials: nothing real inside
@@ -102,13 +103,16 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 - The gateway holds provider keys, does SigV4/GCP/Azure, budgets and per-user audit. Exfiltrating the placeholder or even a minted token has near-zero value when the token is short-lived and the gateway is reachable only through the proxy ([credentials-and-egress.md](research/credentials-and-egress.md) A2 "Properties").
 - Out of scope for the enterprise path: OAuth subscription logins (Claude Pro/Max, ChatGPT). Terms forbid third-party use and gateways cannot carry them. API and cloud accounts only. `/login` inside the guest fails because `auth.json` is mounted read-only with placeholders and OAuth token endpoints are blocked.
 - Other outbound calls off with pi's switches: `PI_OFFLINE=1` (version check, catalog refresh, `rg`/`fd` download), `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0` and `enableInstallTelemetry: false`; `rg`, `fd` and this package baked into the image so nothing downloads at start.
-- Env scrubbing: the container env carries no provider variables, because pi passes the full `process.env` to bash and MCP ([pi-and-harness.md](research/pi-and-harness.md) B).
+- Env scrubbing: the container env carries no provider variables, because pi passes the full `process.env` to bash and MCP ([pi-and-harness.md](research/pi-and-harness.md) B). The shim passes an explicit allowlist (the terminal variables in decision 5) and nothing else, never the host `process.env`; that is also why Gondolin's default env passthrough is rejected.
+- MCP server secrets: stdio MCP servers run inside and often need an API key. The proxy does per-host credential injection for allowed hosts (placeholder in the container, real header added by the proxy; OpenShell documents it as per-endpoint credential binding, Docker Sandboxes as credential swapping), so an MCP server is configured with a placeholder and never sees the real key. Servers whose protocol cannot be proxied this way (non-HTTP) are not supported in the enterprise profile.
+- Git and registries: `git push` over https and private npm registries get the same per-host header injection; no `.npmrc` token, no git credential helper, no `GH_TOKEN` inside. No `/login` inside either: `pi login` on the host mints or refreshes the SSO token the proxy uses, and nothing is written to the agent-state volume.
 - Rejected: `apiKey: "!command"` fetching a real key (puts it in pi's memory); a proxy in the same container (key readable); Gondolin-style env passthrough.
 
 ### 3. Egress: one exit, deny by default
 
 - The container has no default route; the only reachable endpoint is the host proxy (Docker `--network none` plus a Unix-socket relay, or an `--internal` network with the proxy dual-homed). `HTTPS_PROXY` is a client convenience, not the enforcement ([credentials-and-egress.md](research/credentials-and-egress.md) C).
 - Allowlist on CONNECT by hostname with SNI matched to the target, the proxy resolving and dialing itself, no TLS interception for git, npm, pip and other registries. TLS termination only for the gateway host (and later private registries that need injected tokens).
+- MCP hosts are allowed through the same list: policy declares the company's MCP hosts, a project's `.pi/mcp.json` may only pick servers on hosts already allowed, and a project file never adds a host.
 - No resolver inside (internal Docker networks still resolve through embedded DNS, a known exfil channel); refuse IP literals, loopback, link-local and 169.254.169.254.
 - Tools that ignore proxy env (Java, some Go transports, Node children without `NODE_USE_ENV_PROXY`) fail closed; the proxy returns a policy-denied body naming the host and rule instead of a bare 403.
 - Corporate CA: the shim exports System keychain roots into the image trust store and sets `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`, `GIT_SSL_CAINFO` wherever interception exists (Zscaler class or the gateway termination) ([developer-experience.md](research/developer-experience.md) D).
@@ -128,8 +132,8 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 ### 5. Launcher: a `pi` shim
 
 - A small package from this repo, first on PATH. Hot path (target under 200 ms warm): find the cwd top-level (git top-level inside a repo, cwd itself otherwise, the workspace case) and the common dir if any, read policy, check the top-level against the `workspaceRoots` policy, find the per-cwd-top-level container by label (path hash, image digest, policy hash), start or create it if needed, `exec -it` the real pi with working dir = host cwd.
-- Terminal: forward `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`; pass initial size and SIGWINCH (the 80x24 bug class in Docker and sbx); ship `ncurses-term`; run an init process; set `PI_CLIPBOARD_OSC52=1`.
-- Mounts the runtime's host ssh-agent socket (`/run/host-services/ssh-auth.sock` on Docker Desktop and OrbStack, `--ssh` on Apple `container`). The guest can use, not read, loaded keys; a filtered agent is a later option.
+- Terminal: forward `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG` as an explicit env allowlist and nothing else (never the host `process.env`); pass initial size and SIGWINCH (the 80x24 bug class in Docker and sbx); ship `ncurses-term`; run an init process; set `PI_CLIPBOARD_OSC52=1`.
+- Mounts the runtime's host ssh-agent socket (`/run/host-services/ssh-auth.sock` on Docker Desktop and OrbStack, `--ssh` on Apple `container`). No key material enters; the guest can sign with, not read, loaded keys. This is the sole credential-related capability that crosses the boundary. The strict alternative, a policy choice, is https git through the proxy with injected headers and no agent socket; a filtered agent is a later option.
 - One host bridge socket for host-only actions: `open`, `pbpaste` for image paste, desktop notifications, `code -g path:line`/editor; OAuth callback relay on 127.0.0.1:1455/8085/51121 only if a login flow is ever allowed.
 - Policy: a root-owned file managed by MDM (writable paths, `workspaceRoots`, allowlist, image digest, gateway URL), read by the shim only, mounted read-only into the guest; projects may only tighten. `workspaceRoots: { roots: [...], outside: refuse | warn }` lists the folders under which `pi` may start; when the cwd top-level is not under a declared root the shim refuses or warns per `outside` (enterprise default `refuse`), so policy can forbid starting pi at `~` or `/`. It is independent of the `fallback` key below. Fail closed when the runtime or proxy is missing or the policy is unreadable.
 - Host-only subcommands go through the image, not the developer: `pi update` and `pi install` of pi itself are answered with "new image digest from policy"; package installs of extensions happen inside under egress policy; the image updates by background pull of the pinned digest.
@@ -192,6 +196,8 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
   - [ ] Workspace folder with several repos: an agent in another repo than the caller reads, commits and creates a worktree there; a linked worktree whose common dir is outside the folder is refused with a one-line reason; a cwd top-level outside every allowed root is refused.
   - [ ] Corporate TLS inspection on: npm, pip, git and pi provider calls succeed.
   - [ ] Linux: files created inside are owned by the host UID.
+  - [ ] Credential sweep: a test dumps the running container's environment, `~/.pi/agent/auth.json`, `~/.npmrc`, `~/.gitconfig`, `~/.aws`, `~/.config` and the whole writable filesystem and finds no real credential.
+  - [ ] A provider request captured from inside the container carries only the placeholder.
 
 ### Phase 2: `sandbox` extension for per-agent policy
 
