@@ -23,7 +23,7 @@ extensions/subagents/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
 │   └── plugins/
-│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the retention sweep, the `registry` service
+│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start, handoff paths under the owning session's id), the retention sweep, the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
 │       ├── run-agent.ts                   # runner, run_agent/message_agent/stop_agent/handoff tools, outbox, background-work count (answered at any assistant start), wakes held while a main-session handoff is pending (pi:handoff-pending, pi:held-results), main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
@@ -58,7 +58,7 @@ extensions/subagents/
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
 │   ├── agent-registry/
 │   │   ├── registry.ts                    # createRegistry: records, manifests, events
-│   │   └── retention.ts                   # pruneAgentRuns: removes agent dirs whose run and session are untouched for more than retentionDays
+│   │   └── retention.ts                   # pruneAgentRuns: removes agent dirs whose run and session are untouched for more than retentionDays, chains as a whole, sparing unreleased worktrees
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun)
 │   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent

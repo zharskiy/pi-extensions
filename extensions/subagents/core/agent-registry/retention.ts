@@ -1,10 +1,15 @@
-import { lstat, readdir, rm, rmdir } from "node:fs/promises";
+import { lstat, readdir, readFile, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { AgentRecord } from "../model/agent-record.ts";
 import { MANIFEST_FILE } from "../model/paths.ts";
 
 const DAY_MS = 86_400_000;
 
 type Retention = { sessionsRoot: string; retentionDays: number; keepSessions: string[]; now?: number };
+
+type Manifest = Partial<Pick<AgentRecord, "predecessorId" | "successorId" | "worktree">> | null;
+
+type Run = { id: string; dir: string; touched: number; spared: boolean; links: unknown[] };
 
 const ignore = () => undefined;
 
@@ -28,30 +33,70 @@ const mtime = (path: string) =>
     () => 0,
   );
 
-const pruneRun = async (run: string, cutoff: number) => {
+const parsed = (text: string): Manifest => {
   try {
-    const names = await readdir(run);
+    return JSON.parse(text) as Manifest;
+  } catch {
+    return null;
+  }
+};
+
+const keepsWorktree = (manifest: Manifest) => {
+  const worktree = manifest?.worktree;
+
+  return Boolean(worktree) && worktree?.cleanup !== "removed";
+};
+
+const readRun = async (dir: string): Promise<Run[]> => {
+  try {
+    const names = await readdir(dir);
 
     if (!names.includes(MANIFEST_FILE)) {
-      return false;
+      return [];
     }
 
     const stats = await Promise.all(
-      [run, ...names.map((name) => join(run, name))].map((path) => lstat(path)),
+      [dir, ...names.map((name) => join(dir, name))].map((path) => lstat(path)),
     );
-    const touched = Math.max(...stats.map((stat) => stat.mtimeMs));
+    const manifest = parsed(await readFile(join(dir, MANIFEST_FILE), "utf8"));
 
-    if (touched >= cutoff) {
-      return false;
-    }
-
-    await rm(run, { recursive: true, force: true });
-
-    return true;
+    return [
+      {
+        id: basename(dir),
+        dir,
+        touched: Math.max(...stats.map((stat) => stat.mtimeMs)),
+        spared: keepsWorktree(manifest),
+        links: [manifest?.predecessorId, manifest?.successorId],
+      },
+    ];
   } catch {
-    return false;
+    return [];
   }
 };
+
+const gather = (runs: Map<unknown, Run>, id: unknown, chain: Set<Run>) => {
+  const run = runs.get(id);
+
+  if (!run || chain.has(run)) {
+    return chain;
+  }
+
+  chain.add(run);
+  run.links.forEach((link) => {
+    gather(runs, link, chain);
+  });
+
+  return chain;
+};
+
+const expired = (runs: Map<unknown, Run>, run: Run, cutoff: number) =>
+  Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.spared);
+
+const removeRun = (run: Run) =>
+  rm(run.dir, { recursive: true, force: true }).then(
+    () => true,
+    () => false,
+  );
 
 const pruneAgentsDir = async (stem: string, cutoff: number) => {
   const agentsDir = join(stem, "agents");
@@ -61,8 +106,10 @@ const pruneAgentsDir = async (stem: string, cutoff: number) => {
     return;
   }
 
-  const runs = await subdirs(agentsDir);
-  const removed = await Promise.all(runs.map((run) => pruneRun(run, cutoff)));
+  const found = await Promise.all((await subdirs(agentsDir)).map(readRun));
+  const runs = new Map<unknown, Run>(found.flat().map((run) => [run.id, run]));
+  const stale = Array.from(runs.values()).filter((run) => expired(runs, run, cutoff));
+  const removed = await Promise.all(stale.map(removeRun));
 
   if (!removed.includes(true)) {
     return;

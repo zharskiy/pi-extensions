@@ -18,13 +18,18 @@ const touch = (path: string, time: number) => {
   utimesSync(path, new Date(time), new Date(time));
 };
 
-const runFiles = (dir: string, id: string, touched: number, manifest = true) => {
+type Manifest = Record<string, unknown> | string | false;
+
+const manifestText = (id: string, manifest: Record<string, unknown> | string) =>
+  typeof manifest === "string" ? manifest : JSON.stringify({ id, state: "running", ...manifest });
+
+const runFiles = (dir: string, id: string, touched: number, manifest: Manifest = {}) => {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "result.md"), "done\n");
   writeFileSync(join(dir, "child.jsonl"), "{}\n");
 
-  if (manifest) {
-    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify({ id, state: "running" }));
+  if (manifest !== false) {
+    writeFileSync(join(dir, MANIFEST_FILE), manifestText(id, manifest));
   }
 
   readdirSync(dir).forEach((name) => {
@@ -53,7 +58,7 @@ const fabricate = () => {
     return file;
   };
 
-  const run = (stem: string, id: string, touched = NOW, manifest = true) =>
+  const run = (stem: string, id: string, touched = NOW, manifest: Manifest = {}) =>
     runFiles(join(agentsDir(stem), id), id, touched, manifest);
 
   const prune = (keepSessions: string[] = [], retentionDays = 60) =>
@@ -112,6 +117,81 @@ describe("agent run retention", () => {
     await layout.prune();
 
     expect(existsSync(bare)).toBe(true);
+  });
+
+  it("spares a run whose worktree checkout or branch was kept or never released", async () => {
+    const layout = fabricate();
+    const worktree = { path: "/repo/.pi/worktrees/w", branch: "pi-agents/w", base: "abc", cwd: "/repo" };
+    const spared = ["kept", "branch kept", undefined].map((cleanup, index) =>
+      layout.run("s1", `worker-${index}`, OLD, { worktree: { ...worktree, cleanup } }),
+    );
+    const removed = layout.run("s1", "worker-removed", OLD, {
+      worktree: { ...worktree, cleanup: "removed" },
+    });
+
+    await layout.prune();
+
+    expect(spared.map(existsSync)).toEqual([true, true, true]);
+    expect(existsSync(removed)).toBe(false);
+  });
+
+  it("treats an unparsable manifest as a plain run", async () => {
+    const layout = fabricate();
+    const broken = layout.run("s1", "scout-broken", OLD, "{not json");
+
+    await layout.prune();
+
+    expect(existsSync(broken)).toBe(false);
+  });
+
+  it("prunes a chain only when every link is past the cutoff", async () => {
+    const layout = fabricate();
+    const chain = (prefix: string, times: number[]) =>
+      times.map((touched, index) =>
+        layout.run("s1", `${prefix}-${index}`, touched, {
+          predecessorId: index > 0 ? `${prefix}-${index - 1}` : undefined,
+          successorId: index < times.length - 1 ? `${prefix}-${index + 1}` : undefined,
+        }),
+      );
+    const tail = chain("tail", [OLD, OLD, RECENT]);
+    const head = chain("head", [RECENT, OLD, OLD]);
+    const stale = chain("stale", [OLD, OLD, OLD]);
+
+    await layout.prune();
+
+    expect(tail.map(existsSync)).toEqual([true, true, true]);
+    expect(head.map(existsSync)).toEqual([true, true, true]);
+    expect(stale.map(existsSync)).toEqual([false, false, false]);
+  });
+
+  it("keeps a whole chain when one link spares its worktree", async () => {
+    const layout = fabricate();
+    const worktree = { path: "/w", branch: "pi-agents/w", base: "abc", cwd: "/w", cleanup: "kept" };
+    const first = layout.run("s1", "worker-1", OLD, { successorId: "worker-2" });
+    const second = layout.run("s1", "worker-2", OLD, { predecessorId: "worker-1", worktree });
+
+    await layout.prune();
+
+    expect([first, second].map(existsSync)).toEqual([true, true]);
+  });
+
+  it("ends a chain at a missing link and survives a cycle", async () => {
+    const layout = fabricate();
+    const orphan = layout.run("s1", "scout-orphan", OLD, { predecessorId: "gone", successorId: "gone-too" });
+    const loop = [
+      layout.run("s1", "loop-a", OLD, { predecessorId: "loop-b", successorId: "loop-b" }),
+      layout.run("s1", "loop-b", OLD, { predecessorId: "loop-a", successorId: "loop-a" }),
+    ];
+    const fresh = [
+      layout.run("s1", "fresh-a", OLD, { successorId: "fresh-b" }),
+      layout.run("s1", "fresh-b", RECENT, { predecessorId: "fresh-a", successorId: "fresh-a" }),
+    ];
+
+    await layout.prune();
+
+    expect(existsSync(orphan)).toBe(false);
+    expect(loop.map(existsSync)).toEqual([false, false]);
+    expect(fresh.map(existsSync)).toEqual([true, true]);
   });
 
   it("keeps the protected sessions' runs and pi's own session files", async () => {
