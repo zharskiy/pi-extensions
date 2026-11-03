@@ -74,9 +74,11 @@ type BatchOptions = { callerId: string };
 
 type StartedBatch = { batchId: string; records: AgentRecord[] };
 
+type StopOptions = { immediate?: boolean; reason?: string };
+
 export type Runner = AgentRunner & {
   startBatch(items: BatchItem[], options: BatchOptions): StartedBatch;
-  stop(id: string, options?: { immediate?: boolean }): Promise<boolean>;
+  stop(id: string, options?: StopOptions): Promise<boolean>;
   shutdown(reason: string): Promise<void>;
 };
 
@@ -118,6 +120,8 @@ type HeldHandoff = { text: string; validation: HandoffValidation };
 const failedStop = (reason: StopReason | undefined) => reason === "error" || reason === "aborted";
 
 const ABORT_WAIT_MS = 5_000;
+
+const USER_STOP = "stopped by the user";
 
 const newBatchId = () => `b-${randomBytes(3).toString("hex")}`;
 
@@ -217,7 +221,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       .list()
       .filter((child) => child.callerId === record.id && !isClosed(child.state))
       .forEach((child) => {
-        void stop(child.id, { immediate: true });
+        void stop(child.id, { immediate: true, reason: `stopped with its caller ${record.id}` });
       });
   };
 
@@ -340,7 +344,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.child = undefined;
 
     if (child) {
-      noteUsage(id, child.ownUsage());
+      try {
+        noteUsage(id, child.ownUsage());
+      } catch {}
+
       await child.dispose().catch(() => undefined);
     }
   };
@@ -511,7 +518,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       successorId: successor.id,
     });
 
-    void launch(successor, successorSlot);
+    startLaunch(successor, successorSlot);
 
     return closed;
   };
@@ -587,7 +594,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return;
     }
 
-    closeStopped(record, "stopped by the user");
+    closeStopped(record, USER_STOP);
     await releaseLive(id);
   };
 
@@ -672,38 +679,57 @@ export const createRunner = (deps: RunnerDeps): Runner => {
         live.turn = "idle";
       }
 
-      noteUsage(id, child.ownUsage());
-
-      if (record.state === "grace") {
-        settleGrace(record, live);
-        return;
+      try {
+        settle(record, live, child, event.aborted);
+      } catch (error) {
+        failRun(id, "settle failed", error);
       }
-
-      const held = heldHandoff(record, live);
-
-      if (held) {
-        live.turn = "held";
-        live.handoff = held;
-        deps.registry.update(id, { activity: "handoff: waiting for batches" });
-        releaseSlot(live);
-        return;
-      }
-
-      const waiting =
-        !event.aborted &&
-        live.abortReason === undefined &&
-        !record.handoffRequested &&
-        (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
-
-      if (waiting) {
-        deps.registry.update(id, { activity: undefined });
-        goIdle(live);
-        return;
-      }
-
-      finish(record, live, event.aborted);
-      void releaseLive(id);
     }
+  };
+
+  const failRun = (id: string, step: string, error: unknown) => {
+    deps.registry.close(id, { state: "failed", error: `${step}: ${errorText(error)}` });
+    void releaseLive(id);
+  };
+
+  const settle = (record: AgentRecord, live: Live, child: ChildSession, aborted: boolean) => {
+    const id = record.id;
+
+    noteUsage(id, child.ownUsage());
+
+    if (record.state === "grace") {
+      settleGrace(record, live);
+      return;
+    }
+
+    const held = heldHandoff(record, live);
+
+    if (held) {
+      live.turn = "held";
+      live.handoff = held;
+      deps.registry.update(id, { activity: "handoff: waiting for batches" });
+      releaseSlot(live);
+      return;
+    }
+
+    const waiting =
+      !aborted &&
+      live.abortReason === undefined &&
+      !record.handoffRequested &&
+      (hasOpenBatches(id) || (live.outbox?.pending() ?? 0) > 0);
+
+    if (waiting) {
+      deps.registry.update(id, { activity: undefined });
+      goIdle(live);
+      return;
+    }
+
+    finish(record, live, aborted);
+    void releaseLive(id);
+  };
+
+  const startLaunch = (record: AgentRecord, slot: LaunchSlot) => {
+    void launch(record, slot).catch((error: unknown) => failRun(record.id, "launch failed", error));
   };
 
   const launch = async (record: AgentRecord, slot: LaunchSlot) => {
@@ -976,18 +1002,18 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     deps.bus.emit("batch:started", { batchId, callerId: options.callerId });
 
     records.forEach((record, index) => {
-      void launch(record, slots[index]);
+      startLaunch(record, slots[index]);
     });
 
     return { batchId, records };
   };
 
-  const stopNow = async (record: AgentRecord) => {
+  const stopNow = async (record: AgentRecord, reason: string) => {
     const live = lives.get(record.id);
     const child = live?.child;
     const waitingForSlot = live !== undefined && !child && !live.release;
 
-    closeStopped(record, "stopped by the user");
+    closeStopped(record, reason);
 
     if (child) {
       await abortChild(child);
@@ -1006,7 +1032,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     return record && chainTerminal(deps.registry, record);
   };
 
-  const stop = async (requestedId: string, options: { immediate?: boolean } = {}) => {
+  const stop = async (requestedId: string, options: StopOptions = {}) => {
     const record = terminalOf(requestedId);
 
     if (!record || isClosed(record.state)) {
@@ -1019,6 +1045,13 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     const live = lives.get(id);
 
+    if (live?.turn === "held" && options.immediate === true) {
+      live.turn = "idle";
+      live.handoff = undefined;
+
+      return stopNow(record, options.reason ?? USER_STOP);
+    }
+
     if (live?.turn === "held") {
       await unhold(record, live);
       return true;
@@ -1029,7 +1062,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       options.immediate === true || record.state !== "running" || deps.settings.stopGraceSeconds === 0;
 
     if (immediate || !live || !child) {
-      return stopNow(record);
+      return stopNow(record, options.reason ?? USER_STOP);
     }
 
     releaseSlot(live);
@@ -1106,7 +1139,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     open.forEach((record) => {
       if (record.state === "grace") {
-        closeStopped(record, `stopped by the user; ${reason} ended the grace period`);
+        closeStopped(record, `${USER_STOP}; ${reason} ended the grace period`);
         return;
       }
 

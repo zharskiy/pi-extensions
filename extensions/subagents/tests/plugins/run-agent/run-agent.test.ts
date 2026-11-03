@@ -327,6 +327,61 @@ describe("run_agent batches", () => {
     expect(hiddenMessageTexts(host)).toHaveLength(1);
   });
 
+  it("fails an agent whose settle throws, frees its slot and still wakes with a failed section", async () => {
+    const { run, runtime, host, registry } = setup({ maxConcurrent: 1 });
+
+    await run(tasks(2));
+
+    const [first, second] = registry.list();
+
+    expect(second.state).toBe("queued");
+
+    runtime.child(first.id).ownUsage = () => {
+      throw new Error("usage entry without cost");
+    };
+    runtime.child(first.id).finish("Status: done");
+    await flushMicrotasks();
+
+    expect(registry.get(first.id)).toMatchObject({
+      state: "failed",
+      error: "settle failed: usage entry without cost",
+    });
+    expect(registry.get(second.id)?.state).toBe("running");
+    expect(runtime.child(first.id).disposed).toBe(true);
+
+    runtime.child(second.id).finish("Status: done");
+    await flushMicrotasks();
+    host.settle();
+
+    expect(hiddenMessageTexts(host)).toHaveLength(1);
+    expect(hiddenMessageTexts(host)[0]).toContain(`## ${first.id} (scout) - failed`);
+    expect(hiddenMessageTexts(host)[0]).toContain("settle failed: usage entry without cost");
+  });
+
+  it("fails an agent whose launch throws before the spawn, wakes with a failed section and frees the slot", async () => {
+    const { run, host, registry, services } = setup({ maxConcurrent: 1 });
+    const definitions = services.require("definitions");
+    const promptAppend = definitions.promptAppend;
+
+    definitions.promptAppend = () => {
+      throw new Error("prompt file missing");
+    };
+    await run(tasks(1));
+    definitions.promptAppend = promptAppend;
+    host.settle();
+
+    expect(registry.list()[0]).toMatchObject({
+      state: "failed",
+      error: "launch failed: prompt file missing",
+    });
+    expect(hiddenMessageTexts(host)).toHaveLength(1);
+    expect(hiddenMessageTexts(host)[0]).toContain(`## ${registry.list()[0].id} (scout) - failed`);
+
+    await run(tasks(1));
+
+    expect(registry.list()[1].state).toBe("running");
+  });
+
   it("gives each agent its own directory under the parent session, a manifest and the composed task", async () => {
     const { run, runtime, registry, host } = setup();
 

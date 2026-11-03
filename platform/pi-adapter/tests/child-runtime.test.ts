@@ -85,6 +85,7 @@ const runtimeWith = (parent: Partial<ParentSource> = {}, exclude: string[] = [])
       sessionSkillFiles: () => [],
       activeTools: () => [],
       mcpDisabled: () => false,
+      reportError: () => undefined,
       ...parent,
     },
     { namespace: "test-ext", exclude },
@@ -480,6 +481,72 @@ describe("child prompting", () => {
     await flushMicrotasks(1);
 
     expect(events).toEqual(["settled", "error Error: auth expired", "settled"]);
+  });
+
+  const spawnReporting = async () => {
+    const scripted = scriptedSession();
+    const reported: string[] = [];
+
+    captured.session = scripted.session;
+
+    const reportError = (message: string) => {
+      reported.push(message);
+    };
+
+    const child = await runtimeWith({ reportError }).spawn(spec({ tools: [] }));
+
+    return { ...scripted, child, reported };
+  };
+
+  it("calls every subscriber and reports one that throws, and the child still counts as settled", async () => {
+    const { child, calls, settle, reported } = await spawnReporting();
+    const seen: string[] = [];
+
+    child.subscribe(() => {
+      throw new Error("usage entry without cost");
+    });
+    child.subscribe((event) => {
+      seen.push(event.type);
+    });
+
+    child.start("task");
+    settle();
+
+    expect(seen).toEqual(["settled"]);
+    expect(reported).toEqual(["test-ext: agent a1: settled handler failed: usage entry without cost"]);
+
+    await child.send({ sender: "main", text: "again" }, "followUp");
+
+    expect(calls.at(-1)).toMatch(/^prompt .*again/s);
+  });
+
+  it("reports a run that fails after it settled instead of dropping the error", async () => {
+    const { child, settle, failNextRun, reported } = await spawnReporting();
+    const events: string[] = [];
+
+    child.subscribe((event) => {
+      events.push(event.type);
+    });
+
+    failNextRun(new Error("auth expired"));
+    child.start("task");
+    settle();
+    await flushMicrotasks(1);
+
+    expect(events).toEqual(["settled"]);
+    expect(reported).toEqual(["test-ext: agent a1: run failed after it settled: auth expired"]);
+  });
+
+  it("reports nothing for a run rejected because the child was disposed", async () => {
+    const { child, settle, failNextRun, reported } = await spawnReporting();
+
+    failNextRun(new Error("aborted"));
+    child.start("task");
+    settle();
+    await child.dispose();
+    await flushMicrotasks(1);
+
+    expect(reported).toEqual([]);
   });
 
   it("runs messages left in pi's queue at settle instead of reporting settled", async () => {
