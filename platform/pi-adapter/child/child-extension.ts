@@ -11,6 +11,7 @@ export type ParentSource = {
   sessionSkillFiles(): SkillInfo[];
   activeTools(): { name: string; path: string }[];
   mcpDisabled(): boolean;
+  reportError(message: string): void;
 };
 
 export const createChildExtension =

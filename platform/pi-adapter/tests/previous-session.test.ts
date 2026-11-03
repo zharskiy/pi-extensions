@@ -143,7 +143,7 @@ const startRuntime = async () => {
   const normalized = (request: unknown) =>
     JSON.parse(
       JSON.stringify(request, (key, value) =>
-        ["timestamp", "api"].includes(key) ? undefined : value,
+        ["timestamp", "api", "durationMs"].includes(key) ? undefined : value,
       ).replaceAll(dir, "<dir>"),
     );
 

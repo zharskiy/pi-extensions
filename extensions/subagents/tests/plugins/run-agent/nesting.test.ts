@@ -69,6 +69,7 @@ describe("nested agents", () => {
       "handoff",
       "run_agent",
       "message_agent",
+      "stop_agent",
       "agent_status",
     ]);
 
