@@ -210,15 +210,22 @@ Boundary options:
   inside (srt's Linux model). Or `docker network create --internal` with the proxy container dual-homed (internal + egress networks). Docker Desktop
   on macOS: the VM is the boundary; `--internal` networks have no NAT. Verify DNS: internal networks still resolve via embedded DNS (a DNS exfil
   channel); use `--dns 127.0.0.1` or no resolver and let the proxy resolve.
+  Per runtime on macOS (2026-11-03): the host proxy's Unix socket cannot be bind-mounted from the Mac, because sockets do not cross virtiofs or 9p
+  (Podman #27630 maintainer, 2026-09-10; Lima #834). Colima: put the socket on a VM-local volume shared between the `--network none` agent
+  container and a launcher-owned relay container that dials the host proxy at `host.lima.internal`; Lima `portForwards` with `reverse: true` is
+  the alternative but forwards die silently on vz (#5420). Podman machine: same relay pattern; rootless `--internal` networks are unavailable
+  (named networks are rootful only). None of Colima, Lima or Podman has an egress allowlist of its own.
 - Docker Sandboxes: microVM, all TCP proxied, UDP/ICMP blocked, deny-by-default; org policies from Docker admin console, "local `sbx policy` allow
   rules are no longer evaluated and can't expand what the organization permits", local denies still apply, sync within 5 min; HTTP rules by host,
   method, path; requires paid governance subscription (https://docs.docker.com/ai/sandboxes/governance/access-controls/organization/, 2026-11-02).
   `sbx policy log` shows decisions. This is the only off-the-shelf option meeting requirement 2 on a Mac today.
 - OpenShell: OPA policies, network section hot-reloadable, filesystem/process locked at creation (https://docs.nvidia.com/openshell/latest/security).
   Policy is per gateway; central if the gateway is central.
-- Apple `container` (macOS 26+): user-defined networks, host-only mode without NAT (`container network create ... --mode hostOnly` or `--internal`,
-  flag name unverified) (https://instagit.com/apple/container/how-to-configure-network-isolation-and-custom-subnets-for-containers, generated summary,
-  unverified). Per-container lightweight VMs; proxy on host reachable via host-only subnet; vsock possible.
+- Apple `container` (macOS 26+): user-defined networks, host-only mode without NAT. CHANGED 2026-11-03: the flag is `container network create
+  --internal` ("Restrict to host-only network", https://github.com/apple/container/blob/main/docs/command-reference.md); `--network none`
+  exists (PR #739, 2025-10-21) and `--no-dns`; `--publish-socket` relays a socket from container to host only, so a `--network none` container
+  cannot reach a host proxy without a reverse relay, and #2101 (open) breaks it with a read-only root. Per-container lightweight VMs; proxy on
+  host reachable via the host-only subnet; whether that subnet has a route beyond the host: Not verified. No egress allowlist of its own.
 - srt: macOS Seatbelt allows only the proxy's localhost port; Linux removes the netns and bind-mounts proxy Unix sockets; resolved-address check
   blocks loopback/link-local/metadata/own-interface IPs before dialing (https://github.com/anthropics/sandbox-runtime). Allowlist comes
   from a settings file: central only if that file is managed (MDM) and not writable by the user; macOS `allowLocalBinding` reopens localhost.
@@ -339,9 +346,10 @@ verified).
 
 ## Recommended combination
 
-1. Boundary: whole `pi` in a microVM/container with no default route (Docker Sandboxes on macOS where licensable; else Docker/Apple container with
-   `--network none` + Unix-socket relay; Linux: same or srt-style netns removal).
-2. One host-side egress proxy per laptop (sbx proxy, or a managed mitmproxy/Envoy build) is the only exit; transparent capture so proxy-ignoring tools
+1. Boundary: whole `pi` in a microVM/container with no default route. CHANGED 2026-11-03 (no Docker products): Colima or Podman with `--network
+   none` + a Unix-socket relay container inside the VM, Apple `container` on an `--internal` host-only network; Linux: rootless Podman or Docker
+   Engine with the same relay, or srt-style netns removal. Docker Sandboxes stays a comparable.
+2. One host-side egress proxy per laptop (a managed mitmproxy/Envoy build; sbx's proxy only as a comparable) is the only exit; transparent capture so proxy-ignoring tools
    fail closed.
 3. Policy: allowlist fetched from a central service (MDM-signed), proxy refuses local allow edits; deny by default; block metadata and OAuth token
    endpoints.
@@ -364,7 +372,7 @@ verified).
   MITM on non-AI hosts.
 - OpenShell inference-routing page URLs returned 404 on fetch; details come from search snippets and the security page. Whether the endpoint binding that closed #896 covers every injection path.
 - Gondolin secret-binding details (DeepWiki secondary source only); license is Apache-2.0 (GitHub repo metadata).
-- Apple `container` isolated-network flag name and behavior (generated summaries only).
+- Apple `container` `--internal` network behaviour: route beyond the host and which host listeners it exposes (flag name now confirmed in its command reference).
 - Claude Code `allowManagedDomainsOnly` and `enableWeakerNetworkIsolation` semantics (source mirror, not official docs).
 - Agent Router / Envoy AI Gateway SigV4 signing and token-metrics specifics; TensorZero, Portkey, Kong licenses; Bifrost latency claims.
 - Anthropic April 2026 subscription OAuth block date (secondary sources); current policy should be checked on Anthropic's legal page.

@@ -1,6 +1,6 @@
 # Coding-agent sandboxing landscape
 
-Research date: 2026-11-02
+Research date: 2026-11-02; runtime entries (Apple `container`, Colima, Lima, Podman, nerdctl, Rancher Desktop, Linux without a VM, licence and cost) updated 2026-11-03 for the no-Docker decision. Facts marked "(seen 2026-11-03)" were read that day, mostly through the GitHub API.
 
 Method: vendor docs, GitHub READMEs, release notes and security advisories (GitHub API via `gh`), CVE.org records (cveawg.mitre.org API), NVIDIA's bulletin source in `NVIDIA/product-security`, plus web search. Every URL below was seen on 2026-11-02 unless a different date is given; "published" dates are the source's own. "(secondary)" marks blogs, aggregators or search summaries not confirmed at a primary source. "CHANGED" marks a correction or update against the 2026-10-20 pass.
 
@@ -112,9 +112,16 @@ Requirements used to judge relevance: R1 model tokens outside the boundary, R2 o
 ### Pi's own guidance (new since October)
 - https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/containerization.md lists four methods: plain Docker (credentials passed in), Docker Sandboxes (provider credential on host, proxy substitution), OpenShell (`openshell sandbox create --name pi-sandbox --from pi -- pi`), and the Gondolin extension (host pi, built-in tools and `!` commands in a microVM; "Commands inside the VM inherit the host process environment", so not a credential boundary as shipped).
 - Gondolin: https://github.com/earendil-works/gondolin , Apache-2.0, "Experimental", v0.14.0 2026-10-22; QEMU by default, experimental libkrun backend; macOS and Linux; TypeScript control plane with `allowedHosts` and per-host secrets where "The guest only sees a placeholder token"; guest assets about 200 MB on first use.
+  - (seen 2026-11-03) Its own egress policy: a host-side userspace network stack that "does not rely on host firewall rules", HTTP/TLS allowlist, internal ranges blocked, DNS modes synthetic, trusted or open, optional allowlisted SSH egress (docs/network.md). Placeholder secrets are swapped only for the hosts bound to them and a placeholder sent elsewhere is blocked (docs/secrets.md). The library's docs show env supplied explicitly; the host-env inheritance is the pi extension example's behaviour (pi's containerization.md), which the plan rejects as a default. QEMU is in the trusted base (docs/security.md).
 
 ### Apple `container` and Containerization
 - https://github.com/apple/container , Apache-2.0. CHANGED: 1.0.0 shipped 2026-06-09; current 1.6.1 (2026-10-23); versions "are product versions, not semantic versions". Apple silicon, supported on macOS 26 (macOS 15 runs with limitations Apple will not fix).
+- (seen 2026-11-03) Cadence and churn: 11 releases from 1.0.0 (2026-06-09) to 1.6.1 (2026-10-23), before that 0.11.0 to 0.12.3 (2026-03-31 to 2026-04-30); release notes mark breaking CLI changes in 1.0.0 (two), 1.3.0 and 1.5.0. https://github.com/apple/container/releases
+- (seen 2026-11-03) Requirements: "You need a Mac with Apple silicon"; "supported on macOS 26 ... maintainers typically will not address issues that cannot be reproduced on macOS 26" (README). On macOS 15 `container network` commands are unavailable and `--network` errors (docs/technical-overview.md). No Intel support.
+- (seen 2026-11-03) Network flags (docs/command-reference.md): `--network none` added by PR #739 (merged 2025-10-21, closes #386); `container network create --internal` "Restrict to host-only network"; `--no-dns`; `--publish-socket host_path:container_path` publishes a socket from container to host, the wrong direction for reaching a host proxy; #1037 (closed 2026-01-27) asked for port publishing under `--network none` and names `--publish-socket` plus socat as the workaround; #2101 (open, 2026-08-08) `--publish-socket` cannot relay a socket on tmpfs with `--read-only`.
+- (seen 2026-11-03) ssh agent: `--ssh` "Forward SSH agent socket to container" on `run` and `create` (PR #502, 2025-08-15); guest path changed to `/var/host-services/ssh-auth.sock` because init systems remount `/run` (PR #1441, merged 2026-04-22); #1189 (closed 2026-02-10) socket did not follow a changed `SSH_AUTH_SOCK`; #2247 (open, 2026-09-07) parallel clients of the forwarded agent hang and can freeze the terminal.
+- (seen 2026-11-03) Exec TTY: `container exec` takes `--tty`, `--interactive`, `--user`, `--workdir`. #2299 (open, 2026-09-23): `container exec -it` leaves the host tty in `OPOST|ONLCR`, so every bare LF becomes CRLF and full-screen programs (tmux, vim, Ink-based TUIs) draw at column 0; a commenter (2026-09-25) traces it to `Terminal.setraw()` in Containerization. SIGWINCH forwarding work in #1854 (closed 2026-06-27) and #1909 (open). #378 (open, 2025-07-26) asks to attach a terminal to a running container.
+- (seen 2026-11-03) Mounts: `-v` and `--mount` bind mounts are virtiofs; #948 (2025-12-10, closed) filesystem throughput slower than Multipass and Docker; #1251 (2026-02-23, closed) single-file mounts failed intermittently; #1209 (2026-02-13) corrupted symlinks on a virtiofs volume; #1937 (open, 2026-07-12) intermittent permission errors on hard links; #165 (open, 2025-06-12) asks for bind mounts with a specific UID/GID. No Docker Engine API; own CLI plus the XPC `container-apiserver` (docs/technical-overview.md).
 - One lightweight VM per container via Containerization and Virtualization.framework; vmnet networking; separate networks are isolated from each other (docs/technical-overview.md, docs/networking.md). No egress allowlist or proxy feature found in the docs.
 - 2026 advisories: CVE-2026-113951 (high, 2026-09-29) K8s plugin kubeconfig allows host command execution; CVE-2026-64786 env inheritance; CVE-2026-64777 build sync symlink disclosure; several containerization symlink issues (release notes 1.2.0 to 1.6.0).
 - Bind-mount performance: no public benchmark found (secondary: https://tech-insider.org/au/apple-containers-vs-docker-vs-orbstack-2026/).
@@ -123,19 +130,47 @@ Requirements used to judge relevance: R1 model tokens outside the boundary, R2 o
 - See C.
 
 ### OrbStack
-- Proprietary; commercial use needs a per-user license; 30-day Pro trial then personal-use tier (https://docs.orbstack.dev/licensing). Price about $8/user/month annual (secondary). 2025 benchmark: bind mount 4.22 s vs Docker VZ 9.53 s vs Lima 8.99 s (https://www.paolomainardi.com/posts/docker-performance-macos-2025/, secondary).
+- Proprietary; commercial use needs a per-user license; 30-day Pro trial then personal-use tier (https://docs.orbstack.dev/licensing). CHANGED: Pro $8/user/month, $96 billed annually; Free is "Personal, non-commercial use" (https://orbstack.dev/pricing , seen 2026-11-03). 2025 benchmark: bind mount 4.22 s vs Docker VZ 9.53 s vs Lima 8.99 s (https://www.paolomainardi.com/posts/docker-performance-macos-2025/, secondary).
 
 ### Colima and Lima
 - Lima v2.2.1 (2026-10-03), Apache-2.0, CNCF incubating. Colima v0.10.3 (2026-06-04), MIT; `--vm-type=vz` uses Virtualization.framework. No commercial support; no egress policy.
+- Colima (seen 2026-11-03, https://github.com/abiosoft/colima): "Containers on Lima"; vmType qemu, vz, krunkit (experimental); default vz on macOS 13+ else qemu (`environment/vm.go`; the template comment still says qemu); runtimes docker (default), containerd, incus, k3s. Docker socket `$HOME/.colima/default/docker.sock` (docs/FAQ.md); it is the real dockerd, so Docker API clients work unchanged. Default mount `$HOME` writable; `mountType` virtiofs (vz default), sshfs (qemu default), 9p; `mountInotify` experimental (embedded/defaults/colima.yaml). Lima overrides through `~/.colima/_lima/_config/override.yaml` (FAQ).
+- Colima ssh agent: `-s/--ssh-agent`, config `forwardAgent`, via Lima `ssh.forwardAgent` (cmd/start.go). Into containers: mount the VM's `$SSH_AUTH_SOCK` (maintainer, #127 comment, 2022-01-17); #942 (open, 2023-12-21) uses `/run/host-services/ssh-auth.sock` on 0.6.7 and shows it turning into a directory after `colima stop`/`start` with a running container; #1330 (open, 2025-05-30) declared `SSH_AUTH_SOCK` not mapped.
+- Colima maintenance: releases v0.9.0 (2025-09-24), v0.9.1 (2025-09-25), v0.10.0 (2026-02-10), v0.10.1 (2026-02-22), v0.10.2 (2026-06-03), v0.10.3 (2026-06-04); commits continue to 2026-10-02 with no release. abiosoft authored 508 commits and merged all of the last 9 PRs (2026-07-24 to 2026-10-02); about 110 contributors; about 379 open issues. One maintainer in practice.
+- Colima mount issues, no benchmark numbers in any of them: #1258 (open, 2025-01-27) virtiofs permission denied; #841 (open, 2023-11-06) writable volume with vz and virtiofs; #1552 (closed, 2026-04-05) zombie containers with Lima 2.x and virtiofs. The template ranks virtiofs fastest (vz only), sshfs faster than 9p but least reliable under heavy concurrent I/O.
+- Lima (seen 2026-11-03, https://github.com/lima-vm/lima , https://lima-vm.io/docs/): v2.3.0-rc.0 2026-10-30; vmType vz (default on macOS 13.5+), qemu, krunkit; mount types reverse-sshfs, 9p, virtiofs (vz), default virtiofs for vz and 9p for qemu since Lima 1.0; containerd and rootless nerdctl by default; `ssh.forwardAgent` default false; `portForwards` with `guestSocket`/`hostSocket` and `reverse` for Unix sockets; #5420 (closed, 2026-08-17) socket forwards die with the ssh ControlMaster, silently on vz. Network: user-mode default, host at `host.lima.internal` (192.168.5.2); v2.3 adds `networkOpts.hostLoopback: false` (vz only, rc only). No egress allowlist; no option for a VM without a default route found. #834 (open, 2022-04-30): sockets on 9p (and likely sshfs) mounts are visible but do not connect. Active maintainers AkihiroSuda (41 of the last 100 commits) and jandubois (25).
+- What Colima adds over Lima: dockerd (or containerd, incus, k3s) set up in one command, the `docker.sock` socket and Docker context, profiles, a short flag set.
 
-### Podman Desktop
+### nerdctl and containerd
+- nerdctl v2.4.2 (2026-10-30), Apache-2.0, "Docker-compatible CLI for containerd" (https://github.com/containerd/nerdctl , seen 2026-11-03). containerd speaks gRPC, not the Docker Engine API (no statement to the contrary found; Not verified at containerd docs), so an OCI engine API client cannot drive Lima's default containerd or Colima's containerd runtime; it needs Colima's docker runtime or Podman's compat socket.
+
+### Rancher Desktop
+- Apache-2.0, v1.24.0 (2026-07-29), https://github.com/rancher-sandbox/rancher-desktop (seen 2026-11-03). Lima underneath on macOS and the dockerd or containerd choice: Not verified this pass.
+
+### Podman and Podman Desktop
 - v1.30.5 (2026-10-13), Apache-2.0; Red Hat backs Podman. No agent-specific egress or credential features.
+- CHANGED (seen 2026-11-03): the repo moved to https://github.com/podman-container-tools/podman ; Podman is Apache-2.0; latest stable v6.1.4 (2026-10-12), v6.2.0-rc1 (2026-10-26), v5.8.9 still maintained (2026-10-12); v6.0.0 (2026-06-24) made libkrun the default macOS machine provider (applehv the alternative, macOS 13+; libkrun needs `krunkit`, arm64 build tag). https://github.com/podman-container-tools/podman/releases/tag/v6.0.0
+- Docker-compatible socket: `podman machine inspect` gives `ConnectionInfo.PodmanSocket`; `podman-mac-helper install` manages the `/var/run/docker.sock` link; `podman system service` serves a Docker v1.40 compat API plus the libpod API, used with `DOCKER_HOST` (docs/source/markdown/podman-system-service.1.md). Machine is rootless by default (`--rootful` false), default volume `$HOME:$HOME`; `--userns=keep-id` maps the host UID:GID in.
+- ssh agent on macOS: nothing built in. #23785 (open since 2024-08-28, activity 2026-10-23): "Since the move to virtiofs, you can no longer share the SSH agent from the macOS host into a Podman container"; community workaround `podman machine ssh -- -R /tmp/ssh-agent.sock:"$SSH_AUTH_SOCK" -N` then bind-mount that VM path. #27630: a maintainer (2026-09-10) says virtiofs has no support for sockets crossing the VM boundary.
+- I/O: #27216 (2025-10-02, Podman 5.6.0) MySQL import about 60 min on libkrun vs 3m32s after switching to applehv; #16994 (closed 2024-06-15) slow stat on the old QEMU/9p path.
+- Network: no egress allowlist; rootless default `pasta` with `--no-map-gw` and no automatic port forwarding, but host routes are copied so egress exists; `--network none`; `podman network create --internal` adds no default route and aardvark-dns answers only container names, but named networks are rootful only; `--no-hosts` or `host_containers_internal_ip="none"` removes the `host.containers.internal` entry, not the route. gvproxy restriction options: Not verified.
+- Windows: machine providers `wsl` (default) and `hyperv`, Windows 11 (docs/tutorials/podman-for-windows.md). Linux: rootless containers without a VM, user namespaces.
+- Support: Red Hat sells "Red Hat build of Podman Desktop" from US$180 per licence with Red Hat support (https://www.redhat.com/en/store/red-hat-build-podman-desktop , seen 2026-11-03); whether a RHEL subscription includes it: Not verified.
 
 ### microsandbox
 - https://github.com/microsandbox/microsandbox , Apache-2.0, v0.7.13 (2026-11-01), "still beta software". libkrun microVMs; Apple silicon macOS, Linux KVM, CHANGED Windows WHP. Claims guest boot under 100 ms on M1. Host allowlists; secrets "never enter the VM", bound to hosts. TypeScript SDK `npm i microsandbox`.
 
 ### Firecracker, gVisor, Kata
 - Firecracker v1.17.0 (2026-09-10), gVisor release-20261026.0 (2026-10-28), Kata 4.3.1 (2026-10-21); all Apache-2.0, all Linux-only (KVM or ptrace/KVM platforms). Relevant for servers, not directly for a macOS laptop except inside a Linux VM.
+
+### Linux without a VM (seen 2026-11-03)
+- bubblewrap v0.13.1 (2026-10-14), LGPL-2.1 (COPYING; the GitHub API reports NOASSERTION). https://github.com/containers/bubblewrap
+- Landlock (https://docs.kernel.org/userspace-api/landlock.html): ABI 4 TCP bind and connect by port, ABI 6 scoping of abstract Unix sockets and signals, ABI 9 pathname Unix sockets, ABI 10 UDP; rules are ports, never hostnames, so the hostname allowlist stays in the proxy. Kernel versions per ABI beyond ABI 1 (5.13): Not verified on that page.
+- srt v0.0.81 (2026-10-20) confirms bubblewrap on Linux and `sandbox-exec` on macOS, network namespace removed, host HTTP and SOCKS5 proxies. Podman rootless (above) or bubblewrap plus Landlock are the two VM-free Linux shapes.
+
+### Licence and cost of the runtimes (seen 2026-11-03)
+- Free and open source: Colima (MIT), Lima (Apache-2.0), Podman and Podman Desktop (Apache-2.0), Apple `container` (Apache-2.0), nerdctl (Apache-2.0), Rancher Desktop (Apache-2.0), Docker Engine moby (Apache-2.0, docker-v29.9.2 2026-10-20) and docker/cli (Apache-2.0). Paid support exists only for Podman Desktop (Red Hat).
+- Not free for every company: Docker Desktop is free only for businesses under 250 employees and under $10M annual revenue, personal use, education and non-commercial open source; otherwise Pro, Team or Business (https://docs.docker.com/subscription/desktop-license/ , no page date). OrbStack Free is "Personal, non-commercial use", Pro $8/user/month (https://orbstack.dev/pricing). Docker Sandboxes CLI is free including commercial use but needs a Docker sign-in, ships as a closed binary and charges for governance. These remain comparables only.
 
 ### Docker Desktop Enhanced Container Isolation
 - Sysbox runtime, container root mapped to unprivileged VM user, blocks bind-mounting `/var/run/docker.sock` by default (https://docs.docker.com/enterprise/security/hardened-desktop/enhanced-container-isolation/). Business subscription (not stated on that page; from Docker pricing knowledge, not verified). Enforced with Settings Management. No egress allowlist or credential injection.
@@ -276,11 +311,12 @@ What buyers ask and what vendors ship:
 | Docker Sandboxes sbx 0.50 | microVM per sandbox, whole agent | Direct virtiofs mount of workspace, rest of host hidden | Host proxy deny-by-default, wildcard defaults | Yes, sentinel swap | macOS 14+ Apple silicon | seconds (unofficial 2-5 s) | Org governance, paid; sign-in enforcement | Closed binary, free locally |
 | OpenShell 0.1.6 | Container+Landlock+seccomp or libkrun VM, supervisor outside | Landlock; upload or driver bind mounts | Per host/port/binary/L7 | Yes, placeholder swap | Via Docker Desktop or VM driver, open bugs | 10-30 s first VM boot (prior pass) | YAML policy, prover, OCSF; gateway auth required | Apache-2.0 |
 | Gondolin 0.14 | QEMU or libkrun microVM | Host-controlled FS | `allowedHosts` hooks | Yes in library; pi extension inherits env | Yes (QEMU) | not measured | None | Apache-2.0 |
-| Apple container 1.6.1 | VM per container | Mounts you pass | None found | No | macOS 26 Apple silicon | not measured | None | Apache-2.0 |
+| Apple container 1.6.1 | VM per container | Mounts you pass | None; `--network none`, `--internal` host-only | No | macOS 26 Apple silicon | not measured | None | Apache-2.0 |
 | microsandbox 0.7.13 | libkrun microVM | Volumes | Host allowlist | Yes, host-bound secrets | Apple silicon | <100 ms guest boot (vendor) | None | Apache-2.0 |
 | Docker Desktop ECI | Sysbox in Docker Desktop VM | Mounts you pass | None | No | Yes | container start | Settings Management (Business) | Proprietary |
 | Dev Containers | Container in Docker VM | Workspace bind mount | Optional iptables script | No | Via Docker | container start | Repo-held unless MDM | MIT (CLI) |
-| Lima/Colima | Full Linux VM | Mounts you pass | None | No | Yes | VM boot | None | Apache-2.0 / MIT |
+| Lima/Colima (Lima 2.2.1, Colima 0.10.3) | Full Linux VM, dockerd (Colima) or containerd (Lima) | Mounts you pass; virtiofs, sshfs, 9p | None | No | macOS 13+ (vz), Intel and Apple silicon | VM boot | None | Apache-2.0 / MIT |
+| Podman 6.1.4 | Linux VM on macOS (libkrun or applehv), WSL2 or Hyper-V on Windows, no VM on Linux | Mounts you pass; `$HOME` by default | None | No | macOS 13+ (applehv) | VM boot | None; paid Red Hat build of Podman Desktop | Apache-2.0 |
 | OrbStack | Linux VM | Mounts you pass | None | No | Yes | fast (vendor) | Enterprise plan SSO (secondary) | Proprietary, paid commercial |
 | Hosted (E2B, Modal, Vercel, Cloudflare, Fly, Northflank, Runloop, Blaxel) | Remote microVM/gVisor | Remote FS only | Varies | Varies | n/a | remote | Varies | Mixed |
 
@@ -290,11 +326,12 @@ What buyers ask and what vendors ship:
 - Codex managed networking key names (`experimental_network` vs `application.network.domains`); OpenAI "Running Codex safely" post returned 403.
 - Docker Sandboxes: hypervisor per OS, official startup time, governance price, whether the source will be published, CA lifecycle (the proxy CA is seen only in a user-filed issue, not in the docs), fix version of CVE-2026-17106 for `sbx cp`.
 - OpenShell: default `enforcement` when omitted in v0.1.6; whether `--from pi` community image is current; NVIDIA commercial support; VM first-boot time on v0.1.6 (10-30 s figure is from the October pass).
-- Apple container bind-mount performance and any egress filtering beyond isolated networks.
+- Apple container bind-mount performance (#948 resolution not read), whether an `--internal` network has no route beyond the host, UID/GID presentation of bind mounts.
+- Colima and Lima bind-mount numbers (none published), UID/GID under virtiofs; Podman UID presentation on macOS and Docker-API incompatibilities beyond v1.40; Rancher Desktop internals.
 - Cursor cloud Firecracker and default-open egress (search summary of cursor.com docs, not fetched directly); Cursor native Windows sandbox.
 - Amp default approval behaviour; Jules egress and secrets.
 - Devin egress allowlisting granularity.
 - ECI subscription tier on the current docs page.
 - SOC 2 / ISO status of any vendor.
 - arXiv 2606.08433 and 2607.05743 findings (existence seen, contents not re-read).
-- OrbStack price and enterprise SSO (aggregators only).
+- OrbStack enterprise SSO (aggregators only); the $8/user/month price was confirmed at orbstack.dev/pricing on 2026-11-03.

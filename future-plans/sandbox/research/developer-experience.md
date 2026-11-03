@@ -1,6 +1,6 @@
 # Sandboxed pi: developer experience research
 
-Research date: 2026-11-02
+Research date: 2026-11-02; runtime rows, ssh agent, files and licensing updated 2026-11-03 for the no-Docker decision (Colima and Apple `container` first class, Podman third). Primary sources for the 2026-11-03 facts are in [landscape.md](landscape.md) B.
 
 Scope: what a developer on macOS (Linux second, Windows nice-to-have) sees when typing `pi` in a project and getting a sandboxed agent. Target: no container commands, no visible image builds, instant-feeling start, project dir shared read-write. pi version in view: @earendil-works/pi-coding-agent 1.5.0.
 
@@ -49,7 +49,7 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - Independent reviews disagree: Better Stack calls startup "the weak point", DEV review says "comparable". https://betterstack.com/community/guides/linux/apple-container-machines/ ; https://dev.to/andrew-ooo/apple-container-review-a-native-docker-alternative-for-mac-3bo3
 - OrbStack: ~2 s engine start (secondary claim, https://frontend.sliplane.io/blog/orbstack-vs-docker); `docker run --rm hello-world` ~0.3-0.8 s versus Docker Desktop 4-8 s (unverified estimate in a comparison page, https://www.pkgpulse.com/blog/podman-vs-docker-desktop-vs-orbstack-container-tools-macos-2026).
 - Docker Desktop: warm restart of the engine ~15-20 s (v4.38.0, thin methodology). https://thepromptshelf.dev/blog/orbstack-vs-docker-desktop-2026/
-- Lima: sample `limactl start` log reaches READY at ~29 s (driver/hardware unstated). https://github.com/lima-vm/lima/releases . Colima: no measured number found.
+- Lima: sample `limactl start` log reaches READY at ~29 s (driver/hardware unstated). https://github.com/lima-vm/lima/releases . Colima: no measured number found (none in the repo or issues, searched 2026-11-03). Podman machine: none found.
 - Gondolin: "boots in under a second" on macOS and Linux (project claim via secondary summaries, no benchmark). https://deepwiki.com/earendil-works/gondolin
 - Docker Sandboxes: "start in seconds" on reuse, no published number; `sbx version` alone ~500 ms (issue #451). https://github.com/docker/sbx-releases/issues/451
 - Seatbelt, measured locally: `/usr/bin/true` 1.15 ms bare vs 4.87 ms under `sandbox-exec -f profile`; `node -e 0` showed no measurable added cost (noise 22-31 ms). So OS sandbox start is effectively free.
@@ -85,6 +85,8 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 
 - Mechanisms on macOS: virtiofs (Docker Desktop VZ and Docker VMM, Lima vz default on macOS 13.5+ with Lima 1.0, Apple container bind mounts, sbx), gRPC-FUSE (Docker Desktop legacy), Mutagen-based "synchronized file shares" (Docker Desktop, paid: Pro/Team/Business, ext4 cache in the VM with two-way sync, GA in 4.27, 2024-02). https://lima-vm.io/docs/config/vmtype/ ; https://www.docker.com/blog/announcing-synchronized-file-shares/ .
   - OrbStack uses virtiofs plus its own dynamic caching, vendor claim 75-95% of native, yarn install at 77% of native for 1614 packages / 807 MiB. https://orbstack.dev/blog/fast-filesystem
+  - Colima (2026-11-03): `mountType` virtiofs (default with vz), sshfs (default with qemu) or 9p, fixed at VM creation; `$HOME` mounted writable by default; `mountInotify` experimental. The template calls virtiofs fastest and sshfs least reliable under heavy concurrent I/O; no benchmark found. https://github.com/abiosoft/colima/blob/main/embedded/defaults/colima.yaml
+  - Podman machine (2026-11-03): virtiofs with libkrun (default since v6.0.0) or applehv; one report of libkrun I/O about 17x slower than applehv on a MySQL import (#27216, Podman 5.6.0). https://github.com/podman-container-tools/podman/issues/27216
 - Independent npm install numbers (M4 Pro, macOS 15.1.1, published 2025-01-04, updated 2025-06-01), bind mount only, seconds: Linux native Docker 5.29; Lima 8.99; Docker Desktop VZ+virtiofs 9.53; Docker VMM 8.47; Docker Desktop VZ + synchronized file shares 3.88; OrbStack 4.22; macOS native about 3.4.
   - With node_modules in a named volume all setups land at 3.2-4.1. https://www.paolomainardi.com/posts/docker-performance-macos-2025/
 - Apple container: bind mounts are virtiofs; one user reports native ~2-3x faster than virtioblk volumes, which are ~3x faster than virtiofs bind mounts for builds (forum, May 2026). https://github.com/apple/container/discussions/1516
@@ -96,7 +98,7 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - Docker Desktop has open virtiofs bugs: nested bind mounts empty in 4.67.0 (https://github.com/docker/desktop-feedback/issues/268), Docker VMM EBADF on `utime()` and zero-byte files after host churn (https://github.com/docker/desktop-feedback/issues/806), volumes nested in bind mounts detached ~1 s after start under Docker VMM (https://github.com/docker/desktop-feedback/issues/607).
 - Practical pattern for pi: bind-mount the repo at the same absolute path as on the host (as Gemini does) so paths in pi sessions, error messages, OSC 8 links and `code -g file:line` round-trip; put `node_modules`, `.venv`, `target`, build outputs on per-project named volumes layered over the bind mount (mixed blessing: host tools then see empty dirs, and Docker VMM issue #607 above hits exactly this nesting).
 - File watchers: virtiofs on macOS does not reliably deliver host-side changes as inotify inside the guest (Docker Desktop and OrbStack add event forwarding of their own; Not verified per runtime). pi itself watches `<cwd>/.git/HEAD` for the branch display; a missed event only leaves a stale branch label.
-- UID/GID: Docker Desktop, OrbStack and Apple container on macOS present bind-mounted files with ownership mapped so a root or arbitrary container user can write and host files stay owned by the macOS user (Not verified for Apple container).
+- UID/GID: Docker Desktop, OrbStack and Apple container on macOS present bind-mounted files with ownership mapped so a root or arbitrary container user can write and host files stay owned by the macOS user (Not verified for Apple container, where #165 asking for UID/GID on bind mounts is open; Not verified for Colima virtiofs, where #1258 reports permission denied; Not verified for Podman machine, where rootless `--userns=keep-id` maps the host UID in).
   - On Linux there is no translation: run the container as the host UID:GID (`--user $(id -u):$(id -g)`, Gemini's `SANDBOX_SET_UID_GID`) or rootless Podman with `--userns=keep-id`, else files created by pi end up root-owned in the repo.
 - Symlinks: a symlink in the repo pointing outside the mount dangles inside the sandbox; that is the desired security property, but pnpm stores, `npm link`, monorepo links to sibling checkouts and dotfile-managed configs break.
   - Shim should warn once with the list of external targets and offer an explicit read-only extra mount (`sbx run claude ~/proj ~/shared-library:ro` is the precedent).
@@ -115,7 +117,10 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 ## D. Identity and auxiliary credentials
 
 - SSH agent on macOS: Docker Desktop and OrbStack expose the host agent at the magic path `/run/host-services/ssh-auth.sock` (mount it, set `SSH_AUTH_SOCK`); OrbStack notes `-v $SSH_AUTH_SOCK:/agent.sock` works except for 1Password's agent. https://docs.orbstack.dev/docker/ ; https://github.com/docker/docs/pull/10184/files .
-  - Apple container: `container run --ssh` forwards the agent (guest path reported as `/run/host-services/ssh-auth.sock` symlinked to `/var/host-services/ssh-auth.sock`, third-party docs, Not verified against Apple docs). https://instagit.com/apple/container/how-to-use-ssh-agent-forwarding-with-containers-ssh-flag/ . sbx: `ssh.agentForwardingEnabled`, `ssh.agentSocketPath`, needs `socat` in custom templates, `SSH_AUTH_SOCK` is exported even when the relay is not wired; SSH egress needs `sbx policy allow network "host:22"`; GPG/S-MIME keys unavailable; 1Password ssh-agent signing failed on Windows (Andrew Lock). https://docs.docker.com/ai/sandboxes/troubleshooting/
+  - Apple container: `container run --ssh` forwards the agent; the guest path is `/var/host-services/ssh-auth.sock` since PR #1441 (merged 2026-04-22, because init systems remount `/run`); #2247 (open, 2026-09-07) parallel agent clients can hang. https://github.com/apple/container/pull/1441 ; https://github.com/apple/container/issues/2247 .
+  - Colima: `colima start --ssh-agent` forwards the Mac agent into the VM through Lima's `ssh.forwardAgent`; containers mount the VM's `$SSH_AUTH_SOCK` (`docker run -v $SSH_AUTH_SOCK:$SSH_AUTH_SOCK -e SSH_AUTH_SOCK`, maintainer, 2022-01-17, https://github.com/abiosoft/colima/issues/127#issuecomment-1014474574); `/run/host-services/ssh-auth.sock` appears in a 0.6.7 report; the socket breaks after a VM restart with a container still attached (#942, open). Mounting the Mac's `$SSH_AUTH_SOCK` path directly gives a directory (#1247, 2025-01-13).
+  - Podman machine: no built-in forwarding (#23785, open since 2024-08-28); the Mac socket does not cross virtiofs (#27630); workaround `podman machine ssh -- -R /tmp/ssh-agent.sock:"$SSH_AUTH_SOCK" -N` held open by the launcher, then `-v /tmp/ssh-agent.sock:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent`. https://github.com/podman-container-tools/podman/issues/23785 .
+  - sbx: `ssh.agentForwardingEnabled`, `ssh.agentSocketPath`, needs `socat` in custom templates, `SSH_AUTH_SOCK` is exported even when the relay is not wired; SSH egress needs `sbx policy allow network "host:22"`; GPG/S-MIME keys unavailable; 1Password ssh-agent signing failed on Windows (Andrew Lock). https://docs.docker.com/ai/sandboxes/troubleshooting/
 - Agent forwarding means the sandbox can use (not read) every key loaded in the agent for the session. No key material enters; this is the sole credential-related capability that crosses the boundary. The strict alternative, a policy choice, is https git through the proxy with injected headers and no agent socket. A policy-respecting design forwards a filtered agent (only the git host's key, or confirm-on-use keys) or does git push from the host.
 - git over HTTPS: host credential helpers (osxkeychain, GCM) do not exist inside; the enterprise choice is a credential-injecting egress proxy like sbx (`sbx secret set github --command 'gh auth token'`, token "stays on your host") and OpenShell providers ("Agents never see real credentials", injected only toward approved endpoints). https://docs.docker.com/ai/sandboxes/get-started/ ; https://github.com/NVIDIA/OpenShell
 - `gh`: needs `GH_TOKEN`; inject the header at the proxy, no token inside. Under Seatbelt, Go binaries like `gh` fail TLS verification (Claude doc), a point for the container shape.
@@ -130,7 +135,7 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
   - Enterprise path (R2 absolute, no token inside): no `/login` inside. `pi login` on the host (shim subcommand) mints or refreshes the SSO token the proxy uses; `auth.json` in the image holds placeholders and nothing is written to the agent-state volume. sbx likewise keeps Claude's OAuth token on the host. https://docs.docker.com/ai/sandboxes/get-started/
   - Publishing the callback port and bridging `open` is only for a non-enterprise profile that accepts a token inside.
 - MCP server secrets: stdio MCP servers run inside and often need an API key. The proxy does per-host credential injection for allowed hosts (placeholder in the container, real header added by the proxy; OpenShell documents it as per-endpoint credential binding, Docker Sandboxes as credential swapping), so an MCP server is configured with a placeholder and never sees the real key. Servers whose protocol cannot be proxied this way (non-HTTP) are not supported in the enterprise profile.
-- Must solve for "just type pi": provider auth (pi's own), corporate CA + proxy env, git push for the dominant remote type (ssh agent on macOS is cheap with Docker Desktop/OrbStack/Apple container), `HTTP(S)_PROXY`/`NO_PROXY` passthrough.
+- Must solve for "just type pi": provider auth (pi's own), corporate CA + proxy env, git push for the dominant remote type (ssh agent on macOS is one flag on Colima and Apple container, a launcher-held tunnel on Podman machine), `HTTP(S)_PROXY`/`NO_PROXY` passthrough.
   - Can defer: commit signing (GPG unsupported even in sbx), `gh` beyond proxy header injection, private pip/npm header injection (start with registry config only, no tokens), cloud CLIs (`~/.aws`, gcloud), SSO for internal services.
 
 ## E. Image and toolchain without the developer noticing
@@ -144,9 +149,10 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 - Offline: if the image is present, start must not touch the network (no `pull` on the hot path, no registry HEAD); pi itself needs the provider network anyway, so offline is mostly "fail fast with a clear message".
 - Disk: sbx defaults root 20 GB + inner Docker 10 GB per sandbox (troubleshooting doc); Docker Desktop/OrbStack VM disks grow and rarely shrink; the shim needs `pi sandbox gc`.
 - Runtime install and licensing an IT department will weigh:
-  - Docker Desktop: Business $24/user/month annual (https://www.docker.com/pricing); free tier only for small companies (<250 staff and <$10M revenue, third-party summary). Has Settings Management via MDM (see F). Most likely already approved in enterprises.
-  - OrbStack: commercial use needs a per-user license, one license covers up to 5 devices; ~$8/user/month (third-party aggregators). https://docs.orbstack.dev/licensing . Listed in Kandji's MDM app library. No admin policy lock-down found.
-  - Colima/Lima: free, open source, Homebrew; no vendor support or admin lock-down.
+  - Docker Desktop: Business $24/user/month annual (https://www.docker.com/pricing); free tier only for businesses under 250 employees and under $10M revenue, personal use, education, non-commercial open source (https://docs.docker.com/subscription/desktop-license/ , seen 2026-11-03). Has Settings Management via MDM (see F). Often already approved in enterprises, but excluded by R6.
+  - OrbStack: commercial use needs a per-user license, one license covers up to 5 devices; Pro $8/user/month (https://orbstack.dev/pricing , seen 2026-11-03). https://docs.orbstack.dev/licensing . Listed in Kandji's MDM app library. No admin policy lock-down found. Excluded by R6.
+  - Colima/Lima: free, open source (MIT / Apache-2.0), Homebrew; no vendor support or admin lock-down; Colima has one maintainer in practice and no release since v0.10.3 (2026-06-04); Lima is CNCF incubating.
+  - Podman: Apache-2.0, free; Red Hat sells the Red Hat build of Podman Desktop from US$180 per licence with support (https://www.redhat.com/en/store/red-hat-build-podman-desktop , seen 2026-11-03), the only runtime here with a paid support offer.
   - Apple `container`: Apache-2.0, free, Apple silicon, "supported on macOS 26", older releases not supported; versions are "product versions, not semantic versions". https://github.com/apple/container . macOS 15 runs with reduced networking (third party).
   - Docker Sandboxes `sbx`: CLI and local compute free incl. commercial; org governance (central network/filesystem/MCP policy) is a separate paid subscription; macOS 14+ Apple silicon, Windows 11 x64 with Hypervisor Platform, Linux needs KVM; does not require Docker Desktop. https://docs.docker.com/ai/sandboxes/faq/ ; https://docs.docker.com/ai/sandboxes/install/ .
     - Enterprise users found licensing unclear. https://forums.docker.com/t/docker-sandbox-pricing-unclear/151790
@@ -200,12 +206,12 @@ Local measurements in this file were taken on 2026-11-02 on an Apple M6 Mac, mac
 
 Linux (second priority):
 
-- No VM needed for a container: rootless Podman or Docker Engine starts a container in well under a second, and bind mounts are native speed (Linux native Docker bind mount npm install 5.29 s vs 5.32 s native in the Mainardi test, i.e. no penalty).
+- No VM needed for a container: rootless Podman (Apache-2.0, default network `pasta`) or Docker Engine (moby, Apache-2.0) starts a container in well under a second, and bind mounts are native speed (Linux native Docker bind mount npm install 5.29 s vs 5.32 s native in the Mainardi test, i.e. no penalty).
 - The file-share problem disappears; the UID problem appears (run as host UID:GID, or Podman `--userns=keep-id`).
 - OS-sandbox fallback is bubblewrap: Ubuntu 24.04+ AppArmor blocks unprivileged userns for `bwrap` without a profile (Claude and Codex docs both call this out).
-- ssh agent: bind-mount `$SSH_AUTH_SOCK` directly; no magic host-services path needed.
+- ssh agent: bind-mount `$SSH_AUTH_SOCK` directly; no magic host-services path or VM tunnel needed (native Podman and Docker Engine share the host kernel; the Mac virtiofs socket limits of Podman #27630 and Lima #834 do not apply).
 - Docker Sandboxes needs KVM access on Linux; OpenShell supports Linux natively; Firecracker and gVisor are realistic only here.
-- Docker Desktop for Linux runs a VM anyway and reintroduces the macOS file-share costs; prefer Docker Engine or Podman.
+- Docker Desktop for Linux runs a VM anyway and reintroduces the macOS file-share costs; prefer Docker Engine or Podman. Colima and Lima also run on Linux but add a VM for nothing there. VM-free OS-sandbox shape: bubblewrap v0.13.1 (LGPL-2.1) plus Landlock (TCP port rules from ABI 4, never hostnames).
 
 Windows (nice to have):
 
@@ -213,6 +219,7 @@ Windows (nice to have):
 - Codex: native Windows sandbox in PowerShell, Linux sandbox under WSL2. https://learn.chatgpt.com/docs/sandboxing
 - sbx: Windows 11 x64 with Windows Hypervisor Platform, installed by winget; resize redraw problems on Windows were reported around v0.32 and fixed by v0.33 (issue #220).
 - OpenShell: WSL2 experimental, native via Microsoft MXC.
+- Podman: `podman machine` with the `wsl` provider (default) or `hyperv` (Pro, Enterprise or Education; creating one needs Hyper-V Administrators), Windows 11. https://github.com/podman-container-tools/podman/blob/main/docs/tutorials/podman-for-windows.md . Inside WSL2 the shim can also use native rootless Podman as on Linux. Colima and Apple `container` have no Windows path.
 - Practical shape: the shim runs in WSL2 and behaves as on Linux; repos must live in the WSL2 filesystem, not `/mnt/c`, or the 9p/DrvFs share is the slow path (general WSL2 behavior, Not verified for current builds).
 - Terminal: Windows Terminal supports truecolor and OSC 52 but not kitty graphics (Not verified for current release); pi falls back to no images.
 
@@ -222,7 +229,7 @@ Hot path, target under 200 ms when warm:
 
 1. Resolve the project: `git rev-parse --show-toplevel` and `--git-common-dir` from cwd; fall back to cwd outside git. If policy sets the optional `workspaceRoots: { roots: [...], outside: refuse | warn }`, refuse or warn when the top-level is not under a declared root.
 2. Read the effective policy: MDM/system file first, then user file, then project file (tighten only); compute a policy hash.
-3. Detect the backend once and cache the answer: Docker API socket (Docker Desktop, OrbStack, Colima), Apple `container` on macOS 26+, else OS-sandbox fallback.
+3. Detect the backend once and cache the answer, in the order policy sets: Colima's socket (`~/.colima/<profile>/docker.sock`), Apple `container` on macOS 26+ Apple silicon, then any other OCI engine API socket (Podman machine `ConnectionInfo.PodmanSocket`, Docker Engine on Linux; Docker Desktop and OrbStack work here too but are not recommended), else OS-sandbox fallback.
 4. Look up the per-project container by label (repo path hash); verify image digest and policy hash labels match.
 5. If running: `exec -it` with terminal env, working dir = host cwd (same absolute path), initial size, and SIGWINCH forwarding.
 6. If stopped: start it (no create), then exec. If missing or stale: create, then exec.
@@ -248,8 +255,9 @@ Failure modes the developer will actually hit, and the message they need:
 |---|---|---|
 | "self-signed certificate in chain" from npm, pip, pi provider calls | TLS-inspecting proxy, CA not in sandbox | auto-export System keychain roots; set `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, git `http.sslCAInfo` |
 | bare 403 from internal registry | egress allowlist (sbx Balanced shows the same ambiguity) | proxy returns a policy-denied body naming the host and the policy source |
-| `git push` hangs or "Permission denied (publickey)" | no agent socket, or SSH egress not allowed | check agent socket at start; print which policy rule blocks `:22` |
+| `git push` hangs or "Permission denied (publickey)" | no agent socket (Colima started without `--ssh-agent`, or stale after a VM restart, #942; Apple `container` run without `--ssh`; Podman machine tunnel not running), or SSH egress not allowed | check the runtime's socket at start (Colima: VM `$SSH_AUTH_SOCK`; Apple: `/var/host-services/ssh-auth.sock`; Podman: the launcher's `-R` tunnel path); recreate the container after a VM restart; print which policy rule blocks `:22` |
 | TUI drawn in an 80x24 box | initial size not propagated | always pass size on exec, re-send on first SIGWINCH |
+| TUI lines start at column 0, layout torn (Apple `container` only) | host tty left in `OPOST\|ONLCR` by `container exec -it` (#2299, open) | detect in Phase 0; until fixed upstream, steer to Colima and say why |
 | no images, 256 colors | `TERM_PROGRAM`/`COLORTERM` not passed | env passthrough list; terminfo in image |
 | image paste does nothing | `pbpaste` absent in Linux guest | host bridge for clipboard read |
 | `npm install`/build several times slower | virtiofs metadata latency | dependency dirs on volumes; report backend file-share mode in `pi sandbox status` |
@@ -262,39 +270,40 @@ Failure modes the developer will actually hit, and the message they need:
 | Shape | Cold start | Warm start | TUI fidelity | File-share perf (macOS) | ssh/git story | macOS version | Enterprise acceptability | License cost |
 |---|---|---|---|---|---|---|---|---|
 | Host OS sandbox only (Seatbelt/bwrap via srt-style wrapper) | ~5 ms (measured) | same | native, perfect | native | host agent works for HTTPS; SSH blocked by Seatbelt unless excluded; Go TLS issues | any current; `sandbox-exec` deprecated | high (no new runtime), but weak isolation and Windows gap | free |
-| Shim + warm per-project container, Docker Desktop | engine 15-20 s+, image pull once | exec into running container, expected sub-second (Not verified) | good with env passthrough + terminfo; image paste needs bridge | virtiofs ~2.8x native npm; sync shares ~1.1x (paid) | `/run/host-services/ssh-auth.sock` | 13+ (Docker Desktop support window) | high, already deployed; Settings Management via MDM | $24/user/mo Business above SMB threshold |
-| Same on OrbStack | ~2 s engine (claim) | expected sub-second | same as above | ~1.2x native npm, best measured | same magic socket; 1Password caveat | 13+ (Not verified) | medium; per-user license, MDM app via Kandji, no admin lock | ~$8/user/mo (third party) |
-| Same on Colima/Lima | ~29 s sample Lima start | expected sub-second | same as above | ~2.6x native npm (Lima) | Lima agent forwarding (Not verified) | 13+ for vz | medium-low; free, no vendor support or lock | free |
-| Shim + Apple `container` | per-container VM, "sub-second" claimed, disputed | exec into running container (Not verified) | same PTY model; TERM handling Not verified | virtiofs bind mounts reported slow for builds; volumes faster | `--ssh` flag | macOS 26+ only, Apple silicon | medium; Apple, free, but young (product versions, CLI churn) | free |
+| Shim + warm per-project container, Docker Desktop (reference, excluded by R6) | engine 15-20 s+, image pull once | exec into running container, expected sub-second (Not verified) | good with env passthrough + terminfo; image paste needs bridge | virtiofs ~2.8x native npm; sync shares ~1.1x (paid) | `/run/host-services/ssh-auth.sock` | 13+ (Docker Desktop support window) | high where already deployed; Settings Management via MDM; paid | $24/user/mo Business above SMB threshold |
+| Same on OrbStack (reference, excluded by R6) | ~2 s engine (claim) | expected sub-second | same as above | ~1.2x native npm, best measured | same magic socket; 1Password caveat | 13+ (Not verified) | medium; per-user license, MDM app via Kandji, no admin lock | $8/user/mo Pro (orbstack.dev/pricing) |
+| Same on Colima (first class) | ~29 s sample Lima start; no Colima figure | expected sub-second (Not verified) | same as above (real dockerd exec) | ~2.6x native npm (Lima vz+virtiofs, nearest number); sshfs and 9p not measured | `--ssh-agent`, mount the VM's `$SSH_AUTH_SOCK`; breaks after VM restart (#942) | 13+ for vz, Intel and Apple silicon | medium; free, MIT, one maintainer, no vendor support or lock | free |
+| Same on Podman machine (third) | VM boot, no figure | expected sub-second (Not verified) | same as above (compat API v1.40) | libkrun default; one report much slower than applehv (#27216) | none built in (#23785); launcher-held `podman machine ssh -R` tunnel | 13+ (applehv) | medium-high; Red Hat, paid Podman Desktop support available | free; support from US$180/licence |
+| Shim + Apple `container` (first class) | per-container VM, "sub-second" claimed, disputed | exec into running container (Not verified) | same PTY model, but `exec -it` CRLF bug #2299 (open) misdraws TUIs; TERM handling Not verified | virtiofs bind mounts reported slow for builds (#948, forum); volumes faster | `--ssh`, `/var/host-services/ssh-auth.sock` | macOS 26+ only, Apple silicon | medium; Apple, free, but young (product versions, breaking CLI changes in 1.0.0, 1.3.0, 1.5.0) | free |
 | Shim + Docker Sandboxes microVM (`sbx`) | image pull + microVM, "seconds" | `sbx run` reattach, "seconds" (~0.5 s CLI overhead) | Claude Code fine; 80x24 PTY bugs in kit path fixed v0.33 | worst documented: up to ~5x slower builds; clone mode as workaround | agent forwarding setting, `:22` allow rule, credential proxy for HTTPS | 14+ Apple silicon | medium-high; Docker brand, governance paid, licensing unclear to some | free locally; governance paid |
 | Shim + OpenShell | gateway + sandbox create (no figures) | reattach (no figures) | Not verified | local bind mount Not verified; remote gateway has no mount | credential providers inject per endpoint | Apple silicon | medium; NVIDIA, Apache-2.0, fast-moving, catalog retired | free |
 
 ## Recommendation for "type pi and it works"
 
 1. Ship a `pi` shim (the launcher) that is the only thing on PATH; the real pi lives in a pinned image, and the shim owns a small allowlist of host-side subcommands (`login`, `sandbox status|gc|reset`, completion).
-2. Default backend: warm per-project container through the Docker API (works unchanged on Docker Desktop, OrbStack, Colima), with Apple `container` as a second backend on macOS 26+; keep the backend behind one interface so sbx or OpenShell can be added when their file I/O and kit TTY path mature.
+2. Two first-class backends: a warm per-project container on Colima through the OCI engine API (Docker-compatible; the same adapter drives Podman, Docker Engine on Linux and, unrecommended, Docker Desktop or OrbStack), and Apple `container` on macOS 26+ Apple silicon through its own CLI; Podman is the third backend and the Linux and Windows path; keep the backend behind one interface so OpenShell can be added when its file I/O matures. Docker Sandboxes stays a comparable only (R6).
 3. Container per repo top-level, named by path hash, kept running with an idle timeout; `pi` = `exec -it` into it, so warm start is one exec; first run shows one "preparing sandbox" line while pulling the image.
 4. Mount the repo top-level and the git common dir at identical absolute paths; deps and caches on named volumes; root filesystem read-only; `.git/hooks` and `.git/config` overlaid read-only.
 5. Pass terminal env as an explicit allowlist and nothing else, never the host `process.env` (`TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG`; the reason Gondolin's env passthrough default is rejected), ship full terminfo, forward initial size explicitly and SIGWINCH, use an init process.
 6. One host bridge socket for `open`, OAuth callback relay, clipboard image read, editor-open and desktop notifications.
-7. Day-one credentials: provider auth never enters the container; the image's `models.json` carries placeholder keys and the host proxy swaps them for the gateway host only; MCP, git https and registry credentials get the same per-host header injection, corporate CA bundle exported from the System keychain plus `NODE_EXTRA_CA_CERTS`/proxy env, ssh agent via the runtime's host-services socket (the sole capability that crosses: use, not read; strict alternative is https git through the proxy, no agent socket); defer signing, cloud CLIs and private-registry token injection.
+7. Day-one credentials: provider auth never enters the container; the image's `models.json` carries placeholder keys and the host proxy swaps them for the gateway host only; MCP, git https and registry credentials get the same per-host header injection, corporate CA bundle exported from the System keychain plus `NODE_EXTRA_CA_CERTS`/proxy env, ssh agent via the runtime's forwarded socket (Colima `--ssh-agent`, Apple `--ssh`, Podman tunnel; the sole capability that crosses: use, not read; strict alternative is https git through the proxy, no agent socket); defer signing, cloud CLIs and private-registry token injection.
 8. Policy in an MDM-managed root-owned file read only by the shim; egress allowlist enforced by a host-side or sidecar proxy, never inside the agent container; projects may only tighten.
 9. Fallback when no container runtime is present: srt-style OS sandbox around the whole pi process, clearly labeled weaker, so `pi` never refuses to start unless policy says `failIfUnavailable`.
 10. Measure before committing: exec latency, `git status` and `npm install` on a large repo per backend on the company's standard Mac; file-share speed, not boot time, decides the experience.
 
 ## Not verified
 
-- Warm `docker exec -it` / `container exec -t` latency into a running container on Docker Desktop, OrbStack, Colima, Apple container (no runtime was running locally; Docker Desktop installed but stopped). Expected tens to low hundreds of ms.
-- Cold start numbers for Colima, Apple container (independent), sbx microVM, OpenShell, Gondolin; all published figures are vendor claims or single anecdotes.
+- Warm `docker exec -it` / `container exec -t` latency into a running container on Colima, Apple container, Podman machine (no runtime was running locally). Expected tens to low hundreds of ms.
+- Cold start numbers for Colima, Apple container (independent), Podman machine, sbx microVM, OpenShell, Gondolin; all published figures are vendor claims or single anecdotes.
 - Which kitty graphics transmission mode pi uses (inline base64 vs file); whether pi's Kitty keyboard protocol negotiation survives every runtime's exec path.
 - Inotify propagation of host edits into the guest for each runtime (OrbStack, Docker Desktop, Apple container, sbx).
 - UID/GID presentation of bind mounts under Apple `container` and sbx.
 - Which login flows `@earendil-works/pi-ai` exports for reuse by a launcher without a full pi install.
-- Apple `container` `--ssh` guest socket path (third-party sources disagree) and its TERM default.
-- Lima's ssh agent forwarding into containers (Colima `--ssh-agent`).
+- Apple `container` TERM default and whether pi's renderer is hit by #2299 (the `--ssh` guest path is now `/var/host-services/ssh-auth.sock`, PR #1441).
+- Colima `--ssh-agent` into containers on 0.10.x: the maintainer's mount-the-VM-socket method is from 2022 and `/run/host-services/ssh-auth.sock` from a 0.6.7 report; not exercised here.
+- Colima and Podman machine UID/GID presentation of virtiofs bind mounts; Colima virtiofs vs sshfs vs 9p numbers.
 - Docker `registry.json` sign-in enforcement details (stated from memory).
-- OrbStack official pricing, MDM configuration keys, and any admin lock-down feature.
-- Docker's <250 employees / <$10M free-tier threshold (third-party summary of Docker terms).
+- OrbStack MDM configuration keys and any admin lock-down feature (price now confirmed at orbstack.dev/pricing).
 - Whether sbx supports pi as a first-class agent or only through a custom kit, and whether OpenShell still has a `pi` image now that the catalog is retired.
 - Cursor background agents' environment model and startup times.
 - gVisor startup figure and the 10-30% I/O penalty.

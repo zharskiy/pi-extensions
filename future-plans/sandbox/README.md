@@ -1,6 +1,6 @@
 # Sandbox
 
-Research date: 2026-11-02, pi 1.5.0
+Research date: 2026-11-02, pi 1.5.0. Runtime pass 2026-11-03: no Docker product, free and open-source runtimes only, Colima and Apple `container` as the two first-class backends.
 
 Question: how pi and every extension in this repo run inside a sandbox that an enterprise accepts, with model-provider tokens outside it, a writable cwd per agent, a deny-by-default URL allowlist and no visible container handling for the developer, who types `pi` and nothing else. Replaces the 2026-10-20 pass (pi 1.3.0, OpenShell-first, no launcher).
 
@@ -17,6 +17,7 @@ Question: how pi and every extension in this repo run inside a sandbox that an e
 - **R3 Per-agent cwd.** Each agent writes only to its own cwd or worktree inside the project (plus what git needs); the rest of the host is not visible.
 - **R4 Enterprise grade.** Deny-by-default URL allowlist, central policy the agent (and with MDM, the developer) cannot loosen, fail closed, per-user audit, macOS first, Linux second.
 - **R5 Zero friction.** The developer types `pi` in a project; no container commands, no image builds, warm start that feels native.
+- **R6 Free, open-source runtime.** The container or VM runtime costs nothing for commercial use and its source is published under an OSI licence. Docker Desktop and Docker Sandboxes (`sbx`) are excluded (paid above the small-business threshold, sign-in, closed binary); OrbStack is excluded (proprietary, paid commercial use). Docker Engine itself (moby, Apache-2.0) is not excluded.
 
 research/landscape.md numbers its five criteria differently (R2 there is "only cwd writable", R3 the allowlist); research/credentials-and-egress.md says "requirement 1" for tokens and "requirement 2" for the allowlist. The numbering above is the one later sections use.
 
@@ -48,10 +49,13 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
    | Docker Sandboxes, Maven build (sbx 0.24.1, issue #31, still open) | 2:30 native vs ~13 min on the virtiofs workdir vs 2:39 from in-sandbox `/tmp` |
    | Linux native Docker bind mount | 5.29 vs 5.32 native |
 
+   The Docker Desktop and OrbStack rows are reference points, not candidates (R6). Colima runs Lima with vz and virtiofs by default, so the Lima row is the nearest published number for it; no benchmark exists for Colima itself or for Apple `container` bind mounts, so Phase 0 measures both.
+
 9. **No off-the-shelf product is a safe single dependency.**
    - Docker Sandboxes (`sbx` v0.50.1): microVM, same-path mount, deny-by-default proxy, credential swap, paid org governance, an official pi kit; but a closed binary (license NOASSERTION), Docker sign-in, the file-share issue above, linked worktrees that cannot commit, and the 9.4 escape CVE plus five more in 2026.
    - OpenShell v0.1.6: pre-1.0, weekly breaking releases, six CVEs in the first disclosed batch (two at 9.9), macOS only via Docker Desktop or the VM driver with open macOS bugs (#4733 Landlock on VirtioFS), TypeScript SDK not on npm, no support offering found.
-   - Apple `container` 1.6.1: Apache-2.0, VM per container, macOS 26 for full function, no egress allowlist or proxy feature.
+   - Apple `container` 1.6.1: Apache-2.0, VM per container, macOS 26 and Apple silicon, no egress allowlist or proxy feature; `container exec -it` leaves the host tty translating LF to CRLF, which misdraws TUIs (#2299, open).
+   - Colima v0.10.3: MIT, dockerd in a Lima VM, one maintainer in practice, no release since 2026-06-04.
    - Gondolin 0.14.0: "Experimental"; the pi example passes host env into the VM. [landscape.md](research/landscape.md) B, C, E; [developer-experience.md](research/developer-experience.md) C, H.
 10. **Only two launcher shapes feel instant.** An OS sandbox on the host (Seatbelt measured at 4.87 ms vs 1.15 ms bare) or `exec` into an already-running container (expected tens to low hundreds of ms, not measured). `pi --version` takes 0.128 s, so the warm target is under 200 ms. Docker Desktop engine warm restart is 15-20 s and Lima ~29 s, so engine and container must stay warm. sbx and Gemini's Docker mode set the precedent: per-project container, cwd at the same absolute path. [developer-experience.md](research/developer-experience.md) A1, A2, "Derived".
 
@@ -64,7 +68,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
    writable paths, allowlist,      |                                   |
    image digest, gateway URL       |                                   |
             │                      |                                   |
- `pi` shim ─┼─ Docker API / Apple  |  no default route                 |  real pi + repo extensions
+ `pi` shim ─┼─ OCI API / Apple     |  no default route                 |  real pi + repo extensions
    repo root, warm container       |  DNS: none, metadata IPs blocked  |  (PTY, TERM*, size, SIGWINCH)
    named by repo path hash ────────┼── exec -it ───────────────────────┼─▶ models.json: baseUrl=gateway,
             │                      |                                   |   placeholder key per provider
@@ -110,10 +114,12 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 ### 3. Egress: one exit, deny by default
 
-- The container has no default route; the only reachable endpoint is the host proxy (Docker `--network none` plus a Unix-socket relay, or an `--internal` network with the proxy dual-homed). `HTTPS_PROXY` is a client convenience, not the enforcement ([credentials-and-egress.md](research/credentials-and-egress.md) C).
+- The container has no default route; the only reachable endpoint is the host proxy. `HTTPS_PROXY` is a client convenience, not the enforcement ([credentials-and-egress.md](research/credentials-and-egress.md) C). No runtime below has an egress allowlist of its own, so this pattern applies to all of them:
+  - Colima and Podman (OCI engine API): the agent container runs `--network none`; a relay container in the same VM, owned by the launcher, shares a volume holding a Unix socket and forwards it to the host proxy (`host.lima.internal` on Colima). Unix sockets work inside the VM's own filesystem; they do not cross virtiofs or 9p from the Mac (Lima #834, Podman #27630), so the socket is never bind-mounted from the host.
+  - Apple `container`: `--network none` exists (PR #739, 2025-10-21), but its only socket relay, `--publish-socket`, goes container to host, so the agent container instead joins a `container network create --internal` ("Restrict to host-only network") network with the proxy bound to the host side of it, plus `--no-dns`. That the host-only network has no route beyond the host, and which other host listeners it exposes, is checked in Phase 0 (Not verified).
 - Allowlist on CONNECT by hostname with SNI matched to the target, the proxy resolving and dialing itself, no TLS interception for git, npm, pip and other registries. TLS termination only for the gateway host (and later private registries that need injected tokens).
 - MCP hosts are allowed through the same list: policy declares the company's MCP hosts, a project's `.pi/mcp.json` may only pick servers on hosts already allowed, and a project file never adds a host.
-- No resolver inside (internal Docker networks still resolve through embedded DNS, a known exfil channel); refuse IP literals, loopback, link-local and 169.254.169.254.
+- No resolver inside (internal Docker networks still resolve through embedded DNS, a known exfil channel; Apple `container` has `--no-dns`); refuse IP literals, loopback, link-local and 169.254.169.254.
 - Tools that ignore proxy env (Java, some Go transports, Node children without `NODE_USE_ENV_PROXY`) fail closed; the proxy returns a policy-denied body naming the host and rule instead of a bare 403.
 - Corporate CA: the shim exports System keychain roots into the image trust store and sets `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`, `GIT_SSL_CAINFO` wherever interception exists (Zscaler class or the gateway termination) ([developer-experience.md](research/developer-experience.md) D).
 - Rejected: DNS-only allowlists (IP literals, DoH, DNS exfil); transparent TLS interception of all hosts (breaks pinning clients).
@@ -125,7 +131,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 - `.git/hooks` and `.git/config` overlaid read-only (`core.fsmonitor`, `core.hooksPath`, hooks are the documented attack path, finding 4). Cost: agents cannot run `git config`, add remotes or install hooks inside; worktree creation still works because it writes `.git/worktrees/`, not `config` (to be confirmed in Phase 0, see Not verified).
 - `~/.pi/agent` on a named volume per user, writable (sessions, trust, model-default, style, `/agents setup`), with `models.json` and `auth.json` overlaid read-only from the image. Sessions inside do not mix with host pi sessions.
 - `node_modules`, `.venv`, `target` and caches (`~/.npm`, `~/.cache/pip`) on named volumes when file-share speed demands it; host tools then see empty dirs there.
-- Everything else read-only: `--read-only` root, tmpfs for `$HOME`; `/tmp` container-local and kept for the container's life (handoff documents, `pi-bash-*.log`). No Docker socket mounted.
+- Everything else read-only: `--read-only` root, tmpfs for `$HOME`; `/tmp` container-local and kept for the container's life (handoff documents, `pi-bash-*.log`). No engine socket (Docker-compatible or other) mounted.
 - Symlinks out of the repo dangle on purpose; the shim warns once and offers an explicit read-only extra mount.
 
 ### 5. Launcher: a `pi` shim
@@ -133,7 +139,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 - A small package from this repo, first on PATH. Hot path (target under 200 ms warm): find repo root and common dir (cwd itself outside git), read policy, check `workspaceRoots` if set, find the per-repo container by label (repo path hash, image digest, policy hash), start or create it if needed, `exec -it` the real pi with working dir = host cwd.
 - Host install: pi itself is installed only in the image. The host installs the launcher package, which provides the `pi` command and must be first on PATH. An existing host pi installation is not required and, while the launcher is active, is unused; the launcher can print how to call it (for example `pi --no-sandbox`, only when policy allows). Host-side `pi login` is implemented by the launcher using pi's auth library rather than a full pi install (which login flows `@earendil-works/pi-ai` exports for reuse: Not verified). Consequence: this repo's extensions are installed in the image, not on the host, so the image is rebuilt when the extensions package changes; the launcher pins the image by digest and updates it in the background.
 - Terminal: forward `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `LC_TERMINAL`, `COLORFGBG`, `LANG` as an explicit env allowlist and nothing else (never the host `process.env`); pass initial size and SIGWINCH (the 80x24 bug class in Docker and sbx); ship `ncurses-term`; run an init process; set `PI_CLIPBOARD_OSC52=1`.
-- Mounts the runtime's host ssh-agent socket (`/run/host-services/ssh-auth.sock` on Docker Desktop and OrbStack, `--ssh` on Apple `container`). No key material enters; the guest can sign with, not read, loaded keys. This is the sole credential-related capability that crosses the boundary. The strict alternative, a policy choice, is https git through the proxy with injected headers and no agent socket; a filtered agent is a later option.
+- Mounts the runtime's host ssh-agent socket. Colima: started with `--ssh-agent`, the VM's `$SSH_AUTH_SOCK` (a Lima-forwarded socket) is bind-mounted into the container (maintainer instructions, issue #127); Apple `container`: `--ssh`, guest path `/var/host-services/ssh-auth.sock` since PR #1441 (2026-04-22); Podman machine: nothing built in (#23785, open), an `ssh -R` tunnel into the machine is the community workaround. No key material enters; the guest can sign with, not read, loaded keys. This is the sole credential-related capability that crosses the boundary. The strict alternative, a policy choice, is https git through the proxy with injected headers and no agent socket; a filtered agent is a later option.
 - One host bridge socket for host-only actions: `open`, `pbpaste` for image paste, desktop notifications, `code -g path:line`/editor; OAuth callback relay on 127.0.0.1:1455/8085/51121 only if a login flow is ever allowed.
 - Policy: a root-owned file managed by MDM (writable paths, allowlist, image digest, gateway URL), read by the shim only, mounted read-only into the guest; projects may only tighten. Optional `workspaceRoots: { roots: [...], outside: refuse | warn }` limits where `pi` may start (default unrestricted), so policy can forbid starting pi at `~` or `/`; it is independent of the `fallback` key below. Layers, profiles and settings are in decision 8. Fail closed when the runtime or proxy is missing or the policy is unreadable.
 - Host-only subcommands go through the image, not the developer: `pi update` and `pi install` of pi itself are answered with "new image digest from policy"; package installs of extensions happen inside under egress policy; the image updates by background pull of the pinned digest.
@@ -141,11 +147,16 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 ### 6. Runtime backends behind one interface
 
+Two adapters sit behind the interface: an OCI engine API client (the Docker-compatible HTTP API over a Unix socket; an open protocol served by Colima's dockerd, Podman's compat socket and Docker Engine on Linux) and an Apple `container` adapter (its own CLI and XPC API, no Docker-compatible API).
+
 | Backend | Role | Why |
 |---|---|---|
-| Docker Engine API | Default | Covers Docker Desktop (Business licences and Settings Management usually in place), OrbStack, Colima unchanged |
-| Apple `container` | Second, macOS 26+ | Free, VM per container; no egress allowlist of its own, so only with the no-route plus host-proxy pattern |
-| Docker Sandboxes (`sbx`, `docker.io/sbx/pi-kit`) | Evaluate in Phase 0, never the only path | Closest fit (microVM, same-path mount, allowlist, credential proxy, paid governance); closed binary, Docker sign-in, file-share issue, linked-worktree failure, 9.4 escape CVE |
+| Colima (dockerd in a Lima VM, OCI engine API adapter) | First class, supported from Phase 1 | MIT, free; real dockerd, so `exec -it`, same-path bind mounts and named volumes behave as on Docker; vz and virtiofs by default on macOS 13+, Intel and Apple silicon; `--ssh-agent`. Risks: one maintainer, ssh-agent breaks across VM restarts (#942) |
+| Apple `container` | First class, supported from Phase 1 | Apache-2.0, free, VM per container, `--ssh`, `--network none`, `--internal` host-only networks. Limits: macOS 26 and Apple silicon only, exec TTY bug #2299 open, breaking CLI changes in 1.0.0, 1.3.0 and 1.5.0 |
+| Podman (machine on macOS and Windows WSL2/Hyper-V, native rootless on Linux) | Third, same OCI engine API adapter; the Linux and Windows path | Apache-2.0; compat API v1.40; Red Hat sells support for Podman Desktop; on macOS no built-in ssh-agent forwarding (#23785) and a libkrun I/O report (#27216), so not first class there |
+| Lima | Base Colima sits on, not a separate backend | Apache-2.0, CNCF incubating; Colima adds the dockerd setup, socket and CLI |
+| Docker Engine on Linux | Works through the OCI engine API adapter | moby is Apache-2.0 and free |
+| Docker Desktop, OrbStack | Same API, works, not recommended | Paid for commercial use above the small-business threshold (Docker) or for any commercial use (OrbStack); fails R6 |
 | OpenShell | Not now, possible backend | Pre-1.0, weekly breaking changes, six CVEs, macOS via Docker Desktop or VM driver, SDK not on npm, no support |
 | Gondolin | Watch | Pi authors' microVM, experimental, example passes host env into the VM |
 | OS sandbox (srt-style Seatbelt or bubblewrap around all of pi) | Fallback, only where policy allows it | Visible warning that credentials and the proxy then share the user account; never silent |
@@ -180,12 +191,11 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
 ### Phase 0: prove it on the company Mac, no product code
 
 - Image: `node:24-bookworm-slim` base, pi 1.5.0, this package, `git`, `rg`, `fd`, `ncurses-term`, `socat`, tini; `models.json` with gateway `baseUrl` and placeholders; `PI_OFFLINE=1`, `PI_TELEMETRY=0`.
-- Shim prototype on the Docker Engine API (script is enough): same-path mounts, ro overlays, named volumes, `exec -it` with env and size.
+- Shim prototype on both first-class backends (script is enough): the OCI engine API against Colima and the `container` CLI; same-path mounts, ro overlays, named volumes, `exec -it` with env and size, the no-route network shape of decision 3 per backend.
 - Proxy: mitmproxy addon (~30 lines) or a small Node proxy; LiteLLM as gateway with a test virtual key; decide build vs buy for the proxy at the end.
   - Build-vs-buy criteria: host-bound placeholder swap, SSE streaming without buffering, WebSocket upgrade, per-user log lines, MDM-deliverable config, signed updates.
-- Measure on the standard Mac per backend (Docker Desktop, OrbStack, Colima, Apple `container`): cold and warm start, `npm install` and `git status` on a large repo, worktree agent create and commit.
-- Run `sbx run --kit docker.io/sbx/pi-kit:latest pi` side by side with the same repo and record the same numbers.
-- Output: one table per backend (start times, file-share numbers, TUI defects, licensing) and a go or no-go for sbx as an optional backend.
+- Measure Colima and Apple `container` side by side on the standard Mac, same repo, same list: VM or engine cold start, container create, warm `exec -it` latency; `npm install` and `git status` on a large repo (Colima with virtiofs and with sshfs, Apple with virtiofs, each also with `node_modules` on a named volume); UID/GID of files created inside; single-file read-only overlays of `.git/config` and `.git/hooks` (Apple #1251 was intermittent single-file mounts); worktree agent create and commit; ssh signing through the runtime's agent socket, and again after a VM restart (Colima #942); the no-route check; pi's TUI under `exec -it` (Apple #2299). Podman machine gets the same list as an optional third column.
+- Output: one table per backend (start times, file-share numbers, TUI defects, gaps with workaround) and a go or no-go per backend.
 - Acceptance:
   - [ ] Main session, a lead and a `worktree: true` agent run; the worktree is valid in host git.
   - [ ] `env` inside shows no provider variable; `auth.json` and `models.json` hold placeholders only.
@@ -193,19 +203,21 @@ The fallback and fail-closed rules meet through policy: `fallback: refuse` (ente
   - [ ] `curl https://example.com`, `curl https://1.1.1.1`, `dig` and 169.254.169.254 fail from bash inside.
   - [ ] Warm start measured and compared to the 200 ms target; file-share numbers recorded against finding 8.
   - [ ] Footer, composer, agent view, OSC 52 copy, notifications and resize work in the default terminal.
+  - [ ] Every item above is run on both Colima and Apple `container`; a failure is recorded as a gap with its workaround, not dropped.
 
 ### Phase 1: launcher package
 
-- Deliverables: the `pi` shim with the backend interface (Docker API, Apple `container`), policy reader with MDM path and schema and JSON schema, the three layers and the shipped profiles of decision 8, `pi sandbox config` and `config set`, host proxy with CONNECT+SNI allowlist and gateway-only TLS termination, SSO token minting on the host, host bridge, cache and agent-state volumes, `pi sandbox status|gc|reset|config`, background image updates, completion that never starts the container.
+- Deliverables: the `pi` shim with the backend interface (OCI engine API adapter for Colima, Podman and Docker Engine on Linux; Apple `container` adapter), policy reader with MDM path and schema and JSON schema, the three layers and the shipped profiles of decision 8, `pi sandbox config` and `config set`, host proxy with CONNECT+SNI allowlist and gateway-only TLS termination, SSO token minting on the host, host bridge, cache and agent-state volumes, `pi sandbox status|gc|reset|config`, background image updates, completion that never starts the container.
 - Acceptance:
   - [ ] Missing runtime, stopped proxy, unreadable or invalid policy, image digest mismatch: the shim refuses with a one-line reason (fail-closed tests).
-  - [ ] Escape-class tests from inside: writes to `.git/hooks` and `.git/config` fail; a symlink to `~` dangles; no Docker socket; DNS and ICMP blocked; a placeholder sent to an allowlisted non-gateway host is not swapped; OAuth token endpoints blocked.
+  - [ ] Escape-class tests from inside: writes to `.git/hooks` and `.git/config` fail; a symlink to `~` dangles; no engine socket; DNS and ICMP blocked; a placeholder sent to an allowlisted non-gateway host is not swapped; OAuth token endpoints blocked.
   - [ ] Linked worktree as project: commit works and host git sees it.
-  - [ ] Config change: editing the project config (for example adding a cache volume or a published port) takes effect on the next `pi` start without any docker command; a loosening change to a locked security setting is refused with the locking layer named.
+  - [ ] Config change: editing the project config (for example adding a cache volume or a published port) takes effect on the next `pi` start without any container command; a loosening change to a locked security setting is refused with the locking layer named.
   - [ ] Corporate TLS inspection on: npm, pip, git and pi provider calls succeed.
   - [ ] Linux: files created inside are owned by the host UID.
   - [ ] Credential sweep: a test dumps the running container's environment, `~/.pi/agent/auth.json`, `~/.npmrc`, `~/.gitconfig`, `~/.aws`, `~/.config` and the whole writable filesystem and finds no real credential.
   - [ ] A provider request captured from inside the container carries only the placeholder.
+  - [ ] The whole list passes on both Colima and Apple `container`; an item one backend cannot pass is shown by `pi sandbox status` as a named gap.
 
 ### Phase 2: `sandbox` extension for per-agent policy
 
@@ -227,45 +239,53 @@ Also deferred: running pi in a parent folder holding several repos so agents can
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| File-share performance on macOS (virtiofs ~2.8x native npm, sbx Maven ~5x) | Builds and installs feel slow; developers bypass | Dependency dirs on named volumes (3.2-4.1 s); OrbStack or synchronized file shares where licensed; measure in Phase 0 |
+| File-share performance on macOS (virtiofs ~2.8x native npm, sbx Maven ~5x; no numbers for Colima or Apple `container`) | Builds and installs feel slow; developers bypass | Dependency dirs on named volumes (3.2-4.1 s); Colima virtiofs vs sshfs and Apple virtiofs measured in Phase 0 |
 | Corporate TLS-inspecting proxies | Nothing works on day one ("self-signed certificate in chain") | Export System keychain roots at start; set CA env vars; chain the host proxy upstream to the corporate one |
 | Placeholder format drift per provider | Pi rejects or misroutes a placeholder (Anthropic `sk-ant-oat` switches to OAuth mode) | Placeholders per provider in the image, tested against each pi upgrade; gateway path keeps one shape per provider |
 | Gateway cost and usage for `/spending` | Pi prices from its catalog times usage, so list price, not negotiated; translating gateways may drop cache fields | Pass-through gateway routes; model IDs matching pi's catalog; gateway spend logs as the source of truth |
 | Read-only `.git/config` | Agents cannot add remotes, set config or install hooks | Document; host-side `git` for those; revisit per project via policy |
-| Docker Business licensing ($24/user/month above the SMB threshold) | Cost or procurement delay | Docker Engine API also serves OrbStack and Colima; Apple `container` on macOS 26 |
-| Runtime CVE cadence (sbx six 2026 CVEs, OpenShell six, Apple container advisories) | A boundary escape between patches | Pin runtime versions through MDM; credentials outside limit the blast radius; no Docker socket; track advisories |
+| Apple `container` exec TTY: host tty keeps `OPOST\|ONLCR`, every bare LF becomes CRLF, full-screen TUIs draw at column 0 (#2299, open since 2026-09-23) | Pi's TUI may misdraw on the Apple backend; a hard gap until fixed upstream if pi's renderer moves the cursor with bare LF | Phase 0 test; Colima as the backend meanwhile; the diagnosis in the issue points at `setraw()` in Containerization, so an upstream patch is a realistic contribution |
+| Apple `container` has no host-to-container socket relay (`--publish-socket` is container to host; #2101 fails with a read-only root) | The Colima relay-container pattern does not carry over | `--internal` host-only network with the proxy bound to the host side; verify no route beyond the host and bind nothing else there |
+| Apple `container` platform: macOS 26 and Apple silicon only; older macOS issues not addressed (README) | Intel Macs and macOS 15 cannot use it | Colima covers macOS 13+ on both architectures |
+| Apple `container` CLI churn: 11 releases 2026-06-09 to 2026-10-23, breaking CLI changes marked in 1.0.0, 1.3.0, 1.5.0 | Launcher breaks on an upgrade | Pin the version through MDM; adapter tests per supported version |
+| Colima maintenance: abiosoft merged every one of the last 9 PRs and authored 508 commits; no release since v0.10.3 (2026-06-04); about 379 open issues | Fixes stall; a bus-factor-one dependency | Lima (CNCF incubating, two active maintainers) does the VM work; Podman behind the same adapter as the exit path |
+| Colima ssh agent: after `colima stop`/`start` with a container still using it, the socket becomes a directory and forwarding fails (#942, open since 2023-12-21) | `git push` over ssh fails after a VM restart | The launcher recreates containers after a VM restart and checks the agent socket at start |
+| Podman machine has no ssh-agent forwarding on macOS (#23785, open since 2024-08-28) | ssh git fails on the third backend | `podman machine ssh -- -R` tunnel run by the launcher, or https git through the proxy |
+| Runtime CVE cadence (sbx six 2026 CVEs, OpenShell six, Apple container advisories) | A boundary escape between patches | Pin runtime versions through MDM; credentials outside limit the blast radius; no engine socket; track advisories |
 | Developers run pi outside the shim (`npm i -g`, `npx`) | Unsandboxed pi on the host | An MDM and PATH problem: MDM protects the shim and runtime settings; the decisive control is that no real provider key exists on the laptop and the gateway accepts only proxy-minted tokens, so a bypassing pi has no model access |
-| Landlock inside Docker Desktop VirtioFS mounts (OpenShell #4733 silently denies reads) | Phase 2 layer breaks reads | Test in Phase 0 on each backend; bubblewrap bind rules as the fallback mechanism |
+| Landlock on virtiofs mounts (OpenShell #4733 silently denies reads under Docker Desktop VirtioFS; Colima and Apple `container` also use virtiofs) | Phase 2 layer breaks reads | Test in Phase 0 on each backend; bubblewrap bind rules as the fallback mechanism |
 
 ## Open questions
 
 - Gateway vendor: LiteLLM, Bifrost, Agent Router, an existing internal gateway, or Radius; who runs it and where.
 - MDM product (Jamf, Kandji, Intune) and whether it can deliver a root-owned policy file and protect the shim binary.
-- Docker Business already licensed, or OrbStack or Colima as the standard runtime.
-- macOS fleet version (Apple `container` needs macOS 26; sbx needs 14+ on Apple silicon; Intel Macs remain).
+- Which first-class backend the launcher picks when both Colima and Apple `container` are installed, and whether IT accepts a single-maintainer runtime (Colima) or wants Podman with Red Hat's paid Podman Desktop support as the supported option.
+- macOS fleet version (Apple `container` needs macOS 26 and Apple silicon; Colima with vz needs macOS 13; Intel Macs remain).
 - Windows: WSL2 with the Linux shim, or out of scope.
 - SSO flow for the host token (OIDC device flow, MDM-issued device certificate) and its TTL.
 - Which git remotes dominate (ssh agent vs HTTPS with injected tokens), and whether commit signing is required.
 
 ## Not verified
 
-- Warm `docker exec -it` / `container exec -t` latency on Docker Desktop, OrbStack, Colima, Apple `container`; cold start of Colima, Apple `container`, sbx, OpenShell, Gondolin (vendor claims and anecdotes only).
+- Warm `docker exec -it` / `container exec -t` latency on Colima, Apple `container`, Podman machine; cold start of Colima, Apple `container`, Podman machine, OpenShell, Gondolin (vendor claims and anecdotes only, none for Colima).
 - Whether pi's undici dispatcher (`proxyTunnel: true`) trusts a TLS-terminating proxy through `NODE_EXTRA_CA_CERTS` (confirmed by Node docs, not exercised end to end).
 - Whether bubblewrap and Landlock run inside a container under the default seccomp profile without extra privileges (no research file covers it).
 - Whether `git worktree add` and normal commits succeed with `.git/config` read-only.
 - Docker Sandboxes: hypervisor per OS, official startup time, governance price, source publication, CA lifecycle (the proxy CA is seen only in a user-filed issue), WebSocket upgrade injection, injection for arbitrary custom hosts, fix version of CVE-2026-17106, whether pi is first-class or kit-only.
 - OpenShell: default `enforcement` in v0.1.6, whether the endpoint binding that closed #896 (endpoint-blind injection) covers every injection path, whether `--from pi` still resolves after the catalog retirement, commercial support, VM first-boot time (10-30 s is from the October pass), inference-routing pages (404).
 - Gondolin's network model and secret binding (DeepWiki only); license is Apache-2.0.
-- Apple `container`: bind-mount performance, egress filtering beyond isolated networks, host-only network flag name, `--ssh` guest socket path, TERM default, UID/GID presentation.
+- Apple `container`: bind-mount performance (#948 compared throughput with Multipass and Docker, closed, resolution not read), whether an `--internal` network has no route beyond the host, whether pi's TUI is hit by #2299, TERM default, UID/GID presentation (#165 asks for UID/GID on bind mounts, open). Resolved 2026-11-03: host-only flag is `--internal`, `--ssh` guest path `/var/host-services/ssh-auth.sock` (PR #1441).
+- Colima: bind-mount numbers for virtiofs, sshfs and 9p (no benchmark found), UID/GID presentation of virtiofs mounts (#1258 permission denied, open), whether `/run/host-services/ssh-auth.sock` exists in current VMs (seen only in a 0.6.7 user report), cold start.
+- Podman: UID presentation of macOS bind mounts, Docker-API incompatibilities beyond the v1.40 target, whether libkrun I/O (#27216, 5.6.0) still lags applehv on 6.x.
 - Inotify propagation of host edits per runtime; UID/GID presentation under sbx.
-- SIGHUP propagation through `docker exec` when the terminal closes.
+- SIGHUP propagation through `docker exec` and `container exec` when the terminal closes.
 - Which kitty graphics transmission mode pi uses; Kitty keyboard protocol through each runtime's exec path; capability detection without `TERM_PROGRAM`.
 - Gateway `baseUrl` with OAuth-subscription providers; whether pi's Google adapter sends the key as a query parameter; whether pi-mcp HTTP transports use pi's global dispatcher.
 - Per-tool proxy and CA behaviour list (general knowledge); pip truststore default version.
 - Agent Router SigV4 and token metrics; TensorZero, Portkey, Kong licenses; Bifrost latency claims.
 - Anthropic's April 2026 subscription OAuth block date (secondary sources).
 - Claude Code `allowManagedDomainsOnly` and `enableWeakerNetworkIsolation` semantics (source mirror only).
-- Docker `registry.json` sign-in enforcement, the <250 staff / <$10M free tier, ECI subscription tier; OrbStack pricing, MDM keys and admin lock-down; Docker Desktop and OrbStack minimum macOS versions.
+- Docker `registry.json` sign-in enforcement, ECI subscription tier; OrbStack MDM keys and admin lock-down (only relevant as comparables now; the Docker <250 staff and <$10M free tier and OrbStack's $8/user/month were confirmed at primary sources on 2026-11-03).
 - Copilot local sandboxing GA vs preview; Codex managed networking key names; Cursor cloud and background agents; Amp approvals; Jules egress; Devin allowlist granularity; SOC 2 or ISO status of any vendor; arXiv 2606.08433 and 2607.05743 contents.
 - gVisor startup and I/O penalty; WSL2 `/mnt/c` performance; Windows Terminal kitty graphics.
 - `@earendil-works/pi-env` and the durable harness; owner of `oauth.json` in the agent dir; upstream issue numbers cited by the October pass.
