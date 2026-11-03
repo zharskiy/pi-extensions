@@ -36,11 +36,13 @@ export const agentRegistryPlugin: Plugin = {
       const pastIn = (owner: SessionInfo) =>
         pastRecords(host, agentsDirFor(owner), (dir, manifest) => ({
           dir,
-          handoffPath: handoffPathFor(info, manifest.id as string),
+          handoffPath: handoffPathFor(owner, manifest.id as string),
           contextLimit: 0,
         }));
 
-      const parent = info.parentSession ? [{ ...info, file: info.parentSession }] : [];
+      const parent = info.parentSession
+        ? [{ ...info, id: host.sessionId(info.parentSession) ?? info.id, file: info.parentSession }]
+        : [];
       const owners = [info, ...parent];
 
       owners.map(pastIn).forEach(registry.restore);

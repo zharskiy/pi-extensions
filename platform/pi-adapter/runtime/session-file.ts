@@ -121,6 +121,16 @@ const parseEntries = (content: string): RawEntry[] => {
 
 export const readSessionEntries = (file: string): unknown[] => parseEntries(readFileSync(file, "utf8"));
 
+export const readSessionId = (file: string): string | undefined => {
+  try {
+    const header = (readSessionEntries(file) as RawEntry[]).find((entry) => entry.type === "session");
+
+    return typeof header?.id === "string" ? header.id : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const sessionRecord = (entries: RawEntry[], recordEntry: string): SessionRecord => {
   const recordData = entries
     .filter((entry) => entry.type === "custom" && entry.customType === recordEntry)

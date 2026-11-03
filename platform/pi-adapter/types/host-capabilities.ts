@@ -62,6 +62,7 @@ export type SessionHost = {
   session(): SessionInfo;
   sessionName(): string | undefined;
   sessionUsage(file?: string): UsageTotals;
+  sessionId(file: string): string | undefined;
   context(): ContextSnapshot;
   contextFacts(): ContextFacts | undefined;
   model(): ModelInfo | undefined;
