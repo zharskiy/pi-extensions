@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
+  "title": "pi sandbox config layer",
+  "description": "One layer of the pi sandbox config: the policy file, the user config or a project's .pi/sandbox.json. Security keys may only be tightened by lower layers.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "profile": {
+      "enum": ["enterprise", "team", "solo"]
+    },
+    "backend": {
+      "enum": ["auto", "colima", "apple"]
+    },
+    "fallback": {
+      "enum": ["refuse", "host"]
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "description": "image.reference and image.digest may not be set by a project config."
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "authHeader": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$"
+        },
+        "placeholder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "apiKind": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The `api` value pi expects for this provider in its models.json, written through unchanged."
+              }
+            },
+            "required": ["id", "apiKind"]
+          }
+        }
+      },
+      "required": ["url", "authHeader", "placeholder", "providers"]
+    },
+    "credentials": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "static"
+            },
+            "envVar": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "keychainService": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["kind"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "host-pi-auth"
+            },
+            "authFile": {
+              "type": "string",
+              "pattern": "^(/|~$|~/)"
+            }
+          },
+          "required": ["kind"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "sso"
+            },
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": ["kind", "command"]
+        }
+      ]
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
+          }
+        },
+        "mcpHosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
+          }
+        },
+        "denyPrivateAddresses": {
+          "const": true
+        }
+      }
+    },
+    "workspaceRoots": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(/|~$|~/)"
+          }
+        },
+        "outside": {
+          "enum": ["refuse", "warn"]
+        }
+      },
+      "required": ["roots", "outside"]
+    },
+    "mounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "extraReadOnly": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(/|~$|~/)"
+          }
+        },
+        "cacheVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!(.*/)?\\.\\.(/|$))"
+          }
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "allOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              {
+                "not": {
+                  "pattern": "[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]"
+                }
+              }
+            ],
+            "description": "Environment variable forwarded from the host; names that look like secrets are refused."
+          }
+        }
+      },
+      "description": "env.allow may not be set by a project config."
+    },
+    "ssh": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "boolean",
+          "description": "Forward the host ssh agent into the container. Off by default; a project config cannot turn it on."
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memoryGiB": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
+}

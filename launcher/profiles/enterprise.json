@@ -1,0 +1,6 @@
+{
+  "backend": "auto",
+  "fallback": "refuse",
+  "credentials": { "kind": "sso", "command": [] },
+  "egress": { "allow": [], "mcpHosts": [] }
+}
