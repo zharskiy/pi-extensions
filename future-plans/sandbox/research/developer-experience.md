@@ -265,7 +265,7 @@ Failure modes the developer will actually hit, and the message they need:
 | bare 403 from internal registry | egress allowlist (sbx Balanced shows the same ambiguity) | proxy returns a policy-denied body naming the host and the policy source |
 | `git push` hangs or "Permission denied (publickey)" | no agent socket (Colima started without `--ssh-agent`, or stale after a VM restart, #942; Apple `container` run without `--ssh`), or SSH egress not allowed | check the runtime's socket at start (Colima: VM `$SSH_AUTH_SOCK`; Apple: `/var/host-services/ssh-auth.sock`); recreate the container after a VM restart; print which policy rule blocks `:22` |
 | TUI drawn in an 80x24 box | initial size not propagated | always pass size on exec, re-send on first SIGWINCH |
-| TUI lines start at column 0, layout torn (Apple `container` only) | host tty left in `OPOST\|ONLCR` by `container exec -it` (#2299, open) | detect in Phase 0; until fixed upstream, steer to Colima and say why |
+| TUI lines start at column 0, layout torn (Apple `container` only) | host tty left in `OPOST\|ONLCR` by `container exec -it` (#2299, open) | detect in Phase 1; until fixed upstream, steer to Colima and say why |
 | no images, 256 colors | `TERM_PROGRAM`/`COLORTERM` not passed | env passthrough list; terminfo in image |
 | image paste does nothing | `pbpaste` absent in Linux guest | host bridge for clipboard read |
 | `npm install`/build several times slower | virtiofs metadata latency | dependency dirs on volumes; report backend file-share mode in `pi sandbox status` |

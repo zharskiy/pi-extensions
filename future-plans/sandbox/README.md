@@ -49,7 +49,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
    | Docker Sandboxes, Maven build (sbx 0.24.1, issue #31, still open) | 2:30 native vs ~13 min on the virtiofs workdir vs 2:39 from in-sandbox `/tmp` |
    | Linux native Docker bind mount | 5.29 vs 5.32 native |
 
-   The Docker Desktop and OrbStack rows are reference points, not candidates (R6). Colima runs Lima with vz and virtiofs by default, so the Lima row is the nearest published number for it; no benchmark exists for Colima itself or for Apple `container` bind mounts, so Phase 0 measures both.
+   The Docker Desktop and OrbStack rows are reference points, not candidates (R6). Colima runs Lima with vz and virtiofs by default, so the Lima row is the nearest published number for it; no benchmark exists for Colima itself or for Apple `container` bind mounts, so Phase 0 measures Colima and the Apple `container` numbers are taken in Phase 1.
 
 9. **No off-the-shelf product is a safe single dependency.**
    - Docker Sandboxes (`sbx` v0.50.1): microVM, same-path mount, deny-by-default proxy, credential swap, paid org governance, an official pi kit; but a closed binary (license NOASSERTION), Docker sign-in, the file-share issue above, linked worktrees that cannot commit, and the 9.4 escape CVE plus five more in 2026.
@@ -93,7 +93,8 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 ### 2. Credentials: nothing real inside
 
-- The image ships a `models.json` whose `baseUrl` per provider points at a corporate gateway (LiteLLM, Bifrost or Agent Router class) with format-correct placeholder keys, so pi's "No API key" check passes and `/model` lists the provider. Bedrock uses `AWS_BEDROCK_SKIP_AUTH=1` and the gateway re-signs ([credentials-and-egress.md](research/credentials-and-egress.md) B "Pattern A2/A3").
+- The container knows only the gateway URL in `models.json` and a placeholder key; the host proxy adds the real credential and the container never sees it.
+- The gateway is the company's existing internal service that proxies requests to the model vendors. The image ships a `models.json` whose `baseUrl` per provider points at it with format-correct placeholder keys, so pi's "No API key" check passes and `/model` lists the provider. Bedrock uses `AWS_BEDROCK_SKIP_AUTH=1` and the gateway re-signs ([credentials-and-egress.md](research/credentials-and-egress.md) B "Pattern A2/A3").
 
   | Provider path | Placeholder shape inside | Note |
   |---|---|---|
@@ -116,7 +117,7 @@ research/landscape.md numbers its five criteria differently (R2 there is "only c
 
 - The container has no default route; the only reachable endpoint is the host proxy. `HTTPS_PROXY` is a client convenience, not the enforcement ([credentials-and-egress.md](research/credentials-and-egress.md) C). No runtime below has an egress allowlist of its own, so this pattern applies to all of them:
   - Colima (OCI engine API): the agent container runs `--network none`; a relay container in the same VM, owned by the launcher, shares a volume holding a Unix socket and forwards it to the host proxy (`host.lima.internal` on Colima). Unix sockets work inside the VM's own filesystem; they do not cross virtiofs or 9p from the Mac (Lima #834; virtiofs in [landscape.md](research/landscape.md) B), so the socket is never bind-mounted from the host.
-  - Apple `container`: `--network none` exists (PR #739, 2025-10-21), but its only socket relay, `--publish-socket`, goes container to host, so the agent container instead joins a `container network create --internal` ("Restrict to host-only network") network with the proxy bound to the host side of it, plus `--no-dns`. That the host-only network has no route beyond the host, and which other host listeners it exposes, is checked in Phase 0 (Not verified).
+  - Apple `container`: `--network none` exists (PR #739, 2025-10-21), but its only socket relay, `--publish-socket`, goes container to host, so the agent container instead joins a `container network create --internal` ("Restrict to host-only network") network with the proxy bound to the host side of it, plus `--no-dns`. That the host-only network has no route beyond the host, and which other host listeners it exposes, is checked in Phase 1 (Not verified).
 - Allowlist on CONNECT by hostname with SNI matched to the target, the proxy resolving and dialing itself, no TLS interception for git, npm, pip and other registries. TLS termination only for the gateway host (and later private registries that need injected tokens).
 - MCP hosts are allowed through the same list: policy declares the company's MCP hosts, a project's `.pi/mcp.json` may only pick servers on hosts already allowed, and a project file never adds a host.
 - No resolver inside (internal Docker networks still resolve through embedded DNS, a known exfil channel; Apple `container` has `--no-dns`); refuse IP literals, loopback, link-local and 169.254.169.254.
@@ -201,11 +202,11 @@ Selection: `backend: auto | colima | apple` in config (a convenience setting unl
 ### Phase 0: prove it on the company Mac, no product code
 
 - Image: `node:24-bookworm-slim` base, pi 1.5.0, this package, `git`, `rg`, `fd`, `ncurses-term`, `socat`, tini; `models.json` with gateway `baseUrl` and placeholders; `PI_OFFLINE=1`, `PI_TELEMETRY=0`.
-- Shim prototype on both first-class backends (script is enough): the OCI engine API against Colima and the `container` CLI; same-path mounts, ro overlays, named volumes, `exec -it` with env and size, the no-route network shape of decision 3 per backend.
-- Proxy: mitmproxy addon (~30 lines) or a small Node proxy; LiteLLM as gateway with a test virtual key; decide build vs buy for the proxy at the end.
+- Shim prototype on Colima only (script is enough): the OCI engine API; same-path mounts, ro overlays, named volumes, `exec -it` with env and size, the no-route network shape of decision 3. The Apple `container` adapter stays a Phase 1 deliverable and is not prototyped here.
+- Proxy: mitmproxy addon (~30 lines) or a small Node proxy; the internal gateway with a test credential (LiteLLM only as a local stand-in if the internal service is not reachable from the test Mac); decide build vs buy for the proxy at the end.
   - Build-vs-buy criteria: host-bound placeholder swap, SSE streaming without buffering, WebSocket upgrade, per-user log lines, MDM-deliverable config, signed updates.
-- Measure Colima and Apple `container` side by side on the standard Mac, same repo, same list: VM or engine cold start, container create, warm `exec -it` latency; `npm install` and `git status` on a large repo (Colima with virtiofs and with sshfs, Apple with virtiofs, each also with `node_modules` on a named volume); UID/GID of files created inside; single-file read-only overlays of `.git/config` and `.git/hooks` (Apple #1251 was intermittent single-file mounts); worktree agent create and commit; ssh signing through the runtime's agent socket, and again after a VM restart (Colima #942); the no-route check; pi's TUI under `exec -it` (Apple #2299).
-- Output: one table per backend (start times, file-share numbers, TUI defects, gaps with workaround) and a go or no-go per backend.
+- Measure Colima on the standard Mac, same repo, same list (Apple `container` numbers are taken when its adapter is built, in the Phase 1 conformance run): VM or engine cold start, container create, warm `exec -it` latency; `npm install` and `git status` on a large repo (virtiofs and sshfs, each also with `node_modules` on a named volume); UID/GID of files created inside; single-file read-only overlays of `.git/config` and `.git/hooks` worktree agent create and commit; ssh signing through the runtime's agent socket, and again after a VM restart (Colima #942); the no-route check; pi's TUI under `exec -it`.
+- Output: one table for Colima (start times, file-share numbers, TUI defects, gaps with workaround) and a go or no-go for Colima; the Apple table and go or no-go come from Phase 1.
 - Acceptance:
   - [ ] Main session, a lead and a `worktree: true` agent run; the worktree is valid in host git.
   - [ ] `env` inside shows no provider variable; `auth.json` and `models.json` hold placeholders only.
@@ -213,7 +214,7 @@ Selection: `backend: auto | colima | apple` in config (a convenience setting unl
   - [ ] `curl https://example.com`, `curl https://1.1.1.1`, `dig` and 169.254.169.254 fail from bash inside.
   - [ ] Warm start measured and compared to the 200 ms target; file-share numbers recorded against finding 8.
   - [ ] Footer, composer, agent view, OSC 52 copy, notifications and resize work in the default terminal.
-  - [ ] Every item above is run on both Colima and Apple `container`; a failure is recorded as a gap with its workaround, not dropped.
+  - [ ] Every item above is run on Colima; a failure is recorded as a gap with its workaround, not dropped.
 
 ### Phase 1: launcher package
 
@@ -263,13 +264,13 @@ Also deferred: running pi in a parent folder holding several repos so agents can
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| File-share performance on macOS (virtiofs ~2.8x native npm, sbx Maven ~5x; no numbers for Colima or Apple `container`) | Builds and installs feel slow; developers bypass | Dependency dirs on named volumes (3.2-4.1 s); Colima virtiofs vs sshfs and Apple virtiofs measured in Phase 0 |
+| File-share performance on macOS (virtiofs ~2.8x native npm, sbx Maven ~5x; no numbers for Colima or Apple `container`) | Builds and installs feel slow; developers bypass | Dependency dirs on named volumes (3.2-4.1 s); Colima virtiofs vs sshfs measured in Phase 0, Apple virtiofs in Phase 1 |
 | Corporate TLS-inspecting proxies | Nothing works on day one ("self-signed certificate in chain") | Export System keychain roots at start; set CA env vars; chain the host proxy upstream to the corporate one |
 | Placeholder format drift per provider | Pi rejects or misroutes a placeholder (Anthropic `sk-ant-oat` switches to OAuth mode) | Placeholders per provider in the image, tested against each pi upgrade; gateway path keeps one shape per provider |
 | Gateway cost and usage for `/spending` | Pi prices from its catalog times usage, so list price, not negotiated; translating gateways may drop cache fields | Pass-through gateway routes; model IDs matching pi's catalog; gateway spend logs as the source of truth |
 | Read-only `.git/config` | Agents cannot add remotes, set config or install hooks | Document; host-side `git` for those; revisit per project via policy |
 | Backend drift: shared code grows runtime-specific branches | Switching Colima to Apple `container` becomes a rewrite; one backend silently loses checks | The `Backend` interface is the only place a runtime is named, gaps are capability flags, and the conformance suite runs against both adapters |
-| Apple `container` exec TTY: host tty keeps `OPOST\|ONLCR`, every bare LF becomes CRLF, full-screen TUIs draw at column 0 (#2299, open since 2026-09-23) | Pi's TUI may misdraw on the Apple backend; a hard gap until fixed upstream if pi's renderer moves the cursor with bare LF | Phase 0 test; Colima as the backend meanwhile; the diagnosis in the issue points at `setraw()` in Containerization, so an upstream patch is a realistic contribution |
+| Apple `container` exec TTY: host tty keeps `OPOST\|ONLCR`, every bare LF becomes CRLF, full-screen TUIs draw at column 0 (#2299, open since 2026-09-23) | Pi's TUI may misdraw on the Apple backend; a hard gap until fixed upstream if pi's renderer moves the cursor with bare LF | Phase 1 test; Colima as the backend meanwhile; the diagnosis in the issue points at `setraw()` in Containerization, so an upstream patch is a realistic contribution |
 | Apple `container` has no host-to-container socket relay (`--publish-socket` is container to host; #2101 fails with a read-only root) | The Colima relay-container pattern does not carry over | `--internal` host-only network with the proxy bound to the host side; verify no route beyond the host and bind nothing else there |
 | Apple `container` platform: macOS 26 and Apple silicon only; older macOS issues not addressed (README) | Intel Macs and macOS 15 cannot use it | Colima covers macOS 13+ on both architectures |
 | Apple `container` CLI churn: 11 releases 2026-06-09 to 2026-10-23, breaking CLI changes marked in 1.0.0, 1.3.0, 1.5.0 | Launcher breaks on an upgrade | Pin the version through MDM; adapter tests per supported version |
@@ -277,11 +278,11 @@ Also deferred: running pi in a parent folder holding several repos so agents can
 | Colima ssh agent: after `colima stop`/`start` with a container still using it, the socket becomes a directory and forwarding fails (#942, open since 2023-12-21) | `git push` over ssh fails after a VM restart | The launcher recreates containers after a VM restart and checks the agent socket at start |
 | Runtime CVE cadence (sbx six 2026 CVEs, OpenShell six, Apple container advisories) | A boundary escape between patches | Pin runtime versions through MDM; credentials outside limit the blast radius; no engine socket; track advisories |
 | Developers run pi outside the shim (`npm i -g`, `npx`) | Unsandboxed pi on the host | An MDM and PATH problem: MDM protects the shim and runtime settings; the decisive control is that no real provider key exists on the laptop and the gateway accepts only proxy-minted tokens, so a bypassing pi has no model access |
-| Landlock on virtiofs mounts (OpenShell #4733 silently denies reads under Docker Desktop VirtioFS; Colima and Apple `container` also use virtiofs) | Phase 2 layer breaks reads | Test in Phase 0 on each backend; bubblewrap bind rules as the fallback mechanism |
+| Landlock on virtiofs mounts (OpenShell #4733 silently denies reads under Docker Desktop VirtioFS; Colima and Apple `container` also use virtiofs) | Phase 2 layer breaks reads | Test on Colima in Phase 0 and on Apple `container` in Phase 1; bubblewrap bind rules as the fallback mechanism |
 
 ## Open questions
 
-- Gateway vendor: LiteLLM, Bifrost, Agent Router, an existing internal gateway, or Radius; who runs it and where.
+- Gateway: the existing internal proxy service to the model vendors is the gateway; no vendor choice is needed. Open: its request authentication (header name and token format the host proxy must inject), how the host obtains a per-user token (ties to the SSO bullet), and whether it exposes every vendor API shape pi's `models.json` needs.
 - MDM product (Jamf, Kandji, Intune) and whether it can deliver a root-owned policy file and protect the shim binary.
 - Deferred: Podman as a vendor-backed backend may be reconsidered later (facts in [landscape.md](research/landscape.md) B); it was not added now because its macOS machine lacks ssh-agent forwarding (#23785) and its default libkrun provider had an I/O regression (#27216).
 - macOS fleet version (Apple `container` needs macOS 26 and Apple silicon; Colima with vz needs macOS 13; Intel Macs remain).
