@@ -206,15 +206,14 @@ Principle: the sandbox gets no default route; its only reachable endpoint is a p
 clients, never the enforcement.
 
 Boundary options:
-- Docker/Podman: `--network none` + bind-mount a Unix socket of the host proxy and run `socat TCP-LISTEN:3128,fork UNIX-CONNECT:/run/proxy.sock`
+- Docker-compatible engines (dockerd): `--network none` + bind-mount a Unix socket of the host proxy and run `socat TCP-LISTEN:3128,fork UNIX-CONNECT:/run/proxy.sock`
   inside (srt's Linux model). Or `docker network create --internal` with the proxy container dual-homed (internal + egress networks). Docker Desktop
   on macOS: the VM is the boundary; `--internal` networks have no NAT. Verify DNS: internal networks still resolve via embedded DNS (a DNS exfil
   channel); use `--dns 127.0.0.1` or no resolver and let the proxy resolve.
   Per runtime on macOS (2026-11-03): the host proxy's Unix socket cannot be bind-mounted from the Mac, because sockets do not cross virtiofs or 9p
-  (Podman #27630 maintainer, 2026-09-10; Lima #834). Colima: put the socket on a VM-local volume shared between the `--network none` agent
+  (virtiofs: [landscape.md](landscape.md) B; 9p: Lima #834). Colima: put the socket on a VM-local volume shared between the `--network none` agent
   container and a launcher-owned relay container that dials the host proxy at `host.lima.internal`; Lima `portForwards` with `reverse: true` is
-  the alternative but forwards die silently on vz (#5420). Podman machine: same relay pattern; rootless `--internal` networks are unavailable
-  (named networks are rootful only). None of Colima, Lima or Podman has an egress allowlist of its own.
+  the alternative but forwards die silently on vz (#5420). Neither Colima nor Lima has an egress allowlist of its own.
 - Docker Sandboxes: microVM, all TCP proxied, UDP/ICMP blocked, deny-by-default; org policies from Docker admin console, "local `sbx policy` allow
   rules are no longer evaluated and can't expand what the organization permits", local denies still apply, sync within 5 min; HTTP rules by host,
   method, path; requires paid governance subscription (https://docs.docker.com/ai/sandboxes/governance/access-controls/organization/, 2026-11-02).
@@ -346,8 +345,8 @@ verified).
 
 ## Recommended combination
 
-1. Boundary: whole `pi` in a microVM/container with no default route. CHANGED 2026-11-03 (no Docker products): Colima or Podman with `--network
-   none` + a Unix-socket relay container inside the VM, Apple `container` on an `--internal` host-only network; Linux: rootless Podman or Docker
+1. Boundary: whole `pi` in a microVM/container with no default route. CHANGED 2026-11-03 (no Docker products): Colima with `--network none` +
+   a Unix-socket relay container inside the VM, Apple `container` on an `--internal` host-only network; Linux (out of scope for Phase 1): Docker
    Engine with the same relay, or srt-style netns removal. Docker Sandboxes stays a comparable.
 2. One host-side egress proxy per laptop (a managed mitmproxy/Envoy build; sbx's proxy only as a comparable) is the only exit; transparent capture so proxy-ignoring tools
    fail closed.
