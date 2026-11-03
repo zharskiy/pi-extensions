@@ -38,7 +38,7 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers, grantText, grantOrNone, sameGrant, isLead
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainTerminal, chainLinks; both stop at a predecessor or successor cycle), grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
 │   │   ├── agent-override.ts              # override value checks for model, thinking and skills
@@ -118,7 +118,7 @@ extensions/subagents/
 └── tests/
     ├── plugins.test.ts                    # the plugin list and its order
     ├── model/
-    │   ├── agent-record.test.ts           # isLead, including the shipped general agent
+    │   ├── agent-record.test.ts           # isLead, including the shipped general agent; chain walks over a cycle or a self-loop
     │   ├── context-limit.test.ts          # effectiveContextLimit, agentLimit, limitStep
     │   ├── paths.test.ts                  # paths helpers
     │   └── settings.test.ts               # settings schema, overrides and files
