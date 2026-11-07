@@ -1,6 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { writeFileAtomic } from "./atomic-write.ts";
 import { errorMessage, LauncherError } from "./errors.ts";
 
 interface WriteJsonOptions {
@@ -35,18 +34,5 @@ export const readJsonFile = async <T>(path: string): Promise<T | undefined> => {
   }
 };
 
-export const writeJsonFile = async (path: string, value: unknown, options: WriteJsonOptions = {}) => {
-  const temporary = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-
-  await mkdir(dirname(path), { recursive: true });
-
-  try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: options.mode });
-
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-
-    throw new LauncherError(`${path}: ${errorMessage(error)}`);
-  }
-};
+export const writeJsonFile = (path: string, value: unknown, options: WriteJsonOptions = {}) =>
+  writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`, options);

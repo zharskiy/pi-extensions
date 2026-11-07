@@ -20,7 +20,10 @@ describe("configHash", () => {
       { ...config, env: { allow: [...config.env.allow, "EDITOR"] } },
       { ...config, egress: { ...config.egress, allow: ["github.com:22"] } },
       { ...config, mounts: { ...config.mounts, extraReadOnly: ["/opt"] } },
-      { ...config, credentials: { kind: "static" as const } },
+      { ...config, credentials: { kind: "static" as const, rules: [], derive: { enabled: true } } },
+      { ...config, credentials: { ...config.credentials, derive: { enabled: false } } },
+      { ...config, egress: { ...config.egress, deny: ["evil.test"] } },
+      { ...config, tls: { extraCa: [{ file: "/etc/corp-ca.pem" }] } },
       { ...config, image: { ...config.image, digest: `sha256:${"a".repeat(64)}` } },
       { ...config, workspaceRoots: { roots: ["/srv"], outside: "refuse" as const } },
     ];

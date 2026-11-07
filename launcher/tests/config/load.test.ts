@@ -39,7 +39,7 @@ describe("loadEffectiveConfig", () => {
 
     expect(config).toEqual(await defaultConfig());
     expect(config.image.reference).toMatch(/^ghcr\.io\/zharskiy\/pi-sandbox:\d+\.\d+\.\d+/);
-    expect(config.credentials).toEqual({ kind: "host-pi-auth" });
+    expect(config.credentials).toEqual({ kind: "host-pi-auth", rules: [], derive: { enabled: true } });
     expect(config.fallback).toBe("host");
     expect(config.ssh).toEqual({ agent: false });
     expect(sources["egress.allow"]).toBe("default");
@@ -124,7 +124,7 @@ describe("loadEffectiveConfig", () => {
 
     expect(config.profile).toBe("team");
     expect(config.fallback).toBe("refuse");
-    expect(config.credentials).toEqual({ kind: "static" });
+    expect(config.credentials).toEqual({ kind: "static", rules: [], derive: { enabled: true } });
     expect(sources).toMatchObject({ profile: "user", fallback: "profile", credentials: "profile" });
   });
 
@@ -151,7 +151,12 @@ describe("loadEffectiveConfig", () => {
     });
 
     expect(config.egress.allow).toEqual(["github.com", "crates.io"]);
-    expect(config.credentials).toEqual({ kind: "static", envVar: "API" });
+    expect(config.credentials).toEqual({
+      kind: "static",
+      envVar: "API",
+      rules: [],
+      derive: { enabled: true },
+    });
     expect(config.backend).toBe("apple");
   });
 
@@ -272,8 +277,8 @@ describe("loadEffectiveConfig", () => {
       "project: resources.cpus must be a number",
     );
     await expect(loadWith({ user: { ports: [3000] } })).rejects.toThrow("user: ports is not a known key");
-    await expect(loadWith({ policy: { egress: { deny: [] } } })).rejects.toThrow(
-      "policy: egress.deny is not a known key",
+    await expect(loadWith({ policy: { egress: { blocked: [] } } })).rejects.toThrow(
+      "policy: egress.blocked is not a known key",
     );
     await expect(loadWith({ user: "{ not json" })).rejects.toThrow("invalid JSON");
   });

@@ -8,6 +8,8 @@ const IMAGE_REPOSITORY = "ghcr.io/zharskiy/pi-sandbox";
 
 const DEFAULT_EGRESS = ["registry.npmjs.org", "github.com", "pypi.org", "files.pythonhosted.org"];
 
+const DEFAULT_GRANT_HOURS = 168;
+
 const TERMINAL_VARIABLES = [
   "TERM",
   "COLORTERM",
@@ -34,8 +36,17 @@ export const defaultConfig = async (): Promise<SandboxConfig> => ({
   backend: "auto",
   fallback: "host",
   image: { reference: `${IMAGE_REPOSITORY}:${await packageVersion()}` },
-  credentials: { kind: "host-pi-auth" },
-  egress: { allow: DEFAULT_EGRESS, mcpHosts: [], denyPrivateAddresses: true },
+  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true } },
+  egress: {
+    allow: DEFAULT_EGRESS,
+    mcpHosts: [],
+    denyPrivateAddresses: true,
+    deny: [],
+    privateHosts: [],
+    parentProxy: "env",
+    grants: { enabled: true, maxHours: DEFAULT_GRANT_HOURS, permanent: true },
+  },
+  tls: { extraCa: [] },
   mounts: { extraReadOnly: [], cacheVolumes: [] },
   env: { allow: TERMINAL_VARIABLES },
   ssh: { agent: false },

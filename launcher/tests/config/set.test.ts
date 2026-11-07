@@ -126,8 +126,8 @@ describe("setConfigValue", () => {
     const files = await createLayers();
 
     await expect(
-      setConfigValue({ layer: "user", key: "egress.deny", value: [], env: files.env }),
-    ).rejects.toThrow("user: egress.deny is not a known key");
+      setConfigValue({ layer: "user", key: "egress.blocked", value: [], env: files.env }),
+    ).rejects.toThrow("user: egress.blocked is not a known key");
     await expect(
       setConfigValue({ layer: "user", key: "egress.allow", value: "80", env: files.env }),
     ).rejects.toThrow("user: egress.allow must be an array");

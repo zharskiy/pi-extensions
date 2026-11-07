@@ -1,9 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 import { expandHome, isWithin, LauncherError } from "../shared/index.ts";
-import { getPath, setPath } from "./dotted.ts";
+import { getPath, isRecord, setPath } from "./dotted.ts";
 import type {
   ConfigSource,
+  CredentialRule,
   EffectiveConfig,
+  EgressCap,
   LayerConfig,
   LayerName,
   ProfileName,
@@ -30,6 +32,7 @@ interface Leaf {
   key: string;
   rule?: Rule;
   union?: boolean;
+  pick?: (layer: unknown) => unknown;
 }
 
 interface State {
@@ -37,7 +40,11 @@ interface State {
   sources: Record<string, ConfigSource>;
 }
 
-const LAYER_ORDER: readonly LayerName[] = ["policy", "user", "project"];
+const LAYER_ORDER: readonly LayerName[] = ["policy", "org", "user", "project"];
+
+const CAP_LAYERS: readonly LayerName[] = ["policy", "org"];
+
+const LEGACY_CREDENTIAL_KEYS = ["kind", "envVar", "keychainService", "authFile", "command"];
 
 const unchanged = (above: unknown, below: unknown) =>
   isDeepStrictEqual(above, below) ? undefined : "cannot change";
@@ -50,6 +57,42 @@ const subset = (above: unknown, below: unknown) => {
   const added = (below as string[]).filter((entry) => !allowed.includes(entry));
 
   return added.length === 0 ? undefined : `cannot add ${added.join(", ")}`;
+};
+
+const quietSubset = (above: unknown, below: unknown) => {
+  const allowed = (above as unknown[] | undefined) ?? [];
+  const added = (below as unknown[]).filter(
+    (entry) => !allowed.some((item) => isDeepStrictEqual(item, entry)),
+  );
+
+  return added.length === 0 ? undefined : "cannot add entries";
+};
+
+const ruleSubset = (above: unknown, below: unknown) => {
+  const allowed = (above as CredentialRule[] | undefined) ?? [];
+  const changed = (below as CredentialRule[]).some(
+    (rule) => !allowed.some((item) => item.id === rule.id && isDeepStrictEqual(item, rule)),
+  );
+
+  return changed ? "cannot add or change rules, only drop them" : undefined;
+};
+
+const cannotEnable = (above: unknown, below: unknown) =>
+  above === false && below === true ? "cannot enable" : undefined;
+
+const cannotGrow = (above: unknown, below: unknown) =>
+  typeof above === "number" && (below as number) > above ? "cannot grow" : undefined;
+
+const legacyCredentials = (layer: unknown) => {
+  const credentials = getPath(layer, "credentials");
+
+  if (!isRecord(credentials) || credentials.kind === undefined) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(credentials).filter(([key]) => LEGACY_CREDENTIAL_KEYS.includes(key)),
+  );
 };
 
 const noFallback = (above: unknown, below: unknown) =>
@@ -82,11 +125,24 @@ const LEAVES: readonly Leaf[] = [
   { key: "fallback", rule: { problem: noFallback } },
   { key: "image.reference", rule: { problem: unchanged, lockKey: "image.digest" } },
   { key: "image.digest", rule: { problem: unchangedWhenSet } },
+  { key: "image.packages" },
+  { key: "image.npmGlobal" },
+  { key: "image.dockerfile" },
   { key: "gateway", rule: { problem: unchanged, lockedWhenUnset: true } },
-  { key: "credentials", rule: { problem: unchanged } },
+  { key: "credentials", rule: { problem: unchanged }, pick: legacyCredentials },
+  { key: "credentials.rules", rule: { problem: ruleSubset } },
+  { key: "credentials.derive.enabled", rule: { problem: cannotEnable } },
+  { key: "credentials.derive.hosts", rule: { problem: quietSubset } },
   { key: "egress.allow", rule: { problem: subset } },
   { key: "egress.mcpHosts", rule: { problem: subset } },
   { key: "egress.denyPrivateAddresses" },
+  { key: "egress.deny", union: true },
+  { key: "egress.privateHosts", rule: { problem: quietSubset } },
+  { key: "egress.parentProxy", rule: { problem: unchanged } },
+  { key: "egress.grants.enabled", rule: { problem: cannotEnable } },
+  { key: "egress.grants.maxHours", rule: { problem: cannotGrow } },
+  { key: "egress.grants.permanent", rule: { problem: cannotEnable } },
+  { key: "tls.extraCa", rule: { problem: quietSubset } },
   { key: "workspaceRoots", rule: { problem: narrowerRoots } },
   { key: "mounts.extraReadOnly", rule: { problem: subset } },
   { key: "mounts.cacheVolumes" },
@@ -94,10 +150,11 @@ const LEAVES: readonly Leaf[] = [
   { key: "ssh.agent", rule: { problem: staysOff } },
   { key: "resources.cpus" },
   { key: "resources.memoryGiB" },
+  { key: "org", rule: { problem: unchanged, lockers: ["policy"] } },
 ];
 
 const definedLeaves = (layer: unknown) =>
-  LEAVES.map((leaf) => ({ leaf, value: getPath(layer, leaf.key) })).filter(
+  LEAVES.map((leaf) => ({ leaf, value: (leaf.pick ?? ((from) => getPath(from, leaf.key)))(layer) })).filter(
     ({ value }) => value !== undefined,
   );
 
@@ -119,15 +176,25 @@ const overlay = (state: State, layer: unknown, source: ConfigSource): State =>
   );
 
 export const resolveProfileName = (layers: Layers): ProfileName | undefined =>
-  layers.policy?.profile ?? layers.user?.profile ?? layers.project?.profile;
+  layers.policy?.profile ?? layers.org?.profile ?? layers.user?.profile ?? layers.project?.profile;
+
+const withProfile = (lockers: readonly ConfigSource[], chosenAbove: boolean): readonly ConfigSource[] =>
+  chosenAbove ? [...lockers, "profile"] : lockers;
 
 const lockersFor = (layer: LayerName, layers: Layers): readonly ConfigSource[] => {
   if (layer === "project") {
-    return ["default", "profile", "policy", "user"];
+    return ["default", "profile", "policy", "org", "user"];
   }
 
   if (layer === "user") {
-    return layers.policy?.profile === undefined ? ["policy"] : ["policy", "profile"];
+    return withProfile(
+      ["policy", "org"],
+      layers.policy?.profile !== undefined || layers.org?.profile !== undefined,
+    );
+  }
+
+  if (layer === "org") {
+    return withProfile(["policy"], layers.policy?.profile !== undefined);
   }
 
   return [];
@@ -178,17 +245,47 @@ const applyLayer = (state: State, layerName: LayerName, layers: Layers): State =
   return overlay(state, layer, layerName);
 };
 
-const SKELETON = { image: {}, egress: {}, mounts: {}, env: {}, ssh: {}, resources: {} };
+const SKELETON = { image: {}, egress: {}, tls: {}, mounts: {}, env: {}, ssh: {}, resources: {} };
+
+const depthOf = (key: string) => key.split(".").length;
 
 const toConfig = (values: Record<string, unknown>) =>
-  Object.entries(values).reduce<Record<string, unknown>>(
-    (config, [key, value]) => setPath(config, key, value),
-    SKELETON,
-  ) as unknown as SandboxConfig;
+  Object.entries(values)
+    .sort(([left], [right]) => depthOf(left) - depthOf(right))
+    .reduce<Record<string, unknown>>(
+      (config, [key, value]) => setPath(config, key, value),
+      SKELETON,
+    ) as unknown as SandboxConfig;
+
+const capOf = (layer: LayerConfig | undefined, optIn: (layer: LayerConfig) => boolean) => {
+  const allow = layer?.egress?.allow;
+
+  return layer === undefined || allow === undefined || optIn(layer) ? undefined : allow;
+};
+
+const intersect = (lists: string[][]) =>
+  lists.length === 0 ? undefined : lists.reduce((kept, next) => kept.filter((entry) => next.includes(entry)));
+
+const capFor = (layers: Layers, optIn: (layer: LayerConfig) => boolean) =>
+  intersect(
+    CAP_LAYERS.map((name) => capOf(layers[name], optIn)).filter(
+      (list): list is string[] => list !== undefined,
+    ),
+  );
+
+export const egressCapOf = (layers: Layers): EgressCap => {
+  const derivedHosts = capFor(layers, (layer) => layer.credentials?.derive?.enabled === true);
+  const grants = capFor(layers, (layer) => layer.egress?.grants?.enabled === true);
+
+  return {
+    ...(derivedHosts === undefined ? {} : { derivedHosts }),
+    ...(grants === undefined ? {} : { grants }),
+  };
+};
 
 export const mergeLayers = ({ defaults, layers, profile }: MergeInput): EffectiveConfig => {
   const base = overlay(overlay({ values: {}, sources: {} }, defaults, "default"), profile, "profile");
   const merged = LAYER_ORDER.reduce((state, layerName) => applyLayer(state, layerName, layers), base);
 
-  return { config: toConfig(merged.values), sources: merged.sources };
+  return { config: toConfig(merged.values), sources: merged.sources, egressCap: egressCapOf(layers) };
 };

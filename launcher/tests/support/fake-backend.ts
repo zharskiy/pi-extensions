@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import type {
   Backend,
   BackendCapabilities,
@@ -24,11 +25,19 @@ interface FakeBuild {
   files: Record<string, string>;
 }
 
-interface FakeExec {
+export interface FakeExec {
   spec: ExecSpec;
   tty: boolean;
   size?: TerminalSize;
   resizes: TerminalSize[];
+  stdin: Buffer[];
+}
+
+export interface FakeExecScript {
+  command: string[];
+  code?: number;
+  stdout?: string;
+  stderr?: string;
 }
 
 interface FakeRoute {
@@ -42,6 +51,7 @@ interface FakeBackendOptions {
   localImages?: Record<string, string>;
   registry?: Record<string, string>;
   exec?: (spec: ExecSpec, io: ExecIo) => Promise<number> | number;
+  execScripts?: FakeExecScript[];
 }
 
 const DEFAULT_CAPABILITIES: BackendCapabilities = {
@@ -60,6 +70,43 @@ const infoOf = (digest: string): ImageInfo => ({ id: imageIdOf(digest), digest }
 
 const matches = (labels: Record<string, string>, wanted: Record<string, string>) =>
   Object.entries(wanted).every(([key, value]) => labels[key] === value);
+
+const startsWith = (command: string[], prefix: string[]) =>
+  prefix.every((part, index) => command[index] === part);
+
+export const stdinFrom = (input: string | Buffer): NodeJS.ReadableStream =>
+  Readable.from([Buffer.from(input)]);
+
+export const stdinOf = (exec: FakeExec) => Buffer.concat(exec.stdin);
+
+const recordStdin = (record: FakeExec, stdin: NodeJS.ReadableStream | undefined) =>
+  new Promise<void>((resolve) => {
+    if (stdin === undefined) {
+      resolve();
+
+      return;
+    }
+
+    stdin.on("data", (chunk: Buffer | string) => record.stdin.push(Buffer.from(chunk)));
+
+    stdin.once("end", () => resolve());
+
+    stdin.once("error", () => resolve());
+  });
+
+const runScript = async (script: FakeExecScript, io: ExecIo, stdinDone: Promise<void>) => {
+  await stdinDone;
+
+  if (script.stdout !== undefined) {
+    io.stdout.write(script.stdout);
+  }
+
+  if (script.stderr !== undefined) {
+    io.stderr.write(script.stderr);
+  }
+
+  return script.code ?? 0;
+};
 
 const contextFiles = async (dir: string) => {
   const names = await readdir(dir);
@@ -135,15 +182,24 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     return digest === undefined ? undefined : infoOf(digest);
   };
 
+  const defaultExec = (spec: ExecSpec, io: ExecIo, stdinDone: Promise<void>) => {
+    const script = (options.execScripts ?? []).find((entry) => startsWith(spec.command, entry.command));
+
+    return script === undefined ? 0 : runScript(script, io, stdinDone);
+  };
+
   const runExec = async (spec: ExecSpec, io: ExecIo) => {
-    const record: FakeExec = { spec, tty: io.tty, size: io.size, resizes: [] };
+    const record: FakeExec = { spec, tty: io.tty, size: io.size, resizes: [], stdin: [] };
 
     execs.push(record);
 
+    const stdinDone = recordStdin(record, io.stdin);
     const unsubscribe = io.onResize?.((size) => record.resizes.push(size));
 
     try {
-      return options.exec === undefined ? 0 : await options.exec(spec, io);
+      return options.exec === undefined
+        ? await defaultExec(spec, io, stdinDone)
+        : await options.exec(spec, io);
     } finally {
       unsubscribe?.();
     }

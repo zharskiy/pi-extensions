@@ -18,6 +18,9 @@ const LAUNCHER_ENTRY_TARGETS = [
   join(LAUNCHER, LAUNCHER_BUILD, "cli", "main.js"),
 ];
 const LAUNCHER_TEST_PACKAGES = ["vitest"];
+const PI_PACKAGE_REFERENCE =
+  /(?:from\s*|import\s*\(\s*|import\s+|require\s*\(\s*|\.resolve\s*\(\s*)["'`](?:@earendil-works\/|typebox["'`/])/;
+const LAUNCHER_PI_ASSET = /^hostpi\/[^/]+\.mjs$/;
 const LAUNCHER_TESTS = "tests";
 const LAUNCHER_TEST_SUPPORT = "support";
 const LAUNCHER_GRAPH: Record<string, string[]> = {
@@ -25,9 +28,12 @@ const LAUNCHER_GRAPH: Record<string, string[]> = {
   config: ["shared"],
   workspace: ["config", "shared"],
   backend: ["shared"],
-  proxy: ["config", "shared"],
+  proxy: ["config", "grants", "shared"],
   container: ["backend", "config", "shared", "workspace"],
   image: ["backend", "config", "shared"],
+  hostpi: ["config", "shared"],
+  grants: ["shared"],
+  provision: ["backend", "config", "hostpi", "shared"],
   cli: ["backend", "config", "container", "image", "proxy", "shared", "workspace"],
   bin: ["cli"],
 };
@@ -151,7 +157,7 @@ const launcherFiles = (dir: string): string[] =>
           return launcherFiles(path);
         }
 
-        return /\.[jt]s$/.test(path) ? [path] : [];
+        return /\.(m?js|ts)$/.test(path) ? [path] : [];
       })
     : [];
 
@@ -159,8 +165,20 @@ const launcherFolderOf = (path: string) => relative(LAUNCHER, path).split(sep)[0
 
 const isLauncherTest = (file: string) => launcherFolderOf(file) === "tests";
 
+const isLauncherPiAsset = (file: string) =>
+  LAUNCHER_PI_ASSET.test(relative(LAUNCHER, file).split(sep).join("/"));
+
+const launcherPiReferences = (files: Array<{ path: string; text: string }>) =>
+  files
+    .filter((file) => !isLauncherPiAsset(file.path) && PI_PACKAGE_REFERENCE.test(file.text))
+    .map((file) => relative(ROOT, file.path));
+
 const isAllowedLauncherSpecifier = (file: string) => (specifier: string) => {
   if (specifier.startsWith("node:")) {
+    return true;
+  }
+
+  if (isLauncherPiAsset(file) && PI_PACKAGE_REFERENCE.test(`from "${specifier}"`)) {
     return true;
   }
 
@@ -310,6 +328,37 @@ describe("architecture", () => {
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it("lets only launcher/hostpi/*.mjs reference a pi package anywhere under launcher/", () => {
+    const files = launcherFiles(LAUNCHER).map((path) => ({ path, text: readFileSync(path, "utf8") }));
+
+    expect(launcherPiReferences(files)).toEqual([]);
+  });
+
+  it("flags a launcher file other than a hostpi .mjs asset that references a pi package", () => {
+    const reference = 'createRequire(root).resolve("@earendil-works/pi-ai/providers/all")';
+    const files = [
+      { path: join(LAUNCHER, "hostpi", "provider-hosts.mjs"), text: reference },
+      { path: join(LAUNCHER, "hostpi", "derive.ts"), text: reference },
+      {
+        path: join(LAUNCHER, "proxy", "helper.mjs"),
+        text: `import x from "@earendil-works/pi-coding-agent";`,
+      },
+      { path: join(LAUNCHER, "hostpi", "nested", "deep.mjs"), text: "import 'typebox';" },
+      {
+        path: join(LAUNCHER, "cli", "versions.ts"),
+        text: 'const PI_PACKAGE = "@earendil-works/pi-coding-agent";',
+      },
+      { path: join(LAUNCHER, "cli", "late.ts"), text: 'await import("@earendil-works/pi-coding-agent");' },
+    ];
+
+    expect(launcherPiReferences(files)).toEqual([
+      "launcher/hostpi/derive.ts",
+      "launcher/proxy/helper.mjs",
+      "launcher/hostpi/nested/deep.mjs",
+      "launcher/cli/late.ts",
+    ]);
   });
 
   it("lets a launcher folder, or a test folder other than its own, reach a launcher folder only through its index.ts, and bin/ only cli/main", () => {

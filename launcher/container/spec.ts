@@ -29,6 +29,11 @@ interface SpecProxy {
   caPemPath?: string;
 }
 
+interface SpecTrust {
+  pemPath: string;
+  hash: string;
+}
+
 export interface ContainerSpecInput {
   workspace: Workspace;
   config: SandboxConfig;
@@ -43,6 +48,10 @@ export interface ContainerSpecInput {
   proxy?: SpecProxy;
   launcherVersion: string;
   configHash: string;
+  renderDir?: string;
+  trust?: SpecTrust;
+  repoProxyToken?: string;
+  launchId?: string;
 }
 
 export interface RepoVolumesInput {

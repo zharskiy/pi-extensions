@@ -1,3 +1,4 @@
+export { writeFileAtomic } from "./atomic-write.ts";
 export type { BackendName } from "./backend-names.ts";
 export { BACKEND_NAMES } from "./backend-names.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
@@ -13,4 +14,6 @@ export {
   launcherRoot,
   projectConfigFile,
 } from "./paths.ts";
-export { isSecretName } from "./secret-name.ts";
+export { isPlaceholder, jwtShapedPlaceholder, looksLikeJwt, placeholderFor } from "./placeholder.ts";
+export { isAuthLikeHeader, isSecretName } from "./secret-name.ts";
+export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";

@@ -18,6 +18,15 @@ import { proxyAuthorization } from "./server.ts";
 import { proxyPolicyHash } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
+export interface EnvSecretsMessage {
+  type: "env-secrets";
+  secrets: Record<string, string>;
+}
+
+export type ControlMessage = EnvSecretsMessage;
+
+export type ControlReply = { ok: true } | { ok: false; error: string };
+
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
 type InstanceFiles = ReturnType<typeof proxyFiles>;
