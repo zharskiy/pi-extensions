@@ -128,37 +128,39 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("overlays git hooks and config read-only", () => {
-    const mounts = buildContainerSpec(specInput()).mounts;
-
-    expect(mountAt(mounts, "/work/repo/.git/hooks")).toEqual({
-      source: "/work/repo/.git/hooks",
-      target: "/work/repo/.git/hooks",
-      readOnly: true,
-      kind: "bind",
-    });
-    expect(mountAt(mounts, "/work/repo/.git/config")).toEqual({
-      source: "/work/repo/.git/config",
-      target: "/work/repo/.git/config",
-      readOnly: true,
-      kind: "bind",
-    });
-  });
-
-  it("overlays the discovered hooks path, submodule and worktree git files read-only", () => {
+  it("binds the discovered git dirs onto themselves and the git files read-only from the state dir", () => {
     const gitOverlay = {
-      dirs: ["/work/repo/.githooks", "/work/repo/.git/modules/lib/hooks"],
-      files: ["/work/repo/.git/modules/lib/config", "/work/repo/.git/worktrees/wt/config.worktree"],
+      selfBinds: ["/work/repo/.git", "/work/repo/.git/modules"],
+      readOnlyDirs: ["/work/repo/.git/hooks"],
+      readOnlyFiles: ["/work/repo/.git/config", "/work/repo/.git/commondir"],
     };
     const mounts = buildContainerSpec(specInput({ gitOverlay })).mounts;
+    const snapshots = `/state/git/${repoHash}/snapshots/`;
 
-    [...gitOverlay.dirs, ...gitOverlay.files].forEach((path) => {
-      expect(mountAt(mounts, path)).toEqual({ source: path, target: path, readOnly: true, kind: "bind" });
+    expect(mountAt(mounts, "/work/repo/.git")).toEqual({
+      source: "/work/repo/.git",
+      target: "/work/repo/.git",
+      readOnly: false,
+      kind: "bind",
     });
+    expect(mountAt(mounts, "/work/repo/.git/modules")?.readOnly).toBe(false);
+    [...gitOverlay.readOnlyDirs, ...gitOverlay.readOnlyFiles].forEach((path) => {
+      expect(mountAt(mounts, path)).toEqual({
+        source: expect.stringMatching(new RegExp(`^${snapshots}[0-9a-f]{16}$`)),
+        target: path,
+        readOnly: true,
+        kind: "bind",
+      });
+    });
+    expect(mounts.map((mount) => mount.target).indexOf("/work/repo/.git")).toBe(1);
   });
 
-  it("asks for copies of the git files in the spec's copies dir when the backend cannot mount single files", () => {
-    const gitOverlay = { dirs: [], files: ["/work/repo/.git/worktrees/wt/config.worktree"] };
+  it("binds no git files and asks for no git copies when the backend cannot mount single files", () => {
+    const gitOverlay = {
+      selfBinds: ["/work/repo/.git"],
+      readOnlyDirs: ["/work/repo/.git/hooks"],
+      readOnlyFiles: ["/work/repo/.git/config"],
+    };
     const spec = buildContainerSpec(
       specInput({
         gitOverlay,
@@ -168,13 +170,8 @@ describe("buildContainerSpec", () => {
     );
 
     expect(mountAt(spec.mounts, "/work/repo/.git/config")).toBeUndefined();
-    expect(spec.requiredCopies).toEqual([
-      { source: "/work/repo/.git/config", target: "/work/repo/.git/config" },
-      {
-        source: "/work/repo/.git/worktrees/wt/config.worktree",
-        target: "/work/repo/.git/worktrees/wt/config.worktree",
-      },
-    ]);
+    expect(mountAt(spec.mounts, "/work/repo/.git/hooks")?.readOnly).toBe(true);
+    expect(spec.requiredCopies).toEqual([]);
     expect(spec.copiesDir).toBe(`/state/copies/${repoHash.slice(0, 12)}`);
   });
 

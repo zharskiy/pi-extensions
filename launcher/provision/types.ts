@@ -36,10 +36,12 @@ export interface SyncResult {
   notices: string[];
 }
 
-export interface PackageDiff {
+export interface PackageRequest {
   kind: PackageChangeKind;
-  entry?: unknown;
+  source: string;
 }
+
+export type PackageDiff = { kind: PackageChangeKind } | { kind: "mismatch"; recorded: string };
 
 export interface ContainerMcpAuthSyncInput {
   backend: Backend;

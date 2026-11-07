@@ -47,7 +47,11 @@ launcher/
 │   ├── hash.ts              configHash
 │   └── dotted.ts            dotted key access
 ├── workspace/
-│   ├── discover.ts          discoverWorkspace through git
+│   ├── discover.ts          discoverWorkspace: the nearest .git found without git, its layout checked, then git rev-parse must agree
+│   ├── git-layout.ts        gitLayoutAt (main, separate, submodule and linked worktree git dirs, refusing links and foreign commondir or gitdir pointers), findGitRoot, findModuleGitDirs, findWorktreeGitDirs, gitRefusal
+│   ├── git-integrity.ts     assertGitIntegrity, pinGitDirs and unpinGitDirs (the commondir pin), withGitPinLock (one lock per git common dir), gitAlternatesNotices, gitDirOf
+│   ├── git-scan.ts          scanGitBaseline (nested .git entries and gitlinks), nestedGitNotices
+│   ├── git-command.ts       inertGitOptions: core.fsmonitor off and an empty core.hooksPath for the launcher's own git calls
 │   ├── guard.ts             assertSafeWorkspace: refuses a repo at or above home, ~/.pi, state, config or /, or inside ~/.pi, state or config; assertHostSessionsDir, the one ~/.pi exception
 │   ├── pi-session-dir.ts    hostAgentDir, pi's session slug, hostSessionsDir, hostSessionsChoice (on, or off with its reason)
 │   ├── mounts.ts            resolveExtraMounts: mounts.extraReadOnly checked (exists, real path, protected paths, .git, engine socket)
@@ -61,9 +65,10 @@ launcher/
 │   └── apple/               Apple container adapter: backend.ts, cli.ts (every flag and JSON shape it assumes)
 ├── container/
 │   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, ssh agent, spec hash), repoVolumes, forwardedEnv
-│   ├── git-overlay.ts       discoverGitOverlay: core.hooksPath, submodule and worktree git files to protect, creating missing hook dirs
+│   ├── git-overlay.ts       discoverGitOverlay (self binds, read-only dirs and files, links refused), readyGitOverlay (checks, pins, hook dirs, snapshots, baseline before a start), gitLaunchNotices, gitSessionEndNotices
+│   ├── git-snapshot.ts      writeGitSnapshots, gitSnapshotPath, gitSnapshotsDir: launcher-owned copies of the read-only git paths
 │   ├── names.ts             container and volume names, labels
-│   ├── lifecycle.ts         ensureContainer (per-repository lock, wanted identity, reuse while other sessions are live, replacement that keeps the repository network), isCurrentContainer, stopIdleContainer, findCurrentContainer, findRepoContainer, removeRepoContainer, collectGarbage
+│   ├── lifecycle.ts         ensureContainer (per-repository lock, wanted identity, reuse while other sessions are live, beforeStart right before a create or start, inside aroundStart, replacement that keeps the repository network), gitDirInUseElsewhere, isCurrentContainer, stopIdleContainer, findCurrentContainer, findRepoContainer, removeRepoContainer, collectGarbage
 │   ├── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID, raw mode, resizes, signal handling
 │   └── probes.ts            doctor checks: same-path mount, credential sweep (environment, auth.json, mcp.json), no-route, proxy health
 ├── image/
@@ -135,7 +140,7 @@ launcher/
 │   ├── access-log.ts        JSON-line access log
 │   ├── settings.ts          proxy settings from the config and the cap, proxyPolicyHash
 │   └── files.ts             per-instance file paths under proxy/<policy hash>/ and the ProxyInstance record
-├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, stableHash, JSON files, writeFileAtomic, launcherPaths, launcherRoot, launcherEntry, expandHome, isWithin, BACKEND_NAMES, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, writeVaultEntry, the /oauth types), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
+├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, stableHash, JSON files, writeFileAtomic, launcherPaths, launcherRoot, launcherEntry, expandHome, isWithin, BACKEND_NAMES, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, writeVaultEntry, the /oauth types), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
 ├── profiles/                solo.json, team.json, enterprise.json
 ├── examples/                org-baseline.team.json, org-baseline.enterprise.json (starting points for an org baseline)
 ├── schema/                  sandbox-config.schema.json

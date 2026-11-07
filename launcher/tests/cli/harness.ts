@@ -52,7 +52,12 @@ const PROVIDER_HOSTS = { example: { hosts: ["models.example.test"] } };
 const isProviderHostsScript = (call: { file: string; args: string[] }) =>
   call.file === process.execPath && (call.args[0] ?? "").endsWith("provider-hosts.mjs");
 
-const gitAnswer = (repoRoot: string, args: string[]): Partial<RunResult> | undefined => {
+const withoutOptions = (args: string[]): string[] =>
+  args[0] === "-c" ? withoutOptions(args.slice(2)) : args;
+
+const gitAnswer = (repoRoot: string, given: string[]): Partial<RunResult> | undefined => {
+  const args = withoutOptions(given);
+
   if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
     return { stdout: `${repoRoot}\n${join(repoRoot, ".git")}\n` };
   }

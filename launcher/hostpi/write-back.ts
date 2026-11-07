@@ -54,6 +54,9 @@ const indentOf = (text: string | undefined) => {
   return match?.[1] ?? " ".repeat(DEFAULT_INDENT);
 };
 
+const withSource = (existing: unknown, source: string) =>
+  isJsonObject(existing) ? { ...existing, source } : source;
+
 const changedPackages = (packages: unknown[], change: PackageChange) => {
   const matches = entryMatches(change.source);
   const index = packages.findIndex(matches);
@@ -63,12 +66,10 @@ const changedPackages = (packages: unknown[], change: PackageChange) => {
     return kept;
   }
 
-  const entry = change.entry ?? change.source;
-
   return index === -1
-    ? [...packages, entry]
+    ? [...packages, change.source]
     : packages.flatMap((existing, position) =>
-        position === index ? [entry] : matches(existing) ? [] : [existing],
+        position === index ? [withSource(existing, change.source)] : matches(existing) ? [] : [existing],
       );
 };
 

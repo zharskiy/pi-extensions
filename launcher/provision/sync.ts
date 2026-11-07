@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
-import { type JsonObject, packageSourceKey, sourceOfEntry } from "../hostpi/index.ts";
+import { entryMatches, type JsonObject, packagesOf, sourceOfEntry } from "../hostpi/index.ts";
 import {
   expandHome,
   readJsonFile,
@@ -9,8 +9,14 @@ import {
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
-import { hasBakedPackage, keepBakedPackage, mergeTopLevel, prepareHostSettings } from "./merge-settings.ts";
-import type { PackageDiff, SyncInput, SyncResult } from "./types.ts";
+import {
+  hasBakedPackage,
+  keepBakedPackage,
+  mergeTopLevel,
+  prepareHostSettings,
+  withHostOwnedSettings,
+} from "./merge-settings.ts";
+import type { PackageDiff, PackageRequest, SyncInput, SyncResult } from "./types.ts";
 import { readVolumeFile, writeVolumeFile } from "./volume.ts";
 
 export { mergeTopLevel };
@@ -60,7 +66,7 @@ const syncBoth = async (input: SyncInput): Promise<SyncResult> => {
   const settingsNotices = await syncFile(input, {
     name: "settings.json",
     host: prepared.settings,
-    adjust: keepBakedPackage,
+    adjust: (merged, volume) => keepBakedPackage(withHostOwnedSettings(merged, prepared.settings), volume),
   });
   const mcpNotices = await syncFile(input, { name: "mcp.json", host: input.mcp, adjust: (merged) => merged });
 
@@ -75,30 +81,32 @@ export const syncWritableFiles = (input: SyncInput): Promise<SyncResult> =>
 export const readVolumeSettings = async (backend: Backend, containerId: string) =>
   (await readVolumeFile(backend, containerId, "settings.json")).value;
 
-const findPackage = (settings: JsonObject | undefined, source: string) => {
-  const key = packageSourceKey(source);
-  const packages = Array.isArray(settings?.packages) ? settings.packages : [];
+const matchingSources = (settings: JsonObject | undefined, source: string) =>
+  packagesOf(settings)
+    .filter(entryMatches(source))
+    .flatMap((entry) => sourceOfEntry(entry) ?? []);
 
-  return packages.find((entry) => {
-    const own = sourceOfEntry(entry);
+const installChange = (previous: string[], next: string[], source: string): PackageDiff | undefined => {
+  if (next.includes(source)) {
+    return previous.includes(source) ? undefined : { kind: "install" };
+  }
 
-    return own !== undefined && packageSourceKey(own) === key;
-  });
+  const [recorded] = next;
+
+  return recorded === undefined ? undefined : { kind: "mismatch", recorded };
 };
 
 export const packageChangeFor = (
   before: JsonObject | undefined,
   after: JsonObject | undefined,
-  source: string,
+  request: PackageRequest,
 ): PackageDiff | undefined => {
-  const previous = findPackage(before, source);
-  const next = findPackage(after, source);
+  const previous = matchingSources(before, request.source);
+  const next = matchingSources(after, request.source);
 
-  if (next !== undefined) {
-    return previous !== undefined && stableHash(previous) === stableHash(next)
-      ? undefined
-      : { kind: "install", entry: next };
+  if (request.kind === "install") {
+    return installChange(previous, next, request.source);
   }
 
-  return previous === undefined ? undefined : { kind: "remove" };
+  return previous.length > 0 && next.length === 0 ? { kind: "remove" } : undefined;
 };

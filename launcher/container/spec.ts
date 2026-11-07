@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import {
   type BackendCapabilities,
   type ContainerSpec,
@@ -18,6 +18,7 @@ import {
 } from "../shared/index.ts";
 import { type HostSessions, resolveExtraMounts, type Workspace } from "../workspace/index.ts";
 import type { GitOverlay } from "./git-overlay.ts";
+import { gitSnapshotPath, gitSnapshotsDir } from "./git-snapshot.ts";
 import { agentVolumeName, cacheVolumeName, containerName, copiesDir, LABELS, repoHash } from "./names.ts";
 
 export interface RequiredCopy {
@@ -80,6 +81,8 @@ const SHARED_TMPFS = "mode=1777";
 
 const NO_NETWORK: NetworkRef = { kind: "none" };
 
+const GIT_PROTECTION = "snapshots";
+
 const bind = (source: string, target: string, readOnly: boolean): MountSpec => ({
   source,
   target,
@@ -102,25 +105,22 @@ const writableRoots = (workspace: Workspace) => {
   return roots.filter((path) => !roots.some((other) => other !== path && isWithin(path, other)));
 };
 
-const readOnlyOverlay = (input: ContainerSpecInput) => {
-  const gitCommonDir = input.workspace.gitCommonDir;
+const gitMounts = (input: ContainerSpecInput) => {
+  const overlay = input.gitOverlay;
 
-  if (gitCommonDir === undefined) {
-    return { mounts: [], copies: [] };
+  if (overlay === undefined || input.workspace.gitCommonDir === undefined) {
+    return [];
   }
 
-  const extra = input.gitOverlay ?? { dirs: [], files: [] };
-  const dirs = [...new Set([join(gitCommonDir, "hooks"), ...extra.dirs])];
-  const files = [...new Set([join(gitCommonDir, "config"), ...extra.files])];
-  const singleFile = input.capabilities.singleFileMount;
+  const snapshots = gitSnapshotsDir(input.stateDir, input.workspace.repoRoot);
+  const snapshotOf = (target: string) => bind(gitSnapshotPath(snapshots, target), target, true);
+  const files = input.capabilities.singleFileMount ? overlay.readOnlyFiles : [];
 
-  return {
-    mounts: [
-      ...dirs.map((path) => bind(path, path, true)),
-      ...(singleFile ? files.map((path) => bind(path, path, true)) : []),
-    ],
-    copies: singleFile ? [] : files.map((path) => ({ source: path, target: path })),
-  };
+  return [
+    ...overlay.selfBinds.map((path) => bind(path, path, false)),
+    ...overlay.readOnlyDirs.map(snapshotOf),
+    ...files.map(snapshotOf),
+  ];
 };
 
 const hostUser = (hostEnv: Record<string, string | undefined>, uid: number) =>
@@ -244,6 +244,10 @@ const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.version]: input.launcherVersion,
   ...(input.proxy === undefined ? {} : { [LABELS.proxyPolicyHash]: input.proxy.policyHash }),
   ...sessionsLabel(input.hostSessions),
+  ...(input.gitOverlay === undefined ? {} : { [LABELS.gitProtection]: GIT_PROTECTION }),
+  ...(input.workspace.gitCommonDir === undefined
+    ? {}
+    : { [LABELS.gitCommonDir]: input.workspace.gitCommonDir }),
 });
 
 const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
@@ -253,7 +257,6 @@ const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
 
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
   const { workspace, config } = input;
-  const overlay = readOnlyOverlay(input);
   const trust = trustMounts(input);
   const extraReadOnly = extraMounts(input).map((mount) => bind(mount.source, mount.target, true));
   const agentVolume = agentVolumeName(hostUser(input.hostEnv, input.hostUid), workspace.repoRoot);
@@ -267,7 +270,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     labels: baseLabels(input),
     mounts: [
       ...writableRoots(workspace).map((path) => bind(path, path, false)),
-      ...overlay.mounts,
+      ...gitMounts(input),
       ...extraReadOnly,
       volume(agentVolume, GUEST_PATHS.agentDir),
       ...sessionsMounts(input),
@@ -284,7 +287,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     init: true,
     resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
     sshAgent: sshAgentOf(input),
-    requiredCopies: [...overlay.copies, ...trust.copies],
+    requiredCopies: trust.copies,
     copiesDir: copiesDir(input.stateDir, workspace.repoRoot),
   });
 };

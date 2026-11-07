@@ -46,18 +46,32 @@ describe("writeBackPackageChange", () => {
     );
   });
 
-  it("replaces the entry for the same npm package in place, whatever its version", async () => {
+  it("replaces the entry for the same npm package in place with the given source, whatever its version", async () => {
     const host = await setup({ packages: ["npm:a", "npm:@scope/tool@1.0.0", "npm:b"] });
-    const entry = { source: "npm:@scope/tool@2.0.0", skills: [] };
 
     await writeBackPackageChange({
       hostAgentDir: host.hostAgentDir,
-      source: "npm:@scope/tool",
+      source: "npm:@scope/tool@2.0.0",
       kind: "install",
-      entry,
     });
 
-    expect(JSON.parse(await host.read()).packages).toEqual(["npm:a", entry, "npm:b"]);
+    expect(JSON.parse(await host.read()).packages).toEqual(["npm:a", "npm:@scope/tool@2.0.0", "npm:b"]);
+  });
+
+  it("updates only the source of a host object entry and keeps its other fields", async () => {
+    const host = await setup({
+      packages: [{ source: "npm:tool@1.0.0", skills: ["review"], autoload: false }],
+    });
+
+    await writeBackPackageChange({
+      hostAgentDir: host.hostAgentDir,
+      source: "npm:tool@2.0.0",
+      kind: "install",
+    });
+
+    expect(JSON.parse(await host.read()).packages).toEqual([
+      { source: "npm:tool@2.0.0", skills: ["review"], autoload: false },
+    ]);
   });
 
   it("removes a package and reports no change when it is absent", async () => {

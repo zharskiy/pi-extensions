@@ -8,7 +8,13 @@ export {
   sanitizeMcpServer,
   seedMcpAuth,
 } from "./mcp-auth.ts";
-export { packageSourceKey, sourceOfEntry, withoutSourceCredential } from "./package-source.ts";
+export {
+  entryMatches,
+  packageSourceKey,
+  packagesOf,
+  sourceOfEntry,
+  withoutSourceCredential,
+} from "./package-source.ts";
 export { privateHostNotices } from "./private-hosts.ts";
 export { locateBundledPi, readProviderHosts } from "./provider-hosts.ts";
 export type {

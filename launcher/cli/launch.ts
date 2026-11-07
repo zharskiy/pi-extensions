@@ -13,8 +13,12 @@ import {
   ensureContainer,
   findCurrentContainer,
   forwardedEnv,
+  type GitOverlay,
+  gitLaunchNotices,
+  LABELS,
   type LauncherContainerSpec,
   listenFor,
+  readyGitOverlay,
   runPi,
 } from "../container/index.ts";
 import {
@@ -25,13 +29,14 @@ import {
 } from "../image/index.ts";
 import { renderAgentDir, syncWritableFiles } from "../provision/index.ts";
 import { guestProxyUrl, type TrustBundle } from "../proxy/index.ts";
-import { errorMessage, LauncherError, launcherRoot } from "../shared/index.ts";
+import { errorMessage, LauncherError, launcherRoot, stateLayout } from "../shared/index.ts";
 import {
   assertSafeWorkspace,
   assertWithinWorkspaceRoots,
   discoverWorkspace,
   type HostSessions,
   type Workspace,
+  withGitPinLock,
 } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
@@ -46,7 +51,14 @@ import {
 } from "./host-sessions.ts";
 import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
-import { beginSession, finishSession, type LaunchSession, othersLive, pruneEndedGrants } from "./sessions.ts";
+import {
+  beginSession,
+  finishSession,
+  gitGuardOf,
+  type LaunchSession,
+  othersLive,
+  pruneEndedGrants,
+} from "./sessions.ts";
 import { launcherVersion, piVersion } from "./versions.ts";
 
 export interface LaunchContext {
@@ -91,12 +103,16 @@ const PREPARING = "preparing pi sandbox, one time";
 const OUTDATED =
   "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
 
+const UNPROTECTED =
+  "pi-sandbox: the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
+
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
 const SIGNAL_EXIT_BASE = 128;
 
 export const openContext = async (deps: CliDeps, offline = false): Promise<LaunchContext> => {
-  const workspace = await discoverWorkspace(deps.cwd, deps.runner);
+  const stateDir = pathsOf(deps).stateDir;
+  const workspace = await discoverWorkspace(deps.cwd, deps.runner, stateLayout(stateDir).gitNoHooks);
   const { notices, ...effective } = await loadEffectiveConfig({
     repoRoot: workspace.repoRoot,
     env: deps.env,
@@ -106,7 +122,7 @@ export const openContext = async (deps: CliDeps, offline = false): Promise<Launc
 
   writeNotices(deps, notices);
 
-  return { workspace, effective, stateDir: pathsOf(deps).stateDir };
+  return { workspace, effective, stateDir };
 };
 
 const checkWorkspaceRoots = (deps: CliDeps, context: LaunchContext) => {
@@ -280,36 +296,48 @@ export const prepareContainer = async (
 
   await readyHostSessions(deps, context, backend, { sessions, launchId: session.launchId });
 
-  const spec = buildContainerSpec({
-    workspace: context.workspace,
-    config: context.effective.config,
-    image,
-    hostEnv: deps.env,
-    hostUid: deps.uid,
-    hostGid: deps.gid,
-    platform: deps.platform,
-    capabilities: backend.capabilities,
-    stateDir: context.stateDir,
-    gitOverlay: await discoverGitOverlay(context.workspace, deps.runner, deps.home),
-    proxy: route,
-    launcherVersion: await launcherVersion(),
-    configHash: configHash(context.effective.config),
-    renderDir: render.renderDir,
-    trust: route === undefined ? undefined : host.trust,
-    repoProxyToken: proxy?.repoToken,
-    hostSessions: sessions,
-  });
+  writeNotices(deps, await gitLaunchNotices(context.workspace));
+
+  const version = await launcherVersion();
+  const gitGuard = gitGuardOf(deps, context);
+  const specWith = (gitOverlay: GitOverlay) =>
+    buildContainerSpec({
+      workspace: context.workspace,
+      config: context.effective.config,
+      image,
+      hostEnv: deps.env,
+      hostUid: deps.uid,
+      hostGid: deps.gid,
+      platform: deps.platform,
+      capabilities: backend.capabilities,
+      stateDir: context.stateDir,
+      gitOverlay,
+      proxy: route,
+      launcherVersion: version,
+      configHash: configHash(context.effective.config),
+      renderDir: render.renderDir,
+      trust: route === undefined ? undefined : host.trust,
+      repoProxyToken: proxy?.repoToken,
+      hostSessions: sessions,
+    });
+  const wanted = specWith(await discoverGitOverlay(context.workspace, gitGuard));
 
   cancelled?.throwIfAborted();
 
-  const { id, created, outdated } = await ensureContainer({
+  const { id, created, outdated, spec, labels } = await ensureContainer({
     backend,
-    spec,
+    spec: wanted,
     othersLive: () => othersLive(context.stateDir, session),
+    beforeStart: async () => specWith(await readyGitOverlay(context.workspace, gitGuard)),
+    aroundStart: (start) => withGitPinLock(context.stateDir, context.workspace, start),
   });
 
   if (outdated) {
     writeLine(deps.stderr, OUTDATED);
+  }
+
+  if (outdated && context.workspace.isGitRepo && labels[LABELS.gitProtection] === undefined) {
+    writeLine(deps.stderr, UNPROTECTED);
   }
 
   if (created) {

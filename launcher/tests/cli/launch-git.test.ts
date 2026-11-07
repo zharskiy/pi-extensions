@@ -1,0 +1,97 @@
+import { lstat, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { run } from "../../cli/index.ts";
+import { registerSession } from "../../grants/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
+import { createFakeBackend } from "../support/fake-backend.ts";
+import { createHarness } from "./harness.ts";
+
+const harnesses: Array<{ cleanup(): Promise<void> }> = [];
+
+const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
+  const harness = await createHarness(options);
+
+  harnesses.push(harness);
+
+  return harness;
+};
+
+afterEach(async () => {
+  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
+});
+
+const UNPROTECTED =
+  "pi-sandbox: the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
+
+const absent = async (path: string) => (await lstat(path).catch(() => undefined)) === undefined;
+
+describe("the commondir pin around container starts", () => {
+  it("is in place at every start, a restart of the stopped container included, and gone after the last session", async () => {
+    const fake = createFakeBackend();
+    const pinsAtStart: string[] = [];
+    const harness = await harnessWith({
+      adapters: () => [
+        {
+          ...fake.backend,
+          startContainer: async (id: string) => {
+            pinsAtStart.push(await readFile(join(harness.repoRoot, ".git", "commondir"), "utf8"));
+
+            await fake.backend.startContainer(id);
+          },
+        },
+      ],
+    });
+    const pin = join(harness.repoRoot, ".git", "commondir");
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const [first] = [...fake.containers.keys()];
+
+    expect(await absent(pin)).toBe(true);
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect([...fake.containers.keys()]).toEqual([first]);
+    expect(pinsAtStart).toEqual([".\n", ".\n"]);
+    expect(await absent(pin)).toBe(true);
+  });
+
+  it("refuses a repository whose commondir the sandbox rewrote, naming the file, and starts nothing", async () => {
+    const fake = createFakeBackend();
+    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const pin = join(harness.repoRoot, ".git", "commondir");
+
+    await writeFile(pin, "../.x\n");
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(`pi-sandbox: git: ${pin} was not written by git or the launcher`);
+    expect(fake.containers.size).toBe(0);
+    expect(harness.calls.some((call) => call.file === "git")).toBe(false);
+  });
+
+  it("says so when it joins a running sandbox that predates the git snapshots", async () => {
+    const fake = createFakeBackend();
+    const harness = await harnessWith({ adapters: () => [fake.backend] });
+
+    await registerSession(harness.stateDir, {
+      launchId: "00000000000000aa",
+      repoHash: sha256Hex(harness.repoRoot),
+      startedAt: 1,
+      pid: process.pid,
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const [[id, entry] = []] = [...fake.containers.entries()];
+    const { "pi-sandbox.git-protection": _protection, ...labels } = entry?.summary.labels ?? {};
+
+    if (id !== undefined && entry !== undefined) {
+      fake.containers.set(id, { ...entry, summary: { ...entry.summary, labels } });
+    }
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["vendor"] } });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(UNPROTECTED);
+  });
+});

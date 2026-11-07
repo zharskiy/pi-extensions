@@ -114,6 +114,16 @@ const checkedMount = (given: string, context: ExtraMountContext, guarded: Protec
   return { source: real, target: absolute };
 };
 
+export const protectedPathGuard = (context: ExtraMountContext) => {
+  const guarded = protectedPaths(context);
+
+  return (path: string) => {
+    const real = realOrResolved(path);
+
+    return guarded.map((entry) => conflictOf(real, entry)).find((found) => found !== undefined);
+  };
+};
+
 export const resolveExtraMounts = (paths: string[], context: ExtraMountContext) => {
   const guarded = protectedPaths(context);
 

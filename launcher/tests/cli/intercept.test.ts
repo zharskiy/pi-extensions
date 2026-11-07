@@ -1,9 +1,9 @@
-import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, symlink } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { stateLayout } from "../../shared/index.ts";
+import { GUEST_PATHS, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
 
@@ -23,7 +23,7 @@ afterEach(async () => {
 
 const SETTINGS = "/home/pi/.pi/agent/settings.json";
 
-type PiAnswer = (args: string[], files: Map<string, string>) => number;
+type PiAnswer = (args: string[], files: Map<string, string>, workdir: string) => number;
 
 const streamText = (stream: NodeJS.ReadableStream | undefined) =>
   new Promise<string>((resolve) => {
@@ -65,7 +65,7 @@ const volumeBackend = (answer: PiAnswer) => {
 
       piRuns.push(args);
 
-      return answer(args, files);
+      return answer(args, files, spec.workdir ?? "/");
     }
 
     return 0;
@@ -74,15 +74,35 @@ const volumeBackend = (answer: PiAnswer) => {
   return { fake: createFakeBackend({ exec }), files, piRuns };
 };
 
+const LOCAL_SOURCE = /^(\/|\.|~)/;
+
+const storedForm = (source: string, workdir: string) =>
+  LOCAL_SOURCE.test(source) ? relative(GUEST_PATHS.agentDir, resolve(workdir, source)) : source;
+
+const volumePackages = (files: Map<string, string>) =>
+  (JSON.parse(files.get(SETTINGS) ?? "{}") as { packages?: unknown[] }).packages ?? [];
+
+const recording =
+  (packagesAfter: (packages: unknown[], args: string[], workdir: string) => unknown[]): PiAnswer =>
+  (args, files, workdir) => {
+    const settings = JSON.parse(files.get(SETTINGS) ?? "{}") as Record<string, unknown>;
+
+    files.set(
+      SETTINGS,
+      JSON.stringify({ ...settings, packages: packagesAfter(volumePackages(files), args, workdir) }),
+    );
+
+    return 0;
+  };
+
 const installing =
   (code: number): PiAnswer =>
-  (args, files) => {
-    const settings = JSON.parse(files.get(SETTINGS) ?? "{}") as { packages?: unknown[] };
-    const source = args[1] ?? "";
-    const packages = settings.packages ?? [];
-    const next = args[0] === "remove" ? packages.filter((entry) => entry !== source) : [...packages, source];
+  (args, files, workdir) => {
+    const stored = storedForm(args[1] ?? "", workdir);
+    const packages = volumePackages(files);
+    const next = args[0] === "remove" ? packages.filter((entry) => entry !== stored) : [...packages, stored];
 
-    files.set(SETTINGS, JSON.stringify({ ...settings, packages: next }));
+    recording(() => next)(args, files, workdir);
 
     return code;
   };
@@ -127,26 +147,105 @@ describe("pi install and pi remove", () => {
     expect(await run(["install", "/tmp/inside"], harness.deps)).toBe(0);
     expect(await hostSettings(harness)).toEqual({ packages: [] });
     expect(harness.stderr()).toContain("pi-sandbox: /tmp/inside is a path inside the sandbox");
-
-    expect(await run(["install", join(harness.repoRoot, "ext")], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: [join(harness.repoRoot, "ext")] });
   });
 
-  it("writes back a ~/ package under a ~/ extra read-only mount", async () => {
+  it("installs a package from the repository in the sandbox only", async () => {
     const volume = volumeBackend(installing(0));
     const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
 
-    await mkdir(join(harness.deps.home, "tools", "ext"), { recursive: true });
-
-    await harness.writeJson(harness.userConfigFile, { mounts: { extraReadOnly: ["~/tools"] } });
+    await mkdir(join(harness.repoRoot, "ext"), { recursive: true });
 
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
 
+    expect(await run(["install", "../ext"], harness.deps)).toBe(0);
+    expect(await hostSettings(harness)).toEqual({ packages: [] });
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: ../ext lies in the repository, which the sandbox can rewrite; installed in the sandbox only",
+    );
+  });
+
+  it("refuses a package outside the repository that links back into it", async () => {
+    const volume = volumeBackend(installing(0));
+    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const link = join(harness.deps.home, "tools", "ext");
+
+    await mkdir(join(harness.repoRoot, "ext"), { recursive: true });
+
+    await mkdir(join(harness.deps.home, "tools"), { recursive: true });
+
+    await symlink(join(harness.repoRoot, "ext"), link);
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { extraReadOnly: ["~/tools"] } });
+
     harness.deps.env.HOME = harness.deps.home;
 
-    expect(await run(["install", "~/tools/ext"], harness.deps)).toBe(0);
-    expect(harness.stderr()).not.toContain("is a path inside the sandbox");
-    expect(await hostSettings(harness)).toEqual({ packages: ["~/tools/ext"] });
+    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
+
+    expect(await run(["install", link], harness.deps)).toBe(0);
+    expect(await hostSettings(harness)).toEqual({ packages: [] });
+    expect(harness.stderr()).toContain("installed in the sandbox only");
+  });
+
+  it("writes back a package under an extra read-only mount as a path relative to the host agent dir", async () => {
+    const volume = volumeBackend(installing(0));
+    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const ext = join(harness.deps.home, "tools", "ext");
+    const file = join(harness.hostAgentDir, "settings.json");
+
+    await mkdir(ext, { recursive: true });
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { extraReadOnly: ["~/tools"] } });
+
+    harness.deps.env.HOME = harness.deps.home;
+
+    await harness.writeJson(file, { packages: [] });
+
+    expect(await run(["install", ext], harness.deps)).toBe(0);
+    expect(await hostSettings(harness)).toEqual({ packages: ["../../tools/ext"] });
+    expect(harness.stderr()).toContain(`pi-sandbox: added ../../tools/ext in ${file}`);
+  });
+
+  it("writes nothing and names both sources when the sandbox recorded a different entry for the package", async () => {
+    const swapped = "npm:fresh@git+https://attacker.example/x.git";
+    const volume = volumeBackend(recording((packages) => [...packages, swapped]));
+    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const file = join(harness.hostAgentDir, "settings.json");
+
+    await harness.writeJson(file, { packages: ["npm:old"] });
+
+    expect(await run(["install", "npm:fresh"], harness.deps)).toBe(0);
+    expect(await hostSettings(harness)).toEqual({ packages: ["npm:old"] });
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: the sandbox recorded ${swapped} instead of npm:fresh; ${file} was left as it is`,
+    );
+  });
+
+  it("writes the typed source into a host object entry, keeps the host fields and copies nothing from the volume", async () => {
+    const volume = volumeBackend(
+      recording(() => [{ source: "npm:tool@2.0.0", extensions: ["planted.js"], skills: [] }]),
+    );
+    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const file = join(harness.hostAgentDir, "settings.json");
+
+    await harness.writeJson(file, { packages: [{ source: "npm:tool@1.0.0", skills: ["review"] }] });
+
+    expect(await run(["install", "npm:tool@2.0.0"], harness.deps)).toBe(0);
+    expect(await hostSettings(harness)).toEqual({
+      packages: [{ source: "npm:tool@2.0.0", skills: ["review"] }],
+    });
+    expect(harness.stderr()).toContain(`pi-sandbox: added npm:tool@2.0.0 in ${file}`);
+  });
+
+  it("leaves the host alone when an install drops an entry or a remove finds none", async () => {
+    const volume = volumeBackend(recording(() => []));
+    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+
+    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: ["npm:old"] });
+
+    expect(await run(["install", "npm:old"], harness.deps)).toBe(0);
+    expect(await run(["remove", "npm:ghost"], harness.deps)).toBe(0);
+    expect(await hostSettings(harness)).toEqual({ packages: ["npm:old"] });
+    expect(harness.stderr()).not.toContain("removed");
   });
 
   it("passes a project install with -l straight through", async () => {

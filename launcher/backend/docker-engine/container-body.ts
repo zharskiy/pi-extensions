@@ -22,8 +22,8 @@ const STATES: Record<string, ContainerState> = {
 const bindOf = (mount: MountSpec) =>
   mount.readOnly ? `${mount.source}:${mount.target}:ro` : `${mount.source}:${mount.target}`;
 
-const volumeOf = (mount: MountSpec) => ({
-  Type: "volume",
+const mountOf = (mount: MountSpec) => ({
+  Type: mount.kind,
   Source: mount.source,
   Target: mount.target,
   ReadOnly: mount.readOnly,
@@ -58,10 +58,8 @@ export const containerBody = (spec: ContainerSpec, agentSocket?: string) => ({
   WorkingDir: spec.workdir,
   User: spec.user,
   HostConfig: {
-    Binds: [...spec.mounts, ...agentMounts(spec, agentSocket)]
-      .filter((mount) => mount.kind === "bind")
-      .map(bindOf),
-    Mounts: spec.mounts.filter((mount) => mount.kind === "volume").map(volumeOf),
+    Binds: agentMounts(spec, agentSocket).map(bindOf),
+    Mounts: spec.mounts.map(mountOf),
     NetworkMode: networkModeOf(spec.network),
     ReadonlyRootfs: spec.readOnlyRoot,
     Tmpfs: Object.fromEntries(spec.tmpfs.map(tmpfsEntry)),

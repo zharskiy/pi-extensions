@@ -10,12 +10,16 @@ export interface EnsureContainerInput {
   backend: Backend;
   spec: LauncherContainerSpec;
   othersLive?: () => Promise<boolean>;
+  beforeStart?: () => Promise<LauncherContainerSpec>;
+  aroundStart?: <T>(start: () => Promise<T>) => Promise<T>;
 }
 
 export interface EnsuredContainer {
   id: string;
   created: boolean;
   outdated: boolean;
+  spec: LauncherContainerSpec;
+  labels: Record<string, string>;
 }
 
 export interface Garbage {
@@ -119,18 +123,28 @@ const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promi
 
   await backend.startContainer(id);
 
-  return { id, created: true, outdated: false };
+  return { id, created: true, outdated: false, spec, labels: spec.labels };
 };
 
 const repoContainers = (backend: Backend, spec: LauncherContainerSpec) =>
   backend.findContainers({ [LABELS.repoHash]: spec.labels[LABELS.repoHash] ?? "" });
 
-const reuse = async (backend: Backend, container: ContainerSummary, outdated: boolean) => {
+const reuse = async (
+  backend: Backend,
+  container: ContainerSummary,
+  spec: LauncherContainerSpec,
+): Promise<EnsuredContainer> => {
   if (container.state !== "running") {
     await backend.startContainer(container.id);
   }
 
-  return { id: container.id, created: false, outdated };
+  return {
+    id: container.id,
+    created: false,
+    outdated: !isCurrent(container, spec.labels),
+    spec,
+    labels: container.labels,
+  };
 };
 
 const createOrAdopt = async (backend: Backend, spec: LauncherContainerSpec) => {
@@ -143,8 +157,33 @@ const createOrAdopt = async (backend: Backend, spec: LauncherContainerSpec) => {
       throw error;
     }
 
-    return reuse(backend, raced, !isCurrent(raced, spec.labels));
+    return reuse(backend, raced, spec);
   }
+};
+
+const startOrCreateNow = async (input: EnsureContainerInput, stopped: ContainerSummary | undefined) => {
+  const { backend } = input;
+  const spec = (await input.beforeStart?.()) ?? input.spec;
+
+  await recordWanted(spec);
+
+  if (stopped !== undefined && isCurrent(stopped, spec.labels)) {
+    await placeCopies(spec);
+
+    return reuse(backend, stopped, spec);
+  }
+
+  if (stopped !== undefined) {
+    await discard(backend, stopped, true);
+  }
+
+  return createOrAdopt(backend, spec);
+};
+
+const startOrCreate = (input: EnsureContainerInput, stopped: ContainerSummary | undefined) => {
+  const start = () => startOrCreateNow(input, stopped);
+
+  return input.aroundStart === undefined ? start() : input.aroundStart(start);
 };
 
 const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContainer> => {
@@ -155,21 +194,25 @@ const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContain
   const existing = await repoContainers(backend, spec);
   const current = existing.find((container) => isCurrent(container, spec.labels));
 
-  if (current !== undefined) {
+  if (current?.state === "running") {
     await placeCopies(spec);
 
-    return reuse(backend, current, false);
+    return reuse(backend, current, spec);
   }
 
   const shared = existing.find((container) => container.state === "running");
 
   if (shared !== undefined && (await input.othersLive?.()) === true) {
-    return reuse(backend, shared, true);
+    return reuse(backend, shared, spec);
   }
 
-  await Promise.all(existing.map((container) => discard(backend, container, true)));
+  await Promise.all(
+    existing
+      .filter((container) => container !== current)
+      .map((container) => discard(backend, container, true)),
+  );
 
-  return createOrAdopt(backend, spec);
+  return startOrCreate(input, current);
 };
 
 export const ensureContainer = (input: EnsureContainerInput) =>
@@ -212,6 +255,29 @@ const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] 
 
 export const listLauncherContainers = async (backend: Backend) =>
   (await backend.findContainers(MANAGED)).filter(isAgent);
+
+const sharesGitDir = (container: ContainerSummary, gitCommonDir: string) => {
+  const other = container.labels[LABELS.gitCommonDir];
+
+  return other !== undefined && (isWithin(other, gitCommonDir) || isWithin(gitCommonDir, other));
+};
+
+export const gitDirInUseElsewhere = async (backend: Backend, workspace: Workspace) => {
+  const gitCommonDir = workspace.gitCommonDir;
+
+  if (gitCommonDir === undefined) {
+    return false;
+  }
+
+  const own = repoHash(workspace.repoRoot);
+
+  return (await listLauncherContainers(backend)).some(
+    (container) =>
+      container.state !== "stopped" &&
+      container.labels[LABELS.repoHash] !== own &&
+      sharesGitDir(container, gitCommonDir),
+  );
+};
 
 export const removeRepoContainer = async (backend: Backend, repoRoot: string) => {
   const existing = await backend.findContainers({ [LABELS.repoHash]: repoHash(repoRoot) });

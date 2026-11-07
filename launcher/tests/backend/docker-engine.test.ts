@@ -324,8 +324,15 @@ describe("docker-engine container translation", () => {
           WorkingDir: "/work/repo",
           User: "501:20",
           HostConfig: {
-            Binds: ["/work/repo:/work/repo", "/work/repo/.git/hooks:/work/repo/.git/hooks:ro"],
+            Binds: [],
             Mounts: [
+              { Type: "bind", Source: "/work/repo", Target: "/work/repo", ReadOnly: false },
+              {
+                Type: "bind",
+                Source: "/work/repo/.git/hooks",
+                Target: "/work/repo/.git/hooks",
+                ReadOnly: true,
+              },
               {
                 Type: "volume",
                 Source: "pi-sandbox-agent-u1",

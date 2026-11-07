@@ -8,6 +8,7 @@ import {
   collectGarbage,
   ensureContainer,
   findCurrentContainer,
+  gitDirInUseElsewhere,
   listLauncherContainers,
   removeRepoContainer,
   stopIdleContainer,
@@ -92,7 +93,7 @@ describe("ensureContainer", () => {
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
     const second = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(second).toEqual({ id: first.id, created: false, outdated: false });
+    expect(second).toMatchObject({ id: first.id, created: false, outdated: false });
     expect(fake.containers.size).toBe(1);
   });
 
@@ -104,7 +105,7 @@ describe("ensureContainer", () => {
 
     const second = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(second).toEqual({ id: first.id, created: false, outdated: false });
+    expect(second).toMatchObject({ id: first.id, created: false, outdated: false });
     expect(fake.containers.get(first.id)?.summary.state).toBe("running");
   });
 
@@ -173,7 +174,7 @@ describe("ensureContainer", () => {
       othersLive: async () => true,
     });
 
-    expect(second).toEqual({ id: first.id, created: false, outdated: true });
+    expect(second).toMatchObject({ id: first.id, created: false, outdated: true });
     expect(fake.stops).toEqual([]);
     expect([...fake.containers.keys()]).toEqual([first.id]);
   });
@@ -218,7 +219,7 @@ describe("ensureContainer", () => {
     };
     const result = await ensureContainer({ backend, spec });
 
-    expect(result).toEqual({ id: raced.id, created: false, outdated: false });
+    expect(result).toMatchObject({ id: raced.id, created: false, outdated: false });
     expect(fake.containers.get(raced.id)?.summary.state).toBe("running");
   });
 
@@ -312,7 +313,7 @@ describe("stopIdleContainer", () => {
 
     const again = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(again).toEqual({ id, created: false, outdated: false });
+    expect(again).toMatchObject({ id, created: false, outdated: false });
     expect(fake.containers.get(id)?.summary.state).toBe("running");
   });
 
@@ -420,5 +421,39 @@ describe("relay garbage collection", () => {
     relay(fake, "policy");
 
     expect(await listLauncherContainers(fake.backend)).toEqual([]);
+  });
+});
+
+describe("gitDirInUseElsewhere", () => {
+  it("finds a running sandbox of another checkout that shares or holds this git dir", async () => {
+    const fake = createFakeBackend();
+    const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
+    const worktree = {
+      cwd: "/work/wt",
+      repoRoot: "/work/wt",
+      gitCommonDir: "/work/repo/.git",
+      isGitRepo: true,
+    };
+    const submodule = {
+      cwd: "/work/repo/lib",
+      repoRoot: "/work/repo/lib",
+      gitCommonDir: "/work/repo/.git/modules/lib",
+      isGitRepo: true,
+    };
+    const unrelated = {
+      cwd: "/work/other",
+      repoRoot: "/work/other",
+      gitCommonDir: "/work/other/.git",
+      isGitRepo: true,
+    };
+
+    expect(await gitDirInUseElsewhere(fake.backend, worktree)).toBe(true);
+    expect(await gitDirInUseElsewhere(fake.backend, submodule)).toBe(true);
+    expect(await gitDirInUseElsewhere(fake.backend, unrelated)).toBe(false);
+    expect(await gitDirInUseElsewhere(fake.backend, workspace)).toBe(false);
+
+    await stopIdleContainer(fake.backend, id);
+
+    expect(await gitDirInUseElsewhere(fake.backend, worktree)).toBe(false);
   });
 });

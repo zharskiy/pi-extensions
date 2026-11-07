@@ -13,6 +13,8 @@ export const LABELS = {
   relay: "pi-sandbox.relay",
   version: "pi-sandbox.version",
   sessionDir: "pi-sandbox.session-dir",
+  gitProtection: "pi-sandbox.git-protection",
+  gitCommonDir: "pi-sandbox.git-common-dir",
 } as const;
 
 const SHORT = 12;

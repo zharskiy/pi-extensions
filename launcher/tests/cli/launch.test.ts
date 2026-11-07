@@ -176,12 +176,14 @@ describe("pi [args]", () => {
     const harness = await harnessWith({
       adapters: () => [fake.backend],
       respond: (call) =>
-        call.file === "git" && call.args[1] === "--show-toplevel"
+        call.file === "git" && call.args.includes("--show-toplevel")
           ? { stdout: `${harness.deps.home}\n${harness.deps.home}/.git\n` }
           : undefined,
     });
 
     await mkdir(join(harness.deps.home, ".git"), { recursive: true });
+
+    harness.deps.cwd = harness.deps.home;
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(

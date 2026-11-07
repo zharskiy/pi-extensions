@@ -57,7 +57,6 @@ export interface PackageChange {
   hostAgentDir: string;
   source: string;
   kind: PackageChangeKind;
-  entry?: unknown;
 }
 
 export interface BundledPi {

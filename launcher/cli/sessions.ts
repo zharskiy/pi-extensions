@@ -1,8 +1,14 @@
 import type { Backend } from "../backend/index.ts";
-import { findRepoContainer, stopIdleContainer } from "../container/index.ts";
+import {
+  findRepoContainer,
+  type GitGuardContext,
+  gitDirInUseElsewhere,
+  gitSessionEndNotices,
+  stopIdleContainer,
+} from "../container/index.ts";
 import { endSession, liveSessions, newLaunchId, pruneGrants, registerSession } from "../grants/index.ts";
 import { errorMessage } from "../shared/index.ts";
-import { type CliDeps, writeLine } from "./deps.ts";
+import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 
 export interface LaunchSession {
@@ -33,6 +39,21 @@ const stopRepoContainer = async (backend: Backend, context: LaunchContext) => {
 
 type Sweep = (full: boolean) => Promise<void>;
 
+export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardContext => ({
+  runner: deps.runner,
+  home: deps.home,
+  env: deps.env,
+  stateDir: context.stateDir,
+});
+
+const settleGit = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+  const notices = await gitSessionEndNotices(context.workspace, gitGuardOf(deps, context), () =>
+    gitDirInUseElsewhere(backend, context.workspace),
+  ).catch((error: unknown) => [`warning: git: the check after the session failed: ${errorMessage(error)}`]);
+
+  writeNotices(deps, notices);
+};
+
 export const finishSession = async (
   deps: CliDeps,
   context: LaunchContext,
@@ -50,6 +71,8 @@ export const finishSession = async (
         await stopRepoContainer(backend, context);
 
         last.stopped = true;
+
+        await settleGit(deps, context, backend);
 
         await sweep?.(true);
       },

@@ -18,6 +18,15 @@ const BAKED_EXTENSIONS_SOURCE = "/opt/pi-sandbox/extensions/node_modules/pi-exte
 
 const EXTENSIONS_NPM_KEY = "npm:pi-extensions-mz";
 
+const HOST_OWNED_SETTINGS = [
+  "npmCommand",
+  "selfUpdateCommand",
+  "shellPath",
+  "shellCommandPrefix",
+  "externalEditor",
+  "httpProxy",
+];
+
 const sameValue = (left: unknown, right: unknown) =>
   left === undefined || right === undefined ? left === right : stableHash(left) === stableHash(right);
 
@@ -56,6 +65,13 @@ export const mergeTopLevel = (
     }),
   );
 };
+
+export const withHostOwnedSettings = (merged: JsonObject, host: JsonObject): JsonObject => ({
+  ...Object.fromEntries(Object.entries(merged).filter(([key]) => !HOST_OWNED_SETTINGS.includes(key))),
+  ...Object.fromEntries(
+    HOST_OWNED_SETTINGS.flatMap((key) => (Object.hasOwn(host, key) ? [[key, host[key]]] : [])),
+  ),
+});
 
 const isLocalSource = (source: string) =>
   source.startsWith("/") || source.startsWith("~") || source.startsWith(".");

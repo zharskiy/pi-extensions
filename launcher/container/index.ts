@@ -1,9 +1,17 @@
-export { discoverGitOverlay } from "./git-overlay.ts";
+export {
+  discoverGitOverlay,
+  type GitGuardContext,
+  type GitOverlay,
+  gitLaunchNotices,
+  gitSessionEndNotices,
+  readyGitOverlay,
+} from "./git-overlay.ts";
 export {
   collectGarbage,
   ensureContainer,
   findCurrentContainer,
   findRepoContainer,
+  gitDirInUseElsewhere,
   isCurrentContainer,
   policyHashesInUse,
   removeRepoContainer,

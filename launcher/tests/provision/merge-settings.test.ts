@@ -126,6 +126,31 @@ describe("syncWritableFiles", () => {
     expect(writes(other.fake.execs)[guest("settings.json")]).toEqual({ packages: [BAKED, "npm:other"] });
   });
 
+  it("keeps command and proxy settings from the host and drops the ones the volume planted", async () => {
+    const planted = {
+      npmCommand: ["sh", "-c", "planted"],
+      selfUpdateCommand: ["planted"],
+      shellPath: "/planted/sh",
+      shellCommandPrefix: "planted;",
+      externalEditor: "planted",
+      httpProxy: "http://planted.example:1",
+      theme: "volume",
+    };
+    const env = await setup({ "settings.json": planted });
+
+    await writeText(
+      join(stateLayout(env.stateDir).sync("repo1"), "settings.json"),
+      JSON.stringify({ shellPath: "/bin/zsh" }),
+    );
+
+    await env.sync({ shellPath: "/bin/zsh" });
+
+    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({
+      theme: "volume",
+      shellPath: "/bin/zsh",
+    });
+  });
+
   it("applies host deletions against the last synced copy", async () => {
     const env = await setup({ "settings.json": { theme: "dark", local: 1 } });
 
@@ -217,25 +242,45 @@ describe("readVolumeSettings and packageChangeFor", () => {
     expect(await readVolumeSettings(missing.backend, "c1")).toBeUndefined();
   });
 
-  it("reports installs, changed entries, removals and no-ops for one source", () => {
-    const entry = { source: "npm:tool@2.0.0", skills: [] };
+  it("reports an install only when the sandbox recorded the exact source asked for", () => {
+    const install = (source: string) => ({ kind: "install" as const, source });
 
-    expect(packageChangeFor({ packages: [] }, { packages: ["npm:tool@1.0.0"] }, "npm:tool")).toEqual({
+    expect(packageChangeFor({ packages: [] }, { packages: ["npm:tool"] }, install("npm:tool"))).toEqual({
       kind: "install",
-      entry: "npm:tool@1.0.0",
     });
     expect(
-      packageChangeFor({ packages: ["npm:tool@1.0.0"] }, { packages: [entry] }, "npm:tool@2.0.0"),
-    ).toEqual({
-      kind: "install",
-      entry,
-    });
+      packageChangeFor(
+        { packages: ["npm:tool@1.0.0"] },
+        { packages: [{ source: "npm:tool@2.0.0", skills: [] }] },
+        install("npm:tool@2.0.0"),
+      ),
+    ).toEqual({ kind: "install" });
     expect(
-      packageChangeFor({ packages: ["npm:tool", "npm:x"] }, { packages: ["npm:x"] }, "npm:tool"),
+      packageChangeFor(
+        { packages: [] },
+        { packages: ["npm:tool@git+https://attacker.example/x.git"] },
+        install("npm:tool"),
+      ),
+    ).toEqual({ kind: "mismatch", recorded: "npm:tool@git+https://attacker.example/x.git" });
+    expect(
+      packageChangeFor({ packages: ["npm:x"] }, { packages: ["npm:x"] }, install("npm:x")),
+    ).toBeUndefined();
+    expect(
+      packageChangeFor({ packages: ["npm:tool@9"] }, { packages: ["npm:tool@9"] }, install("npm:tool")),
+    ).toEqual({ kind: "mismatch", recorded: "npm:tool@9" });
+    expect(packageChangeFor({ packages: ["npm:x"] }, { packages: [] }, install("npm:x"))).toBeUndefined();
+    expect(packageChangeFor(undefined, undefined, install("npm:x"))).toBeUndefined();
+  });
+
+  it("reports a removal only when an entry for the source existed before and none remains", () => {
+    const remove = { kind: "remove" as const, source: "npm:tool" };
+
+    expect(
+      packageChangeFor({ packages: ["npm:tool@1.0.0", "npm:x"] }, { packages: ["npm:x"] }, remove),
     ).toEqual({
       kind: "remove",
     });
-    expect(packageChangeFor({ packages: ["npm:x"] }, { packages: ["npm:x"] }, "npm:x")).toBeUndefined();
-    expect(packageChangeFor(undefined, undefined, "npm:x")).toBeUndefined();
+    expect(packageChangeFor({ packages: ["npm:x"] }, { packages: ["npm:x"] }, remove)).toBeUndefined();
+    expect(packageChangeFor({ packages: ["npm:tool"] }, { packages: ["npm:tool"] }, remove)).toBeUndefined();
   });
 });
