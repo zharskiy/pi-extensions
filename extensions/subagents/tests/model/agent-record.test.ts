@@ -2,7 +2,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadDefinitions } from "../../core/agent-definitions/loader.ts";
-import { type AgentDefinition, isLead } from "../../core/model/agent-record.ts";
+import {
+  type AgentDefinition,
+  type AgentRecord,
+  chainLinks,
+  chainTerminal,
+  isLead,
+} from "../../core/model/agent-record.ts";
+import { agentRecord } from "../support/agent-records.ts";
 import { PACKAGE_ROOT, tempDir } from "../support/subagents-harness.ts";
 
 const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
@@ -52,5 +59,39 @@ describe("isLead", () => {
       true,
       false,
     ]);
+  });
+});
+
+const indexOf = (records: AgentRecord[]) => new Map(records.map((record) => [record.id, record]));
+
+const ids = (records: AgentRecord[]) => records.map((record) => record.id);
+
+describe("chain walks", () => {
+  it("stops at a predecessor cycle", () => {
+    const records = indexOf([
+      agentRecord({ id: "a", predecessorId: "c" }),
+      agentRecord({ id: "b", predecessorId: "a" }),
+      agentRecord({ id: "c", predecessorId: "b" }),
+    ]);
+
+    expect(ids(chainLinks(records, records.get("c") as AgentRecord))).toEqual(["a", "b", "c"]);
+  });
+
+  it("stops at a successor cycle", () => {
+    const records = indexOf([
+      agentRecord({ id: "a", successorId: "b" }),
+      agentRecord({ id: "b", successorId: "c" }),
+      agentRecord({ id: "c", successorId: "a" }),
+    ]);
+
+    expect(chainTerminal(records, records.get("a") as AgentRecord).id).toBe("c");
+  });
+
+  it("stops at a record that is its own predecessor or successor", () => {
+    const record = agentRecord({ id: "a", predecessorId: "a", successorId: "a" });
+    const records = indexOf([record]);
+
+    expect(ids(chainLinks(records, record))).toEqual(["a"]);
+    expect(chainTerminal(records, record).id).toBe("a");
   });
 });

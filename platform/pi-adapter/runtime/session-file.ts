@@ -111,25 +111,17 @@ const transcriptItem = (entry: RawEntry): TranscriptItem | undefined => {
   return { kind: "assistant", raw: message };
 };
 
-const parseEntries = (lines: readonly string[]): RawEntry[] =>
-  lines
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as RawEntry;
-      } catch {
-        return undefined;
-      }
-    })
-    .filter((entry): entry is RawEntry => entry !== undefined);
+const parseEntries = (content: string): RawEntry[] => {
+  const entries = parseSessionEntries(content);
 
-const readLines = (file: string) => readFileSync(file, "utf8").split("\n");
+  migrateSessionEntries(entries);
 
-export const readSessionEntries = (file: string): unknown[] => parseEntries(readLines(file));
+  return entries as RawEntry[];
+};
 
-export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord => {
-  const entries = parseEntries(lines);
+export const readSessionEntries = (file: string): unknown[] => parseEntries(readFileSync(file, "utf8"));
 
+const sessionRecord = (entries: RawEntry[], recordEntry: string): SessionRecord => {
   const recordData = entries
     .filter((entry) => entry.type === "custom" && entry.customType === recordEntry)
     .map((entry) => entry.data as PromptRecordData)
@@ -140,8 +132,11 @@ export const parseSessionLines = (lines: readonly string[], recordEntry: string)
   return { providerPayload: recordData?.providerPayload, items };
 };
 
+export const parseSessionLines = (lines: readonly string[], recordEntry: string): SessionRecord =>
+  sessionRecord(parseEntries(lines.join("\n")), recordEntry);
+
 export const readSessionFile = (file: string, recordEntry: string): SessionRecord =>
-  parseSessionLines(readLines(file), recordEntry);
+  sessionRecord(parseEntries(readFileSync(file, "utf8")), recordEntry);
 
 const SUMMARY_ROLES = ["compactionSummary", "branchSummary"];
 
@@ -193,13 +188,10 @@ const leafPath = (entries: RawEntry[], leafId: string | null) => {
 };
 
 export const readSessionBranch = (file: string, leafId: string | null): SessionBranch => {
-  const entries = parseSessionEntries(readFileSync(file, "utf8"));
-
-  migrateSessionEntries(entries);
-
+  const entries = parseEntries(readFileSync(file, "utf8"));
   const branch = buildContextEntries(entries as SessionEntry[], leafId) as RawEntry[];
 
-  const custom = leafPath(entries as RawEntry[], leafId)
+  const custom = leafPath(entries, leafId)
     .filter((entry) => entry.type === "custom")
     .map((entry) => ({ customType: entry.customType ?? "", data: entry.data }));
 
