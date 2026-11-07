@@ -11,7 +11,7 @@ launcher/
 │   ├── main.ts              builds the real CliDeps and calls run
 │   ├── run.ts               the command table, routes argv (intercepted commands before the pass-through), renders LauncherError and unexpected errors
 │   ├── deps.ts              CliDeps: runner, env, home, cwd, streams, terminal, signals, platform, uid and gid, adapters, proxy control (ensure, list, stop, remove, control, denials, trust), bundledPi, resolveHost, confirm, now; writeNotices, hostAgentDirOf
-│   ├── launch.ts            LaunchContext, the pi pipeline, withSandbox and the steps other commands reuse (prepareImage with the layer, prepareContainer with render, sync and grant pruning)
+│   ├── launch.ts            LaunchContext, the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage with the layer, prepareContainer with render, sync and grant pruning)
 │   ├── derive.ts            the host side: host pi files, MCP token seed, provider host table, vault discovery, deriveSandboxPi, private-host notices, trust bundle; deriveVaultServers
 │   ├── sandbox-proxy.ts     starts the proxy with a minimal env and the discover command, the repository token, dynamic.json (under a lock) with the vault servers, env secrets over /control (no line breaks), the cap-aware denial summary on exit
 │   ├── mcp-auth-sync.ts     syncSandboxMcpAuth: containerMcpAuth and syncContainerMcpAuth into a container, with notices
@@ -57,7 +57,7 @@ launcher/
 │   ├── types.ts             Backend, BackendCapabilities, ContainerSpec, ExecSpec, ExecIo, ImageInfo, MountSpec, NetworkRef, ProxyRoute
 │   ├── select.ts            selectBackend, createDefaultAdapters
 │   ├── image-reference.ts   repository, tag and repo@digest of an image reference
-│   ├── docker-engine/       Docker Engine API adapter (backend name colima): socket, engine client, container body, exec session, images, volumes, relay per policy
+│   ├── docker-engine/       Docker Engine API adapter (backend name colima): socket, engine client, container body, exec session, images, volumes, relay per policy (kept while other repositories use it), the bridge gateway the proxy listens on for a native Linux engine
 │   └── apple/               Apple container adapter: backend.ts, cli.ts (every flag and JSON shape it assumes)
 ├── container/
 │   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, ssh agent, spec hash), repoVolumes, forwardedEnv
@@ -72,7 +72,7 @@ launcher/
 │   ├── xdg-open.mjs         /usr/local/bin/xdg-open in the image: one https: URL to POST /oauth/open, long-polls the callback and replays it to pi, --pi-sandbox-check
 │   ├── extensions.ts        resolveExtensionsSource (tarball pack cache, registry or none), packExtensionsTarball
 │   ├── build.ts             build context, ensureBuiltImage, recordedImage
-│   ├── layer.ts             ensureLayerImage: image.packages, npmGlobal and dockerfile on top of the base
+│   ├── layer.ts             ensureLayerImage: image.packages, npmGlobal and dockerfile on top of the base, the dockerfile allowlist with heredoc bodies skipped
 │   ├── record.ts            image.json with its layer record
 │   ├── build-trust.ts       the extra CAs in the build context
 │   └── build-proxy.ts       parent proxy build arguments, refused with credentials
@@ -112,12 +112,11 @@ launcher/
 ├── grants/
 │   ├── store.ts             grants.json: addGrant with the limits, revokeGrants, activeGrants, pruneGrants
 │   ├── sessions.ts          newLaunchId, registerSession, endSession, liveSessions, withRepoSessionLock
-│   ├── lock.ts              file lock written by link, with stale-pid takeover
 │   └── types.ts             Grant, GrantScope, SessionEntry
 ├── proxy/
 │   ├── daemon.ts            the proxy process entry
-│   ├── control.ts           ensureProxyRunning, readProxyInstances, stopProxy, removeProxyInstance, sendProxyControl, per-instance lock and control token
-│   ├── server.ts            CONNECT handling, token check, health, policy, denials, control and /oauth/open|callback|cancel endpoints
+│   ├── control.ts           ensureProxyRunning, readProxyInstances, stopProxy, removeProxyInstance, sendProxyControl, per-instance lock, control token, kept port and extra listen hosts
+│   ├── server.ts            CONNECT handling (address check before the 200, server name checked before the upstream dial), token check, health, policy, denials, control and /oauth/open|callback|cancel endpoints, per-host TLS contexts rechecked against the leaf on disk, extra listen hosts
 │   ├── denial-page.ts       createDenialPages: the 403 page over TLS for a denied CONNECT, with the mint rate and name limits
 │   ├── runtime.ts           live view of dynamic.json, repository tokens and grants
 │   ├── dynamic.ts           writeProxyDynamic, repoProxyToken, readDenials, extraAllowList
@@ -125,18 +124,18 @@ launcher/
 │   ├── policy.ts            decideConnect, restricted addresses, the denial reason
 │   ├── rules.ts             matchRule, header rewrite and response scrub
 │   ├── terminate.ts         TLS termination and credential injection for rule hosts and vault hosts, with the vault's token hook
-│   ├── parent.ts            parent proxy route and CONNECT through it
+│   ├── parent.ts            parent proxy route (IPv6 literal without brackets) and CONNECT through it
 │   ├── trust.ts             ensureTrustBundle: the launcher CA plus tls.extraCa
 │   ├── vault/               createVault: index.ts (the hook), discovery.ts (discoverCommand when the cache is missing), open.ts (authorize URL checks, rate limit), callback.ts (host listener, flows, long poll), token.ts (code, client and refresh placeholders, token responses), store.ts (vault entries), browser.ts (host open or xdg-open)
 │   ├── secrets/             createSecretResolver: env, file, command, pi-auth, mcp-oauth, cache, errors
 │   ├── sni.ts               ClientHello server name parsing
 │   ├── dial.ts              resolving dialer with the private-address filter
 │   ├── test-resolve.ts      PI_SANDBOX_TEST_RESOLVE, honoured only from the sources (live tests)
-│   ├── tls-ca.ts            launcher CA and leaf certificates through openssl
+│   ├── tls-ca.ts            launcher CA (created once under a lock, pair renamed into place) and leaf certificates through openssl
 │   ├── access-log.ts        JSON-line access log
 │   ├── settings.ts          proxy settings from the config and the cap, proxyPolicyHash
 │   └── files.ts             per-instance file paths under proxy/<policy hash>/ and the ProxyInstance record
-├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, stableHash, JSON files, writeFileAtomic, launcherPaths, launcherRoot, launcherEntry, expandHome, isWithin, BACKEND_NAMES, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, writeVaultEntry, the /oauth types), file-lock.ts (withFileLock, the mkdir lock pi uses)
+├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, stableHash, JSON files, writeFileAtomic, launcherPaths, launcherRoot, launcherEntry, expandHome, isWithin, BACKEND_NAMES, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, writeVaultEntry, the /oauth types), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
 ├── profiles/                solo.json, team.json, enterprise.json
 ├── examples/                org-baseline.team.json, org-baseline.enterprise.json (starting points for an org baseline)
 ├── schema/                  sandbox-config.schema.json

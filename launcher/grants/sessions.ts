@@ -1,8 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { LauncherError, stateLayout, writeJsonFile } from "../shared/index.ts";
-import { isProcessAlive, withFileLock } from "./lock.ts";
+import { isProcessAlive, LauncherError, stateLayout, withFileLock, writeJsonFile } from "../shared/index.ts";
 import type { EndSessionInput, SessionEntry } from "./types.ts";
 
 const LAUNCH_ID = /^[0-9a-f]{16}$/;

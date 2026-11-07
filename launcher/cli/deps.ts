@@ -20,6 +20,7 @@ interface ProxyRequest {
   egressCap: EgressCap;
   piCommand: string[];
   discoverCommand?: string[];
+  listenHosts?: string[];
 }
 
 interface DenialFilter {

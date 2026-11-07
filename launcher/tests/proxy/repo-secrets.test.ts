@@ -1,4 +1,5 @@
-import { rm } from "node:fs/promises";
+import { rm, stat, utimes } from "node:fs/promises";
+import { dirname } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { repoProxyToken } from "../../proxy/dynamic.ts";
 import { createRepoSecrets } from "../../proxy/repo-secrets.ts";
@@ -81,6 +82,22 @@ describe("per-repository env secrets", () => {
     await secrets.accept(message(await tokenHashOf(REPO_A), { rule: "from-a" }));
 
     await rm(stateLayout(state.stateDir).proxyRepoToken(POLICY_HASH, REPO_A), { force: true });
+
+    expect((await secrets.secretsOf(REPO_A)).size).toBe(0);
+  });
+
+  it("notices a removed token even when the tokens directory keeps its timestamp", async () => {
+    const secrets = setup();
+    const tokenFile = stateLayout(state.stateDir).proxyRepoToken(POLICY_HASH, REPO_A);
+
+    await secrets.accept(message(await tokenHashOf(REPO_A), { rule: "from-a" }));
+
+    const directory = dirname(tokenFile);
+    const before = await stat(directory);
+
+    await rm(tokenFile, { force: true });
+
+    await utimes(directory, before.atimeMs / 1000, before.mtimeMs / 1000);
 
     expect((await secrets.secretsOf(REPO_A)).size).toBe(0);
   });

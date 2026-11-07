@@ -77,7 +77,55 @@ const echoOnce = (socket: Socket, text: string) =>
 
 const publicResolve = async () => [{ address: "93.184.216.34", family: 4 }];
 
+const loopbackSix = await new Promise<boolean>((resolve) => {
+  const probe = createTcpServer();
+
+  probe.once("error", () => resolve(false));
+
+  probe.listen(0, "::1", () => probe.close(() => resolve(true)));
+});
+
 describe("parent proxy", () => {
+  it("dials a parent given as an IPv6 literal without its brackets", async () => {
+    const route = parentRouteFor("env", { HTTPS_PROXY: "http://[::1]:3128" }, resolverWith(undefined));
+    const explicit = parentRouteFor({ url: "http://[::1]:3128" }, {}, resolverWith(undefined));
+
+    expect([route?.host, route?.port, explicit?.host]).toEqual(["::1", 3128, "::1"]);
+  });
+
+  it.skipIf(!loopbackSix)("tunnels through a parent listening on [::1]", async () => {
+    const parent = createServer();
+
+    parent.on("connect", (_request, socket: Socket) => {
+      const upstream = connect({ host: "127.0.0.1", port: portOf(state.echo) });
+
+      upstream.once("connect", () => {
+        socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+
+        socket.pipe(upstream).pipe(socket);
+      });
+    });
+
+    await new Promise<void>((resolve) => parent.listen(0, "::1", () => resolve()));
+
+    try {
+      const route = parentRouteFor({ url: `http://[::1]:${portOf(parent)}` }, {}, resolverWith(undefined));
+      const socket = await createDialer({ parent: route, resolve: publicResolve })(
+        "api.example.test",
+        443,
+        "public",
+      );
+
+      expect(await echoOnce(socket, "over six")).toBe("over six");
+
+      socket.destroy();
+    } finally {
+      parent.closeAllConnections();
+
+      await close(parent);
+    }
+  });
+
   it("tunnels through the parent with Basic auth from the secret", async () => {
     const route = parentRouteFor(
       { url: `http://127.0.0.1:${portOf(state.parent)}`, auth: { env: "PARENT" } },

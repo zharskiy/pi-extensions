@@ -1,3 +1,4 @@
+import { isIPv4 } from "node:net";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import type {
   Backend,
@@ -18,6 +19,16 @@ export interface DockerEngineOptions {
   socketPath: string;
   runner: CommandRunner;
   home: string;
+  platform?: NodeJS.Platform;
+}
+
+interface EngineInfo {
+  OperatingSystem?: string;
+  SecurityOptions?: string[] | null;
+}
+
+interface BridgeInspect {
+  IPAM?: { Config?: Array<{ Gateway?: string }> | null };
 }
 
 interface EngineVersion {
@@ -35,13 +46,46 @@ const STOP_TIMEOUT_SECONDS = 5;
 
 const REPO_HASH_LABEL = "pi-sandbox.repo-hash";
 
+const DOCKER_DESKTOP = "Docker Desktop";
+
 export const createDockerEngineBackend = (options: DockerEngineOptions): Backend => {
   const client = createEngineClient(options.socketPath);
   const colimaProfile = colimaProfileOf(options.socketPath, options.home);
   const images = createImageOperations(client, options.runner);
   const volumes = createVolumeOperations(client);
   const hostAlias = colimaProfile === undefined ? DOCKER_HOST_ALIAS : LIMA_HOST;
-  const relay = createRelayOperations(client, hostAlias);
+  const native = (options.platform ?? process.platform) === "linux" && colimaProfile === undefined;
+
+  const findBridgeGateway = async () => {
+    const info = await client.json<EngineInfo>({ method: "GET", path: "/info" }).catch(() => undefined);
+    const rootless = (info?.SecurityOptions ?? []).some((option) => option.includes("rootless"));
+
+    if (info === undefined || rootless || (info.OperatingSystem ?? "").includes(DOCKER_DESKTOP)) {
+      return undefined;
+    }
+
+    const bridge = await client
+      .json<BridgeInspect>({ method: "GET", path: "/networks/bridge" })
+      .catch(() => undefined);
+
+    return (bridge?.IPAM?.Config ?? [])
+      .map((entry) => entry.Gateway ?? "")
+      .find((address) => isIPv4(address));
+  };
+
+  const bridgeGateway = { found: undefined as Promise<string | undefined> | undefined };
+
+  const nativeGateway = () => {
+    if (!native) {
+      return Promise.resolve(undefined);
+    }
+
+    bridgeGateway.found = bridgeGateway.found ?? findBridgeGateway();
+
+    return bridgeGateway.found;
+  };
+
+  const relay = createRelayOperations(client, hostAlias, nativeGateway);
 
   const capabilities: BackendCapabilities = {
     singleFileMount: true,
@@ -199,6 +243,11 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
     importVolume: volumes.importVolume,
     prepareProxyRoute: relay.prepareProxyRoute,
     pruneNetworks: relay.pruneNetworks,
+    proxyListenHosts: async () => {
+      const gateway = await nativeGateway();
+
+      return gateway === undefined ? [] : [gateway];
+    },
     status,
   };
 };

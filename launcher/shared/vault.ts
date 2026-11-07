@@ -1,6 +1,6 @@
 import { readFile, rename } from "node:fs/promises";
 import { writeFileAtomic } from "./atomic-write.ts";
-import { withFileLock } from "./file-lock.ts";
+import { withDirectoryLock } from "./file-lock.ts";
 import { placeholderFor } from "./placeholder.ts";
 import { stateLayout } from "./state-layout.ts";
 
@@ -166,7 +166,7 @@ export const loadVaultStore = async (path: string, options: { forWrite: boolean 
 export const readVaultStore = (stateDir: string): Promise<VaultStore> => {
   const layout = stateLayout(stateDir);
 
-  return withFileLock(layout.mcpAuthStoreLock, () =>
+  return withDirectoryLock(layout.mcpAuthStoreLock, () =>
     loadVaultStore(layout.mcpAuthStore, { forWrite: false }),
   );
 };
@@ -174,7 +174,7 @@ export const readVaultStore = (stateDir: string): Promise<VaultStore> => {
 export const writeVaultEntry = (stateDir: string, key: string, entry: VaultEntry | null): Promise<void> => {
   const layout = stateLayout(stateDir);
 
-  return withFileLock(layout.mcpAuthStoreLock, async () => {
+  return withDirectoryLock(layout.mcpAuthStoreLock, async () => {
     const current = await loadVaultStore(layout.mcpAuthStore, { forWrite: true });
     const { [key]: _replaced, ...others } = current;
     const next = entry === null ? others : { ...others, [key]: entry };

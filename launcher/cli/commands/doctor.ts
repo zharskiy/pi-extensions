@@ -123,8 +123,8 @@ const containerChecks = async (
   ];
 };
 
-const startedProxy = (deps: CliDeps, context: LaunchContext, host: HostSide) =>
-  openSandboxProxy(deps, context, host).catch((error: unknown) => errorMessage(error));
+const startedProxy = (deps: CliDeps, context: LaunchContext, host: HostSide, backend: Backend) =>
+  openSandboxProxy(deps, context, host, backend).catch((error: unknown) => errorMessage(error));
 
 interface Containers {
   created?: PreparedContainer;
@@ -170,7 +170,7 @@ const sandboxChecks = async (
   session: LaunchSession,
   sessions: HostSessions,
 ) => {
-  const proxy = await startedProxy(deps, context, host);
+  const proxy = await startedProxy(deps, context, host, backend);
 
   if (typeof proxy === "string") {
     return [

@@ -4,7 +4,7 @@ export { BACKEND_NAMES } from "./backend-names.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
 export { createProcessRunner } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";
-export { withFileLock } from "./file-lock.ts";
+export { isProcessAlive, withDirectoryLock, withFileLock } from "./file-lock.ts";
 export { sha256Hex, stableHash } from "./hash.ts";
 export { readJsonFile, writeJsonFile } from "./json-file.ts";
 export {

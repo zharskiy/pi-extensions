@@ -5,7 +5,9 @@ import { restrictedAddress } from "./policy.ts";
 
 export type DialAccess = "public" | "private";
 
-export type Dialer = (host: string, port: number, access: DialAccess, repoHash?: string) => Promise<Socket>;
+type Dial = (host: string, port: number, access: DialAccess, repoHash?: string) => Promise<Socket>;
+
+export type Dialer = Dial & { checkAddresses?: (host: string, access: DialAccess) => Promise<void> };
 
 type Resolve = (hostname: string) => Promise<LookupAddress[]>;
 
@@ -113,7 +115,7 @@ const direct =
   (host: string, port: number, access: DialAccess) =>
     connected(connect({ host, port, lookup: access === "public" ? lookups.public : lookups.private }));
 
-const checkBeforeParent = async (resolve: Resolve, host: string) => {
+const checkResolved = async (resolve: Resolve, host: string) => {
   const addresses = await resolve(host).catch((error: NodeJS.ErrnoException) => {
     if (UNRESOLVED.has(error.code ?? "")) {
       return [];
@@ -142,16 +144,25 @@ export const createDialer = ({ parent, resolve, overrides = new Map() }: DialerO
     private: lookupWith(resolveAll, (_, addresses) => addresses),
   });
   const resolveHost = resolve ?? systemResolve(resolveAll);
+  const isDirect = (host: string) => parent === undefined || bypassesParent(parent.noProxy, host);
 
-  return async (host, port, access, repoHash) => {
-    if (parent === undefined || bypassesParent(parent.noProxy, host)) {
+  const dial: Dial = async (host, port, access, repoHash) => {
+    if (parent === undefined || isDirect(host)) {
       return dialDirect(host, port, access);
     }
 
     if (access === "public") {
-      await checkBeforeParent(resolveHost, host);
+      await checkResolved(resolveHost, host);
     }
 
     return dialViaParent(parent, host, port, repoHash);
   };
+
+  const checkAddresses = async (host: string, access: DialAccess) => {
+    if (access === "public") {
+      await checkResolved(isDirect(host) ? systemResolve(resolveAll) : resolveHost, host);
+    }
+  };
+
+  return Object.assign(dial, { checkAddresses });
 };

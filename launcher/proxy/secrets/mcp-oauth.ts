@@ -5,6 +5,7 @@ import {
   type CommandRunner,
   stateLayout,
   type VaultEntry,
+  withDirectoryLock,
   withFileLock,
   writeFileAtomic,
 } from "../../shared/index.ts";
@@ -109,7 +110,7 @@ const storePath = (directory: string) => join(directory, "mcp-auth.json");
 const layoutOf = (deps: McpOAuthDeps) => stateLayout(dirname(deps.mcpAuthDir));
 
 const readStore = (deps: McpOAuthDeps) =>
-  withFileLock(layoutOf(deps).mcpAuthStoreLock, () => readJson(storePath(deps.mcpAuthDir)));
+  withDirectoryLock(layoutOf(deps).mcpAuthStoreLock, () => readJson(storePath(deps.mcpAuthDir)));
 
 const prepareOneServerDir = async (deps: McpOAuthDeps, key: string, server: string, href: string) => {
   const definition = await serverDefinition(deps, key, server);

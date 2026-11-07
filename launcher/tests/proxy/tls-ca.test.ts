@@ -1,4 +1,4 @@
-import { generateKeyPairSync, X509Certificate } from "node:crypto";
+import { createPrivateKey, generateKeyPairSync, X509Certificate } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,6 +59,56 @@ describe("launcher CA", () => {
     await expect(ca.leaf("../escape")).rejects.toBeInstanceOf(LauncherError);
   });
 
+  it("creates one consistent CA when several launchers open a new state dir at once", async () => {
+    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-first-"));
+
+    try {
+      const opened = await Promise.all(
+        Array.from({ length: 4 }, () => openLauncherCa({ stateDir, runner: createProcessRunner() })),
+      );
+      const certificate = new X509Certificate(await readFile(join(stateDir, "ca", "ca-cert.pem"), "utf8"));
+      const key = createPrivateKey(await readFile(join(stateDir, "ca", "ca-key.pem"), "utf8"));
+      const leaf = new X509Certificate((await opened[0]?.leaf("first.test"))?.cert ?? "");
+
+      expect(new Set(opened.map((ca) => ca.certPem)).size).toBe(1);
+      expect(opened[0]?.certPem).toBe(certificate.toString());
+      expect(certificate.checkPrivateKey(key)).toBe(true);
+      expect(leaf.checkIssued(certificate)).toBe(true);
+      expect((await readdir(join(stateDir, "ca"))).sort()).toEqual(["ca-cert.pem", "ca-key.pem", "leaf"]);
+    } finally {
+      await rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces a CA whose key does not match its certificate and keeps a valid one", async () => {
+    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-pair-"));
+
+    try {
+      const first = await openLauncherCa({ stateDir, runner: createProcessRunner() });
+      const again = await openLauncherCa({ stateDir, runner: createProcessRunner() });
+
+      expect(again.certPem).toBe(first.certPem);
+
+      await writeFile(
+        join(stateDir, "ca", "ca-key.pem"),
+        String(
+          generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({
+            type: "pkcs8",
+            format: "pem",
+          }),
+        ),
+      );
+
+      const replaced = await openLauncherCa({ stateDir, runner: createProcessRunner() });
+      const key = createPrivateKey(await readFile(join(stateDir, "ca", "ca-key.pem"), "utf8"));
+
+      expect(replaced.certPem).not.toBe(first.certPem);
+      expect(new X509Certificate(replaced.certPem).checkPrivateKey(key)).toBe(true);
+    } finally {
+      await rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
   it("mints one matching key and certificate when two daemons ask for the same host at once", async () => {
     const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-race-"));
     const first = await openLauncherCa({ stateDir, runner: createProcessRunner() });
@@ -112,7 +162,7 @@ describe("launcher CA", () => {
     await rm(stateDir, { recursive: true, force: true });
 
     expect(new X509Certificate(leaf.cert).checkIssued(new X509Certificate(ca.certPem))).toBe(true);
-    expect(entries.sort()).toEqual(["ca-cert.pem", "ca-key.pem", "ca.cnf"]);
+    expect(entries.sort()).toEqual(["ca-cert.pem", "ca-key.pem"]);
   });
 
   it("prunes expired or unreadable leaves and keeps valid ones", async () => {

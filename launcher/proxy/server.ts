@@ -1,5 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo, Socket } from "node:net";
+import {
+  type AddressInfo,
+  createServer as createNetServer,
+  type Server as NetServer,
+  type Socket,
+} from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
@@ -27,7 +32,7 @@ import type { LeafCertificate } from "./tls-ca.ts";
 import type { VaultHook, VaultReply } from "./vault/index.ts";
 
 export interface ProxyServerOptions {
-  listen: { host: string; port: number };
+  listen: { host: string; port: number; extraHosts?: string[] };
   policy: EgressPolicy;
   policyHash?: string;
   controlToken: string;
@@ -43,7 +48,9 @@ export interface ProxyServerOptions {
   dial?: Dialer;
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
+  leafRecheckMs?: number;
   onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
+  onListenError?: (line: string) => void;
   vault?: VaultHook;
   denialPages?: { maxNames?: number; mintsPerMinute?: number };
 }
@@ -63,6 +70,12 @@ interface Connection {
   client: Socket;
 }
 
+interface CachedContext {
+  cert: string;
+  context: SecureContext;
+  checkedAt: number;
+}
+
 type Caller = { kind: "repo"; repoHash: string } | { kind: "control" };
 
 type DenialInput = Pick<Denial, "rule" | "reason">;
@@ -80,6 +93,8 @@ const HANDSHAKE_RECORD = 0x16;
 const MAX_HELLO_BYTES = 16_389;
 
 const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
+
+const DEFAULT_LEAF_RECHECK_MS = 60_000;
 
 const MAX_DENIALS = 200;
 
@@ -282,7 +297,8 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const sockets = new Set<Socket>();
   const helloTimeoutMs = options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS;
   const denials = new Map<string, DenialRecord[]>();
-  const contexts = new Map<string, Promise<SecureContext>>();
+  const leafRecheckMs = options.leafRecheckMs ?? DEFAULT_LEAF_RECHECK_MS;
+  const contexts = new Map<string, Promise<CachedContext>>();
   const gatewayPath = options.gateway === undefined ? undefined : new URL(options.gateway.url).pathname;
 
   const track = (socket: Socket) => {
@@ -392,24 +408,35 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     return isGateway || isPrivate ? "private" : "public";
   };
 
-  const secureContextFor = (host: string) => {
-    const known = contexts.get(host);
+  const loadContext = async (
+    ca: NonNullable<ProxyServerOptions["ca"]>,
+    host: string,
+    known: CachedContext | undefined,
+  ): Promise<CachedContext> => {
+    const leaf = await ca.leaf(host);
+    const context = known?.cert === leaf.cert ? known.context : createSecureContext(leaf);
 
-    if (known !== undefined) {
-      return known;
-    }
+    return { cert: leaf.cert, context, checkedAt: Date.now() };
+  };
 
+  const secureContextFor = async (host: string) => {
     if (options.ca === undefined) {
-      return Promise.reject(new LauncherError("the proxy needs the launcher CA to terminate TLS"));
+      throw new LauncherError("the proxy needs the launcher CA to terminate TLS");
     }
 
-    const created = options.ca.leaf(host).then((leaf) => createSecureContext(leaf));
+    const known = await contexts.get(host)?.catch(() => undefined);
 
-    contexts.set(host, created);
+    if (known !== undefined && Date.now() - known.checkedAt < leafRecheckMs) {
+      return known.context;
+    }
 
-    created.catch(() => contexts.delete(host));
+    const loading = loadContext(options.ca, host, known);
 
-    return created;
+    contexts.set(host, loading);
+
+    loading.catch(() => contexts.delete(host));
+
+    return (await loading).context;
   };
 
   const isGatewayTarget = (host: string, port: number) => isGatewayHost(host, port, options.policy);
@@ -565,48 +592,73 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     client.resume();
   };
 
-  const checkHello = async (connection: Connection, upstream: Socket, head: Buffer) => {
-    const hello = await readClientHello(connection.client, head, helloTimeoutMs);
-    const sni = parseServerName(hello);
+  const helloDecision = (connection: Connection, sni: string | undefined) =>
+    sni === undefined
+      ? ({ allowed: false, rule: "sni", reason: "no TLS ClientHello with a server name" } as const)
+      : decideConnect(
+          { host: connection.host, port: connection.port, sni },
+          options.policy,
+          connection.extras,
+        );
 
-    connection.sni = sni;
+  const dialUpstream = async (connection: Connection) => {
+    const { host, port, repoHash } = connection;
+    const upstream = await dial(host, port, accessOf(host), repoHash).catch((error: Error) => error);
 
-    const decision =
-      sni === undefined
-        ? ({ allowed: false, rule: "sni", reason: "no TLS ClientHello with a server name" } as const)
-        : decideConnect(
-            { host: connection.host, port: connection.port, sni },
-            options.policy,
-            connection.extras,
-          );
-
-    if (!decision.allowed) {
-      recordDenial(connection.host, decision, { port: connection.port, repoHash: connection.repoHash, sni });
-
-      upstream.destroy();
-
-      connection.client.destroy();
-
-      return;
+    if (!(upstream instanceof Error)) {
+      return upstream;
     }
 
-    splice(connection, upstream, hello);
+    const rule = upstream instanceof RestrictedAddressError ? upstream.rule : "upstream";
+
+    recordDenial(host, { rule, reason: upstream.message }, { port, repoHash });
+
+    return undefined;
+  };
+
+  const restrictedResolution = async (host: string) => {
+    const problem = await dial.checkAddresses?.(host, accessOf(host)).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    return problem instanceof RestrictedAddressError ? problem : undefined;
   };
 
   const tunnel = async (connection: Connection, head: Buffer) => {
     const { client, host, port, repoHash } = connection;
-    const upstream = await dial(host, port, accessOf(host), repoHash).catch((error: Error) => error);
+    const restricted = await restrictedResolution(host);
 
-    if (upstream instanceof RestrictedAddressError) {
-      refuse(client, host, { rule: upstream.rule, reason: upstream.message }, { port, repoHash });
+    if (restricted !== undefined) {
+      refuse(client, host, { rule: restricted.rule, reason: restricted.message }, { port, repoHash });
 
       return;
     }
 
-    if (upstream instanceof Error) {
-      recordDenial(host, { rule: "upstream", reason: upstream.message }, { port, repoHash });
+    client.write(ESTABLISHED);
 
-      client.end(rawResponse("502 Bad Gateway", { error: `cannot reach ${host}: ${upstream.message}` }));
+    const hello = await readClientHello(client, head, helloTimeoutMs);
+    const sni = parseServerName(hello);
+    const decision = helloDecision(connection, sni);
+
+    connection.sni = sni;
+
+    if (!decision.allowed) {
+      recordDenial(host, decision, { port, repoHash, sni });
+
+      client.destroy();
+
+      return;
+    }
+
+    if (client.destroyed) {
+      return;
+    }
+
+    const upstream = await dialUpstream(connection);
+
+    if (upstream === undefined) {
+      client.destroy();
 
       return;
     }
@@ -623,9 +675,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
     client.once("close", () => upstream.destroy());
 
-    client.write(ESTABLISHED);
-
-    await checkHello(connection, upstream, head);
+    splice(connection, upstream, hello);
   };
 
   const callerOf = async (request: IncomingMessage): Promise<Caller | undefined> => {
@@ -908,6 +958,23 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     server.listen(options.listen.port, options.listen.host, () => resolve());
   });
 
+  const port = (server.address() as AddressInfo).port;
+
+  const listenAlso = (host: string) =>
+    new Promise<NetServer | undefined>((resolve) => {
+      const extra = createNetServer((socket) => server.emit("connection", socket));
+
+      extra.once("error", (error) => {
+        options.onListenError?.(`proxy cannot also listen on ${host}:${port}: ${error.message}`);
+
+        resolve(undefined);
+      });
+
+      extra.listen(port, host, () => resolve(extra));
+    });
+
+  const extras = await Promise.all((options.listen.extraHosts ?? []).map(listenAlso));
+
   const close = async () => {
     await options.vault?.close();
 
@@ -918,9 +985,13 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
       server.closeAllConnections();
 
+      extras.forEach((extra) => {
+        extra?.close();
+      });
+
       server.close(() => resolve());
     });
   };
 
-  return { port: (server.address() as AddressInfo).port, policyHash, close };
+  return { port, policyHash, close };
 };

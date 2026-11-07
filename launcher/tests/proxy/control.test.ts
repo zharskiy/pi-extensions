@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { SandboxConfig } from "../../config/index.ts";
-import { takeOverStaleLock } from "../../proxy/control.ts";
 import {
   ensureProxyRunning,
   guestProxyUrl,
@@ -17,7 +17,7 @@ import {
   stopProxy,
 } from "../../proxy/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
-import { CONTROL_USER, openConnect, pageThrough, plainGet, readRest } from "./proxy-client.ts";
+import { CONTROL_USER, openConnect, pageThrough, plainGet, plainRequest, readRest } from "./proxy-client.ts";
 
 const state = { stateDir: "", home: "" };
 
@@ -88,6 +88,14 @@ const recordHungProxy = async (allow: string[], pid: number) => {
   );
 };
 
+const loopbackSix = await new Promise<boolean>((resolve) => {
+  const probe = createNetServer();
+
+  probe.once("error", () => resolve(false));
+
+  probe.listen(0, "::1", () => probe.close(() => resolve(true)));
+});
+
 const instanceDir = (allow: string[]) => join(state.stateDir, "proxy", proxyPolicyHash(config(allow)));
 
 beforeAll(async () => {
@@ -148,6 +156,7 @@ describe("ensureProxyRunning", () => {
       port: instance.port,
       token: instance.token,
       pid: instance.pid,
+      listenHosts: [],
     });
     expect((await stat(join(dir, "proxy.json"))).mode & 0o777).toBe(0o600);
     expect((await stat(join(dir, "proxy-config.json"))).mode & 0o777).toBe(0o600);
@@ -233,6 +242,47 @@ describe("ensureProxyRunning", () => {
     expect((await stat(join(instanceDir(["registry.npmjs.org"]), "proxy-token"))).mode & 0o777).toBe(0o600);
   }, 20_000);
 
+  it("comes back on the same port after it was stopped, so relays that forward to it keep working", async () => {
+    const first = await ensureProxyRunning(options(["registry.npmjs.org"]));
+
+    expect(await stopProxy(state.stateDir, first.policyHash)).toBe(1);
+
+    const again = await ensureProxyRunning(options(["registry.npmjs.org"]));
+
+    expect(again.pid).not.toBe(first.pid);
+    expect(again.port).toBe(first.port);
+  }, 20_000);
+
+  it.skipIf(!loopbackSix)(
+    "also listens on a host address the backend asks for, with the same port and token check",
+    async () => {
+      const plain = await ensureProxyRunning(options(["registry.npmjs.org"]));
+      const widened = await ensureProxyRunning({ ...options(["registry.npmjs.org"]), listenHosts: ["::1"] });
+      const reused = await ensureProxyRunning({ ...options(["registry.npmjs.org"]), listenHosts: ["::1"] });
+      const authorized = await plainRequest(widened.port, "/healthz", {
+        address: "::1",
+        token: widened.token,
+        user: CONTROL_USER,
+      });
+      const anonymous = await plainRequest(widened.port, "/healthz", { address: "::1" });
+
+      expect(widened.pid).not.toBe(plain.pid);
+      expect(widened.port).toBe(plain.port);
+      expect(reused.pid).toBe(widened.pid);
+      expect(JSON.parse(authorized.body)).toMatchObject({ ok: true, pid: widened.pid });
+      expect(anonymous.status).toBe(407);
+    },
+    20_000,
+  );
+
+  it("still starts when an extra host address cannot be bound, and says so in the proxy log", async () => {
+    const instance = await ensureProxyRunning({ ...options(["github.com"]), listenHosts: ["192.0.2.1"] });
+    const log = await readFile(join(instanceDir(["github.com"]), "proxy.log"), "utf8");
+
+    expect(instance.listenHosts).toEqual(["192.0.2.1"]);
+    expect(log).toContain(`proxy cannot also listen on 192.0.2.1:${instance.port}`);
+  }, 20_000);
+
   it("starts a single daemon when two launchers ask at once", async () => {
     const [left, right] = await Promise.all([
       ensureProxyRunning(options(["registry.npmjs.org"])),
@@ -241,68 +291,6 @@ describe("ensureProxyRunning", () => {
 
     expect(right).toEqual(left);
   }, 20_000);
-});
-
-describe("takeOverStaleLock", () => {
-  const lockDir = async () => {
-    const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-lock-"));
-
-    return { dir, lock: join(dir, "lock") };
-  };
-
-  const snapshotOf = async (path: string) => {
-    const info = await stat(path);
-    const text = await readFile(path, "utf8");
-
-    return { owner: Number.parseInt(text, 10), text, ino: info.ino, mtimeMs: info.mtimeMs };
-  };
-
-  const replaceWith = async (path: string, text: string) => {
-    await rm(path);
-
-    await writeFile(join(path, "..", "next"), text);
-
-    await rename(join(path, "..", "next"), path);
-  };
-
-  it("removes the stale lock it read and leaves nothing behind", async () => {
-    const { dir, lock } = await lockDir();
-
-    await writeFile(lock, "999999");
-
-    await takeOverStaleLock(lock, await snapshotOf(lock));
-
-    expect(await readdir(dir)).toEqual([]);
-  });
-
-  it("puts back a newer lock of a live holder that replaced the stale one", async () => {
-    const { dir, lock } = await lockDir();
-
-    await writeFile(lock, "999999");
-
-    const stale = await snapshotOf(lock);
-
-    await replaceWith(lock, String(process.pid));
-
-    await takeOverStaleLock(lock, stale);
-
-    expect(await readFile(lock, "utf8")).toBe(String(process.pid));
-    expect(await readdir(dir)).toEqual(["lock"]);
-  });
-
-  it("does not resurrect the lock of a holder that released in between", async () => {
-    const { dir, lock } = await lockDir();
-
-    await writeFile(lock, "999999");
-
-    const stale = await snapshotOf(lock);
-
-    await replaceWith(lock, "999998");
-
-    await takeOverStaleLock(lock, stale);
-
-    expect(await readdir(dir)).toEqual([]);
-  });
 });
 
 describe("stopProxy", () => {

@@ -1,5 +1,4 @@
-import { LauncherError, readJsonFile, stateLayout, writeJsonFile } from "../shared/index.ts";
-import { withFileLock } from "./lock.ts";
+import { LauncherError, readJsonFile, stateLayout, withFileLock, writeJsonFile } from "../shared/index.ts";
 import type { ActiveGrantContext, Grant, GrantLimits, GrantMatch, GrantRequest } from "./types.ts";
 
 export const SESSION_GRANT_CAP_HOURS = 12;

@@ -5,7 +5,7 @@ import {
   randomBytes,
   X509Certificate,
 } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type CommandRunner,
@@ -45,6 +45,10 @@ const MINT_LOCK_TIMEOUT_MS = 30_000;
 
 const CERT_SUFFIX = "-cert.pem";
 
+const CA_KEY = "ca-key.pem";
+
+const CA_CERT = "ca-cert.pem";
+
 const LEAF_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
 const caConfig = `[req]
@@ -81,7 +85,7 @@ const parseCertificate = (pem: string | undefined) => {
   }
 };
 
-const isFresh = (certificate: X509Certificate | undefined) =>
+const isFresh = (certificate: X509Certificate | undefined): certificate is X509Certificate =>
   certificate !== undefined && Date.parse(certificate.validTo) - Date.now() > RENEW_MARGIN_MS;
 
 const newPrivateKey = () =>
@@ -120,30 +124,80 @@ const openssl = async (runner: CommandRunner, args: string[]) => {
   }
 };
 
-const createCa = async (directory: string, runner: CommandRunner) => {
-  const keyPath = join(directory, "ca-key.pem");
-  const configPath = join(directory, "ca.cnf");
+const generateCa = async (directory: string, runner: CommandRunner) => {
+  const work = await mkdtemp(join(directory, "new-"));
+  const keyPath = join(work, "ca-key.pem");
+  const certPath = join(work, "ca-cert.pem");
+  const configPath = join(work, "ca.cnf");
 
-  await writePrivateKey(keyPath);
+  try {
+    await writePrivateKey(keyPath);
 
-  await writeFile(configPath, caConfig);
+    await writeFile(configPath, caConfig);
 
-  await openssl(runner, [
-    "req",
-    "-x509",
-    "-new",
-    "-key",
-    keyPath,
-    "-config",
-    configPath,
-    "-extensions",
-    "ca",
-    "-days",
-    CA_DAYS,
-    "-sha256",
-    "-out",
-    join(directory, "ca-cert.pem"),
-  ]);
+    await openssl(runner, [
+      "req",
+      "-x509",
+      "-new",
+      "-key",
+      keyPath,
+      "-config",
+      configPath,
+      "-extensions",
+      "ca",
+      "-days",
+      CA_DAYS,
+      "-sha256",
+      "-out",
+      certPath,
+    ]);
+
+    await rename(keyPath, join(directory, CA_KEY));
+
+    await rename(certPath, join(directory, CA_CERT));
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+};
+
+const storedCa = async (directory: string) => {
+  const key = await readOptional(join(directory, CA_KEY));
+  const certPem = await readOptional(join(directory, CA_CERT));
+  const certificate = parseCertificate(certPem);
+
+  return key !== undefined && certPem !== undefined && isFresh(certificate) && keyMatches(key, certificate)
+    ? { certPem, certificate }
+    : undefined;
+};
+
+const ensureCa = async (directory: string, runner: CommandRunner) => {
+  const current = await storedCa(directory);
+
+  if (current !== undefined) {
+    return current;
+  }
+
+  return withFileLock(
+    join(directory, "ca.lock"),
+    async () => {
+      const again = await storedCa(directory);
+
+      if (again !== undefined) {
+        return again;
+      }
+
+      await generateCa(directory, runner);
+
+      const created = await storedCa(directory);
+
+      if (created === undefined) {
+        throw new LauncherError(`the launcher CA in ${directory} could not be created`);
+      }
+
+      return created;
+    },
+    { timeoutMs: MINT_LOCK_TIMEOUT_MS },
+  );
 };
 
 const signLeaf = async (directory: string, host: string, runner: CommandRunner): Promise<LeafCertificate> => {
@@ -166,9 +220,9 @@ const signLeaf = async (directory: string, host: string, runner: CommandRunner):
       "-in",
       requestPath,
       "-CA",
-      join(directory, "ca-cert.pem"),
+      join(directory, CA_CERT),
       "-CAkey",
-      join(directory, "ca-key.pem"),
+      join(directory, CA_KEY),
       "-set_serial",
       `0x${randomBytes(16).toString("hex")}`,
       "-days",
@@ -190,19 +244,11 @@ const signLeaf = async (directory: string, host: string, runner: CommandRunner):
 
 export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<LauncherCa> => {
   const directory = join(stateDir, "ca");
-  const certPath = join(directory, "ca-cert.pem");
+  const certPath = join(directory, CA_CERT);
 
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
-  const existing = parseCertificate(await readOptional(certPath));
-
-  if (!isFresh(existing)) {
-    await createCa(directory, runner);
-  }
-
-  const certPem = await readFile(certPath, "utf8");
-  const authority = new X509Certificate(certPem);
-
+  const { certPem, certificate: authority } = await ensureCa(directory, runner);
   const leafDir = join(directory, "leaf");
 
   const checkHost = (host: string) => {

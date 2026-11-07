@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { createServer as createHttpsServer, type Server } from "node:https";
+import { connect } from "node:net";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant, endSession, newLaunchId, registerSession } from "../../grants/index.ts";
@@ -397,6 +398,83 @@ describe("CONNECT tunnel", () => {
     reply.socket.write("GET / HTTP/1.1\r\nHost: target.test\r\n\r\n");
 
     expect(await readRest(reply.socket)).toBe("");
+  });
+});
+
+describe("the upstream of a spliced tunnel", () => {
+  const countingProxy = async () => {
+    const dialled: string[] = [];
+    const stateDir = await createStateDir();
+    const local = await startTestProxy({
+      stateDir,
+      policy: { allow: ["target.test", "other.test"], mcpHosts: [] },
+      ca: state.ca,
+      dial: (host, port) => {
+        dialled.push(`${host}:${port}`);
+
+        return new Promise((resolve, reject) => {
+          const socket = connect({ host: "127.0.0.1", port: portOf(state.target) });
+
+          socket.once("connect", () => resolve(socket));
+
+          socket.once("error", reject);
+        });
+      },
+    });
+    const close = async () => {
+      await local.proxy.close();
+
+      await removeDir(stateDir);
+    };
+
+    return { local, dialled, close, token: await local.tokenOf(REPO) };
+  };
+
+  it("opens no upstream socket when the TLS server name differs from the CONNECT host", async () => {
+    const { local, dialled, close, token } = await countingProxy();
+
+    try {
+      const outcome = await secureTunnel(
+        local.proxy.port,
+        "target.test:443",
+        "other.test",
+        state.ca.certPem,
+        token,
+      ).then(
+        () => "connected",
+        () => "closed",
+      );
+
+      expect(outcome).toBe("closed");
+      expect(await waitFor(() => local.log.find((entry) => entry.rule === "sni"))).toMatchObject({
+        decision: "deny",
+        host: "target.test",
+        sni: "other.test",
+      });
+      expect(dialled).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("dials the upstream once the server name matches", async () => {
+    const { local, dialled, close, token } = await countingProxy();
+
+    try {
+      const secure = await secureTunnel(
+        local.proxy.port,
+        "target.test:443",
+        "target.test",
+        state.ca.certPem,
+        token,
+      );
+
+      secure.destroy();
+
+      expect(dialled).toEqual(["target.test:443"]);
+    } finally {
+      await close();
+    }
   });
 });
 

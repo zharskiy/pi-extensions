@@ -49,7 +49,7 @@ const parentRouteFromUrl = (
   const parsed = new URL(url);
 
   return {
-    host: parsed.hostname,
+    host: parsed.hostname.replace(/^\[(.*)\]$/, "$1"),
     port: Number(parsed.port || DEFAULT_PARENT_PORT),
     noProxy,
     authorization,

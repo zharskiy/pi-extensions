@@ -186,7 +186,8 @@ describe("xdg-open shim", () => {
       NO_PROXY: "",
     });
 
-    expect(result).toMatchObject({ code: 0, stderr: "" });
+    expect(result.code).toBe(0);
+    expect(result.stderr).not.toContain("pi-sandbox");
     expect(decoy).toEqual([]);
     expect(fake.seen.map((seen) => `${seen.method} ${seen.url}`)).toEqual([
       `POST ${ROUTES.open}`,

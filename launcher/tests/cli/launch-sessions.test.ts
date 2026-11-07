@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { liveSessions, registerSession } from "../../grants/index.ts";
@@ -26,8 +27,6 @@ const OUTDATED =
   "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
 
 const OTHER_LAUNCH = "00000000000000aa";
-
-const never = () => new Promise<never>(() => undefined);
 
 describe("a config change while other sessions of the repository are live", () => {
   it("keeps the shared container with a notice, then replaces it once the others have exited", async () => {
@@ -62,17 +61,17 @@ describe("a config change while other sessions of the repository are live", () =
 });
 
 describe("a signal while the sandbox is being prepared", () => {
-  it("ends the session, stops the idle container and exits 128 plus the signal number", async () => {
+  it("lets the container start finish, never runs pi, then ends the session, stops the container and exits 128 plus the signal number", async () => {
     const signals = new EventEmitter();
     const fake = createFakeBackend();
     const backend = {
       ...fake.backend,
       startContainer: async (id: string) => {
-        await fake.backend.startContainer(id);
-
         signals.emit("SIGTERM");
 
-        return never();
+        await sleep(50);
+
+        await fake.backend.startContainer(id);
       },
     };
     const harness = await harnessWith({ adapters: () => [backend] });
@@ -80,28 +79,38 @@ describe("a signal while the sandbox is being prepared", () => {
     harness.deps.signals = signals;
 
     expect(await run([], harness.deps)).toBe(143);
+    expect(fake.containers.size).toBe(1);
     expect(fake.stops.map((stop) => stop.id)).toEqual([...fake.containers.keys()]);
     expect(await liveSessions(harness.stateDir)).toEqual([]);
     expect(signals.listenerCount("SIGINT")).toBe(0);
-    expect(fake.execs).toHaveLength(0);
+    expect(fake.execs.some((exec) => exec.spec.command.includes("pi"))).toBe(false);
   });
 
-  it("exits 130 on Ctrl-C during the image build", async () => {
+  it("creates no container when Ctrl-C arrives during the image build, and ends the session only after the build", async () => {
     const signals = new EventEmitter();
     const fake = createFakeBackend();
-    const backend = {
-      ...fake.backend,
-      buildImage: async () => {
-        signals.emit("SIGINT");
+    const sessionsWhenBuilt: number[] = [];
+    const harness = await harnessWith({
+      adapters: () => [
+        {
+          ...fake.backend,
+          buildImage: async (...args: Parameters<typeof fake.backend.buildImage>) => {
+            signals.emit("SIGINT");
 
-        return never();
-      },
-    };
-    const harness = await harnessWith({ adapters: () => [backend] });
+            await sleep(50);
+
+            sessionsWhenBuilt.push((await liveSessions(harness.stateDir)).length);
+
+            return fake.backend.buildImage(...args);
+          },
+        },
+      ],
+    });
 
     harness.deps.signals = signals;
 
     expect(await run([], harness.deps)).toBe(130);
+    expect(sessionsWhenBuilt).toEqual([1]);
     expect(fake.containers.size).toBe(0);
     expect(await liveSessions(harness.stateDir)).toEqual([]);
   });
@@ -144,5 +153,24 @@ describe("the proxy route of a repository", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(asked).toEqual([sha256Hex(harness.repoRoot)]);
+  });
+
+  it("starts the proxy on the extra host addresses the backend needs and prints the route's notices", async () => {
+    const fake = createFakeBackend({ proxyListenHosts: ["172.17.0.1"], routeNotices: ["the relay is kept"] });
+    const requested: Array<string[] | undefined> = [];
+    const harness = await harnessWith({
+      adapters: () => [fake.backend],
+      proxy: {
+        ensure: async (request) => {
+          requested.push(request.listenHosts);
+
+          return { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
+        },
+      },
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(requested).toEqual([["172.17.0.1"]]);
+    expect(harness.stderr()).toContain("pi-sandbox: the relay is kept\n");
   });
 });

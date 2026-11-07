@@ -62,22 +62,77 @@ const ASSIGNED_NAME = /\s([A-Za-z_][A-Za-z0-9_]*)=/g;
 
 const FROM_FLAG = /(^|\s)--from[=\s]/i;
 
+const HEREDOC_DIRECTIVES = new Set(["RUN", "COPY", "ADD"]);
+
+const HEREDOC = /(?<!<)<<(?!<)(-?)(["']?)([A-Za-z_][A-Za-z0-9_]*)\2/g;
+
+const CONTINUED = /\\\s*$/;
+
 interface Instruction {
   directive: string;
   args: string;
 }
 
+interface Terminator {
+  word: string;
+  tabs: boolean;
+}
+
+interface ParseState {
+  instructions: Instruction[];
+  pending?: string;
+  bodies: Terminator[];
+}
+
+const instructionOf = (text: string): Instruction => {
+  const [word = "", ...rest] = text.trim().split(/\s+/);
+
+  return { directive: word.toUpperCase(), args: rest.join(" ") };
+};
+
+const heredocsOf = (instruction: Instruction): Terminator[] =>
+  HEREDOC_DIRECTIVES.has(instruction.directive)
+    ? [...instruction.args.matchAll(HEREDOC)].map((match) => ({
+        word: match[3] ?? "",
+        tabs: match[1] === "-",
+      }))
+    : [];
+
+const inBody = (state: ParseState, line: string): ParseState => {
+  const [terminator, ...rest] = state.bodies;
+  const candidate = terminator?.tabs === true ? line.replace(/^\t+/, "") : line;
+
+  return candidate === terminator?.word ? { ...state, bodies: rest } : state;
+};
+
+const atInstruction = (state: ParseState, line: string): ParseState => {
+  const trimmed = line.trim();
+
+  if (trimmed === "" || trimmed.startsWith("#")) {
+    return state;
+  }
+
+  const text = state.pending === undefined ? line : `${state.pending} ${line}`;
+
+  if (CONTINUED.test(text)) {
+    return { ...state, pending: text.replace(CONTINUED, "") };
+  }
+
+  const instruction = instructionOf(text);
+
+  return {
+    instructions: [...state.instructions, instruction],
+    bodies: heredocsOf(instruction),
+  };
+};
+
 const instructionsOf = (text: string): Instruction[] =>
   text
-    .replace(/\\\r?\n/g, " ")
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"))
-    .map((line) => {
-      const [word = "", ...rest] = line.split(/\s+/);
-
-      return { directive: word.toUpperCase(), args: rest.join(" ") };
-    });
+    .reduce<ParseState>(
+      (state, line) => (state.bodies.length > 0 ? inBody(state, line) : atInstruction(state, line)),
+      { instructions: [], bodies: [] },
+    ).instructions;
 
 const variableNames = (args: string) => [
   ...(FIRST_NAME.exec(args)?.slice(1, 2) ?? []),

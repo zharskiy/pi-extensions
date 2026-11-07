@@ -10,6 +10,7 @@ export const proxyFiles = (stateDir: string, policyHash: string) => {
     record: join(directory, "proxy.json"),
     config: join(directory, "proxy-config.json"),
     token: join(directory, "proxy-token"),
+    port: join(directory, "proxy-port"),
     accessLog: join(directory, "proxy-access.log"),
     proxyLog: join(directory, "proxy.log"),
     lock: join(directory, "lock"),
@@ -21,6 +22,7 @@ export interface ProxyInstance {
   port: number;
   token: string;
   pid: number;
+  listenHosts?: string[];
 }
 
 export interface DaemonConfig<Config> {
@@ -30,4 +32,5 @@ export interface DaemonConfig<Config> {
   piCommand?: string[];
   discoverCommand?: string[];
   parentEnv?: Record<string, string>;
+  listenHosts?: string[];
 }

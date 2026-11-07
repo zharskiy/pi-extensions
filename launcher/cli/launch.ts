@@ -74,6 +74,7 @@ export interface SandboxParts {
   image: ImageRef;
   session: LaunchSession;
   sessions: HostSessions;
+  cancelled?: AbortSignal;
 }
 
 export interface Sandbox extends PreparedContainer {
@@ -211,6 +212,7 @@ export const prepareImage = async (
 };
 
 const sandboxRoute = async (
+  deps: CliDeps,
   backend: Backend,
   proxy: SandboxProxy | undefined,
   imageId: string,
@@ -226,6 +228,8 @@ const sandboxRoute = async (
     imageId,
     repoHash,
   );
+
+  writeNotices(deps, route.notices ?? []);
 
   return { url: guestProxyUrl(route, proxy.repoToken), network: route.network, policyHash: proxy.policyHash };
 };
@@ -265,14 +269,14 @@ export const prepareContainer = async (
   backend: Backend,
   parts: SandboxParts,
 ): Promise<PreparedContainer> => {
-  const { host, proxy, image, session, sessions } = parts;
+  const { host, proxy, image, session, sessions, cancelled } = parts;
   const render = await renderAgentDir({
     stateDir: context.stateDir,
     repoHash: host.repoHash,
     hostAgentDir: host.hostAgentDir,
     derived: host.derived,
   });
-  const route = await sandboxRoute(backend, proxy, image.id, host.repoHash);
+  const route = await sandboxRoute(deps, backend, proxy, image.id, host.repoHash);
 
   await readyHostSessions(deps, context, backend, { sessions, launchId: session.launchId });
 
@@ -295,6 +299,9 @@ export const prepareContainer = async (
     repoProxyToken: proxy?.repoToken,
     hostSessions: sessions,
   });
+
+  cancelled?.throwIfAborted();
+
   const { id, created, outdated } = await ensureContainer({
     backend,
     spec,
@@ -311,6 +318,8 @@ export const prepareContainer = async (
     await pruneEndedGrants(deps, context.stateDir);
   }
 
+  cancelled?.throwIfAborted();
+
   await syncAgentFiles(deps, context, backend, host, id);
 
   await syncSandboxMcpAuth(deps, context, { backend, containerId: id, servers: host.derived.vault });
@@ -325,10 +334,24 @@ const prepareSandbox = async (
   host: HostSide,
   session: LaunchSession,
   sessions: HostSessions,
+  cancelled: AbortSignal,
 ) => {
-  const proxy = await openSandboxProxy(deps, context, host);
+  const proxy = await openSandboxProxy(deps, context, host, backend);
+
+  cancelled.throwIfAborted();
+
   const image = await prepareImage(deps, context, backend, host.trust);
-  const prepared = await prepareContainer(deps, context, backend, { host, proxy, image, session, sessions });
+
+  cancelled.throwIfAborted();
+
+  const prepared = await prepareContainer(deps, context, backend, {
+    host,
+    proxy,
+    image,
+    session,
+    sessions,
+    cancelled,
+  });
 
   return { prepared, proxy };
 };
@@ -346,16 +369,22 @@ export const withSandbox = async (
 
   const session = await beginSession(deps, context, host.repoHash);
   const watch = listenFor(deps.signals ?? process, PREPARATION_SIGNALS);
+  const cancel = new AbortController();
+  const preparation = prepareSandbox(deps, context, backend, host, session, sessions, cancel.signal);
 
   try {
     const outcome = await Promise.race([
-      prepareSandbox(deps, context, backend, host, session, sessions).then((ready) => ({ ready })),
+      preparation.then((ready) => ({ ready })),
       watch.received.then((signal) => ({ signal })),
     ]);
 
     watch.stop();
 
     if ("signal" in outcome) {
+      cancel.abort();
+
+      await preparation.catch(() => undefined);
+
       return SIGNAL_EXIT_BASE + constants.signals[outcome.signal];
     }
 

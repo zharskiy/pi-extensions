@@ -24,6 +24,8 @@ const LOCK_TIMEOUT_MS = LOCK_STALE_MS + 5_000;
 
 const LOCK_RETRY_MS = 50;
 
+const LOCK_REFRESH_MS = 1_000;
+
 const LOCK_BUSY = 3;
 
 const PRIVATE_MODE = 0o600;
@@ -35,8 +37,13 @@ const LOCK_SCRIPT = [
   "const [lock, staleMs] = [process.argv[1], Number(process.argv[2])];",
   'fs.mkdirSync(require("node:path").dirname(lock), { recursive: true });',
   "const take = () => { try { fs.mkdirSync(lock); return true; } catch (error) { if (error.code !== 'EEXIST') throw error; return false; } };",
-  "const age = () => { try { return Date.now() - fs.statSync(lock).mtimeMs; } catch { return Infinity; } };",
-  `const stale = () => age() > staleMs && (fs.rmSync(lock, { recursive: true, force: true }), true);`,
+  "const look = (path) => { try { return fs.statSync(path); } catch { return undefined; } };",
+  "const same = (left, right) => left !== undefined && left.ino === right.ino && left.mtimeMs === right.mtimeMs;",
+  'const aside = lock + ".stale." + process.pid + "." + Date.now();',
+  "const drop = () => fs.rmSync(aside, { recursive: true, force: true });",
+  "const settle = (seen) => same(look(aside), seen) || look(lock) !== undefined ? drop() : fs.renameSync(aside, lock);",
+  "const moveAside = (seen) => { try { fs.renameSync(lock, aside); } catch { return; } settle(seen); };",
+  "const stale = () => { const seen = look(lock); if (seen !== undefined && Date.now() - seen.mtimeMs <= staleMs) return false; if (seen !== undefined) moveAside(seen); return true; };",
   `process.exit(take() || (stale() && take()) ? 0 : ${LOCK_BUSY});`,
 ].join("\n");
 
@@ -95,7 +102,7 @@ const acquire = async (backend: Backend, containerId: string, deadline: number):
 const keepFresh = (backend: Backend, containerId: string) =>
   setInterval(() => {
     void run(backend, containerId, ["touch", "-c", LOCK]).catch(() => undefined);
-  }, LOCK_STALE_MS / 2);
+  }, LOCK_REFRESH_MS);
 
 const isObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);

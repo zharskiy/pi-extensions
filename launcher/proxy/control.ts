@@ -1,16 +1,16 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
-import { link, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { get, request as httpRequest } from "node:http";
 import type { EgressCap, SandboxConfig } from "../config/index.ts";
 import {
   type CommandRunner,
   createProcessRunner,
-  errorMessage,
   LauncherError,
   launcherEntry,
   readJsonFile,
+  withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
 import { controlAuthorization } from "./auth.ts";
@@ -46,6 +46,7 @@ export interface EnsureProxyOptions {
   egressCap?: EgressCap;
   piCommand?: string[];
   discoverCommand?: string[];
+  listenHosts?: string[];
 }
 
 interface Health {
@@ -124,6 +125,15 @@ const healthyRecord = async (files: InstanceFiles) => {
   return (await isHealthy(record)) ? record : undefined;
 };
 
+const listensOn = (record: ProxyInstance, hosts: string[]) =>
+  hosts.every((host) => (record.listenHosts ?? []).includes(host));
+
+const recordedPort = async (files: InstanceFiles) => {
+  const port = Number.parseInt(await readFile(files.port, "utf8").catch(() => ""), 10);
+
+  return Number.isInteger(port) && port > 0 ? port : undefined;
+};
+
 const isAlive = (pid: number) => {
   try {
     process.kill(pid, 0);
@@ -162,118 +172,10 @@ const terminate = async (pid: number, now: () => number) => {
   }
 };
 
-export interface LockSnapshot {
-  owner: number;
-  text: string;
-  ino: number;
-  mtimeMs: number;
-}
-
-const lockSnapshot = async (path: string): Promise<LockSnapshot | undefined> => {
-  const handle = await open(path, "r").catch(() => undefined);
-
-  if (handle === undefined) {
-    return undefined;
-  }
-
-  try {
-    const info = await handle.stat();
-    const text = await handle.readFile("utf8");
-
-    return { owner: Number.parseInt(text, 10), text, ino: info.ino, mtimeMs: info.mtimeMs };
-  } finally {
-    await handle.close();
-  }
-};
-
-const sameLock = (left: LockSnapshot | undefined, right: LockSnapshot) =>
-  left !== undefined && left.ino === right.ino && left.mtimeMs === right.mtimeMs && left.text === right.text;
-
-const uniqueSibling = (path: string, kind: string) =>
-  `${path}.${kind}.${process.pid}.${randomBytes(4).toString("hex")}`;
-
-const createLock = async (path: string) => {
-  const staged = uniqueSibling(path, "staged");
-
-  await writeFile(staged, String(process.pid), { mode: PRIVATE_MODE });
-
-  try {
-    await link(staged, path);
-
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-      throw new LauncherError(`cannot lock ${path}: ${errorMessage(error)}`);
-    }
-
-    return false;
-  } finally {
-    await rm(staged, { force: true });
-  }
-};
-
-const isLiveOwner = (owner: number) => Number.isInteger(owner) && isAlive(owner);
-
-export const takeOverStaleLock = async (path: string, stale: LockSnapshot) => {
-  const moved = uniqueSibling(path, "stale");
-  const renamed = await rename(path, moved).then(
-    () => true,
-    () => false,
-  );
-
-  if (!renamed) {
-    return;
-  }
-
-  const found = await lockSnapshot(moved);
-
-  if (found !== undefined && !sameLock(found, stale) && isLiveOwner(found.owner)) {
-    await link(moved, path).catch(() => undefined);
-  }
-
-  await rm(moved, { force: true });
-};
-
-const acquireLock = async (path: string, deadline: number, now: () => number): Promise<void> => {
-  if (await createLock(path)) {
-    return;
-  }
-
-  const snapshot = await lockSnapshot(path);
-  const owner = snapshot?.owner ?? Number.NaN;
-
-  if (snapshot !== undefined && !isLiveOwner(owner)) {
-    await takeOverStaleLock(path, snapshot);
-
-    return acquireLock(path, deadline, now);
-  }
-
-  if (snapshot === undefined) {
-    return acquireLock(path, deadline, now);
-  }
-
-  if (now() >= deadline) {
-    throw new LauncherError(
-      `another launcher (pid ${owner}) is starting the egress proxy`,
-      `wait for it, or remove ${path} if that process is gone`,
-    );
-  }
-
-  await delay(POLL_MS);
-
-  return acquireLock(path, deadline, now);
-};
-
-const withLock = async <T>(files: InstanceFiles, now: () => number, action: () => Promise<T>) => {
+const withLock = async <T>(files: InstanceFiles, action: () => Promise<T>) => {
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
 
-  await acquireLock(files.lock, now() + LOCK_TIMEOUT_MS, now);
-
-  try {
-    return await action();
-  } finally {
-    await rm(files.lock, { force: true });
-  }
+  return withFileLock(files.lock, action, { timeoutMs: LOCK_TIMEOUT_MS });
 };
 
 const instanceDirectories = async (stateDir: string) => {
@@ -394,7 +296,11 @@ const launchDaemon = async (
 
   if (record === undefined) {
     child.kill("SIGKILL");
+
+    return undefined;
   }
+
+  await writeFile(files.port, String(record.port), { mode: PRIVATE_MODE });
 
   return record;
 };
@@ -429,8 +335,9 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
   const now = options.now ?? Date.now;
   const runner = options.runner ?? createProcessRunner();
   const stale = await readRecord(files);
+  const listenHosts = options.listenHosts ?? [];
 
-  if (stale !== undefined && (await respondsTwice(stale))) {
+  if (stale !== undefined && listensOn(stale, listenHosts) && (await respondsTwice(stale))) {
     return stale;
   }
 
@@ -445,11 +352,12 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
     piCommand: options.piCommand ?? [],
     discoverCommand: options.discoverCommand ?? [],
     parentEnv: parentProxyEnv(options.env),
+    listenHosts,
   };
 
   await writeJsonFile(files.config, daemonConfig, { mode: PRIVATE_MODE });
 
-  const preferred = options.port ?? stale?.port ?? 0;
+  const preferred = options.port ?? stale?.port ?? (await recordedPort(files)) ?? 0;
   const started =
     (await launchDaemon(options, files, preferred, hash)) ??
     (preferred === 0 || options.port !== undefined ? undefined : await launchDaemon(options, files, 0, hash));
@@ -469,11 +377,11 @@ export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<P
 
   const current = await healthyRecord(files);
 
-  if (current !== undefined) {
+  if (current !== undefined && listensOn(current, options.listenHosts ?? [])) {
     return current;
   }
 
-  return withLock(files, options.now ?? Date.now, () => replaceInstance(options, files, hash));
+  return withLock(files, () => replaceInstance(options, files, hash));
 };
 
 const CONTROL_TIMEOUT_MS = 2000;

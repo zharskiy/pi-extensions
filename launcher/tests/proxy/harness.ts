@@ -89,6 +89,7 @@ export interface TestProxyOptions {
   onControl?: Parameters<typeof startProxyServer>[0]["onControl"];
   vault?: Parameters<typeof startProxyServer>[0]["vault"];
   denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
+  leafRecheckMs?: number;
 }
 
 export interface TestProxy {
@@ -121,6 +122,7 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),
     upstreamCa: options.ca?.certPem,
     helloTimeoutMs: 500,
+    leafRecheckMs: options.leafRecheckMs,
     onControl: options.onControl,
     vault: options.vault,
     denialPages: options.denialPages,

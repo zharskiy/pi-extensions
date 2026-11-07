@@ -87,6 +87,7 @@ export interface ImageInfo {
 export interface ProxyRoute {
   network: NetworkRef;
   address: string;
+  notices?: string[];
 }
 
 export interface Backend {
@@ -113,5 +114,6 @@ export interface Backend {
     repoHash?: string,
   ): Promise<ProxyRoute>;
   pruneNetworks(keepRepoHashes: string[]): Promise<string[]>;
+  proxyListenHosts(): Promise<string[]>;
   status(): Promise<Record<string, string>>;
 }

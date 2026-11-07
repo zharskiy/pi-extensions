@@ -45,7 +45,7 @@ const backendFor = (
   engine: FakeEngine,
   home = "/nonexistent-home",
   runner = createFakeRunner(() => undefined).runner,
-) => createDockerEngineBackend({ socketPath: engine.socketPath, runner, home });
+) => createDockerEngineBackend({ socketPath: engine.socketPath, runner, home, platform: "darwin" });
 
 const relayOf = (engine: FakeEngine, name = RELAY) =>
   [...engine.containers.values()].find((container) => container.Name === name);
@@ -229,6 +229,52 @@ describe("docker-engine adapter on another engine socket", () => {
       "TCP-LISTEN:3128,fork,reuseaddr",
       "TCP:host.docker.internal:8080",
     ]);
+  });
+
+  it("asks for no extra proxy address on Docker Desktop or off Linux", async () => {
+    const engine = await startEngine({ bridgeGateway: "172.17.0.1" });
+    const desktop = createDockerEngineBackend({
+      socketPath: engine.socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      home: "/nonexistent-home",
+      platform: "linux",
+    });
+    const mac = createDockerEngineBackend({
+      socketPath: engine.socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      home: "/nonexistent-home",
+      platform: "darwin",
+    });
+
+    await desktop.pullImage(IMAGE);
+
+    await desktop.prepareProxyRoute(8080, POLICY, IMAGE);
+
+    expect(await desktop.proxyListenHosts()).toEqual([]);
+    expect(await mac.proxyListenHosts()).toEqual([]);
+    expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
+      HostConfig: { ExtraHosts: ["host.docker.internal:host-gateway"] },
+    });
+  });
+
+  it("on a native Linux engine has the proxy listen on the bridge gateway and points the relay at it", async () => {
+    const engine = await startEngine({ operatingSystem: "Ubuntu 24.04 LTS", bridgeGateway: "172.17.0.1" });
+    const backend = createDockerEngineBackend({
+      socketPath: engine.socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      home: "/nonexistent-home",
+      platform: "linux",
+    });
+
+    await backend.pullImage(IMAGE);
+
+    await backend.prepareProxyRoute(8080, POLICY, IMAGE);
+
+    expect(await backend.proxyListenHosts()).toEqual(["172.17.0.1"]);
+    expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
+      Cmd: ["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.docker.internal:8080"],
+      HostConfig: { ExtraHosts: ["host.docker.internal:172.17.0.1"] },
+    });
   });
 
   it("reports the socket path and engine version in status", async () => {
@@ -619,6 +665,56 @@ describe("docker-engine egress relay", () => {
       "TCP:host.docker.internal:4000",
     ]);
     expect(await backend.findContainers({ "pi-sandbox.relay-port": "4000" })).toHaveLength(1);
+  });
+
+  it("keeps the relay, with a notice, when a port change would cut another repository's running sandbox", async () => {
+    const { engine, backend } = await readyBackend();
+    const repoA = "a".repeat(64);
+    const routeA = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+    const sandboxA = await backend.createContainer({
+      ...baseSpec,
+      name: "agent-a",
+      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repoA },
+      network: routeA.network,
+    });
+
+    await backend.startContainer(sandboxA.id);
+
+    const first = relayOf(engine)?.Id;
+    const routeB = await backend.prepareProxyRoute(4000, POLICY, IMAGE, "b".repeat(64));
+
+    expect(relayOf(engine)?.Id).toBe(first);
+    expect(relayBody(engine)?.Cmd).toEqual([
+      "TCP-LISTEN:3128,fork,reuseaddr",
+      "TCP:host.docker.internal:3128",
+    ]);
+    expect(routeB.notices).toEqual([
+      `the egress relay ${RELAY} still forwards to proxy port 3128, not 4000; it is kept because sandboxes of other repositories use it, so egress may fail until they exit and it is replaced`,
+    ]);
+  });
+
+  it("recreates the relay on a port change when only this repository's sandbox uses it", async () => {
+    const { engine, backend } = await readyBackend();
+    const repo = "a".repeat(64);
+    const route = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repo);
+    const sandbox = await backend.createContainer({
+      ...baseSpec,
+      name: "agent-a",
+      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repo },
+      network: route.network,
+    });
+
+    await backend.startContainer(sandbox.id);
+
+    const first = relayOf(engine)?.Id;
+    const again = await backend.prepareProxyRoute(4000, POLICY, IMAGE, repo);
+
+    expect(relayOf(engine)?.Id).not.toBe(first);
+    expect(relayBody(engine)?.Cmd).toEqual([
+      "TCP-LISTEN:3128,fork,reuseaddr",
+      "TCP:host.docker.internal:4000",
+    ]);
+    expect(again.notices).toBeUndefined();
   });
 
   it("starts a stopped relay whose labels match instead of recreating it", async () => {

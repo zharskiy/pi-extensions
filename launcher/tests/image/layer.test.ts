@@ -183,6 +183,63 @@ describe("ensureLayerImage", () => {
     expect(layer.built).toBe(true);
   });
 
+  it("accepts heredoc bodies whose lines look like refused instructions", async () => {
+    const fake = createFakeBackend();
+    const dockerfile = await extraDockerfile(
+      [
+        "RUN <<EOF",
+        "USER=alice",
+        "USER alice",
+        "FROM scratch",
+        "EOF",
+        'COPY <<-"CONF" /etc/tool.conf',
+        '\tENTRYPOINT ["/bin/sh"]',
+        "\tCONF",
+        "RUN cat <<ONE <<'TWO' > /tmp/x",
+        "CMD one",
+        "ONE",
+        "VOLUME /two",
+        "TWO",
+        "WORKDIR /opt",
+        "",
+      ].join("\n"),
+    );
+    const layer = await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({ dockerfile }),
+      stateDir: await tempDir(),
+    });
+
+    expect(layer.built).toBe(true);
+  });
+
+  it("checks the instructions after a heredoc ends", async () => {
+    const cases = [
+      ["RUN <<EOF\necho hi\nEOF\nUSER root", "has a USER instruction"],
+      ["RUN <<EOF\necho \\\nEOF\nFROM scratch", "has a FROM line"],
+      ["RUN <<-EOF\n\techo hi\n\tEOF\nCMD sleep 1", "has a CMD instruction"],
+      ["RUN cat <<A <<B\nA\nB\nENV NODE_OPTIONS=x", "sets NODE_OPTIONS with ENV"],
+      ["ENV GREETING=<<EOF\nUSER root", "has a USER instruction"],
+    ];
+
+    await cases.reduce(async (previous, [text = "", problem = ""]) => {
+      await previous;
+
+      const fake = createFakeBackend();
+      const dockerfile = await extraDockerfile(`${text}\n`);
+
+      await expect(
+        ensureLayerImage({
+          backend: fake.backend,
+          baseImageId: BASE_ID,
+          config: configWith({ dockerfile }),
+          stateDir: await tempDir(),
+        }),
+      ).rejects.toThrow(`image.dockerfile: ${dockerfile} ${problem}`);
+    }, Promise.resolve());
+  });
+
   it("tags the layer by its inputs hash and records it next to the base image", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();

@@ -139,6 +139,7 @@ export interface PlainOptions {
   user?: string;
   method?: string;
   body?: string;
+  address?: string;
 }
 
 export const plainRequest = (proxyPort: number, path: string, options: PlainOptions = {}) =>
@@ -146,7 +147,7 @@ export const plainRequest = (proxyPort: number, path: string, options: PlainOpti
     const host = options.host ?? "127.0.0.1";
     const request = httpRequest(
       {
-        host: "127.0.0.1",
+        host: options.address ?? "127.0.0.1",
         port: proxyPort,
         path,
         method: options.method ?? "GET",

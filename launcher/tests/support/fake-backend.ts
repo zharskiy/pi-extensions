@@ -52,6 +52,8 @@ interface FakeBackendOptions {
   registry?: Record<string, string>;
   exec?: (spec: ExecSpec, io: ExecIo) => Promise<number> | number;
   execScripts?: FakeExecScript[];
+  proxyListenHosts?: string[];
+  routeNotices?: string[];
 }
 
 const DEFAULT_CAPABILITIES: BackendCapabilities = {
@@ -301,7 +303,11 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       removedNetworks.delete(name);
 
-      return { network: { kind: "internal", name }, address: RELAY_ADDRESS };
+      return {
+        network: { kind: "internal", name },
+        address: RELAY_ADDRESS,
+        ...(options.routeNotices === undefined ? {} : { notices: options.routeNotices }),
+      };
     },
     pruneNetworks: async (keepRepoHashes) => {
       const kept = new Set(keepRepoHashes.map((hash) => `${RELAY_NETWORK}-${hash.slice(0, 12)}`));
@@ -313,6 +319,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       return removed;
     },
+    proxyListenHosts: async () => options.proxyListenHosts ?? [],
     status: async () => ({ socket: "/fake/docker.sock" }),
   };
 

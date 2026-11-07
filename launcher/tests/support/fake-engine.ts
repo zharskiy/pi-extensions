@@ -30,7 +30,12 @@ interface EngineRequestRecord {
 }
 
 interface FakeNetwork {
-  body: { Name?: string; Internal?: boolean; Labels?: Record<string, string> };
+  body: {
+    Name?: string;
+    Internal?: boolean;
+    Labels?: Record<string, string>;
+    IPAM?: { Config: Array<{ Gateway?: string }> };
+  };
   connected: Array<{ container: string; address: string }>;
 }
 
@@ -40,6 +45,8 @@ export interface FakeEngineOptions {
   registry?: Record<string, string>;
   exec?: FakeExecHandler;
   socketPath?: string;
+  operatingSystem?: string;
+  bridgeGateway?: string;
 }
 
 interface FakeImage {
@@ -178,7 +185,19 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   const execs = new Map<string, FakeExec>();
   const volumes = new Map<string, Buffer>();
   const createdBodies: Array<{ name: string; body: unknown }> = [];
-  const networks = new Map<string, FakeNetwork>();
+  const networks = new Map<string, FakeNetwork>(
+    options.bridgeGateway === undefined
+      ? []
+      : [
+          [
+            "bridge",
+            {
+              body: { Name: "bridge", IPAM: { Config: [{ Gateway: options.bridgeGateway }] } },
+              connected: [],
+            },
+          ],
+        ],
+  );
   const requests: EngineRequestRecord[] = [];
   const resizes: Array<{ execId: string; rows: number; columns: number }> = [];
   const execHandler = options.exec ?? defaultExec;
@@ -448,6 +467,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     Name: network.body.Name,
     Internal: network.body.Internal ?? false,
     Labels: network.body.Labels ?? {},
+    IPAM: network.body.IPAM ?? { Config: [] },
     Containers: Object.fromEntries(
       network.connected.map(({ container, address }) => [
         container,
@@ -490,6 +510,11 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     { method: "POST", pattern: /^\/networks\/([^/]+)\/disconnect$/, handle: disconnectNetwork },
     { method: "DELETE", pattern: /^\/networks\/([^/]+)$/, handle: removeNetwork },
     { method: "GET", pattern: /^\/_ping$/, handle: () => ({ status: 200, raw: "OK" }) },
+    {
+      method: "GET",
+      pattern: /^\/info$/,
+      handle: () => ({ status: 200, json: { OperatingSystem: options.operatingSystem ?? "Docker Desktop" } }),
+    },
     {
       method: "GET",
       pattern: /^\/version$/,
@@ -614,12 +639,12 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     );
   };
 
-  const runSession = async (exec: FakeExec, socket: Socket, leftover: Buffer) => {
+  const runSession = async (exec: FakeExec, socket: Socket, leftover: Buffer, unreadBody: () => number) => {
     const chunks = [leftover];
     const ended = new Promise<Buffer>((resolve) => {
       socket.on("data", (chunk: Buffer) => chunks.push(chunk));
 
-      socket.once("end", () => resolve(Buffer.concat(chunks)));
+      socket.once("end", () => resolve(Buffer.concat(chunks).subarray(unreadBody())));
     });
 
     const write = (data: string | Buffer, stream: OutputStream = "stdout") => {
@@ -662,7 +687,13 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       "HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n",
     );
 
-    void runSession(exec, socket, head);
+    const body = { length: Number(request.headers["content-length"] ?? 0), read: 0 };
+
+    request.on("data", (chunk: Buffer) => {
+      body.read += chunk.length;
+    });
+
+    void runSession(exec, socket, head, () => Math.max(0, body.length - body.read));
   };
 
   const server = createServer((request, response) => {

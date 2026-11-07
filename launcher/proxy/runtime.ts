@@ -1,4 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type { CredentialRule, EgressCap } from "../config/index.ts";
 import { liveSessions, readGrants } from "../grants/index.ts";
 import { sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
@@ -41,6 +42,20 @@ const stampOf = async (path: string) => {
   const info = await stat(path).catch(() => undefined);
 
   return info === undefined ? "absent" : `${info.ino}:${info.mtimeMs}:${info.size}`;
+};
+
+const directoryStampOf = async (directory: string) => {
+  const names = await readdir(directory).catch(() => undefined);
+
+  if (names === undefined) {
+    return "absent";
+  }
+
+  const stamps = await Promise.all(
+    names.sort().map(async (name) => `${name}=${await stampOf(join(directory, name))}`),
+  );
+
+  return stamps.join("|");
 };
 
 const readJson = async (path: string) => {
@@ -96,7 +111,7 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
   };
 
   const tokens = async () => {
-    const stamp = await stampOf(tokensDir);
+    const stamp = await directoryStampOf(tokensDir);
 
     if (stamp !== cache.tokens.stamp) {
       cache.tokens = { stamp, value: await tokenFileHashes(tokensDir) };

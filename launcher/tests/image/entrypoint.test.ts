@@ -49,12 +49,20 @@ const sandboxRoot = async () => {
 type Paths = Awaited<ReturnType<typeof sandboxRoot>>;
 
 const runEntrypoint = async (paths: Paths) => {
-  const script = (await entrypoint())
-    .replaceAll("/opt/pi-sandbox/render", paths.render)
-    .replaceAll("/opt/pi-sandbox", paths.opt)
-    .replaceAll("/tmp/pi-sandbox", paths.bundle)
-    .replaceAll("/etc/ssl/certs/ca-certificates.crt", paths.system)
-    .replaceAll("/etc/pi-sandbox/ca.pem", paths.trust);
+  const guestPaths: Record<string, string> = {
+    "/opt/pi-sandbox/render": paths.render,
+    "/opt/pi-sandbox": paths.opt,
+    "/tmp/pi-sandbox": paths.bundle,
+    "/etc/ssl/certs/ca-certificates.crt": paths.system,
+    "/etc/pi-sandbox/ca.pem": paths.trust,
+  };
+  const guestPath = new RegExp(
+    Object.keys(guestPaths)
+      .map((path) => path.replaceAll(".", "\\."))
+      .join("|"),
+    "g",
+  );
+  const script = (await entrypoint()).replace(guestPath, (path) => guestPaths[path] ?? path);
   const result = spawnSync("sh", ["-c", script, "entrypoint", "true"], {
     env: { PATH: process.env.PATH, HOME: paths.home },
     encoding: "utf8",

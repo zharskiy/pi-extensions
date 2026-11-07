@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
@@ -251,6 +251,7 @@ describe("syncContainerMcpAuth", () => {
       [DOCS]: docsEntry,
     });
     await expect(lstat(lock)).rejects.toThrow();
+    expect((await readdir(env.agentDir)).filter((name) => name.startsWith("mcp-auth.json.lock"))).toEqual([]);
   });
 
   it("keeps waiting past five seconds for a holder that refreshes its lock", {

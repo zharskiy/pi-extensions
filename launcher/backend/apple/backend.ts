@@ -540,6 +540,7 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     importVolume,
     prepareProxyRoute,
     pruneNetworks,
+    proxyListenHosts: async () => [],
     status,
   };
 };

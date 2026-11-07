@@ -4,7 +4,7 @@ import {
   stateLayout,
   type VaultEntry,
   type VaultServer,
-  withFileLock,
+  withDirectoryLock,
   writeFileAtomic,
 } from "../../shared/index.ts";
 
@@ -25,7 +25,7 @@ export const updateStoreEntry = (
 ): Promise<boolean> => {
   const layout = stateLayout(stateDir);
 
-  return withFileLock(layout.mcpAuthStoreLock, async () => {
+  return withDirectoryLock(layout.mcpAuthStoreLock, async () => {
     const store = await loadVaultStore(layout.mcpAuthStore, { forWrite: true });
     const next = update(store[key]);
 

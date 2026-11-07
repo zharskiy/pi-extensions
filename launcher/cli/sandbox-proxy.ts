@@ -1,3 +1,4 @@
+import type { Backend } from "../backend/index.ts";
 import { type CredentialRule, grantCapBlocker, type ParentProxy } from "../config/index.ts";
 import { mcpDiscoverCommand } from "../hostpi/index.ts";
 import {
@@ -86,9 +87,10 @@ const discoverCommandOf = async (deps: CliDeps) => {
   return pi === undefined ? {} : { discoverCommand: mcpDiscoverCommand(pi) };
 };
 
-const startProxy = async (deps: CliDeps, context: LaunchContext) => {
+const startProxy = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
   try {
     return await deps.proxy.ensure({
+      listenHosts: await backend.proxyListenHosts(),
       config: context.effective.config,
       stateDir: context.stateDir,
       env: daemonEnv(deps.env),
@@ -170,12 +172,13 @@ export const openSandboxProxy = async (
   deps: CliDeps,
   context: LaunchContext,
   host: HostSide,
+  backend: Backend,
 ): Promise<SandboxProxy | undefined> => {
   if (!host.proxyNeeded) {
     return undefined;
   }
 
-  const instance = await startProxy(deps, context);
+  const instance = await startProxy(deps, context, backend);
   const repoToken = await repoProxyToken(context.stateDir, instance.policyHash, host.repoHash);
 
   await recordProxyDynamic(context.stateDir, instance.policyHash, {
