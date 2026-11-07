@@ -1,10 +1,20 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, get, type Server } from "node:https";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { httpsFetchText, loadOrgLayer } from "../../config/org-source.ts";
+import { promisify } from "node:util";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  createHttpsFetchText,
+  type HttpsGet,
+  httpsFetchText,
+  loadOrgLayer,
+  orgBaselineStatus,
+} from "../../config/org-source.ts";
 import type { OrgRef } from "../../config/types.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { createFakeFetchText } from "../support/fake-fetch.ts";
 
@@ -294,5 +304,194 @@ describe("httpsFetchText", () => {
     await expect(httpsFetchText("http://config.example.internal/x.json", { timeoutMs: 100 })).rejects.toThrow(
       "only HTTPS URLs are fetched",
     );
+  });
+});
+
+const selfSignedCertificate = async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-org-cert-"));
+  const key = join(dir, "key.pem");
+  const cert = join(dir, "cert.pem");
+
+  await promisify(execFile)("openssl", [
+    "req",
+    "-x509",
+    "-newkey",
+    "ec",
+    "-pkeyopt",
+    "ec_paramgen_curve:prime256v1",
+    "-nodes",
+    "-keyout",
+    key,
+    "-out",
+    cert,
+    "-days",
+    "1",
+    "-subj",
+    "/CN=localhost",
+    "-addext",
+    "subjectAltName=IP:127.0.0.1",
+  ]);
+
+  const pair = { key: await readFile(key, "utf8"), cert: await readFile(cert, "utf8") };
+
+  await rm(dir, { recursive: true, force: true });
+
+  return pair;
+};
+
+const ONE_MIB = 1_048_576;
+
+describe("httpsFetchText against a local HTTPS server", () => {
+  const local = { server: undefined as Server | undefined, origin: "", fetchText: httpsFetchText };
+
+  beforeAll(async () => {
+    const certificate = await selfSignedCertificate();
+    const server = createServer(certificate, (request, response) => {
+      const path = request.url ?? "/";
+      const hops = /^\/hops\/(\d+)$/.exec(path);
+
+      if (hops !== null) {
+        const left = Number(hops[1]);
+
+        response.writeHead(left === 0 ? 200 : 302, left === 0 ? {} : { location: `/hops/${left - 1}` });
+
+        response.end(left === 0 ? "arrived" : "");
+
+        return;
+      }
+
+      if (path === "/to-http") {
+        response.writeHead(302, { location: `http://127.0.0.1:${(server.address() as AddressInfo).port}/x` });
+
+        response.end();
+
+        return;
+      }
+
+      if (path === "/huge") {
+        response.writeHead(200);
+
+        response.write(Buffer.alloc(ONE_MIB + 1, "x"));
+      }
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const testGet: HttpsGet = (url, options, callback) =>
+      get(url, { ...options, ca: [certificate.cert] }, callback);
+
+    local.server = server;
+    local.origin = `https://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    local.fetchText = createHttpsFetchText(testGet);
+  });
+
+  afterAll(async () => {
+    local.server?.closeAllConnections();
+
+    await new Promise((resolve) => local.server?.close(resolve));
+  });
+
+  const fetchPath = (path: string, timeoutMs = 2000) =>
+    local.fetchText(`${local.origin}${path}`, { timeoutMs });
+
+  it("follows up to 3 redirects and refuses a fourth", async () => {
+    await expect(fetchPath("/hops/3")).resolves.toEqual({ status: 200, body: "arrived" });
+    await expect(fetchPath("/hops/4")).rejects.toThrow("more than 3 redirects");
+  });
+
+  it("refuses a redirect from HTTPS to plain HTTP", async () => {
+    await expect(fetchPath("/to-http")).rejects.toThrow("only HTTPS URLs are fetched");
+  });
+
+  it("stops reading a body once it passes 1 MiB, without waiting for its end", async () => {
+    await expect(fetchPath("/huge")).rejects.toThrow(/^org: response larger than 1 MiB$/);
+  });
+
+  it("names the timeout when the server does not answer", async () => {
+    await expect(fetchPath("/silent", 200)).rejects.toThrow("timed out after 200 ms");
+  });
+
+  it("does not trust a server outside the system and default CA stores", async () => {
+    await expect(httpsFetchText(`${local.origin}/hops/0`, { timeoutMs: 2000 })).rejects.toThrow();
+  });
+});
+
+describe("orgBaselineStatus", () => {
+  const SHOWN = "https://config.example.internal/pi/baseline.json";
+
+  it("reports a URL source that has never been fetched, without the query", async () => {
+    const { stateDir, clock } = await setup();
+
+    await expect(
+      orgBaselineStatus({ ref: { source: URL_SOURCE }, stateDir, now: clock.now }),
+    ).resolves.toEqual({
+      ok: false,
+      message: `${SHOWN} has not been fetched`,
+    });
+  });
+
+  it("reports the age and hash of an intact cached copy", async () => {
+    const { stateDir, clock, load } = await setup();
+
+    await load();
+
+    clock.advance(2 * HOUR_MS + 1);
+
+    await expect(
+      orgBaselineStatus({ ref: { source: URL_SOURCE }, stateDir, now: clock.now }),
+    ).resolves.toEqual({
+      ok: true,
+      message: `${SHOWN} fetched 2 h ago, sha256 ${sha256Hex(BASELINE).slice(0, 12)}`,
+    });
+  });
+
+  it("tells a changed source, a damaged copy and a pin mismatch apart", async () => {
+    const { stateDir, clock, load } = await setup();
+    const status = (ref: OrgRef) => orgBaselineStatus({ ref, stateDir, now: clock.now });
+
+    await load();
+
+    await expect(status({ source: "https://config.example.internal/other.json" })).resolves.toEqual({
+      ok: false,
+      message: "https://config.example.internal/other.json has not been fetched since org.source changed",
+    });
+    await expect(status({ source: URL_SOURCE, sha256: "0".repeat(64) })).resolves.toEqual({
+      ok: false,
+      message: `${SHOWN} has a cached copy that does not match the pinned sha256`,
+    });
+
+    await writeFile(stateLayout(stateDir).orgBaseline, NEWER);
+
+    await expect(status({ source: URL_SOURCE })).resolves.toEqual({
+      ok: false,
+      message: `${SHOWN} has a damaged cached copy`,
+    });
+  });
+
+  it("checks a file source directly: readable, pinned and valid", async () => {
+    const { stateDir, clock } = await setup();
+    const file = join(stateDir, "baseline.json");
+    const status = (ref: Partial<OrgRef> = {}) =>
+      orgBaselineStatus({ ref: { source: file, ...ref }, stateDir, now: clock.now });
+
+    await expect(status()).resolves.toEqual({ ok: false, message: `cannot read ${file}` });
+
+    await writeFile(file, BASELINE);
+
+    await expect(status()).resolves.toEqual({
+      ok: true,
+      message: `${file}, sha256 ${sha256Hex(BASELINE).slice(0, 12)}`,
+    });
+    await expect(status({ sha256: "0".repeat(64) })).resolves.toEqual({
+      ok: false,
+      message: `${file} does not match the pinned sha256`,
+    });
+
+    await writeFile(file, JSON.stringify({ ports: [3000] }));
+
+    await expect(status()).resolves.toEqual({
+      ok: false,
+      message: `${file}: org: ports is not a known key`,
+    });
   });
 });

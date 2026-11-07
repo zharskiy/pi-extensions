@@ -1,4 +1,4 @@
-import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -78,6 +78,28 @@ describe("sessions", () => {
     });
 
     expect(calls).toEqual(["last"]);
+  });
+
+  it("deletes the entry of a dead launcher when another session registers or ends", async () => {
+    const directory = join(state.stateDir, "sessions", REPO);
+    const live = entry();
+    const files = async () => (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
+
+    await registerSession(state.stateDir, entry(DEAD_PID));
+
+    expect(await files()).toEqual([]);
+
+    await registerSession(state.stateDir, live);
+
+    await writeFile(join(directory, `${"a".repeat(16)}.json`), JSON.stringify(entry(DEAD_PID)));
+
+    await endSession(state.stateDir, {
+      repoHash: REPO,
+      launchId: newLaunchId(),
+      onLast: async () => undefined,
+    });
+
+    expect(await files()).toEqual([`${live.launchId}.json`]);
   });
 
   it("lists sessions of every repository", async () => {

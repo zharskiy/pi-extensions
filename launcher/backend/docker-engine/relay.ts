@@ -1,5 +1,7 @@
 import { LauncherError } from "../../shared/index.ts";
-import type { ProxyRoute } from "../types.ts";
+import { LABELS } from "../labels.ts";
+import { pruneCandidates, repoNetworkLabels, repoNetworkName } from "../managed-network.ts";
+import type { ProxyRoute, ProxyRouteRequest } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
 interface RelayInspect {
@@ -18,23 +20,7 @@ interface NetworkSummary {
   Name?: string;
 }
 
-const RELAY_NETWORK = "pi-sandbox";
-
-const REPO_LABEL = "pi-sandbox.repo-hash";
-
-const SHORT_REPO_HASH = 12;
-
 const RELAY_PREFIX = "pi-sandbox-relay-";
-
-const MANAGED_LABEL = "pi-sandbox.managed";
-
-const RELAY_LABEL = "pi-sandbox.relay";
-
-const RELAY_PORT_LABEL = "pi-sandbox.relay-port";
-
-const POLICY_LABEL = "pi-sandbox.proxy-policy-hash";
-
-const IMAGE_LABEL = "pi-sandbox.relay-image";
 
 const RELAY_LISTEN_PORT = 3128;
 
@@ -45,18 +31,13 @@ const HOST_GATEWAY = "host-gateway";
 const networkHint = (name: string) =>
   `remove it (docker network rm ${name}) so the launcher can create its own`;
 
-const PRUNABLE_NETWORK = /^pi-sandbox(?:-([0-9a-f]{12}))?$/;
-
-const repoNetworkName = (repoHash: string | undefined) =>
-  repoHash === undefined ? RELAY_NETWORK : `${RELAY_NETWORK}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
-
 const relayName = (policyHash: string) => `${RELAY_PREFIX}${policyHash.slice(0, 8)}`;
 
 const relayLabels = (hostPort: number, policyHash: string) => ({
-  [MANAGED_LABEL]: "true",
-  [RELAY_LABEL]: "true",
-  [RELAY_PORT_LABEL]: String(hostPort),
-  [POLICY_LABEL]: policyHash,
+  [LABELS.managed]: "true",
+  [LABELS.relay]: "true",
+  [LABELS.relayPort]: String(hostPort),
+  [LABELS.proxyPolicyHash]: policyHash,
 });
 
 export const createRelayOperations = (
@@ -77,12 +58,12 @@ export const createRelayOperations = (
       throw new LauncherError(`network ${name} exists but is not internal`, networkHint(name));
     }
 
-    if (network.Labels?.[MANAGED_LABEL] !== "true") {
+    if (network.Labels?.[LABELS.managed] !== "true") {
       throw new LauncherError(`network ${name} exists but is not managed by pi-sandbox`, networkHint(name));
     }
   };
 
-  const ensureNetwork = async (name: string, repoHash: string | undefined) => {
+  const ensureNetwork = async (name: string, repoHash: string) => {
     const existing = await inspectNetwork(name);
 
     if (existing !== undefined) {
@@ -98,7 +79,7 @@ export const createRelayOperations = (
         Name: name,
         Driver: "bridge",
         Internal: true,
-        Labels: { [MANAGED_LABEL]: "true", ...(repoHash === undefined ? {} : { [REPO_LABEL]: repoHash }) },
+        Labels: repoNetworkLabels(repoHash),
       },
     });
   };
@@ -134,7 +115,7 @@ export const createRelayOperations = (
         Image: imageId,
         Entrypoint: ["socat"],
         Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${hostAlias}:${hostPort}`],
-        Labels: { ...relayLabels(hostPort, policyHash), [IMAGE_LABEL]: imageId },
+        Labels: { ...relayLabels(hostPort, policyHash), [LABELS.relayImage]: imageId },
         HostConfig: {
           NetworkMode: "bridge",
           ExtraHosts: [`${DOCKER_HOST_ALIAS}:${gateway}`],
@@ -153,7 +134,7 @@ export const createRelayOperations = (
     client.json<NetworkSummary[]>({
       method: "GET",
       path: "/networks",
-      query: { filters: JSON.stringify({ label: [`${MANAGED_LABEL}=true`] }) },
+      query: { filters: JSON.stringify({ label: [`${LABELS.managed}=true`] }) },
     });
 
   const servesOthers = async (relayId: string, ownNetwork: string) => {
@@ -173,7 +154,7 @@ export const createRelayOperations = (
   };
 
   const keptNotice = (name: string, relay: RelayInspect, hostPort: number) =>
-    `the egress relay ${name} still forwards to proxy port ${relay.Config?.Labels?.[RELAY_PORT_LABEL] ?? "unknown"}, not ${hostPort}; it is kept because sandboxes of other repositories use it, so egress may fail until they exit and it is replaced`;
+    `the egress relay ${name} still forwards to proxy port ${relay.Config?.Labels?.[LABELS.relayPort] ?? "unknown"}, not ${hostPort}; it is kept because sandboxes of other repositories use it, so egress may fail until they exit and it is replaced`;
 
   const ensureRelay = async (hostPort: number, policyHash: string, imageId: string, network: string) => {
     const name = relayName(policyHash);
@@ -217,17 +198,12 @@ export const createRelayOperations = (
     return address;
   };
 
-  const prepareProxyRoute = async (
-    hostPort: number,
-    policyHash: string,
-    imageId: string,
-    repoHash?: string,
-  ): Promise<ProxyRoute> => {
+  const prepareProxyRoute = async ({ hostPort, repoHash, relay }: ProxyRouteRequest): Promise<ProxyRoute> => {
     const network = repoNetworkName(repoHash);
 
     await ensureNetwork(network, repoHash);
 
-    const { relayId, notices } = await ensureRelay(hostPort, policyHash, imageId, network);
+    const { relayId, notices } = await ensureRelay(hostPort, relay.policyHash, relay.imageId, network);
 
     return {
       network: { kind: "internal", name: network },
@@ -239,7 +215,7 @@ export const createRelayOperations = (
   const removeNetwork = async (name: string) => {
     const network = await inspectNetwork(name);
 
-    if (network === undefined || network.Labels?.[MANAGED_LABEL] !== "true") {
+    if (network === undefined || network.Labels?.[LABELS.managed] !== "true") {
       return false;
     }
 
@@ -267,24 +243,16 @@ export const createRelayOperations = (
     return response.status < 300;
   };
 
-  const removeRepoNetwork = async (repoHash: string) => {
-    await removeNetwork(repoNetworkName(repoHash));
-  };
-
   const pruneNetworks = async (keepRepoHashes: string[]) => {
-    const kept = new Set(keepRepoHashes.map((hash) => hash.slice(0, SHORT_REPO_HASH)));
     const listed = await managedNetworks();
-    const candidates = listed
-      .map((network) => network.Name ?? "")
-      .filter((name) => {
-        const match = PRUNABLE_NETWORK.exec(name);
-
-        return match !== null && (match[1] === undefined || !kept.has(match[1]));
-      });
+    const candidates = pruneCandidates(
+      listed.map((network) => network.Name ?? ""),
+      keepRepoHashes,
+    );
     const removed = await Promise.all(candidates.map(removeNetwork));
 
     return candidates.filter((_name, index) => removed[index]);
   };
 
-  return { prepareProxyRoute, removeRepoNetwork, pruneNetworks };
+  return { prepareProxyRoute, removeNetwork, pruneNetworks };
 };

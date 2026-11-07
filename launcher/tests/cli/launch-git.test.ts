@@ -1,25 +1,11 @@
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
 
 const UNPROTECTED =
   "pi-sandbox: the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
@@ -30,7 +16,7 @@ describe("the commondir pin around container starts", () => {
   it("is in place at every start, a restart of the stopped container included, and gone after the last session", async () => {
     const fake = createFakeBackend();
     const pinsAtStart: string[] = [];
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [
         {
           ...fake.backend,
@@ -58,7 +44,7 @@ describe("the commondir pin around container starts", () => {
 
   it("refuses a repository whose commondir the sandbox rewrote, naming the file, and starts nothing", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
     const pin = join(harness.repoRoot, ".git", "commondir");
 
     await writeFile(pin, "../.x\n");
@@ -71,7 +57,7 @@ describe("the commondir pin around container starts", () => {
 
   it("says so when it joins a running sandbox that predates the git snapshots", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await registerSession(harness.stateDir, {
       launchId: "00000000000000aa",

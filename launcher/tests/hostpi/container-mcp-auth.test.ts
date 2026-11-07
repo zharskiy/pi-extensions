@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { containerMcpAuth, mcpAuthKey } from "../../hostpi/index.ts";
+import { containerMcpAuth } from "../../hostpi/index.ts";
 import {
   isPlaceholder,
+  mcpAuthKey,
   readJsonFile,
   stateLayout,
   type VaultServer,

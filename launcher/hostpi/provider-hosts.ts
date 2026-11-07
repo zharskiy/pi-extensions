@@ -1,14 +1,15 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type CommandRunner,
   errorMessage,
+  isJsonObject,
   launcherRoot,
+  parseJsonObject,
+  readJsonObject,
   stateLayout,
   writeJsonFile,
 } from "../shared/index.ts";
-import { isJsonObject } from "./json.ts";
 import type { BundledPi, ProviderHosts } from "./types.ts";
 
 export interface ProviderHostsInput {
@@ -49,13 +50,9 @@ const isTable = (value: unknown): value is ProviderHosts =>
   );
 
 const parseTable = (text: string) => {
-  try {
-    const value: unknown = JSON.parse(text);
+  const value = parseJsonObject(text);
 
-    return isTable(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  return isTable(value) ? value : undefined;
 };
 
 const packageDirFrom = (start: string): string | undefined => {
@@ -87,8 +84,7 @@ export const locateBundledPi = async (): Promise<BundledPi | undefined> => {
     return undefined;
   }
 
-  const text = await readFile(join(packageDir, "package.json"), "utf8").catch(() => "{}");
-  const manifest = JSON.parse(text) as PiManifest;
+  const manifest: PiManifest = (await readJsonObject(join(packageDir, "package.json"))) ?? {};
   const bin = binOf(manifest);
 
   if (typeof manifest.version !== "string" || bin === undefined) {
@@ -104,9 +100,9 @@ const unavailable = (reason: string): ProviderHostsResult => ({
 });
 
 const cachedTable = async (path: string | undefined) => {
-  const text = path === undefined ? undefined : await readFile(path, "utf8").catch(() => undefined);
+  const value = path === undefined ? undefined : await readJsonObject(path);
 
-  return text === undefined ? undefined : parseTable(text);
+  return isTable(value) ? value : undefined;
 };
 
 const runScript = async (

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SandboxConfig } from "../../config/index.ts";
-import { ensureBuiltImage, ensureLayerImage } from "../../image/index.ts";
+import { ensureBuiltImage } from "../../image/build.ts";
+import { ensureLayerImage } from "../../image/layer.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 

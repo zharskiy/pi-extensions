@@ -1,10 +1,9 @@
+import { LABELS } from "../labels.ts";
 import type { ContainerState, ContainerSummary, MountSpec } from "../types.ts";
 
 export const CONTAINER_CLI = "container";
 
 export const APPLE_SSH_SOCKET = "/var/host-services/ssh-auth.sock";
-
-export const APPLE_PROXY_NETWORK = "pi-sandbox";
 
 export const APPLE_COMMANDS = {
   systemStatus: ["system", "status"],
@@ -13,6 +12,7 @@ export const APPLE_COMMANDS = {
   imagePull: ["image", "pull"],
   build: ["build"],
   list: ["list", "--all", "--format", "json"],
+  inspect: ["inspect"],
   create: ["create"],
   run: ["run"],
   start: ["start"],
@@ -141,8 +141,6 @@ const APPLE_NETWORK_FIELDS = {
 
 const APPLE_HOST_ONLY_MODE = "hostOnly";
 
-export const APPLE_MANAGED_LABEL = "pi-sandbox.managed";
-
 export interface AppleNetwork {
   gateway?: string;
   internal?: boolean;
@@ -183,6 +181,6 @@ export const networkOf = (output: string): AppleNetwork => {
   return {
     gateway: text(firstAt(network, APPLE_NETWORK_FIELDS.gateway)),
     internal: internalOf(network),
-    managed: labels[APPLE_MANAGED_LABEL] === "true",
+    managed: labels[LABELS.managed] === "true",
   };
 };

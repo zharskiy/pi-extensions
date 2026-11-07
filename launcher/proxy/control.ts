@@ -1,37 +1,30 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { get, request as httpRequest } from "node:http";
 import type { EgressCap, SandboxConfig } from "../config/index.ts";
 import {
   type CommandRunner,
   createProcessRunner,
+  ensureRandomHexFile,
+  isProcessAlive,
   LauncherError,
   launcherEntry,
-  readJsonFile,
+  readJsonObject,
+  stateLayout,
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
-import { controlAuthorization } from "./auth.ts";
 import { minimalEnv, parentProxyEnv } from "./child-env.ts";
-import { type DaemonConfig, type ProxyInstance, proxyFiles, proxyRoot } from "./files.ts";
+import { readHealth } from "./client.ts";
+import type { DaemonConfig, ProxyInstance } from "./files.ts";
 import { proxyPolicyHash } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
-interface EnvSecretsMessage {
-  type: "env-secrets";
-  secrets: Record<string, string>;
-  repoTokenHash?: string;
-}
-
-export type ControlMessage = EnvSecretsMessage;
-
-export type ControlReply = { ok: true } | { ok: false; error: string };
+export type { ControlMessage, ControlReply } from "./client.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
-type InstanceFiles = ReturnType<typeof proxyFiles>;
+type InstanceFiles = ReturnType<ReturnType<typeof stateLayout>["proxyInstance"]>;
 
 export interface EnsureProxyOptions {
   stateDir: string;
@@ -49,17 +42,7 @@ export interface EnsureProxyOptions {
   listenHosts?: string[];
 }
 
-interface Health {
-  ok: boolean;
-  policyHash: string;
-  pid: number;
-}
-
-const LISTEN_HOST = "127.0.0.1";
-
 const PRIVATE_MODE = 0o600;
-
-const HEALTH_TIMEOUT_MS = 500;
 
 const START_TIMEOUT_MS = 2000;
 
@@ -71,43 +54,55 @@ const POLL_MS = 50;
 
 const TOKEN_BYTES = 32;
 
-const TOKEN_PATTERN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
+const PROXY_URL_KEYS = ["HTTPS_PROXY", "https_proxy"];
+
+const DAEMON_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "NO_PROXY",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "NODE_OPTIONS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "PI_CODING_AGENT_DIR",
+  "PI_SANDBOX_STATE_DIR",
+  "PI_SANDBOX_USER_CONFIG",
+  "PI_SANDBOX_POLICY_FILE",
+  "PI_SANDBOX_TEST_RESOLVE",
+];
+
+const withoutUserinfo = (text: string | undefined) => {
+  try {
+    const url = text === undefined || text === "" ? undefined : new URL(text);
+
+    return url === undefined
+      ? text
+      : `${url.protocol}//${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch {
+    return text;
+  }
+};
+
+const pickEnv = (env: NodeJS.ProcessEnv, keys: string[]) =>
+  Object.fromEntries(keys.filter((key) => env[key] !== undefined).map((key) => [key, env[key]]));
+
+export const daemonEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
+  ...pickEnv(env, DAEMON_ENV_KEYS),
+  ...Object.fromEntries(
+    PROXY_URL_KEYS.filter((key) => env[key] !== undefined).map((key) => [key, withoutUserinfo(env[key])]),
+  ),
+});
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const readHealth = (instance: ProxyInstance) =>
-  new Promise<Health | undefined>((resolve) => {
-    const request = get(
-      {
-        host: LISTEN_HOST,
-        port: instance.port,
-        path: "/healthz",
-        timeout: HEALTH_TIMEOUT_MS,
-        headers: { "proxy-authorization": controlAuthorization(instance.token) },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-        response.on("end", () => {
-          try {
-            const health = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Health;
-
-            resolve(response.statusCode === 200 && health.ok === true ? health : undefined);
-          } catch {
-            resolve(undefined);
-          }
-        });
-      },
-    );
-
-    request.on("timeout", () => request.destroy());
-
-    request.on("error", () => resolve(undefined));
-  });
-
-const readRecord = (files: InstanceFiles) => readJsonFile<ProxyInstance>(files.record).catch(() => undefined);
+const readRecord = async (files: InstanceFiles) =>
+  (await readJsonObject(files.record)) as ProxyInstance | undefined;
 
 const isHealthy = async (instance: ProxyInstance | undefined) => {
   if (instance === undefined) {
@@ -134,16 +129,6 @@ const recordedPort = async (files: InstanceFiles) => {
   return Number.isInteger(port) && port > 0 ? port : undefined;
 };
 
-const isAlive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const waitUntil = async (check: () => Promise<boolean>, deadline: number, now: () => number) => {
   if (await check()) {
     return true;
@@ -159,13 +144,13 @@ const waitUntil = async (check: () => Promise<boolean>, deadline: number, now: (
 };
 
 const terminate = async (pid: number, now: () => number) => {
-  if (!isAlive(pid)) {
+  if (!isProcessAlive(pid)) {
     return;
   }
 
   process.kill(pid, "SIGTERM");
 
-  const stopped = await waitUntil(async () => !isAlive(pid), now() + STOP_TIMEOUT_MS, now);
+  const stopped = await waitUntil(async () => !isProcessAlive(pid), now() + STOP_TIMEOUT_MS, now);
 
   if (!stopped) {
     process.kill(pid, "SIGKILL");
@@ -179,14 +164,16 @@ const withLock = async <T>(files: InstanceFiles, action: () => Promise<T>) => {
 };
 
 const instanceDirectories = async (stateDir: string) => {
-  const entries = await readdir(proxyRoot(stateDir), { withFileTypes: true }).catch(() => []);
+  const entries = await readdir(stateLayout(stateDir).proxyRoot, { withFileTypes: true }).catch(() => []);
 
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 };
 
 export const readProxyInstances = async (stateDir: string) => {
   const hashes = await instanceDirectories(stateDir);
-  const records = await Promise.all(hashes.map((hash) => healthyRecord(proxyFiles(stateDir, hash))));
+  const records = await Promise.all(
+    hashes.map((hash) => healthyRecord(stateLayout(stateDir).proxyInstance(hash))),
+  );
 
   return records.filter((record): record is ProxyInstance => record !== undefined);
 };
@@ -215,7 +202,7 @@ const stopInstance = async (files: InstanceFiles, hash: string, runner: CommandR
 };
 
 export const removeProxyInstance = async (stateDir: string, policyHash: string) => {
-  const files = proxyFiles(stateDir, policyHash);
+  const files = stateLayout(stateDir).proxyInstance(policyHash);
   const found = await stat(files.directory).then(
     () => true,
     () => false,
@@ -236,7 +223,7 @@ export const stopProxy = async (stateDir: string, policyHash?: string) => {
   const runner = createProcessRunner();
   const hashes = policyHash === undefined ? await instanceDirectories(stateDir) : [policyHash];
   const stopped = await Promise.all(
-    hashes.map((hash) => stopInstance(proxyFiles(stateDir, hash), hash, runner)),
+    hashes.map((hash) => stopInstance(stateLayout(stateDir).proxyInstance(hash), hash, runner)),
   );
 
   return stopped.filter(Boolean).length;
@@ -315,21 +302,7 @@ const respondsTwice = async (record: ProxyInstance) => {
   return isHealthy(record);
 };
 
-const instanceToken = async (files: InstanceFiles) => {
-  const stored = await readFile(files.token, "utf8").catch(() => "");
-
-  if (TOKEN_PATTERN.test(stored)) {
-    return stored;
-  }
-
-  const token = randomBytes(TOKEN_BYTES).toString("hex");
-
-  await rm(files.token, { force: true });
-
-  await writeFile(files.token, token, { mode: PRIVATE_MODE });
-
-  return token;
-};
+const instanceToken = (files: InstanceFiles) => ensureRandomHexFile(files.token, TOKEN_BYTES);
 
 const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles, hash: string) => {
   const now = options.now ?? Date.now;
@@ -371,7 +344,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
 
 export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<ProxyInstance> => {
   const hash = proxyPolicyHash(options.config, options.egressCap);
-  const files = proxyFiles(options.stateDir, hash);
+  const files = stateLayout(options.stateDir).proxyInstance(hash);
 
   await openLauncherCa({ stateDir: options.stateDir, runner: options.runner ?? createProcessRunner() });
 
@@ -383,49 +356,3 @@ export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<P
 
   return withLock(files, () => replaceInstance(options, files, hash));
 };
-
-const CONTROL_TIMEOUT_MS = 2000;
-
-const parseReply = (text: string): ControlReply => {
-  try {
-    const reply = JSON.parse(text) as ControlReply;
-
-    return typeof reply === "object" && reply !== null && typeof reply.ok === "boolean"
-      ? reply
-      : { ok: false, error: "the proxy sent an unreadable reply" };
-  } catch {
-    return { ok: false, error: "the proxy sent an unreadable reply" };
-  }
-};
-
-export const sendProxyControl = (instance: ProxyInstance, message: ControlMessage) =>
-  new Promise<ControlReply>((resolve) => {
-    const body = JSON.stringify(message);
-    const request = httpRequest(
-      {
-        host: LISTEN_HOST,
-        port: instance.port,
-        method: "POST",
-        path: "/control",
-        timeout: CONTROL_TIMEOUT_MS,
-        headers: {
-          "proxy-authorization": controlAuthorization(instance.token),
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(body),
-        },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-        response.on("end", () => resolve(parseReply(Buffer.concat(chunks).toString("utf8"))));
-      },
-    );
-
-    request.on("timeout", () => request.destroy());
-
-    request.on("error", (error) => resolve({ ok: false, error: `cannot reach the proxy: ${error.message}` }));
-
-    request.end(body);
-  });

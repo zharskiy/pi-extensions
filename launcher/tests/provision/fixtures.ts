@@ -1,24 +1,23 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { afterEach } from "vitest";
+import type { Backend } from "../../backend/index.ts";
 
-const created: string[] = [];
+export { tempDir, writeText } from "../support/temp-dir.ts";
 
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
+export const runningContainer = async (backend: Backend) => {
+  const { id } = await backend.createContainer({
+    name: "pi-sandbox-provision",
+    image: "pi-sandbox:test",
+    labels: {},
+    mounts: [],
+    network: { kind: "none" },
+    env: {},
+    workdir: "/",
+    readOnlyRoot: false,
+    tmpfs: [],
+    init: true,
+    resources: {},
+  });
 
-export const tempDir = async (prefix: string) => {
-  const dir = await mkdtemp(join(tmpdir(), `pi-sandbox-${prefix}-`));
+  await backend.startContainer(id);
 
-  created.push(dir);
-
-  return dir;
-};
-
-export const writeText = async (path: string, text: string | Buffer) => {
-  await mkdir(dirname(path), { recursive: true });
-
-  await writeFile(path, text);
+  return id;
 };

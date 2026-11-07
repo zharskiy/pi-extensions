@@ -1,4 +1,4 @@
-import { isJsonObject } from "./json.ts";
+import { isJsonObject } from "../shared/index.ts";
 import type { JsonObject } from "./types.ts";
 
 const NPM_SOURCE = /^npm:(@[^/@]+\/[^@]+|[^@]+)(?:@.*)?$/;

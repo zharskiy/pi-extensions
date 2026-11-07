@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 interface LauncherPaths {
@@ -59,6 +60,22 @@ export const isWithin = (path: string, parent: string) => {
   const rest = relative(parent, path);
 
   return rest === "" || (rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest));
+};
+
+export const realOrResolved = async (path: string) => {
+  const absolute = resolve(path);
+
+  return realpath(absolute).catch(() => absolute);
+};
+
+export const realOrResolvedSync = (path: string) => {
+  const absolute = resolve(path);
+
+  try {
+    return realpathSync.native(absolute);
+  } catch {
+    return absolute;
+  }
 };
 
 export const projectConfigFile = (repoRoot: string) => join(repoRoot, ".pi", "sandbox.json");

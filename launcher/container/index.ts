@@ -4,6 +4,7 @@ export {
   type GitOverlay,
   gitLaunchNotices,
   gitSessionEndNotices,
+  planGitOverlay,
   readyGitOverlay,
 } from "./git-overlay.ts";
 export {
@@ -15,7 +16,6 @@ export {
   isCurrentContainer,
   policyHashesInUse,
   removeRepoContainer,
-  stopIdleContainer,
 } from "./lifecycle.ts";
 export { LABELS } from "./names.ts";
 export type { CheckResult, ProbeTarget } from "./probes.ts";

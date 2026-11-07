@@ -6,7 +6,7 @@ import {
   type OAuthCallbackReply,
   type OAuthCancelReply,
   type OAuthOpenReply,
-} from "../../shared/index.ts";
+} from "./protocol.ts";
 
 export interface FlowInput {
   repoHash: string;

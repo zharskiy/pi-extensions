@@ -1,7 +1,8 @@
 import { access } from "node:fs/promises";
-import type { Backend } from "../../backend/index.ts";
+import type { Backend, ContainerSummary } from "../../backend/index.ts";
 import { collectGarbage, LABELS } from "../../container/index.ts";
 import { liveSessions } from "../../grants/index.ts";
+import { removeRepoToken } from "../../proxy/index.ts";
 import { stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { openBackend, openContext } from "../launch.ts";
@@ -18,7 +19,7 @@ const exists = (path: string) =>
 const servesAny = async (stateDir: string, policyHash: string, repoHashes: string[]) =>
   (
     await Promise.all(
-      repoHashes.map((repo) => exists(stateLayout(stateDir).proxyRepoToken(policyHash, repo))),
+      repoHashes.map((repo) => exists(stateLayout(stateDir).proxyInstance(policyHash).repoToken(repo))),
     )
   ).some(Boolean);
 
@@ -37,6 +38,19 @@ const reposWithContainers = async (backend: Backend) =>
       return repoHash === undefined ? [] : [repoHash];
     });
 
+const removeTokens = (stateDir: string, removed: ContainerSummary[], policyHashes: string[]) =>
+  Promise.all(
+    removed.flatMap((container) => {
+      const repoHash = container.labels[LABELS.repoHash];
+      const own = container.labels[LABELS.proxyPolicyHash];
+      const policies = [...new Set(own === undefined ? policyHashes : [...policyHashes, own])];
+
+      return repoHash === undefined
+        ? []
+        : policies.map((policyHash) => removeRepoToken(stateDir, policyHash, repoHash));
+    }),
+  );
+
 export const gcCommand = async (deps: CliDeps) => {
   const { effective, stateDir } = await openContext(deps);
   const backend = await openBackend(deps, effective.config);
@@ -49,6 +63,12 @@ export const gcCommand = async (deps: CliDeps) => {
   );
   const garbage = await collectGarbage(backend, { repoHashes, policyHashes });
   const idle = instances.filter((instance) => !garbage.policyHashesInUse.includes(instance.policyHash));
+
+  await removeTokens(
+    stateDir,
+    garbage.containers,
+    instances.map((instance) => instance.policyHash),
+  );
 
   await Promise.all(idle.map((instance) => deps.proxy.stop(stateDir, instance.policyHash)));
 

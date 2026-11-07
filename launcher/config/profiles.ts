@@ -1,12 +1,10 @@
 import { join } from "node:path";
 import { LauncherError, launcherRoot, readJsonFile } from "../shared/index.ts";
-import type { LayerConfig, ProfileName } from "./types.ts";
+import { type LayerConfig, PROFILE_NAMES } from "./types.ts";
 import { validateLayer } from "./validate.ts";
 
-const PROFILE_NAMES: readonly string[] = ["enterprise", "team", "solo"] satisfies ProfileName[];
-
 export const loadProfile = async (name: string): Promise<LayerConfig> => {
-  if (!PROFILE_NAMES.includes(name)) {
+  if (!(PROFILE_NAMES as readonly string[]).includes(name)) {
     throw new LauncherError(`profile ${name}: unknown profile`, `use one of ${PROFILE_NAMES.join(", ")}`);
   }
 

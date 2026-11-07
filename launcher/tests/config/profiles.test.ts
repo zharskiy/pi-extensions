@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { defaultConfig } from "../../config/defaults.ts";
 import { loadProfile } from "../../config/profiles.ts";
 import { validateLayer } from "../../config/validate.ts";
 import { launcherRoot } from "../../shared/index.ts";
@@ -14,12 +15,14 @@ describe("loadProfile", () => {
 
     expect(solo.fallback).toBe("host");
     expect(solo.credentials).toEqual({ kind: "host-pi-auth" });
-    expect(solo.egress?.allow).toEqual([
-      "registry.npmjs.org",
-      "github.com",
-      "pypi.org",
-      "files.pythonhosted.org",
-    ]);
+  });
+
+  it.each(["solo", "team"])("keeps the %s allowlists equal to the defaults", async (name) => {
+    const defaults = await defaultConfig();
+    const profile = await loadProfile(name);
+
+    expect(profile.egress?.allow).toEqual(defaults.egress.allow);
+    expect(profile.env?.allow).toEqual(defaults.env.allow);
   });
 
   it("ships team as solo with a refused fallback and static credentials", async () => {

@@ -1,18 +1,22 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { CredentialRule, EgressCap } from "../config/index.ts";
-import { liveSessions, readGrants } from "../grants/index.ts";
-import { sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
+import {
+  authorityOf,
+  type CredentialRule,
+  type EgressCap,
+  matchesEntry,
+  parseEntry,
+  TLS_PORT,
+} from "../config/index.ts";
+import { activeGrants, type Grant, liveSessions, readGrants } from "../grants/index.ts";
+import { readJsonObject, sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
 import {
   type DynamicSection,
   emptyDynamic,
-  extraAllowList,
   parseDynamic,
-  repoTokensDir,
   type StoredDynamic,
   tokenFileHashes,
 } from "./dynamic.ts";
-import { matchesEntry, parseEntry } from "./policy.ts";
 
 export interface ProxyRuntime {
   repoOf(token: string): Promise<string | undefined>;
@@ -38,6 +42,11 @@ interface Snapshot<T> {
   value: T;
 }
 
+interface OwnedSection {
+  owner?: string;
+  section: DynamicSection;
+}
+
 const stampOf = async (path: string) => {
   const info = await stat(path).catch(() => undefined);
 
@@ -58,12 +67,18 @@ const directoryStampOf = async (directory: string) => {
   return stamps.join("|");
 };
 
-const readJson = async (path: string) => {
-  try {
-    return JSON.parse(await readFile(path, "utf8")) as unknown;
-  } catch {
-    return undefined;
-  }
+const stampCached = <T>(stampNow: () => Promise<string>, load: () => Promise<T>, initial: T) => {
+  const cache: { snapshot: Snapshot<T> } = { snapshot: { stamp: "", value: initial } };
+
+  return async () => {
+    const stamp = await stampNow();
+
+    if (stamp !== cache.snapshot.stamp) {
+      cache.snapshot = { stamp, value: await load() };
+    }
+
+    return cache.snapshot.value;
+  };
 };
 
 const capped = (entries: string[], cap: string[] | undefined) =>
@@ -72,7 +87,7 @@ const capped = (entries: string[], cap: string[] | undefined) =>
     : entries.filter((entry) => {
         const parsed = parseEntry(entry);
 
-        return cap.some((pattern) => matchesEntry(pattern, parsed.pattern, parsed.port ?? 443));
+        return cap.some((pattern) => matchesEntry(pattern, parsed.pattern, parsed.port ?? TLS_PORT));
       });
 
 const vaultHosts = (servers: VaultServer[]) => servers.flatMap((server) => server.discovery.hosts);
@@ -82,7 +97,7 @@ const uniqueServers = (servers: VaultServer[]) => [
 ];
 
 const ruleKey = (rule: CredentialRule) =>
-  `${rule.id}|${rule.host.toLowerCase()}|${rule.port ?? 443}|${rule.pathPrefix ?? ""}`;
+  `${rule.id}|${rule.host.toLowerCase()}|${rule.port ?? TLS_PORT}|${rule.pathPrefix ?? ""}`;
 
 const mergeRules = (first: CredentialRule[], second: CredentialRule[]) => {
   const keys = new Set(first.map(ruleKey));
@@ -90,94 +105,83 @@ const mergeRules = (first: CredentialRule[], second: CredentialRule[]) => {
   return [...first, ...second.filter((rule) => !keys.has(ruleKey(rule)))];
 };
 
+const visibleTo = (sections: OwnedSection[], repoHash: string | undefined) =>
+  sections
+    .filter((entry) => repoHash === undefined || entry.owner === undefined || entry.owner === repoHash)
+    .map((entry) => entry.section);
+
+const serversOf = (sections: DynamicSection[]) =>
+  uniqueServers(sections.flatMap((section) => section.vault ?? []));
+
 export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
   const layout = stateLayout(options.stateDir);
-  const dynamicPath = layout.proxyDynamic(options.policyHash);
-  const tokensDir = repoTokensDir(options.stateDir, options.policyHash);
+  const files = layout.proxyInstance(options.policyHash);
   const now = options.now ?? Date.now;
-  const cache: { dynamic: Snapshot<StoredDynamic>; tokens: Snapshot<Record<string, string>> } = {
-    dynamic: { stamp: "", value: emptyDynamic() },
-    tokens: { stamp: "", value: {} },
-  };
 
-  const dynamic = async () => {
-    const stamp = await stampOf(dynamicPath);
+  const dynamic = stampCached<StoredDynamic>(
+    () => stampOf(files.dynamic),
+    async () => parseDynamic(await readJsonObject(files.dynamic)),
+    emptyDynamic(),
+  );
 
-    if (stamp !== cache.dynamic.stamp) {
-      cache.dynamic = { stamp, value: parseDynamic(await readJson(dynamicPath)) };
-    }
+  const tokens = stampCached<Record<string, string>>(
+    () => directoryStampOf(files.tokensDir),
+    () => tokenFileHashes(files.tokensDir),
+    {},
+  );
 
-    return cache.dynamic.value;
-  };
+  const grants = stampCached<Grant[]>(
+    () => stampOf(layout.grants),
+    () => readGrants(options.stateDir).catch(() => []),
+    [],
+  );
 
-  const tokens = async () => {
-    const stamp = await directoryStampOf(tokensDir);
-
-    if (stamp !== cache.tokens.stamp) {
-      cache.tokens = { stamp, value: await tokenFileHashes(tokensDir) };
-    }
-
-    return cache.tokens.value;
-  };
-
-  const repoOfTokenHash = async (tokenHash: string) => {
-    const fromFiles = (await tokens())[tokenHash];
-
-    return fromFiles ?? (await dynamic()).tokens[tokenHash];
-  };
+  const repoOfTokenHash = async (tokenHash: string) => (await tokens())[tokenHash];
 
   const repoOf = (token: string) => repoOfTokenHash(sha256Hex(token));
 
-  const liveRepos = async () =>
-    new Set([...Object.values(await tokens()), ...Object.values((await dynamic()).tokens)]);
+  const liveRepos = async () => new Set(Object.values(await tokens()));
 
-  const sectionsFor = async (repoHash: string | undefined): Promise<DynamicSection[]> => {
-    const current = await dynamic();
-    const owned = await Promise.all(
-      Object.entries(current.repos).map(async ([tokenHash, section]) => {
-        const owner = await repoOfTokenHash(tokenHash);
-        const wanted = owner !== undefined && (repoHash === undefined || owner === repoHash);
+  const ownedSections = async (): Promise<OwnedSection[]> => {
+    const [current, owners] = await Promise.all([dynamic(), tokens()]);
+    const owned = Object.entries(current.repos).flatMap(([tokenHash, section]) => {
+      const owner = owners[tokenHash];
 
-        return wanted ? [section] : [];
-      }),
-    );
+      return owner === undefined ? [] : [{ owner, section }];
+    });
 
-    return [current.shared, ...owned.flat()];
+    return [{ section: current.shared }, ...owned];
   };
 
-  const grantEntries = async (current: StoredDynamic, repoHash: string) => {
+  const grantEntries = async (repoHash: string) => {
     if (!options.grantsEnabled) {
       return [];
     }
 
     const live = await liveSessions(options.stateDir, undefined, options.isAlive);
     const context = { now: now(), repoHash, liveLaunches: new Set(live.map((entry) => entry.launchId)) };
-    const fromGrants = extraAllowList({
-      dynamic: { ...current, derivedHosts: [] },
-      grants: await readGrants(options.stateDir).catch(() => []),
-      context,
-    });
+    const granted = activeGrants(await grants(), context).map((grant) => authorityOf(grant.host, grant.port));
 
-    return capped(fromGrants, options.cap.grants);
+    return capped(granted, options.cap.grants);
   };
 
-  const vault = async (repoHash?: string) =>
-    uniqueServers((await sectionsFor(repoHash)).flatMap((section) => section.vault ?? []));
+  const vault = async (repoHash?: string) => serversOf(visibleTo(await ownedSections(), repoHash));
 
   const extras = async (repoHash: string) => {
-    const current = await dynamic();
-    const derived = (await sectionsFor(undefined)).flatMap((section) => section.derivedHosts);
+    const sections = await ownedSections();
+    const derived = sections.flatMap((entry) => entry.section.derivedHosts);
+    const hosts = vaultHosts(serversOf(visibleTo(sections, repoHash)));
 
     return [
-      ...capped([...new Set([...derived, ...vaultHosts(await vault(repoHash))])], options.cap.derivedHosts),
-      ...(await grantEntries(current, repoHash)),
+      ...capped([...new Set([...derived, ...hosts])], options.cap.derivedHosts),
+      ...(await grantEntries(repoHash)),
     ];
   };
 
   const rules = async (repoHash?: string) =>
     mergeRules(
       options.staticRules,
-      (await sectionsFor(repoHash)).flatMap((section) => section.rules),
+      visibleTo(await ownedSections(), repoHash).flatMap((section) => section.rules),
     );
 
   return { repoOf, repoOfTokenHash, liveRepos, extras, rules, vault };

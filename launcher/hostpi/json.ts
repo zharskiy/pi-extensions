@@ -1,7 +1,4 @@
-import type { JsonObject } from "./types.ts";
-
-export const isJsonObject = (value: unknown): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+import { isJsonObject, type JsonObject } from "../shared/index.ts";
 
 export const objectOr = (value: unknown): JsonObject => (isJsonObject(value) ? value : {});
 

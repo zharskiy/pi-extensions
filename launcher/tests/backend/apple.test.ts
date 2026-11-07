@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { createAppleBackend } from "../../backend/apple/backend.ts";
-import type { ContainerSpec } from "../../backend/index.ts";
+import { type ContainerSpec, LABELS } from "../../backend/index.ts";
 import { createFakeContainerCli } from "../support/fake-container-cli.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 
@@ -10,12 +10,18 @@ const IMAGE = "example.test/pi-sandbox:1";
 
 const DIGEST = `sha256:${"d".repeat(64)}`;
 
+const REPO = "a".repeat(64);
+
+const REPO_NETWORK = `pi-sandbox-${REPO.slice(0, 12)}`;
+
+const ROUTE = { hostPort: 3128, repoHash: REPO, relay: { policyHash: "p".repeat(64), imageId: "image" } };
+
 const SWITCHES = new Set(["--read-only", "--init", "--ssh", "--no-dns", "--interactive", "--tty"]);
 
 const spec: ContainerSpec = {
   name: "pi-sandbox-abc",
   image: IMAGE,
-  labels: { "pi-sandbox.repo-hash": "abc" },
+  labels: { [LABELS.repoHash]: "abc" },
   mounts: [
     { kind: "bind", source: "/work/repo", target: "/work/repo", readOnly: false },
     { kind: "bind", source: "/work/repo/.git/hooks", target: "/work/repo/.git/hooks", readOnly: true },
@@ -82,7 +88,7 @@ describe("apple adapter", () => {
   it("declares its capabilities", () => {
     const backend = createAppleBackend({ runner: createFakeContainerCli().runner });
 
-    expect(backend.capabilities).toEqual({ singleFileMount: false, sshAgent: true, internalNetwork: true });
+    expect(backend.capabilities).toEqual({ singleFileMount: false, sshAgent: true });
   });
 
   it("translates the container spec into container create flags", async () => {
@@ -250,117 +256,32 @@ describe("apple adapter", () => {
     expect(await backend.resolveImage("example.test/absent:1")).toBeUndefined();
   });
 
-  it("creates the internal proxy network once and routes to its gateway", async () => {
+  it("creates the repository's labelled internal network once and routes to its gateway", async () => {
     const { cli, backend } = await readyCli();
 
-    expect(await backend.prepareProxyRoute(3128, "a".repeat(64), "image")).toEqual({
-      network: { kind: "internal", name: "pi-sandbox" },
+    expect(await backend.prepareProxyRoute(ROUTE)).toEqual({
+      network: { kind: "internal", name: REPO_NETWORK },
       address: "192.168.66.1:3128",
     });
 
-    await backend.prepareProxyRoute(3128, "a".repeat(64), "image");
+    await backend.prepareProxyRoute(ROUTE);
 
-    expect(cli.networks.get("pi-sandbox")).toEqual({ internal: true, labels: ["pi-sandbox.managed=true"] });
+    expect(cli.networks.get(REPO_NETWORK)).toEqual({
+      internal: true,
+      labels: [`${LABELS.managed}=true`, `${LABELS.repoHash}=${REPO}`],
+    });
     expect(cli.calls.filter((call) => call.args.slice(0, 2).join(" ") === "network create")).toHaveLength(1);
   });
 
-  it("gives each repository its own internal network and removes it with the repository's last container", async () => {
-    const { cli, backend } = await readyCli();
-    const repoA = "a".repeat(64);
-    const repoB = "b".repeat(64);
-    const routeA = await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoA);
-    const routeB = await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoB);
-    const create = (name: string, repo: string) =>
-      backend.createContainer({
-        ...spec,
-        name,
-        labels: { "pi-sandbox.repo-hash": repo },
-        network: repo === repoA ? routeA.network : routeB.network,
-      });
-
-    expect(routeA.network).toEqual({ kind: "internal", name: `pi-sandbox-${"a".repeat(12)}` });
-    expect(cli.networks.get(`pi-sandbox-${"a".repeat(12)}`)).toEqual({
-      internal: true,
-      labels: ["pi-sandbox.managed=true", `pi-sandbox.repo-hash=${repoA}`],
-    });
-
-    const first = await create("agent-a1", repoA);
-    const second = await create("agent-a2", repoA);
-
-    await create("agent-b", repoB);
-
-    await backend.removeContainer(first.id);
-
-    expect(cli.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
-
-    await backend.removeContainer(second.id);
-
-    expect(cli.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(false);
-    expect(cli.networks.has(`pi-sandbox-${"b".repeat(12)}`)).toBe(true);
-  });
-
-  it("keeps the repository's network when asked to while the last container is replaced", async () => {
-    const { cli, backend } = await readyCli();
-    const repo = "a".repeat(64);
-    const route = await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repo);
-    const created = await backend.createContainer({
-      ...spec,
-      name: "agent-a",
-      labels: { "pi-sandbox.repo-hash": repo },
-      network: route.network,
-    });
-
-    await backend.removeContainer(created.id, { keepNetwork: true });
-
-    expect(cli.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
-  });
-
-  it("prunes managed networks of repositories outside the keep set", async () => {
-    const { cli, backend } = await readyCli();
-    const repoA = "a".repeat(64);
-    const repoB = "b".repeat(64);
-
-    await backend.prepareProxyRoute(3128, "p".repeat(64), "image");
-
-    await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoA);
-
-    await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoB);
-
-    cli.networks.set("pi-sandbox-foreign", { internal: true, labels: [] });
-
-    expect(await backend.pruneNetworks([repoA])).toEqual(["pi-sandbox", `pi-sandbox-${"b".repeat(12)}`]);
-    expect([...cli.networks.keys()].sort()).toEqual([`pi-sandbox-${"a".repeat(12)}`, "pi-sandbox-foreign"]);
-  });
-
-  it("refuses an existing pi-sandbox network that is not internal", async () => {
-    const { cli, backend } = await readyCli();
-
-    cli.networks.set("pi-sandbox", { internal: false, labels: ["pi-sandbox.managed=true"] });
-
-    await expect(backend.prepareProxyRoute(3128, "a".repeat(64), "image")).rejects.toThrow(
-      "container network pi-sandbox exists but is not internal",
-    );
-  });
-
-  it("refuses an existing pi-sandbox network without the managed label", async () => {
-    const { cli, backend } = await readyCli();
-
-    cli.networks.set("pi-sandbox", { internal: true, labels: [] });
-
-    await expect(backend.prepareProxyRoute(3128, "a".repeat(64), "image")).rejects.toThrow(
-      "container network pi-sandbox exists but is not managed by pi-sandbox",
-    );
-  });
-
-  it("refuses a pi-sandbox network whose inspect output cannot show it is internal", async () => {
-    const inspected = JSON.stringify([{ id: "pi-sandbox", status: { gateway: "192.168.66.1" } }]);
+  it("refuses a repository network whose inspect output cannot show it is internal", async () => {
+    const inspected = JSON.stringify([{ id: REPO_NETWORK, status: { gateway: "192.168.66.1" } }]);
     const runner = createFakeRunner((call) =>
       call.args.slice(0, 2).join(" ") === "network inspect" ? { code: 0, stdout: inspected } : undefined,
     ).runner;
     const backend = createAppleBackend({ runner });
 
-    await expect(backend.prepareProxyRoute(3128, "a".repeat(64), "image")).rejects.toThrow(
-      "container network pi-sandbox cannot be verified as internal",
+    await expect(backend.prepareProxyRoute(ROUTE)).rejects.toThrow(
+      `container network ${REPO_NETWORK} cannot be verified as internal`,
     );
   });
 
@@ -369,7 +290,27 @@ describe("apple adapter", () => {
 
     await backend.ensureVolume("pi-sandbox-cache-x");
 
-    expect(cli.volumeLabels.get("pi-sandbox-cache-x")).toEqual(["pi-sandbox.managed=true"]);
+    expect(cli.volumeLabels.get("pi-sandbox-cache-x")).toEqual([`${LABELS.managed}=true`]);
+  });
+
+  it("names the taken container name only when the CLI says it already exists", async () => {
+    const { backend } = await readyCli();
+    const refusing = createAppleBackend({
+      runner: createFakeRunner((call) =>
+        call.args[0] === "create"
+          ? { code: 1, stderr: "Error: mount source /work/repo exists but is not a directory" }
+          : undefined,
+      ).runner,
+    });
+
+    await backend.createContainer(spec);
+
+    await expect(backend.createContainer(spec)).rejects.toThrow(
+      "container name pi-sandbox-abc is already in use",
+    );
+    await expect(refusing.createContainer(spec)).rejects.toThrow(
+      "container create: Error: mount source /work/repo exists but is not a directory",
+    );
   });
 
   it("passes the stop timeout through", async () => {

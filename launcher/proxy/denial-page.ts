@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
+import { PROXY_AGENT } from "./replies.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 
 export interface DenialPageOptions {
@@ -24,7 +25,7 @@ const pageHeaders = (text: string) => ({
   "content-type": "text/plain; charset=utf-8",
   "content-length": String(Buffer.byteLength(text)),
   connection: "close",
-  "proxy-agent": "pi-sandbox",
+  "proxy-agent": PROXY_AGENT,
 });
 
 const rawPage = (text: string) =>

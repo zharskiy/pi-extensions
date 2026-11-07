@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage } from "../shared/index.ts";
+import { errorMessage, parseJsonObject } from "../shared/index.ts";
 import type { HostPiFiles, JsonObject } from "./types.ts";
 
 type FileKey = "auth" | "models" | "mcp" | "settings";
@@ -17,17 +17,10 @@ const FILES: Array<[FileKey, string]> = [
   ["settings", "settings.json"],
 ];
 
-const isObject = (value: unknown): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 const parseObject = (path: string, text: string): ReadOutcome => {
-  try {
-    const value: unknown = JSON.parse(text);
+  const value = parseJsonObject(text);
 
-    return isObject(value) ? { value } : { notice: `${path}: not a JSON object, ignored` };
-  } catch {
-    return { notice: `${path}: invalid JSON, ignored` };
-  }
+  return value === undefined ? { notice: `${path}: invalid JSON object, ignored` } : { value };
 };
 
 const readObject = async (path: string): Promise<ReadOutcome> => {

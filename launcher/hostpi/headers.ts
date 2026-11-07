@@ -1,7 +1,7 @@
-import type { SecretRef } from "../config/index.ts";
-import { isAuthLikeHeader } from "../shared/index.ts";
+import { SECRET_MARKER, type SecretRef } from "../config/index.ts";
+import { isAuthLikeHeader, isJsonObject } from "../shared/index.ts";
 import type { Endpoint } from "./endpoints.ts";
-import { isJsonObject, jsonPointer } from "./json.ts";
+import { jsonPointer } from "./json.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 
@@ -19,8 +19,6 @@ export interface HeaderTarget {
   literalSecret?: (name: string) => SecretRef;
 }
 
-const SECRET_SLOT = "{secret}";
-
 const CREDENTIAL_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization"]);
 
 const CREDENTIAL_PREFIXES = ["x-auth", "x-api", "x-access", "x-session"];
@@ -35,6 +33,9 @@ const isCredentialHeader = (name: string) => {
   );
 };
 
+export const hasAuthorizationHeader = (headers: unknown) =>
+  isJsonObject(headers) && Object.keys(headers).some((name) => name.toLowerCase() === "authorization");
+
 const WHOLE_VARIABLE = /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})$/;
 
 const BRACED_VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -43,14 +44,14 @@ const whole = (secret: SecretRef): Binding => ({
   kind: "bound",
   secret,
   fileValue: (placeholder) => placeholder,
-  template: SECRET_SLOT,
+  template: SECRET_MARKER,
 });
 
 const embedded = (value: string, reference: string, name: string): Binding => ({
   kind: "bound",
   secret: { env: name },
   fileValue: (placeholder) => value.split(reference).join(placeholder),
-  template: value.split(reference).join(SECRET_SLOT),
+  template: value.split(reference).join(SECRET_MARKER),
 });
 
 const bindingOf = (name: string, value: unknown, literal: SecretRef): Binding => {

@@ -1,18 +1,25 @@
 import { readFile } from "node:fs/promises";
-import { get } from "node:https";
-import { join } from "node:path";
+import type { ClientRequest, IncomingMessage } from "node:http";
+import { get, type RequestOptions } from "node:https";
 import { getCACertificates } from "node:tls";
 import {
   errorMessage,
   expandHome,
   LauncherError,
-  readJsonFile,
+  readJsonObject,
   sha256Hex,
   stateLayout,
   writeFileAtomic,
   writeJsonFile,
 } from "../shared/index.ts";
-import type { FetchText, FetchTextResult, LayerConfig, OrgLayerInput, OrgLayerResult } from "./types.ts";
+import type {
+  FetchText,
+  FetchTextResult,
+  LayerConfig,
+  OrgLayerInput,
+  OrgLayerResult,
+  OrgRef,
+} from "./types.ts";
 import { validateLayer } from "./validate.ts";
 
 interface OrgCache {
@@ -27,6 +34,28 @@ interface OrgMeta {
   sha256?: unknown;
   failedAt?: unknown;
 }
+
+type CacheState =
+  | { state: "missing" | "otherSource" | "damaged" | "unpinned" }
+  | { state: "intact"; cache: OrgCache; hash: string };
+
+interface OrgStatusInput {
+  ref: OrgRef;
+  stateDir: string;
+  now: () => number;
+  home?: string;
+}
+
+export interface OrgBaselineStatus {
+  ok: boolean;
+  message: string;
+}
+
+export type HttpsGet = (
+  url: URL,
+  options: RequestOptions,
+  callback: (response: IncomingMessage) => void,
+) => ClientRequest;
 
 const DEFAULT_REFRESH_HOURS = 24;
 
@@ -56,45 +85,53 @@ const displaySource = (source: string) => {
   return `${url.origin}${url.pathname}`;
 };
 
-const cacheFiles = (stateDir: string) => {
-  const dir = stateLayout(stateDir).org;
-
-  return { baseline: join(dir, "baseline.json"), meta: join(dir, "meta.json") };
-};
-
-const readCache = async (input: OrgLayerInput): Promise<OrgCache | undefined> => {
-  const files = cacheFiles(input.stateDir);
-  const meta = await readJsonFile<OrgMeta>(files.meta).catch(() => undefined);
-  const text = await readFile(files.baseline, "utf8").catch(() => undefined);
+const inspectCache = async (stateDir: string, ref: OrgRef): Promise<CacheState> => {
+  const layout = stateLayout(stateDir);
+  const meta: OrgMeta | undefined = await readJsonObject(layout.orgMeta);
+  const text = await readFile(layout.orgBaseline, "utf8").catch(() => undefined);
 
   if (meta === undefined || text === undefined || typeof meta.fetchedAt !== "number") {
-    return undefined;
+    return { state: "missing" };
+  }
+
+  if (meta.source !== ref.source) {
+    return { state: "otherSource" };
   }
 
   const hash = sha256Hex(text);
-  const intact = meta.source === input.ref.source && meta.sha256 === hash;
-  const pinned = input.ref.sha256;
+
+  if (meta.sha256 !== hash) {
+    return { state: "damaged" };
+  }
+
+  if (ref.sha256 !== undefined && ref.sha256 !== hash) {
+    return { state: "unpinned" };
+  }
 
   const failedAt = typeof meta.failedAt === "number" ? meta.failedAt : undefined;
 
-  return intact && (pinned === undefined || pinned === hash)
-    ? { text, fetchedAt: meta.fetchedAt, failedAt }
-    : undefined;
+  return { state: "intact", cache: { text, fetchedAt: meta.fetchedAt, failedAt }, hash };
+};
+
+const readCache = async (input: OrgLayerInput) => {
+  const inspected = await inspectCache(input.stateDir, input.ref);
+
+  return inspected.state === "intact" ? inspected.cache : undefined;
 };
 
 const recordFailure = async (input: OrgLayerInput) => {
-  const file = cacheFiles(input.stateDir).meta;
-  const meta = await readJsonFile<OrgMeta>(file).catch(() => undefined);
+  const file = stateLayout(input.stateDir).orgMeta;
+  const meta = await readJsonObject(file);
 
   await writeJsonFile(file, { ...meta, failedAt: input.now() }).catch(() => undefined);
 };
 
 const writeCache = async (input: OrgLayerInput, text: string) => {
-  const files = cacheFiles(input.stateDir);
+  const layout = stateLayout(input.stateDir);
 
-  await writeFileAtomic(files.baseline, text);
+  await writeFileAtomic(layout.orgBaseline, text);
 
-  await writeJsonFile(files.meta, {
+  await writeJsonFile(layout.orgMeta, {
     source: input.ref.source,
     fetchedAt: input.now(),
     sha256: sha256Hex(text),
@@ -228,9 +265,9 @@ interface HttpsResponse extends FetchTextResult {
   location?: string;
 }
 
-const requestOnce = (url: URL, signal: AbortSignal) =>
+const requestOnce = (httpsGet: HttpsGet, url: URL, signal: AbortSignal) =>
   new Promise<HttpsResponse>((resolve, reject) => {
-    const request = get(url, { ca: trustedCas(), signal }, (response) => {
+    const request = httpsGet(url, { ca: trustedCas(), signal }, (response) => {
       const chunks: Buffer[] = [];
       const received = { bytes: 0 };
 
@@ -262,12 +299,17 @@ const requestOnce = (url: URL, signal: AbortSignal) =>
     request.on("error", reject);
   });
 
-const follow = async (url: URL, signal: AbortSignal, redirects: number): Promise<FetchTextResult> => {
+const follow = async (
+  httpsGet: HttpsGet,
+  url: URL,
+  signal: AbortSignal,
+  redirects: number,
+): Promise<FetchTextResult> => {
   if (url.protocol !== "https:") {
     throw new Error("only HTTPS URLs are fetched");
   }
 
-  const response = await requestOnce(url, signal);
+  const response = await requestOnce(httpsGet, url, signal);
 
   if (!REDIRECT_STATUSES.includes(response.status) || response.location === undefined) {
     return { status: response.status, body: response.body };
@@ -277,15 +319,72 @@ const follow = async (url: URL, signal: AbortSignal, redirects: number): Promise
     throw new Error(`more than ${MAX_REDIRECTS} redirects`);
   }
 
-  return follow(new URL(response.location, url), signal, redirects + 1);
+  return follow(httpsGet, new URL(response.location, url), signal, redirects + 1);
 };
 
-export const httpsFetchText: FetchText = async (url, options) => {
-  const signal = AbortSignal.timeout(options.timeoutMs);
+export const createHttpsFetchText =
+  (httpsGet: HttpsGet = get): FetchText =>
+  async (url, options) => {
+    const signal = AbortSignal.timeout(options.timeoutMs);
+
+    try {
+      return await follow(httpsGet, new URL(url), signal, 0);
+    } catch (error) {
+      throw signal.aborted ? new Error(`timed out after ${options.timeoutMs} ms`) : error;
+    }
+  };
+
+export const httpsFetchText = createHttpsFetchText();
+
+const SHORT_HASH = 12;
+
+const failedStatus = (message: string): OrgBaselineStatus => ({ ok: false, message });
+
+const fileStatus = async (input: OrgStatusInput): Promise<OrgBaselineStatus> => {
+  const source = input.ref.source;
+  const text = await readFile(expandHome(source, input.home), "utf8").catch(() => undefined);
+
+  if (text === undefined) {
+    return failedStatus(`cannot read ${source}`);
+  }
+
+  const hash = sha256Hex(text);
+
+  if (input.ref.sha256 !== undefined && input.ref.sha256 !== hash) {
+    return failedStatus(`${source} does not match the pinned sha256`);
+  }
 
   try {
-    return await follow(new URL(url), signal, 0);
+    parseLayer(text);
   } catch (error) {
-    throw signal.aborted ? new Error(`timed out after ${options.timeoutMs} ms`) : error;
+    return failedStatus(`${source}: ${errorMessage(error)}`);
   }
+
+  return { ok: true, message: `${source}, sha256 ${hash.slice(0, SHORT_HASH)}` };
 };
+
+const CACHE_PROBLEMS = {
+  missing: "has not been fetched",
+  otherSource: "has not been fetched since org.source changed",
+  damaged: "has a damaged cached copy",
+  unpinned: "has a cached copy that does not match the pinned sha256",
+};
+
+const urlStatus = async (input: OrgStatusInput): Promise<OrgBaselineStatus> => {
+  const source = displaySource(input.ref.source);
+  const inspected = await inspectCache(input.stateDir, input.ref);
+
+  if (inspected.state !== "intact") {
+    return failedStatus(`${source} ${CACHE_PROBLEMS[inspected.state]}`);
+  }
+
+  const hours = Math.floor((input.now() - inspected.cache.fetchedAt) / HOUR_MS);
+
+  return {
+    ok: true,
+    message: `${source} fetched ${hours} h ago, sha256 ${inspected.hash.slice(0, SHORT_HASH)}`,
+  };
+};
+
+export const orgBaselineStatus = (input: OrgStatusInput): Promise<OrgBaselineStatus> =>
+  isUrl(input.ref.source) ? urlStatus(input) : fileStatus(input);

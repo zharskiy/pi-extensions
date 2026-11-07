@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDockerEngineBackend } from "../../backend/docker-engine/backend.ts";
+import { LABELS } from "../../backend/index.ts";
 import { createFakeEngine } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { runBackendConformance } from "./conformance.ts";
@@ -25,6 +26,22 @@ runBackendConformance(
       backend,
       pullableImage: PULLABLE,
       runnableImage: PULLABLE,
+      networks: {
+        has: async (name) => engine.networks.has(name),
+        remove: async (name) => {
+          engine.networks.delete(name);
+        },
+        plant: async (name, traits) => {
+          engine.networks.set(name, {
+            body: {
+              Name: name,
+              Internal: traits.internal,
+              Labels: traits.managed ? { [LABELS.managed]: "true" } : {},
+            },
+            connected: [],
+          });
+        },
+      },
       dispose: async () => {
         await engine.close();
 

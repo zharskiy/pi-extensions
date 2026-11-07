@@ -1,16 +1,14 @@
 import { createHash } from "node:crypto";
+import { isJsonObject } from "./json-file.ts";
 
-export const sha256Hex = (input: string) => createHash("sha256").update(input).digest("hex");
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+export const sha256Hex = (input: string | Buffer) => createHash("sha256").update(input).digest("hex");
 
 const canonical = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(canonical);
   }
 
-  if (!isPlainObject(value)) {
+  if (!isJsonObject(value)) {
     return value;
   }
 
@@ -22,3 +20,5 @@ const canonical = (value: unknown): unknown => {
 };
 
 export const stableHash = (value: unknown) => sha256Hex(JSON.stringify(canonical(value)));
+
+export const repoHash = (repoRoot: string) => sha256Hex(repoRoot);

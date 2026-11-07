@@ -16,13 +16,12 @@ import {
   gitLayoutAt,
   gitRefusal,
   isPinText,
+  PIN_TEXT,
   pinStateOf,
   pointerPath,
   readGitPointer,
 } from "./git-layout.ts";
-import type { Workspace } from "./types.ts";
-
-const PIN_TEXT = ".\n";
+import { gitDirOf, type Workspace } from "./types.ts";
 
 const PIN_MODE = 0o644;
 
@@ -32,8 +31,6 @@ const ALTERNATES = [
   ["objects", "info", "alternates"],
   ["objects", "info", "http-alternates"],
 ];
-
-export const gitDirOf = (workspace: Workspace) => workspace.gitDir ?? workspace.gitCommonDir;
 
 export const withGitPinLock = <T>(stateDir: string, workspace: Workspace, action: () => Promise<T>) => {
   const gitCommonDir = workspace.gitCommonDir;
@@ -47,45 +44,32 @@ export const withGitPinLock = <T>(stateDir: string, workspace: Workspace, action
   });
 };
 
-const gitDirsToPin = async (workspace: Workspace) => {
-  const gitCommonDir = workspace.gitCommonDir;
-
-  return gitCommonDir === undefined ? [] : [gitCommonDir, ...(await findModuleGitDirs(gitCommonDir))];
-};
-
 const assertWorktreePointers = async (worktreeDir: string, gitCommonDir: string) => {
-  const back = join(worktreeDir, "gitdir");
-  const backInfo = await lstatOrUndefined(back);
-
-  if (backInfo !== undefined) {
-    await readGitPointer(back, backInfo);
-  }
+  await readGitPointer(join(worktreeDir, "gitdir"));
 
   const commondir = join(worktreeDir, "commondir");
-  const info = await lstatOrUndefined(commondir);
+  const text = await readGitPointer(commondir);
 
-  if (info === undefined) {
+  if (text === undefined) {
     return;
   }
 
-  const target = await realpath(pointerPath(worktreeDir, await readGitPointer(commondir, info))).catch(
-    () => "a missing directory",
-  );
+  const target = await realpath(pointerPath(worktreeDir, text)).catch(() => "a missing directory");
 
   if (target !== gitCommonDir) {
     throw gitRefusal(commondir, `points at ${target}, not ${gitCommonDir}`);
   }
 };
 
-export const assertGitIntegrity = async (workspace: Workspace) => {
+export const assertGitIntegrity = async (workspace: Workspace): Promise<string[]> => {
   const gitCommonDir = workspace.gitCommonDir;
 
   if (gitCommonDir === undefined) {
-    return;
+    return [];
   }
 
   const layout = await gitLayoutAt(workspace.repoRoot);
-  const gitDir = gitDirOf(workspace);
+  const gitDir = gitDirOf(workspace, gitCommonDir);
 
   if (layout.gitDir !== gitDir || layout.gitCommonDir !== gitCommonDir) {
     throw gitRefusal(join(workspace.repoRoot, ".git"), `now leads to ${layout.gitDir}, not ${gitDir}`);
@@ -95,9 +79,11 @@ export const assertGitIntegrity = async (workspace: Workspace) => {
 
   await Promise.all(worktrees.map((dir) => assertWorktreePointers(dir, gitCommonDir)));
 
-  const pinned = await gitDirsToPin(workspace);
+  const modules = await findModuleGitDirs(gitCommonDir);
 
-  await Promise.all(pinned.map(pinStateOf));
+  await Promise.all([gitCommonDir, ...modules].map(pinStateOf));
+
+  return modules;
 };
 
 const writeGitPin = async (gitDir: string) => {
@@ -129,10 +115,12 @@ const writeGitPin = async (gitDir: string) => {
   }
 };
 
-export const pinGitDirs = async (workspace: Workspace) => {
-  const dirs = await gitDirsToPin(workspace);
+export const pinGitDirs = async (workspace: Workspace, modules: string[]) => {
+  const gitCommonDir = workspace.gitCommonDir;
 
-  await Promise.all(dirs.map(writeGitPin));
+  if (gitCommonDir !== undefined) {
+    await Promise.all([gitCommonDir, ...modules].map(writeGitPin));
+  }
 };
 
 const pinTextOf = (path: string) =>

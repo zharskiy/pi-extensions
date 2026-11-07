@@ -1,12 +1,10 @@
-import { spawn } from "node:child_process";
-import { lstat, mkdir, readdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { syncContainerMcpAuth } from "../../provision/index.ts";
-import { GUEST_PATHS, placeholderFor, readJsonFile, stateLayout } from "../../shared/index.ts";
+import { placeholderFor, readJsonFile, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { tempDir, writeText } from "./fixtures.ts";
+import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
 const ACCESS = placeholderFor("salt", "mcp:docs:oauth");
 
@@ -20,26 +18,6 @@ const STRAY = "mcp__stray|https://mcp.stray.example/mcp";
 
 const KEPT = "mcp__kept|https://mcp.kept.example/mcp";
 
-const shellIn = (agentDir: string) => (spec: ExecSpec, io: ExecIo) =>
-  new Promise<number>((resolve) => {
-    const [file = "sh", ...args] = spec.command.map((part) =>
-      part.replaceAll(GUEST_PATHS.agentDir, agentDir),
-    );
-    const child = spawn(file, args, { stdio: ["pipe", "pipe", "pipe"] });
-
-    child.stdout.pipe(io.stdout);
-
-    child.stderr.pipe(io.stderr);
-
-    if (io.stdin === undefined) {
-      child.stdin.end();
-    } else {
-      io.stdin.pipe(child.stdin);
-    }
-
-    child.once("close", (code) => resolve(code ?? 1));
-  });
-
 const setup = async (existing?: unknown) => {
   const agentDir = await tempDir("container-agent");
   const stateDir = await tempDir("container-state");
@@ -48,12 +26,17 @@ const setup = async (existing?: unknown) => {
     await writeText(join(agentDir, "mcp-auth.json"), JSON.stringify(existing));
   }
 
-  const fake = createFakeBackend({ exec: shellIn(agentDir) });
+  const fake = createFakeBackend({ guestAgentDir: agentDir });
+  const containerId = await runningContainer(fake.backend);
   const sync = (entries: Parameters<typeof syncContainerMcpAuth>[0]["entries"]) =>
-    syncContainerMcpAuth({ backend: fake.backend, containerId: "c1", stateDir, repoHash: "repo1", entries });
-  const file = () => readJsonFile<Record<string, Record<string, unknown>>>(join(agentDir, "mcp-auth.json"));
+    syncContainerMcpAuth({ backend: fake.backend, containerId, stateDir, repoHash: "repo1", entries });
+  const file = async () => {
+    const text = await fake.guestFile("mcp-auth.json");
 
-  return { agentDir, stateDir, sync, file };
+    return text === undefined ? undefined : (JSON.parse(text) as Record<string, Record<string, unknown>>);
+  };
+
+  return { agentDir, stateDir, fake, sync, file };
 };
 
 const docsEntry = {
@@ -254,27 +237,28 @@ describe("syncContainerMcpAuth", () => {
     expect((await readdir(env.agentDir)).filter((name) => name.startsWith("mcp-auth.json.lock"))).toEqual([]);
   });
 
-  it("keeps waiting past five seconds for a holder that refreshes its lock", {
-    timeout: 20_000,
-  }, async () => {
+  it("keeps waiting for a holder that refreshes its lock past the stale window", async () => {
     const env = await setup({ [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" } });
     const lock = join(env.agentDir, "mcp-auth.json.lock");
+    const old = new Date(Date.now() - 9_500);
 
     await mkdir(lock);
+
+    await utimes(lock, old, old);
 
     const refresh = setInterval(() => {
       const now = new Date();
 
       void utimes(lock, now, now).catch(() => undefined);
-    }, 500);
-    let settled = false;
+    }, 200);
+    const state = { settled: false };
     const pending = env.sync({ [DOCS]: docsEntry }).finally(() => {
-      settled = true;
+      state.settled = true;
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 6_000));
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
 
-    expect(settled).toBe(false);
+    expect(state.settled).toBe(false);
     expect(await env.file()).toEqual({ [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" } });
 
     clearInterval(refresh);
@@ -287,5 +271,27 @@ describe("syncContainerMcpAuth", () => {
       [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" },
       [DOCS]: docsEntry,
     });
+  });
+
+  it("leaves the file alone when nothing changed", async () => {
+    const env = await setup({ [DOCS]: docsEntry });
+    const before = await lstat(join(env.agentDir, "mcp-auth.json"));
+
+    await env.sync({ [DOCS]: docsEntry });
+
+    expect((await lstat(join(env.agentDir, "mcp-auth.json"))).ino).toBe(before.ino);
+    expect(env.fake.execs.filter((exec) => exec.spec.command.join(" ").includes("pi-sandbox-tmp"))).toEqual(
+      [],
+    );
+  });
+
+  it("makes an existing file private even when nothing changed", async () => {
+    const env = await setup({ [DOCS]: docsEntry });
+
+    await chmod(join(env.agentDir, "mcp-auth.json"), 0o644);
+
+    await env.sync({ [DOCS]: docsEntry });
+
+    expect((await stat(join(env.agentDir, "mcp-auth.json"))).mode & 0o777).toBe(0o600);
   });
 });

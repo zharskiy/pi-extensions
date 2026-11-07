@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import type { DeriveInput } from "../../hostpi/index.ts";
-import { deriveSandboxPi, privateHostNotices } from "../../hostpi/index.ts";
+import { deriveSandboxPi } from "../../hostpi/index.ts";
 import { isPlaceholder, jwtShapedPlaceholder, placeholderFor } from "../../shared/index.ts";
 import {
   AGENT_DIR,
@@ -424,6 +424,9 @@ describe("deriveSandboxPi rules and hosts", () => {
     expect(new Set(all.hosts).size).toBe(all.hosts.length);
     expect(all.hosts).toContain("mcp.oauth.example");
     expect(limited.hosts).toEqual(["llm.custom.example", "model-a.custom.example"]);
+    expect(deriveSandboxPi(input({ derive: { enabled: true, hosts: ["*.example"] } })).hosts).not.toContain(
+      "llm.custom.example",
+    );
     expect(disabled.hosts).toEqual([]);
     expect(disabled.rules).toEqual([manual]);
   });
@@ -541,45 +544,5 @@ describe("deriveSandboxPi safety and stability", () => {
       "mcp.json": { mcpServers: {} },
     });
     expect(result.rules).toEqual([]);
-  });
-});
-
-describe("privateHostNotices", () => {
-  const rule = (host: string): CredentialRule => ({
-    id: host,
-    host,
-    placeholder: "pi-sandbox-x",
-    secret: { env: "X" },
-  });
-
-  it("names rule hosts that resolve privately unless privateHosts lists them", async () => {
-    const addresses: Record<string, string[]> = {
-      "inside.corp.example": ["10.1.2.3"],
-      "listed.corp.example": ["192.168.1.1"],
-      "public.example": ["93.184.216.34"],
-      "v6.corp.example": ["fd00::1"],
-    };
-    const notices = await privateHostNotices({
-      rules: Object.keys(addresses).map(rule),
-      privateHosts: ["listed.corp.example"],
-      resolve: async (host) => addresses[host] ?? [],
-    });
-
-    expect(notices).toEqual([
-      "inside.corp.example resolves to a private address; add it to egress.privateHosts so the sandbox may reach it",
-      "v6.corp.example resolves to a private address; add it to egress.privateHosts so the sandbox may reach it",
-    ]);
-  });
-
-  it("ignores hosts that do not resolve", async () => {
-    const notices = await privateHostNotices({
-      rules: [rule("gone.example")],
-      privateHosts: [],
-      resolve: async () => {
-        throw new Error("ENOTFOUND");
-      },
-    });
-
-    expect(notices).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import { readFile, rename } from "node:fs/promises";
-import { writeFileAtomic } from "./atomic-write.ts";
+import { basename } from "node:path";
 import { withDirectoryLock } from "./file-lock.ts";
+import { isJsonObject, parseJsonObject, writeJsonFile } from "./json-file.ts";
 import { placeholderFor } from "./placeholder.ts";
 import { stateLayout } from "./state-layout.ts";
 
@@ -65,42 +66,12 @@ export interface VaultEntry {
 
 export type VaultStore = Record<string, VaultEntry>;
 
-export const OAUTH_ROUTES = {
-  open: "/oauth/open",
-  callback: "/oauth/callback",
-  cancel: "/oauth/cancel",
-} as const;
+export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 
-export const OAUTH_AUTHORIZE_PARAMS = [
-  "response_type",
-  "client_id",
-  "code_challenge",
-  "code_challenge_method",
-  "redirect_uri",
-  "state",
-  "scope",
-  "prompt",
-  "resource",
-] as const;
+export const mcpAuthKey = (server: string, url: string) =>
+  `mcp__${server.replaceAll("-", "_")}|${new URL(url).href}`;
 
-export interface OAuthOpenRequest {
-  url: string;
-}
-
-export type OAuthOpenReply =
-  | { ok: true; flow: string; port: number; path: string }
-  | { ok: false; error: string };
-
-export type OAuthCallbackReply =
-  | { status: "ready"; query: string }
-  | { status: "pending" }
-  | { status: "gone"; error?: string };
-
-export const OAUTH_CALLBACK_STATUS = { ready: 200, pending: 204, gone: 410 } as const;
-
-export type OAuthCancelReply = { ok: true } | { ok: false; error: string };
-
-export const CONTAINER_MCP_AUTH_LOCK = "mcp-auth.json.lock";
+export const CONTAINER_MCP_AUTH_LOCK = basename(stateLayout("/").mcpAuthStoreLock);
 
 const MIN_EXPIRES_SECONDS = 300;
 
@@ -117,21 +88,14 @@ export const vaultPlaceholders = (salt: string, server: string) => ({
 export const syntheticExpiresIn = (remainingSeconds: number) =>
   Math.max(MIN_EXPIRES_SECONDS, Math.min(Math.floor(remainingSeconds), MAX_EXPIRES_SECONDS));
 
-const isEntry = (value: unknown): value is VaultEntry =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 const parseStore = (text: string | undefined): VaultStore | undefined => {
-  try {
-    const parsed: unknown = text === undefined || text.trim() === "" ? {} : JSON.parse(text);
+  const parsed = text === undefined || text.trim() === "" ? {} : parseJsonObject(text);
 
-    return isEntry(parsed)
-      ? Object.fromEntries(
-          Object.entries(parsed).filter((pair): pair is [string, VaultEntry] => isEntry(pair[1])),
-        )
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return parsed === undefined
+    ? undefined
+    : Object.fromEntries(
+        Object.entries(parsed).filter((pair): pair is [string, VaultEntry] => isJsonObject(pair[1])),
+      );
 };
 
 const moveAside = async (path: string) => {
@@ -171,14 +135,24 @@ export const readVaultStore = (stateDir: string): Promise<VaultStore> => {
   );
 };
 
-export const writeVaultEntry = (stateDir: string, key: string, entry: VaultEntry | null): Promise<void> => {
+export const updateVaultStore = (
+  stateDir: string,
+  update: (store: VaultStore) => VaultStore | undefined,
+): Promise<void> => {
   const layout = stateLayout(stateDir);
 
   return withDirectoryLock(layout.mcpAuthStoreLock, async () => {
-    const current = await loadVaultStore(layout.mcpAuthStore, { forWrite: true });
-    const { [key]: _replaced, ...others } = current;
-    const next = entry === null ? others : { ...others, [key]: entry };
+    const next = update(await loadVaultStore(layout.mcpAuthStore, { forWrite: true }));
 
-    await writeFileAtomic(layout.mcpAuthStore, `${JSON.stringify(next, null, 2)}\n`, { mode: PRIVATE_MODE });
+    if (next !== undefined) {
+      await writeJsonFile(layout.mcpAuthStore, next, { mode: PRIVATE_MODE });
+    }
   });
 };
+
+export const writeVaultEntry = (stateDir: string, key: string, entry: VaultEntry | null): Promise<void> =>
+  updateVaultStore(stateDir, (current) => {
+    const { [key]: _replaced, ...others } = current;
+
+    return entry === null ? others : { ...others, [key]: entry };
+  });

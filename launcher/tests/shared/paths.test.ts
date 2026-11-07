@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,8 @@ import {
   launcherPaths,
   launcherRoot,
   projectConfigFile,
+  realOrResolved,
+  realOrResolvedSync,
 } from "../../shared/index.ts";
 
 const home = "/home/dev";
@@ -106,5 +109,17 @@ describe("launcherEntry", () => {
 
   it("returns the compiled file under dist when running compiled", () => {
     expect(launcherEntry("proxy/daemon.ts", compiledModule)).toBe("/opt/pkg/launcher/dist/proxy/daemon.js");
+  });
+});
+
+describe("realOrResolved", () => {
+  it("resolves symlinks of an existing path and falls back to the absolute path", async () => {
+    const missing = join("relative", "missing-path");
+    const real = realpathSync.native(tmpdir());
+
+    expect(await realOrResolved(tmpdir())).toBe(real);
+    expect(realOrResolvedSync(tmpdir())).toBe(real);
+    expect(await realOrResolved(missing)).toBe(resolve(missing));
+    expect(realOrResolvedSync(missing)).toBe(resolve(missing));
   });
 });

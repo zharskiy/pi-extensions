@@ -1,18 +1,19 @@
 export { guestProxyUrl } from "./auth.ts";
-export type { ControlMessage, ControlReply } from "./control.ts";
+export type { ControlMessage, ControlReply } from "./client.ts";
+export { sendProxyControl } from "./client.ts";
 export {
+  daemonEnv,
   ensureProxyRunning,
   readProxyInstances,
   removeProxyInstance,
-  sendProxyControl,
   stopProxy,
 } from "./control.ts";
-export type { DenialRecord } from "./dynamic.ts";
-export { readDenials, repoProxyToken, writeProxyDynamic } from "./dynamic.ts";
+export type { DenialRecord, ProxyDynamic } from "./dynamic.ts";
+export { readDenials, removeRepoToken, repoProxyToken, writeProxyDynamic } from "./dynamic.ts";
 export type { ProxyInstance } from "./files.ts";
-export type { EnvSecretEntry } from "./secrets/index.ts";
-export { collectEnvSecrets, PARENT_PROXY_SECRET_KEY } from "./secrets/index.ts";
+export { privateHostNotices } from "./private-hosts.ts";
+export { envSecretsFor, PARENT_PROXY_SECRET_KEY } from "./secrets/index.ts";
 export { proxyPolicyHash } from "./settings.ts";
-export { ensureLauncherCa } from "./tls-ca.ts";
 export type { TrustBundle } from "./trust.ts";
 export { ensureTrustBundle } from "./trust.ts";
+export { OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "./vault/protocol.ts";

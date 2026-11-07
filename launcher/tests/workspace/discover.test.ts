@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -143,6 +143,24 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
     });
+  });
+
+  it("pins an empty commondir the engine left as a bind mountpoint in place, so host git works again", async () => {
+    const repo = await createRepo();
+    const commondir = join(repo, ".git", "commondir");
+
+    await writeFile(commondir, "");
+
+    const before = await stat(commondir);
+
+    expect(await discoverWorkspace(repo, runner, NO_HOOKS)).toMatchObject({
+      gitDir: join(repo, ".git"),
+      gitCommonDir: join(repo, ".git"),
+    });
+    expect(await readFile(commondir, "utf8")).toBe(".\n");
+    expect((await stat(commondir)).ino).toBe(before.ino);
+
+    await git(repo, ["status"]);
   });
 
   it("refuses a commondir the sandbox planted, naming the file, before running git", async () => {

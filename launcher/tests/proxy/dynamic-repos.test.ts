@@ -1,7 +1,8 @@
 import { readFile, rm } from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
-import { repoProxyToken, writeProxyDynamic } from "../../proxy/dynamic.ts";
+import { addGrant, newLaunchId, registerSession } from "../../grants/index.ts";
+import { removeRepoToken, repoProxyToken, writeProxyDynamic } from "../../proxy/dynamic.ts";
 import { createProxyRuntime } from "../../proxy/runtime.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createStateDir, POLICY_HASH, removeDir } from "./harness.ts";
@@ -28,13 +29,14 @@ const rule = (id: string): CredentialRule => ({
   secret: { env: id },
 });
 
-const runtime = () =>
+const runtime = (extra: { grantsEnabled?: boolean; isAlive?: (pid: number) => boolean } = {}) =>
   createProxyRuntime({
     stateDir: state.stateDir,
     policyHash: POLICY_HASH,
     staticRules: [],
     grantsEnabled: false,
     cap: {},
+    ...extra,
   });
 
 const launch = async (repoHash: string, id: string, vault = [vaultServer({ server: id })]) => {
@@ -45,8 +47,10 @@ const launch = async (repoHash: string, id: string, vault = [vaultServer({ serve
     rules: [rule(id)],
     derivedHosts: [`${id}-host.test`],
     vault,
-    tokens: { [sha256Hex(token)]: repoHash },
+    tokenHash: sha256Hex(token),
   });
+
+  return token;
 };
 
 const ids = (rules: CredentialRule[]) => rules.map((entry) => entry.id).sort();
@@ -88,15 +92,14 @@ describe("dynamic configuration per repository", () => {
 
     await launch(REPO_B, "beta");
 
+    const current = runtime();
     const stored = JSON.parse(
       await readFile(stateLayout(state.stateDir).proxyDynamic(POLICY_HASH), "utf8"),
-    ) as {
-      repos: Record<string, unknown>;
-      rules: CredentialRule[];
-    };
+    ) as { repos: Record<string, unknown> };
 
     expect(Object.keys(stored.repos)).toHaveLength(1);
-    expect(ids(stored.rules)).toEqual(["beta"]);
+    expect(ids(await current.rules(REPO_A))).toEqual([]);
+    expect(ids(await current.rules())).toEqual(["beta"]);
   });
 
   it("shares a section written without a repository token with every repository", async () => {
@@ -104,12 +107,74 @@ describe("dynamic configuration per repository", () => {
       version: 1,
       rules: [rule("shared")],
       derivedHosts: [],
-      tokens: {},
     });
 
     await launch(REPO_A, "alpha");
 
     expect(ids(await runtime().rules(REPO_A))).toEqual(["alpha", "shared"]);
     expect(ids(await runtime().rules(REPO_B))).toEqual(["shared"]);
+  });
+
+  it("keeps every repository when many launches write at once", async () => {
+    const repos = Array.from({ length: 12 }, (_unused, index) => index.toString(16).padStart(64, "0"));
+
+    await Promise.all(repos.map((repo, index) => launch(repo, `repo${index}`)));
+
+    const current = runtime();
+    const found = await Promise.all(repos.map(async (repo) => ids(await current.rules(repo))));
+
+    expect(found).toEqual(repos.map((_repo, index) => [`repo${index}`]));
+  });
+});
+
+describe("repository tokens", () => {
+  it("stop authenticating once gc removes the token file", async () => {
+    const token = await launch(REPO_A, "alpha");
+    const current = runtime();
+
+    expect(await current.repoOf(token)).toBe(REPO_A);
+
+    await removeRepoToken(state.stateDir, POLICY_HASH, REPO_A);
+
+    expect(await current.repoOf(token)).toBeUndefined();
+    expect(await current.liveRepos()).toEqual(new Set());
+    expect(ids(await current.rules(REPO_A))).toEqual([]);
+  });
+
+  it("are stable for a repository and distinct between repositories", async () => {
+    const first = await repoProxyToken(state.stateDir, POLICY_HASH, REPO_A);
+
+    expect(await repoProxyToken(state.stateDir, POLICY_HASH, REPO_A)).toBe(first);
+    expect(await repoProxyToken(state.stateDir, POLICY_HASH, REPO_B)).not.toBe(first);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("session grants", () => {
+  it("drop out on the next call once the launch's process is gone", async () => {
+    const launchId = newLaunchId();
+    const alive = new Set([process.pid]);
+
+    await registerSession(state.stateDir, {
+      launchId,
+      pid: process.pid,
+      repoHash: REPO_A,
+      startedAt: Date.now(),
+    });
+
+    await addGrant(
+      state.stateDir,
+      { host: "granted.test", port: 443, repoHash: REPO_A, scope: { kind: "session", launchId } },
+      { enabled: true, maxHours: 24, permanent: true },
+      Date.now(),
+    );
+
+    const current = runtime({ grantsEnabled: true, isAlive: (pid) => alive.has(pid) });
+
+    expect(await current.extras(REPO_A)).toContain("granted.test");
+
+    alive.clear();
+
+    expect(await current.extras(REPO_A)).not.toContain("granted.test");
   });
 });

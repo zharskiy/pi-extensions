@@ -1,16 +1,17 @@
+import { matchesEntry } from "../../config/index.ts";
 import {
   type CommandRunner,
   errorMessage,
-  type OAuthOpenRequest,
+  isJsonObject,
   type VaultDiscovered,
   type VaultServer,
 } from "../../shared/index.ts";
-import { matchesEntry } from "../policy.ts";
 import type { SecretResolver } from "../secrets/index.ts";
 import { type OpenBrowser, openInBrowser } from "./browser.ts";
 import { createFlows, type VaultReply } from "./callback.ts";
 import { createDiscovery } from "./discovery.ts";
 import { checkAuthorizeUrl, createOpenLimiter, type OpenCandidate } from "./open.ts";
+import type { OAuthOpenRequest } from "./protocol.ts";
 import { type BufferQuery, createTokenHook, type VaultTokenHook } from "./token.ts";
 
 export type { VaultReply } from "./callback.ts";
@@ -39,9 +40,6 @@ export interface VaultHook extends VaultTokenHook {
 const FLOW_TTL_MS = 10 * 60_000;
 
 const POLL_MS = 25_000;
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const failure = (status: number, error: string): VaultReply => ({ status, body: { ok: false, error } });
 
@@ -85,7 +83,7 @@ export const createVault = (options: VaultOptions): VaultHook => {
   };
 
   const open = async (repoHash: string, body: unknown): Promise<VaultReply> => {
-    const request: Partial<OAuthOpenRequest> = isObject(body) ? body : {};
+    const request: Partial<OAuthOpenRequest> = isJsonObject(body) ? body : {};
     const check = checkAuthorizeUrl(request.url, await candidates(repoHash));
 
     if (!check.ok) {

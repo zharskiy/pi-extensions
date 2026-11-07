@@ -1,6 +1,5 @@
-import type { CredentialRule } from "../config/index.ts";
+import { type CredentialRule, fillTemplate, normalizeHost, TLS_PORT } from "../config/index.ts";
 import { isAuthLikeHeader } from "../shared/index.ts";
-import { normalizeHost } from "./policy.ts";
 
 export type HeaderPair = readonly [string, string];
 
@@ -8,10 +7,6 @@ export interface ScrubSecret {
   value: string;
   placeholder?: string;
 }
-
-const TLS_PORT = 443;
-
-const SECRET_MARKER = "{secret}";
 
 const REDACTED = "pi-sandbox-redacted";
 
@@ -63,9 +58,6 @@ const substitute = (headers: HeaderPair[], rule: CredentialRule, secret: string)
         : [name, value],
   );
 
-const templated = (rule: CredentialRule, secret: string) =>
-  (rule.template ?? SECRET_MARKER).replaceAll(SECRET_MARKER, secret);
-
 const setRuleHeader = (headers: HeaderPair[], rule: CredentialRule, secret: string) => {
   const header = rule.header;
 
@@ -82,7 +74,7 @@ const setRuleHeader = (headers: HeaderPair[], rule: CredentialRule, secret: stri
 
   return [
     ...headers.filter(([name]) => !isRuleHeader(name, rule)),
-    [header, templated(rule, secret)] as const,
+    [header, fillTemplate(rule.template, secret)] as const,
   ];
 };
 

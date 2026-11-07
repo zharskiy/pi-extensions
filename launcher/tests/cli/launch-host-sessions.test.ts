@@ -1,28 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { chmod, lstat, mkdir, readdir, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
+import { createHarness, isPiSession } from "./harness.ts";
 
 const CUSTOM_NOTICE =
   "pi-sandbox: sessions: host pi uses a custom session dir, so sandbox sessions stay in the sandbox volume\n";
@@ -32,8 +18,6 @@ const exists = (path: string) =>
     () => true,
     () => false,
   );
-
-const isPi = (spec: ExecSpec) => spec.command.includes("pi");
 
 const isProbe = (spec: ExecSpec) => spec.command.join(" ").includes("PI_CODING_AGENT_SESSION_DIR");
 
@@ -47,14 +31,14 @@ const sandboxWith = async (onPi: (dir: string) => Promise<void> = async () => un
         return probeExit;
       }
 
-      if (isPi(spec)) {
+      if (isPiSession(spec)) {
         await onPi(box.dir);
       }
 
       return 0;
     },
   });
-  const harness = await harnessWith({ adapters: () => [fake.backend] });
+  const harness = await createHarness({ adapters: () => [fake.backend] });
 
   box.dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
@@ -121,7 +105,7 @@ describe("pi launch with host sessions", () => {
       `pi-sandbox: sessions: ${dir} is not writable from the sandbox; set sessions.host: false or share it with the VM\n`,
     );
     expect(fake.containers.size).toBe(0);
-    expect(fake.execs.some((exec) => isPi(exec.spec))).toBe(false);
+    expect(fake.execs.some((exec) => isPiSession(exec.spec))).toBe(false);
     expect((await readdir(dir)).filter((name) => name.startsWith(".pi-sandbox-probe"))).toEqual([]);
   });
 
@@ -135,7 +119,7 @@ describe("pi launch with host sessions", () => {
         return 0;
       },
     });
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     expect(await run([], harness.deps)).not.toBe(0);
@@ -298,7 +282,7 @@ describe("pi launch with host sessions", () => {
         expect(await run([], harness.deps)).toBe(1);
         expect(harness.stderr()).toContain(message);
         expect(fake.containers.size).toBe(0);
-        expect(fake.execs.some((exec) => isPi(exec.spec))).toBe(false);
+        expect(fake.execs.some((exec) => isPiSession(exec.spec))).toBe(false);
 
         const bin = join(harness.root, "host-bin");
 
@@ -334,7 +318,7 @@ describe("pi launch with host sessions", () => {
     const network = second?.spec?.network;
 
     expect(second?.summary.id).not.toBe(first);
-    expect(fake.execs.filter((exec) => isPi(exec.spec))).toHaveLength(2);
+    expect(fake.execs.filter((exec) => isPiSession(exec.spec))).toHaveLength(2);
     expect(network?.kind === "internal" && fake.networks.has(network.name)).toBe(true);
   });
 
@@ -371,7 +355,7 @@ describe("pi --no-sandbox with host sessions", () => {
   };
 
   it("sweeps the repository's session dir before host pi reads it, without a backend", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     await hostPiIn(harness);
@@ -389,7 +373,7 @@ describe("pi --no-sandbox with host sessions", () => {
 
   it("sweeps the agents subtree too when the repository's container is not running", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     await hostPiIn(harness);
@@ -404,7 +388,7 @@ describe("pi --no-sandbox with host sessions", () => {
 
   it("leaves the agents subtree alone while a sandboxed session of the repository is registered", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     await hostPiIn(harness);
@@ -425,7 +409,7 @@ describe("pi --no-sandbox with host sessions", () => {
   });
 
   it("creates nothing on the host when the directory is missing", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await hostPiIn(harness);
 

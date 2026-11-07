@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { LABELS } from "../../backend/index.ts";
 import { launcherRoot } from "../../shared/index.ts";
 
 const created: string[] = [];
@@ -39,14 +40,30 @@ esac
 const FAKE_DOCKER = `#!/bin/sh
 shift 2
 case "$1 $2" in
+  "info "*) exit 0 ;;
+  "ps -aq")
+    case "$4" in
+      label=pi-sandbox.relay=true) printf 'relay-1\\n' ;;
+      label=pi-sandbox.managed=true) printf 'sandbox-1\\nrelay-1\\nsandbox-2\\n' ;;
+    esac ;;
+  "rm -f") echo "$@" >> "$FAKE_LOG" ;;
   "network ls") echo "$@" >> "$FAKE_LOG.args"; printf 'net-legacy\\nnet-repo\\n' ;;
   "network rm") echo "$@" >> "$FAKE_LOG" ;;
 esac
 exit 0
 `;
 
+describe("uninstall.sh labels", () => {
+  it("filters on the same label names the launcher puts on what it creates", async () => {
+    const script = await readFile(join(launcherRoot(), "uninstall.sh"), "utf8");
+
+    expect(script).toContain(`\nmanaged_label=${LABELS.managed}\n`);
+    expect(script).toContain(`\nrelay_label=${LABELS.relay}\n`);
+  });
+});
+
 describe("uninstall.sh on the docker engine", () => {
-  it("removes the legacy and per-repository networks the launcher labelled", async () => {
+  it("removes labelled containers, counts relays once and removes the labelled networks", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
     const bin = join(root, "bin");
     const log = join(root, "removed.log");
@@ -74,11 +91,16 @@ describe("uninstall.sh on the docker engine", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("and 2 pi-sandbox networks");
+    expect(result.stdout).toContain(
+      "containers: removed 2 sandbox and 1 relay containers and 2 pi-sandbox networks",
+    );
     expect((await readFile(`${log}.args`, "utf8")).trim()).toBe(
       "network ls -q --filter label=pi-sandbox.managed=true --filter name=pi-sandbox",
     );
-    expect((await readFile(log, "utf8")).trim()).toBe("network rm net-legacy net-repo");
+    expect((await readFile(log, "utf8")).trim().split("\n")).toEqual([
+      "rm -f sandbox-1 sandbox-2 relay-1",
+      "network rm net-legacy net-repo",
+    ]);
   });
 });
 

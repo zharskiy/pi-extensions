@@ -1,6 +1,6 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
-import { expandHome, isWithin, LauncherError, launcherPaths } from "../shared/index.ts";
+import { expandHome, isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
 import { hostAgentDir } from "./pi-session-dir.ts";
 
 interface ExtraMountContext {
@@ -19,14 +19,6 @@ interface Protected {
 const HOME_SECRETS = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];
 
 const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
-
-const realOrResolved = (path: string) => {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return resolve(path);
-  }
-};
 
 const dockerHostSocket = (env: NodeJS.ProcessEnv) => {
   const host = env.DOCKER_HOST;
@@ -51,7 +43,7 @@ const protectedPaths = (context: ExtraMountContext): Protected[] => {
   ];
 
   return listed.flatMap((entry) => {
-    const real = realOrResolved(entry.path);
+    const real = realOrResolvedSync(entry.path);
     const resolved = resolve(entry.path);
 
     return real === resolved ? [{ ...entry, path: real }] : [entry, { ...entry, path: real }];
@@ -90,7 +82,14 @@ const gitReason = (real: string, kind: string) => {
   return kind === "directory" && existsSync(join(real, ".git")) ? "it contains a .git directory" : undefined;
 };
 
-const checkedMount = (given: string, context: ExtraMountContext, guarded: Protected[]) => {
+type PathGuard = (path: string) => string | undefined;
+
+const guardOf =
+  (guarded: Protected[]): PathGuard =>
+  (real) =>
+    guarded.map((entry) => conflictOf(real, entry)).find((found) => found !== undefined);
+
+const checkedMount = (given: string, context: ExtraMountContext, guard: PathGuard) => {
   const expanded = expandHome(given, context.home);
   const absolute = isAbsolute(expanded) ? expanded : resolve(context.repoRoot, expanded);
   const kind = kindOf(absolute);
@@ -104,8 +103,7 @@ const checkedMount = (given: string, context: ExtraMountContext, guarded: Protec
   }
 
   const real = realpathSync.native(absolute);
-  const reason = guarded.map((entry) => conflictOf(real, entry)).find((found) => found !== undefined);
-  const found = reason ?? gitReason(real, kind);
+  const found = guard(real) ?? gitReason(real, kind);
 
   if (found !== undefined) {
     throw refuse(given, found);
@@ -114,18 +112,10 @@ const checkedMount = (given: string, context: ExtraMountContext, guarded: Protec
   return { source: real, target: absolute };
 };
 
-export const protectedPathGuard = (context: ExtraMountContext) => {
-  const guarded = protectedPaths(context);
-
-  return (path: string) => {
-    const real = realOrResolved(path);
-
-    return guarded.map((entry) => conflictOf(real, entry)).find((found) => found !== undefined);
-  };
-};
+export const protectedRealPathGuard = (context: ExtraMountContext) => guardOf(protectedPaths(context));
 
 export const resolveExtraMounts = (paths: string[], context: ExtraMountContext) => {
-  const guarded = protectedPaths(context);
+  const guard = protectedRealPathGuard(context);
 
-  return paths.map((path) => checkedMount(path, context, guarded));
+  return paths.map((path) => checkedMount(path, context, guard));
 };

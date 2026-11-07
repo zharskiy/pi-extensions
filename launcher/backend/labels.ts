@@ -1,0 +1,18 @@
+export const LABELS = {
+  managed: "pi-sandbox.managed",
+  repoHash: "pi-sandbox.repo-hash",
+  repoRoot: "pi-sandbox.repo-root",
+  imageDigest: "pi-sandbox.image-digest",
+  imageReference: "pi-sandbox.image-reference",
+  configHash: "pi-sandbox.config-hash",
+  specHash: "pi-sandbox.spec-hash",
+  proxyPolicyHash: "pi-sandbox.proxy-policy-hash",
+  relay: "pi-sandbox.relay",
+  relayPort: "pi-sandbox.relay-port",
+  relayImage: "pi-sandbox.relay-image",
+  helper: "pi-sandbox.helper",
+  version: "pi-sandbox.version",
+  sessionDir: "pi-sandbox.session-dir",
+  gitProtection: "pi-sandbox.git-protection",
+  gitCommonDir: "pi-sandbox.git-common-dir",
+} as const;

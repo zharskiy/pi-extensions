@@ -1,8 +1,7 @@
 import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { lstatOrUndefined, readRegularFile, sha256Hex, stateLayout } from "../shared/index.ts";
+import { lstatOrUndefined, readRegularFile, repoHash, sha256Hex, stateLayout } from "../shared/index.ts";
 import { gitRefusal } from "../workspace/index.ts";
-import { repoHash } from "./names.ts";
 
 export interface GitSnapshotTargets {
   readOnlyDirs: string[];

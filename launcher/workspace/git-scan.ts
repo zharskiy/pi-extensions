@@ -3,8 +3,7 @@ import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { type CommandRunner, readRegularFile } from "../shared/index.ts";
 import { inertGitOptions } from "./git-command.ts";
-import { gitDirOf } from "./git-integrity.ts";
-import type { Workspace } from "./types.ts";
+import { gitDirOf, type Workspace } from "./types.ts";
 
 export interface NestedGitEntry {
   path: string;
@@ -32,10 +31,15 @@ const REVIEW = "review it before running host git tools in this repository";
 
 const EMPTY: GitBaseline = { gitlinks: [], nested: [], complete: true };
 
-const gitlinksOf = async (workspace: Workspace, runner: CommandRunner, emptyHooksDir: string) => {
+const gitlinksOf = async (
+  workspace: Workspace,
+  gitCommonDir: string,
+  runner: CommandRunner,
+  emptyHooksDir: string,
+) => {
   const args = [
     ...inertGitOptions(emptyHooksDir),
-    `--git-dir=${gitDirOf(workspace)}`,
+    `--git-dir=${gitDirOf(workspace, gitCommonDir)}`,
     `--work-tree=${workspace.repoRoot}`,
     "ls-files",
     "--stage",
@@ -134,16 +138,15 @@ export const scanGitBaseline = async (
   const skipped = new Set([
     join(workspace.repoRoot, ".git"),
     gitCommonDir,
-    gitDirOf(workspace) ?? gitCommonDir,
+    gitDirOf(workspace, gitCommonDir),
   ]);
-  const walk = await walkLevel([workspace.repoRoot], skipped, {
-    found: [],
-    budget: DIRECTORY_BUDGET,
-    complete: true,
-  });
+  const [walk, gitlinks] = await Promise.all([
+    walkLevel([workspace.repoRoot], skipped, { found: [], budget: DIRECTORY_BUDGET, complete: true }),
+    gitlinksOf(workspace, gitCommonDir, runner, emptyHooksDir),
+  ]);
 
   return {
-    gitlinks: await gitlinksOf(workspace, runner, emptyHooksDir),
+    gitlinks,
     nested: walk.found,
     complete: walk.complete,
   };

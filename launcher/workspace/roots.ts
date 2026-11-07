@@ -1,18 +1,8 @@
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
 import type { WorkspaceRootsConfig } from "../config/index.ts";
-import { expandHome, isWithin, LauncherError } from "../shared/index.ts";
+import { expandHome, isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
 import type { Workspace } from "./types.ts";
 
-const resolveRoot = (root: string) => {
-  const path = resolve(expandHome(root));
-
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return path;
-  }
-};
+const resolveRoot = (root: string) => realOrResolvedSync(expandHome(root));
 
 export const assertWithinWorkspaceRoots = (
   workspace: Workspace,

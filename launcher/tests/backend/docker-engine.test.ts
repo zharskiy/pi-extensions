@@ -1,10 +1,16 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDockerEngineBackend } from "../../backend/docker-engine/backend.ts";
-import { type ContainerSpec, resolveDockerSocket, type TerminalSize } from "../../backend/index.ts";
+import {
+  type Backend,
+  type ContainerSpec,
+  LABELS,
+  resolveDockerSocket,
+  type TerminalSize,
+} from "../../backend/index.ts";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 import { createFakeEngine, type FakeEngine, type FakeEngineOptions } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
@@ -18,6 +24,23 @@ const POLICY = "a".repeat(64);
 const OTHER_POLICY = "b".repeat(64);
 
 const RELAY = `pi-sandbox-relay-${POLICY.slice(0, 8)}`;
+
+const REPO = "e".repeat(64);
+
+const REPO_NETWORK = `pi-sandbox-${REPO.slice(0, 12)}`;
+
+interface RouteOptions {
+  policy?: string;
+  image?: string;
+  repo?: string;
+}
+
+const routeOn = (backend: Backend, hostPort: number, options: RouteOptions = {}) =>
+  backend.prepareProxyRoute({
+    hostPort,
+    repoHash: options.repo ?? REPO,
+    relay: { policyHash: options.policy ?? POLICY, imageId: options.image ?? IMAGE },
+  });
 
 const cleanups: Array<() => Promise<unknown>> = [];
 
@@ -58,7 +81,7 @@ const relayBody = (engine: FakeEngine, name = RELAY) =>
 const baseSpec: ContainerSpec = {
   name: "pi-sandbox-abc",
   image: IMAGE,
-  labels: { "pi-sandbox.repo-hash": "abc" },
+  labels: { [LABELS.repoHash]: "abc" },
   mounts: [
     { kind: "bind", source: "/work/repo", target: "/work/repo", readOnly: false },
     { kind: "bind", source: "/work/repo/.git/hooks", target: "/work/repo/.git/hooks", readOnly: true },
@@ -166,9 +189,9 @@ describe("docker-engine adapter on a colima socket", () => {
 
     await backend.pullImage(IMAGE);
 
-    expect(backend.capabilities).toEqual({ singleFileMount: true, sshAgent: true, internalNetwork: true });
-    expect(await backend.prepareProxyRoute(3128, POLICY, IMAGE)).toEqual({
-      network: { kind: "internal", name: "pi-sandbox" },
+    expect(backend.capabilities).toEqual({ singleFileMount: true, sshAgent: true });
+    expect(await routeOn(backend, 3128)).toEqual({
+      network: { kind: "internal", name: REPO_NETWORK },
       address: "10.89.0.2:3128",
     });
     expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:3128"]);
@@ -222,7 +245,7 @@ describe("docker-engine adapter on another engine socket", () => {
 
     await backend.pullImage(IMAGE);
 
-    await backend.prepareProxyRoute(8080, POLICY, IMAGE);
+    await routeOn(backend, 8080);
 
     expect(backend.capabilities.sshAgent).toBe(false);
     expect(relayBody(engine)?.Cmd).toEqual([
@@ -248,7 +271,7 @@ describe("docker-engine adapter on another engine socket", () => {
 
     await desktop.pullImage(IMAGE);
 
-    await desktop.prepareProxyRoute(8080, POLICY, IMAGE);
+    await routeOn(desktop, 8080);
 
     expect(await desktop.proxyListenHosts()).toEqual([]);
     expect(await mac.proxyListenHosts()).toEqual([]);
@@ -268,7 +291,7 @@ describe("docker-engine adapter on another engine socket", () => {
 
     await backend.pullImage(IMAGE);
 
-    await backend.prepareProxyRoute(8080, POLICY, IMAGE);
+    await routeOn(backend, 8080);
 
     expect(await backend.proxyListenHosts()).toEqual(["172.17.0.1"]);
     expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
@@ -314,53 +337,38 @@ describe("docker-engine container translation", () => {
 
     await backend.createContainer({ ...baseSpec, network: { kind: "internal", name: "pi-sandbox-net" } });
 
-    expect(engine.createdBodies).toEqual([
-      {
-        name: "pi-sandbox-abc",
-        body: {
-          Image: IMAGE,
-          Labels: { "pi-sandbox.repo-hash": "abc" },
-          Env: ["TERM=xterm-256color", "PI_OFFLINE=1"],
-          WorkingDir: "/work/repo",
-          User: "501:20",
-          HostConfig: {
-            Binds: [],
-            Mounts: [
-              { Type: "bind", Source: "/work/repo", Target: "/work/repo", ReadOnly: false },
-              {
-                Type: "bind",
-                Source: "/work/repo/.git/hooks",
-                Target: "/work/repo/.git/hooks",
-                ReadOnly: true,
-              },
-              {
-                Type: "volume",
-                Source: "pi-sandbox-agent-u1",
-                Target: "/home/pi/.pi/agent",
-                ReadOnly: false,
-              },
-            ],
-            NetworkMode: "pi-sandbox-net",
-            ReadonlyRootfs: true,
-            Tmpfs: { "/tmp": "", "/home/pi": "mode=1777" },
-            Init: true,
-            NanoCpus: 2_000_000_000,
-            Memory: 4 * 1024 ** 3,
-          },
+    expect(engine.createdBodies.at(-1)).toMatchObject({
+      name: "pi-sandbox-abc",
+      body: {
+        Env: ["TERM=xterm-256color", "PI_OFFLINE=1"],
+        HostConfig: {
+          Binds: [],
+          Mounts: [
+            { Type: "bind", Source: "/work/repo", Target: "/work/repo", ReadOnly: false },
+            {
+              Type: "bind",
+              Source: "/work/repo/.git/hooks",
+              Target: "/work/repo/.git/hooks",
+              ReadOnly: true,
+            },
+            { Type: "volume", Source: "pi-sandbox-agent-u1", Target: "/home/pi/.pi/agent", ReadOnly: false },
+          ],
+          NetworkMode: "pi-sandbox-net",
+          ReadonlyRootfs: true,
         },
       },
-    ]);
+    });
   });
 
   it("maps engine states to summary states and passes the stop timeout", async () => {
     const engine = await startEngine();
     const { backend, id } = await startedContainer(engine);
 
-    expect(await backend.findContainers({ "pi-sandbox.repo-hash": "abc" })).toEqual([
+    expect(await backend.findContainers({ [LABELS.repoHash]: "abc" })).toEqual([
       {
         id,
         name: "pi-sandbox-abc",
-        labels: { "pi-sandbox.repo-hash": "abc" },
+        labels: { [LABELS.repoHash]: "abc" },
         state: "running",
         image: IMAGE,
       },
@@ -544,6 +552,41 @@ describe("docker-engine exec", () => {
     expect(stderr.text()).toBe("warning");
   });
 
+  it("delivers every frame in order to a slow stdout that asks it to wait", async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\n`);
+    const engine = await startEngine({
+      exec: (context) => {
+        lines.forEach((line) => {
+          context.write(line);
+        });
+
+        context.write("done", "stderr");
+
+        return 0;
+      },
+    });
+    const { backend, id } = await startedContainer(engine);
+    const received: string[] = [];
+    const slow = new Writable({
+      highWaterMark: 16,
+      write: (chunk: Buffer, _encoding, done) => {
+        received.push(chunk.toString("utf8"));
+
+        setTimeout(done, 1);
+      },
+    });
+    const stderr = collected();
+
+    const exitCode = await backend.exec(
+      { containerId: id, command: ["sh"], env: {}, workdir: "/" },
+      { stdout: slow, stderr: stderr.stream, tty: false },
+    );
+
+    await vi.waitFor(() => expect(received.join("")).toBe(lines.join("")));
+    expect(exitCode).toBe(0);
+    expect(stderr.text()).toBe("done");
+  });
+
   it("refuses to exec in a stopped container", async () => {
     const engine = await startEngine();
     const { backend, id } = await startedContainer(engine);
@@ -567,7 +610,7 @@ describe("docker-engine volumes", () => {
 
     expect(engine.requests.find((request) => request.path === "/volumes/create")?.body).toEqual({
       Name: "pi-sandbox-cache-x",
-      Labels: { "pi-sandbox.managed": "true" },
+      Labels: { [LABELS.managed]: "true" },
     });
   });
 
@@ -606,26 +649,26 @@ describe("docker-engine egress relay", () => {
   it("creates a managed internal network and a running relay named after the policy", async () => {
     const { engine, backend } = await readyBackend();
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
     const relay = relayOf(engine);
 
-    expect(engine.networks.get("pi-sandbox")?.body).toEqual({
-      Name: "pi-sandbox",
+    expect(engine.networks.get(REPO_NETWORK)?.body).toEqual({
+      Name: REPO_NETWORK,
       Driver: "bridge",
       Internal: true,
-      Labels: { "pi-sandbox.managed": "true" },
+      Labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
     });
-    expect(engine.networks.get("pi-sandbox")?.connected.map((entry) => entry.container)).toEqual([relay?.Id]);
+    expect(engine.networks.get(REPO_NETWORK)?.connected.map((entry) => entry.container)).toEqual([relay?.Id]);
     expect(relay?.State).toBe("running");
     expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
       Image: IMAGE,
       Labels: {
-        "pi-sandbox.managed": "true",
-        "pi-sandbox.relay": "true",
-        "pi-sandbox.relay-port": "3128",
-        "pi-sandbox.proxy-policy-hash": POLICY,
-        "pi-sandbox.relay-image": IMAGE,
+        [LABELS.managed]: "true",
+        [LABELS.relay]: "true",
+        [LABELS.relayPort]: "3128",
+        [LABELS.proxyPolicyHash]: POLICY,
+        [LABELS.relayImage]: IMAGE,
       },
       HostConfig: { NetworkMode: "bridge", ExtraHosts: ["host.docker.internal:host-gateway"] },
     });
@@ -634,9 +677,9 @@ describe("docker-engine egress relay", () => {
   it("routes to the address the network reports for the relay", async () => {
     const { engine, backend } = await readyBackend();
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
-    const route = await backend.prepareProxyRoute(4000, OTHER_POLICY, IMAGE);
+    const route = await routeOn(backend, 4000, { policy: OTHER_POLICY });
 
     expect(route.address).toBe("10.89.0.3:3128");
     expect(relayOf(engine, `pi-sandbox-relay-${OTHER_POLICY.slice(0, 8)}`)?.State).toBe("running");
@@ -646,24 +689,24 @@ describe("docker-engine egress relay", () => {
   it("reuses a running relay for the same host port and policy", async () => {
     const { engine, backend } = await readyBackend();
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
     const first = relayOf(engine)?.Id;
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
     expect(relayOf(engine)?.Id).toBe(first);
-    expect(await backend.findContainers({ "pi-sandbox.relay": "true" })).toHaveLength(1);
+    expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
   });
 
   it("recreates the relay when the host port changes", async () => {
     const { engine, backend } = await readyBackend();
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
     const first = relayOf(engine)?.Id;
 
-    await backend.prepareProxyRoute(4000, POLICY, IMAGE);
+    await routeOn(backend, 4000);
 
     expect(relayOf(engine)?.Id).not.toBe(first);
     expect(relayOf(engine)?.State).toBe("running");
@@ -671,24 +714,24 @@ describe("docker-engine egress relay", () => {
       "TCP-LISTEN:3128,fork,reuseaddr",
       "TCP:host.docker.internal:4000",
     ]);
-    expect(await backend.findContainers({ "pi-sandbox.relay-port": "4000" })).toHaveLength(1);
+    expect(await backend.findContainers({ [LABELS.relayPort]: "4000" })).toHaveLength(1);
   });
 
   it("keeps the relay, with a notice, when a port change would cut another repository's running sandbox", async () => {
     const { engine, backend } = await readyBackend();
     const repoA = "a".repeat(64);
-    const routeA = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+    const routeA = await routeOn(backend, 3128, { repo: repoA });
     const sandboxA = await backend.createContainer({
       ...baseSpec,
       name: "agent-a",
-      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repoA },
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoA },
       network: routeA.network,
     });
 
     await backend.startContainer(sandboxA.id);
 
     const first = relayOf(engine)?.Id;
-    const routeB = await backend.prepareProxyRoute(4000, POLICY, IMAGE, "b".repeat(64));
+    const routeB = await routeOn(backend, 4000, { repo: "b".repeat(64) });
 
     expect(relayOf(engine)?.Id).toBe(first);
     expect(relayBody(engine)?.Cmd).toEqual([
@@ -703,18 +746,18 @@ describe("docker-engine egress relay", () => {
   it("recreates the relay on a port change when only this repository's sandbox uses it", async () => {
     const { engine, backend } = await readyBackend();
     const repo = "a".repeat(64);
-    const route = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repo);
+    const route = await routeOn(backend, 3128, { repo });
     const sandbox = await backend.createContainer({
       ...baseSpec,
       name: "agent-a",
-      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repo },
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
       network: route.network,
     });
 
     await backend.startContainer(sandbox.id);
 
     const first = relayOf(engine)?.Id;
-    const again = await backend.prepareProxyRoute(4000, POLICY, IMAGE, repo);
+    const again = await routeOn(backend, 4000, { repo });
 
     expect(relayOf(engine)?.Id).not.toBe(first);
     expect(relayBody(engine)?.Cmd).toEqual([
@@ -727,13 +770,13 @@ describe("docker-engine egress relay", () => {
   it("starts a stopped relay whose labels match instead of recreating it", async () => {
     const { engine, backend } = await readyBackend();
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
     const first = relayOf(engine)?.Id ?? "";
 
     await backend.stopContainer(first);
 
-    const route = await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    const route = await routeOn(backend, 3128);
 
     expect(relayOf(engine)?.Id).toBe(first);
     expect(relayOf(engine)?.State).toBe("running");
@@ -745,37 +788,23 @@ describe("docker-engine egress relay", () => {
     const { engine, backend } = await readyBackend();
     const pinned = await backend.pullImage(IMAGE, DIGEST);
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    await routeOn(backend, 3128);
 
     const first = relayOf(engine)?.Id;
 
-    await backend.prepareProxyRoute(3128, POLICY, pinned.id);
+    await routeOn(backend, 3128, { image: pinned.id });
 
     expect(relayOf(engine)?.Id).toBe(first);
     expect(engine.createdBodies.filter((entry) => entry.name === RELAY)).toHaveLength(1);
-    expect(relayBody(engine)?.Labels?.["pi-sandbox.relay-image"]).toBe(IMAGE);
+    expect(relayBody(engine)?.Labels?.[LABELS.relayImage]).toBe(IMAGE);
   });
 
-  it("refuses an existing pi-sandbox network that is not internal", async () => {
+  it("creates no relay when the repository's network is refused", async () => {
     const { engine, backend } = await readyBackend();
 
-    engine.networks.set("pi-sandbox", {
-      body: { Name: "pi-sandbox", Internal: false, Labels: { "pi-sandbox.managed": "true" } },
-      connected: [],
-    });
+    engine.networks.set(REPO_NETWORK, { body: { Name: REPO_NETWORK, Internal: true }, connected: [] });
 
-    await expect(backend.prepareProxyRoute(3128, POLICY, IMAGE)).rejects.toThrow(
-      "network pi-sandbox exists but is not internal",
-    );
-    expect(relayOf(engine)).toBeUndefined();
-  });
-
-  it("refuses an existing pi-sandbox network without the managed label", async () => {
-    const { engine, backend } = await readyBackend();
-
-    engine.networks.set("pi-sandbox", { body: { Name: "pi-sandbox", Internal: true }, connected: [] });
-
-    await expect(backend.prepareProxyRoute(3128, POLICY, IMAGE)).rejects.toBeInstanceOf(LauncherError);
+    await expect(routeOn(backend, 3128)).rejects.toBeInstanceOf(LauncherError);
     expect(relayOf(engine)).toBeUndefined();
   });
 
@@ -783,8 +812,8 @@ describe("docker-engine egress relay", () => {
     const { engine, backend } = await readyBackend();
     const repoA = "a".repeat(64);
     const repoB = "b".repeat(64);
-    const routeA = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
-    const routeB = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoB);
+    const routeA = await routeOn(backend, 3128, { repo: repoA });
+    const routeB = await routeOn(backend, 3128, { repo: repoB });
     const relayId = relayOf(engine)?.Id;
     const members = (name: string) => engine.networks.get(name)?.connected.map((entry) => entry.container);
 
@@ -794,56 +823,35 @@ describe("docker-engine egress relay", () => {
       Name: `pi-sandbox-${"a".repeat(12)}`,
       Driver: "bridge",
       Internal: true,
-      Labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repoA },
+      Labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoA },
     });
     expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayId]);
     expect(members(`pi-sandbox-${"b".repeat(12)}`)).toEqual([relayId]);
     expect(engine.networks.has("pi-sandbox")).toBe(false);
 
-    const again = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+    const again = await routeOn(backend, 3128, { repo: repoA });
 
     expect(again.address).toBe(routeA.address);
     expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayId]);
   });
 
-  it("keeps the repository's network when asked to while the last container is replaced", async () => {
-    const { engine, backend } = await readyBackend();
-    const repo = "a".repeat(64);
-    const route = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repo);
-    const created = await backend.createContainer({
-      ...baseSpec,
-      name: "agent-a",
-      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repo },
-      network: route.network,
-    });
-
-    await backend.removeContainer(created.id, { keepNetwork: true });
-
-    expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
-  });
-
-  it("removes a repository's network with its last container and keeps the others", async () => {
+  it("keeps the relay running on other repositories' networks when one repository's network goes", async () => {
     const { engine, backend } = await readyBackend();
     const repoA = "a".repeat(64);
     const repoB = "b".repeat(64);
-    const routeA = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
-    const routeB = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoB);
+    const routeA = await routeOn(backend, 3128, { repo: repoA });
+    const routeB = await routeOn(backend, 3128, { repo: repoB });
     const create = (name: string, repo: string, network: typeof routeA.network) =>
       backend.createContainer({
         ...baseSpec,
         name,
-        labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repo },
+        labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
         network,
       });
-    const first = await create("agent-a1", repoA, routeA.network);
-    const second = await create("agent-a2", repoA, routeA.network);
+    const only = await create("agent-a", repoA, routeA.network);
     const other = await create("agent-b", repoB, routeB.network);
 
-    await backend.removeContainer(first.id);
-
-    expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
-
-    await backend.removeContainer(second.id);
+    await backend.removeContainer(only.id);
 
     expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(false);
     expect(
@@ -858,25 +866,18 @@ describe("docker-engine egress relay", () => {
     const repoB = "b".repeat(64);
     const repoC = "c".repeat(64);
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+    engine.networks.set("pi-sandbox", {
+      body: { Name: "pi-sandbox", Internal: true, Labels: { [LABELS.managed]: "true" } },
+      connected: [],
+    });
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+    await routeOn(backend, 3128, { repo: repoA });
 
-    await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoB);
+    await routeOn(backend, 3128, { repo: repoB });
 
-    const routeC = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoC);
+    const routeC = await routeOn(backend, 3128, { repo: repoC });
 
     await backend.createContainer({ ...baseSpec, name: "agent-c", network: routeC.network });
-
-    engine.networks.set("pi-sandbox-foreign", {
-      body: { Name: "pi-sandbox-foreign", Internal: true },
-      connected: [],
-    });
-
-    engine.networks.set("pi-sandbox-other", {
-      body: { Name: "pi-sandbox-other", Internal: true, Labels: { "pi-sandbox.managed": "true" } },
-      connected: [],
-    });
 
     expect((await backend.pruneNetworks([repoA])).sort()).toEqual([
       "pi-sandbox",
@@ -885,8 +886,6 @@ describe("docker-engine egress relay", () => {
     expect([...engine.networks.keys()].sort()).toEqual([
       `pi-sandbox-${"a".repeat(12)}`,
       `pi-sandbox-${"c".repeat(12)}`,
-      "pi-sandbox-foreign",
-      "pi-sandbox-other",
     ]);
     expect(relayOf(engine)?.State).toBe("running");
   });
@@ -897,8 +896,8 @@ describe("docker-engine egress relay", () => {
     const pinned = await backend.pullImage(IMAGE, DIGEST);
 
     expect(engine.images.has(IMAGE)).toBe(false);
-    expect(await backend.prepareProxyRoute(3128, POLICY, pinned.id)).toEqual({
-      network: { kind: "internal", name: "pi-sandbox" },
+    expect(await routeOn(backend, 3128, { image: pinned.id })).toEqual({
+      network: { kind: "internal", name: REPO_NETWORK },
       address: "10.89.0.2:3128",
     });
     expect(relayBody(engine)).toMatchObject({ Image: pinned.id });

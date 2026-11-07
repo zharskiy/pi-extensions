@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import type { ExecIo, ExecSpec, TerminalSize } from "../types.ts";
 import { envList } from "./container-body.ts";
 import { type EngineClient, type Hijacked, segment } from "./engine-client.ts";
@@ -29,34 +30,42 @@ const execBody = (spec: ExecSpec, io: ExecIo) => ({
   ConsoleSize: consoleSizeOf(io),
 });
 
-const demultiplexer = (io: ExecIo) => {
-  const state = { pending: Buffer.alloc(0) };
+type Sink = (target: NodeJS.WritableStream, data: Buffer) => void;
 
-  const drain = (): void => {
-    if (state.pending.length < FRAME_HEADER) {
+const demultiplexer = (io: ExecIo, sink: Sink) => {
+  const state = { header: Buffer.alloc(0), remaining: 0, target: io.stdout };
+
+  const deliver = (chunk: Buffer): void => {
+    if (chunk.length === 0) {
       return;
     }
 
-    const end = FRAME_HEADER + state.pending.readUInt32BE(4);
+    if (state.remaining > 0) {
+      const size = Math.min(state.remaining, chunk.length);
 
-    if (state.pending.length < end) {
+      state.remaining -= size;
+
+      sink(state.target, chunk.subarray(0, size));
+
+      deliver(chunk.subarray(size));
+
       return;
     }
 
-    const target = state.pending[0] === STDERR_STREAM ? io.stderr : io.stdout;
+    const needed = FRAME_HEADER - state.header.length;
 
-    target.write(state.pending.subarray(FRAME_HEADER, end));
+    state.header = Buffer.concat([state.header, chunk.subarray(0, needed)]);
 
-    state.pending = state.pending.subarray(end);
+    if (state.header.length === FRAME_HEADER) {
+      state.target = state.header[0] === STDERR_STREAM ? io.stderr : io.stdout;
+      state.remaining = state.header.readUInt32BE(4);
+      state.header = Buffer.alloc(0);
+    }
 
-    drain();
+    deliver(chunk.subarray(needed));
   };
 
-  return (chunk: Buffer) => {
-    state.pending = Buffer.concat([state.pending, chunk]);
-
-    drain();
-  };
+  return deliver;
 };
 
 const attachInput = (stdin: NodeJS.ReadableStream | undefined, socket: Hijacked["socket"]) => {
@@ -66,18 +75,10 @@ const attachInput = (stdin: NodeJS.ReadableStream | undefined, socket: Hijacked[
     return () => undefined;
   }
 
-  const forward = (chunk: Buffer | string) => socket.write(chunk);
-
-  const closeInput = () => socket.end();
-
-  stdin.on("data", forward);
-
-  stdin.once("end", closeInput);
+  stdin.pipe(socket);
 
   return () => {
-    stdin.removeListener("data", forward);
-
-    stdin.removeListener("end", closeInput);
+    stdin.unpipe(socket);
 
     stdin.pause();
   };
@@ -86,13 +87,39 @@ const attachInput = (stdin: NodeJS.ReadableStream | undefined, socket: Hijacked[
 const pump = (hijacked: Hijacked, io: ExecIo) =>
   new Promise<void>((resolve, reject) => {
     const { socket, head } = hijacked;
-    const deliver = io.tty ? (chunk: Buffer) => io.stdout.write(chunk) : demultiplexer(io);
+    const blocked = new Set<NodeJS.WritableStream>();
 
-    if (head.length > 0) {
-      deliver(head);
-    }
+    const sink: Sink = (target, data) => {
+      if (!target.write(data)) {
+        blocked.add(target);
+      }
+    };
 
-    socket.on("data", deliver);
+    const deliver = io.tty ? (chunk: Buffer) => sink(io.stdout, chunk) : demultiplexer(io, sink);
+
+    const resume = () => {
+      socket.resume();
+    };
+
+    const receive = (chunk: Buffer) => {
+      deliver(chunk);
+
+      if (blocked.size === 0) {
+        return;
+      }
+
+      const waiting = [...blocked];
+
+      blocked.clear();
+
+      socket.pause();
+
+      void Promise.all(waiting.map((target) => once(target, "drain"))).then(resume, resume);
+    };
+
+    receive(head);
+
+    socket.on("data", receive);
 
     const detach = attachInput(io.stdin, socket);
 

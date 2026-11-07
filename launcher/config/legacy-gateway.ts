@@ -1,8 +1,7 @@
+import { SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
 import type { CredentialRule, CredentialSource, GatewayConfig, SecretRef } from "./types.ts";
 
 export const LEGACY_GATEWAY_RULE_ID = "gateway";
-
-const DEFAULT_TLS_PORT = 443;
 
 const keychainCommand = (service: string) => ["security", "find-generic-password", "-s", service, "-w"];
 
@@ -64,15 +63,15 @@ export const legacyGatewayRule = (
   }
 
   const url = new URL(gateway.url);
-  const port = Number(url.port || DEFAULT_TLS_PORT);
+  const port = Number(url.port || TLS_PORT);
 
   return {
     id: LEGACY_GATEWAY_RULE_ID,
     host: url.hostname.toLowerCase(),
-    ...(port === DEFAULT_TLS_PORT ? {} : { port }),
+    ...(port === TLS_PORT ? {} : { port }),
     placeholder: gateway.placeholder,
     header: gateway.authHeader,
-    template: "{secret}",
+    template: SECRET_MARKER,
     secret,
   };
 };

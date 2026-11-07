@@ -1,7 +1,7 @@
 import type { Backend } from "../backend/index.ts";
 import { containerMcpAuth } from "../hostpi/index.ts";
 import { syncContainerMcpAuth } from "../provision/index.ts";
-import { errorMessage, sha256Hex, type VaultServer } from "../shared/index.ts";
+import { errorMessage, type VaultServer } from "../shared/index.ts";
 import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 
@@ -18,7 +18,7 @@ export const syncSandboxMcpAuth = async (deps: CliDeps, context: LaunchContext, 
       backend: input.backend,
       containerId: input.containerId,
       stateDir: context.stateDir,
-      repoHash: sha256Hex(context.workspace.repoRoot),
+      repoHash: context.repoHash,
       entries,
     });
 

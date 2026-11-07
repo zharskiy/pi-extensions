@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideConnect, type EgressPolicy, restrictedAddress } from "../../proxy/policy.ts";
+import { decideConnect, type EgressPolicy, restrictedAddress, sniDenial } from "../../proxy/policy.ts";
 
 const policy: EgressPolicy = {
   allow: ["registry.npmjs.org", "*.githubusercontent.com", "example.test:8443"],
@@ -109,12 +109,82 @@ describe("denial hint under a grant cap", () => {
   it("names the policy or org allowlist for a host outside the cap", () => {
     expect(decideConnect({ host: "evil.test", port: 443 }, capped)).toEqual({
       allowed: false,
-      rule: "egress.allow",
+      rule: "egress.cap",
       reason: "pi-sandbox: evil.test is outside the allowlist set by policy or org",
     });
     expect(decideConnect({ host: "tools.test", port: 443 }, capped)).toMatchObject({
+      rule: "egress.cap",
       reason: "pi-sandbox: tools.test is outside the allowlist set by policy or org",
     });
+  });
+});
+
+const guarded: EgressPolicy = {
+  allow: ["registry.npmjs.org"],
+  mcpHosts: [],
+  deny: ["evil.test", "*.blocked.test", "ports.test:8443"],
+  credentialHosts: ["rules.test"],
+};
+
+const guardedRule = (host: string, port = 443, extra: string[] = []) => {
+  const decision = decideConnect({ host, port }, guarded, extra);
+
+  return decision.allowed ? "allowed" : decision.rule;
+};
+
+describe("decideConnect with deny, rule hosts and extra entries", () => {
+  it("allows the host of a configured credential rule", () => {
+    expect(guardedRule("rules.test")).toBe("allowed");
+  });
+
+  it("allows an extra entry such as a grant or derived host", () => {
+    expect(guardedRule("granted.test", 443, ["granted.test"])).toBe("allowed");
+    expect(guardedRule("granted.test", 8443, ["granted.test:8443"])).toBe("allowed");
+  });
+
+  it("lets egress.deny win over an extra entry on any port", () => {
+    expect(guardedRule("evil.test", 443, ["evil.test"])).toBe("egress.deny");
+    expect(guardedRule("a.blocked.test", 443, ["a.blocked.test"])).toBe("egress.deny");
+    expect(guardedRule("ports.test", 8443, ["ports.test:8443"])).toBe("egress.deny");
+    expect(guardedRule("ports.test", 443, ["ports.test"])).toBe("allowed");
+  });
+
+  it("keeps IP literals and loopback names denied with an extra entry", () => {
+    expect(guardedRule("10.0.0.1", 443, ["10.0.0.1"])).toBe("private-address");
+    expect(guardedRule("localhost", 443, ["localhost"])).toBe("loopback");
+  });
+
+  it("carries the allow hint in the denial reason", () => {
+    expect(decideConnect({ host: "new.test", port: 443 }, guarded)).toMatchObject({
+      reason: "pi-sandbox: new.test is not allowed; run pi sandbox egress allow new.test",
+    });
+  });
+});
+
+describe("sniDenial", () => {
+  it("refuses a ClientHello without a server name", () => {
+    expect(sniDenial("api.test", undefined)).toEqual({
+      allowed: false,
+      rule: "sni",
+      reason: "no TLS server name",
+    });
+  });
+
+  it("refuses a server name that differs from the CONNECT host", () => {
+    expect(sniDenial("api.test", "other.test")).toEqual({
+      allowed: false,
+      rule: "sni",
+      reason: "TLS server name other.test does not match api.test",
+    });
+  });
+
+  it("passes a matching name in any case and with a trailing dot", () => {
+    expect(sniDenial("api.test", "API.Test.")).toBeUndefined();
+  });
+
+  it("passes a host reached only through a grant, since it checks the name and not the allowlist", () => {
+    expect(decideConnect({ host: "granted.test", port: 443 }, guarded).allowed).toBe(false);
+    expect(sniDenial("granted.test", "granted.test")).toBeUndefined();
   });
 });
 

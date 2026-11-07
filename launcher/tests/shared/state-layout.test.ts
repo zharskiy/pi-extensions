@@ -53,6 +53,33 @@ describe("stateLayout", () => {
     expect(layout.providerHosts("1.5.0")).toBe("/state/provider-hosts/1.5.0.json");
     expect(layout.proxyDynamic("p1")).toBe("/state/proxy/p1/dynamic.json");
     expect(layout.proxyRepoToken("p1", "r1")).toBe("/state/proxy/p1/tokens/r1");
+    expect(layout.configLock("abc")).toBe("/state/locks/config-abc");
+    expect(layout.ca).toBe("/state/ca");
+    expect(layout.extraPem).toBe("/state/ca/extra.pem");
+    expect(layout.imageRecord).toBe("/state/image.json");
+    expect(layout.pack).toBe("/state/pack");
+    expect(layout.copies("k1")).toBe("/state/copies/k1");
+    expect(layout.orgBaseline).toBe("/state/org/baseline.json");
+    expect(layout.orgMeta).toBe("/state/org/meta.json");
+  });
+
+  it("keeps every file of one proxy instance in its own directory", () => {
+    const files = stateLayout("/state").proxyInstance("p1");
+
+    expect(files).toMatchObject({
+      directory: "/state/proxy/p1",
+      record: "/state/proxy/p1/proxy.json",
+      config: "/state/proxy/p1/proxy-config.json",
+      token: "/state/proxy/p1/proxy-token",
+      port: "/state/proxy/p1/proxy-port",
+      accessLog: "/state/proxy/p1/proxy-access.log",
+      proxyLog: "/state/proxy/p1/proxy.log",
+      lock: "/state/proxy/p1/lock",
+      dynamic: "/state/proxy/p1/dynamic.json",
+      dynamicLock: "/state/proxy/p1/dynamic.json.lock",
+      tokensDir: "/state/proxy/p1/tokens",
+    });
+    expect(files.repoToken("r1")).toBe("/state/proxy/p1/tokens/r1");
   });
 });
 

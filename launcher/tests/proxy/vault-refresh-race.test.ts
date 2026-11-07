@@ -122,7 +122,7 @@ beforeEach(async () => {
     home: state.stateDir,
     now: state.clock.now,
     piCommand: ["/usr/bin/node", "/opt/pi/cli.js"],
-    mcpAuthDir: stateLayout(state.stateDir).mcpAuth,
+    stateDir: state.stateDir,
     envSecrets: async () => new Map(),
   });
 

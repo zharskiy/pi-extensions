@@ -47,6 +47,8 @@ const SWITCHES = new Set([
 
 const GATEWAY = "192.168.66.1";
 
+const ECHO_INPUT = "cat";
+
 const ok = (stdout = ""): Partial<RunResult> => ({ code: 0, stdout });
 
 const failed = (stderr: string): Partial<RunResult> => ({ code: 1, stderr });
@@ -191,7 +193,7 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
     return ok();
   };
 
-  const execCommand = (args: string[]) => {
+  const execCommand = (args: string[], input = "") => {
     const parsed = parseArguments(args);
     const [id = "", ...command] = parsed.positional;
 
@@ -199,7 +201,7 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       return failed(`Error: container ${id} is not running`);
     }
 
-    return runFakeScript(command);
+    return command.at(-1) === ECHO_INPUT ? ok(input) : runFakeScript(command);
   };
 
   const runCommand = (args: string[]) => {
@@ -276,19 +278,24 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       : ok(JSON.stringify([networkJson(name, network)]));
   };
 
-  const listCommand = () =>
-    ok(
-      JSON.stringify(
-        [...containers.values()].map((container) => ({
-          status: container.status,
-          configuration: {
-            id: container.id,
-            labels: container.labels,
-            image: { reference: container.image },
-          },
-        })),
-      ),
-    );
+  const containerJson = (container: FakeCliContainer) => ({
+    status: container.status,
+    configuration: {
+      id: container.id,
+      labels: container.labels,
+      image: { reference: container.image },
+    },
+  });
+
+  const listCommand = () => ok(JSON.stringify([...containers.values()].map(containerJson)));
+
+  const inspectCommand = ([id = ""]: string[]) => {
+    const container = containers.get(id);
+
+    return container === undefined
+      ? failed(`Error: container ${id} not found`)
+      : ok(JSON.stringify([containerJson(container)]));
+  };
 
   const buildCommand = (args: string[]) => {
     const tag = flagValues(parseArguments(args), "--tag")[0] ?? "";
@@ -305,6 +312,7 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
     image: imageCommand,
     build: buildCommand,
     list: listCommand,
+    inspect: inspectCommand,
     create: createCommand,
     start: ([id = ""]) => setStatus(id, "running"),
     stop: (args) => setStatus(parseArguments(args).positional[0] ?? "", "stopped"),
@@ -351,7 +359,8 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
 
     const finish = () => {
       const [command = "", ...rest] = args;
-      const result = file === "container" && command === "exec" ? execCommand(rest) : failed("unknown");
+      const result =
+        file === "container" && command === "exec" ? execCommand(rest, record.input) : failed("unknown");
 
       stdout.end(result.stdout ?? "");
 

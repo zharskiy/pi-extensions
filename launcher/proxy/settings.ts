@@ -7,6 +7,7 @@ import type {
   ParentProxy,
   SandboxConfig,
 } from "../config/index.ts";
+import { authorityOf, TLS_PORT } from "../config/index.ts";
 import { sha256Hex } from "../shared/index.ts";
 import type { EgressPolicy } from "./policy.ts";
 
@@ -33,8 +34,6 @@ export interface ProxySettings {
 
 const SETTINGS_VERSION = 2;
 
-const DEFAULT_TLS_PORT = 443;
-
 const gatewaySettings = (config: SandboxConfig): GatewaySettings | undefined => {
   if (config.gateway === undefined) {
     return undefined;
@@ -44,7 +43,7 @@ const gatewaySettings = (config: SandboxConfig): GatewaySettings | undefined => 
 
   return {
     host: url.hostname.toLowerCase(),
-    port: Number(url.port || DEFAULT_TLS_PORT),
+    port: Number(url.port || TLS_PORT),
     url: config.gateway.url,
     authHeader: config.gateway.authHeader,
     placeholder: config.gateway.placeholder,
@@ -64,8 +63,7 @@ const legacyCredentials = (credentials: SandboxConfig["credentials"]): Credentia
   return { kind: "host-pi-auth", authFile: credentials.authFile };
 };
 
-const ruleHost = (rule: CredentialRule) =>
-  rule.port === undefined || rule.port === DEFAULT_TLS_PORT ? rule.host : `${rule.host}:${rule.port}`;
+const ruleHost = (rule: CredentialRule) => authorityOf(rule.host, rule.port ?? TLS_PORT);
 
 const sorted = (values: string[]) => [...values].sort();
 

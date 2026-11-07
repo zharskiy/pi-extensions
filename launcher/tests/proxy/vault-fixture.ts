@@ -154,7 +154,6 @@ export const startVaultProxy = async (options: VaultProxyOptions): Promise<Vault
     version: 1,
     rules: [accessRule],
     derivedHosts: [],
-    tokens: {},
     vault: options.servers ?? [vaultServer()],
   });
 

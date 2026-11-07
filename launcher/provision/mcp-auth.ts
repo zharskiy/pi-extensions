@@ -1,18 +1,20 @@
 import { posix } from "node:path";
-import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Backend } from "../backend/index.ts";
-import type { ContainerMcpAuthEntries, JsonObject } from "../hostpi/index.ts";
+import { type Backend, execCapture } from "../backend/index.ts";
+import type { ContainerMcpAuthEntries } from "../hostpi/index.ts";
 import {
   CONTAINER_MCP_AUTH_LOCK,
   GUEST_PATHS,
+  isJsonObject,
   isPlaceholder,
+  type JsonObject,
   LauncherError,
+  parseJsonObject,
+  stableHash,
   stateLayout,
   writeJsonFile,
 } from "../shared/index.ts";
 import type { ContainerMcpAuthSyncInput, SyncResult } from "./types.ts";
-import { collector } from "./volume.ts";
 
 const FILE = posix.join(GUEST_PATHS.agentDir, "mcp-auth.json");
 
@@ -32,9 +34,11 @@ const PRIVATE_MODE = 0o600;
 
 const SECRET_TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"] as const;
 
-const LOCK_SCRIPT = [
+const READ_FAILED = 4;
+
+const LOCK_AND_READ_SCRIPT = [
   'const fs = require("node:fs");',
-  "const [lock, staleMs] = [process.argv[1], Number(process.argv[2])];",
+  "const [lock, staleMs, file] = [process.argv[1], Number(process.argv[2]), process.argv[3]];",
   'fs.mkdirSync(require("node:path").dirname(lock), { recursive: true });',
   "const take = () => { try { fs.mkdirSync(lock); return true; } catch (error) { if (error.code !== 'EEXIST') throw error; return false; } };",
   "const look = (path) => { try { return fs.statSync(path); } catch { return undefined; } };",
@@ -44,43 +48,32 @@ const LOCK_SCRIPT = [
   "const settle = (seen) => same(look(aside), seen) || look(lock) !== undefined ? drop() : fs.renameSync(aside, lock);",
   "const moveAside = (seen) => { try { fs.renameSync(lock, aside); } catch { return; } settle(seen); };",
   "const stale = () => { const seen = look(lock); if (seen !== undefined && Date.now() - seen.mtimeMs <= staleMs) return false; if (seen !== undefined) moveAside(seen); return true; };",
-  `process.exit(take() || (stale() && take()) ? 0 : ${LOCK_BUSY});`,
+  "const entry = () => { try { return fs.lstatSync(file); } catch { return undefined; } };",
+  "const show = () => { const found = entry(); if (found?.isSymbolicLink()) { fs.rmSync(file, { force: true }); return; } if (found?.isFile()) { try { fs.chmodSync(file, 0o600); } catch {} fs.writeSync(1, fs.readFileSync(file)); } };",
+  `const read = () => { try { show(); return 0; } catch { fs.rmSync(lock, { recursive: true, force: true }); return ${READ_FAILED}; } };`,
+  `process.exitCode = take() || (stale() && take()) ? read() : ${LOCK_BUSY};`,
 ].join("\n");
-
-const READ_SCRIPT = 'if [ -L "$1" ]; then rm -f "$1"; fi; if [ -f "$1" ]; then cat "$1"; fi';
 
 const WRITE_SCRIPT =
   'umask 077 && rm -f "$1.pi-sandbox-tmp" && cat > "$1.pi-sandbox-tmp" && mv -f "$1.pi-sandbox-tmp" "$1"';
 
-interface ExecResult {
-  code: number;
-  stdout: string;
-}
+const run = (backend: Backend, containerId: string, command: string[], stdin?: string) =>
+  execCapture(backend, { containerId, command, env: {}, workdir: "/" }, stdin);
 
-const run = async (backend: Backend, containerId: string, command: string[], stdin?: string) => {
-  const stdout = collector();
-  const code = await backend.exec(
-    { containerId, command, env: {}, workdir: "/" },
-    {
-      ...(stdin === undefined ? {} : { stdin: Readable.from([Buffer.from(stdin)]) }),
-      stdout: stdout.stream,
-      stderr: collector().stream,
-      tty: false,
-    },
-  );
+const script = (text: string, ...args: string[]) => ["sh", "-c", text, "sh", ...args];
 
-  return { code, stdout: stdout.text() } satisfies ExecResult;
-};
+const lockAndReadCommand = () =>
+  script('exec node -e "$1" "$2" "$3" "$4"', LOCK_AND_READ_SCRIPT, LOCK, String(LOCK_STALE_MS), FILE);
 
-const script = (text: string, path: string) => ["sh", "-c", text, "sh", path];
-
-const lockCommand = () => ["node", "-e", LOCK_SCRIPT, LOCK, String(LOCK_STALE_MS)];
-
-const acquire = async (backend: Backend, containerId: string, deadline: number): Promise<void> => {
-  const attempt = await run(backend, containerId, lockCommand());
+const acquireAndRead = async (backend: Backend, containerId: string, deadline: number): Promise<string> => {
+  const attempt = await run(backend, containerId, lockAndReadCommand());
 
   if (attempt.code === 0) {
-    return;
+    return attempt.stdout;
+  }
+
+  if (attempt.code === READ_FAILED) {
+    throw new LauncherError("mcp-auth.json: could not read it in the sandbox");
   }
 
   if (attempt.code !== LOCK_BUSY) {
@@ -96,33 +89,26 @@ const acquire = async (backend: Backend, containerId: string, deadline: number):
 
   await sleep(LOCK_RETRY_MS);
 
-  return acquire(backend, containerId, deadline);
+  return acquireAndRead(backend, containerId, deadline);
 };
 
 const keepFresh = (backend: Backend, containerId: string) =>
   setInterval(() => {
-    void run(backend, containerId, ["touch", "-c", LOCK]).catch(() => undefined);
+    void run(backend, containerId, script('touch -c "$1"', LOCK)).catch(() => undefined);
   }, LOCK_REFRESH_MS);
-
-const isObject = (value: unknown): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const parseFile = (text: string): { value: JsonObject; invalid: boolean } => {
   if (text.trim() === "") {
     return { value: {}, invalid: false };
   }
 
-  try {
-    const value: unknown = JSON.parse(text);
+  const value = parseJsonObject(text);
 
-    return isObject(value) ? { value, invalid: false } : { value: {}, invalid: true };
-  } catch {
-    return { value: {}, invalid: true };
-  }
+  return value === undefined ? { value: {}, invalid: true } : { value, invalid: false };
 };
 
 const withoutTokens = (value: unknown): JsonObject => {
-  if (!isObject(value)) {
+  if (!isJsonObject(value)) {
     return {};
   }
 
@@ -148,13 +134,13 @@ const isLeak = (value: unknown) => typeof value === "string" && !isPlaceholder(v
 const isClientSecretField = (field: string) => field.toLowerCase().startsWith("client_secret");
 
 const vaultClientSecret = (entry: ContainerMcpAuthEntries[string] | undefined) => {
-  const client = isObject(entry) && isObject(entry.clientInformation) ? entry.clientInformation : {};
+  const client = isJsonObject(entry) && isJsonObject(entry.clientInformation) ? entry.clientInformation : {};
 
   return client.client_secret;
 };
 
 const sweptClient = (entry: JsonObject, vaultSecret: unknown) => {
-  if (!isObject(entry.clientInformation)) {
+  if (!isJsonObject(entry.clientInformation)) {
     return { entry, swept: false };
   }
 
@@ -174,7 +160,7 @@ const sweptClient = (entry: JsonObject, vaultSecret: unknown) => {
 };
 
 const sweptEntry = (entry: unknown, vaultSecret: unknown) => {
-  if (!isObject(entry)) {
+  if (!isJsonObject(entry)) {
     return { entry, swept: false };
   }
 
@@ -185,7 +171,7 @@ const sweptEntry = (entry: unknown, vaultSecret: unknown) => {
 };
 
 const sweptTokens = (entry: JsonObject) => {
-  if (!isObject(entry.tokens)) {
+  if (!isJsonObject(entry.tokens)) {
     return { entry, swept: false };
   }
 
@@ -223,20 +209,23 @@ const sweep = (value: JsonObject, entries: ContainerMcpAuthEntries) => {
   };
 };
 
-const mergeAndWrite = async (input: ContainerMcpAuthSyncInput): Promise<SyncResult> => {
-  const read = await run(input.backend, input.containerId, script(READ_SCRIPT, FILE));
-
-  if (read.code !== 0) {
-    throw new LauncherError(`mcp-auth.json: could not read it in the sandbox (exit ${read.code})`);
-  }
-
-  const current = parseFile(read.stdout);
+const mergeAndWrite = async (input: ContainerMcpAuthSyncInput, text: string): Promise<SyncResult> => {
+  const current = parseFile(text);
   const swept = sweep(applyEntries(current.value, input.entries), input.entries);
-  const text = `${JSON.stringify(swept.value, null, 2)}\n`;
-  const written = await run(input.backend, input.containerId, script(WRITE_SCRIPT, FILE), text);
+  const unchanged =
+    !current.invalid && text.trim() !== "" && stableHash(swept.value) === stableHash(current.value);
 
-  if (written.code !== 0) {
-    throw new LauncherError(`mcp-auth.json: could not write it into the sandbox (exit ${written.code})`);
+  if (!unchanged) {
+    const written = await run(
+      input.backend,
+      input.containerId,
+      script(WRITE_SCRIPT, FILE),
+      `${JSON.stringify(swept.value, null, 2)}\n`,
+    );
+
+    if (written.code !== 0) {
+      throw new LauncherError(`mcp-auth.json: could not write it into the sandbox (exit ${written.code})`);
+    }
   }
 
   await writeJsonFile(stateLayout(input.stateDir).syncMcpAuth(input.repoHash), swept.value, {
@@ -251,15 +240,14 @@ const mergeAndWrite = async (input: ContainerMcpAuthSyncInput): Promise<SyncResu
 };
 
 export const syncContainerMcpAuth = async (input: ContainerMcpAuthSyncInput): Promise<SyncResult> => {
-  await acquire(input.backend, input.containerId, Date.now() + LOCK_TIMEOUT_MS);
-
+  const text = await acquireAndRead(input.backend, input.containerId, Date.now() + LOCK_TIMEOUT_MS);
   const refresher = keepFresh(input.backend, input.containerId);
 
   try {
-    return await mergeAndWrite(input);
+    return await mergeAndWrite(input, text);
   } finally {
     clearInterval(refresher);
 
-    await run(input.backend, input.containerId, ["rm", "-rf", LOCK]).catch(() => undefined);
+    await run(input.backend, input.containerId, script('rm -rf "$1"', LOCK)).catch(() => undefined);
   }
 };

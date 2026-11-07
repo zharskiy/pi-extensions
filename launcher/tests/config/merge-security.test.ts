@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
+import { getPath } from "../../config/dotted.ts";
 import { mergeLayers } from "../../config/merge.ts";
 import type { LayerConfig, LayerName } from "../../config/types.ts";
-import { errorMessage } from "../../shared/index.ts";
+import { layerKeys, validateLayer } from "../../config/validate.ts";
+import { errorMessage, isJsonObject } from "../../shared/index.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
@@ -287,5 +289,105 @@ describe("mergeLayers egress cap", () => {
         })
       ).egressCap,
     ).toEqual({ derivedHosts: ["a.test"], grants: ["a.test"] });
+  });
+});
+
+const COMPLETE_LAYER: LayerConfig = {
+  profile: "team",
+  backend: "apple",
+  fallback: "refuse",
+  image: {
+    reference: "registry.corp.test/pi",
+    digest: `sha256:${"d".repeat(64)}`,
+    packages: ["chromium"],
+    npmGlobal: ["tool@1.0.0"],
+    dockerfile: "/etc/pi-sandbox/layer.Dockerfile",
+  },
+  gateway: {
+    url: "https://llm.corp.test",
+    authHeader: "authorization",
+    placeholder: "pi-sandbox-gateway",
+    providers: [{ id: "corp", apiKind: "openai-completions" }],
+  },
+  credentials: {
+    kind: "static",
+    envVar: "GATEWAY_KEY",
+    keychainService: "corp-gateway",
+    rules: [gatewayRule],
+    derive: { enabled: false, hosts: ["*.corp.test"] },
+    vault: { enabled: false },
+  },
+  egress: {
+    allow: ["llm.corp.test"],
+    mcpHosts: ["mcp.corp.test"],
+    denyPrivateAddresses: true,
+    deny: ["paste.corp.test"],
+    privateHosts: ["*.corp.internal"],
+    parentProxy: { url: "http://proxy.corp.test:3128", noProxy: [".corp.test"], auth: { env: "PROXY_AUTH" } },
+    grants: { enabled: false, maxHours: 4, permanent: false },
+  },
+  tls: { extraCa: [{ file: "/etc/corp/ca.pem" }] },
+  workspaceRoots: { roots: ["/work"], outside: "refuse" },
+  mounts: { extraReadOnly: ["/opt/tools"], cacheVolumes: ["node_modules"] },
+  env: { allow: ["EDITOR"] },
+  ssh: { agent: true },
+  resources: { cpus: 2, memoryGiB: 4 },
+  sessions: { host: false },
+  org: { source: "/etc/pi-sandbox/org.json", sha256: "a".repeat(64), refreshHours: 6 },
+};
+
+const OTHER_VARIANT_KEYS = [
+  "credentials.authFile",
+  "credentials.command",
+  ...[
+    "file",
+    "pointer",
+    "command",
+    "ttlSeconds",
+    "piAuth",
+    "bearer",
+    "mcpOAuth",
+    "mcpOAuth.server",
+    "mcpOAuth.url",
+  ].map((key) => `egress.parentProxy.auth.${key}`),
+];
+
+const UNION_KEYS = ["egress.deny", "env.allow"];
+
+const settableKeys = () => layerKeys().filter((key) => key !== "$schema" && !key.includes("[]"));
+
+const isRelated = (key: string) => (other: string) =>
+  other === key || key.startsWith(`${other}.`) || other.startsWith(`${key}.`);
+
+describe("mergeLayers with a layer that sets every key", () => {
+  it("is a valid user layer that leaves out only the other variants of credentials and secrets", () => {
+    expect(validateLayer(COMPLETE_LAYER, "user")).toEqual(COMPLETE_LAYER);
+    expect(settableKeys().filter((key) => getPath(COMPLETE_LAYER, key) === undefined)).toEqual(
+      OTHER_VARIANT_KEYS,
+    );
+  });
+
+  it("carries every key into the merged config with the user as its source", async () => {
+    const { config, sources } = await merge({ user: COMPLETE_LAYER });
+    const keys = settableKeys().filter((key) => {
+      const value = getPath(COMPLETE_LAYER, key);
+
+      return value !== undefined && !isJsonObject(value);
+    });
+
+    keys.forEach((key) => {
+      const expected = getPath(COMPLETE_LAYER, key);
+      const merged = getPath(config, key);
+      const owners = Object.keys(sources).filter(isRelated(key));
+
+      expect({ key, merged }).toEqual({
+        key,
+        merged: UNION_KEYS.includes(key) ? expect.arrayContaining(expected as unknown[]) : expected,
+      });
+      expect({ key, owners: owners.map((owner) => sources[owner]) }).toEqual({
+        key,
+        owners: expect.arrayContaining(["user"]),
+      });
+    });
   });
 });

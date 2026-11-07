@@ -1,8 +1,7 @@
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+import { isJsonObject } from "../shared/index.ts";
 
 export const getPath = (target: unknown, key: string) =>
-  key.split(".").reduce<unknown>((node, part) => (isRecord(node) ? node[part] : undefined), target);
+  key.split(".").reduce<unknown>((node, part) => (isJsonObject(node) ? node[part] : undefined), target);
 
 export const setPath = (
   target: Record<string, unknown>,
@@ -17,5 +16,5 @@ export const setPath = (
 
   const child = target[head];
 
-  return { ...target, [head]: setPath(isRecord(child) ? child : {}, rest.join("."), value) };
+  return { ...target, [head]: setPath(isJsonObject(child) ? child : {}, rest.join("."), value) };
 };

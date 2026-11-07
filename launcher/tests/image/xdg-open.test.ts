@@ -4,7 +4,8 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { launcherRoot, OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "../../shared/index.ts";
+import { OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "../../proxy/index.ts";
+import { launcherRoot } from "../../shared/index.ts";
 
 interface ShimModule {
   ROUTES: typeof OAUTH_ROUTES;

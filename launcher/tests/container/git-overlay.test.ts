@@ -12,9 +12,10 @@ import {
   gitLaunchNotices,
   gitSessionEndNotices,
   LABELS,
+  planGitOverlay,
   readyGitOverlay,
 } from "../../container/index.ts";
-import { createProcessRunner } from "../../shared/index.ts";
+import { createProcessRunner, sha256Hex } from "../../shared/index.ts";
 import { discoverWorkspace, type Workspace } from "../../workspace/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
@@ -28,7 +29,7 @@ afterEach(async () => {
   await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-const capabilities: BackendCapabilities = { singleFileMount: true, sshAgent: false, internalNetwork: true };
+const capabilities: BackendCapabilities = { singleFileMount: true, sshAgent: false };
 
 const git = async (cwd: string, args: string[]) => {
   const result = await runner.run(
@@ -182,19 +183,18 @@ describe("the git dir in the container", () => {
     const gitDir = join(repo, ".git", "worktrees", "linked");
     const mounts = specOf(base, workspace, overlay).mounts.map((mount) => describeMount(base, mount));
 
-    expect(mounts).toEqual(
-      expect.arrayContaining([
-        { target: worktree, readOnly: false, snapshot: false },
-        { target: join(repo, ".git"), readOnly: false, snapshot: false },
-        { target: join(repo, ".git", "worktrees"), readOnly: false, snapshot: false },
-        { target: gitDir, readOnly: false, snapshot: false },
-        { target: join(worktree, ".git"), readOnly: true, snapshot: true },
-        { target: join(gitDir, "commondir"), readOnly: true, snapshot: true },
-        { target: join(gitDir, "gitdir"), readOnly: true, snapshot: true },
-        { target: join(repo, ".git", "commondir"), readOnly: true, snapshot: true },
-        { target: join(repo, ".git", "config"), readOnly: true, snapshot: true },
-      ]),
-    );
+    expect(mounts.filter((mount) => mount.target.startsWith(base))).toEqual([
+      { target: worktree, readOnly: false, snapshot: false },
+      { target: join(repo, ".git"), readOnly: false, snapshot: false },
+      { target: join(repo, ".git", "worktrees"), readOnly: false, snapshot: false },
+      { target: gitDir, readOnly: false, snapshot: false },
+      { target: join(repo, ".git", "hooks"), readOnly: true, snapshot: true },
+      { target: join(repo, ".git", "config"), readOnly: true, snapshot: true },
+      { target: join(gitDir, "commondir"), readOnly: true, snapshot: true },
+      { target: join(gitDir, "gitdir"), readOnly: true, snapshot: true },
+      { target: join(worktree, ".git"), readOnly: true, snapshot: true },
+      { target: join(repo, ".git", "commondir"), readOnly: true, snapshot: true },
+    ]);
   });
 
   it("protects submodule git dirs and accepts a submodule opened as its own repository", async () => {
@@ -289,6 +289,57 @@ describe("the git dir in the container", () => {
     expect((await stat(join(repo, ".husky", "_"))).isDirectory()).toBe(true);
     expect((await stat(join(repo, ".git", "hooks"))).isDirectory()).toBe(true);
     expect(overlay.selfBinds).toEqual([join(repo, ".git"), join(repo, ".husky")]);
+  });
+
+  it("refuses a link planted where a missing hooks dir is about to be created, and snapshots nothing", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const workspace = await workspaceAt(base, repo);
+    const hooks = join(repo, ".git", "hooks");
+
+    await rm(hooks, { recursive: true });
+
+    const plan = await planGitOverlay(workspace, contextOf(base));
+
+    await mkdir(join(base, "home", ".ssh"));
+    await symlink(join(base, "home", ".ssh"), hooks);
+
+    await expect(plan.ready()).rejects.toThrow(`git: ${hooks} is a symbolic link`);
+    expect(
+      await lstat(join(base, "state", "git", sha256Hex(repo), "snapshots")).catch(() => undefined),
+    ).toBeUndefined();
+  });
+
+  it("refuses a hooks dir created through a parent the sandbox side turned into a link", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const workspace = await workspaceAt(base, repo);
+
+    await git(repo, ["config", "core.hooksPath", ".husky/_"]);
+
+    const plan = await planGitOverlay(workspace, contextOf(base));
+
+    await mkdir(join(base, "elsewhere"));
+    await symlink(join(base, "elsewhere"), join(repo, ".husky"));
+
+    await expect(plan.ready()).rejects.toThrow(
+      `git: ${join(repo, ".husky", "_")} goes through a symbolic link`,
+    );
+  });
+
+  it("refuses a git leaf that is a link to a protected path even though the guard trusts real paths", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const workspace = await workspaceAt(base, repo);
+    const ssh = join(base, "home", ".ssh");
+
+    await mkdir(ssh);
+    await rm(join(repo, ".git", "hooks"), { recursive: true });
+    await symlink(ssh, join(repo, ".git", "hooks"));
+
+    await expect(discoverGitOverlay(workspace, contextOf(base))).rejects.toThrow(
+      `git: ${join(repo, ".git", "hooks")} is a symbolic link`,
+    );
   });
 
   it("binds no git files on a backend without single-file mounts but keeps the dir snapshots", async () => {

@@ -1,7 +1,6 @@
 import { X509Certificate } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
 import type { ExtraCa } from "../config/index.ts";
 import {
   type CommandRunner,
@@ -89,14 +88,13 @@ const writeIfChanged = async (path: string, text: string) => {
 
 const pemText = (certificates: string[]) => certificates.map((pem) => `${pem.trim()}\n`).join("");
 
-export const extraPemPathOf = (stateDir: string) => join(stateDir, "ca", "extra.pem");
-
 export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustBundle> => {
   const ca = await openLauncherCa({ stateDir: input.stateDir, runner: input.runner });
   const found = await Promise.all(input.sources.map(sourceCertificates(input)));
   const extras = [...new Set(found.flat().map((pem) => pem.trim()))];
-  const pemPath = stateLayout(input.stateDir).trustPem;
-  const extraPemPath = extraPemPathOf(input.stateDir);
+  const layout = stateLayout(input.stateDir);
+  const pemPath = layout.trustPem;
+  const extraPemPath = layout.extraPem;
   const bundle = pemText([ca.certPem, ...extras]);
 
   await writeIfChanged(extraPemPath, pemText(extras));

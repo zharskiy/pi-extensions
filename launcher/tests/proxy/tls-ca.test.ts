@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSecureContext } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureLauncherCa } from "../../proxy/index.ts";
 import { openLauncherCa } from "../../proxy/tls-ca.ts";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 
@@ -20,10 +19,10 @@ afterAll(async () => {
 
 describe("launcher CA", () => {
   it("creates a CA under the state dir and returns the certificate path", async () => {
-    const ca = await ensureLauncherCa(state.stateDir, createProcessRunner());
-    const authority = new X509Certificate(await readFile(ca.certPemPath, "utf8"));
+    const ca = await openLauncherCa({ stateDir: state.stateDir, runner: createProcessRunner() });
+    const authority = new X509Certificate(await readFile(ca.certPath, "utf8"));
 
-    expect(ca.certPemPath).toBe(join(state.stateDir, "ca", "ca-cert.pem"));
+    expect(ca.certPath).toBe(join(state.stateDir, "ca", "ca-cert.pem"));
     expect(authority.ca).toBe(true);
   });
 

@@ -1,5 +1,7 @@
 import { isIPv4 } from "node:net";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
+import { LABELS } from "../labels.ts";
+import { removeWithNetworkCleanup } from "../managed-network.ts";
 import type {
   Backend,
   BackendCapabilities,
@@ -43,8 +45,6 @@ const LIMA_HOST = "host.lima.internal";
 const DOCKER_HOST_ALIAS = "host.docker.internal";
 
 const STOP_TIMEOUT_SECONDS = 5;
-
-const REPO_HASH_LABEL = "pi-sandbox.repo-hash";
 
 const DOCKER_DESKTOP = "Docker Desktop";
 
@@ -90,7 +90,6 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
   const capabilities: BackendCapabilities = {
     singleFileMount: true,
     sshAgent: colimaProfile !== undefined,
-    internalNetwork: true,
   };
 
   const version = () => client.json<EngineVersion>({ method: "GET", path: "/version" });
@@ -187,25 +186,22 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
       Config?: { Labels?: Record<string, string> | null };
     };
 
-    return inspected.Config?.Labels?.[REPO_HASH_LABEL];
+    return inspected.Config?.Labels?.[LABELS.repoHash];
   };
 
-  const removeContainer = async (id: string, options: RemoveContainerOptions = {}) => {
-    const repoHash = await repoHashOf(id);
-
+  const deleteContainer = async (id: string) => {
     await client.call(
       { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true } },
       [404],
     );
-
-    if (options.keepNetwork === true || repoHash === undefined) {
-      return;
-    }
-
-    if ((await findContainers({ [REPO_HASH_LABEL]: repoHash })).length === 0) {
-      await relay.removeRepoNetwork(repoHash);
-    }
   };
+
+  const removeContainer = (id: string, options: RemoveContainerOptions = {}) =>
+    removeWithNetworkCleanup(
+      { repoHashOf, remove: deleteContainer, findContainers, removeNetwork: relay.removeNetwork },
+      id,
+      options,
+    );
 
   const status = async () => {
     const base = { socket: options.socketPath, profile: colimaProfile ?? "none" };

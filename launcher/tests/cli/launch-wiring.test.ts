@@ -1,73 +1,47 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { ProxyRouteRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { readGrants, registerSession } from "../../grants/index.ts";
+import { readGrants } from "../../grants/index.ts";
 import { type DenialRecord, PARENT_PROXY_SECRET_KEY } from "../../proxy/index.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
+import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
+import { createHarness, renderDirOf, repoDynamicOf, repoTokenOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
 const PINNED = `sha256:${"a".repeat(64)}`;
 
-const tokenHashOf = async (harness: { stateDir: string; repoRoot: string }, policyHash: string) =>
-  sha256Hex(
-    await readFile(
-      stateLayout(harness.stateDir).proxyRepoToken(policyHash, sha256Hex(harness.repoRoot)),
-      "utf8",
-    ),
-  );
-
-const denial = (host: string, port: number): DenialRecord => ({
+const denial = (host: string, port: number, rule = "egress.allow"): DenialRecord => ({
   time: 1_700_000_000_500,
   host,
   port,
   repoHash: "repo",
-  rule: "allowlist",
+  rule,
   reason: "not allowed",
 });
 
 describe("pi launch wiring", () => {
   it("gives the container its repository token, never the instance token, and records it for the proxy", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
     const [container] = [...fake.containers.values()];
     const url = new URL(container?.spec?.env.HTTPS_PROXY ?? "");
-    const repoHash = sha256Hex(harness.repoRoot);
-    const dynamic = JSON.parse(
-      await readFile(stateLayout(harness.stateDir).proxyDynamic("policy"), "utf8"),
-    ) as { tokens: Record<string, string> };
 
     expect(url.password).toMatch(/^[0-9a-f]{64}$/);
     expect(url.password).not.toBe("token-1");
-    expect(await readFile(stateLayout(harness.stateDir).proxyRepoToken("policy", repoHash), "utf8")).toBe(
-      url.password,
-    );
-    expect(dynamic.tokens[sha256Hex(url.password)]).toBe(repoHash);
+    expect(await repoTokenOf(harness)).toBe(url.password);
+    expect(await repoDynamicOf(harness)).toEqual({ rules: [], derivedHosts: expect.any(Array), vault: [] });
   });
 
   it("hands env secrets and the parent proxy credentials to the proxy, not to the container", async () => {
     const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       env: { CORP_TOKEN: REAL_KEY, PARENT_CREDS: "user:password-123" },
     });
@@ -91,20 +65,18 @@ describe("pi launch wiring", () => {
     expect(harness.controlMessages).toEqual([
       {
         type: "env-secrets",
-        repoTokenHash: await tokenHashOf(harness, "policy"),
+        repoTokenHash: sha256Hex(await repoTokenOf(harness)),
         secrets: { corp: REAL_KEY, [PARENT_PROXY_SECRET_KEY]: "user:password-123" },
       },
     ]);
 
-    const [container] = [...fake.containers.values()];
-
-    expect(JSON.stringify(container?.spec)).not.toContain(REAL_KEY);
+    await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY, "password-123"]);
   });
 
   it("hands the env parent proxy's credentials over control and starts the proxy without them", async () => {
     const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
     const requests: Array<{ env: NodeJS.ProcessEnv }> = [];
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       env: { HTTPS_PROXY: "http://corp:p%40ss@proxy.example.test:8080" },
       proxy: {
@@ -125,11 +97,13 @@ describe("pi launch wiring", () => {
     expect(harness.controlMessages).toEqual([
       {
         type: "env-secrets",
-        repoTokenHash: await tokenHashOf(harness, "policy"),
+        repoTokenHash: sha256Hex(await repoTokenOf(harness)),
         secrets: { [PARENT_PROXY_SECRET_KEY]: "corp:p@ss" },
       },
     ]);
     expect(requests.map((request) => request.env.HTTPS_PROXY)).toEqual(["http://proxy.example.test:8080"]);
+
+    await expectNoLeak(fake, renderDirOf(harness), ["p@ss", "p%40ss"]);
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.controlMessages).toHaveLength(2);
@@ -137,7 +111,7 @@ describe("pi launch wiring", () => {
 
   it("renders host auth.json with placeholders into a read-only render mount", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await harness.writeJson(join(harness.hostAgentDir, "auth.json"), {
       example: { type: "api_key", key: REAL_KEY },
@@ -146,7 +120,7 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     const [container] = [...fake.containers.values()];
-    const renderDir = stateLayout(harness.stateDir).render(sha256Hex(harness.repoRoot));
+    const renderDir = renderDirOf(harness);
     const rendered = await readFile(join(renderDir, "auth.json"), "utf8");
 
     expect(container?.spec?.mounts).toContainEqual({
@@ -155,13 +129,46 @@ describe("pi launch wiring", () => {
       readOnly: true,
       kind: "bind",
     });
-    expect(rendered).not.toContain(REAL_KEY);
     expect(JSON.parse(rendered).example.key).toMatch(/^pi-sandbox-[0-9a-f]{24}$/);
+
+    await expectNoLeak(fake, renderDir, [REAL_KEY]);
+  });
+
+  it("says when a credential rule host resolves to a private address", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({
+      adapters: () => [fake.backend],
+      resolve: async () => ["10.0.0.7"],
+    });
+
+    await harness.writeJson(join(harness.hostAgentDir, "auth.json"), {
+      example: { type: "api_key", key: REAL_KEY },
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: models.example.test resolves to a private address; add it to egress.privateHosts",
+    );
+  });
+
+  it("launches without the private address notice when DNS does not answer within 2 s", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({
+      adapters: () => [fake.backend],
+      resolve: () => new Promise<string[]>(() => undefined),
+    });
+
+    await harness.writeJson(join(harness.hostAgentDir, "auth.json"), {
+      example: { type: "api_key", key: REAL_KEY },
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).not.toContain("resolves to a private address");
   });
 
   it("prints one line per denied host when pi exits", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       denials: [
         denial("blocked.example.test", 443),
@@ -183,9 +190,9 @@ describe("pi launch wiring", () => {
 
   it("does not suggest a grant for a denied host outside the policy allowlist", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
-      denials: [denial("evil.test", 443), denial("docs.example.test", 443)],
+      denials: [denial("evil.test", 443, "egress.cap"), denial("docs.example.test", 443)],
     });
 
     await harness.writeJson(harness.policyFile, { egress: { allow: ["*.example.test"] } });
@@ -199,40 +206,9 @@ describe("pi launch wiring", () => {
     expect(harness.stderr()).toContain("run pi sandbox egress allow docs.example.test");
   });
 
-  it("stops the container when the last session of the repository ends", async () => {
-    const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
-
-    await run([], harness.deps);
-
-    const [container] = [...fake.containers.values()];
-
-    expect(container?.summary.state).toBe("stopped");
-    expect(fake.stops.map((stop) => stop.id)).toEqual([container?.summary.id]);
-  });
-
-  it("keeps the container running while another session of the repository is live", async () => {
-    const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
-
-    await registerSession(harness.stateDir, {
-      launchId: "0123456789abcdef",
-      pid: process.pid,
-      repoHash: sha256Hex(harness.repoRoot),
-      startedAt: 1,
-    });
-
-    await run([], harness.deps);
-
-    const [container] = [...fake.containers.values()];
-
-    expect(container?.summary.state).toBe("running");
-    expect(fake.stops).toEqual([]);
-  });
-
   it("drops session grants of ended launches when the container is created", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await harness.writeJson(stateLayout(harness.stateDir).grants, [
       { host: "gone.example.test", port: 443, createdAt: 1, launchId: "ffffffffffffffff", expiresAt: 9e15 },
@@ -246,8 +222,8 @@ describe("pi launch wiring", () => {
 
   it("says once that the host CA store was skipped when the launcher does not run on macOS", async () => {
     const fake = createFakeBackend();
-    const linux = await harnessWith({ adapters: () => [fake.backend] });
-    const mac = await harnessWith({ adapters: () => [createFakeBackend().backend] });
+    const linux = await createHarness({ adapters: () => [fake.backend] });
+    const mac = await createHarness({ adapters: () => [createFakeBackend().backend] });
     const notice =
       "pi-sandbox: tls.extraCa hostStore reads the macOS System keychain only and was skipped here";
 
@@ -265,7 +241,7 @@ describe("pi launch wiring", () => {
 
   it("prints derivation notices on stderr, one line each", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend], bundledPi: null });
+    const harness = await createHarness({ adapters: () => [fake.backend], bundledPi: null });
 
     await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
       mcpServers: { docs: { url: "https://docs.example.test/mcp" } },
@@ -275,5 +251,43 @@ describe("pi launch wiring", () => {
 
     expect(harness.stderr()).toContain("pi-sandbox: mcp docs: sign in with pi mcp login docs\n");
     expect(harness.stderr()).toContain("pi-sandbox: the launcher's bundled pi is missing");
+  });
+});
+
+describe("the proxy route of a repository", () => {
+  it("asks the backend for the repository's own network", async () => {
+    const fake = createFakeBackend();
+    const asked: Array<string | undefined> = [];
+    const backend = {
+      ...fake.backend,
+      prepareProxyRoute: (request: ProxyRouteRequest) => {
+        asked.push(request.repoHash);
+
+        return fake.backend.prepareProxyRoute(request);
+      },
+    };
+    const harness = await createHarness({ adapters: () => [backend] });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(asked).toEqual([sha256Hex(harness.repoRoot)]);
+  });
+
+  it("starts the proxy on the extra host addresses the backend needs and prints the route's notices", async () => {
+    const fake = createFakeBackend({ proxyListenHosts: ["172.17.0.1"], routeNotices: ["the relay is kept"] });
+    const requested: Array<string[] | undefined> = [];
+    const harness = await createHarness({
+      adapters: () => [fake.backend],
+      proxy: {
+        ensure: async (request) => {
+          requested.push(request.listenHosts);
+
+          return { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
+        },
+      },
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(requested).toEqual([["172.17.0.1"]]);
+    expect(harness.stderr()).toContain("pi-sandbox: the relay is kept\n");
   });
 });

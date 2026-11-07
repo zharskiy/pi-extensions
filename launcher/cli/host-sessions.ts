@@ -1,8 +1,8 @@
 import { type Backend, selectBackend } from "../backend/index.ts";
 import { findRepoContainer, removeRepoContainer } from "../container/index.ts";
-import { liveSessions, withRepoSessionLock } from "../grants/index.ts";
+import { withRepoSessionLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
-import { errorMessage, LauncherError, sha256Hex } from "../shared/index.ts";
+import { errorMessage, LauncherError } from "../shared/index.ts";
 import {
   assertHostSessionsDir,
   type HostSessions,
@@ -12,6 +12,7 @@ import {
 } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
+import { othersLive } from "./sessions.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -85,13 +86,9 @@ const sweepWhenIdle = async (
   running: () => Promise<boolean>,
   launchId?: string,
 ) => {
-  const repoHash = sha256Hex(context.workspace.repoRoot);
-
   try {
-    return await withRepoSessionLock(context.stateDir, repoHash, async () => {
-      const others = (await liveSessions(context.stateDir, repoHash)).some(
-        (entry) => entry.launchId !== launchId,
-      );
+    return await withRepoSessionLock(context.stateDir, context.repoHash, async () => {
+      const others = await othersLive(context.stateDir, context.repoHash, launchId);
 
       return sweep(deps, context, !others && !(await running()));
     });

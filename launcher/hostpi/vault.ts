@@ -1,8 +1,12 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   errorMessage,
+  isJsonObject,
   launcherRoot,
+  MCP_SERVER_NAME,
+  mcpAuthKey,
+  parseJsonObject,
+  readJsonObject,
   readVaultStore,
   stateLayout,
   type VaultClientInformation,
@@ -12,8 +16,9 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { endpointOf } from "./endpoints.ts";
-import { isJsonObject, objectOr } from "./json.ts";
-import { mcpAuthKey, recordServer, sanitizeMcpServer } from "./mcp-auth.ts";
+import { hasAuthorizationHeader } from "./headers.ts";
+import { objectOr } from "./json.ts";
+import { recordServer, sanitizeMcpServer } from "./mcp-auth.ts";
 import type {
   BundledPi,
   ContainerMcpAuthEntries,
@@ -23,11 +28,9 @@ import type {
   VaultDiscoveryInput,
   VaultDiscoveryResult,
 } from "./types.ts";
-import { hasQueryCredential, hasUrlPassword } from "./userinfo.ts";
+import { hasQueryCredential, hasUrlPassword, withoutUserinfo } from "./userinfo.ts";
 
 const SCRIPT = "mcp-discover.mjs";
-
-const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 
 const SUCCESS_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -39,24 +42,13 @@ const BEARER = "Bearer";
 
 const CLIENT_FIELDS = ["client_id", "redirect_uris", "token_endpoint_auth_method"] as const;
 
-const hasAuthorization = (headers: unknown) =>
-  Object.keys(objectOr(headers)).some((header) => header.toLowerCase() === "authorization");
-
-const withoutUserinfo = (url: string) => {
-  const parsed = new URL(url);
-
-  parsed.username = "";
-
-  return parsed.href;
-};
-
 export const vaultCandidate = (name: string, definition: unknown): McpOAuthServer | undefined => {
-  if (!SERVER_NAME.test(name) || !isJsonObject(definition) || typeof definition.url !== "string") {
+  if (!MCP_SERVER_NAME.test(name) || !isJsonObject(definition) || typeof definition.url !== "string") {
     return undefined;
   }
 
   const excluded =
-    hasAuthorization(definition.headers) ||
+    hasAuthorizationHeader(definition.headers) ||
     hasUrlPassword(definition.url) ||
     hasQueryCredential(definition.url) ||
     definition.auth !== undefined ||
@@ -127,14 +119,6 @@ const discoveryFrom = (
     : undefined;
 };
 
-const parseJson = (text: string | undefined): unknown => {
-  try {
-    return text === undefined ? undefined : JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-};
-
 const isFresh = (discovery: VaultDiscovery, now: number) => {
   const age = now - discovery.fetchedAt;
 
@@ -142,14 +126,13 @@ const isFresh = (discovery: VaultDiscovery, now: number) => {
 };
 
 const cachedDiscovery = async (path: string, name: string, server: McpOAuthServer, now: number) => {
-  const value = parseJson(await readFile(path, "utf8").catch(() => undefined));
-  const record = objectOr(value);
+  const record = objectOr(await readJsonObject(path));
 
   if (record.server !== name || record.url !== server.url || typeof record.fetchedAt !== "number") {
     return undefined;
   }
 
-  const discovery = discoveryFrom(value, { server: name, url: server.url, fetchedAt: record.fetchedAt });
+  const discovery = discoveryFrom(record, { server: name, url: server.url, fetchedAt: record.fetchedAt });
 
   return discovery !== undefined && isFresh(discovery, now) ? discovery : undefined;
 };
@@ -172,7 +155,7 @@ const runDiscovery = async (
     .run(file, args, { input: discoveryRequest(server) })
     .catch((error: unknown) => ({ code: 1, stdout: "", stderr: errorMessage(error) }));
   const base = { server: name, url: server.url, fetchedAt: input.now() };
-  const parsed = result.code === 0 ? discoveryFrom(parseJson(result.stdout), base) : undefined;
+  const parsed = result.code === 0 ? discoveryFrom(parseJsonObject(result.stdout), base) : undefined;
 
   if (parsed !== undefined) {
     return parsed;

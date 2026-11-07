@@ -1,3 +1,3 @@
-export { ensureBuiltImage, recordedImage } from "./build.ts";
+export { recordedImage } from "./build.ts";
 export { resolveExtensionsSource } from "./extensions.ts";
-export { ensureLayerImage } from "./layer.ts";
+export { ensureSandboxImage, type SandboxImage, type SandboxImageInput } from "./sandbox-image.ts";

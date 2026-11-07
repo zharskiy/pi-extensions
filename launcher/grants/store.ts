@@ -1,4 +1,11 @@
-import { LauncherError, readJsonFile, stateLayout, withFileLock, writeJsonFile } from "../shared/index.ts";
+import {
+  isJsonObject,
+  LauncherError,
+  readJsonFile,
+  stateLayout,
+  withFileLock,
+  writeJsonFile,
+} from "../shared/index.ts";
 import type { ActiveGrantContext, Grant, GrantLimits, GrantMatch, GrantRequest } from "./types.ts";
 
 export const SESSION_GRANT_CAP_HOURS = 12;
@@ -7,17 +14,11 @@ const HOUR_MS = 60 * 60 * 1000;
 
 const PRIVATE_MODE = 0o600;
 
-const isGrant = (value: unknown): value is Grant => {
-  const grant = value as Grant;
-
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof grant.host === "string" &&
-    typeof grant.port === "number" &&
-    typeof grant.createdAt === "number"
-  );
-};
+const isGrant = (value: unknown): value is Grant =>
+  isJsonObject(value) &&
+  typeof value.host === "string" &&
+  typeof value.port === "number" &&
+  typeof value.createdAt === "number";
 
 const grantsFile = (stateDir: string) => stateLayout(stateDir).grants;
 

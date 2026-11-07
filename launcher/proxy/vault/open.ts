@@ -1,4 +1,5 @@
-import { OAUTH_AUTHORIZE_PARAMS, type VaultDiscovered, type VaultServer } from "../../shared/index.ts";
+import type { VaultDiscovered, VaultServer } from "../../shared/index.ts";
+import { OAUTH_AUTHORIZE_PARAMS } from "./protocol.ts";
 
 export interface OpenCandidate {
   server: VaultServer;

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
-import { expandHome, isWithin, LauncherError } from "../shared/index.ts";
-import { getPath, isRecord, setPath } from "./dotted.ts";
+import { expandHome, isJsonObject, isWithin, LauncherError } from "../shared/index.ts";
+import { getPath, setPath } from "./dotted.ts";
 import type {
   ConfigSource,
   CredentialRule,
@@ -86,7 +86,7 @@ const cannotGrow = (above: unknown, below: unknown) =>
 const legacyCredentials = (layer: unknown) => {
   const credentials = getPath(layer, "credentials");
 
-  if (!isRecord(credentials) || credentials.kind === undefined) {
+  if (!isJsonObject(credentials) || credentials.kind === undefined) {
     return undefined;
   }
 

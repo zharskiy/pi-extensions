@@ -1,20 +1,17 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { LauncherError } from "../../shared/index.ts";
+import { LABELS } from "../labels.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
 const VOLUME_TARGET = "/volume";
-
-const HELPER_LABEL = "pi-sandbox.helper";
-
-const MANAGED_LABEL = "pi-sandbox.managed";
 
 export const createVolumeOperations = (client: EngineClient) => {
   const ensureVolume = async (name: string) => {
     await client.call({
       method: "POST",
       path: "/volumes/create",
-      json: { Name: name, Labels: { [MANAGED_LABEL]: "true" } },
+      json: { Name: name, Labels: { [LABELS.managed]: "true" } },
     });
   };
 
@@ -44,7 +41,7 @@ export const createVolumeOperations = (client: EngineClient) => {
       json: {
         Image: imageId,
         Cmd: ["true"],
-        Labels: { [HELPER_LABEL]: "volume" },
+        Labels: { [LABELS.helper]: "volume" },
         HostConfig: {
           NetworkMode: "none",
           Mounts: [{ Type: "volume", Source: name, Target: VOLUME_TARGET, ReadOnly: false }],

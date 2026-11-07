@@ -5,7 +5,6 @@ export type { BackendName };
 export interface BackendCapabilities {
   singleFileMount: boolean;
   sshAgent: boolean;
-  internalNetwork: boolean;
 }
 
 export interface MountSpec {
@@ -90,6 +89,12 @@ export interface ProxyRoute {
   notices?: string[];
 }
 
+export interface ProxyRouteRequest {
+  hostPort: number;
+  repoHash: string;
+  relay: { policyHash: string; imageId: string };
+}
+
 export interface Backend {
   readonly name: BackendName;
   readonly capabilities: BackendCapabilities;
@@ -107,12 +112,7 @@ export interface Backend {
   removeVolume(name: string): Promise<void>;
   exportVolume(name: string, tarPath: string, imageId: string): Promise<void>;
   importVolume(name: string, tarPath: string, imageId: string): Promise<void>;
-  prepareProxyRoute(
-    hostPort: number,
-    policyHash: string,
-    imageId: string,
-    repoHash?: string,
-  ): Promise<ProxyRoute>;
+  prepareProxyRoute(request: ProxyRouteRequest): Promise<ProxyRoute>;
   pruneNetworks(keepRepoHashes: string[]): Promise<string[]>;
   proxyListenHosts(): Promise<string[]>;
   status(): Promise<Record<string, string>>;

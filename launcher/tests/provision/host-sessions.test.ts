@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../../provision/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { tempDir, writeText } from "./fixtures.ts";
+import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
 const PRIVATE = 0o700;
 
@@ -370,6 +370,9 @@ describe("sweepHostSessions", () => {
   });
 });
 
+const probe = async (fake: ReturnType<typeof createFakeBackend>, dir: string) =>
+  probeHostSessions(fake.backend, await runningContainer(fake.backend), dir);
+
 const sharedContainer = (dir: string, seen: string = dir) =>
   createFakeBackend({
     exec: (spec) => {
@@ -384,16 +387,14 @@ describe("probeHostSessions", () => {
   it("passes when the container sees the host marker at its session dir and can write there, and leaves nothing", async () => {
     const { dir } = await sessionsFixture();
 
-    expect(await probeHostSessions(sharedContainer(dir).backend, "container-1", dir)).toBe(true);
+    expect(await probe(sharedContainer(dir), dir)).toBe(true);
     expect(await readdir(dir)).toEqual([]);
   });
 
   it("fails when the container's session dir variable points elsewhere", async () => {
     const { base, dir } = await sessionsFixture();
 
-    expect(
-      await probeHostSessions(sharedContainer(dir, join(base, "elsewhere")).backend, "container-1", dir),
-    ).toBe(false);
+    expect(await probe(sharedContainer(dir, join(base, "elsewhere")), dir)).toBe(false);
     expect(await readdir(dir)).toEqual([]);
   });
 
@@ -401,7 +402,7 @@ describe("probeHostSessions", () => {
     const { dir } = await sessionsFixture();
     const fake = createFakeBackend({ exec: () => 1 });
 
-    expect(await probeHostSessions(fake.backend, "container-1", dir)).toBe(false);
+    expect(await probe(fake, dir)).toBe(false);
     expect(await readdir(dir)).toEqual([]);
   });
 
@@ -413,7 +414,7 @@ describe("probeHostSessions", () => {
       },
     });
 
-    await expect(probeHostSessions(fake.backend, "container-1", dir)).rejects.toThrow("exec failed");
+    await expect(probe(fake, dir)).rejects.toThrow("exec failed");
     expect(await readdir(dir)).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
+import { MCP_LIST_PROBE, OFFLINE_PROBE, SHIM_PROBE } from "../../cli/commands/doctor-container.ts";
 import { run } from "../../cli/index.ts";
 import { registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
@@ -59,6 +60,8 @@ type Intent =
   | "sessions share"
   | "sync";
 
+const isProbe = (command: string[], probe: string[]) => command.join(" ") === probe.join(" ");
+
 const intentOf = (command: string[]): Intent | undefined => {
   const text = command.join(" ");
 
@@ -82,7 +85,7 @@ const intentOf = (command: string[]): Intent | undefined => {
     return "container mcp-auth";
   }
 
-  if (command[0] === "xdg-open") {
+  if (isProbe(command, SHIM_PROBE)) {
     return "browser";
   }
 
@@ -94,11 +97,11 @@ const intentOf = (command: string[]): Intent | undefined => {
     return "mcp file";
   }
 
-  if (text === "pi mcp list") {
+  if (isProbe(command, MCP_LIST_PROBE)) {
     return "mcp list";
   }
 
-  if (command[0] === "printenv") {
+  if (isProbe(command, OFFLINE_PROBE)) {
     return "offline";
   }
 
@@ -199,8 +202,6 @@ const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unkno
     adapters: () => [fake.backend],
     proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
   });
-
-  cleanups.push(harness.cleanup);
 
   if (userConfig !== undefined) {
     await harness.writeJson(harness.userConfigFile, userConfig);
@@ -349,8 +350,6 @@ describe("pi sandbox doctor", () => {
       proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
     });
 
-    cleanups.push(harness.cleanup);
-
     await registerSession(harness.stateDir, {
       launchId: "00000000000000cc",
       pid: process.pid,
@@ -416,8 +415,6 @@ describe("pi sandbox doctor", () => {
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
     const harness = await createHarness({ adapters: () => [down] });
 
-    cleanups.push(harness.cleanup);
-
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
 
     const lines = harness.stdout().trim().split("\n");
@@ -440,12 +437,27 @@ describe("pi sandbox doctor", () => {
     ]);
   });
 
+  it("reports a file org baseline with its hash", async () => {
+    const fake = createFakeBackend();
+    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const harness = await createHarness({ adapters: () => [down] });
+    const baseline = join(harness.root, "org.json");
+
+    await harness.writeJson(baseline, {});
+
+    await harness.writeJson(harness.userConfigFile, { org: { source: baseline } });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(harness.stdout()).toContain(
+      `ok org baseline: ${baseline}, sha256 ${sha256Hex("{}").slice(0, 12)}\n`,
+    );
+  });
+
   it("does not count skipped checks as failures", async () => {
     const fake = createFakeBackend({ exec: answering({}) });
     const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
     const harness = await createHarness({ adapters: () => [failing] });
-
-    cleanups.push(harness.cleanup);
 
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 

@@ -9,8 +9,8 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 
 import { join } from "node:path";
 import {
   type CommandRunner,
-  createProcessRunner,
   LauncherError,
+  stateLayout,
   withFileLock,
   writeFileAtomic,
 } from "../shared/index.ts";
@@ -243,7 +243,7 @@ const signLeaf = async (directory: string, host: string, runner: CommandRunner):
 };
 
 export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<LauncherCa> => {
-  const directory = join(stateDir, "ca");
+  const directory = stateLayout(stateDir).ca;
   const certPath = join(directory, CA_CERT);
 
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -338,10 +338,4 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   };
 
   return { certPath, certPem, leaf, ephemeralLeaf, pruneLeaves };
-};
-
-export const ensureLauncherCa = async (stateDir: string, runner: CommandRunner = createProcessRunner()) => {
-  const ca = await openLauncherCa({ stateDir, runner });
-
-  return { certPemPath: ca.certPath };
 };

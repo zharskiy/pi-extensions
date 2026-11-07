@@ -5,3 +5,5 @@ export interface Workspace {
   gitCommonDir?: string;
   isGitRepo: boolean;
 }
+
+export const gitDirOf = (workspace: Workspace, gitCommonDir: string) => workspace.gitDir ?? gitCommonDir;

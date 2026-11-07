@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { SandboxConfig } from "../../config/index.ts";
 import {
+  daemonEnv,
   ensureProxyRunning,
   guestProxyUrl,
   proxyPolicyHash,
@@ -17,31 +18,13 @@ import {
   stopProxy,
 } from "../../proxy/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
+import { sandboxConfig } from "../support/sandbox-config.ts";
 import { CONTROL_USER, openConnect, pageThrough, plainGet, plainRequest, readRest } from "./proxy-client.ts";
 
 const state = { stateDir: "", home: "" };
 
-const config = (allow: string[]): SandboxConfig => ({
-  backend: "auto",
-  fallback: "refuse",
-  image: { reference: "example/pi-sandbox:test" },
-  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true }, vault: { enabled: true } },
-  egress: {
-    allow,
-    mcpHosts: [],
-    denyPrivateAddresses: true,
-    deny: [],
-    privateHosts: [],
-    parentProxy: "env",
-    grants: { enabled: true, maxHours: 168, permanent: true },
-  },
-  tls: { extraCa: [] },
-  mounts: { extraReadOnly: [], cacheVolumes: [] },
-  env: { allow: [] },
-  resources: {},
-  ssh: { agent: false },
-  sessions: { host: true },
-});
+const config = (allow: string[]): SandboxConfig =>
+  sandboxConfig({ fallback: "refuse", egress: { ...sandboxConfig().egress, allow } });
 
 const isAlive = (pid: number) => {
   try {
@@ -414,6 +397,28 @@ describe("daemon environment", () => {
     expect(spawned[0]).toEqual({ PATH: "/usr/bin", HOME: state.home });
     expect(daemonConfig.parentEnv).toEqual({ HTTPS_PROXY: "http://proxy.test:3128" });
   }, 20_000);
+
+  it("passes only the variables the daemon needs, never secrets, and strips proxy userinfo", () => {
+    const env = daemonEnv({
+      PATH: "/usr/bin",
+      HOME: "/home/dev",
+      TMPDIR: "/tmp",
+      NODE_OPTIONS: "--require /fixture/resolve.cjs",
+      PI_SANDBOX_STATE_DIR: "/state",
+      CORP_TOKEN: "secret-value",
+      HTTP_PROXY: "http://user:pw@proxy.example.test:8080",
+      HTTPS_PROXY: "http://user:pw@proxy.example.test:8080",
+    });
+
+    expect(env).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/home/dev",
+      TMPDIR: "/tmp",
+      NODE_OPTIONS: "--require /fixture/resolve.cjs",
+      PI_SANDBOX_STATE_DIR: "/state",
+      HTTPS_PROXY: "http://proxy.example.test:8080",
+    });
+  });
 });
 
 describe("guestProxyUrl", () => {

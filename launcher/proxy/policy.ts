@@ -1,4 +1,13 @@
 import { BlockList, isIP } from "node:net";
+import {
+  authorityOf,
+  isLoopbackName,
+  matchesEntry,
+  matchesPattern,
+  normalizeHost,
+  parseEntry,
+  TLS_PORT,
+} from "../config/index.ts";
 
 export interface EgressPolicy {
   allow: string[];
@@ -23,8 +32,6 @@ export interface Denial {
 }
 
 export type ConnectDecision = { allowed: true } | Denial;
-
-const TLS_PORT = 443;
 
 const METADATA_ADDRESS = "169.254.169.254";
 
@@ -135,45 +142,14 @@ export const restrictedAddress = (address: string): Denial | undefined => {
   return match === undefined ? undefined : deny(match.range.rule, `${plain} is a ${match.range.reason}`);
 };
 
-export const normalizeHost = (host: string) => host.trim().toLowerCase().replace(/\.$/, "");
-
-const ENTRY_PORT = /^(.+):(\d{1,5})$/;
-
-export const parseEntry = (entry: string) => {
-  const withPort = ENTRY_PORT.exec(entry.trim());
-
-  return withPort === null
-    ? { pattern: normalizeHost(entry), port: undefined }
-    : { pattern: normalizeHost(withPort[1] ?? ""), port: Number(withPort[2]) };
-};
-
-export const matchesPattern = (host: string, pattern: string) => {
-  if (pattern.startsWith("*.")) {
-    const suffix = pattern.slice(1);
-    const label = host.slice(0, -suffix.length);
-
-    return host.endsWith(suffix) && label.length > 0 && !label.includes(".");
-  }
-
-  return host === pattern;
-};
-
-export const matchesEntry = (entry: string, host: string, port: number) => {
-  const parsed = parseEntry(entry);
-
-  return matchesPattern(normalizeHost(host), parsed.pattern) && (parsed.port ?? TLS_PORT) === port;
-};
-
-export const authorityOf = (host: string, port: number) => (port === TLS_PORT ? host : `${host}:${port}`);
-
-const notAllowedReason = (host: string, port: number, grantCap: string[] | undefined) => {
+const notAllowed = (rule: string, host: string, port: number, grantCap: string[] | undefined) => {
   const target = authorityOf(host, port);
 
   if (grantCap !== undefined && !grantCap.some((pattern) => matchesEntry(pattern, host, port))) {
-    return `pi-sandbox: ${target} is outside the allowlist set by policy or org`;
+    return deny("egress.cap", `pi-sandbox: ${target} is outside the allowlist set by policy or org`);
   }
 
-  return `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`;
+  return deny(rule, `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`);
 };
 
 const policyHosts = (policy: EgressPolicy) => [
@@ -203,8 +179,6 @@ const isLiteral = (host: string) => isIP(host.replace(/^\[|\]$/g, "")) !== 0;
 
 const isNumericHost = (host: string) => NUMERIC_LABEL.test(host.split(".").at(-1) ?? "");
 
-const isLocalhost = (host: string) => host === "localhost" || host.endsWith(".localhost");
-
 const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: string[]): ConnectDecision => {
   if (isLiteral(host)) {
     return literalDecision(host);
@@ -218,7 +192,7 @@ const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: s
     return deny("ip-literal", `${host} looks like a numeric address`);
   }
 
-  if (isLocalhost(host)) {
+  if (isLoopbackName(host)) {
     return deny("loopback", `${host} is a loopback name`);
   }
 
@@ -231,14 +205,25 @@ const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: s
     .filter((entry) => matchesPattern(host, entry.pattern));
 
   if (entries.length === 0) {
-    return deny("egress.allow", notAllowedReason(host, port, policy.grantCap));
+    return notAllowed("egress.allow", host, port, policy.grantCap);
   }
 
   if (!entries.some((entry) => (entry.port ?? TLS_PORT) === port)) {
-    return deny("egress.port", notAllowedReason(host, port, policy.grantCap));
+    return notAllowed("egress.port", host, port, policy.grantCap);
   }
 
   return { allowed: true };
+};
+
+export const sniDenial = (host: string, sni: string | undefined): Denial | undefined => {
+  if (sni === undefined) {
+    return deny("sni", "no TLS server name");
+  }
+
+  const name = normalizeHost(sni);
+  const target = normalizeHost(host);
+
+  return name === target ? undefined : deny("sni", `TLS server name ${name} does not match ${target}`);
 };
 
 export const decideConnect = (
@@ -253,7 +238,5 @@ export const decideConnect = (
     return decision;
   }
 
-  const sni = normalizeHost(request.sni);
-
-  return sni === host ? decision : deny("sni", `TLS server name ${sni} does not match ${host}`);
+  return sniDenial(host, request.sni) ?? decision;
 };

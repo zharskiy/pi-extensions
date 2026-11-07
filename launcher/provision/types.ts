@@ -16,8 +16,6 @@ export interface RenderInput {
 
 export interface RenderResult {
   renderDir: string;
-  entries: string[];
-  hash: string;
 }
 
 export interface SyncInput {

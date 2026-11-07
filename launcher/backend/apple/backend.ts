@@ -3,7 +3,14 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { type CommandRunner, errorMessage, LauncherError, type RunResult } from "../../shared/index.ts";
-import { pinnedReference } from "../image-reference.ts";
+import { LABELS } from "../labels.ts";
+import {
+  pruneCandidates,
+  removeWithNetworkCleanup,
+  repoNetworkLabels,
+  repoNetworkName,
+} from "../managed-network.ts";
+import { missingImage, verifiedPull } from "../pull.ts";
 import type {
   Backend,
   BackendCapabilities,
@@ -14,13 +21,12 @@ import type {
   ImageInfo,
   NetworkRef,
   ProxyRoute,
+  ProxyRouteRequest,
   RemoveContainerOptions,
 } from "../types.ts";
 import {
   APPLE_COMMANDS,
   APPLE_FLAGS,
-  APPLE_MANAGED_LABEL,
-  APPLE_PROXY_NETWORK,
   APPLE_SSH_SOCKET,
   type AppleNetwork,
   bindArgument,
@@ -46,28 +52,14 @@ const ARCHIVE_TARGET = "/archive";
 
 const NOT_FOUND = /not found|does not exist|no such/i;
 
-const ALREADY_EXISTS = /already exists|exists/i;
-
-const MANAGED_LABEL = "pi-sandbox.managed=true";
-
-const REPO_HASH_LABEL = "pi-sandbox.repo-hash";
-
-const SHORT_REPO_HASH = 12;
+const ALREADY_EXISTS = /already exists/i;
 
 const networkHint = (name: string) =>
   `remove it (container network delete ${name}) so the launcher can create its own`;
 
-const PRUNABLE_NETWORK = /^pi-sandbox(?:-([0-9a-f]{12}))?$/;
-
-const repoNetworkName = (repoHash: string | undefined) =>
-  repoHash === undefined
-    ? APPLE_PROXY_NETWORK
-    : `${APPLE_PROXY_NETWORK}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
-
 const capabilities: BackendCapabilities = {
   singleFileMount: false,
   sshAgent: true,
-  internalNetwork: true,
 };
 
 const firstLine = (result: RunResult) => (result.stderr.trim() || result.stdout.trim()).split("\n")[0] ?? "";
@@ -243,31 +235,14 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     return digest === undefined ? undefined : { id: reference, digest };
   };
 
-  const pullImage = async (reference: string, digest?: string): Promise<ImageInfo> => {
-    const target = digest === undefined ? reference : pinnedReference(reference, digest);
-    const present = await inspectDigest(target);
-
-    if (present !== undefined && (digest === undefined || present === digest)) {
-      return { id: target, digest: present };
-    }
-
-    await checked("image pull", [...APPLE_COMMANDS.imagePull, target]);
-
-    const pulled = await inspectDigest(target);
-
-    if (pulled === undefined) {
-      throw new LauncherError(`image ${target} is missing after pull`);
-    }
-
-    if (digest !== undefined && pulled !== digest) {
-      throw new LauncherError(
-        `image ${target} has digest ${pulled}, expected ${digest}`,
-        "update image.digest in the policy or publish the expected image",
-      );
-    }
-
-    return { id: target, digest: pulled };
-  };
+  const pullImage = (reference: string, digest?: string): Promise<ImageInfo> =>
+    verifiedPull(reference, digest, {
+      inspect: inspectDigest,
+      pull: (target) => checked("image pull", [...APPLE_COMMANDS.imagePull, target]),
+      accepts: (found, expected) => found === expected,
+      digestOf: (found) => found,
+      infoOf: (found, target) => ({ id: target, digest: found }),
+    });
 
   const buildImage = async (contextDir: string, tag: string, buildArgs: Record<string, string> = {}) => {
     await checked("build", [
@@ -283,7 +258,7 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     const digest = await inspectDigest(tag);
 
     if (digest === undefined) {
-      throw new LauncherError(`image ${tag} is missing after build`);
+      throw missingImage(tag, "build");
     }
 
     return { id: tag, digest };
@@ -331,18 +306,9 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     return network?.managed === true && (await container([...APPLE_COMMANDS.networkRemove, name])).code === 0;
   };
 
-  const removeRepoNetwork = async (repoHash: string) => {
-    await removeNetwork(repoNetworkName(repoHash));
-  };
-
   const pruneNetworks = async (keepRepoHashes: string[]) => {
-    const kept = new Set(keepRepoHashes.map((hash) => hash.slice(0, SHORT_REPO_HASH)));
     const listed = networkNamesOf((await checked("network list", APPLE_COMMANDS.networkList)).stdout);
-    const candidates = listed.filter((name) => {
-      const match = PRUNABLE_NETWORK.exec(name);
-
-      return match !== null && (match[1] === undefined || !kept.has(match[1]));
-    });
+    const candidates = pruneCandidates(listed, keepRepoHashes);
     const removed = await candidates.reduce<Promise<boolean[]>>(
       async (previous, name) => [...(await previous), await removeNetwork(name)],
       Promise.resolve([]),
@@ -351,22 +317,24 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     return candidates.filter((_name, index) => removed[index]);
   };
 
-  const removeContainer = async (id: string, options: RemoveContainerOptions = {}) => {
-    const listed = await findContainers({}).catch(() => []);
-    const repoHash = listed.find((summary) => summary.id === id || summary.name === id)?.labels[
-      REPO_HASH_LABEL
-    ];
+  const repoHashOf = async (id: string) => {
+    const inspected = await container([...APPLE_COMMANDS.inspect, id]);
 
-    await tolerant("delete", [...APPLE_COMMANDS.remove, APPLE_FLAGS.force, id], NOT_FOUND);
-
-    if (options.keepNetwork === true || repoHash === undefined) {
-      return;
-    }
-
-    if ((await findContainers({ [REPO_HASH_LABEL]: repoHash })).length === 0) {
-      await removeRepoNetwork(repoHash);
-    }
+    return inspected.code === 0
+      ? containerSummariesOf(inspected.stdout)[0]?.labels[LABELS.repoHash]
+      : undefined;
   };
+
+  const deleteContainer = async (id: string) => {
+    await tolerant("delete", [...APPLE_COMMANDS.remove, APPLE_FLAGS.force, id], NOT_FOUND);
+  };
+
+  const removeContainer = (id: string, options: RemoveContainerOptions = {}) =>
+    removeWithNetworkCleanup(
+      { repoHashOf, remove: deleteContainer, findContainers, removeNetwork },
+      id,
+      options,
+    );
 
   const exec = (spec: ExecSpec, io: ExecIo) =>
     withEnvFile(spec.env, (envFlags) =>
@@ -382,7 +350,7 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
       await checked("volume create", [
         ...APPLE_COMMANDS.volumeCreate,
         APPLE_FLAGS.label,
-        MANAGED_LABEL,
+        `${LABELS.managed}=true`,
         name,
       ]);
     }
@@ -474,25 +442,18 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     }
   };
 
-  const createProxyNetwork = async (name: string, repoHash: string | undefined) => {
+  const createProxyNetwork = async (name: string, repoHash: string) => {
     await checked("network create", [
       ...APPLE_COMMANDS.networkCreate,
       APPLE_FLAGS.internal,
-      APPLE_FLAGS.label,
-      `${APPLE_MANAGED_LABEL}=true`,
-      ...(repoHash === undefined ? [] : [APPLE_FLAGS.label, `${REPO_HASH_LABEL}=${repoHash}`]),
+      ...pairs(APPLE_FLAGS.label, keyValues(repoNetworkLabels(repoHash))),
       name,
     ]);
 
     return inspectProxyNetwork(name);
   };
 
-  const prepareProxyRoute = async (
-    hostPort: number,
-    _policyHash?: string,
-    _imageId?: string,
-    repoHash?: string,
-  ): Promise<ProxyRoute> => {
+  const prepareProxyRoute = async ({ hostPort, repoHash }: ProxyRouteRequest): Promise<ProxyRoute> => {
     const name = repoNetworkName(repoHash);
     const network = (await inspectProxyNetwork(name)) ?? (await createProxyNetwork(name, repoHash));
 

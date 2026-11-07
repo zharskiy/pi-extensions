@@ -4,7 +4,6 @@ import {
   type GitGuardContext,
   gitDirInUseElsewhere,
   gitSessionEndNotices,
-  stopIdleContainer,
 } from "../container/index.ts";
 import { endSession, liveSessions, newLaunchId, pruneGrants, registerSession } from "../grants/index.ts";
 import { errorMessage } from "../shared/index.ts";
@@ -17,12 +16,8 @@ export interface LaunchSession {
   startedAt: number;
 }
 
-export const beginSession = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  repoHash: string,
-): Promise<LaunchSession> => {
-  const session = { launchId: newLaunchId(), repoHash, startedAt: deps.now() };
+export const beginSession = async (deps: CliDeps, context: LaunchContext): Promise<LaunchSession> => {
+  const session = { launchId: newLaunchId(), repoHash: context.repoHash, startedAt: deps.now() };
 
   await registerSession(context.stateDir, { ...session, pid: process.pid });
 
@@ -32,8 +27,8 @@ export const beginSession = async (
 const stopRepoContainer = async (backend: Backend, context: LaunchContext) => {
   const container = await findRepoContainer(backend, context.workspace);
 
-  if (container !== undefined) {
-    await stopIdleContainer(backend, container.id);
+  if (container?.state === "running") {
+    await backend.stopContainer(container.id);
   }
 };
 
@@ -92,5 +87,5 @@ export const liveLaunchIds = async (stateDir: string, repoHash?: string) =>
 export const pruneEndedGrants = async (deps: CliDeps, stateDir: string) =>
   pruneGrants(stateDir, { now: deps.now(), liveLaunches: await liveLaunchIds(stateDir) });
 
-export const othersLive = async (stateDir: string, session: LaunchSession) =>
-  (await liveSessions(stateDir, session.repoHash)).some((entry) => entry.launchId !== session.launchId);
+export const othersLive = async (stateDir: string, repoHash: string, launchId?: string) =>
+  (await liveSessions(stateDir, repoHash)).some((entry) => entry.launchId !== launchId);

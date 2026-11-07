@@ -2,7 +2,14 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LauncherError, readJsonFile, writeJsonFile } from "../../shared/index.ts";
+import {
+  isJsonObject,
+  LauncherError,
+  parseJsonObject,
+  readJsonFile,
+  readJsonObject,
+  writeJsonFile,
+} from "../../shared/index.ts";
 
 const dirs: string[] = [];
 
@@ -83,5 +90,36 @@ describe("writeJsonFile", () => {
 
     await expect(writeJsonFile(join(dir, "taken"), {})).rejects.toBeInstanceOf(LauncherError);
     expect((await readdir(dir)).sort()).toEqual(["taken"]);
+  });
+});
+
+describe("lenient JSON objects", () => {
+  it("accepts only plain objects", () => {
+    expect(isJsonObject({ a: 1 })).toBe(true);
+    expect(isJsonObject([])).toBe(false);
+    expect(isJsonObject(null)).toBe(false);
+    expect(isJsonObject("text")).toBe(false);
+  });
+
+  it("parses an object and answers undefined for anything else", () => {
+    expect(parseJsonObject('{"a":1}')).toEqual({ a: 1 });
+    expect(parseJsonObject("[1]")).toBeUndefined();
+    expect(parseJsonObject("{ not json")).toBeUndefined();
+  });
+
+  it("reads an object file and answers undefined when it is missing, invalid or not an object", async () => {
+    const dir = await tempDir();
+
+    await writeFile(join(dir, "good.json"), '{"a":1}');
+
+    await writeFile(join(dir, "bad.json"), "{ not json");
+
+    await writeFile(join(dir, "list.json"), "[1]");
+
+    expect(await readJsonObject(join(dir, "good.json"))).toEqual({ a: 1 });
+    expect(await readJsonObject(join(dir, "bad.json"))).toBeUndefined();
+    expect(await readJsonObject(join(dir, "list.json"))).toBeUndefined();
+    expect(await readJsonObject(join(dir, "missing.json"))).toBeUndefined();
+    expect(await readJsonObject(dir)).toBeUndefined();
   });
 });

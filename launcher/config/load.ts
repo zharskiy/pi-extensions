@@ -6,13 +6,12 @@ import {
   readJsonFile,
 } from "../shared/index.ts";
 import { defaultConfig } from "./defaults.ts";
-import { getPath } from "./dotted.ts";
 import { mergeLayers, resolveProfileName } from "./merge.ts";
 import { httpsFetchText, loadOrgLayer } from "./org-source.ts";
 import { loadProfile } from "./profiles.ts";
 import { capManualRules } from "./rule-cap.ts";
 import type { EffectiveConfig, FetchText, LayerConfig, LayerName, OrgRef } from "./types.ts";
-import { validateLayer } from "./validate.ts";
+import { projectKeyRefusal, validateLayer } from "./validate.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
@@ -35,19 +34,6 @@ export const layerFile = (layer: LayerName, repoRoot: string, env?: NodeJS.Proce
   return layer === "policy" ? paths.policyFile : paths.userConfigFile;
 };
 
-const HOST_ONLY_KEYS = ["env.allow", "image.reference", "image.digest", "sessions.host"];
-
-const assertProjectKeys = (layer: LayerConfig, file: string) => {
-  const key = HOST_ONLY_KEYS.find((name) => getPath(layer, name) !== undefined);
-
-  if (key !== undefined) {
-    throw new LauncherError(
-      `project: ${key} may not be set by a project config (${file})`,
-      `remove ${key} from ${file}; set it in the user config instead`,
-    );
-  }
-};
-
 const validated = (value: unknown, layer: LayerName, file: string) => {
   try {
     return validateLayer(value, layer);
@@ -57,13 +43,13 @@ const validated = (value: unknown, layer: LayerName, file: string) => {
 };
 
 export const validateLayerFile = (value: unknown, layer: LayerName, file: string) => {
-  const config = validated(value, layer, file);
+  const refused = layer === "project" ? projectKeyRefusal(value, file) : undefined;
 
-  if (layer === "project") {
-    assertProjectKeys(config, file);
+  if (refused !== undefined) {
+    throw refused;
   }
 
-  return config;
+  return validated(value, layer, file);
 };
 
 export const readLayer = async (layer: LayerName, file: string) => {

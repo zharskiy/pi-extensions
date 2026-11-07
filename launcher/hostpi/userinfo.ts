@@ -1,4 +1,4 @@
-import type { SecretRef } from "../config/index.ts";
+import { SECRET_MARKER, type SecretRef } from "../config/index.ts";
 import { isSecretName } from "../shared/index.ts";
 import { type Endpoint, endpointOf } from "./endpoints.ts";
 import { jsonPointer } from "./json.ts";
@@ -34,6 +34,26 @@ export const hasQueryCredential = (url: unknown) => {
 export const hasUrlPassword = (url: unknown) =>
   typeof url === "string" && (parsed(url)?.password ?? "") !== "";
 
+export const hasUrlUserinfo = (url: unknown) => {
+  const parts = typeof url === "string" ? parsed(url) : undefined;
+
+  return parts !== undefined && (parts.username !== "" || parts.password !== "");
+};
+
+export const withoutUserinfo = (url: unknown) => {
+  const parts = typeof url === "string" ? parsed(url) : undefined;
+
+  if (parts === undefined) {
+    return "";
+  }
+
+  parts.username = "";
+
+  parts.password = "";
+
+  return parts.href;
+};
+
 export const stripUserinfo = (target: UserinfoTarget, url: unknown): Section<unknown> => {
   const parts = typeof url === "string" ? parsed(url) : undefined;
 
@@ -54,7 +74,7 @@ export const stripUserinfo = (target: UserinfoTarget, url: unknown): Section<unk
     rules: hadPassword
       ? rulesFor(target.identity, endpoints, {
           header: "Authorization",
-          template: "Basic {secret}",
+          template: `Basic ${SECRET_MARKER}`,
           transform: "urlUserinfoBase64",
           secret: target.secret ?? { file: target.file, pointer: jsonPointer(target.pointer) },
         })

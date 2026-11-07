@@ -1,7 +1,7 @@
 import { connect, createServer, type Server } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
-import { OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "../../shared/index.ts";
+import { OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "../../proxy/vault/protocol.ts";
 import { CONTROL_TOKEN, closeServer, createStateDir, fakeResolver, openCa, removeDir } from "./harness.ts";
 import { CONTROL_USER, plainRequest } from "./proxy-client.ts";
 import {

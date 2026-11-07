@@ -1,6 +1,5 @@
 import { connect, type Socket } from "node:net";
-import type { ParentProxy, SecretRef } from "../config/index.ts";
-import { normalizeHost } from "./policy.ts";
+import { normalizeHost, type ParentProxy, type SecretRef } from "../config/index.ts";
 import { PARENT_PROXY_SECRET_KEY, type SecretResolver } from "./secrets/index.ts";
 
 export interface ParentRoute {

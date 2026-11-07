@@ -1,13 +1,13 @@
 import { join } from "node:path";
 import type { SecretRef } from "../config/index.ts";
-import { launcherRoot } from "../shared/index.ts";
+import { isJsonObject, launcherRoot } from "../shared/index.ts";
 import { type Endpoint, endpointOf } from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
-import { isJsonObject, objectOr } from "./json.ts";
+import { objectOr } from "./json.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
-import { stripUserinfo } from "./userinfo.ts";
+import { stripUserinfo, withoutUserinfo } from "./userinfo.ts";
 
 interface ProviderScope {
   context: DeriveContext;
@@ -40,24 +40,6 @@ const withHeaders = (
 };
 
 const MODEL_SECRET_SCRIPT = "model-secret.mjs";
-
-const withoutUserinfo = (url: unknown) => {
-  if (typeof url !== "string") {
-    return "";
-  }
-
-  try {
-    const parsed = new URL(url);
-
-    parsed.username = "";
-
-    parsed.password = "";
-
-    return parsed.href;
-  } catch {
-    return "";
-  }
-};
 
 const modelSecret = (scope: ProviderScope, model: JsonObject, id: string, path: string[]): SecretRef => ({
   command: [

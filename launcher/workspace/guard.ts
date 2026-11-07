@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { isWithin, LauncherError, launcherPaths } from "../shared/index.ts";
+import { isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
 import { sessionSlug } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
 
@@ -9,16 +9,6 @@ interface GuardContext {
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
 }
-
-const realOrResolved = (path: string) => {
-  const absolute = resolve(path);
-
-  try {
-    return realpathSync.native(absolute);
-  } catch {
-    return absolute;
-  }
-};
 
 const DEFAULT_CONFIG_DIR = [".config", "pi-sandbox"];
 
@@ -32,7 +22,7 @@ const launcherDirs = (context: GuardContext) => {
   const paths = launcherPaths(context);
 
   return [join(context.home, ".pi"), paths.stateDir, protectedConfig(context, paths.userConfigFile)].map(
-    realOrResolved,
+    realOrResolvedSync,
   );
 };
 
@@ -52,7 +42,7 @@ const assertOutsideLauncherDirs = (mounted: string[], context: GuardContext) => 
 };
 
 export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext) => {
-  const dirs = ["/", context.home].map(realOrResolved).concat(launcherDirs(context));
+  const dirs = ["/", context.home].map(realOrResolvedSync).concat(launcherDirs(context));
   const mounted = [workspace.repoRoot, workspace.gitCommonDir].filter((path) => path !== undefined);
   const unsafe = mounted.find((path) => dirs.some((dir) => isWithin(dir, path)));
 
@@ -100,9 +90,9 @@ const protectedPiPaths = (context: HostSessionsContext) => {
   const agentDir = resolve(context.agentDir);
 
   return [
-    { path: realOrResolved(join(context.home, ".pi")), both: false },
-    { path: realOrResolved(agentDir), both: false },
-    ...agentEntries(agentDir).map((name) => ({ path: realOrResolved(join(agentDir, name)), both: true })),
+    { path: realOrResolvedSync(join(context.home, ".pi")), both: false },
+    { path: realOrResolvedSync(agentDir), both: false },
+    ...agentEntries(agentDir).map((name) => ({ path: realOrResolvedSync(join(agentDir, name)), both: true })),
   ];
 };
 
@@ -122,7 +112,7 @@ export const assertHostSessionsDir = (dir: string, context: HostSessionsContext)
 
   const realSessions = realSessionsDir(sessions);
 
-  const real = realOrResolved(dir);
+  const real = realOrResolvedSync(dir);
 
   if (realSessions === undefined || real !== join(realSessions, slug)) {
     throw refuseSessions(dir, "resolves outside pi's sessions directory");

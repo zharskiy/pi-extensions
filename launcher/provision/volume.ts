@@ -1,8 +1,7 @@
 import { posix } from "node:path";
-import { Readable, Writable } from "node:stream";
-import type { Backend } from "../backend/index.ts";
+import { type Backend, execCapture } from "../backend/index.ts";
 import type { JsonObject } from "../hostpi/index.ts";
-import { GUEST_PATHS, LauncherError } from "../shared/index.ts";
+import { GUEST_PATHS, LauncherError, parseJsonObject } from "../shared/index.ts";
 
 export interface VolumeRead {
   value?: JsonObject;
@@ -13,29 +12,10 @@ const WRITE_SCRIPT = 'mkdir -p "$(dirname "$1")" && cat > "$1.pi-sandbox-tmp" &&
 
 const guestPath = (name: string) => posix.join(GUEST_PATHS.agentDir, name);
 
-export const collector = () => {
-  const chunks: Buffer[] = [];
-  const stream = new Writable({
-    write(chunk: Buffer | string, _encoding, callback) {
-      chunks.push(Buffer.from(chunk));
-
-      callback();
-    },
-  });
-
-  return { stream, text: () => Buffer.concat(chunks).toString("utf8") };
-};
-
 const parse = (text: string): VolumeRead => {
-  try {
-    const value: unknown = JSON.parse(text);
+  const value = parseJsonObject(text);
 
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? { value: value as JsonObject, invalid: false }
-      : { invalid: true };
-  } catch {
-    return { invalid: true };
-  }
+  return value === undefined ? { invalid: true } : { value, invalid: false };
 };
 
 export const readVolumeFile = async (
@@ -43,15 +23,14 @@ export const readVolumeFile = async (
   containerId: string,
   name: string,
 ): Promise<VolumeRead> => {
-  const stdout = collector();
-  const code = await backend.exec(
-    { containerId, command: ["cat", guestPath(name)], env: {}, workdir: "/" },
-    { stdout: stdout.stream, stderr: collector().stream, tty: false },
-  );
+  const result = await execCapture(backend, {
+    containerId,
+    command: ["cat", guestPath(name)],
+    env: {},
+    workdir: "/",
+  });
 
-  const text = stdout.text();
-
-  return code === 0 && text.trim() !== "" ? parse(text) : { invalid: false };
+  return result.code === 0 && result.stdout.trim() !== "" ? parse(result.stdout) : { invalid: false };
 };
 
 export const writeVolumeFile = async (
@@ -60,17 +39,13 @@ export const writeVolumeFile = async (
   name: string,
   value: JsonObject,
 ) => {
-  const code = await backend.exec(
+  const result = await execCapture(
+    backend,
     { containerId, command: ["sh", "-c", WRITE_SCRIPT, "sh", guestPath(name)], env: {}, workdir: "/" },
-    {
-      stdin: Readable.from([Buffer.from(`${JSON.stringify(value, null, 2)}\n`)]),
-      stdout: collector().stream,
-      stderr: collector().stream,
-      tty: false,
-    },
+    `${JSON.stringify(value, null, 2)}\n`,
   );
 
-  if (code !== 0) {
-    throw new LauncherError(`${name}: could not write it into the sandbox volume (exit ${code})`);
+  if (result.code !== 0) {
+    throw new LauncherError(`${name}: could not write it into the sandbox volume (exit ${result.code})`);
   }
 };

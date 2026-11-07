@@ -1,35 +1,42 @@
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  mergeTopLevel,
-  packageChangeFor,
-  readVolumeSettings,
-  syncWritableFiles,
-} from "../../provision/index.ts";
+import { packageChangeFor, readVolumeSettings, syncWritableFiles } from "../../provision/index.ts";
+import { mergeTopLevel } from "../../provision/merge-settings.ts";
 import { GUEST_PATHS, stateLayout } from "../../shared/index.ts";
-import { createFakeBackend, type FakeExec, stdinOf } from "../support/fake-backend.ts";
+import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { tempDir, writeText } from "./fixtures.ts";
+import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
 const BAKED = "/opt/pi-sandbox/extensions/node_modules/pi-extensions-mz";
 
 const guest = (name: string) => `${GUEST_PATHS.agentDir}/${name}`;
 
-const volumeBackend = (files: Record<string, unknown>) =>
-  createFakeBackend({
+const volumeText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
+
+const volumeBackend = async (files: Record<string, unknown>) => {
+  const guestAgentDir = await tempDir("sync-volume");
+
+  await Promise.all(
+    Object.entries(files).map(([name, value]) => writeText(join(guestAgentDir, name), volumeText(value))),
+  );
+
+  const fake = createFakeBackend({
+    guestAgentDir,
     execScripts: Object.entries(files).map(([name, value]) => ({
       command: ["cat", guest(name)],
-      stdout: typeof value === "string" ? value : JSON.stringify(value),
+      stdout: volumeText(value),
     })),
   });
+  const containerId = await runningContainer(fake.backend);
+  const volume = async (name: string) => {
+    const text = await fake.guestFile(name);
 
-const writes = (execs: FakeExec[]) =>
-  Object.fromEntries(
-    execs
-      .filter((exec) => exec.spec.command[0] === "sh")
-      .map((exec) => [exec.spec.command.at(-1), JSON.parse(stdinOf(exec).toString("utf8"))]),
-  );
+    return text === undefined ? undefined : JSON.parse(text);
+  };
+
+  return { fake, containerId, volume };
+};
 
 describe("mergeTopLevel", () => {
   it("lets host-changed keys win, keeps volume-only keys and applies host deletions", () => {
@@ -56,11 +63,11 @@ describe("syncWritableFiles", () => {
   const setup = async (volume: Record<string, unknown>) => {
     const stateDir = await tempDir("sync-state");
     const repoRoot = await tempDir("sync-repo");
-    const fake = volumeBackend(volume);
+    const { fake, containerId, volume: volumeFile } = await volumeBackend(volume);
     const sync = (hostSettings: Record<string, unknown> | undefined, mcp: Record<string, unknown> = {}) =>
       syncWritableFiles({
         backend: fake.backend,
-        containerId: "c1",
+        containerId,
         stateDir,
         repoHash: "repo1",
         hostAgentDir: "/host/.pi/agent",
@@ -70,7 +77,7 @@ describe("syncWritableFiles", () => {
         mcp,
       });
 
-    return { stateDir, repoRoot, fake, sync };
+    return { stateDir, repoRoot, fake, sync, volume: volumeFile };
   };
 
   it("writes merged settings and mcp files through stdin and records the host copies", async () => {
@@ -80,10 +87,8 @@ describe("syncWritableFiles", () => {
     const syncDir = stateLayout(env.stateDir).sync("repo1");
 
     expect(result.notices).toEqual([]);
-    expect(writes(env.fake.execs)).toEqual({
-      [guest("settings.json")]: { packages: [BAKED], inside: true, theme: "dark" },
-      [guest("mcp.json")]: mcp,
-    });
+    expect(await env.volume("settings.json")).toEqual({ packages: [BAKED], inside: true, theme: "dark" });
+    expect(await env.volume("mcp.json")).toEqual(mcp);
     expect(JSON.parse(await readFile(join(syncDir, "settings.json"), "utf8"))).toEqual({ theme: "dark" });
     expect(JSON.parse(await readFile(join(syncDir, "mcp.json"), "utf8"))).toEqual(mcp);
   });
@@ -93,7 +98,26 @@ describe("syncWritableFiles", () => {
 
     await env.sync({ theme: "dark" }, { mcpServers: {} });
 
-    expect(writes(env.fake.execs)).toEqual({});
+    expect(await env.fake.guestFile("settings.json")).toBe(volumeText({ theme: "dark" }));
+    expect(await env.fake.guestFile("mcp.json")).toBe(volumeText({ mcpServers: {} }));
+  });
+
+  it("reads each volume file once and leaves an unchanged base copy alone", async () => {
+    const env = await setup({ "settings.json": { theme: "dark" } });
+
+    await env.sync({ theme: "dark" });
+
+    const base = join(stateLayout(env.stateDir).sync("repo1"), "settings.json");
+    const first = await stat(base);
+
+    await env.sync({ theme: "dark" });
+
+    const reads = env.fake.execs.filter(
+      (exec) => exec.spec.command.join(" ") === `cat ${guest("settings.json")}`,
+    );
+
+    expect(reads).toHaveLength(2);
+    expect((await stat(base)).ino).toBe(first.ino);
   });
 
   it("drops local packages outside the mounts with a notice and keeps mounted ones", async () => {
@@ -103,7 +127,7 @@ describe("syncWritableFiles", () => {
       packages: ["/elsewhere/ext", inRepo, "/shared/libs/x", "npm:a", "~/private/ext"],
     });
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({
+    expect(await env.volume("settings.json")).toEqual({
       packages: [inRepo, "/shared/libs/x", "npm:a"],
     });
     expect(result.notices).toEqual([
@@ -117,13 +141,13 @@ describe("syncWritableFiles", () => {
 
     await env.sync({ packages: ["npm:pi-extensions-mz@1.2.3", "npm:other"] });
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({ packages: [BAKED, "npm:other"] });
+    expect(await env.volume("settings.json")).toEqual({ packages: [BAKED, "npm:other"] });
 
     const other = await setup({ "settings.json": { packages: [BAKED] } });
 
     await other.sync({ packages: ["npm:other"] });
 
-    expect(writes(other.fake.execs)[guest("settings.json")]).toEqual({ packages: [BAKED, "npm:other"] });
+    expect(await other.volume("settings.json")).toEqual({ packages: [BAKED, "npm:other"] });
   });
 
   it("keeps command and proxy settings from the host and drops the ones the volume planted", async () => {
@@ -145,7 +169,7 @@ describe("syncWritableFiles", () => {
 
     await env.sync({ shellPath: "/bin/zsh" });
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({
+    expect(await env.volume("settings.json")).toEqual({
       theme: "volume",
       shellPath: "/bin/zsh",
     });
@@ -161,7 +185,7 @@ describe("syncWritableFiles", () => {
 
     await env.sync({});
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({ local: 1 });
+    expect(await env.volume("settings.json")).toEqual({ local: 1 });
   });
 
   it("removes a credential from a package URL inside the sandbox and in the base copy, with a notice", async () => {
@@ -177,7 +201,7 @@ describe("syncWritableFiles", () => {
     const syncDir = stateLayout(env.stateDir).sync("repo1");
     const base = await readFile(join(syncDir, "settings.json"), "utf8");
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({
+    expect(await env.volume("settings.json")).toEqual({
       packages: [
         "git:https://github.com/org/ext",
         { source: "https://git.example.com/org/tool.git", skills: [] },
@@ -219,14 +243,14 @@ describe("syncWritableFiles", () => {
 
     await pending;
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({ theme: "dark" });
+    expect(await env.volume("settings.json")).toEqual({ theme: "dark" });
   });
 
   it("replaces an invalid volume file with a notice", async () => {
     const env = await setup({ "settings.json": "{ broken" });
     const result = await env.sync({ theme: "dark" });
 
-    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({ theme: "dark" });
+    expect(await env.volume("settings.json")).toEqual({ theme: "dark" });
     expect(result.notices).toEqual([
       "settings.json in the sandbox volume was not valid JSON; replaced with the host copy",
     ]);
@@ -235,11 +259,14 @@ describe("syncWritableFiles", () => {
 
 describe("readVolumeSettings and packageChangeFor", () => {
   it("reads the volume settings and reports undefined when the file is missing", async () => {
-    const present = volumeBackend({ "settings.json": { packages: ["npm:a"] } });
+    const present = await volumeBackend({ "settings.json": { packages: ["npm:a"] } });
     const missing = createFakeBackend({ execScripts: [{ command: ["cat"], code: 1 }] });
+    const missingId = await runningContainer(missing.backend);
 
-    expect(await readVolumeSettings(present.backend, "c1")).toEqual({ packages: ["npm:a"] });
-    expect(await readVolumeSettings(missing.backend, "c1")).toBeUndefined();
+    expect(await readVolumeSettings(present.fake.backend, present.containerId)).toEqual({
+      packages: ["npm:a"],
+    });
+    expect(await readVolumeSettings(missing.backend, missingId)).toBeUndefined();
   });
 
   it("reports an install only when the sandbox recorded the exact source asked for", () => {

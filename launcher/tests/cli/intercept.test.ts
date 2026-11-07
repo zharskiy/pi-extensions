@@ -1,25 +1,11 @@
 import { mkdir, readFile, symlink } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { GUEST_PATHS, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
 
 const SETTINGS = "/home/pi/.pi/agent/settings.json";
 
@@ -113,7 +99,7 @@ const hostSettings = async (harness: { hostAgentDir: string }) =>
 describe("pi install and pi remove", () => {
   it("runs inside the sandbox and writes only that package entry to the host settings.json on exit 0", async () => {
     const volume = volumeBackend(installing(0));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), {
       theme: "dark",
@@ -130,7 +116,7 @@ describe("pi install and pi remove", () => {
 
   it("leaves the host settings.json alone when pi install fails", async () => {
     const volume = volumeBackend(installing(1));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: ["npm:old"] });
 
@@ -140,7 +126,7 @@ describe("pi install and pi remove", () => {
 
   it("refuses to write back a path that exists only inside the sandbox", async () => {
     const volume = volumeBackend(installing(0));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
 
@@ -151,7 +137,7 @@ describe("pi install and pi remove", () => {
 
   it("installs a package from the repository in the sandbox only", async () => {
     const volume = volumeBackend(installing(0));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     await mkdir(join(harness.repoRoot, "ext"), { recursive: true });
 
@@ -166,7 +152,7 @@ describe("pi install and pi remove", () => {
 
   it("refuses a package outside the repository that links back into it", async () => {
     const volume = volumeBackend(installing(0));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
     const link = join(harness.deps.home, "tools", "ext");
 
     await mkdir(join(harness.repoRoot, "ext"), { recursive: true });
@@ -188,7 +174,7 @@ describe("pi install and pi remove", () => {
 
   it("writes back a package under an extra read-only mount as a path relative to the host agent dir", async () => {
     const volume = volumeBackend(installing(0));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
     const ext = join(harness.deps.home, "tools", "ext");
     const file = join(harness.hostAgentDir, "settings.json");
 
@@ -208,7 +194,7 @@ describe("pi install and pi remove", () => {
   it("writes nothing and names both sources when the sandbox recorded a different entry for the package", async () => {
     const swapped = "npm:fresh@git+https://attacker.example/x.git";
     const volume = volumeBackend(recording((packages) => [...packages, swapped]));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
     const file = join(harness.hostAgentDir, "settings.json");
 
     await harness.writeJson(file, { packages: ["npm:old"] });
@@ -224,7 +210,7 @@ describe("pi install and pi remove", () => {
     const volume = volumeBackend(
       recording(() => [{ source: "npm:tool@2.0.0", extensions: ["planted.js"], skills: [] }]),
     );
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
     const file = join(harness.hostAgentDir, "settings.json");
 
     await harness.writeJson(file, { packages: [{ source: "npm:tool@1.0.0", skills: ["review"] }] });
@@ -238,7 +224,7 @@ describe("pi install and pi remove", () => {
 
   it("leaves the host alone when an install drops an entry or a remove finds none", async () => {
     const volume = volumeBackend(recording(() => []));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: ["npm:old"] });
 
@@ -250,7 +236,7 @@ describe("pi install and pi remove", () => {
 
   it("passes a project install with -l straight through", async () => {
     const volume = volumeBackend(installing(0));
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
 
@@ -266,7 +252,7 @@ describe("pi mcp", () => {
   };
 
   it("runs mcp add and remove with the host pi against the host agent dir", async () => {
-    const harness = await harnessWith({ adapters: noBackend });
+    const harness = await createHarness({ adapters: noBackend });
 
     expect(await run(["mcp", "add", "docs", "--url", "https://docs.example.test/mcp"], harness.deps)).toBe(0);
 
@@ -278,7 +264,7 @@ describe("pi mcp", () => {
   });
 
   it("signs in on the host against a one-server helper dir with only the sanitised server", async () => {
-    const harness = await harnessWith({ adapters: noBackend });
+    const harness = await createHarness({ adapters: noBackend });
 
     await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
       mcpServers: {
@@ -304,7 +290,7 @@ describe("pi mcp", () => {
   });
 
   it("passes login flags such as --timeout to the host pi and leaves unknown flags to the sandbox", async () => {
-    const harness = await harnessWith({ adapters: noBackend });
+    const harness = await createHarness({ adapters: noBackend });
 
     await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
       mcpServers: { docs: { url: "https://docs.example.test/mcp" } },
@@ -325,7 +311,7 @@ describe("pi mcp", () => {
   });
 
   it("asks before signing in to a server defined only by the repository", async () => {
-    const harness = await harnessWith({ adapters: noBackend });
+    const harness = await createHarness({ adapters: noBackend });
 
     await harness.writeJson(join(harness.repoRoot, ".pi", "mcp.json"), {
       mcpServers: { repo: { url: "https://repo.example.test/mcp" } },
@@ -337,7 +323,7 @@ describe("pi mcp", () => {
     ]);
     expect(harness.calls.some((entry) => entry.interactive)).toBe(false);
 
-    const confirming = await harnessWith({ adapters: noBackend, confirm: true });
+    const confirming = await createHarness({ adapters: noBackend, confirm: true });
 
     await confirming.writeJson(join(confirming.repoRoot, ".pi", "mcp.json"), {
       mcpServers: { repo: { url: "https://repo.example.test/mcp" } },
@@ -350,7 +336,7 @@ describe("pi mcp", () => {
 
 describe("pi update", () => {
   it("prints that pi follows the launcher for a bare pi update", async () => {
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => {
         throw new Error("the backend must not be used");
       },
@@ -364,7 +350,7 @@ describe("pi update", () => {
 
   it("runs pi update --extensions inside the sandbox", async () => {
     const volume = volumeBackend(() => 0);
-    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+    const harness = await createHarness({ adapters: () => [volume.fake.backend] });
 
     expect(await run(["update", "--extensions"], harness.deps)).toBe(0);
     expect(volume.piRuns).toEqual([["update", "--extensions"]]);

@@ -1,7 +1,15 @@
 import { isAbsolute } from "node:path";
-import { BACKEND_NAMES, isSecretName, LAUNCHER_SET_VARIABLES, LauncherError } from "../shared/index.ts";
-import { getPath, isRecord } from "./dotted.ts";
-import type { LayerConfig } from "./types.ts";
+import {
+  BACKEND_NAMES,
+  isJsonObject,
+  isSecretName,
+  LAUNCHER_SET_VARIABLES,
+  LauncherError,
+  PLACEHOLDER_PREFIX,
+} from "../shared/index.ts";
+import { getPath } from "./dotted.ts";
+import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
+import { type LayerConfig, PROFILE_NAMES } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -65,13 +73,9 @@ const APT_PACKAGE = /^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$/;
 
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
-const PLACEHOLDER_PREFIX = "pi-sandbox-";
-
-const SECRET_MARKER = "{secret}";
-
 const nonEmpty: Check = (value) => (value.trim() === "" ? "must not be empty" : undefined);
 
-const portOf = (value: string) => Number(value.split(":")[1] ?? "443");
+const portOf = (value: string) => Number(value.split(":")[1] ?? TLS_PORT);
 
 const host: Check = (value) => {
   if (!HOST.test(value)) {
@@ -122,8 +126,6 @@ const quietHost: Check = (value) =>
     ? undefined
     : "must be a host name or host:port";
 
-const isLoopbackName = (value: string) => value === "localhost" || value.endsWith(".localhost");
-
 const privateHost: Check = (value) => {
   if (!HOST_PATTERN.test(value) || IP_LITERAL.test(value)) {
     return "must be a host name or *.domain, not an IP address";
@@ -149,11 +151,6 @@ const placeholder: Check = (value) =>
 
 const template: Check = (value) =>
   value.includes(SECRET_MARKER) ? undefined : `must contain ${SECRET_MARKER}`;
-
-const TRANSFORMS = ["urlUserinfoBase64"];
-
-const transform: Check = (value) =>
-  TRANSFORMS.includes(value) ? undefined : `must be one of ${TRANSFORMS.join(", ")}`;
 
 const jsonPointer: Check = (value) => (JSON_POINTER.test(value) ? undefined : "must be a JSON pointer");
 
@@ -185,7 +182,7 @@ const npmPackage: Check = (value) =>
 const notEmptyList: ListCheck = (value) => (value.length === 0 ? "must not be empty" : undefined);
 
 const uniqueIds: ListCheck = (value) => {
-  const ids = value.map((item) => (isRecord(item) ? item.id : undefined));
+  const ids = value.map((item) => (isJsonObject(item) ? item.id : undefined));
 
   return ids.some((id, index) => ids.indexOf(id) !== index) ? "has a duplicate id" : undefined;
 };
@@ -244,7 +241,7 @@ const CREDENTIAL_RULE: ObjectSpec = {
     placeholder: text(placeholder),
     header: text(header),
     template: text(template),
-    transform: text(transform),
+    transform: choice(["urlUserinfoBase64"]),
     secret: SECRET_REF,
   },
 };
@@ -276,7 +273,7 @@ const LAYER_SPEC: ObjectSpec = {
   type: "object",
   properties: {
     $schema: text(),
-    profile: choice(["enterprise", "team", "solo"]),
+    profile: choice(PROFILE_NAMES),
     backend: choice(["auto", ...BACKEND_NAMES]),
     fallback: choice(["refuse", "host"]),
     image: shape({
@@ -345,7 +342,7 @@ const LAYER_SPEC: ObjectSpec = {
   },
 };
 
-const PROJECT_REFUSED_KEYS = [
+const SECURITY_KEYS = [
   "backend",
   "credentials.rules",
   "credentials.derive",
@@ -360,6 +357,29 @@ const PROJECT_REFUSED_KEYS = [
   "image.dockerfile",
   "org",
 ];
+
+const HOST_ONLY_KEYS = ["env.allow", "image.reference", "image.digest", "sessions.host"];
+
+const PROJECT_REFUSED_KEYS = [
+  ...SECURITY_KEYS.map((key) => ({ key, owner: "the user or policy config" })),
+  ...HOST_ONLY_KEYS.map((key) => ({ key, owner: "the user config" })),
+];
+
+export const projectKeyRefusal = (value: unknown, file?: string) => {
+  const refused = PROJECT_REFUSED_KEYS.find(({ key }) => getPath(value, key) !== undefined);
+
+  if (refused === undefined) {
+    return undefined;
+  }
+
+  const where = file === undefined ? "" : ` (${file})`;
+  const from = file === undefined ? "" : ` from ${file}`;
+
+  return new LauncherError(
+    `project: ${refused.key} may not be set by a project config${where}`,
+    `remove ${refused.key}${from}; set it in ${refused.owner} instead`,
+  );
+};
 
 const ORG_KEY_LAYERS = ["policy", "user"];
 
@@ -403,7 +423,7 @@ const numberProblem = (
 };
 
 const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem | undefined => {
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     return { path, problem: path === "" ? "must be a JSON object" : "must be an object" };
   }
 
@@ -427,7 +447,7 @@ const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem 
 };
 
 const variantProblem = (spec: VariantsSpec, value: unknown, path: string): Problem | undefined => {
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     return { path, problem: "must be an object" };
   }
 
@@ -446,7 +466,7 @@ const variantProblem = (spec: VariantsSpec, value: unknown, path: string): Probl
 };
 
 const keyedProblem = (variants: Record<string, ObjectSpec>, value: unknown, path: string) => {
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     return { path, problem: "must be an object" };
   }
 
@@ -495,20 +515,10 @@ const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefine
   return spec.type === "object" ? objectProblem(spec, value, path) : variantProblem(spec, value, path);
 };
 
-const layerKeyProblem = (value: unknown, layerName: string) => {
-  const refused =
-    layerName === "project"
-      ? PROJECT_REFUSED_KEYS.find((key) => getPath(value, key) !== undefined)
-      : undefined;
-
-  if (refused !== undefined) {
-    return `${layerName}: ${refused} may not be set by a project config`;
-  }
-
-  const misplacedOrg = getPath(value, "org") !== undefined && !ORG_KEY_LAYERS.includes(layerName);
-
-  return misplacedOrg ? `${layerName}: org may only be set by the policy or user config` : undefined;
-};
+const misplacedOrg = (value: unknown, layerName: string) =>
+  getPath(value, "org") !== undefined && !ORG_KEY_LAYERS.includes(layerName)
+    ? new LauncherError(`${layerName}: org may only be set by the policy or user config`)
+    : undefined;
 
 export const validateLayer = (value: unknown, layerName: string): LayerConfig => {
   const found = problemOf(LAYER_SPEC, value, "");
@@ -519,10 +529,10 @@ export const validateLayer = (value: unknown, layerName: string): LayerConfig =>
     );
   }
 
-  const misplaced = layerKeyProblem(value, layerName);
+  const misplaced = layerName === "project" ? projectKeyRefusal(value) : misplacedOrg(value, layerName);
 
   if (misplaced !== undefined) {
-    throw new LauncherError(misplaced);
+    throw misplaced;
   }
 
   return value as LayerConfig;
@@ -557,3 +567,42 @@ const keysOf = (spec: Spec, path: string): string[] => {
 };
 
 export const layerKeys = () => keysOf(LAYER_SPEC, "");
+
+interface Constraint {
+  path: string;
+  required?: readonly string[];
+  values?: readonly string[];
+}
+
+const variantsOf = (spec: Spec): Spec[] => {
+  if (spec.type === "variants") {
+    return [...Object.values(spec.variants), ...(spec.untagged === undefined ? [] : [spec.untagged])];
+  }
+
+  if (spec.type === "keyed") {
+    return Object.values(spec.variants);
+  }
+
+  return spec.type === "either" ? [spec.text, spec.object] : [];
+};
+
+const constraintsOf = (spec: Spec, path: string): Constraint[] => {
+  if (spec.type === "string") {
+    return spec.values === undefined ? [] : [{ path, values: spec.values }];
+  }
+
+  if (spec.type === "array") {
+    return constraintsOf(spec.items, `${path}[]`);
+  }
+
+  if (spec.type === "object") {
+    return [
+      ...(spec.required === undefined ? [] : [{ path, required: spec.required }]),
+      ...Object.entries(spec.properties).flatMap(([key, child]) => constraintsOf(child, joinPath(path, key))),
+    ];
+  }
+
+  return variantsOf(spec).flatMap((variant) => constraintsOf(variant, path));
+};
+
+export const layerConstraints = () => constraintsOf(LAYER_SPEC, "");

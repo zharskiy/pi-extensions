@@ -1,43 +1,16 @@
+import { authorityOf, matchesEntry, TLS_PORT } from "./egress-entry.ts";
 import type { CredentialRule, EffectiveConfig, LayerConfig, LayerName } from "./types.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
-const TLS_PORT = 443;
-
-const ENTRY_PORT = /^(.+):(\d{1,5})$/;
-
-const normalized = (host: string) => host.trim().toLowerCase().replace(/\.$/, "");
-
-const matchesHost = (host: string, pattern: string) => {
-  if (!pattern.startsWith("*.")) {
-    return host === pattern;
-  }
-
-  const suffix = pattern.slice(1);
-  const label = host.slice(0, -suffix.length);
-
-  return host.endsWith(suffix) && label.length > 0 && !label.includes(".");
-};
-
-const allowEntryMatches = (entry: string, host: string, port: number) => {
-  const withPort = ENTRY_PORT.exec(entry.trim());
-  const pattern = normalized(withPort?.[1] ?? entry);
-  const entryPort = withPort?.[2] === undefined ? TLS_PORT : Number(withPort[2]);
-
-  return matchesHost(normalized(host), pattern) && entryPort === port;
-};
-
-const matchesEntry = (entry: string, rule: CredentialRule) =>
-  allowEntryMatches(entry, rule.host, rule.port ?? TLS_PORT);
+const ruleMatches = (entry: string, rule: CredentialRule) =>
+  matchesEntry(entry, rule.host, rule.port ?? TLS_PORT);
 
 export const grantCapBlocker = (effective: EffectiveConfig, host: string, port: number) =>
-  effective.grantCaps?.find((cap) => !cap.allow.some((entry) => allowEntryMatches(entry, host, port)))?.layer;
+  effective.grantCaps?.find((cap) => !cap.allow.some((entry) => matchesEntry(entry, host, port)))?.layer;
 
 const policyRuleIds = (layers: Layers) =>
   new Set((layers.policy?.credentials?.rules ?? []).map((rule) => rule.id));
-
-const authority = (rule: CredentialRule) =>
-  rule.port === undefined || rule.port === TLS_PORT ? rule.host : `${rule.host}:${rule.port}`;
 
 export const capManualRules = (effective: EffectiveConfig, layers: Layers) => {
   const cap = effective.egressCap.derivedHosts;
@@ -48,7 +21,7 @@ export const capManualRules = (effective: EffectiveConfig, layers: Layers) => {
 
   const exempt = policyRuleIds(layers);
   const rules = effective.config.credentials.rules;
-  const kept = rules.filter((rule) => exempt.has(rule.id) || cap.some((entry) => matchesEntry(entry, rule)));
+  const kept = rules.filter((rule) => exempt.has(rule.id) || cap.some((entry) => ruleMatches(entry, rule)));
   const dropped = rules.filter((rule) => !kept.includes(rule));
 
   return {
@@ -58,7 +31,7 @@ export const capManualRules = (effective: EffectiveConfig, layers: Layers) => {
     },
     notices: dropped.map(
       (rule) =>
-        `credentials.rules ${rule.id}: ${authority(rule)} is outside the egress.allow of the policy or org baseline, so the rule was dropped`,
+        `credentials.rules ${rule.id}: ${authorityOf(rule.host, rule.port ?? TLS_PORT)} is outside the egress.allow of the policy or org baseline, so the rule was dropped`,
     ),
   };
 };

@@ -1,4 +1,4 @@
-import { chmod, lstat, readFile, readlink, rename, stat, symlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readlink, rename, rm, stat, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { writeBackPackageChange } from "../../hostpi/index.ts";
@@ -15,6 +15,42 @@ const setup = async (value: unknown, indent = "    ") => {
 };
 
 describe("writeBackPackageChange", () => {
+  it("keeps every change when several land at once", async () => {
+    const host = await setup({ packages: [] });
+    const sources = ["npm:one", "npm:two", "npm:three", "npm:four"];
+
+    await Promise.all(
+      sources.map((source) =>
+        writeBackPackageChange({ hostAgentDir: host.hostAgentDir, source, kind: "install" }),
+      ),
+    );
+
+    expect([...JSON.parse(await host.read()).packages].sort()).toEqual([...sources].sort());
+  });
+
+  it("waits for the lock pi holds on settings.json before it reads", async () => {
+    const host = await setup({ packages: ["npm:first"] });
+    const lock = join(host.hostAgentDir, "settings.json.lock");
+
+    await mkdir(lock);
+
+    const change = writeBackPackageChange({
+      hostAgentDir: host.hostAgentDir,
+      source: "npm:second",
+      kind: "install",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    await writeText(join(host.hostAgentDir, "settings.json"), settingsText({ packages: ["npm:pi"] }, "  "));
+
+    await rm(lock, { recursive: true });
+
+    await change;
+
+    expect(JSON.parse(await host.read()).packages).toEqual(["npm:pi", "npm:second"]);
+  });
+
   it("writes through a symlinked settings.json and keeps the link", async () => {
     const host = await setup({ packages: ["npm:first"] });
     const settings = join(host.hostAgentDir, "settings.json");

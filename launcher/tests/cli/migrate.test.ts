@@ -1,17 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Backend } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { repoVolumes } from "../../container/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { createHarness } from "./harness.ts";
-
-const cleanups: Array<() => Promise<void>> = [];
-
-afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-});
 
 const archivingBackend = (
   name: Backend["name"],
@@ -48,8 +42,6 @@ describe("pi sandbox migrate", () => {
     const target = archivingBackend("apple", new Map());
     const harness = await createHarness({ adapters: () => [source.backend, target.backend] });
 
-    cleanups.push(harness.cleanup);
-
     await harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["node_modules"] } });
 
     await run([], harness.deps);
@@ -83,8 +75,6 @@ describe("pi sandbox migrate", () => {
     const target = archivingBackend("apple", new Map(), registry);
     const harness = await createHarness({ adapters: () => [source.backend, target.backend] });
 
-    cleanups.push(harness.cleanup);
-
     await harness.writeJson(harness.userConfigFile, {
       image: { reference: PINNED_REFERENCE, digest: PINNED_DIGEST },
     });
@@ -112,8 +102,6 @@ describe("pi sandbox migrate", () => {
       detect: async () => ({ available: false, reason: "not installed" }),
     };
     const harness = await createHarness({ adapters: () => [source.backend, downTarget] });
-
-    cleanups.push(harness.cleanup);
 
     expect(await run(["sandbox", "migrate", "--to", "vmware"], harness.deps)).toBe(1);
     expect(await run(["sandbox", "migrate", "--to", "colima"], harness.deps)).toBe(1);

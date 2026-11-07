@@ -1,16 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  mcpAuthKey,
-  mcpLoginServer,
-  oneServerDir,
-  prepareMcpLogin,
-  sanitizeMcpServer,
-  seedMcpAuth,
-} from "../../hostpi/index.ts";
-import { stateLayout } from "../../shared/index.ts";
-import { braced, SECRETS, tempDir, writeJson } from "./fixtures.ts";
+import { mcpLoginServer, oneServerDir, prepareMcpLogin, seedMcpAuth } from "../../hostpi/index.ts";
+import { sanitizeMcpServer } from "../../hostpi/mcp-auth.ts";
+import { mcpAuthKey, stateLayout } from "../../shared/index.ts";
+import { braced, SECRETS, tempDir, writeJson, writeText } from "./fixtures.ts";
 
 const readJson = async (path: string) => JSON.parse(await readFile(path, "utf8"));
 
@@ -197,5 +191,24 @@ describe("seedMcpAuth", () => {
 
     expect(result.signedIn).toEqual(["user"]);
     expect((await readJson(join(stateLayout(stateDir).mcpAuth, "mcp-auth.json")))[key]).toEqual(helperToken);
+  });
+
+  it("leaves a helper store that does not parse untouched and seeds nothing", async () => {
+    const stateDir = await tempDir("mcp-state");
+    const agentDir = await tempDir("mcp-host");
+    const key = mcpAuthKey("user", "https://mcp.user.example/mcp");
+    const storePath = stateLayout(stateDir).mcpAuthStore;
+
+    await writeText(storePath, "{broken");
+
+    await writeJson(join(agentDir, "mcp-auth.json"), { [key]: token });
+
+    const result = await seedMcpAuth({
+      stateDir,
+      files: { agentDir, mcp: { mcpServers: { user: { url: "https://mcp.user.example/mcp" } } } },
+    });
+
+    expect(result.signedIn).toEqual([]);
+    expect(await readFile(storePath, "utf8")).toBe("{broken");
   });
 });

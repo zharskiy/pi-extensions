@@ -1,13 +1,18 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   type CommandRunner,
+  isJsonObject,
+  MCP_SERVER_NAME,
+  mcpAuthKey,
+  readJsonObject,
+  readVaultStore,
   stateLayout,
   type VaultEntry,
-  withDirectoryLock,
+  type VaultStore,
   withFileLock,
-  writeFileAtomic,
+  writeJsonFile,
 } from "../../shared/index.ts";
 import { updateStoreEntry } from "../vault/store.ts";
 import type { CachedSecret, SecretLoadOptions } from "./cache.ts";
@@ -17,19 +22,12 @@ export interface McpOAuthDeps {
   runner: CommandRunner;
   now: () => number;
   piCommand: string[];
-  mcpAuthDir: string;
-}
-
-interface TokenEntry {
-  tokens?: { access_token?: unknown };
-  tokensExpireAt?: unknown;
+  stateDir: string;
 }
 
 const REFRESH_SKEW_MS = 30_000;
 
 const RETRY_INTERVAL_MS = 10_000;
-
-const SERVER_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 
 const PRIVATE_MODE = 0o600;
 
@@ -37,36 +35,19 @@ const REFRESH_LOCK_WAIT_MS = 30_000;
 
 const REFRESH_ATTEMPTS = 2;
 
-const readJson = async (path: string) => {
-  const text = await readFile(path, "utf8").catch(() => undefined);
+const STORE_FILE = "mcp-auth.json";
 
-  try {
-    return text === undefined ? undefined : (JSON.parse(text) as unknown);
-  } catch {
-    return undefined;
-  }
-};
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const authKey = (server: string, href: string) => `mcp__${server.replaceAll("-", "_")}|${href}`;
-
-const storeEntry = (store: unknown, server: string, href: string) => {
-  if (!isObject(store)) {
-    return undefined;
-  }
-
-  const exact = authKey(server, href);
+const storeEntry = (store: VaultStore, server: string, href: string) => {
+  const exact = mcpAuthKey(server, href);
   const name = Object.hasOwn(store, exact)
     ? exact
     : Object.keys(store).find((key) => key.endsWith(`|${href}`));
   const entry = name === undefined ? undefined : store[name];
 
-  return name !== undefined && isObject(entry) ? { name, entry: entry as TokenEntry } : undefined;
+  return name === undefined || entry === undefined ? undefined : { name, entry };
 };
 
-const tokenOf = (entry: TokenEntry | undefined) => {
+const tokenOf = (entry: VaultEntry | undefined) => {
   const access = entry?.tokens?.access_token;
 
   if (typeof access !== "string" || access === "") {
@@ -92,29 +73,24 @@ const afterRefresh = (token: { access: string; expiresAt?: number }, now: number
   return { value: token.access, expiresAt: Math.min(token.expiresAt, now + RETRY_INTERVAL_MS) };
 };
 
-const writePrivateJson = (path: string, value: unknown) =>
-  writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`, { mode: PRIVATE_MODE });
+const writePrivateJson = (path: string, value: unknown) => writeJsonFile(path, value, { mode: PRIVATE_MODE });
 
 const serverDefinition = async (deps: McpOAuthDeps, key: string, server: string) => {
-  const definition = await readJson(join(deps.mcpAuthDir, "servers", `${server}.json`));
+  const definition = await readJsonObject(stateLayout(deps.stateDir).mcpAuthServer(server));
 
-  if (!isObject(definition) || typeof definition.url !== "string") {
+  if (definition === undefined || typeof definition.url !== "string") {
     throw unavailable(`mcpOAuth secret for ${key}: server ${server} has no stored sign-in definition`);
   }
 
   return { url: definition.url, oauth: definition.oauth };
 };
 
-const storePath = (directory: string) => join(directory, "mcp-auth.json");
-
-const layoutOf = (deps: McpOAuthDeps) => stateLayout(dirname(deps.mcpAuthDir));
-
-const readStore = (deps: McpOAuthDeps) =>
-  withDirectoryLock(layoutOf(deps).mcpAuthStoreLock, () => readJson(storePath(deps.mcpAuthDir)));
+const readEntry = async (deps: McpOAuthDeps, server: string, href: string) =>
+  storeEntry(await readVaultStore(deps.stateDir), server, href);
 
 const prepareOneServerDir = async (deps: McpOAuthDeps, key: string, server: string, href: string) => {
   const definition = await serverDefinition(deps, key, server);
-  const found = storeEntry(await readStore(deps), server, href);
+  const found = await readEntry(deps, server, href);
 
   if (found === undefined) {
     throw unavailable(`mcpOAuth secret for ${key}: ${server} is not signed in; run pi mcp login ${server}`);
@@ -128,21 +104,23 @@ const prepareOneServerDir = async (deps: McpOAuthDeps, key: string, server: stri
 
   await writePrivateJson(join(agentDir, "mcp.json"), { mcpServers: { [server]: definition } });
 
-  await writePrivateJson(storePath(agentDir), { [found.name]: found.entry });
+  await writePrivateJson(join(agentDir, STORE_FILE), { [found.name]: found.entry });
 
   return { root, agentDir, cwd, name: found.name };
 };
 
-const copyBack = async (deps: McpOAuthDeps, agentDir: string, name: string, replaced: string | undefined) => {
-  const refreshed = await readJson(storePath(agentDir));
-  const entry = isObject(refreshed) ? refreshed[name] : undefined;
+const isEntry = (value: unknown): value is VaultEntry => isJsonObject(value);
 
-  if (!isObject(entry)) {
+const copyBack = async (deps: McpOAuthDeps, agentDir: string, name: string, replaced: string | undefined) => {
+  const refreshed = await readJsonObject(join(agentDir, STORE_FILE));
+  const entry = refreshed?.[name];
+
+  if (!isEntry(entry)) {
     return;
   }
 
-  await updateStoreEntry(dirname(deps.mcpAuthDir), name, (current) =>
-    tokenOf(current)?.access === replaced ? (entry as VaultEntry) : undefined,
+  await updateStoreEntry(deps.stateDir, name, (current) =>
+    tokenOf(current)?.access === replaced ? entry : undefined,
   );
 };
 
@@ -184,7 +162,7 @@ const refreshOnce = async (
     throw unavailable(`mcpOAuth secret for ${key}: no pi command is configured`);
   }
 
-  const read = async () => tokenOf(storeEntry(await readStore(deps), target.server, target.href)?.entry);
+  const read = async () => tokenOf((await readEntry(deps, target.server, target.href))?.entry);
   const current = await read();
 
   if (current !== undefined && current.access !== target.seen && !needsRefresh(current, deps.now())) {
@@ -200,24 +178,30 @@ const refreshOnce = async (
 
 const runRefresh = (deps: McpOAuthDeps, key: string, server: string, href: string, seen?: string) =>
   withFileLock(
-    layoutOf(deps).mcpAuthRefreshLock(server),
+    stateLayout(deps.stateDir).mcpAuthRefreshLock(server),
     () => refreshOnce(deps, key, { server, href, seen }, REFRESH_ATTEMPTS),
     { timeoutMs: REFRESH_LOCK_WAIT_MS },
   );
 
 export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
-  const queue = { tail: Promise.resolve() };
+  const queues = new Map<string, Promise<void>>();
 
-  const serialised = (task: () => Promise<void>) => {
-    const next = queue.tail.then(task, task);
+  const serialised = (server: string, task: () => Promise<void>) => {
+    const next = (queues.get(server) ?? Promise.resolve()).then(task);
+    const tail = next.catch(() => undefined);
 
-    queue.tail = next.catch(() => undefined);
+    queues.set(server, tail);
+
+    void tail.then(() => {
+      if (queues.get(server) === tail) {
+        queues.delete(server);
+      }
+    });
 
     return next;
   };
 
-  const read = async (server: string, href: string) =>
-    tokenOf(storeEntry(await readJson(storePath(deps.mcpAuthDir)), server, href)?.entry);
+  const read = async (server: string, href: string) => tokenOf((await readEntry(deps, server, href))?.entry);
 
   return async (
     key: string,
@@ -226,7 +210,7 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
   ): Promise<CachedSecret> => {
     const { server, url } = ref.mcpOAuth;
 
-    if (!SERVER_NAME.test(server)) {
+    if (!MCP_SERVER_NAME.test(server)) {
       throw unavailable(`mcpOAuth secret for ${key}: ${server} is not a valid server name`);
     }
 
@@ -237,7 +221,7 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
       return fresh(current);
     }
 
-    await serialised(() => runRefresh(deps, key, server, href, current?.access));
+    await serialised(server, () => runRefresh(deps, key, server, href, current?.access));
 
     const refreshed = await read(server, href);
     const now = deps.now();

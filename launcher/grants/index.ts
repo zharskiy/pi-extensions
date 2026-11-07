@@ -5,10 +5,5 @@ export {
   pruneGrants,
   readGrants,
   revokeGrants,
-  SESSION_GRANT_CAP_HOURS,
 } from "./store.ts";
-export type {
-  ActiveGrantContext,
-  Grant,
-  GrantScope,
-} from "./types.ts";
+export type { Grant, GrantScope } from "./types.ts";

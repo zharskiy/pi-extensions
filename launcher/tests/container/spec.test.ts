@@ -15,7 +15,6 @@ const repoHash = sha256Hex(repoRoot);
 const capabilities: BackendCapabilities = {
   singleFileMount: true,
   sshAgent: true,
-  internalNetwork: true,
 };
 
 const proxy = {

@@ -31,6 +31,8 @@ export class RestrictedAddressError extends Error {
 
 const UNRESOLVED = new Set(["ENOTFOUND", "EAI_AGAIN", "ENODATA", "EAI_NONAME"]);
 
+const CONNECT_TIMEOUT_MS = 10_000;
+
 const publicAddresses = (hostname: string, addresses: LookupAddress[]) => {
   const allowed = addresses.filter((address) => restrictedAddress(address.address) === undefined);
   const denial = addresses.map((address) => restrictedAddress(address.address)).find(Boolean);
@@ -99,21 +101,42 @@ const systemResolve =
       );
     });
 
-const connected = (socket: Socket) =>
+const connected = (socket: Socket, host: string, port: number, timeoutMs: number) =>
   new Promise<Socket>((resolve, reject) => {
+    const fail = (error: Error) => {
+      clearTimeout(timer);
+
+      reject(error);
+    };
+
+    const timer = setTimeout(() => {
+      socket.off("error", fail);
+
+      socket.destroy();
+
+      reject(new Error(`${host}:${port} did not accept the connection in time`));
+    }, timeoutMs);
+
     socket.once("connect", () => {
-      socket.off("error", reject);
+      clearTimeout(timer);
+
+      socket.off("error", fail);
 
       resolve(socket);
     });
 
-    socket.once("error", reject);
+    socket.once("error", fail);
   });
 
 const direct =
-  (lookups: { public: LookupFunction; private: LookupFunction }) =>
+  (lookups: { public: LookupFunction; private: LookupFunction }, timeoutMs: number) =>
   (host: string, port: number, access: DialAccess) =>
-    connected(connect({ host, port, lookup: access === "public" ? lookups.public : lookups.private }));
+    connected(
+      connect({ host, port, lookup: access === "public" ? lookups.public : lookups.private }),
+      host,
+      port,
+      timeoutMs,
+    );
 
 const checkResolved = async (resolve: Resolve, host: string) => {
   const addresses = await resolve(host).catch((error: NodeJS.ErrnoException) => {
@@ -135,14 +158,23 @@ export interface DialerOptions {
   parent?: ParentRoute;
   resolve?: Resolve;
   overrides?: Overrides;
+  connectTimeoutMs?: number;
 }
 
-export const createDialer = ({ parent, resolve, overrides = new Map() }: DialerOptions = {}): Dialer => {
+export const createDialer = ({
+  parent,
+  resolve,
+  overrides = new Map(),
+  connectTimeoutMs = CONNECT_TIMEOUT_MS,
+}: DialerOptions = {}): Dialer => {
   const resolveAll = lookupAll(overrides);
-  const dialDirect = direct({
-    public: lookupWith(resolveAll, publicAddresses),
-    private: lookupWith(resolveAll, (_, addresses) => addresses),
-  });
+  const dialDirect = direct(
+    {
+      public: lookupWith(resolveAll, publicAddresses),
+      private: lookupWith(resolveAll, (_, addresses) => addresses),
+    },
+    connectTimeoutMs,
+  );
   const resolveHost = resolve ?? systemResolve(resolveAll);
   const isDirect = (host: string) => parent === undefined || bypassesParent(parent.noProxy, host);
 

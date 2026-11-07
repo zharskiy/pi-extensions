@@ -1,5 +1,4 @@
-import { isSecretName, jwtShapedPlaceholder } from "../shared/index.ts";
-import { isJsonObject } from "./json.ts";
+import { isJsonObject, isSecretName, jwtShapedPlaceholder } from "../shared/index.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";

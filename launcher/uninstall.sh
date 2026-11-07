@@ -8,6 +8,8 @@ marker_end="# pi-sandbox end"
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
 state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
+managed_label=pi-sandbox.managed
+relay_label=pi-sandbox.relay
 
 dry_run=0
 volumes=0
@@ -184,14 +186,15 @@ else
 fi
 
 if command -v docker >/dev/null 2>&1 && docker --host "$docker_host" info >/dev/null 2>&1; then
-  containers=$(docker --host "$docker_host" ps -aq --filter label=pi-sandbox.managed=true)
-  relays=$(docker --host "$docker_host" ps -aq --filter label=pi-sandbox.relay=true)
+  relays=$(docker --host "$docker_host" ps -aq --filter "label=$relay_label=true")
+  managed=$(docker --host "$docker_host" ps -aq --filter "label=$managed_label=true")
+  containers=$(printf '%s\n' $managed | grep -vxF "$(printf '%s\n' $relays)" || true)
 
   if [ -n "$containers$relays" ]; then
     act docker --host "$docker_host" rm -f $containers $relays >/dev/null
   fi
 
-  networks=$(docker --host "$docker_host" network ls -q --filter label=pi-sandbox.managed=true --filter name=pi-sandbox)
+  networks=$(docker --host "$docker_host" network ls -q --filter "label=$managed_label=true" --filter name=pi-sandbox)
 
   if [ -n "$networks" ]; then
     act docker --host "$docker_host" network rm $networks >/dev/null
@@ -200,7 +203,7 @@ if command -v docker >/dev/null 2>&1 && docker --host "$docker_host" info >/dev/
   echo "containers: $(verb "remove" "removed") $(echo $containers | wc -w | tr -d ' ') sandbox and $(echo $relays | wc -w | tr -d ' ') relay containers and $(echo $networks | wc -w | tr -d ' ') pi-sandbox networks"
 
   if [ "$volumes" -eq 1 ]; then
-    volume_names=$(docker --host "$docker_host" volume ls -q --filter label=pi-sandbox.managed=true --filter name=pi-sandbox- | grep '^pi-sandbox-' || true)
+    volume_names=$(docker --host "$docker_host" volume ls -q --filter "label=$managed_label=true" --filter name=pi-sandbox- | grep '^pi-sandbox-' || true)
 
     if [ -n "$volume_names" ]; then
       act docker --host "$docker_host" volume rm $volume_names >/dev/null
@@ -222,7 +225,7 @@ if command -v container >/dev/null 2>&1 && container system status >/dev/null 2>
       return 0
     fi
 
-    if container inspect "$1" 2>/dev/null | grep -q '"pi-sandbox\.managed"[[:space:]]*:[[:space:]]*"true"'; then
+    if container inspect "$1" 2>/dev/null | grep -q "\"$managed_label\"[[:space:]]*:[[:space:]]*\"true\""; then
       apple_containers="$apple_containers $1"
     fi
 
@@ -243,7 +246,7 @@ if command -v container >/dev/null 2>&1 && container system status >/dev/null 2>
       return 0
     fi
 
-    if container network inspect "$1" 2>/dev/null | grep -q '"pi-sandbox\.managed"[[:space:]]*:[[:space:]]*"true"'; then
+    if container network inspect "$1" 2>/dev/null | grep -q "\"$managed_label\"[[:space:]]*:[[:space:]]*\"true\""; then
       apple_networks="$apple_networks $1"
     fi
 

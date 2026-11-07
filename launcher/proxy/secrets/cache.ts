@@ -1,3 +1,5 @@
+import { singleFlight } from "../single-flight.ts";
+
 export interface CachedSecret {
   value: string;
   expiresAt?: number;
@@ -16,41 +18,27 @@ export interface SecretCache {
 
 export const createSecretCache = (now: () => number): SecretCache => {
   const values = new Map<string, CachedSecret>();
-  const pending = new Map<string, Promise<CachedSecret>>();
   const forced = new Set<string>();
+  const flight = singleFlight<string, CachedSecret>();
 
-  const isFresh = (entry: CachedSecret | undefined) =>
-    entry !== undefined && (entry.expiresAt === undefined || now() < entry.expiresAt);
+  const isFresh = (entry: CachedSecret) => entry.expiresAt === undefined || now() < entry.expiresAt;
 
-  const start = (key: string, load: SecretLoader) => {
-    const force = forced.delete(key);
-    const loading = load({ forced: force })
-      .then((entry) => {
-        values.set(key, entry);
+  const start = (key: string, load: SecretLoader) => async () => {
+    const entry = await load({ forced: forced.delete(key) });
 
-        return entry;
-      })
-      .finally(() => pending.delete(key));
+    values.set(key, entry);
 
-    pending.set(key, loading);
-
-    return loading;
+    return entry;
   };
 
   const get = (key: string, load: SecretLoader) => {
-    const inFlight = pending.get(key);
-
-    if (inFlight !== undefined) {
-      return inFlight;
-    }
-
     const cached = values.get(key);
 
     if (!forced.has(key) && cached !== undefined && isFresh(cached)) {
       return Promise.resolve(cached);
     }
 
-    return start(key, load);
+    return flight(key, start(key, load));
   };
 
   const invalidate = (key: string) => {

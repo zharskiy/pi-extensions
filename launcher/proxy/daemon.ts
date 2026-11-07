@@ -9,13 +9,14 @@ import {
   LauncherError,
   launcherPaths,
   readJsonFile,
+  readJsonObject,
   stateLayout,
   writeJsonFile,
 } from "../shared/index.ts";
 import { createAccessLog } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { createDialer } from "./dial.ts";
-import { type DaemonConfig, type ProxyInstance, proxyFiles } from "./files.ts";
+import type { DaemonConfig, ProxyInstance } from "./files.ts";
 import { parentRouteFor } from "./parent.ts";
 import { createRepoSecrets } from "./repo-secrets.ts";
 import { createProxyRuntime } from "./runtime.ts";
@@ -24,7 +25,6 @@ import { startProxyServer } from "./server.ts";
 import { proxyPolicyHash, proxySettings } from "./settings.ts";
 import { testResolveOverrides } from "./test-resolve.ts";
 import { openLauncherCa } from "./tls-ca.ts";
-import { extraPemPathOf } from "./trust.ts";
 import { createVault } from "./vault/index.ts";
 
 const LISTEN_HOST = "127.0.0.1";
@@ -54,7 +54,7 @@ const parseDaemonArgs = () => {
 };
 
 const upstreamTrust = async (stateDir: string, hasExtraCa: boolean) => {
-  const extra = hasExtraCa ? await readFile(extraPemPathOf(stateDir), "utf8").catch(() => "") : "";
+  const extra = hasExtraCa ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
 
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };
@@ -79,7 +79,7 @@ const reportFailure = async (log: string | undefined, error: unknown) => {
 };
 
 const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
-  const files = proxyFiles(args.stateDir, args.policyHash);
+  const files = stateLayout(args.stateDir).proxyInstance(args.policyHash);
   const daemonConfig = await readJsonFile<DaemonConfig<SandboxConfig>>(files.config);
 
   if (daemonConfig === undefined) {
@@ -114,7 +114,7 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     home: args.home,
     now: Date.now,
     piCommand: daemonConfig.piCommand ?? [],
-    mcpAuthDir: stateLayout(args.stateDir).mcpAuth,
+    stateDir: args.stateDir,
     envSecrets: secrets.secretsOf,
   });
   const log = createAccessLog(files.accessLog);
@@ -160,7 +160,7 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
 
     await log.close();
 
-    const current = await readJsonFile<ProxyInstance>(files.record).catch(() => undefined);
+    const current = await readJsonObject(files.record);
 
     if (current?.pid === process.pid) {
       await rm(files.record, { force: true });
@@ -179,11 +179,11 @@ const startProxyDaemon = async () => {
     .then(parseDaemonArgs)
     .catch((error: unknown) => reportFailure(undefined, error));
 
-  await mkdir(proxyFiles(args.stateDir, args.policyHash).directory, { recursive: true, mode: 0o700 });
+  const files = stateLayout(args.stateDir).proxyInstance(args.policyHash);
 
-  await run(args).catch((error: unknown) =>
-    reportFailure(proxyFiles(args.stateDir, args.policyHash).proxyLog, error),
-  );
+  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+
+  await run(args).catch((error: unknown) => reportFailure(files.proxyLog, error));
 };
 
 await startProxyDaemon();

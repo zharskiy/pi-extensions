@@ -1,15 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  isJsonObject,
   LauncherError,
+  MCP_SERVER_NAME,
+  mcpAuthKey,
+  parseJsonObject,
+  readJsonObject,
+  readVaultStore,
   stableHash,
   stateLayout,
+  updateVaultStore,
   type VaultEntry,
+  type VaultStore,
   writeJsonFile,
-  writeVaultEntry,
 } from "../shared/index.ts";
-import { isJsonObject, objectOr } from "./json.ts";
-import type { HostPiFiles, JsonObject, McpOAuthServer } from "./types.ts";
+import { hasAuthorizationHeader } from "./headers.ts";
+import { objectOr } from "./json.ts";
+import type { HostPiFiles, McpOAuthServer } from "./types.ts";
 
 export interface McpLoginInput {
   stateDir: string;
@@ -33,8 +41,6 @@ type OAuthValue = string | number | boolean;
 
 const PRIVATE_MODE = 0o600;
 
-const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
-
 const AUTH_FILE = "mcp-auth.json";
 
 const isPlainValue = (value: unknown): value is OAuthValue => {
@@ -46,27 +52,12 @@ const isPlainValue = (value: unknown): value is OAuthValue => {
 };
 
 const checkedName = (name: string) => {
-  if (!SERVER_NAME.test(name)) {
+  if (!MCP_SERVER_NAME.test(name)) {
     throw new LauncherError(`mcp ${name}: a server name may contain only letters, digits, _ and -`);
   }
 
   return name;
 };
-
-const readObject = async (path: string): Promise<JsonObject | undefined> => {
-  const text = await readFile(path, "utf8").catch(() => undefined);
-
-  try {
-    const value: unknown = text === undefined ? undefined : JSON.parse(text);
-
-    return isJsonObject(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-export const mcpAuthKey = (name: string, url: string) =>
-  `mcp__${name.replace(/-/g, "_")}|${new URL(url).href}`;
 
 const isHttpUrl = (url: unknown): url is string => {
   if (typeof url !== "string" || url.includes("${")) {
@@ -106,7 +97,7 @@ const writeOneServer = async (stateDir: string, name: string, server: McpOAuthSe
 
 export const recordServer = async (stateDir: string, name: string, server: McpOAuthServer) => {
   const path = stateLayout(stateDir).mcpAuthServer(name);
-  const existing = await readObject(path);
+  const existing = await readJsonObject(path);
 
   if (existing === undefined || stableHash(existing) !== stableHash(server)) {
     await writeJsonFile(path, server, { mode: PRIVATE_MODE });
@@ -127,7 +118,9 @@ export const prepareMcpLogin = async (input: McpLoginInput): Promise<{ agentDir:
 };
 
 export const oneServerDir = async (stateDir: string, name: string) => {
-  const server = sanitizeMcpServer(await readObject(stateLayout(stateDir).mcpAuthServer(checkedName(name))));
+  const server = sanitizeMcpServer(
+    await readJsonObject(stateLayout(stateDir).mcpAuthServer(checkedName(name))),
+  );
 
   if (server === undefined) {
     throw new LauncherError(`mcp ${name}: no recorded server`, `run pi mcp login ${name}`);
@@ -136,7 +129,8 @@ export const oneServerDir = async (stateDir: string, name: string) => {
   return writeOneServer(stateDir, name, server);
 };
 
-const serverIn = async (file: string, name: string) => objectOr((await readObject(file))?.mcpServers)[name];
+const serverIn = async (file: string, name: string) =>
+  objectOr((await readJsonObject(file))?.mcpServers)[name];
 
 export const mcpLoginServer = async (input: McpLoginServerInput): Promise<McpOAuthServer> => {
   const name = checkedName(input.name);
@@ -166,42 +160,51 @@ const hasToken = (entry: unknown) => {
   return typeof tokens.access_token === "string" || typeof tokens.refresh_token === "string";
 };
 
-const hasAuthorization = (definition: unknown) =>
-  Object.keys(objectOr(objectOr(definition).headers)).some(
-    (header) => header.toLowerCase() === "authorization",
-  );
-
 const oauthServers = (files: HostPiFiles) =>
   Object.entries(objectOr(files.mcp?.mcpServers)).flatMap(([name, definition]) => {
     const server =
-      SERVER_NAME.test(name) && !hasAuthorization(definition) ? sanitizeMcpServer(definition) : undefined;
+      MCP_SERVER_NAME.test(name) && !hasAuthorizationHeader(objectOr(definition).headers)
+        ? sanitizeMcpServer(definition)
+        : undefined;
 
     return server === undefined ? [] : [{ name, server, key: mcpAuthKey(name, server.url) }];
   });
 
-export const seedMcpAuth = async (input: McpSeedInput): Promise<{ signedIn: string[] }> => {
-  const helperPath = stateLayout(input.stateDir).mcpAuthStore;
-  const helperText = await readFile(helperPath, "utf8").catch(() => undefined);
-  const helper = await readObject(helperPath);
+const isUnreadableStore = async (path: string) => {
+  const text = await readFile(path, "utf8").catch(() => undefined);
 
-  if (helperText !== undefined && helper === undefined) {
+  return text !== undefined && text.trim() !== "" && parseJsonObject(text) === undefined;
+};
+
+const storeWithSeeds = async (stateDir: string, seeds: Array<{ key: string; token: unknown }>) => {
+  if (seeds.length === 0) {
+    return readVaultStore(stateDir);
+  }
+
+  let seeded: VaultStore = {};
+
+  await updateVaultStore(stateDir, (store) => {
+    const missing = seeds.filter((seed) => !hasToken(store[seed.key]));
+
+    seeded = { ...store, ...Object.fromEntries(missing.map((seed) => [seed.key, seed.token as VaultEntry])) };
+
+    return missing.length === 0 ? undefined : seeded;
+  });
+
+  return seeded;
+};
+
+export const seedMcpAuth = async (input: McpSeedInput): Promise<{ signedIn: string[] }> => {
+  if (await isUnreadableStore(stateLayout(input.stateDir).mcpAuthStore)) {
     return { signedIn: [] };
   }
 
-  const host = objectOr(await readObject(join(input.files.agentDir, AUTH_FILE)));
+  const host = objectOr(await readJsonObject(join(input.files.agentDir, AUTH_FILE)));
   const servers = oauthServers(input.files);
   const seeds = servers
-    .filter((entry) => !hasToken(helper?.[entry.key]))
-    .map((entry) => ({ ...entry, token: host[entry.key] ?? host[new URL(entry.server.url).href] }))
+    .map((entry) => ({ key: entry.key, token: host[entry.key] ?? host[new URL(entry.server.url).href] }))
     .filter((entry) => hasToken(entry.token));
-  const store = { ...helper, ...Object.fromEntries(seeds.map((entry) => [entry.key, entry.token])) };
-
-  await seeds.reduce(
-    (previous, entry) =>
-      previous.then(() => writeVaultEntry(input.stateDir, entry.key, entry.token as VaultEntry)),
-    Promise.resolve(),
-  );
-
+  const store = await storeWithSeeds(input.stateDir, seeds);
   const signedIn = servers.filter((entry) => hasToken(store[entry.key]));
 
   await Promise.all(signedIn.map((entry) => recordServer(input.stateDir, entry.name, entry.server)));

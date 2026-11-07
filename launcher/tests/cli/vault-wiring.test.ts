@@ -1,24 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS } from "../../container/index.ts";
-import {
-  isPlaceholder,
-  sha256Hex,
-  stateLayout,
-  type VaultServer,
-  writeVaultEntry,
-} from "../../shared/index.ts";
+import { isPlaceholder, sha256Hex, stateLayout, writeVaultEntry } from "../../shared/index.ts";
+import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { createFakeBackend, type FakeExec, stdinOf } from "../support/fake-backend.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
-import { createHarness, type HarnessOptions } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
+import { createHarness, type HarnessOptions, renderDirOf, repoDynamicOf } from "./harness.ts";
 
 const DOCS_URL = "https://mcp.docs.example.test/mcp";
 
@@ -46,8 +35,6 @@ const discovering = (answer: { code?: number; stdout?: string; stderr?: string }
 const harnessWith = async (options: HarnessOptions = {}) => {
   const harness = await createHarness(options);
 
-  harnesses.push(harness);
-
   await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
     mcpServers: { docs: { url: DOCS_URL } },
   });
@@ -70,12 +57,6 @@ const launchWith = async (
 
   return { fake, harness };
 };
-
-const dynamicOf = async (stateDir: string) =>
-  JSON.parse(await readFile(stateLayout(stateDir).proxyDynamic("policy"), "utf8")) as {
-    vault?: VaultServer[];
-    derivedHosts: string[];
-  };
 
 const isMcpAuthWrite = (exec: FakeExec) =>
   exec.spec.command.join(" ").includes("pi-sandbox-tmp") &&
@@ -104,14 +85,14 @@ describe("mcp token vault wiring", () => {
   it("discovers the authorization server at launch on the host and hands its hosts to the proxy", async () => {
     const { fake, harness } = await launchWith({ stdout: JSON.stringify(DISCOVERED) });
     const discovery = harness.calls.find(isDiscovery);
-    const dynamic = await dynamicOf(harness.stateDir);
+    const dynamic = await repoDynamicOf(harness);
     const docs = renderedMcp(fake.execs).mcpServers?.docs;
 
     expect(JSON.parse(String(discovery?.options.input))).toEqual({ url: DOCS_URL });
-    expect(dynamic.vault?.map((server) => [server.server, server.discovery.hosts])).toEqual([
+    expect(dynamic?.vault?.map((server) => [server.server, server.discovery.hosts])).toEqual([
       ["docs", DISCOVERED.hosts],
     ]);
-    expect(dynamic.derivedHosts).not.toContain("token.docs.example.test");
+    expect(dynamic?.derivedHosts).not.toContain("token.docs.example.test");
     expect(docs?.url).toBe(DOCS_URL);
     expect(docs?.headers).toBeUndefined();
     expect(harness.stderr()).toContain(
@@ -121,10 +102,10 @@ describe("mcp token vault wiring", () => {
 
   it("keeps a server whose discovery failed in header mode for the launch and says why", async () => {
     const { fake, harness } = await launchWith({ code: 1, stderr: "no authorization server metadata\n" });
-    const dynamic = await dynamicOf(harness.stateDir);
+    const dynamic = await repoDynamicOf(harness);
     const docs = renderedMcp(fake.execs).mcpServers?.docs;
 
-    expect(dynamic.vault).toEqual([]);
+    expect(dynamic?.vault).toEqual([]);
     expect(authorizationOf(docs)).toMatch(/^Bearer pi-sandbox-/);
     expect(harness.stderr()).toContain(
       "pi-sandbox: mcp docs: sign-in discovery failed (no authorization server metadata); this launch uses the host sign-in instead\n",
@@ -151,15 +132,14 @@ describe("mcp token vault wiring", () => {
 
     expect(isPlaceholder(tokens.access_token ?? "")).toBe(true);
     expect(isPlaceholder(tokens.refresh_token ?? "")).toBe(true);
-    expect(JSON.stringify(fake.execs.map((exec) => stdinOf(exec).toString("utf8")))).not.toContain("real-");
     expect(harness.stderr()).not.toContain("sign in from /mcp");
+
+    await expectNoLeak(fake, renderDirOf(harness), [REAL_ACCESS, REAL_REFRESH]);
   });
 
   it("runs the mcp-auth.json sync on every launch, with no entries when no server qualifies", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ adapters: () => [fake.backend] });
-
-    harnesses.push(harness);
 
     expect(await run([], harness.deps)).toBe(0);
     expect(await run([], harness.deps)).toBe(0);
@@ -176,11 +156,11 @@ describe("mcp token vault wiring", () => {
       { stdout: JSON.stringify(DISCOVERED) },
       { credentials: { vault: { enabled: false } } },
     );
-    const dynamic = await dynamicOf(harness.stateDir);
+    const dynamic = await repoDynamicOf(harness);
     const docs = renderedMcp(fake.execs).mcpServers?.docs;
 
     expect(harness.calls.some(isDiscovery)).toBe(false);
-    expect(dynamic.vault).toEqual([]);
+    expect(dynamic?.vault).toEqual([]);
     expect(authorizationOf(docs)).toMatch(/^Bearer pi-sandbox-/);
     expect(writtenMcpAuth(fake.execs)).toEqual([{}]);
   });
@@ -227,12 +207,13 @@ describe("intercepted pi mcp login and logout", () => {
   };
 
   it("syncs the new sign-in into the running sandbox as a placeholder", async () => {
-    const { fake } = await loginWith("running");
+    const { fake, harness } = await loginWith("running");
     const [written] = writtenMcpAuth(fake.execs);
     const tokens = tokensOf(written);
 
     expect(isPlaceholder(tokens.access_token ?? "")).toBe(true);
-    expect(JSON.stringify(written)).not.toContain(REAL_ACCESS);
+
+    await expectNoLeak(fake, renderDirOf(harness), [REAL_ACCESS]);
   });
 
   it("leaves a stopped sandbox alone, the next launch syncs it", async () => {

@@ -1,12 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { LauncherError, launcherRoot, sha256Hex } from "../shared/index.ts";
-import { buildProxyArgs } from "./build-proxy.ts";
+import { LauncherError, launcherRoot, sha256Hex, stableHash } from "../shared/index.ts";
 import { placeBuildTrust } from "./build-trust.ts";
-import type { ExtensionsSource } from "./extensions.ts";
+import { buildInContext, reusableImage } from "./context.ts";
+import { type ExtensionsSource, PACKAGE_NAME } from "./extensions.ts";
 import { type ImageRecord, isImageRecord, readImageRecord, writeImageRecord } from "./record.ts";
 
 export interface ImageVersions {
@@ -14,11 +13,14 @@ export interface ImageVersions {
   extensions: ExtensionsSource;
 }
 
-export interface EnsureImageInput {
+export interface PullImageInput {
   backend: Backend;
   config: SandboxConfig;
-  versions: ImageVersions;
   stateDir: string;
+}
+
+export interface EnsureImageInput extends PullImageInput {
+  versions: ImageVersions;
   trustPem?: string;
   env?: Record<string, string | undefined>;
 }
@@ -39,8 +41,6 @@ const ENTRYPOINT = "entrypoint.sh";
 const BROWSER_SHIM = "xdg-open.mjs";
 
 const COPIED_ASSETS = [ENTRYPOINT, BROWSER_SHIM];
-
-const PACKAGE_NAME = "pi-extensions-mz";
 
 const PINNED = "pinned";
 
@@ -90,10 +90,7 @@ export const prepareBuildContext = async (versions: ImageVersions, dir: string, 
   return dir;
 };
 
-const fileSha256 = async (path: string) =>
-  createHash("sha256")
-    .update(await readFile(path))
-    .digest("hex");
+const fileSha256 = async (path: string) => sha256Hex(await readFile(path));
 
 const extensionsIdentity = async (source: ExtensionsSource) =>
   source.kind === "tarball" ? { kind: source.kind, sha256: await fileSha256(source.path) } : source;
@@ -104,14 +101,7 @@ const inputsHash = async (config: SandboxConfig, versions: ImageVersions) => {
   );
   const extensions = await extensionsIdentity(versions.extensions);
 
-  return sha256Hex(
-    JSON.stringify({
-      reference: config.image.reference,
-      pi: versions.pi,
-      extensions,
-      assets,
-    }),
-  );
+  return stableHash({ reference: config.image.reference, pi: versions.pi, extensions, assets });
 };
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
@@ -125,40 +115,25 @@ export const recordedImage = async (stateDir: string, config: SandboxConfig) => 
   return digest === undefined || record.digest === digest ? record : undefined;
 };
 
-const reusableBuild = async (backend: Backend, record: ImageRecord | undefined, hash: string) => {
-  if (record === undefined || record.inputsHash !== hash) {
-    return undefined;
-  }
-
-  const local = await backend.resolveImage(record.reference).catch(() => undefined);
-
-  return local?.digest === record.digest ? local : undefined;
-};
+const reusableBuild = (backend: Backend, record: ImageRecord | undefined, hash: string) =>
+  record === undefined || record.inputsHash !== hash
+    ? undefined
+    : reusableImage(backend, record.reference, record.digest);
 
 const buildLocally = async (input: EnsureImageInput, hash: string): Promise<BuiltImage> => {
   const reference = input.config.image.reference;
-  const contextDir = join(input.stateDir, `build-${randomBytes(4).toString("hex")}`);
+  const { id, digest } = await buildInContext(input, {
+    prefix: "build",
+    tag: reference,
+    fill: (dir) => prepareBuildContext(input.versions, dir, input.trustPem),
+  });
 
-  try {
-    await prepareBuildContext(input.versions, contextDir, input.trustPem);
+  await writeImageRecord(input.stateDir, { reference, digest, id, inputsHash: hash });
 
-    const buildArgs = buildProxyArgs(input.config.egress.parentProxy, input.env ?? {});
-    const { id, digest } = await input.backend.buildImage(contextDir, reference, buildArgs);
-
-    await writeImageRecord(input.stateDir, {
-      reference,
-      digest,
-      id,
-      inputsHash: hash,
-    });
-
-    return { reference, digest, id, built: true };
-  } finally {
-    await rm(contextDir, { recursive: true, force: true });
-  }
+  return { reference, digest, id, built: true };
 };
 
-const pullPinned = async (input: EnsureImageInput, pinned: string): Promise<BuiltImage> => {
+export const pullPinnedImage = async (input: PullImageInput, pinned: string): Promise<BuiltImage> => {
   const reference = input.config.image.reference;
   const { id, digest } = await input.backend.pullImage(reference, pinned);
 
@@ -175,7 +150,7 @@ export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltIm
   const pinned = input.config.image.digest;
 
   if (pinned !== undefined) {
-    return pullPinned(input, pinned);
+    return pullPinnedImage(input, pinned);
   }
 
   const hash = await inputsHash(input.config, input.versions);

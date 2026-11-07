@@ -1,10 +1,9 @@
-import type { CredentialRule, DeriveConfig } from "../config/index.ts";
+import { type CredentialRule, type DeriveConfig, matchesPattern, normalizeHost } from "../config/index.ts";
 import { deriveAuth } from "./derive-auth.ts";
 import { deriveMcp } from "./derive-mcp.ts";
 import { deriveModels } from "./derive-models.ts";
 import { endpointKey } from "./endpoints.ts";
 import { gatewayFiles } from "./gateway.ts";
-import { matchesAnyHostPattern } from "./host-pattern.ts";
 import { objectOr } from "./json.ts";
 import type { DerivedSandboxPi, DeriveInput, JsonObject } from "./types.ts";
 
@@ -12,7 +11,9 @@ const without = (object: JsonObject, keys: string[]) =>
   Object.fromEntries(Object.entries(object).filter(([key]) => !keys.includes(key)));
 
 const allowedByDerive = (derive: DeriveConfig, host: string) =>
-  derive.enabled && (derive.hosts === undefined || matchesAnyHostPattern(derive.hosts, host));
+  derive.enabled &&
+  (derive.hosts === undefined ||
+    derive.hosts.some((pattern) => matchesPattern(normalizeHost(host), normalizeHost(pattern))));
 
 const keptDerived = (derived: CredentialRule[], manual: CredentialRule[], derive: DeriveConfig) => {
   const manualHosts = new Set(manual.map((rule) => rule.host.toLowerCase()));

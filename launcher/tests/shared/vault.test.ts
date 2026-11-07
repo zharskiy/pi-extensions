@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  codePlaceholder,
-  isCodePlaceholder,
   isPlaceholder,
   loadVaultStore,
+  mcpAuthKey,
   readVaultStore,
   stateLayout,
   syntheticExpiresIn,
+  updateVaultStore,
   type VaultEntry,
   vaultPlaceholders,
   writeVaultEntry,
@@ -42,20 +42,6 @@ describe("vault placeholders", () => {
     expect(values.every(isPlaceholder)).toBe(true);
 
     expect(vaultPlaceholders("salt", "other").access).not.toBe(first.access);
-  });
-
-  it("mints a fresh code placeholder each time in its own format", () => {
-    const code = codePlaceholder();
-
-    expect(code).toMatch(/^pi-sandbox-code-[0-9a-f]{32}$/);
-
-    expect(codePlaceholder()).not.toBe(code);
-
-    expect(isPlaceholder(code)).toBe(true);
-
-    expect(isCodePlaceholder(code)).toBe(true);
-
-    expect(isCodePlaceholder(vaultPlaceholders("salt", "docs").access)).toBe(false);
   });
 });
 
@@ -158,5 +144,36 @@ describe("a corrupt vault store", () => {
     expect(aside).toHaveLength(1);
     expect(await readFile(join(state.dir, "mcp-auth", aside[0] ?? ""), "utf8")).toBe("{ not json");
     expect(Object.keys(await loadVaultStore(path, { forWrite: false }))).toEqual(["first", "second"]);
+  });
+});
+
+describe("updateVaultStore", () => {
+  it("writes the updated store with mode 600 and leaves it alone when the update answers undefined", async () => {
+    const path = stateLayout(state.dir).mcpAuthStore;
+
+    await updateVaultStore(state.dir, (store) => ({ ...store, a: entry("one"), b: entry("two") }));
+
+    await updateVaultStore(state.dir, () => undefined);
+
+    expect(await readVaultStore(state.dir)).toEqual({ a: entry("one"), b: entry("two") });
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  it("serialises concurrent updates so none is lost", async () => {
+    await Promise.all(
+      ["a", "b", "c", "d"].map((key) =>
+        updateVaultStore(state.dir, (store) => ({ ...store, [key]: entry(key) })),
+      ),
+    );
+
+    expect(Object.keys(await readVaultStore(state.dir)).sort()).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("mcpAuthKey", () => {
+  it("joins pi's server key and the normalised url", () => {
+    expect(mcpAuthKey("my-docs", "https://MCP.example.test/mcp")).toBe(
+      "mcp__my_docs|https://mcp.example.test/mcp",
+    );
   });
 });

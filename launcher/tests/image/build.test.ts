@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { prepareBuildContext } from "../../image/build.ts";
+import { ensureBuiltImage, prepareBuildContext } from "../../image/build.ts";
 import { packExtensionsTarball } from "../../image/extensions.ts";
-import { ensureBuiltImage, recordedImage, resolveExtensionsSource } from "../../image/index.ts";
+import { recordedImage, resolveExtensionsSource } from "../../image/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -334,10 +334,10 @@ describe("recordedImage", () => {
 });
 
 describe("resolveExtensionsSource", () => {
-  const gitRunner = (head: string) =>
+  const gitRunner = (head: string, status = "") =>
     createFakeRunner((call) => {
       if (call.file === "git") {
-        return { stdout: `${head}\n` };
+        return { stdout: call.args.includes("status") ? status : `${head}\n` };
       }
 
       writeFileSync(join(call.args[2] ?? "", "pi-extensions-mz-0.4.0.tgz"), "packed");
@@ -362,6 +362,27 @@ describe("resolveExtensionsSource", () => {
     const packs = (calls: typeof first.calls) => calls.filter((call) => call.file === "npm").length;
 
     expect([packs(first.calls), packs(second.calls), packs(moved.calls)]).toEqual([1, 0, 1]);
+  });
+
+  it("packs again on every launch while the checkout has uncommitted changes, and after them", async () => {
+    const root = await packageAt(join(await tempDir(), "checkout"), {
+      name: "pi-extensions-mz",
+      version: "0.4.0",
+    });
+    const stateDir = await tempDir();
+    const clean = gitRunner("head-one");
+    const dirty = gitRunner("head-one", " M extensions/a/index.ts\0");
+    const again = gitRunner("head-one", " M extensions/a/index.ts\0");
+    const committed = gitRunner("head-one");
+    const runs = [clean, dirty, again, committed];
+
+    await runs.reduce(
+      (previous, { runner }) =>
+        previous.then(() => resolveExtensionsSource({ launcherRoot: root, runner, stateDir })),
+      Promise.resolve<unknown>(undefined),
+    );
+
+    expect(runs.map(({ calls }) => calls.filter((call) => call.file === "npm").length)).toEqual([1, 1, 1, 1]);
   });
 
   it("packs a checkout of this package into a tarball", async () => {

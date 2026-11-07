@@ -1,5 +1,5 @@
 import {
-  isCodePlaceholder,
+  mcpAuthKey,
   syntheticExpiresIn,
   type VaultClientInformation,
   type VaultEntry,
@@ -9,7 +9,26 @@ import {
 import type { HeaderPair } from "../rules.ts";
 import type { SecretResolver } from "../secrets/index.ts";
 import type { Flow, Flows } from "./callback.ts";
-import { readStoreEntry, serverUrlOf, updateStoreEntry, vaultKey } from "./store.ts";
+import {
+  authMethodOf,
+  basicCredentials,
+  headerValue,
+  isFormType,
+  isJsonType,
+  isSuccess,
+  json,
+  nonEmpty,
+  oauthError,
+  parseJson,
+  parseLoose,
+  sameUrl,
+  swapBasic,
+  type TokenResponse,
+} from "./oauth-http.ts";
+import { isCodePlaceholder } from "./protocol.ts";
+import { readStoreEntry, serverUrlOf, updateStoreEntry } from "./store.ts";
+
+export type { TokenResponse } from "./oauth-http.ts";
 
 export interface BufferQuery {
   host: string;
@@ -23,12 +42,6 @@ export interface BufferQuery {
 export interface TokenRequest {
   repoHash: string;
   url: string;
-  headers: HeaderPair[];
-  body: Buffer;
-}
-
-export interface TokenResponse {
-  status: number;
   headers: HeaderPair[];
   body: Buffer;
 }
@@ -62,70 +75,15 @@ export interface TokenDeps {
   now: () => number;
 }
 
-const FORM_TYPE = "application/x-www-form-urlencoded";
-
-const JSON_TYPE = "application/json";
-
 const TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"];
 
 const EXPIRY_MARGIN_MS = 60_000;
 
-const JSON_HEADERS: HeaderPair[] = [
-  ["content-type", JSON_TYPE],
-  ["cache-control", "no-store"],
-];
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const nonEmpty = (value: unknown): value is string => typeof value === "string" && value !== "";
-
-const mediaTypeOf = (contentType: string) => (contentType.split(";")[0] ?? "").trim().toLowerCase();
-
-const headerValue = (headers: HeaderPair[], name: string) =>
-  headers.find(([key]) => key.toLowerCase() === name)?.[1] ?? "";
-
-const sameUrl = (left: string, right: string) => {
-  try {
-    return new URL(left).href === new URL(right).href;
-  } catch {
-    return false;
-  }
-};
-
-const isFormType = (contentType: string) => mediaTypeOf(contentType) === FORM_TYPE;
-
-const isJsonType = (contentType: string) => mediaTypeOf(contentType) === JSON_TYPE;
-
-const json = (status: number, body: object): TokenResponse => ({
-  status,
-  headers: JSON_HEADERS,
-  body: Buffer.from(JSON.stringify(body)),
-});
-
-const oauthError = (status: number, error: string, description: string) =>
-  json(status, { error, error_description: `pi-sandbox: ${description}` });
-
 const expiredSignIn = (server: VaultServer) =>
   oauthError(400, "invalid_grant", `the stored sign-in for ${server.server} has expired; sign in again`);
 
-const parseJson = (body: Buffer): Record<string, unknown> | undefined => {
-  try {
-    const parsed: unknown = JSON.parse(body.toString("utf8"));
-
-    return isObject(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const parseLoose = (body: Buffer) =>
-  parseJson(body) ?? Object.fromEntries(new URLSearchParams(body.toString("utf8")));
-
 const carriesTokens = (body: Record<string, unknown> | undefined) =>
   body !== undefined && TOKEN_FIELDS.some((field) => nonEmpty(body[field]));
-
-const isSuccess = (status: number) => status >= 200 && status < 300;
 
 const expiresInOf = (value: unknown) => {
   const seconds = value === undefined || value === null || value === "" ? undefined : Number(value);
@@ -153,36 +111,6 @@ const withoutTokens = (entry: VaultEntry | undefined) => {
   const { tokens: _tokens, tokensExpireAt: _expiry, ...rest } = entry ?? { serverUrl: "" };
 
   return rest;
-};
-
-const basicCredentials = (headers: HeaderPair[]) => {
-  const match = /^Basic\s+([A-Za-z0-9+/=]+)$/i.exec(headerValue(headers, "authorization").trim());
-  const decoded = match === null ? undefined : Buffer.from(match[1] ?? "", "base64").toString("utf8");
-  const separator = decoded?.indexOf(":") ?? -1;
-
-  return decoded === undefined || separator === -1
-    ? undefined
-    : { user: decoded.slice(0, separator), secret: decoded.slice(separator + 1) };
-};
-
-const swapBasic = (headers: HeaderPair[], placeholder: string, secret: string | undefined) =>
-  headers.map(([name, value]): HeaderPair => {
-    const credentials =
-      name.toLowerCase() === "authorization" ? basicCredentials([[name, value]]) : undefined;
-
-    if (credentials === undefined || credentials.secret !== placeholder || secret === undefined) {
-      return [name, value];
-    }
-
-    return [name, `Basic ${Buffer.from(`${credentials.user}:${secret}`).toString("base64")}`];
-  });
-
-const authMethodOf = (headers: HeaderPair[], params: URLSearchParams) => {
-  if (basicCredentials(headers) !== undefined) {
-    return "client_secret_basic";
-  }
-
-  return params.has("client_secret") ? "client_secret_post" : "none";
 };
 
 export const createTokenHook = (deps: TokenDeps) => {
@@ -270,7 +198,7 @@ export const createTokenHook = (deps: TokenDeps) => {
     };
     const expiresAt = expiresIn === undefined ? undefined : deps.now() + expiresIn * 1000;
 
-    await updateStoreEntry(deps.stateDir, vaultKey(server.server, server.url), (current) => ({
+    await updateStoreEntry(deps.stateDir, mcpAuthKey(server.server, server.url), (current) => ({
       ...withoutTokens(current),
       serverUrl: serverUrlOf(server.url),
       clientInformation: client,
@@ -364,7 +292,7 @@ export const createTokenHook = (deps: TokenDeps) => {
       };
     }
 
-    await updateStoreEntry(deps.stateDir, vaultKey(server.server, server.url), (current) => ({
+    await updateStoreEntry(deps.stateDir, mcpAuthKey(server.server, server.url), (current) => ({
       ...(current ?? {}),
       serverUrl: serverUrlOf(server.url),
       clientInformation: body as VaultClientInformation,

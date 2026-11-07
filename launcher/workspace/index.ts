@@ -1,17 +1,18 @@
 export { discoverWorkspace } from "./discover.ts";
-export { inertGitOptions } from "./git-command.ts";
+export { assertGitIntegrity, pinGitDirs, withGitPinLock } from "./git-integrity.ts";
+export { gitRefusal } from "./git-layout.ts";
 export {
-  assertGitIntegrity,
-  gitAlternatesNotices,
-  gitDirOf,
-  pinGitDirs,
-  unpinGitDirs,
-  withGitPinLock,
-} from "./git-integrity.ts";
-export { findModuleGitDirs, findWorktreeGitDirs, gitRefusal } from "./git-layout.ts";
-export { type GitBaseline, nestedGitNotices, scanGitBaseline } from "./git-scan.ts";
+  findProtectedGitPaths,
+  type GitOverlay,
+  type GitPathGuard,
+  type GitProtectContext,
+  gitPathGuard,
+  type ProtectedGitPaths,
+  protectedGitOverlay,
+} from "./git-protect.ts";
+export { gitLaunchNotices, gitSessionEndNotices, recordGitBaseline } from "./git-session.ts";
 export { assertHostSessionsDir, assertSafeWorkspace } from "./guard.ts";
-export { protectedPathGuard, resolveExtraMounts } from "./mounts.ts";
+export { resolveExtraMounts } from "./mounts.ts";
 export {
   type HostSessions,
   hostAgentDir,

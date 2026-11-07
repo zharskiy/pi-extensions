@@ -1,12 +1,14 @@
-import { readFile } from "node:fs/promises";
 import {
   type CommandRunner,
   errorMessage,
+  parseJsonObject,
+  readJsonObject,
   stateLayout,
   type VaultDiscovery,
   type VaultServer,
-  writeFileAtomic,
+  writeJsonFile,
 } from "../../shared/index.ts";
+import { singleFlight } from "../single-flight.ts";
 
 export interface DiscoveryOptions {
   stateDir: string;
@@ -21,9 +23,6 @@ const FAILURE_TTL_MS = 60_000;
 
 const PRIVATE_MODE = 0o600;
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 const isText = (value: unknown) => typeof value === "string" && value !== "";
 
 const isDiscovered = (value: Record<string, unknown>) =>
@@ -34,20 +33,14 @@ const isDiscovered = (value: Record<string, unknown>) =>
   Array.isArray(value.hosts) &&
   value.hosts.every((host) => typeof host === "string");
 
-const parseRecord = (text: string | undefined): VaultDiscovery | undefined => {
-  try {
-    const parsed: unknown = text === undefined ? undefined : JSON.parse(text);
-
-    if (!isObject(parsed) || typeof parsed.fetchedAt !== "number") {
-      return undefined;
-    }
-
-    return isDiscovered(parsed) || (parsed.ok === false && typeof parsed.error === "string")
-      ? (parsed as unknown as VaultDiscovery)
-      : undefined;
-  } catch {
+const parseRecord = (parsed: Record<string, unknown> | undefined): VaultDiscovery | undefined => {
+  if (parsed === undefined || typeof parsed.fetchedAt !== "number") {
     return undefined;
   }
+
+  return isDiscovered(parsed) || (parsed.ok === false && typeof parsed.error === "string")
+    ? (parsed as unknown as VaultDiscovery)
+    : undefined;
 };
 
 const failed = (server: VaultServer, error: string, fetchedAt: number): VaultDiscovery => ({
@@ -68,24 +61,18 @@ const commandInput = (server: VaultServer) => {
 };
 
 const fromOutput = (server: VaultServer, stdout: string, fetchedAt: number): VaultDiscovery => {
-  try {
-    const parsed: unknown = JSON.parse(stdout);
+  const parsed = parseJsonObject(stdout);
 
-    if (isObject(parsed) && isDiscovered(parsed)) {
-      return { ...(parsed as unknown as VaultDiscovery), server: server.server, url: server.url, fetchedAt };
-    }
-
-    const reason = isObject(parsed) && typeof parsed.error === "string" ? parsed.error : "unexpected output";
-
-    return failed(server, reason, fetchedAt);
-  } catch {
-    return failed(server, "unexpected output", fetchedAt);
+  if (parsed !== undefined && isDiscovered(parsed)) {
+    return { ...(parsed as unknown as VaultDiscovery), server: server.server, url: server.url, fetchedAt };
   }
+
+  return failed(server, typeof parsed?.error === "string" ? parsed.error : "unexpected output", fetchedAt);
 };
 
 export const createDiscovery = (options: DiscoveryOptions): DiscoverFn => {
   const layout = stateLayout(options.stateDir);
-  const pending = new Map<string, Promise<VaultDiscovery>>();
+  const flight = singleFlight<string, VaultDiscovery>();
 
   const run = async (server: VaultServer, command: string[]) => {
     const [file = "", ...args] = command;
@@ -98,31 +85,16 @@ export const createDiscovery = (options: DiscoveryOptions): DiscoverFn => {
         ? fromOutput(server, result.stdout, fetchedAt)
         : failed(server, result.stderr.trim().split("\n").at(-1) || `exit code ${result.code}`, fetchedAt);
 
-    await writeFileAtomic(layout.mcpAuthDiscovery(server.server), `${JSON.stringify(record, null, 2)}\n`, {
-      mode: PRIVATE_MODE,
-    });
+    await writeJsonFile(layout.mcpAuthDiscovery(server.server), record, { mode: PRIVATE_MODE });
 
     return record;
   };
 
-  const rediscover = (server: VaultServer, command: string[]) => {
-    const inFlight = pending.get(server.server);
-
-    if (inFlight !== undefined) {
-      return inFlight;
-    }
-
-    const started = run(server, command).finally(() => pending.delete(server.server));
-
-    pending.set(server.server, started);
-
-    return started;
-  };
+  const rediscover = (server: VaultServer, command: string[]) =>
+    flight(server.server, () => run(server, command));
 
   return async (server) => {
-    const cached = parseRecord(
-      await readFile(layout.mcpAuthDiscovery(server.server), "utf8").catch(() => undefined),
-    );
+    const cached = parseRecord(await readJsonObject(layout.mcpAuthDiscovery(server.server)));
     const current = cached?.url === server.url ? cached : undefined;
     const usable =
       current?.ok === true || (current !== undefined && options.now() - current.fetchedAt < FAILURE_TTL_MS);

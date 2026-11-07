@@ -1,4 +1,4 @@
-import { chmod, lstat, readdir, readFile, rm, symlink } from "node:fs/promises";
+import { chmod, lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DerivedSandboxPi } from "../../hostpi/index.ts";
@@ -82,15 +82,6 @@ describe("renderAgentDir", () => {
     });
 
     expect(result.renderDir).toBe(stateLayout(stateDir).render("repo1"));
-    expect(result.entries).toEqual([
-      "auth.json",
-      "models.json",
-      "agents",
-      "skills",
-      "extensions",
-      "AGENTS.md",
-      "keybindings.json",
-    ]);
     expect(await listTree(result.renderDir)).toEqual([
       "AGENTS.md",
       "agents/",
@@ -113,43 +104,46 @@ describe("renderAgentDir", () => {
     expect((await lstat(join(result.renderDir, "skills", "deploy", "run.sh"))).mode & 0o777).toBe(0o755);
   });
 
-  it("gives the same bytes and hash for the same input and a new hash when content changes", async () => {
+  it("rewrites only the files whose content changed", async () => {
     const stateDir = await tempDir("render-state");
     const host = await hostAgentDir();
-    const first = await renderAgentDir({
-      stateDir,
-      repoHash: "repo1",
-      hostAgentDir: host,
-      derived: derived(),
-    });
-    const bytes = await readFile(join(first.renderDir, "auth.json"));
-    const second = await renderAgentDir({
-      stateDir,
-      repoHash: "repo1",
-      hostAgentDir: host,
-      derived: derived(),
-    });
+    const render = (key?: string) =>
+      renderAgentDir({ stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived(key) });
+    const first = await render();
+    const auth = join(first.renderDir, "auth.json");
+    const agents = join(first.renderDir, "AGENTS.md");
+    const before = await stat(auth);
 
-    expect(second.hash).toBe(first.hash);
-    expect(await readFile(join(second.renderDir, "auth.json"))).toEqual(bytes);
+    await render();
+
+    expect((await stat(auth)).ino).toBe(before.ino);
 
     await writeText(join(host, "AGENTS.md"), "changed\n");
 
-    const third = await renderAgentDir({
+    await render("pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb");
+
+    expect(await readFile(agents, "utf8")).toBe("changed\n");
+    expect(JSON.parse(await readFile(auth, "utf8"))).toEqual(
+      derived("pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb").files["auth.json"],
+    );
+    expect((await stat(auth)).ino).not.toBe(before.ino);
+  });
+
+  it("rewrites a file of the same size whose bytes differ", async () => {
+    const stateDir = await tempDir("render-state");
+    const host = await hostAgentDir();
+    const result = await renderAgentDir({
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
       derived: derived(),
     });
-    const fourth = await renderAgentDir({
-      stateDir,
-      repoHash: "repo1",
-      hostAgentDir: host,
-      derived: derived("pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb"),
-    });
 
-    expect(third.hash).not.toBe(first.hash);
-    expect(fourth.hash).not.toBe(third.hash);
+    await writeText(join(result.renderDir, "AGENTS.md"), "RULES\n");
+
+    await renderAgentDir({ stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived() });
+
+    expect(await readFile(join(result.renderDir, "AGENTS.md"), "utf8")).toBe("rules\n");
   });
 
   it("removes entries that are gone on the host", async () => {
@@ -170,8 +164,6 @@ describe("renderAgentDir", () => {
     });
     const tree = await listTree(result.renderDir);
 
-    expect(result.entries).not.toContain("skills");
-    expect(result.entries).not.toContain("agents");
     expect(tree.filter((path) => path.startsWith("skills") || path.startsWith("agents"))).toEqual([]);
   });
 
@@ -185,7 +177,7 @@ describe("renderAgentDir", () => {
       derived: derived(),
     });
 
-    expect(result.entries).toEqual(["auth.json", "models.json"]);
+    expect(await listTree(result.renderDir)).toEqual(["auth.json", "models.json"]);
   });
 
   it("leaves out git dirs, key files, credential files and secret-named files of any extension", async () => {

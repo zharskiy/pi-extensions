@@ -9,27 +9,20 @@ import {
 } from "../config/index.ts";
 import {
   buildContainerSpec,
-  discoverGitOverlay,
   ensureContainer,
   findCurrentContainer,
   forwardedEnv,
   type GitOverlay,
   gitLaunchNotices,
-  LABELS,
   type LauncherContainerSpec,
   listenFor,
-  readyGitOverlay,
+  planGitOverlay,
   runPi,
 } from "../container/index.ts";
-import {
-  ensureBuiltImage,
-  ensureLayerImage,
-  recordedImage,
-  resolveExtensionsSource,
-} from "../image/index.ts";
+import { ensureSandboxImage, resolveExtensionsSource, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncWritableFiles } from "../provision/index.ts";
 import { guestProxyUrl, type TrustBundle } from "../proxy/index.ts";
-import { errorMessage, LauncherError, launcherRoot, stateLayout } from "../shared/index.ts";
+import { errorMessage, LauncherError, launcherRoot, repoHash, stateLayout } from "../shared/index.ts";
 import {
   assertSafeWorkspace,
   assertWithinWorkspaceRoots,
@@ -38,7 +31,7 @@ import {
   type Workspace,
   withGitPinLock,
 } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, pathsOf, settleAll, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
 import { findHostPi } from "./host-pi.ts";
 import {
@@ -65,25 +58,20 @@ export interface LaunchContext {
   workspace: Workspace;
   effective: EffectiveConfig;
   stateDir: string;
-}
-
-export interface ImageRef {
-  reference: string;
-  digest: string;
-  id: string;
+  repoHash: string;
 }
 
 export interface PreparedContainer {
   containerId: string;
   spec: LauncherContainerSpec;
-  image: ImageRef;
+  image: SandboxImage;
   created: boolean;
 }
 
 export interface SandboxParts {
   host: HostSide;
   proxy?: SandboxProxy;
-  image: ImageRef;
+  image: SandboxImage;
   session: LaunchSession;
   sessions: HostSessions;
   cancelled?: AbortSignal;
@@ -99,12 +87,6 @@ export interface Sandbox extends PreparedContainer {
 const NO_SANDBOX = "--no-sandbox";
 
 const PREPARING = "preparing pi sandbox, one time";
-
-const OUTDATED =
-  "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
-
-const UNPROTECTED =
-  "pi-sandbox: the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
 
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
@@ -122,7 +104,7 @@ export const openContext = async (deps: CliDeps, offline = false): Promise<Launc
 
   writeNotices(deps, notices);
 
-  return { workspace, effective, stateDir };
+  return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
 };
 
 const checkWorkspaceRoots = (deps: CliDeps, context: LaunchContext) => {
@@ -160,71 +142,32 @@ export const openBackend = async (deps: CliDeps, config: SandboxConfig) => {
   }
 };
 
-const currentImage = async (backend: Backend, context: LaunchContext) => {
-  const { config } = context.effective;
-  const record = await recordedImage(context.stateDir, config);
-
-  if (record === undefined) {
-    return undefined;
-  }
-
-  const container = await findCurrentContainer(backend, context.workspace, record.digest, configHash(config));
-
-  return container === undefined
-    ? undefined
-    : { reference: record.reference, digest: record.digest, id: record.id };
-};
-
-const buildTrust = (context: LaunchContext, trust: TrustBundle | undefined) =>
-  context.effective.config.tls.extraCa.length === 0 ? undefined : trust?.extraPemPath;
-
-const buildImage = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  backend: Backend,
-  trust: TrustBundle | undefined,
-): Promise<ImageRef> => {
-  const { config } = context.effective;
-
-  writeLine(deps.stderr, PREPARING);
-
-  const extensions =
-    config.image.digest === undefined
-      ? await resolveExtensionsSource({
-          launcherRoot: launcherRoot(),
-          runner: deps.runner,
-          stateDir: context.stateDir,
-        })
-      : { kind: "none" as const };
-  const image = await ensureBuiltImage({
-    backend,
-    config,
-    versions: { pi: await piVersion(), extensions },
-    stateDir: context.stateDir,
-    trustPem: buildTrust(context, trust),
-    env: deps.env,
-  });
-
-  return { reference: image.reference, digest: image.digest, id: image.id };
-};
-
-export const prepareImage = async (
+export const prepareImage = (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
   trust?: TrustBundle,
-): Promise<ImageRef> => {
-  const base = (await currentImage(backend, context)) ?? (await buildImage(deps, context, backend, trust));
-  const layer = await ensureLayerImage({
-    backend,
-    baseImageId: base.id,
-    config: context.effective.config,
-    stateDir: context.stateDir,
-    trustPem: buildTrust(context, trust),
-    env: deps.env,
-  });
+): Promise<SandboxImage> => {
+  const { config } = context.effective;
 
-  return { ...base, id: layer.id };
+  return ensureSandboxImage({
+    backend,
+    config,
+    stateDir: context.stateDir,
+    env: deps.env,
+    trustPem: trust?.extraPemPath,
+    versions: async () => ({
+      pi: await piVersion(),
+      extensions: await resolveExtensionsSource({
+        launcherRoot: launcherRoot(),
+        runner: deps.runner,
+        stateDir: context.stateDir,
+      }),
+    }),
+    inUse: async (digest) =>
+      (await findCurrentContainer(backend, context.workspace, digest, configHash(config))) !== undefined,
+    preparing: () => writeLine(deps.stderr, PREPARING),
+  });
 };
 
 const sandboxRoute = async (
@@ -238,12 +181,11 @@ const sandboxRoute = async (
     return undefined;
   }
 
-  const route: ProxyRoute = await backend.prepareProxyRoute(
-    proxy.instance.port,
-    proxy.policyHash,
-    imageId,
+  const route: ProxyRoute = await backend.prepareProxyRoute({
+    hostPort: proxy.instance.port,
     repoHash,
-  );
+    relay: { policyHash: proxy.policyHash, imageId },
+  });
 
   writeNotices(deps, route.notices ?? []);
 
@@ -262,7 +204,7 @@ const syncAgentFiles = async (
       backend,
       containerId: id,
       stateDir: context.stateDir,
-      repoHash: host.repoHash,
+      repoHash: context.repoHash,
       hostAgentDir: host.hostAgentDir,
       repoRoot: context.workspace.repoRoot,
       config: context.effective.config,
@@ -286,20 +228,22 @@ export const prepareContainer = async (
   parts: SandboxParts,
 ): Promise<PreparedContainer> => {
   const { host, proxy, image, session, sessions, cancelled } = parts;
-  const render = await renderAgentDir({
-    stateDir: context.stateDir,
-    repoHash: host.repoHash,
-    hostAgentDir: host.hostAgentDir,
-    derived: host.derived,
-  });
-  const route = await sandboxRoute(deps, backend, proxy, image.id, host.repoHash);
+  const [render, gitNotices, version, git] = await settleAll([
+    renderAgentDir({
+      stateDir: context.stateDir,
+      repoHash: context.repoHash,
+      hostAgentDir: host.hostAgentDir,
+      derived: host.derived,
+    }),
+    gitLaunchNotices(context.workspace),
+    launcherVersion(),
+    planGitOverlay(context.workspace, gitGuardOf(deps, context)),
+    readyHostSessions(deps, context, backend, { sessions, launchId: session.launchId }),
+  ]);
 
-  await readyHostSessions(deps, context, backend, { sessions, launchId: session.launchId });
+  writeNotices(deps, gitNotices);
 
-  writeNotices(deps, await gitLaunchNotices(context.workspace));
-
-  const version = await launcherVersion();
-  const gitGuard = gitGuardOf(deps, context);
+  const route = await sandboxRoute(deps, backend, proxy, image.id, context.repoHash);
   const specWith = (gitOverlay: GitOverlay) =>
     buildContainerSpec({
       workspace: context.workspace,
@@ -320,25 +264,19 @@ export const prepareContainer = async (
       repoProxyToken: proxy?.repoToken,
       hostSessions: sessions,
     });
-  const wanted = specWith(await discoverGitOverlay(context.workspace, gitGuard));
+  const wanted = specWith(git.overlay);
 
   cancelled?.throwIfAborted();
 
-  const { id, created, outdated, spec, labels } = await ensureContainer({
+  const { id, created, spec, notices } = await ensureContainer({
     backend,
     spec: wanted,
-    othersLive: () => othersLive(context.stateDir, session),
-    beforeStart: async () => specWith(await readyGitOverlay(context.workspace, gitGuard)),
+    othersLive: () => othersLive(context.stateDir, context.repoHash, session.launchId),
+    beforeStart: async () => specWith(await git.ready()),
     aroundStart: (start) => withGitPinLock(context.stateDir, context.workspace, start),
   });
 
-  if (outdated) {
-    writeLine(deps.stderr, OUTDATED);
-  }
-
-  if (outdated && context.workspace.isGitRepo && labels[LABELS.gitProtection] === undefined) {
-    writeLine(deps.stderr, UNPROTECTED);
-  }
+  writeNotices(deps, notices);
 
   if (created) {
     await probeSessionsShare(backend, context, id, sessions);
@@ -348,9 +286,10 @@ export const prepareContainer = async (
 
   cancelled?.throwIfAborted();
 
-  await syncAgentFiles(deps, context, backend, host, id);
-
-  await syncSandboxMcpAuth(deps, context, { backend, containerId: id, servers: host.derived.vault });
+  await Promise.all([
+    syncAgentFiles(deps, context, backend, host, id),
+    syncSandboxMcpAuth(deps, context, { backend, containerId: id, servers: host.derived.vault }),
+  ]);
 
   return { containerId: id, spec, image, created };
 };
@@ -364,11 +303,10 @@ const prepareSandbox = async (
   sessions: HostSessions,
   cancelled: AbortSignal,
 ) => {
-  const proxy = await openSandboxProxy(deps, context, host, backend);
-
-  cancelled.throwIfAborted();
-
-  const image = await prepareImage(deps, context, backend, host.trust);
+  const [proxy, image] = await settleAll([
+    openSandboxProxy(deps, context, host, backend),
+    prepareImage(deps, context, backend, host.trust),
+  ]);
 
   cancelled.throwIfAborted();
 
@@ -395,7 +333,7 @@ export const withSandbox = async (
 
   noticeHostSessions(deps, sessions);
 
-  const session = await beginSession(deps, context, host.repoHash);
+  const session = await beginSession(deps, context);
   const watch = listenFor(deps.signals ?? process, PREPARATION_SIGNALS);
   const cancel = new AbortController();
   const preparation = prepareSandbox(deps, context, backend, host, session, sessions, cancel.signal);

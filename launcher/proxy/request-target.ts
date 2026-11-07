@@ -1,8 +1,6 @@
-import { normalizeHost } from "./policy.ts";
+import { normalizeHost, TLS_PORT } from "../config/index.ts";
 
 export type RequestTarget = { ok: true; path: string; decodedPath: string } | { ok: false; reason: string };
-
-const TLS_PORT = 443;
 
 const ABSOLUTE = /^https:\/\/([^/?#]*)(.*)$/is;
 

@@ -3,7 +3,6 @@ import { constants, type Stats } from "node:fs";
 import {
   chmod,
   type FileHandle,
-  lstat,
   mkdir,
   open,
   readdir,
@@ -14,9 +13,15 @@ import {
 } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import type { Backend } from "../backend/index.ts";
-import { errorMessage, isWithin, PI_SESSION_DIR_VARIABLE } from "../shared/index.ts";
-import { collector } from "./volume.ts";
+import { type Backend, execCapture } from "../backend/index.ts";
+import {
+  errorMessage,
+  isWithin,
+  lstatOrUndefined,
+  PI_SESSION_DIR_VARIABLE,
+  sameEntry,
+} from "../shared/index.ts";
+import { inPool } from "./pool.ts";
 
 interface SweepInput {
   dir: string;
@@ -79,20 +84,18 @@ export const prepareHostSessions = async (dir: string) => {
   await mkdir(dir, { recursive: true, mode: PRIVATE_DIR });
 };
 
-const lstatOrUndefined = (path: string) => lstat(path).catch(() => undefined);
-
 const isSpecial = (info: Stats) => !info.isFile() && !info.isDirectory();
 
-const sameEntry = async (path: string, info: Stats) => {
+const unchanged = async (path: string, info: Stats) => {
   const again = await lstatOrUndefined(path);
 
-  return again !== undefined && again.dev === info.dev && again.ino === info.ino;
+  return again !== undefined && sameEntry(again, info);
 };
 
 const stuck = (path: string, what: string) => `${path} is ${what} and could be neither renamed nor deleted`;
 
 const removeSpecial = async (path: string, info: Stats): Promise<Removal> => {
-  if (!(await sameEntry(path, info))) {
+  if (!(await unchanged(path, info))) {
     return NO_REMOVAL;
   }
 
@@ -187,7 +190,7 @@ const readVerdict = async (path: string, info: Stats, repoRoot: string): Promise
   try {
     const opened = await handle.stat();
 
-    if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino) {
+    if (!opened.isFile() || !sameEntry(opened, info)) {
       return undefined;
     }
 
@@ -211,7 +214,7 @@ const verdictOf = (path: string, info: Stats, repoRoot: string): Promise<Verdict
 const rejectedName = (path: string) => `${path}${REJECTED_SUFFIX}-${randomBytes(4).toString("hex")}`;
 
 const rejectFile = async (path: string, info: Stats, reason: string): Promise<EntryOutcome> => {
-  if (!(await sameEntry(path, info))) {
+  if (!(await unchanged(path, info))) {
     return NOTHING;
   }
 
@@ -226,7 +229,7 @@ const rejectFile = async (path: string, info: Stats, reason: string): Promise<En
   }
 
   const removed =
-    (await sameEntry(path, info)) &&
+    (await unchanged(path, info)) &&
     (await unlink(path).then(
       () => true,
       () => false,
@@ -267,22 +270,20 @@ const sweepTree = async (dir: string, info: Stats): Promise<Removal> => {
     return unreadable(dir);
   }
 
-  const removals = await Promise.all(
-    names.map(async (name) => {
-      const path = join(dir, name);
-      const entry = await lstatOrUndefined(path);
+  const removals = await inPool(names, PARALLEL_FILES, async (name) => {
+    const path = join(dir, name);
+    const entry = await lstatOrUndefined(path);
 
-      if (entry === undefined) {
-        return NO_REMOVAL;
-      }
+    if (entry === undefined) {
+      return NO_REMOVAL;
+    }
 
-      if (entry.isDirectory()) {
-        return sweepTree(path, entry);
-      }
+    if (entry.isDirectory()) {
+      return sweepTree(path, entry);
+    }
 
-      return isSpecial(entry) ? removeSpecial(path, entry) : NO_REMOVAL;
-    }),
-  );
+    return isSpecial(entry) ? removeSpecial(path, entry) : NO_REMOVAL;
+  });
 
   return combined(removals);
 };
@@ -306,16 +307,6 @@ const sweepEntry = async (input: SweepInput, name: string): Promise<EntryOutcome
   return input.full ? { ...NOTHING, ...(await sweepTree(path, info)) } : NOTHING;
 };
 
-const inBatches = async <T, R>(items: T[], size: number, action: (item: T) => Promise<R>): Promise<R[]> => {
-  if (items.length === 0) {
-    return [];
-  }
-
-  const done = await Promise.all(items.slice(0, size).map(action));
-
-  return [...done, ...(await inBatches(items.slice(size), size, action))];
-};
-
 const removedNotice = (dir: string, removed: number) =>
   removed === 0 ? [] : [`sessions: removed ${removed} links or special files from ${dir}`];
 
@@ -334,7 +325,7 @@ export const sweepHostSessions = async (input: SweepInput) => {
     return { notices: [], failures: unreadable(input.dir).failures };
   }
 
-  const outcomes = await inBatches(names, PARALLEL_FILES, (name) => sweepEntry(input, name));
+  const outcomes = await inPool(names, PARALLEL_FILES, (name) => sweepEntry(input, name));
   const removed = outcomes.reduce((total, outcome) => total + outcome.removed, 0);
 
   return {
@@ -350,12 +341,14 @@ export const probeHostSessions = async (backend: Backend, containerId: string, d
   await writeFile(path, "", { flag: "wx", mode: 0o600 });
 
   try {
-    const code = await backend.exec(
-      { containerId, command: ["sh", "-c", PROBE_SCRIPT, "sh", dir, marker], env: {}, workdir: "/" },
-      { stdout: collector().stream, stderr: collector().stream, tty: false },
-    );
+    const result = await execCapture(backend, {
+      containerId,
+      command: ["sh", "-c", PROBE_SCRIPT, "sh", dir, marker],
+      env: {},
+      workdir: "/",
+    });
 
-    return code === 0;
+    return result.code === 0;
   } finally {
     await rm(path, { force: true });
 

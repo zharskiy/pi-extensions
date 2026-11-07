@@ -6,10 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDockerEngineBackend, resolveDockerSocket } from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 import { runBackendConformance } from "../backend/conformance.ts";
+import { listNetworks, removeNetwork } from "./harness/engine.ts";
 
 const PULLABLE = "busybox:1.36";
 
 const RUNNABLE = "pi-sandbox-conformance:busybox";
+
+const RELAY = "pi-sandbox-relay-test:alpine";
 
 const colimaSockets = () => {
   const root = join(homedir(), ".colima");
@@ -32,18 +35,45 @@ const hooks = enabled
   ? { describe, it, expect, beforeAll, afterAll }
   : { describe: describe.skip, it, expect, beforeAll, afterAll };
 
-runBackendConformance(`docker-engine (${socketPath ?? "no socket"})`, hooks, async () => {
-  const runner = createProcessRunner();
-  const backend = createDockerEngineBackend({ socketPath: socketPath ?? "", runner, home: homedir() });
+const buildFrom = async (
+  build: (contextDir: string, tag: string) => Promise<unknown>,
+  tag: string,
+  dockerfile: string,
+) => {
   const context = await mkdtemp(join(tmpdir(), "pi-sandbox-live-"));
 
-  await backend.pullImage(PULLABLE);
+  await writeFile(join(context, "Dockerfile"), dockerfile);
 
-  await writeFile(join(context, "Dockerfile"), `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
-
-  await backend.buildImage(context, RUNNABLE);
+  await build(context, tag);
 
   await rm(context, { recursive: true, force: true });
+};
 
-  return { backend, pullableImage: PULLABLE, runnableImage: RUNNABLE };
-});
+runBackendConformance(
+  `docker-engine (${socketPath ?? "no socket"})`,
+  hooks,
+  async () => {
+    const runner = createProcessRunner();
+    const backend = createDockerEngineBackend({ socketPath: socketPath ?? "", runner, home: homedir() });
+
+    await backend.pullImage(PULLABLE);
+
+    await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
+
+    await buildFrom(backend.buildImage, RELAY, "FROM alpine:3.20\nRUN apk add --no-cache socat\n");
+
+    return {
+      backend,
+      pullableImage: PULLABLE,
+      runnableImage: RUNNABLE,
+      relayImage: RELAY,
+      networks: {
+        has: async (name) => (await listNetworks()).some((network) => network.Name === name),
+        remove: async (name) => {
+          await removeNetwork(name);
+        },
+      },
+    };
+  },
+  { sharedRuntime: true },
+);

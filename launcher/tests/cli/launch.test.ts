@@ -1,24 +1,10 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
+import { createHarness, isPiSession, piSession, piSessions } from "./harness.ts";
 
 const PREPARING = "preparing pi sandbox, one time";
 
@@ -36,8 +22,8 @@ const writeScript = async (dir: string, body: string) => {
 
 describe("pi [args]", () => {
   it("prepares once on the cold path, then reuses the container without image work", async () => {
-    const fake = createFakeBackend({ exec: (spec) => (spec.command.includes("pi") ? 3 : 0) });
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const fake = createFakeBackend({ exec: (spec) => (isPiSession(spec) ? 3 : 0) });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     expect(await run(["--model", "x"], harness.deps)).toBe(3);
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
@@ -51,7 +37,7 @@ describe("pi [args]", () => {
     expect(harness.calls.filter((call) => call.file === "npm")).toHaveLength(packs);
     expect(fake.containers.size).toBe(1);
 
-    const last = fake.execs.findLast((exec) => exec.spec.command.includes("pi"))?.spec;
+    const last = piSession(fake)?.spec;
 
     expect(last?.command.slice(-3)).toEqual(["pi", "chat", "hello"]);
     expect(last?.workdir).toBe(harness.cwd);
@@ -59,7 +45,7 @@ describe("pi [args]", () => {
 
   it("mounts the repository at its host path, routes through the proxy and leaves out the CA without a gateway", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -87,7 +73,7 @@ describe("pi [args]", () => {
 
   it("passes the terminal variables to pi's exec, not the container, and reuses it from another terminal", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend], env: { TERM_PROGRAM: "first" } });
+    const harness = await createHarness({ adapters: () => [fake.backend], env: { TERM_PROGRAM: "first" } });
 
     await run([], harness.deps);
 
@@ -99,7 +85,7 @@ describe("pi [args]", () => {
 
     await run([], harness.deps);
 
-    const piExecs = fake.execs.filter((exec) => exec.spec.command.includes("pi"));
+    const piExecs = piSessions(fake);
 
     expect(container?.spec?.env.TERM).toBeUndefined();
     expect(container?.spec?.env.TERM_PROGRAM).toBeUndefined();
@@ -120,7 +106,7 @@ describe("pi [args]", () => {
 
   it("mounts the trust bundle read-only when a gateway is configured", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await harness.writeJson(harness.userConfigFile, {
       gateway: {
@@ -147,7 +133,7 @@ describe("pi [args]", () => {
 
   it("reuses the packed extensions tarball while the version and HEAD are unchanged", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -161,7 +147,7 @@ describe("pi [args]", () => {
 
   it("creates the container from the built image id and keeps the reference in a label", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -173,7 +159,7 @@ describe("pi [args]", () => {
 
   it("refuses a repository rooted at the home directory before touching the backend", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       respond: (call) =>
         call.file === "git" && call.args.includes("--show-toplevel")
@@ -196,20 +182,17 @@ describe("pi [args]", () => {
 
   it("passes pi --version through to pi inside", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run(["--version"], harness.deps);
 
-    expect(fake.execs.findLast((exec) => exec.spec.command.includes("pi"))?.spec.command.slice(-2)).toEqual([
-      "pi",
-      "--version",
-    ]);
+    expect(piSession(fake)?.spec.command.slice(-2)).toEqual(["pi", "--version"]);
   });
 
   it("refuses when no backend is available", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await harnessWith({ adapters: () => [down] });
+    const harness = await createHarness({ adapters: () => [down] });
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("pi-sandbox: no sandbox backend available: colima (socket missing)");
@@ -219,7 +202,7 @@ describe("pi [args]", () => {
 
   it("fails closed when the proxy cannot start", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       proxy: {
         ensure: async () => {
@@ -237,7 +220,7 @@ describe("pi [args]", () => {
 
   it("skips the proxy when nothing may leave the container", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       proxy: {
         ensure: async () => {
@@ -258,7 +241,7 @@ describe("pi [args]", () => {
 
   it("refuses outside the workspace roots and warns when the policy says warn", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await harness.writeJson(harness.policyFile, {
       workspaceRoots: { roots: [join(harness.root, "elsewhere")], outside: "refuse" },
@@ -279,7 +262,7 @@ describe("pi [args]", () => {
   });
 
   it("refuses --no-sandbox under fallback refuse and names the layer that set it", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.policyFile, { fallback: "refuse" });
 
@@ -288,7 +271,7 @@ describe("pi [args]", () => {
   });
 
   it("runs host pi from PATH under fallback host, skipping the launcher's own wrapper", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
     const wrapperDir = join(harness.root, "local-bin");
     const hostDir = join(harness.root, "host-bin");
 
@@ -307,5 +290,22 @@ describe("pi [args]", () => {
 
     expect(call?.file).toBe(hostPi);
     expect(call?.args).toEqual(["-p", "hi"]);
+  });
+});
+
+describe("pi --no-sandbox with an org baseline", () => {
+  it("never fetches the baseline, so an unreachable org source without a cache does not block host pi", async () => {
+    const harness = await createHarness();
+    const hostDir = join(harness.root, "host-bin");
+
+    await writeScript(hostDir, "echo host pi");
+
+    harness.deps.env.PATH = hostDir;
+
+    await harness.writeJson(harness.userConfigFile, { org: { source: "https://org.invalid/baseline.json" } });
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain("the org layer is skipped");
+    expect(harness.stderr()).not.toContain("could not fetch");
   });
 });

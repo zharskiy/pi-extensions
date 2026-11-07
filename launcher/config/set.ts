@@ -1,14 +1,16 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  isJsonObject,
   LauncherError,
   launcherPaths,
   readJsonFile,
   sha256Hex,
+  stateLayout,
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
-import { isRecord, setPath } from "./dotted.ts";
+import { setPath } from "./dotted.ts";
 import { layerFile, loadOrg, readLayer, resolveConfig, validateLayerFile } from "./load.ts";
 import { layerKeys } from "./validate.ts";
 
@@ -41,12 +43,12 @@ const prepareProjectFolder = async (file: string) => {
 };
 
 const lockOf = (file: string, env: NodeJS.ProcessEnv | undefined) =>
-  join(launcherPaths({ env }).stateDir, "locks", `config-${sha256Hex(file).slice(0, 16)}`);
+  stateLayout(launcherPaths({ env }).stateDir).configLock(sha256Hex(file).slice(0, 16));
 
 const writeValue = async ({ layer, key, value, env }: SetConfigOptions, root: string, file: string) => {
   const current = (await readJsonFile<unknown>(file)) ?? {};
 
-  if (!isRecord(current)) {
+  if (!isJsonObject(current)) {
     throw new LauncherError(`${layer}: must be a JSON object`, `fix ${file}`);
   }
 

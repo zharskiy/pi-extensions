@@ -1,29 +1,30 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { LEGACY_GATEWAY_RULE_ID, type SandboxConfig, vaultEnabled } from "../config/index.ts";
 import {
   type DerivedSandboxPi,
   deriveSandboxPi,
   discoverVaultServers,
   type HostPiFiles,
-  privateHostNotices,
   readHostPiFiles,
   readProviderHosts,
   seedMcpAuth,
   vaultCandidates,
 } from "../hostpi/index.ts";
-import type { TrustBundle } from "../proxy/index.ts";
-import { ensureSalt, sha256Hex } from "../shared/index.ts";
-import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
+import { privateHostNotices, type TrustBundle } from "../proxy/index.ts";
+import { ensureSalt } from "../shared/index.ts";
+import { type CliDeps, hostAgentDirOf, settleAll, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 import { piVersion } from "./versions.ts";
 
 export interface HostSide {
-  repoHash: string;
   hostAgentDir: string;
   files: HostPiFiles;
   derived: DerivedSandboxPi;
   trust?: TrustBundle;
   proxyNeeded: boolean;
 }
+
+const DNS_WAIT_MS = 2000;
 
 const MISSING_PI =
   "the launcher's bundled pi is missing, built-in providers get no credential rules; reinstall with npm install -g pi-extensions-mz";
@@ -60,16 +61,19 @@ export const discoverVault = async (deps: CliDeps, context: LaunchContext, files
 
 const deriveFor = async (deps: CliDeps, context: LaunchContext, files: HostPiFiles) => {
   const { config } = context.effective;
-  const seeded = await seedMcpAuth({ stateDir: context.stateDir, files });
-  const providers = await providerHostsOf(deps, context.stateDir);
-  const vault = await discoverVault(deps, context, files);
+  const [seeded, providers, vault, salt] = await settleAll([
+    seedMcpAuth({ stateDir: context.stateDir, files }),
+    providerHostsOf(deps, context.stateDir),
+    discoverVault(deps, context, files),
+    ensureSalt(context.stateDir),
+  ]);
   const derived = deriveSandboxPi({
     files,
     providerHosts: providers.hosts,
     gateway: config.gateway,
     credentials: config.credentials,
     manual: config.credentials.rules,
-    salt: await ensureSalt(context.stateDir),
+    salt,
     env: deps.env,
     derive: config.credentials.derive,
     mcpSignedIn: seeded.signedIn,
@@ -104,27 +108,35 @@ const trustFor = (deps: CliDeps, context: LaunchContext, derived: DerivedSandbox
   return deps.proxy.trust(context.stateDir, sources);
 };
 
+const noticesWithin = async (pending: Promise<string[]>) => {
+  const abort = new AbortController();
+  const late = delay(DNS_WAIT_MS, [], { signal: abort.signal }).catch(() => []);
+
+  try {
+    return await Promise.race([pending, late]);
+  } finally {
+    abort.abort();
+  }
+};
+
 export const prepareHostSide = async (deps: CliDeps, context: LaunchContext): Promise<HostSide> => {
   const { config } = context.effective;
   const hostAgentDir = hostAgentDirOf(deps);
   const files = await readHostPiFiles(hostAgentDir);
   const { derived, notices } = await deriveFor(deps, context, files);
-  const privateNotices = await privateHostNotices({
-    rules: derived.rules.filter((rule) => rule.id !== LEGACY_GATEWAY_RULE_ID),
-    privateHosts: config.egress.privateHosts,
-    resolve: deps.resolveHost,
-  });
+  const proxyNeeded = needsProxy(config) || derived.rules.length > 0;
+  const [privateNotices, trust] = await settleAll([
+    noticesWithin(
+      privateHostNotices({
+        rules: derived.rules.filter((rule) => rule.id !== LEGACY_GATEWAY_RULE_ID),
+        privateHosts: config.egress.privateHosts,
+        resolve: deps.resolveHost,
+      }),
+    ),
+    trustFor(deps, context, derived, proxyNeeded),
+  ]);
 
   writeNotices(deps, [...notices, ...privateNotices, ...hostStoreNotices(deps, context)]);
 
-  const proxyNeeded = needsProxy(config) || derived.rules.length > 0;
-
-  return {
-    repoHash: sha256Hex(context.workspace.repoRoot),
-    hostAgentDir,
-    files,
-    derived,
-    trust: await trustFor(deps, context, derived, proxyNeeded),
-    proxyNeeded,
-  };
+  return { hostAgentDir, files, derived, trust, proxyNeeded };
 };

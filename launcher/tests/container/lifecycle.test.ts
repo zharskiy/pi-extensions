@@ -21,7 +21,6 @@ import { sandboxConfig } from "../support/sandbox-config.ts";
 const capabilities: BackendCapabilities = {
   singleFileMount: true,
   sshAgent: true,
-  internalNetwork: true,
 };
 
 const workspace = {
@@ -258,12 +257,11 @@ describe("ensureContainer", () => {
 
 describe("ensureContainer and the repository network", () => {
   const routedSpec = async (fake: ReturnType<typeof createFakeBackend>, configHash: string) => {
-    const route = await fake.backend.prepareProxyRoute(
-      3128,
-      "p",
-      "sha256:image-one",
-      sha256Hex(workspace.repoRoot),
-    );
+    const route = await fake.backend.prepareProxyRoute({
+      hostPort: 3128,
+      repoHash: sha256Hex(workspace.repoRoot),
+      relay: { policyHash: "p", imageId: "sha256:image-one" },
+    });
 
     return specOf({
       configHash,

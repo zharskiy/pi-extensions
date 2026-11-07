@@ -2,20 +2,20 @@ import type { SecretRef } from "../../config/index.ts";
 import type { CommandRunner } from "../../shared/index.ts";
 import { type CachedSecret, createSecretCache, type SecretLoadOptions } from "./cache.ts";
 import { commandSecret } from "./command.ts";
-import { collectEnvValues, envSecret } from "./env.ts";
+import { envSecret } from "./env.ts";
 import { SecretUnavailable } from "./errors.ts";
 import { fileSecret } from "./file.ts";
 import { createMcpOAuthSource } from "./mcp-oauth.ts";
 import { piAuthSecret } from "./pi-auth.ts";
 
-export const PARENT_PROXY_SECRET_KEY = "egress.parentProxy";
+export { envSecretsFor, PARENT_PROXY_SECRET_KEY } from "./env.ts";
 
 export interface SecretResolverDeps {
   runner: CommandRunner;
   home: string;
   now: () => number;
   piCommand: string[];
-  mcpAuthDir: string;
+  stateDir: string;
   envSecrets: (repoHash: string | undefined) => Promise<ReadonlyMap<string, string>>;
 }
 
@@ -24,11 +24,6 @@ export type SecretResult = { ok: true; value: string; expiresAt?: number } | { o
 export interface SecretResolver {
   resolve(key: string, ref: SecretRef, repoHash?: string): Promise<SecretResult>;
   invalidate(key: string): void;
-}
-
-export interface EnvSecretEntry {
-  key: string;
-  ref: SecretRef;
 }
 
 const kindOf = (ref: SecretRef) => Object.keys(ref)[0] ?? "unknown";
@@ -102,8 +97,3 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
 
   return { resolve, invalidate };
 };
-
-export const collectEnvSecrets = (
-  entries: EnvSecretEntry[],
-  env: Record<string, string | undefined>,
-): Record<string, string> => collectEnvValues(entries, env);

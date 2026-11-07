@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  isPlaceholder,
-  jwtShapedPlaceholder,
-  looksLikeJwt,
-  placeholderFor,
-  sha256Hex,
-} from "../../shared/index.ts";
+import { isPlaceholder, jwtShapedPlaceholder, placeholderFor, sha256Hex } from "../../shared/index.ts";
+import { looksLikeJwt } from "../../shared/placeholder.ts";
 
 const SALT = "a".repeat(64);
 

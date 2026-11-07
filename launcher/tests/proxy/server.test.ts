@@ -577,7 +577,6 @@ describe("dynamic configuration", () => {
       version: 1,
       rules: [],
       derivedHosts: ["reloaded.test"],
-      tokens: {},
     });
 
     expect((await connectStatus("reloaded.test:443")).status).toBe(200);
@@ -640,7 +639,6 @@ describe("egress cap", () => {
       version: 1,
       rules: [],
       derivedHosts: ["derived.test", "clipped.test"],
-      tokens: {},
     });
 
     await addGrant(

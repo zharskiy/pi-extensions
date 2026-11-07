@@ -1,11 +1,10 @@
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { errorMessage, LauncherError, sha256Hex } from "../shared/index.ts";
-import { buildProxyArgs } from "./build-proxy.ts";
 import { placeBuildTrust, TRUST_FILE } from "./build-trust.ts";
+import { buildInContext, reusableImage } from "./context.ts";
 import { isImageRecord, type LayerRecord, readImageRecord, writeImageRecord } from "./record.ts";
 
 interface EnsureLayerInput {
@@ -235,9 +234,7 @@ const reusableLayer = async (input: EnsureLayerInput, inputsHash: string) => {
     return undefined;
   }
 
-  const local = await input.backend.resolveImage(layer.tag).catch(() => undefined);
-
-  return local?.digest === layer.digest ? layer : undefined;
+  return (await reusableImage(input.backend, layer.tag, layer.digest)) === undefined ? undefined : layer;
 };
 
 const recordLayer = async (stateDir: string, layer: LayerRecord) => {
@@ -256,24 +253,19 @@ const buildLayer = async (
   inputsHash: string,
 ): Promise<LayerImage> => {
   const tag = `${TAG_PREFIX}:${inputsHash.slice(0, SHORT_HASH)}`;
-  const contextDir = join(input.stateDir, `layer-${randomBytes(4).toString("hex")}`);
+  const { id, digest } = await buildInContext(input, {
+    prefix: "layer",
+    tag,
+    fill: async (dir) => {
+      await writeFile(join(dir, "Dockerfile"), dockerfile);
 
-  try {
-    await mkdir(contextDir, { recursive: true });
+      await placeBuildTrust(dir, input.trustPem);
+    },
+  });
 
-    await writeFile(join(contextDir, "Dockerfile"), dockerfile);
+  await recordLayer(input.stateDir, { tag, id, digest, inputsHash });
 
-    await placeBuildTrust(contextDir, input.trustPem);
-
-    const buildArgs = buildProxyArgs(input.config.egress.parentProxy, input.env ?? {});
-    const { id, digest } = await input.backend.buildImage(contextDir, tag, buildArgs);
-
-    await recordLayer(input.stateDir, { tag, id, digest, inputsHash });
-
-    return { id, digest, tag, built: true };
-  } finally {
-    await rm(contextDir, { recursive: true, force: true });
-  }
+  return { id, digest, tag, built: true };
 };
 
 export const ensureLayerImage = async (input: EnsureLayerInput): Promise<LayerImage> => {

@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SecretRef } from "../../config/index.ts";
 import {
-  collectEnvSecrets,
   createSecretResolver,
+  envSecretsFor,
+  PARENT_PROXY_SECRET_KEY,
   type SecretResolverDeps,
 } from "../../proxy/secrets/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
@@ -34,7 +35,7 @@ const setup = (respond: FakeResponder = () => ({ stdout: "" }), extra: Partial<S
     home: state.home,
     now: clock.now,
     piCommand: PI,
-    mcpAuthDir: state.mcpAuthDir,
+    stateDir: join(state.home, "state"),
     envSecrets: async () => new Map(),
     ...extra,
   });
@@ -190,16 +191,41 @@ describe("env and file secrets", () => {
   });
 
   it("collects env values for the launcher, skipping unset variables and other kinds", () => {
+    const envRule = (id: string, secret: SecretRef) => ({ id, host: `${id}.test`, placeholder: id, secret });
+
     expect(
-      collectEnvSecrets(
+      envSecretsFor(
         [
-          { key: "one", ref: { env: "ONE" } },
-          { key: "two", ref: { env: "TWO" } },
-          { key: "three", ref: { command: ["x"] } },
+          envRule("one", { env: "ONE" }),
+          envRule("two", { env: "TWO" }),
+          envRule("three", { command: ["x"] }),
         ],
+        "none",
         { ONE: "1", TWO: "" },
       ),
     ).toEqual({ one: "1" });
+  });
+
+  it("hands the parent proxy credentials from HTTPS_PROXY or from the configured env reference", () => {
+    expect(envSecretsFor([], "env", { HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toEqual({
+      [PARENT_PROXY_SECRET_KEY]: "corp:p@ss",
+    });
+    expect(envSecretsFor([], "none", { HTTPS_PROXY: "http://corp:pass@proxy.test:3128" })).toEqual({});
+    expect(
+      envSecretsFor(
+        [],
+        { url: "http://proxy.test:3128", auth: { env: "PARENT_AUTH" } },
+        { PARENT_AUTH: "u:p" },
+      ),
+    ).toEqual({ [PARENT_PROXY_SECRET_KEY]: "u:p" });
+  });
+
+  it("refuses an env credential that holds a line break", () => {
+    const corp = { id: "corp", host: "corp.test", placeholder: "corp", secret: { env: "CORP" } };
+
+    expect(() => envSecretsFor([corp], "none", { CORP: "abc\r\nX-Evil: 1" })).toThrow(
+      "CORP contains a line break and cannot be used as a credential",
+    );
   });
 });
 

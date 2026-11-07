@@ -1,14 +1,16 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import type { Backend } from "../../backend/index.ts";
+import { afterEach } from "vitest";
+import type { Backend, ExecSpec } from "../../backend/index.ts";
 import type { CliDeps } from "../../cli/index.ts";
 import { piVersion } from "../../cli/versions.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
 import type { ControlMessage, DenialRecord, ProxyInstance } from "../../proxy/index.ts";
-import type { RunResult } from "../../shared/index.ts";
+import { type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
+import type { FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
 interface Collected {
@@ -27,6 +29,14 @@ export interface HarnessOptions {
   resolve?: (host: string) => Promise<string[]>;
   confirm?: boolean;
 }
+
+const roots: string[] = [];
+
+const removeRoot = (root: string) => rm(root, { recursive: true, force: true });
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map(removeRoot));
+});
 
 const collector = (): Collected => {
   const chunks: string[] = [];
@@ -62,6 +72,10 @@ const gitAnswer = (repoRoot: string, given: string[]): Partial<RunResult> | unde
     return { stdout: `${repoRoot}\n${join(repoRoot, ".git")}\n` };
   }
 
+  if (args[0] === "status") {
+    return { stdout: "" };
+  }
+
   return args[0] === "rev-parse" && args[1] === "HEAD" ? { stdout: "head-one\n" } : undefined;
 };
 
@@ -73,8 +87,47 @@ const npmPack = (args: string[]): Partial<RunResult> => {
   return { stdout: `${TARBALL}\n` };
 };
 
+interface HarnessPaths {
+  stateDir: string;
+  repoRoot: string;
+}
+
+interface DynamicSection {
+  rules: unknown[];
+  derivedHosts: string[];
+  vault?: Array<{ server: string; discovery: { hosts: string[] } }>;
+}
+
+export const isPiSession = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
+
+export const piSessions = (fake: { execs: FakeExec[] }) =>
+  fake.execs.filter((exec) => isPiSession(exec.spec));
+
+export const piSession = (fake: { execs: FakeExec[] }) => piSessions(fake).at(-1);
+
+export const renderDirOf = (harness: HarnessPaths) =>
+  stateLayout(harness.stateDir).render(sha256Hex(harness.repoRoot));
+
+export const repoTokenOf = (harness: HarnessPaths, policyHash = RUNNING_PROXY.policyHash) =>
+  readFile(
+    stateLayout(harness.stateDir).proxyInstance(policyHash).repoToken(sha256Hex(harness.repoRoot)),
+    "utf8",
+  );
+
+export const repoDynamicOf = async (harness: HarnessPaths, policyHash = RUNNING_PROXY.policyHash) => {
+  const files = stateLayout(harness.stateDir).proxyInstance(policyHash);
+  const stored = JSON.parse(await readFile(files.dynamic, "utf8")) as {
+    repos: Record<string, DynamicSection>;
+  };
+
+  return stored.repos[sha256Hex(await repoTokenOf(harness, policyHash))];
+};
+
 export const createHarness = async (options: HarnessOptions = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-cli-")));
+
+  roots.push(root);
+
   const repoRoot = join(root, "repo");
   const cwd = join(repoRoot, "src");
   const stateDir = join(root, "state");
@@ -216,6 +269,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     stdout: stdout.text,
     stderr: stderr.text,
     writeJson,
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup: () => removeRoot(root),
   };
 };

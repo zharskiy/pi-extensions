@@ -19,7 +19,7 @@ export interface EnsuredContainer {
   created: boolean;
   outdated: boolean;
   spec: LauncherContainerSpec;
-  labels: Record<string, string>;
+  notices: string[];
 }
 
 export interface Garbage {
@@ -35,6 +35,11 @@ const RELAYS = { [LABELS.relay]: "true" };
 const IDENTITY = [LABELS.imageDigest, LABELS.configHash, LABELS.specHash];
 
 const LOCK_TIMEOUT_MS = 120_000;
+
+const OUTDATED = "the sandbox config changed; it applies after every session in this repository exits";
+
+const UNPROTECTED =
+  "the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
 
 const isCurrent = (container: ContainerSummary, labels: Record<string, string | undefined>) =>
   IDENTITY.every((label) => container.labels[label] === labels[label]);
@@ -123,7 +128,7 @@ const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promi
 
   await backend.startContainer(id);
 
-  return { id, created: true, outdated: false, spec, labels: spec.labels };
+  return { id, created: true, outdated: false, spec, notices: [] };
 };
 
 const repoContainers = (backend: Backend, spec: LauncherContainerSpec) =>
@@ -138,12 +143,16 @@ const reuse = async (
     await backend.startContainer(container.id);
   }
 
+  const outdated = !isCurrent(container, spec.labels);
+  const unprotected =
+    spec.labels[LABELS.gitCommonDir] !== undefined && container.labels[LABELS.gitProtection] === undefined;
+
   return {
     id: container.id,
     created: false,
-    outdated: !isCurrent(container, spec.labels),
+    outdated,
     spec,
-    labels: container.labels,
+    notices: outdated ? [OUTDATED, ...(unprotected ? [UNPROTECTED] : [])] : [],
   };
 };
 

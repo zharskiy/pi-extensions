@@ -1,7 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { isProcessAlive, LauncherError, stateLayout, withFileLock, writeJsonFile } from "../shared/index.ts";
+import {
+  isJsonObject,
+  isProcessAlive,
+  LauncherError,
+  readJsonObject,
+  stateLayout,
+  withFileLock,
+  writeJsonFile,
+} from "../shared/index.ts";
 import type { EndSessionInput, SessionEntry } from "./types.ts";
 
 const LAUNCH_ID = /^[0-9a-f]{16}$/;
@@ -26,24 +34,41 @@ const entryFile = (stateDir: string, repoHash: string, launchId: string) =>
 const lockFile = (stateDir: string, repoHash: string) =>
   join(stateLayout(stateDir).sessionsOf(repoHash), "lock");
 
-const readEntry = async (path: string) => {
-  try {
-    const entry = JSON.parse(await readFile(path, "utf8")) as SessionEntry;
+interface StoredEntry {
+  path: string;
+  entry?: SessionEntry;
+}
 
-    return typeof entry.pid === "number" && typeof entry.launchId === "string" ? entry : undefined;
-  } catch {
-    return undefined;
-  }
+const isEntry = (value: unknown): value is SessionEntry =>
+  isJsonObject(value) && typeof value.pid === "number" && typeof value.launchId === "string";
+
+const readEntry = async (path: string): Promise<StoredEntry> => {
+  const value = await readJsonObject(path);
+
+  return isEntry(value) ? { path, entry: value } : { path };
 };
 
-const repoEntries = async (stateDir: string, repoHash: string) => {
+const storedEntries = async (stateDir: string, repoHash: string) => {
   const directory = stateLayout(stateDir).sessionsOf(repoHash);
   const names = await readdir(directory).catch(() => []);
-  const entries = await Promise.all(
+
+  return Promise.all(
     names.filter((name) => name.endsWith(ENTRY_SUFFIX)).map((name) => readEntry(join(directory, name))),
   );
+};
 
-  return entries.filter((entry): entry is SessionEntry => entry !== undefined);
+const repoEntries = async (stateDir: string, repoHash: string) =>
+  (await storedEntries(stateDir, repoHash)).flatMap((stored) =>
+    stored.entry === undefined ? [] : [stored.entry],
+  );
+
+const pruneDead = async (stateDir: string, repoHash: string) => {
+  const stored = await storedEntries(stateDir, repoHash);
+  const dead = stored.filter((item) => item.entry !== undefined && !isProcessAlive(item.entry.pid));
+
+  await Promise.all(dead.map((item) => rm(item.path, { force: true })));
+
+  return stored.flatMap((item) => (item.entry === undefined || dead.includes(item) ? [] : [item.entry]));
 };
 
 const repoHashes = async (stateDir: string) => {
@@ -67,14 +92,14 @@ export const registerSession = (stateDir: string, entry: SessionEntry): Promise<
   withFileLock(lockFile(stateDir, entry.repoHash), async () => {
     await writeJsonFile(entryFile(stateDir, entry.repoHash, entry.launchId), entry, { mode: PRIVATE_MODE });
 
-    return (await liveSessions(stateDir, entry.repoHash)).length;
+    return (await pruneDead(stateDir, entry.repoHash)).length;
   });
 
 export const endSession = (stateDir: string, input: EndSessionInput): Promise<number> =>
   withFileLock(lockFile(stateDir, input.repoHash), async () => {
     await rm(entryFile(stateDir, input.repoHash, input.launchId), { force: true });
 
-    const remaining = (await liveSessions(stateDir, input.repoHash)).length;
+    const remaining = (await pruneDead(stateDir, input.repoHash)).length;
 
     if (remaining === 0) {
       await input.onLast();

@@ -188,7 +188,10 @@ const sandboxChecks = async (
       ...(await imageAndContainer(deps, context, backend, { host, proxy, session, sessions }, containers)),
     ];
   } finally {
-    if (containers.created !== undefined && !(await othersLive(context.stateDir, session))) {
+    if (
+      containers.created !== undefined &&
+      !(await othersLive(context.stateDir, context.repoHash, session.launchId))
+    ) {
       await removeRepoContainer(backend, context.workspace.repoRoot);
     }
   }
@@ -205,7 +208,7 @@ const backendChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
   }
 
   const sessions = hostSessionsOf(deps, context, host.files.settings);
-  const session = await beginSession(deps, context, host.repoHash);
+  const session = await beginSession(deps, context);
 
   try {
     return await sandboxChecks(deps, context, backend, host, session, sessions);

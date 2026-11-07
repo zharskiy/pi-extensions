@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ParentProxy } from "../../config/index.ts";
-import { ensureBuiltImage } from "../../image/index.ts";
+import { ensureBuiltImage } from "../../image/build.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 

@@ -1,6 +1,6 @@
 import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
-import { sha256Hex, stateLayout, writeFileAtomic } from "../shared/index.ts";
+import { stateLayout, writeFileAtomic } from "../shared/index.ts";
 import { readHostEntries, type Tree } from "./tree.ts";
 import type { RenderInput, RenderResult } from "./types.ts";
 
@@ -14,8 +14,6 @@ const RENDER_COPIED_ENTRIES = [
   "SYSTEM.md",
   "keybindings.json",
 ] as const;
-
-const RENDERED_FILES = ["auth.json", "models.json"] as const;
 
 const FILE_MODE = 0o644;
 
@@ -78,7 +76,7 @@ const removeStale = async (dir: string, tree: Tree) => {
 const isCurrent = async (path: string, data: Buffer, mode: number) => {
   const info = await lstat(path).catch(() => undefined);
 
-  if (info === undefined || !info.isFile() || (info.mode & 0o777) !== mode) {
+  if (info === undefined || !info.isFile() || (info.mode & 0o777) !== mode || info.size !== data.length) {
     return false;
   }
 
@@ -97,24 +95,6 @@ const writeChanged = async (dir: string, tree: Tree) => {
   );
 };
 
-const treeHash = (tree: Tree) =>
-  sha256Hex(
-    [...tree.keys()]
-      .sort()
-      .map((relative) => {
-        const file = tree.get(relative);
-
-        return `${relative}\0${file?.mode ?? 0}\0${sha256Hex(file?.data.toString("base64") ?? "")}\n`;
-      })
-      .join(""),
-  );
-
-const topLevelEntries = (tree: Tree) => {
-  const present = new Set([...tree.keys()].map((relative) => relative.split("/")[0] ?? relative));
-
-  return [...RENDERED_FILES, ...RENDER_COPIED_ENTRIES].filter((name) => present.has(name));
-};
-
 export const renderAgentDir = async (input: RenderInput): Promise<RenderResult> => {
   const renderDir = stateLayout(input.stateDir).render(input.repoHash);
   const tree = await desiredTree(input);
@@ -125,5 +105,5 @@ export const renderAgentDir = async (input: RenderInput): Promise<RenderResult> 
 
   await writeChanged(renderDir, tree);
 
-  return { renderDir, entries: topLevelEntries(tree), hash: treeHash(tree) };
+  return { renderDir };
 };

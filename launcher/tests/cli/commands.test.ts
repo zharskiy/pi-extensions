@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
 import { registerSession } from "../../grants/index.ts";
@@ -9,28 +9,14 @@ import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { createHarness } from "./harness.ts";
 
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
-
 const packageVersion = async () =>
   (JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as { version: string })
     .version;
 
 describe("pi sandbox status", () => {
   it("reports backend, container, proxy, image and capability gaps", async () => {
-    const fake = createFakeBackend({ capabilities: { sshAgent: false, internalNetwork: false } });
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const fake = createFakeBackend({ capabilities: { sshAgent: false } });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -48,14 +34,13 @@ describe("pi sandbox status", () => {
     expect(lines).toContain("proxy: stopped");
     expect(lines).toContain(`image: ghcr.io/zharskiy/pi-sandbox:${await packageVersion()} sha256:built-1`);
     expect(lines).toContain("gap: no ssh agent forwarding, ssh.agent has no effect");
-    expect(lines).toContain("gap: no internal network, the container cannot reach the egress proxy");
     expect(lines).toContain("sessions: 0 running for this repository");
     expect(lines).toContain("grants: 0 active");
   });
 
   it("reports the container stale when its image digest differs from the recorded image", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -72,7 +57,7 @@ describe("pi sandbox status", () => {
 
   it("reports the container stale when its spec hash differs from the one the last launch wanted", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -88,7 +73,7 @@ describe("pi sandbox status", () => {
   });
 
   it("lists every running proxy instance and marks the one for this repository's policy", async () => {
-    const harness = await harnessWith({
+    const harness = await createHarness({
       proxy: {
         list: async () => [
           { policyHash: "a".repeat(64), pid: 11, port: 4001, token: "secret-token-a" },
@@ -112,7 +97,7 @@ describe("pi sandbox status", () => {
   });
 
   it("reports live sessions and active grants of this repository", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await registerSession(harness.stateDir, {
       launchId: "0123456789abcdef",
@@ -136,7 +121,7 @@ describe("pi sandbox status", () => {
   it("still reports the proxy and image without a backend", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await harnessWith({ adapters: () => [down] });
+    const harness = await createHarness({ adapters: () => [down] });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(
@@ -149,7 +134,7 @@ describe("pi sandbox status", () => {
 
 describe("pi sandbox config", () => {
   it("prints the effective config followed by the source layer of each key", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.userConfigFile, { backend: "colima" });
 
@@ -164,7 +149,7 @@ describe("pi sandbox config", () => {
   });
 
   it("prints config and sources as one JSON object with --json", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
 
@@ -178,7 +163,7 @@ describe("pi sandbox config", () => {
   });
 
   it("sets a user key, or a project key with --project", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "config", "set", "backend", '"apple"'], harness.deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ backend: "apple" });
@@ -200,7 +185,7 @@ describe("pi sandbox config", () => {
   });
 
   it("refuses a value that is not JSON with a hint", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "config", "set", "backend", "apple"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("pi-sandbox: config set backend: apple is not a JSON value\n");
@@ -210,7 +195,7 @@ describe("pi sandbox config", () => {
   });
 
   it("refuses loosening a key the org baseline locked, and writes nothing", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
     const baseline = join(harness.root, "org-baseline.json");
 
     await harness.writeJson(baseline, { egress: { grants: { permanent: false } } });
@@ -223,7 +208,7 @@ describe("pi sandbox config", () => {
   });
 
   it("refuses loosening a key the policy locked and names the layer", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.policyFile, { fallback: "refuse" });
 
@@ -235,7 +220,7 @@ describe("pi sandbox config", () => {
 describe("pi sandbox gc and reset", () => {
   it("removes stopped launcher containers, this repository's idle one included, and keeps running ones", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -264,9 +249,37 @@ describe("pi sandbox gc and reset", () => {
     ]);
   });
 
+  it("removes the proxy token of a repository whose container it removed, so the token stops working", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const tokens = stateLayout(harness.stateDir).proxyInstance("policy");
+    const other = "b".repeat(64);
+
+    await run([], harness.deps);
+
+    await mkdir(tokens.tokensDir, { recursive: true });
+
+    await writeFile(tokens.repoToken(other), "c".repeat(64));
+
+    fake.addContainer({
+      name: "pi-sandbox-other",
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: other, [LABELS.proxyPolicyHash]: "policy" },
+      state: "running",
+      image: "x",
+    });
+
+    const repoToken = tokens.repoToken(sha256Hex(harness.repoRoot));
+    const before = await readFile(repoToken, "utf8").catch(() => undefined);
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(before).toMatch(/^[0-9a-f]{64}$/);
+    expect(await readFile(repoToken, "utf8").catch(() => undefined)).toBeUndefined();
+    expect(await readFile(tokens.repoToken(other), "utf8")).toBe("c".repeat(64));
+  });
+
   it("removes relays and stops proxies that no running container uses", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       proxy: {
         list: async () => [
@@ -304,7 +317,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes the networks of repositories that have no container left", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
     const kept = "a".repeat(64);
 
     await run([], harness.deps);
@@ -328,7 +341,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("keeps the proxy, relay and container of a repository whose session is still preparing", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => [fake.backend],
       proxy: { list: async () => [{ policyHash: "preparing", pid: 3, port: 5000, token: "t" }] },
     });
@@ -367,7 +380,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes this repo's container and, with --volumes, its agent and cache volumes", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["node_modules"] } });
 
@@ -397,7 +410,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes the proxy instance of this repo's policy so its token rotates on the next launch", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -408,7 +421,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("keeps the proxy instance when a running container of another repository shares its policy", async () => {
     const fake = createFakeBackend();
-    const harness = await harnessWith({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ adapters: () => [fake.backend] });
 
     await run([], harness.deps);
 
@@ -434,14 +447,14 @@ describe("pi sandbox gc and reset", () => {
 
 describe("pi sandbox help and version", () => {
   it("prints the launcher version from the package manifest", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "--version"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(`${await packageVersion()}\n`);
   });
 
   it("prints usage for help and for a bare pi sandbox", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "help"], harness.deps)).toBe(0);
     expect(await run(["sandbox"], harness.deps)).toBe(0);

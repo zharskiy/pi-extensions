@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Backend, createDockerEngineBackend, resolveDockerSocket } from "../../backend/index.ts";
+import { type Backend, createDockerEngineBackend, LABELS, resolveDockerSocket } from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
 const RELAY_IMAGE = "pi-sandbox-relay-test:alpine";
@@ -15,6 +15,8 @@ const CLIENT_IMAGE = "pi-sandbox-conformance:busybox";
 const CLIENT_NAME = "pi-sandbox-relay-client";
 
 const POLICY_HASH = "0".repeat(64);
+
+const REPO_HASH = "f".repeat(64);
 
 const colimaSockets = () => {
   const root = join(homedir(), ".colima");
@@ -93,7 +95,11 @@ describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
 
     state.server = await listen();
 
-    const route = await backend.prepareProxyRoute(portOf(state.server), POLICY_HASH, RELAY_IMAGE);
+    const route = await backend.prepareProxyRoute({
+      hostPort: portOf(state.server),
+      repoHash: REPO_HASH,
+      relay: { policyHash: POLICY_HASH, imageId: RELAY_IMAGE },
+    });
     const stale = await backend.findContainers({ "pi-sandbox.relay-client": "true" });
 
     await Promise.all(stale.map((container) => backend.removeContainer(container.id)));
@@ -101,7 +107,7 @@ describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
     const client = await backend.createContainer({
       name: CLIENT_NAME,
       image: CLIENT_IMAGE,
-      labels: { "pi-sandbox.relay-client": "true" },
+      labels: { "pi-sandbox.relay-client": "true", [LABELS.repoHash]: REPO_HASH },
       mounts: [],
       network: route.network,
       env: {},
@@ -120,7 +126,7 @@ describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
   });
 
   afterAll(async () => {
-    const relays = await backend.findContainers({ "pi-sandbox.relay": "true" });
+    const relays = await backend.findContainers({ [LABELS.relay]: "true" });
 
     await Promise.all(
       [state.clientId, ...relays.map((relay) => relay.id)].map((id) => id && backend.removeContainer(id)),

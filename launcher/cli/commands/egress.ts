@@ -1,5 +1,6 @@
-import { grantCapBlocker } from "../../config/index.ts";
+import { authorityOf, grantCapBlocker } from "../../config/index.ts";
 import {
+  activeGrants,
   addGrant,
   type Grant,
   type GrantScope,
@@ -8,10 +9,9 @@ import {
   revokeGrants,
 } from "../../grants/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
-import { LauncherError, sha256Hex } from "../../shared/index.ts";
+import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { type LaunchContext, openContext } from "../launch.ts";
-import { authorityOf } from "../sandbox-proxy.ts";
 import { liveLaunchIds } from "../sessions.ts";
 
 interface Target {
@@ -79,10 +79,8 @@ const parseAllowFlags = (args: string[], options: AllowOptions = { user: false }
   throw usage(`egress: unknown option ${flag}`);
 };
 
-const repoHashOf = (context: LaunchContext) => sha256Hex(context.workspace.repoRoot);
-
 const sessionLaunches = async (deps: CliDeps, context: LaunchContext) => {
-  const sessions = await liveSessions(context.stateDir, repoHashOf(context));
+  const sessions = await liveSessions(context.stateDir, context.repoHash);
   const current = deps.env.PI_SANDBOX_LAUNCH_ID;
 
   if (current !== undefined && current !== "") {
@@ -155,7 +153,7 @@ const allow = async (deps: CliDeps, args: string[]) => {
     scopes.map((scope) =>
       addGrant(
         context.stateDir,
-        { ...target, ...(options.user ? {} : { repoHash: repoHashOf(context) }), scope },
+        { ...target, ...(options.user ? {} : { repoHash: context.repoHash }), scope },
         context.effective.config.egress.grants,
         deps.now(),
       ),
@@ -187,7 +185,7 @@ const revoke = async (deps: CliDeps, args: string[]) => {
   const count = await revokeGrants(context.stateDir, {
     host: target.host,
     ...(text?.includes(":") ? { port: target.port } : {}),
-    ...(flags.includes("--user") ? {} : { repoHash: repoHashOf(context) }),
+    ...(flags.includes("--user") ? {} : { repoHash: context.repoHash }),
   });
 
   writeLine(deps.stdout, `revoked ${count} grant${count === 1 ? "" : "s"} for ${text}`);
@@ -195,16 +193,12 @@ const revoke = async (deps: CliDeps, args: string[]) => {
   return 0;
 };
 
-const isShown = (grant: Grant, context: LaunchContext, now: number, live: ReadonlySet<string>) =>
-  (grant.repoHash === undefined || grant.repoHash === repoHashOf(context)) &&
-  (grant.expiresAt === undefined || grant.expiresAt > now) &&
-  (grant.launchId === undefined || live.has(grant.launchId));
-
 export const grantLines = async (deps: CliDeps, context: LaunchContext) => {
-  const live = await liveLaunchIds(context.stateDir);
-  const grants = (await readGrants(context.stateDir)).filter((grant) =>
-    isShown(grant, context, deps.now(), live),
-  );
+  const grants = activeGrants(await readGrants(context.stateDir), {
+    now: deps.now(),
+    liveLaunches: await liveLaunchIds(context.stateDir),
+    repoHash: context.repoHash,
+  });
 
   return grants.map(
     (grant) => `${authorityOf(grant.host, grant.port)} for ${scopeText(grant)} ${lifetimeText(grant)}`,
@@ -214,7 +208,7 @@ export const grantLines = async (deps: CliDeps, context: LaunchContext) => {
 const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
   const policyHash = proxyPolicyHash(context.effective.config, context.effective.egressCap);
   const denials = await deps.proxy.denials(context.stateDir, policyHash, {
-    repoHash: repoHashOf(context),
+    repoHash: context.repoHash,
     since: 0,
   });
 

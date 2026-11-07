@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { policyHashesInUse, removeRepoContainer, repoVolumes } from "../../container/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
-import { LauncherError, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { openBackend, openContext } from "../launch.ts";
 import { pruneEndedGrants } from "../sessions.ts";
@@ -15,7 +15,7 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
     throw new LauncherError(`unknown reset option "${unknown}"`, "pi sandbox reset [--volumes]");
   }
 
-  const { workspace, effective, stateDir } = await openContext(deps);
+  const { workspace, effective, stateDir, repoHash } = await openContext(deps);
   const backend = await openBackend(deps, effective.config);
   const removed = await removeRepoContainer(backend, workspace.repoRoot);
 
@@ -29,7 +29,6 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
   }
 
   const layout = stateLayout(stateDir);
-  const repoHash = sha256Hex(workspace.repoRoot);
 
   await rm(layout.render(repoHash), { recursive: true, force: true });
 

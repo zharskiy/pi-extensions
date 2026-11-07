@@ -5,7 +5,7 @@ import { findRepoContainer, isCurrentContainer, LABELS } from "../../container/i
 import { liveSessions } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
-import { LauncherError, sha256Hex } from "../../shared/index.ts";
+import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, writeLines } from "../deps.ts";
 import { type LaunchContext, openBackend, openContext } from "../launch.ts";
 import { launcherVersion } from "../versions.ts";
@@ -15,7 +15,6 @@ const GAPS: Record<keyof BackendCapabilities, string> = {
   singleFileMount:
     "no single-file mounts, git config files and the trust bundle are mounted from read-only copies",
   sshAgent: "no ssh agent forwarding, ssh.agent has no effect",
-  internalNetwork: "no internal network, the container cannot reach the egress proxy",
 };
 
 const SHORT_HASH = 12;
@@ -102,7 +101,7 @@ const imageLine = async (context: LaunchContext) => {
 };
 
 const sessionLines = async (context: LaunchContext) => {
-  const sessions = await liveSessions(context.stateDir, sha256Hex(context.workspace.repoRoot));
+  const sessions = await liveSessions(context.stateDir, context.repoHash);
 
   return [
     `sessions: ${sessions.length} running for this repository`,

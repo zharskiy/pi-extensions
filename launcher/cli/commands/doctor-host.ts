@@ -1,15 +1,13 @@
 import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
 import { connect } from "node:net";
-import { join } from "node:path";
-import { type ParentProxy, vaultEnabled } from "../../config/index.ts";
+import { orgBaselineStatus, type ParentProxy, vaultEnabled } from "../../config/index.ts";
 import { failed, passed, skipped } from "../../container/index.ts";
-import { mcpAuthKey, readHostPiFiles } from "../../hostpi/index.ts";
+import { type HostPiFiles, readHostPiFiles } from "../../hostpi/index.ts";
 import {
   errorMessage,
-  readJsonFile,
+  mcpAuthKey,
   readVaultStore,
-  stateLayout,
   type VaultDiscovery,
   type VaultEntry,
 } from "../../shared/index.ts";
@@ -22,11 +20,6 @@ import { piVersion } from "../versions.ts";
 import type { NamedCheck } from "./doctor-container.ts";
 import { grantLines } from "./egress.ts";
 
-interface OrgMeta {
-  fetchedAt?: number;
-  sha256?: string;
-}
-
 const CONNECT_TIMEOUT_MS = 3000;
 
 const MINUTE_MS = 60_000;
@@ -38,8 +31,6 @@ const DAY_MS = 86_400_000;
 const MINUTES_SHOWN_BELOW_MS = 2 * HOUR_MS;
 
 const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
-
-const SHORT_HASH = 12;
 
 const DEFAULT_PROXY_PORT = 80;
 
@@ -121,12 +112,6 @@ const checkParentProxy = async (deps: CliDeps, context: LaunchContext) => {
     : failed(`${authority} does not accept connections`);
 };
 
-const displaySource = (source: string) => {
-  const url = parsedUrl(source);
-
-  return url === undefined || url.protocol !== "https:" ? source : `${url.origin}${url.pathname}`;
-};
-
 const checkOrg = async (deps: CliDeps, context: LaunchContext) => {
   const ref = context.effective.config.org;
 
@@ -134,23 +119,14 @@ const checkOrg = async (deps: CliDeps, context: LaunchContext) => {
     return skipped("no org baseline configured");
   }
 
-  const meta = await readJsonFile<OrgMeta>(join(stateLayout(context.stateDir).org, "meta.json")).catch(
-    () => undefined,
-  );
+  const status = await orgBaselineStatus({
+    ref,
+    stateDir: context.stateDir,
+    now: deps.now,
+    home: deps.home,
+  });
 
-  if (meta?.fetchedAt === undefined || meta.sha256 === undefined) {
-    return failed(`${displaySource(ref.source)} has not been fetched`);
-  }
-
-  if (ref.sha256 !== undefined && ref.sha256 !== meta.sha256) {
-    return failed(`${displaySource(ref.source)}: the cached copy does not match the pinned sha256`);
-  }
-
-  const hours = Math.floor((deps.now() - meta.fetchedAt) / HOUR_MS);
-
-  return passed(
-    `${displaySource(ref.source)} fetched ${hours} h ago, sha256 ${meta.sha256.slice(0, SHORT_HASH)}`,
-  );
+  return status.ok ? passed(status.message) : failed(status.message);
 };
 
 const checkGrants = async (deps: CliDeps, context: LaunchContext) => {
@@ -206,7 +182,11 @@ const vaultCheck = (
   return { name, result: passed(`${ready}, ${signInText(deps, discovery.server, entry)}`) };
 };
 
-const vaultChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
+const vaultChecks = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  files: HostPiFiles,
+): Promise<NamedCheck[]> => {
   if (!vaultEnabled(context.effective.config)) {
     return [
       {
@@ -216,7 +196,6 @@ const vaultChecks = async (deps: CliDeps, context: LaunchContext): Promise<Named
     ];
   }
 
-  const files = await readHostPiFiles(hostAgentDirOf(deps));
   const { discovery } = await discoverVault(deps, context, files);
   const store = await readVaultStore(context.stateDir);
 
@@ -237,8 +216,7 @@ const unsafeSessionsDir = (deps: CliDeps, context: LaunchContext, dir: string) =
   }
 };
 
-const checkSessions = async (deps: CliDeps, context: LaunchContext) => {
-  const files = await readHostPiFiles(hostAgentDirOf(deps));
+const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostPiFiles) => {
   const sessions = hostSessionsOf(deps, context, files.settings);
 
   if ("off" in sessions) {
@@ -265,12 +243,24 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext) => {
     : failed(`${sessions.dir} is not writable`);
 };
 
-export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => [
-  { name: "bundled pi", result: await checkBundledPi(deps) },
-  { name: "provider hosts", result: await checkProviderHosts(deps, context) },
-  { name: "parent proxy", result: await checkParentProxy(deps, context) },
-  { name: "org baseline", result: await checkOrg(deps, context) },
-  { name: "grants", result: await checkGrants(deps, context) },
-  { name: "sessions", result: await checkSessions(deps, context) },
-  ...(await vaultChecks(deps, context)),
-];
+const named = async (name: string, result: Promise<NamedCheck["result"]>): Promise<NamedCheck> => ({
+  name,
+  result: await result,
+});
+
+export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
+  const files = await readHostPiFiles(hostAgentDirOf(deps));
+  const [checks, vault] = await Promise.all([
+    Promise.all([
+      named("bundled pi", checkBundledPi(deps)),
+      named("provider hosts", checkProviderHosts(deps, context)),
+      named("parent proxy", checkParentProxy(deps, context)),
+      named("org baseline", checkOrg(deps, context)),
+      named("grants", checkGrants(deps, context)),
+      named("sessions", checkSessions(deps, context, files)),
+    ]),
+    vaultChecks(deps, context, files),
+  ]);
+
+  return [...checks, ...vault];
+};

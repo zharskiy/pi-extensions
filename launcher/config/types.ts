@@ -4,7 +4,9 @@ type Backend = "auto" | BackendName;
 
 type Fallback = "refuse" | "host";
 
-export type ProfileName = "enterprise" | "team" | "solo";
+export const PROFILE_NAMES = ["enterprise", "team", "solo"] as const;
+
+export type ProfileName = (typeof PROFILE_NAMES)[number];
 
 export type CredentialSource =
   | { kind: "static"; envVar?: string; keychainService?: string }

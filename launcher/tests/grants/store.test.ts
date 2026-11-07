@@ -9,7 +9,7 @@ import {
   readGrants,
   revokeGrants,
   SESSION_GRANT_CAP_HOURS,
-} from "../../grants/index.ts";
+} from "../../grants/store.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { FAKE_EPOCH } from "../support/fake-clock.ts";
 

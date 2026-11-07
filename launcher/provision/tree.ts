@@ -1,6 +1,7 @@
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { basename, extname, join, posix } from "node:path";
-import { isSecretName } from "../shared/index.ts";
+import { isSecretName, lstatOrUndefined, readRegularFile } from "../shared/index.ts";
+import { inPool } from "./pool.ts";
 
 interface TreeFile {
   data: Buffer;
@@ -51,49 +52,49 @@ const holdsPrivateKey = (name: string, data: Buffer) =>
 
 const modeOf = (mode: number) => ((mode & EXECUTABLE_BITS) === 0 ? FILE_MODE : EXECUTABLE_MODE);
 
-const walk = async (path: string, relative: string, tree: Tree, topLevel: boolean): Promise<void> => {
-  const info = await lstat(path).catch(() => undefined);
+interface Candidate {
+  path: string;
+  relative: string;
+}
+
+const PARALLEL_READS = 16;
+
+const candidates = async (path: string, relative: string, topLevel: boolean): Promise<Candidate[]> => {
+  const info = await lstatOrUndefined(path);
 
   if (info === undefined || info.isSymbolicLink()) {
-    return;
+    return [];
   }
 
   if (info.isDirectory() && !topLevel && SKIPPED_DIRS.has(basename(path))) {
-    return;
+    return [];
   }
 
   if (info.isDirectory()) {
     const names = (await readdir(path)).sort();
-
-    await names.reduce(
-      (previous, name) =>
-        previous.then(() => walk(join(path, name), posix.join(relative, name), tree, false)),
-      Promise.resolve(),
+    const nested = await Promise.all(
+      names.map((name) => candidates(join(path, name), posix.join(relative, name), false)),
     );
 
-    return;
+    return nested.flat();
   }
 
   const excluded = !topLevel && isExcludedName(basename(path));
 
-  if (!info.isFile() || info.size > MAX_FILE_BYTES || excluded) {
-    return;
-  }
-
-  const data = await readFile(path);
-
-  if (!holdsPrivateKey(basename(path), data)) {
-    tree.set(relative, { data, mode: modeOf(info.mode) });
-  }
+  return !info.isFile() || info.size > MAX_FILE_BYTES || excluded ? [] : [{ path, relative }];
 };
 
-export const readHostEntries = async (hostAgentDir: string, names: readonly string[]) => {
-  const tree: Tree = new Map();
+const readCandidate = async (candidate: Candidate): Promise<[string, TreeFile] | undefined> => {
+  const file = await readRegularFile(candidate.path).catch(() => undefined);
 
-  await names.reduce(
-    (previous, name) => previous.then(() => walk(join(hostAgentDir, name), name, tree, true)),
-    Promise.resolve(),
-  );
+  return file === undefined || holdsPrivateKey(basename(candidate.path), file.data)
+    ? undefined
+    : [candidate.relative, { data: file.data, mode: modeOf(file.mode) }];
+};
 
-  return tree;
+export const readHostEntries = async (hostAgentDir: string, names: readonly string[]): Promise<Tree> => {
+  const found = await Promise.all(names.map((name) => candidates(join(hostAgentDir, name), name, true)));
+  const files = await inPool(found.flat(), PARALLEL_READS, readCandidate);
+
+  return new Map(files.filter((file): file is [string, TreeFile] => file !== undefined));
 };

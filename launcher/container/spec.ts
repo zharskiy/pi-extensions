@@ -16,8 +16,12 @@ import {
   PI_SESSION_DIR_VARIABLE,
   stableHash,
 } from "../shared/index.ts";
-import { type HostSessions, resolveExtraMounts, type Workspace } from "../workspace/index.ts";
-import type { GitOverlay } from "./git-overlay.ts";
+import {
+  type GitOverlay,
+  type HostSessions,
+  resolveExtraMounts,
+  type Workspace,
+} from "../workspace/index.ts";
 import { gitSnapshotPath, gitSnapshotsDir } from "./git-snapshot.ts";
 import { agentVolumeName, cacheVolumeName, containerName, copiesDir, LABELS, repoHash } from "./names.ts";
 

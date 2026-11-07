@@ -1,11 +1,17 @@
 import { join } from "node:path";
-import { isSecretName, type VaultDiscovered, type VaultServer, vaultPlaceholders } from "../shared/index.ts";
+import {
+  isJsonObject,
+  isSecretName,
+  type VaultDiscovered,
+  type VaultServer,
+  vaultPlaceholders,
+} from "../shared/index.ts";
 import { type Endpoint, endpointOf } from "./endpoints.ts";
-import { deriveHeaders } from "./headers.ts";
-import { isJsonObject, objectOr } from "./json.ts";
+import { deriveHeaders, hasAuthorizationHeader } from "./headers.ts";
+import { objectOr } from "./json.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { DeriveVault, JsonObject } from "./types.ts";
-import { hasQueryCredential, hasUrlPassword, stripUserinfo } from "./userinfo.ts";
+import { hasQueryCredential, hasUrlPassword, hasUrlUserinfo, stripUserinfo } from "./userinfo.ts";
 import { vaultCandidate } from "./vault.ts";
 
 type ServerSection = Section<[string, unknown]> & { vault?: VaultServer; dropped?: boolean };
@@ -17,14 +23,9 @@ export interface McpDeriveOptions {
 
 export type McpSection = Section<JsonObject> & { vault: VaultServer[] };
 
-const AUTHORIZATION = "authorization";
-
 const isHttpServer = (server: JsonObject) => typeof server.url === "string";
 
 const isStdioServer = (server: JsonObject) => typeof server.command === "string";
-
-const hasAuthorization = (headers: JsonObject | undefined) =>
-  Object.keys(headers ?? {}).some((name) => name.toLowerCase() === AUTHORIZATION);
 
 const oauthSection = (
   context: DeriveContext,
@@ -144,7 +145,7 @@ const httpServer = (
   }
 
   const bearer =
-    hasAuthorization(headers.value) || hasUrlPassword(server.url)
+    hasAuthorizationHeader(headers.value) || hasUrlPassword(server.url)
       ? undefined
       : oauthSection(context, name, url, endpoints, options.signedIn);
 
@@ -158,16 +159,6 @@ const httpServer = (
     rules: [...stripped.rules, ...headers.rules, ...(bearer?.rules ?? [])],
     notices: [...stripped.notices, ...headers.notices, ...(bearer?.notices ?? [])],
   };
-};
-
-const hasUrlUserinfo = (value: string) => {
-  try {
-    const url = new URL(value);
-
-    return url.username !== "" || url.password !== "";
-  } catch {
-    return false;
-  }
 };
 
 const isSecretEnvValue = (variable: string, value: unknown) =>

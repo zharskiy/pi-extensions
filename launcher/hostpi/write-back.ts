@@ -1,7 +1,14 @@
-import { readFile, realpath, stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage, LauncherError, stableHash, writeFileAtomic } from "../shared/index.ts";
-import { isJsonObject } from "./json.ts";
+import {
+  isJsonObject,
+  LauncherError,
+  parseJsonObject,
+  readText,
+  stableHash,
+  withDirectoryLock,
+  writeFileAtomic,
+} from "../shared/index.ts";
 import { entryMatches, packagesOf } from "./package-source.ts";
 import type { JsonObject, PackageChange } from "./types.ts";
 
@@ -15,37 +22,21 @@ const modeOf = async (path: string) => {
   return info === undefined ? undefined : info.mode & PERMISSION_BITS;
 };
 
-const readSettingsText = async (path: string) => {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-
-    throw new LauncherError(`${path}: ${errorMessage(error)}`);
-  }
-};
-
 const parseSettings = (path: string, text: string | undefined): JsonObject => {
   if (text === undefined) {
     return {};
   }
 
-  try {
-    const value: unknown = JSON.parse(text);
+  const value = parseJsonObject(text);
 
-    if (isJsonObject(value)) {
-      return value;
-    }
-  } catch {
-    throw new LauncherError(`${path}: invalid JSON, the package change was not written back`, "fix the file");
+  if (value === undefined) {
+    throw new LauncherError(
+      `${path}: invalid JSON object, the package change was not written back`,
+      "fix the file",
+    );
   }
 
-  throw new LauncherError(
-    `${path}: not a JSON object, the package change was not written back`,
-    "fix the file",
-  );
+  return value;
 };
 
 const indentOf = (text: string | undefined) => {
@@ -75,9 +66,9 @@ const changedPackages = (packages: unknown[], change: PackageChange) => {
 
 const targetOf = async (path: string) => realpath(path).catch(() => path);
 
-export const writeBackPackageChange = async (change: PackageChange): Promise<{ changed: boolean }> => {
-  const path = await targetOf(join(change.hostAgentDir, "settings.json"));
-  const text = await readSettingsText(path);
+const writeBack = async (link: string, change: PackageChange): Promise<{ changed: boolean }> => {
+  const path = await targetOf(link);
+  const text = await readText(path);
   const settings = parseSettings(path, text);
   const before = packagesOf(settings);
   const after = changedPackages(before, change);
@@ -87,10 +78,15 @@ export const writeBackPackageChange = async (change: PackageChange): Promise<{ c
   }
 
   const updated = { ...settings, packages: after };
-
   const mode = await modeOf(path);
 
   await writeFileAtomic(path, `${JSON.stringify(updated, null, indentOf(text))}\n`, { mode });
 
   return { changed: true };
+};
+
+export const writeBackPackageChange = (change: PackageChange): Promise<{ changed: boolean }> => {
+  const link = join(change.hostAgentDir, "settings.json");
+
+  return withDirectoryLock(`${link}.lock`, () => writeBack(link, change));
 };

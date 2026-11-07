@@ -1,7 +1,7 @@
-import type { Stats } from "node:fs";
-import { readdir, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { isWithin, LauncherError, lstatOrUndefined, readRegularFile } from "../shared/index.ts";
+import { isWithin, LauncherError, lstatOrUndefined, readRegularFile, sameEntry } from "../shared/index.ts";
 
 export interface GitLayout {
   gitDir: string;
@@ -9,6 +9,8 @@ export interface GitLayout {
 }
 
 const PIN = /^\.\n?$/;
+
+export const PIN_TEXT = ".\n";
 
 const GIT_FILE_PREFIX = "gitdir: ";
 
@@ -22,12 +24,28 @@ export const isPinText = (text: string) => PIN.test(text);
 
 export const pointerPath = (base: string, text: string) => resolve(base, text.trimEnd());
 
-export const readGitPointer = async (path: string, info: Stats) => {
-  if (info.isSymbolicLink()) {
+export const lstatKind = async (path: string, kind: "file" | "dir") => {
+  const info = await lstatOrUndefined(path);
+
+  if (info?.isSymbolicLink() === true) {
     throw gitRefusal(path, "is a symbolic link");
   }
 
-  if (!info.isFile()) {
+  if (info === undefined) {
+    return "missing";
+  }
+
+  return (kind === "dir" ? info.isDirectory() : info.isFile()) ? "match" : "other";
+};
+
+export const readGitPointer = async (path: string) => {
+  const kind = await lstatKind(path, "file");
+
+  if (kind === "missing") {
+    return undefined;
+  }
+
+  if (kind === "other") {
     throw gitRefusal(path, "is not a regular file");
   }
 
@@ -40,20 +58,62 @@ export const readGitPointer = async (path: string, info: Stats) => {
   return file.data.toString("utf8");
 };
 
+const requiredPointer = async (path: string) => {
+  const text = await readGitPointer(path);
+
+  if (text === undefined) {
+    throw gitRefusal(path, "is missing");
+  }
+
+  return text;
+};
+
 const realOrRefuse = (path: string, owner: string) =>
   realpath(path).catch(() => {
     throw gitRefusal(owner, `points at ${path}, which does not exist`);
   });
 
+const fillEmptyPin = async (path: string) => {
+  const handle = await open(path, constants.O_WRONLY | constants.O_NOFOLLOW).catch(() => undefined);
+
+  if (handle === undefined) {
+    throw gitRefusal(path, "is empty and could not be pinned");
+  }
+
+  try {
+    const [opened, current] = await Promise.all([handle.stat(), lstatOrUndefined(path)]);
+
+    if (
+      !opened.isFile() ||
+      opened.size !== 0 ||
+      opened.nlink !== 1 ||
+      current === undefined ||
+      !sameEntry(opened, current)
+    ) {
+      throw gitRefusal(path, "changed while it was pinned");
+    }
+
+    await handle.write(PIN_TEXT, 0);
+  } finally {
+    await handle.close();
+  }
+};
+
 export const pinStateOf = async (gitDir: string) => {
   const path = join(gitDir, "commondir");
-  const info = await lstatOrUndefined(path);
+  const text = await readGitPointer(path);
 
-  if (info === undefined) {
+  if (text === undefined) {
     return "absent";
   }
 
-  if (!isPinText(await readGitPointer(path, info))) {
+  if (text === "") {
+    await fillEmptyPin(path);
+
+    return "pinned";
+  }
+
+  if (!isPinText(text)) {
     throw gitRefusal(path, "was not written by git or the launcher");
   }
 
@@ -66,21 +126,15 @@ const ownGitDir = async (gitDir: string): Promise<GitLayout> => {
   return { gitDir, gitCommonDir: gitDir };
 };
 
-const linkedGitDir = async (repoRoot: string, dotGit: string, info: Stats) => {
-  const [line = ""] = (await readGitPointer(dotGit, info)).split("\n");
+const linkedGitDir = async (repoRoot: string, dotGit: string) => {
+  const [line = ""] = (await requiredPointer(dotGit)).split("\n");
 
   if (!line.startsWith(GIT_FILE_PREFIX)) {
     throw gitRefusal(dotGit, "is not a gitdir file");
   }
 
   const target = pointerPath(repoRoot, line.slice(GIT_FILE_PREFIX.length));
-  const entry = await lstatOrUndefined(target);
-
-  if (entry?.isSymbolicLink() === true) {
-    throw gitRefusal(target, "is a symbolic link");
-  }
-
-  if (entry === undefined || !entry.isDirectory()) {
+  if ((await lstatKind(target, "dir")) !== "match") {
     throw gitRefusal(dotGit, `points at ${target}, which is not a directory`);
   }
 
@@ -106,13 +160,7 @@ const worktreeLayout = async (repoRoot: string, gitDir: string, pointer: string)
   }
 
   const back = join(gitDir, "gitdir");
-  const info = await lstatOrUndefined(back);
-
-  if (info === undefined) {
-    throw gitRefusal(back, "is missing");
-  }
-
-  const linked = await realOrRefuse(pointerPath(gitDir, await readGitPointer(back, info)), back);
+  const linked = await realOrRefuse(pointerPath(gitDir, await requiredPointer(back)), back);
   const dotGit = join(repoRoot, ".git");
 
   if (linked !== dotGit) {
@@ -124,31 +172,22 @@ const worktreeLayout = async (repoRoot: string, gitDir: string, pointer: string)
 
 export const gitLayoutAt = async (repoRoot: string): Promise<GitLayout> => {
   const dotGit = join(repoRoot, ".git");
-  const info = await lstatOrUndefined(dotGit);
+  const kind = await lstatKind(dotGit, "dir");
 
-  if (info === undefined) {
+  if (kind === "missing") {
     throw gitRefusal(dotGit, "is missing");
   }
 
-  if (info.isSymbolicLink()) {
-    throw gitRefusal(dotGit, "is a symbolic link");
-  }
-
-  if (info.isDirectory()) {
+  if (kind === "match") {
     return ownGitDir(dotGit);
   }
 
-  const gitDir = await linkedGitDir(repoRoot, dotGit, info);
-  const commondir = join(gitDir, "commondir");
-  const pointer = await lstatOrUndefined(commondir);
+  const gitDir = await linkedGitDir(repoRoot, dotGit);
+  const text = await readGitPointer(join(gitDir, "commondir"));
 
-  if (pointer === undefined) {
-    return { gitDir, gitCommonDir: gitDir };
-  }
-
-  const text = await readGitPointer(commondir, pointer);
-
-  return isPinText(text) ? { gitDir, gitCommonDir: gitDir } : worktreeLayout(repoRoot, gitDir, text);
+  return text === undefined || text === "" || isPinText(text)
+    ? ownGitDir(gitDir)
+    : worktreeLayout(repoRoot, gitDir, text);
 };
 
 export const findGitRoot = async (dir: string): Promise<string | undefined> => {
@@ -161,15 +200,7 @@ export const findGitRoot = async (dir: string): Promise<string | undefined> => {
   return parent === dir ? undefined : findGitRoot(parent);
 };
 
-const isStructuralDir = async (dir: string) => {
-  const info = await lstatOrUndefined(dir);
-
-  if (info?.isSymbolicLink() === true) {
-    throw gitRefusal(dir, "is a symbolic link");
-  }
-
-  return info?.isDirectory() === true;
-};
+const isStructuralDir = async (dir: string) => (await lstatKind(dir, "dir")) === "match";
 
 const realChildDirs = async (dir: string) => {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);

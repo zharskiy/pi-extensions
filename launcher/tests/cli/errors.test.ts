@@ -1,25 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { createHarness } from "./harness.ts";
 
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
-
 describe("error rendering", () => {
   it("prints a LauncherError as one line plus its hint and exits 1", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.userConfigFile, { backend: "vmware" });
 
@@ -33,7 +19,7 @@ describe("error rendering", () => {
   });
 
   it("prints a LauncherError without a hint as one line", async () => {
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => {
         throw new LauncherError("engine refused");
       },
@@ -46,7 +32,7 @@ describe("error rendering", () => {
   });
 
   it("prints an unexpected error message without a stack and exits 70", async () => {
-    const harness = await harnessWith({
+    const harness = await createHarness({
       adapters: () => {
         throw new Error("boom");
       },
@@ -57,7 +43,7 @@ describe("error rendering", () => {
   });
 
   it("refuses an unknown subcommand and points at help", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "explode"], harness.deps)).toBe(1);
     expect(harness.stderr()).toBe(
@@ -66,7 +52,7 @@ describe("error rendering", () => {
   });
 
   it("refuses arguments to a command that takes none", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "gc", "--all"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("pi sandbox gc takes no arguments");

@@ -1,6 +1,13 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
-import { type CommandRunner, LauncherError, readJsonFile, writeJsonFile } from "../shared/index.ts";
+import {
+  type CommandRunner,
+  LauncherError,
+  readJsonFile,
+  readJsonObject,
+  stateLayout,
+  writeJsonFile,
+} from "../shared/index.ts";
 
 export type ExtensionsSource =
   | { kind: "registry"; version: string }
@@ -30,7 +37,9 @@ interface PackRecord {
   path: string;
 }
 
-const PACKAGE_NAME = "pi-extensions-mz";
+export const PACKAGE_NAME = "pi-extensions-mz";
+
+const INERT_GIT = ["-c", "core.fsmonitor=false"];
 
 const exists = (path: string) =>
   stat(path).then(
@@ -57,28 +66,42 @@ export const packExtensionsTarball = async ({ packageDir, runner, outDir }: Pack
 
 const isInstalledCopy = (packageDir: string) => packageDir.split(sep).includes("node_modules");
 
-const checkoutHead = async (runner: CommandRunner, packageDir: string) => {
-  const result = await runner.run("git", ["rev-parse", "HEAD"], { cwd: packageDir }).catch(() => undefined);
-  const head = result?.stdout.trim() ?? "";
+const gitOutput = async (runner: CommandRunner, packageDir: string, args: string[]) => {
+  const result = await runner.run("git", [...INERT_GIT, ...args], { cwd: packageDir }).catch(() => undefined);
 
-  return result?.code === 0 && head !== "" ? head : undefined;
+  return result?.code === 0 ? result.stdout : undefined;
 };
 
-const cachedTarball = async (record: PackRecord | undefined, version: string, head: string) =>
-  record !== undefined && record.version === version && record.head === head && (await exists(record.path))
+const cleanCheckoutHead = async (runner: CommandRunner, packageDir: string) => {
+  const [head, status] = await Promise.all([
+    gitOutput(runner, packageDir, ["rev-parse", "HEAD"]),
+    gitOutput(runner, packageDir, ["status", "--porcelain", "-z"]),
+  ]);
+  const commit = head?.trim() ?? "";
+
+  return commit !== "" && status === "" ? commit : undefined;
+};
+
+const cachedTarball = async (record: Partial<PackRecord> | undefined, version: string, head: string) =>
+  record?.version === version &&
+  record.head === head &&
+  typeof record.path === "string" &&
+  (await exists(record.path))
     ? record.path
     : undefined;
 
 const packedSource = async (packageDir: string, version: string, input: ResolveExtensionsInput) => {
-  const outDir = join(input.stateDir, "pack");
-  const head = await checkoutHead(input.runner, packageDir);
+  const outDir = stateLayout(input.stateDir).pack;
+  const recordFile = join(outDir, "pack.json");
+  const head = await cleanCheckoutHead(input.runner, packageDir);
 
   if (head === undefined) {
+    await rm(recordFile, { force: true });
+
     return packExtensionsTarball({ packageDir, runner: input.runner, outDir });
   }
 
-  const recordFile = join(outDir, "pack.json");
-  const record = await readJsonFile<PackRecord>(recordFile).catch(() => undefined);
+  const record: Partial<PackRecord> | undefined = await readJsonObject(recordFile);
   const cached = await cachedTarball(record, version, head);
 
   if (cached !== undefined) {

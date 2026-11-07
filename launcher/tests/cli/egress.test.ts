@@ -1,24 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { readGrants, registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createHarness } from "./harness.ts";
-
-const harnesses: Array<{ cleanup(): Promise<void> }> = [];
-
-const harnessWith = async (options: Parameters<typeof createHarness>[0] = {}) => {
-  const harness = await createHarness(options);
-
-  harnesses.push(harness);
-
-  return harness;
-};
-
-afterEach(async () => {
-  await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-});
 
 const NOW = 1_700_000_000_000;
 
@@ -36,7 +22,7 @@ const liveSession = (harness: { stateDir: string; repoRoot: string }, launchId =
 
 describe("pi sandbox egress allow", () => {
   it("grants a host for N hours to this repository", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "allow", "Docs.Example.test", "--hours", "2"], harness.deps)).toBe(
       0,
@@ -56,7 +42,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("grants a host:port permanently to every repository with --user", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(
       await run(
@@ -71,7 +57,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("outside a sandbox session, grants the host to every live pi session of the repository and says so", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await liveSession(harness, "1111111111111111", 1);
 
@@ -89,7 +75,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("refuses a host outside the policy allowlist, naming the layer, and stores nothing", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.policyFile, { egress: { allow: ["*.example.test"] } });
 
@@ -104,7 +90,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("lets a policy that opts into grants keep its allowlist from capping them", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.policyFile, {
       egress: { allow: ["*.example.test"], grants: { enabled: true } },
@@ -114,7 +100,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("keys the session grant to PI_SANDBOX_LAUNCH_ID when set", async () => {
-    const harness = await harnessWith({ env: { PI_SANDBOX_LAUNCH_ID: "1111111111111111" } });
+    const harness = await createHarness({ env: { PI_SANDBOX_LAUNCH_ID: "1111111111111111" } });
 
     await liveSession(harness, "1111111111111111", 1);
 
@@ -125,7 +111,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("refuses a session grant when no pi session runs for the repository", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("no pi session is running for this repository");
@@ -133,7 +119,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("applies the limits from egress.grants", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await harness.writeJson(harness.policyFile, { egress: { grants: { maxHours: 4, permanent: false } } });
 
@@ -149,7 +135,7 @@ describe("pi sandbox egress allow", () => {
   });
 
   it("refuses a target that is not a host name and conflicting scopes", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "allow", "*.example.test"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("egress: *.example.test is not a host or host:port");
@@ -162,7 +148,7 @@ describe("pi sandbox egress allow", () => {
 
 describe("pi sandbox egress revoke and list", () => {
   it("revokes this repository's grants for a host, and user grants with --user", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await run(["sandbox", "egress", "allow", "docs.example.test", "--hours", "1"], harness.deps);
 
@@ -179,7 +165,7 @@ describe("pi sandbox egress revoke and list", () => {
   });
 
   it("lists active grants and hides ended or foreign ones", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     await writeFile(
       join(harness.stateDir, "grants.json"),
@@ -209,7 +195,7 @@ describe("pi sandbox egress revoke and list", () => {
   });
 
   it("lists the hosts the proxy denied with --denied", async () => {
-    const harness = await harnessWith({
+    const harness = await createHarness({
       denials: [
         {
           time: NOW,
@@ -229,7 +215,7 @@ describe("pi sandbox egress revoke and list", () => {
   });
 
   it("says when there is nothing to list", async () => {
-    const harness = await harnessWith();
+    const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "list"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe("no active grants\n");

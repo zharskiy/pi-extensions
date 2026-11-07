@@ -1,5 +1,6 @@
+import { isJsonObject } from "../shared/index.ts";
 import { type Endpoint, endpointOf, uniqueEndpoints } from "./endpoints.ts";
-import { isJsonObject, objectOr } from "./json.ts";
+import { objectOr } from "./json.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
 const httpsEndpoint = (url: unknown): Endpoint[] => {

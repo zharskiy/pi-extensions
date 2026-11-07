@@ -118,6 +118,18 @@ describe("resolveExtraMounts", () => {
     });
   });
 
+  it("refuses a link whose target is protected, judging the real path the guard is given", async () => {
+    const { home, refused } = await setup();
+
+    await mkdir(join(home, ".ssh", "keys"), { recursive: true });
+
+    await symlink(join(home, ".ssh"), join(home, "innocent"));
+    await symlink(join(home, ".ssh", "keys"), join(home, "work", "keys"));
+
+    refused(join(home, "innocent"), "it is ~/.ssh");
+    refused("~/work/keys", "it is inside ~/.ssh");
+  });
+
   it("refuses system dirs", async () => {
     const { refused } = await setup();
 

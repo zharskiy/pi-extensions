@@ -1,7 +1,7 @@
 import type { CredentialRule, CredentialSource, DeriveConfig, GatewayConfig } from "../config/index.ts";
-import type { CommandRunner, VaultDiscovery, VaultServer } from "../shared/index.ts";
+import type { CommandRunner, JsonObject, VaultDiscovery, VaultServer } from "../shared/index.ts";
 
-export type JsonObject = Record<string, unknown>;
+export type { JsonObject } from "../shared/index.ts";
 
 export interface HostPiFiles {
   agentDir: string;

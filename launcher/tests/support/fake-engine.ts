@@ -157,7 +157,15 @@ export const runFakeScript = (command: string[]): ScriptResult => {
   return { ...result, code: Math.max(result.code, 0) };
 };
 
-const defaultExec: FakeExecHandler = (context) => {
+const ECHO_INPUT = "cat";
+
+const defaultExec: FakeExecHandler = async (context) => {
+  if (context.command.at(-1) === ECHO_INPUT) {
+    context.write(await context.input(), "stdout");
+
+    return 0;
+  }
+
   const result = runFakeScript(context.command);
 
   context.write(result.stdout, "stdout");

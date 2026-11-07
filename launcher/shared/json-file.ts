@@ -2,13 +2,34 @@ import { readFile } from "node:fs/promises";
 import { writeFileAtomic } from "./atomic-write.ts";
 import { errorMessage, LauncherError } from "./errors.ts";
 
+export type JsonObject = Record<string, unknown>;
+
 interface WriteJsonOptions {
   mode?: number;
 }
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 
-const readText = async (path: string) => {
+export const isJsonObject = (value: unknown): value is JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const parseJsonObject = (text: string): JsonObject | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+
+    return isJsonObject(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const readJsonObject = async (path: string): Promise<JsonObject | undefined> => {
+  const text = await readFile(path, "utf8").catch(() => undefined);
+
+  return text === undefined ? undefined : parseJsonObject(text);
+};
+
+export const readText = async (path: string) => {
   try {
     return await readFile(path, "utf8");
   } catch (error) {

@@ -35,8 +35,8 @@ describe("readHostPiFiles", () => {
     expect(files.models).toBeUndefined();
     expect(files.mcp).toBeUndefined();
     expect(files.notices).toEqual([
-      `${join(agentDir, "models.json")}: invalid JSON, ignored`,
-      `${join(agentDir, "mcp.json")}: not a JSON object, ignored`,
+      `${join(agentDir, "models.json")}: invalid JSON object, ignored`,
+      `${join(agentDir, "mcp.json")}: invalid JSON object, ignored`,
     ]);
     expect(JSON.stringify(files)).not.toContain("SECRET-IN-BROKEN-FILE");
   });

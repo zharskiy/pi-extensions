@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CommandRunner, LauncherError } from "../../shared/index.ts";
-import { pinnedReference, repositoryOf, tagOf } from "../image-reference.ts";
+import { repositoryOf, tagOf } from "../image-reference.ts";
+import { missingImage, verifiedPull } from "../pull.ts";
 import type { ImageInfo } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
@@ -20,14 +21,7 @@ const infoOf = (image: EngineImage, digest?: string): ImageInfo => ({
   digest: digest ?? repoDigests(image)[0] ?? image.Id,
 });
 
-const accepts = (image: EngineImage, digest: string | undefined) =>
-  digest === undefined || [...repoDigests(image), image.Id].includes(digest);
-
-const mismatch = (reference: string, image: EngineImage, digest: string) =>
-  new LauncherError(
-    `image ${reference} has digest ${infoOf(image).digest}, expected ${digest}`,
-    "update image.digest in the policy or publish the expected image",
-  );
+const accepts = (image: EngineImage, digest: string) => [...repoDigests(image), image.Id].includes(digest);
 
 export const createImageOperations = (client: EngineClient, runner: CommandRunner) => {
   const inspect = async (reference: string) => {
@@ -49,28 +43,14 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     return image === undefined ? undefined : infoOf(image);
   };
 
-  const pullImage = async (reference: string, digest?: string) => {
-    const target = digest === undefined ? reference : pinnedReference(reference, digest);
-    const present = await inspect(target);
-
-    if (present !== undefined && accepts(present, digest)) {
-      return infoOf(present, digest);
-    }
-
-    await pull(reference, digest);
-
-    const pulled = await inspect(target);
-
-    if (pulled === undefined) {
-      throw new LauncherError(`image ${target} is missing after pull`);
-    }
-
-    if (digest !== undefined && !accepts(pulled, digest)) {
-      throw mismatch(target, pulled, digest);
-    }
-
-    return infoOf(pulled, digest);
-  };
+  const pullImage = (reference: string, digest?: string) =>
+    verifiedPull(reference, digest, {
+      inspect,
+      pull: () => pull(reference, digest),
+      accepts,
+      digestOf: (image) => infoOf(image).digest,
+      infoOf: (image) => infoOf(image, digest),
+    });
 
   const archiveContext = async (contextDir: string, tarPath: string) => {
     const result = await runner.run("tar", ["-c", "-f", tarPath, "-C", contextDir, "."], {
@@ -110,7 +90,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     const built = await inspect(tag);
 
     if (built === undefined) {
-      throw new LauncherError(`image ${tag} is missing after build`);
+      throw missingImage(tag, "build");
     }
 
     return infoOf(built, built.Id);
