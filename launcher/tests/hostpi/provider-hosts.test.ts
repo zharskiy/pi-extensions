@@ -1,0 +1,131 @@
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { type BundledPi, readProviderHosts } from "../../hostpi/index.ts";
+import { createProcessRunner, launcherRoot, stateLayout } from "../../shared/index.ts";
+import { createScriptedRunner } from "../support/fake-runner.ts";
+import { tempDir, writeText } from "./fixtures.ts";
+
+const SAMPLE = join(import.meta.dirname, "provider-hosts-sample.json");
+
+const PI: BundledPi = {
+  command: [process.execPath, "/opt/pi/cli.js"],
+  version: "1.5.0",
+  packageDir: "/opt/pi",
+};
+
+const SCRIPT = join(launcherRoot(), "hostpi", "provider-hosts.mjs");
+
+const sampleRunner = async () => {
+  const stdout = await readFile(SAMPLE, "utf8");
+
+  return createScriptedRunner([{ argv: [process.execPath, SCRIPT, PI.packageDir], result: { stdout } }]);
+};
+
+describe("readProviderHosts", () => {
+  it("runs the bundled script, returns its table and caches it per pi version", async () => {
+    const stateDir = await tempDir("provider-hosts");
+    const fake = await sampleRunner();
+    const first = await readProviderHosts({ stateDir, runner: fake.runner, pi: PI, imagePiVersion: "1.5.0" });
+    const second = await readProviderHosts({
+      stateDir,
+      runner: fake.runner,
+      pi: PI,
+      imagePiVersion: "1.5.0",
+    });
+    const cached = JSON.parse(await readFile(stateLayout(stateDir).providerHosts("1.5.0"), "utf8"));
+
+    expect(first.notices).toEqual([]);
+    expect(first.hosts).toEqual(JSON.parse(await readFile(SAMPLE, "utf8")));
+    expect(second.hosts).toEqual(first.hosts);
+    expect(cached).toEqual(first.hosts);
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("returns an empty table with a notice when the pi versions differ, without running anything", async () => {
+    const stateDir = await tempDir("provider-hosts");
+    const fake = await sampleRunner();
+    const result = await readProviderHosts({
+      stateDir,
+      runner: fake.runner,
+      pi: PI,
+      imagePiVersion: "1.6.0",
+    });
+
+    expect(result.hosts).toEqual({});
+    expect(result.notices).toHaveLength(1);
+    expect(result.notices[0]).toContain("1.6.0");
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("returns an empty table with a notice when the script fails or prints something else", async () => {
+    const stateDir = await tempDir("provider-hosts");
+    const failing = createScriptedRunner([
+      { argv: [process.execPath], result: { code: 1, stderr: "boom\n" } },
+    ]);
+    const garbled = createScriptedRunner([
+      { argv: [process.execPath], result: { stdout: '{"x":{"hosts":"no"}}' } },
+    ]);
+    const failed = await readProviderHosts({
+      stateDir,
+      runner: failing.runner,
+      pi: PI,
+      imagePiVersion: "1.5.0",
+    });
+    const unreadable = await readProviderHosts({
+      stateDir,
+      runner: garbled.runner,
+      pi: PI,
+      imagePiVersion: "1.5.0",
+    });
+
+    expect(failed).toEqual({ hosts: {}, notices: [expect.stringContaining("boom")] });
+    expect(unreadable.hosts).toEqual({});
+    expect(unreadable.notices).toHaveLength(1);
+  });
+
+  it("ignores a broken cache file and runs the script again", async () => {
+    const stateDir = await tempDir("provider-hosts");
+    const fake = await sampleRunner();
+
+    await writeText(stateLayout(stateDir).providerHosts("1.5.0"), "not json");
+
+    const result = await readProviderHosts({
+      stateDir,
+      runner: fake.runner,
+      pi: PI,
+      imagePiVersion: "1.5.0",
+    });
+
+    expect(Object.keys(result.hosts)).toHaveLength(3);
+    expect(fake.calls).toHaveLength(1);
+  });
+});
+
+describe("provider-hosts.mjs", () => {
+  it("prints a table of host lists from the installed pi", async () => {
+    const piDir = resolve(launcherRoot(), "..", "node_modules", "@earendil-works", "pi-coding-agent");
+    const result = await createProcessRunner().run(process.execPath, [SCRIPT, piDir]);
+    const table = JSON.parse(result.stdout) as Record<string, { hosts: unknown }>;
+    const entries = Object.values(table);
+
+    expect(result.code).toBe(0);
+    expect(entries.length).toBeGreaterThan(0);
+    entries.forEach((entry) => {
+      expect(Object.keys(entry)).toEqual(["hosts"]);
+      expect(Array.isArray(entry.hosts)).toBe(true);
+      (entry.hosts as unknown[]).forEach((host) => {
+        expect(host).toMatch(/^[a-z0-9.-]+$/);
+      });
+    });
+    expect(entries.some((entry) => (entry.hosts as unknown[]).length > 0)).toBe(true);
+  });
+
+  it("exits non-zero when no pi is found", async () => {
+    const dir = await tempDir("provider-hosts-empty");
+    const result = await createProcessRunner().run(process.execPath, [SCRIPT, dir]);
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+  });
+});

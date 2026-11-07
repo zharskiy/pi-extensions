@@ -4,11 +4,13 @@ import { dirname } from "node:path";
 export interface AccessLogEntry {
   time: string;
   user: string;
+  repo?: string;
   host: string;
   sni?: string;
   decision: "allow" | "deny";
   rule: string;
   reason?: string;
+  credential?: string;
   bytesIn: number;
   bytesOut: number;
 }

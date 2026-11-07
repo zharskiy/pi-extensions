@@ -1,28 +1,44 @@
-import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
-import { createSecureContext, TLSSocket } from "node:tls";
+import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
 import { LauncherError, sha256Hex } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
-import { type Dialer, defaultDialer, RestrictedAddressError } from "./dial.ts";
-import { createGatewayForwarder, type GatewayRoute } from "./gateway.ts";
-import { type Denial, decideConnect, type EgressPolicy, isGatewayHost, normalizeHost } from "./policy.ts";
+import { parseProxyAuthorization, sameText } from "./auth.ts";
+import type { ControlMessage, ControlReply } from "./control.ts";
+import { createDialer, type DialAccess, type Dialer, RestrictedAddressError } from "./dial.ts";
+import type { DenialRecord } from "./dynamic.ts";
+import {
+  type Denial,
+  decideConnect,
+  type EgressPolicy,
+  isGatewayHost,
+  matchesPattern,
+  normalizeHost,
+} from "./policy.ts";
+import { isRuleHost } from "./rules.ts";
+import type { ProxyRuntime } from "./runtime.ts";
+import type { SecretResolver } from "./secrets/index.ts";
 import { clientHelloRecordLength, parseServerName } from "./sni.ts";
+import { createTerminator } from "./terminate.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 
 export interface ProxyServerOptions {
   listen: { host: string; port: number };
   policy: EgressPolicy;
   policyHash?: string;
-  token: string;
-  gateway?: GatewayRoute;
+  controlToken: string;
+  runtime: ProxyRuntime;
+  resolver: SecretResolver;
+  gateway?: { host: string; port: number; url: string };
+  privateHosts?: string[];
   ca?: { leaf(host: string): Promise<LeafCertificate> };
   log: (entry: AccessLogEntry) => void;
   dial?: Dialer;
-  upstreamCa?: string;
+  upstreamCa?: string | string[];
   helloTimeoutMs?: number;
+  onControl?: (message: ControlMessage) => ControlReply;
 }
 
 export interface ProxyServer {
@@ -33,23 +49,34 @@ export interface ProxyServer {
 
 interface Connection {
   host: string;
+  port: number;
+  repoHash: string;
+  extras: string[];
   sni?: string;
   client: Socket;
 }
 
-const PROXY_AGENT = "pi-sandbox";
+type Caller = { kind: "repo"; repoHash: string } | { kind: "control" };
 
-const PROXY_USER = "pi-sandbox";
+type DenialInput = Pick<Denial, "rule" | "reason">;
+
+const PROXY_AGENT = "pi-sandbox";
 
 const AUTH_CHALLENGE = `Basic realm="${PROXY_AGENT}"`;
 
 const AUTH_DENIAL = { rule: "auth", reason: "missing or wrong Proxy-Authorization" };
+
+const HINTED_RULES = new Set(["egress.allow", "egress.port"]);
 
 const HANDSHAKE_RECORD = 0x16;
 
 const MAX_HELLO_BYTES = 16_389;
 
 const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
+
+const MAX_DENIALS = 200;
+
+const MAX_CONTROL_BYTES = 1024 * 1024;
 
 const ESTABLISHED = `HTTP/1.1 200 Connection Established\r\nProxy-Agent: ${PROXY_AGENT}\r\n\r\n`;
 
@@ -59,25 +86,6 @@ const currentUser = () => {
   } catch {
     return "";
   }
-};
-
-export const proxyAuthorization = (token: string) =>
-  `Basic ${Buffer.from(`${PROXY_USER}:${token}`).toString("base64")}`;
-
-export const guestProxyUrl = (route: { address: string }, token: string) =>
-  `http://${PROXY_USER}:${token}@${route.address}`;
-
-const sameText = (left: string, right: string) => {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
-const isAuthorized = (request: IncomingMessage, expected: string) => {
-  const header = request.headers["proxy-authorization"];
-
-  return typeof header === "string" && sameText(header.trim(), expected);
 };
 
 const rawResponse = (status: string, body: object, extra: string[] = []) => {
@@ -95,11 +103,14 @@ const rawResponse = (status: string, body: object, extra: string[] = []) => {
   ].join("\r\n");
 };
 
-const denialBody = (host: string, denial: Pick<Denial, "rule" | "reason">) => ({
+const denialBody = (host: string, denial: DenialInput) => ({
   denied: host,
   rule: denial.rule,
   reason: denial.reason,
 });
+
+const forbiddenStatus = (denial: DenialInput) =>
+  HINTED_RULES.has(denial.rule) ? `403 ${denial.reason}` : "403 Forbidden";
 
 const parseAuthority = (authority: string | undefined) => {
   try {
@@ -180,81 +191,180 @@ const readClientHello = (socket: Socket, head: Buffer, timeoutMs: number) =>
     socket.resume();
   });
 
-const gatewayHandshakeDenial = (host: string, sni: string | undefined) => {
-  if (sni === undefined) {
-    return { rule: "sni", reason: "no TLS server name" };
+const readBody = (request: IncomingMessage) =>
+  new Promise<string | undefined>((resolve) => {
+    const chunks: Buffer[] = [];
+    const state = { size: 0 };
+
+    request.on("data", (chunk: Buffer) => {
+      state.size += chunk.length;
+
+      if (state.size > MAX_CONTROL_BYTES) {
+        request.destroy();
+
+        resolve(undefined);
+
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
+    request.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+
+    request.once("error", () => resolve(undefined));
+  });
+
+const isStringMap = (value: unknown): value is Record<string, string> =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every((entry) => typeof entry === "string");
+
+const parseControlMessage = (text: string | undefined): ControlMessage | undefined => {
+  try {
+    const message = JSON.parse(text ?? "") as { type?: unknown; secrets?: unknown };
+
+    return message.type === "env-secrets" && isStringMap(message.secrets)
+      ? { type: "env-secrets", secrets: message.secrets }
+      : undefined;
+  } catch {
+    return undefined;
   }
-
-  const decision = decideConnect({ host, port: 443, sni }, { allow: [host], mcpHosts: [] });
-
-  return decision.allowed ? { rule: "tls", reason: "TLS handshake with the client failed" } : decision;
 };
 
+const sinceOf = (url: string) => {
+  const since = Number(new URL(url, "http://proxy").searchParams.get("since") ?? "0");
+
+  return Number.isFinite(since) ? since : 0;
+};
+
+const pathOf = (url: string | undefined) => (url?.startsWith("/") ? (url.split("?")[0] ?? "") : "");
+
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
-  const dial = options.dial ?? defaultDialer;
+  const dial = options.dial ?? createDialer();
   const policyHash = options.policyHash ?? sha256Hex(JSON.stringify(options.policy));
   const user = currentUser();
   const sockets = new Set<Socket>();
   const helloTimeoutMs = options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS;
-  const expectedAuthorization = proxyAuthorization(options.token);
+  const denials = new Map<string, DenialRecord[]>();
+  const contexts = new Map<string, Promise<SecureContext>>();
+  const gatewayPath = options.gateway === undefined ? undefined : new URL(options.gateway.url).pathname;
+
+  const track = (socket: Socket) => {
+    sockets.add(socket);
+
+    socket.once("close", () => sockets.delete(socket));
+  };
 
   const record = (entry: Omit<AccessLogEntry, "time" | "user">) => {
     options.log({ time: new Date().toISOString(), user, ...entry });
   };
 
-  const recordDenial = (host: string, denial: Pick<Denial, "rule" | "reason">, sni?: string) => {
+  const terminator = createTerminator({
+    rules: () => options.runtime.rules(),
+    resolver: options.resolver,
+    dial: async (host, port, access) => {
+      const socket = await dial(host, port, access);
+
+      track(socket);
+
+      return socket;
+    },
+    upstreamCa: options.upstreamCa,
+    log: record,
+  });
+
+  const rememberDenial = (repoHash: string, entry: DenialRecord) => {
+    denials.set(repoHash, [...(denials.get(repoHash) ?? []), entry].slice(-MAX_DENIALS));
+  };
+
+  const recordDenial = (
+    host: string,
+    denial: DenialInput,
+    context: { port?: number; repoHash?: string; sni?: string } = {},
+  ) => {
     record({
+      repo: context.repoHash,
       host,
-      sni,
+      sni: context.sni,
       decision: "deny",
       rule: denial.rule,
       reason: denial.reason,
       bytesIn: 0,
       bytesOut: 0,
     });
-  };
 
-  const refuse = (socket: Socket, host: string, denial: Pick<Denial, "rule" | "reason">) => {
-    recordDenial(host, denial);
-
-    socket.end(rawResponse("403 Forbidden", denialBody(host, denial)));
-  };
-
-  const recordOnClose = (
-    connection: Connection,
-    rule: string,
-    counters: { bytesIn: number; bytesOut: number },
-  ) => {
-    connection.client.once("close", () => {
-      record({ host: connection.host, sni: connection.sni, decision: "allow", rule, ...counters });
-    });
-  };
-
-  const gatewayCertificate =
-    options.gateway === undefined || options.ca === undefined
-      ? undefined
-      : await options.ca.leaf(options.gateway.host);
-
-  if (options.gateway !== undefined && gatewayCertificate === undefined) {
-    throw new LauncherError("the proxy needs the launcher CA to serve the gateway host");
-  }
-
-  const gatewayServer =
-    options.gateway === undefined
-      ? undefined
-      : createGatewayForwarder({ route: options.gateway, dial, upstreamCa: options.upstreamCa });
-
-  const secureContext =
-    gatewayCertificate === undefined ? undefined : createSecureContext(gatewayCertificate);
-
-  const interceptGateway = (connection: Connection, head: Buffer) => {
-    const { client, host } = connection;
-
-    if (head.length > 0 || gatewayServer === undefined || secureContext === undefined) {
-      refuse(client, host, { rule: "sni", reason: "client sent data before the tunnel was established" });
-
-      return;
+    if (context.repoHash !== undefined) {
+      rememberDenial(context.repoHash, {
+        time: Date.now(),
+        host,
+        port: context.port ?? 0,
+        repoHash: context.repoHash,
+        rule: denial.rule,
+        reason: denial.reason,
+      });
     }
+  };
+
+  const refuse = (
+    socket: Socket,
+    host: string,
+    denial: DenialInput,
+    context: { port?: number; repoHash?: string } = {},
+  ) => {
+    recordDenial(host, denial, context);
+
+    socket.end(rawResponse(forbiddenStatus(denial), denialBody(host, denial)));
+  };
+
+  const accessOf = (host: string): DialAccess => {
+    const isGateway = options.gateway !== undefined && normalizeHost(options.gateway.host) === host;
+    const isPrivate = (options.privateHosts ?? []).some((pattern) =>
+      matchesPattern(host, normalizeHost(pattern)),
+    );
+
+    return isGateway || isPrivate ? "private" : "public";
+  };
+
+  const secureContextFor = (host: string) => {
+    const known = contexts.get(host);
+
+    if (known !== undefined) {
+      return known;
+    }
+
+    if (options.ca === undefined) {
+      return Promise.reject(new LauncherError("the proxy needs the launcher CA to terminate TLS"));
+    }
+
+    const created = options.ca.leaf(host).then((leaf) => createSecureContext(leaf));
+
+    contexts.set(host, created);
+
+    created.catch(() => contexts.delete(host));
+
+    return created;
+  };
+
+  const isGatewayTarget = (host: string, port: number) => isGatewayHost(host, port, options.policy);
+
+  const handshakeDenial = (connection: Connection) => {
+    if (connection.sni === undefined) {
+      return { rule: "sni", reason: "no TLS server name" };
+    }
+
+    const decision = decideConnect(
+      { host: connection.host, port: connection.port, sni: connection.sni },
+      { allow: [`${connection.host}:${connection.port}`], mcpHosts: [] },
+    );
+
+    return decision.allowed ? { rule: "tls", reason: "TLS handshake with the client failed" } : decision;
+  };
+
+  const startTls = (connection: Connection, secureContext: SecureContext) => {
+    const { client, host, port } = connection;
+    const gateway = isGatewayTarget(host, port);
 
     client.write(ESTABLISHED);
 
@@ -265,7 +375,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       SNICallback: (servername, callback) => {
         connection.sni = servername;
 
-        if (normalizeHost(servername) !== normalizeHost(host)) {
+        if (normalizeHost(servername) !== host) {
           callback(new Error(`TLS server name ${servername} does not match ${host}`));
 
           return;
@@ -274,7 +384,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
         callback(null, secureContext);
       },
     });
-
     const state = { secured: false };
 
     secure.on("error", () => client.destroy());
@@ -290,16 +399,23 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
       state.secured = true;
 
-      gatewayServer.emit("connection", secure);
+      terminator.serve(secure, {
+        host,
+        port,
+        repoHash: connection.repoHash,
+        access: accessOf(host),
+        ...(gateway && gatewayPath !== undefined ? { pathPrefix: gatewayPath } : {}),
+      });
     });
 
     client.once("close", () => {
       if (state.secured) {
         record({
+          repo: connection.repoHash,
           host,
           sni: connection.sni,
           decision: "allow",
-          rule: "gateway",
+          rule: gateway ? "gateway" : "terminate",
           bytesIn: client.bytesWritten,
           bytesOut: client.bytesRead,
         });
@@ -307,8 +423,42 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
         return;
       }
 
-      recordDenial(host, gatewayHandshakeDenial(host, connection.sni), connection.sni);
+      recordDenial(host, handshakeDenial(connection), {
+        port,
+        repoHash: connection.repoHash,
+        sni: connection.sni,
+      });
     });
+  };
+
+  const intercept = async (connection: Connection, head: Buffer) => {
+    const { client, host, port, repoHash } = connection;
+
+    if (head.length > 0) {
+      refuse(
+        client,
+        host,
+        { rule: "sni", reason: "client sent data before the tunnel was established" },
+        { port, repoHash },
+      );
+
+      return;
+    }
+
+    const secureContext = await secureContextFor(host).catch(() => undefined);
+
+    if (secureContext === undefined) {
+      refuse(
+        client,
+        host,
+        { rule: "tls", reason: `no certificate can be issued for ${host}` },
+        { port, repoHash },
+      );
+
+      return;
+    }
+
+    startTls(connection, secureContext);
   };
 
   const splice = (connection: Connection, upstream: Socket, hello: Buffer) => {
@@ -323,7 +473,16 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       counters.bytesIn += chunk.length;
     });
 
-    recordOnClose(connection, "egress.allow", counters);
+    client.once("close", () => {
+      record({
+        repo: connection.repoHash,
+        host: connection.host,
+        sni: connection.sni,
+        decision: "allow",
+        rule: "egress.allow",
+        ...counters,
+      });
+    });
 
     upstream.write(hello);
 
@@ -336,7 +495,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     client.resume();
   };
 
-  const checkHello = async (connection: Connection, port: number, upstream: Socket, head: Buffer) => {
+  const checkHello = async (connection: Connection, upstream: Socket, head: Buffer) => {
     const hello = await readClientHello(connection.client, head, helloTimeoutMs);
     const sni = parseServerName(hello);
 
@@ -345,10 +504,14 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     const decision =
       sni === undefined
         ? ({ allowed: false, rule: "sni", reason: "no TLS ClientHello with a server name" } as const)
-        : decideConnect({ host: connection.host, port, sni }, options.policy);
+        : decideConnect(
+            { host: connection.host, port: connection.port, sni },
+            options.policy,
+            connection.extras,
+          );
 
     if (!decision.allowed) {
-      recordDenial(connection.host, decision, sni);
+      recordDenial(connection.host, decision, { port: connection.port, repoHash: connection.repoHash, sni });
 
       upstream.destroy();
 
@@ -360,52 +523,70 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     splice(connection, upstream, hello);
   };
 
-  const tunnel = (connection: Connection, port: number, head: Buffer) => {
-    const upstream = dial(connection.host, port, "tunnel");
-    const { client, host } = connection;
+  const tunnel = async (connection: Connection, head: Buffer) => {
+    const { client, host, port, repoHash } = connection;
+    const upstream = await dial(host, port, accessOf(host)).catch((error: Error) => error);
 
-    sockets.add(upstream);
+    if (upstream instanceof RestrictedAddressError) {
+      refuse(client, host, { rule: upstream.rule, reason: upstream.message }, { port, repoHash });
 
-    upstream.once("close", () => sockets.delete(upstream));
+      return;
+    }
 
-    const onDialError = (error: Error) => {
-      if (error instanceof RestrictedAddressError) {
-        refuse(client, host, { rule: error.rule, reason: error.message });
+    if (upstream instanceof Error) {
+      recordDenial(host, { rule: "upstream", reason: upstream.message }, { port, repoHash });
 
-        return;
-      }
+      client.end(rawResponse("502 Bad Gateway", { error: `cannot reach ${host}: ${upstream.message}` }));
 
-      recordDenial(host, { rule: "upstream", reason: error.message });
+      return;
+    }
 
-      client.end(rawResponse("502 Bad Gateway", { error: `cannot reach ${host}: ${error.message}` }));
-    };
+    track(upstream);
 
-    upstream.once("error", onDialError);
+    if (client.destroyed) {
+      upstream.destroy();
 
-    upstream.once("connect", () => {
-      upstream.off("error", onDialError);
+      return;
+    }
 
-      upstream.on("error", () => client.destroy());
-
-      client.write(ESTABLISHED);
-
-      void checkHello(connection, port, upstream, head);
-    });
+    upstream.on("error", () => client.destroy());
 
     client.once("close", () => upstream.destroy());
+
+    client.write(ESTABLISHED);
+
+    await checkHello(connection, upstream, head);
   };
 
-  const handleConnect = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const client = socket as Socket;
+  const callerOf = async (request: IncomingMessage): Promise<Caller | undefined> => {
+    const parsed = parseProxyAuthorization(request.headers["proxy-authorization"]);
+
+    if (parsed?.kind === "control") {
+      return sameText(parsed.token, options.controlToken) ? { kind: "control" } : undefined;
+    }
+
+    const repoHash = parsed === undefined ? undefined : await options.runtime.repoOf(parsed.token);
+
+    return repoHash === undefined ? undefined : { kind: "repo", repoHash };
+  };
+
+  const decide = async (host: string, port: number, repoHash: string) => {
+    const decision = decideConnect({ host, port }, options.policy);
+
+    if (decision.allowed || !HINTED_RULES.has(decision.rule)) {
+      return { decision, extras: [] };
+    }
+
+    const extras = await options.runtime.extras(repoHash);
+
+    return { decision: decideConnect({ host, port }, options.policy, extras), extras };
+  };
+
+  const handleConnect = async (request: IncomingMessage, client: Socket, head: Buffer) => {
     const target = parseAuthority(request.url);
+    const caller = await callerOf(request);
 
-    sockets.add(client);
-
-    client.once("close", () => sockets.delete(client));
-
-    client.on("error", () => client.destroy());
-
-    if (!isAuthorized(request, expectedAuthorization)) {
+    if (caller?.kind !== "repo") {
       recordDenial(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
 
       client.end(
@@ -418,29 +599,46 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     }
 
     if (target === undefined) {
-      refuse(client, UNPARSEABLE, { rule: "connect", reason: "CONNECT needs host:port" });
+      refuse(
+        client,
+        UNPARSEABLE,
+        { rule: "connect", reason: "CONNECT needs host:port" },
+        { repoHash: caller.repoHash },
+      );
 
       return;
     }
 
     const host = normalizeHost(target.host);
-    const decision = decideConnect({ host, port: target.port }, options.policy);
+    const { decision, extras } = await decide(host, target.port, caller.repoHash);
 
     if (!decision.allowed) {
-      refuse(client, host, decision);
+      refuse(client, host, decision, { port: target.port, repoHash: caller.repoHash });
 
       return;
     }
 
-    const connection: Connection = { host, client };
+    const connection: Connection = { host, port: target.port, repoHash: caller.repoHash, extras, client };
+    const terminated =
+      isGatewayTarget(host, target.port) || isRuleHost(await options.runtime.rules(), host, target.port);
 
-    if (isGatewayHost(host, target.port, options.policy)) {
-      interceptGateway(connection, head);
+    if (terminated) {
+      await intercept(connection, head);
 
       return;
     }
 
-    tunnel(connection, target.port, head);
+    await tunnel(connection, head);
+  };
+
+  const onConnect = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const client = socket as Socket;
+
+    track(client);
+
+    client.on("error", () => client.destroy());
+
+    void handleConnect(request, client, head).catch(() => client.destroy());
   };
 
   const sendJson = (
@@ -454,23 +652,58 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     response.end(JSON.stringify(body));
   };
 
-  const handlePlain = (request: IncomingMessage, response: ServerResponse) => {
-    if (!isAuthorized(request, expectedAuthorization)) {
-      recordDenial(hostOf(request.headers.host), AUTH_DENIAL);
+  const challenge = (response: ServerResponse) =>
+    sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
 
-      sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
+  const handleControl = async (request: IncomingMessage, response: ServerResponse) => {
+    const message = parseControlMessage(await readBody(request));
+
+    if (message === undefined) {
+      sendJson(response, 400, { ok: false, error: "unknown control message" });
 
       return;
     }
 
-    if (request.method === "GET" && request.url === "/healthz") {
+    const reply = options.onControl?.(message) ?? { ok: false, error: "control messages are not accepted" };
+
+    sendJson(response, reply.ok ? 200 : 400, reply);
+  };
+
+  const handlePlain = async (request: IncomingMessage, response: ServerResponse) => {
+    const caller = await callerOf(request);
+    const path = pathOf(request.url);
+
+    if (caller === undefined || (path === "/control" && caller.kind !== "control")) {
+      recordDenial(hostOf(request.headers.host), AUTH_DENIAL);
+
+      challenge(response);
+
+      return;
+    }
+
+    if (request.method === "GET" && path === "/healthz") {
       sendJson(response, 200, { ok: true, policyHash, pid: process.pid });
 
       return;
     }
 
-    if (request.method === "GET" && request.url === "/policy") {
+    if (request.method === "GET" && path === "/policy") {
       sendJson(response, 200, { ...options.policy, policyHash });
+
+      return;
+    }
+
+    if (request.method === "GET" && path === "/denials" && caller.kind === "repo") {
+      const since = sinceOf(request.url ?? "/");
+      const found = (denials.get(caller.repoHash) ?? []).filter((entry) => entry.time >= since);
+
+      sendJson(response, 200, { denials: found });
+
+      return;
+    }
+
+    if (request.method === "POST" && path === "/control") {
+      await handleControl(request, response);
 
       return;
     }
@@ -478,14 +711,16 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     const host = hostOf(request.headers.host);
     const denial = { rule: "plain-http", reason: "only HTTPS through CONNECT is proxied" };
 
-    recordDenial(host, denial);
+    recordDenial(host, denial, caller.kind === "repo" ? { repoHash: caller.repoHash, port: 80 } : {});
 
     sendJson(response, 403, denialBody(host, denial));
   };
 
-  const server = createServer(handlePlain);
+  const server = createServer((request, response) => {
+    void handlePlain(request, response).catch(() => response.destroy());
+  });
 
-  server.on("connect", handleConnect);
+  server.on("connect", onConnect);
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", (error) =>

@@ -28,6 +28,7 @@ export const APPLE_COMMANDS = {
 
 export const APPLE_FLAGS = {
   tag: "--tag",
+  buildArg: "--build-arg",
   file: "--file",
   name: "--name",
   label: "--label",

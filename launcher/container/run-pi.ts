@@ -23,6 +23,7 @@ export interface RunPiInput {
   containerId: string;
   piArgs: string[];
   env?: Record<string, string>;
+  launchId?: string;
   workspace: Workspace;
   terminal: HostTerminal;
   signals?: SignalSource;
@@ -42,6 +43,9 @@ const PIPE_SIGNALS: NodeJS.Signals[] = ["SIGINT", ...TTY_SIGNALS];
 const LAUNCH_ID_BYTES = 8;
 
 const pidFileOf = (launchId: string) => `/tmp/pi-sandbox-${launchId}.pid`;
+
+const launchEnv = (launchId: string | undefined): Record<string, string> =>
+  launchId === undefined ? {} : { PI_SANDBOX_LAUNCH_ID: launchId };
 
 const discard = () =>
   new Writable({
@@ -127,7 +131,7 @@ const execPi = (input: RunPiInput, tty: boolean, pidFile: string) =>
     {
       containerId: input.containerId,
       command: ["sh", "-c", `echo $$ > ${pidFile}; exec "$@"`, "sh", "pi", ...input.piArgs],
-      env: input.env ?? {},
+      env: { ...input.env, ...launchEnv(input.launchId) },
       workdir: input.workspace.cwd,
     },
     {

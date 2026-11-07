@@ -145,6 +145,11 @@ const placeholder: Check = (value) =>
 const template: Check = (value) =>
   value.includes(SECRET_MARKER) ? undefined : `must contain ${SECRET_MARKER}`;
 
+const TRANSFORMS = ["urlUserinfoBase64"];
+
+const transform: Check = (value) =>
+  TRANSFORMS.includes(value) ? undefined : `must be one of ${TRANSFORMS.join(", ")}`;
+
 const jsonPointer: Check = (value) => (JSON_POINTER.test(value) ? undefined : "must be a JSON pointer");
 
 const quietAbsolutePath: Check = (value) =>
@@ -234,6 +239,7 @@ const CREDENTIAL_RULE: ObjectSpec = {
     placeholder: text(placeholder),
     header: text(header),
     template: text(template),
+    transform: text(transform),
     secret: SECRET_REF,
   },
 };

@@ -91,7 +91,7 @@ export interface Backend {
   detect(): Promise<Detection>;
   pullImage(reference: string, digest?: string): Promise<ImageInfo>;
   resolveImage(reference: string): Promise<ImageInfo | undefined>;
-  buildImage(contextDir: string, tag: string): Promise<ImageInfo>;
+  buildImage(contextDir: string, tag: string, buildArgs?: Record<string, string>): Promise<ImageInfo>;
   findContainers(labels: Record<string, string>): Promise<ContainerSummary[]>;
   createContainer(spec: ContainerSpec): Promise<{ id: string }>;
   startContainer(id: string): Promise<void>;

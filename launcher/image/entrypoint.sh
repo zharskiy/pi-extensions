@@ -2,20 +2,24 @@
 set -eu
 
 agent_dir="${HOME:-/home/pi}/.pi/agent"
+render_dir=/opt/pi-sandbox/render
 bundle_dir=/tmp/pi-sandbox
 system_bundle=/etc/ssl/certs/ca-certificates.crt
-sandbox_ca=/etc/pi-sandbox/ca.pem
+trust_bundle=/etc/pi-sandbox/ca.pem
 
 mkdir -p "$agent_dir" "$bundle_dir"
 
-link_read_only() {
-  if [ ! -e "$agent_dir/$1" ] && [ ! -L "$agent_dir/$1" ]; then
-    ln -s "/opt/pi-sandbox/$1" "$agent_dir/$1"
-  fi
-}
+find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \;
 
-link_read_only models.json
-link_read_only auth.json
+if [ -d "$render_dir" ]; then
+  find "$render_dir" -mindepth 1 -maxdepth 1 -exec sh -c '
+    link="$1/$(basename "$2")"
+
+    if [ -L "$link" ] || [ ! -e "$link" ]; then
+      ln -sfn "$2" "$link"
+    fi
+  ' sh "$agent_dir" {} \;
+fi
 
 if [ -f /opt/pi-sandbox/settings.json ] && [ ! -e "$agent_dir/settings.json" ]; then
   cp /opt/pi-sandbox/settings.json "$agent_dir/settings.json"
@@ -24,8 +28,8 @@ fi
 
 cat "$system_bundle" > "$bundle_dir/ca-bundle.pem"
 
-if [ -f "$sandbox_ca" ]; then
-  cat "$sandbox_ca" >> "$bundle_dir/ca-bundle.pem"
+if [ -f "$trust_bundle" ]; then
+  cat "$trust_bundle" >> "$bundle_dir/ca-bundle.pem"
 fi
 
 if [ "$#" -gt 0 ]; then

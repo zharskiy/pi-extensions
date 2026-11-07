@@ -1,0 +1,448 @@
+import { describe, expect, it } from "vitest";
+import type { CredentialRule } from "../../config/index.ts";
+import type { DeriveInput } from "../../hostpi/index.ts";
+import { deriveSandboxPi, privateHostNotices } from "../../hostpi/index.ts";
+import { isPlaceholder, jwtShapedPlaceholder, placeholderFor } from "../../shared/index.ts";
+import {
+  AGENT_DIR,
+  braced,
+  hostAuth,
+  hostMcp,
+  hostModels,
+  JWT_ACCESS,
+  providerHosts,
+  SECRETS,
+} from "./fixtures.ts";
+
+const SALT = "c".repeat(64);
+
+const input = (overrides: Partial<DeriveInput> = {}): DeriveInput => ({
+  files: { agentDir: AGENT_DIR, auth: hostAuth(), models: hostModels(), mcp: hostMcp() },
+  providerHosts: providerHosts(),
+  manual: [],
+  salt: SALT,
+  env: { ENVONLY_API_KEY: SECRETS.envValue },
+  derive: { enabled: true },
+  mcpSignedIn: ["sentryish"],
+  ...overrides,
+});
+
+const P = (identity: string) => placeholderFor(SALT, identity);
+
+const rulesOf = (rules: CredentialRule[], id: string) => rules.filter((rule) => rule.id === id);
+
+describe("deriveSandboxPi auth.json", () => {
+  it("turns api_key entries into placeholders bound to the host pi credential", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.files["auth.json"].keyed).toEqual({ type: "api_key", key: P("auth:keyed:key") });
+    expect(rulesOf(result.rules, "derived:auth:keyed:key")).toEqual([
+      {
+        id: "derived:auth:keyed:key",
+        host: "api.keyed.example",
+        placeholder: P("auth:keyed:key"),
+        secret: { piAuth: "keyed" },
+      },
+    ]);
+  });
+
+  it("keeps non-secret oauth fields, shapes a JWT access placeholder and pushes expiry far out", () => {
+    const result = deriveSandboxPi(input());
+    const access = jwtShapedPlaceholder(JWT_ACCESS, SALT, "auth:jwt:access");
+
+    expect(result.files["auth.json"].jwt).toEqual({
+      type: "oauth",
+      accountId: "account-7",
+      access,
+      refresh: P("auth:jwt:refresh"),
+      expires: 4102444800000,
+    });
+    expect(isPlaceholder(access)).toBe(true);
+    expect(rulesOf(result.rules, "derived:auth:jwt:access").map((rule) => rule.host)).toEqual([
+      "api.jwt.example",
+      "alt.jwt.example",
+    ]);
+    expect(rulesOf(result.rules, "derived:auth:jwt:access")[0]).toMatchObject({
+      placeholder: access,
+      secret: { piAuth: "jwt", bearer: true },
+    });
+  });
+
+  it("uses an opaque access placeholder for a token that is not a JWT", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.files["auth.json"].opaque).toMatchObject({ access: P("auth:opaque:access") });
+  });
+
+  it("gives an entry without a known host a placeholder, a notice and no rule", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.files["auth.json"].stray).toEqual({ type: "api_key", key: P("auth:stray:key") });
+    expect(rulesOf(result.rules, "derived:auth:stray:key")).toEqual([]);
+    expect(result.notices).toContain(
+      "auth stray: no known API host, so no credential rule; add credentials.rules for it",
+    );
+  });
+
+  it("adds an api_key placeholder for a provider whose key comes from the launcher environment", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.files["auth.json"].envOnly).toEqual({ type: "api_key", key: P("auth:envOnly:key") });
+    expect(rulesOf(result.rules, "derived:auth:envOnly:key")[0]).toMatchObject({
+      host: "api.envonly.example",
+      secret: { piAuth: "envOnly" },
+    });
+    expect(deriveSandboxPi(input({ env: {} })).files["auth.json"].envOnly).toBeUndefined();
+  });
+});
+
+describe("deriveSandboxPi models.json", () => {
+  const custom = () => {
+    const providers = deriveSandboxPi(input()).files["models.json"].providers as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    return providers.custom as Record<string, unknown>;
+  };
+
+  it("replaces apiKey with a placeholder on the provider and model hosts", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(custom().apiKey).toBe(P("models:custom:apiKey"));
+    expect(custom().authHeader).toBe(true);
+    expect(rulesOf(result.rules, "derived:models:custom:apiKey").map((rule) => rule.host)).toEqual([
+      "llm.custom.example",
+      "model-a.custom.example",
+    ]);
+  });
+
+  it("binds env, command and literal header values and leaves plain ones", () => {
+    const result = deriveSandboxPi(input());
+    const headers = custom().headers as Record<string, string>;
+    const rule = (name: string) => rulesOf(result.rules, `derived:models:custom:header:${name}`)[0];
+
+    expect(headers).toEqual({
+      "X-Api-Key": P("models:custom:header:x-api-key"),
+      "X-Team": P("models:custom:header:x-team"),
+      "X-Signed": P("models:custom:header:x-signed"),
+      "X-Trace": "plain-value",
+    });
+    expect(rule("x-api-key")).toMatchObject({
+      header: "X-Api-Key",
+      template: "{secret}",
+      secret: { file: `${AGENT_DIR}/models.json`, pointer: "/providers/custom/headers/X-Api-Key" },
+    });
+    expect(rule("x-team")?.secret).toEqual({ env: "TEAM_TOKEN" });
+    expect(rule("x-signed")?.secret).toEqual({ command: ["sh", "-c", "print-signature --now"] });
+  });
+
+  it("binds model-level headers to the model host with the model identity", () => {
+    const result = deriveSandboxPi(input());
+    const rules = rulesOf(result.rules, "derived:models:custom:model:model-a:header:authorization");
+
+    expect(rules).toEqual([
+      {
+        id: "derived:models:custom:model:model-a:header:authorization",
+        host: "model-a.custom.example",
+        placeholder: P("models:custom:model:model-a:header:authorization"),
+        header: "Authorization",
+        template: "{secret}",
+        secret: {
+          file: `${AGENT_DIR}/models.json`,
+          pointer: "/providers/custom/models/0/headers/Authorization",
+        },
+      },
+    ]);
+  });
+
+  it("warns about host-local endpoints and providers without a host and gives them no rule", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.notices).toContain(
+      "models local: localhost is a host-local or plain-http endpoint, not reachable from the sandbox",
+    );
+    expect(result.notices).toContain(
+      "models unknownHost: no known API host, so no credential rule; add credentials.rules for it",
+    );
+    expect(result.rules.filter((rule) => rule.id.startsWith("derived:models:local"))).toEqual([]);
+  });
+});
+
+describe("deriveSandboxPi mcp.json", () => {
+  const servers = (result = deriveSandboxPi(input())) =>
+    result.files["mcp.json"].mcpServers as Record<string, Record<string, unknown>>;
+
+  it("keeps the header shape around an embedded variable and binds the variable", () => {
+    const result = deriveSandboxPi(input());
+    const placeholder = P("mcp:docs:header:authorization");
+
+    expect(servers(result).docs?.headers).toEqual({ Authorization: `Bearer ${placeholder}` });
+    expect(rulesOf(result.rules, "derived:mcp:docs:header:authorization")).toEqual([
+      {
+        id: "derived:mcp:docs:header:authorization",
+        host: "mcp.docs.example",
+        placeholder,
+        header: "Authorization",
+        template: "Bearer {secret}",
+        secret: { env: "DOCS_TOKEN" },
+      },
+    ]);
+    expect(rulesOf(result.rules, "derived:mcp:docs:oauth")).toEqual([]);
+  });
+
+  it("adds a bearer placeholder for servers without Authorization and drops their oauth block", () => {
+    const result = deriveSandboxPi(input());
+    const placeholder = P("mcp:sentryish:oauth");
+
+    expect(servers(result).sentryish).toEqual({
+      url: "https://mcp.oauth.example/mcp",
+      headers: { Authorization: `Bearer ${placeholder}` },
+    });
+    expect(rulesOf(result.rules, "derived:mcp:sentryish:oauth")).toEqual([
+      {
+        id: "derived:mcp:sentryish:oauth",
+        host: "mcp.oauth.example",
+        placeholder,
+        secret: { mcpOAuth: { server: "sentryish", url: "https://mcp.oauth.example/mcp" } },
+      },
+    ]);
+  });
+
+  it("asks for a sign-in only for servers without a token in the helper dir", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.notices).toContain("mcp literal: sign in with pi mcp login literal");
+    expect(result.notices).not.toContain("mcp sentryish: sign in with pi mcp login sentryish");
+  });
+
+  it("points a literal secret header at the host mcp.json", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(rulesOf(result.rules, "derived:mcp:literal:header:x-auth-token")[0]?.secret).toEqual({
+      file: `${AGENT_DIR}/mcp.json`,
+      pointer: "/mcpServers/literal/headers/X-Auth-Token",
+    });
+  });
+
+  it("gives plain-http servers a notice and no rule", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(result.notices).toContain(
+      "mcp plain: intranet.example is a host-local or plain-http endpoint, not reachable from the sandbox",
+    );
+    expect(result.rules.filter((rule) => rule.id.startsWith("derived:mcp:plain"))).toEqual([]);
+  });
+
+  it("turns secret-like stdio env values into placeholders with a notice", () => {
+    const result = deriveSandboxPi(input());
+
+    expect(servers(result).tools?.env).toEqual({
+      API_TOKEN: P("mcp:tools:env:API_TOKEN"),
+      FROM_ENV: P("mcp:tools:env:FROM_ENV"),
+      RUN: P("mcp:tools:env:RUN"),
+      MODE: "fast",
+    });
+    expect(result.notices).toContain(
+      "mcp tools: API_TOKEN is a placeholder in the sandbox; add credentials.rules for the host it calls",
+    );
+  });
+
+  it("leaves a header that combines several variables unbound with a notice", () => {
+    const mcp = {
+      mcpServers: {
+        multi: {
+          url: "https://multi.example/mcp",
+          headers: { Authorization: `${braced("A")}:${braced("B")}` },
+        },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp } }));
+
+    expect(rulesOf(result.rules, "derived:mcp:multi:header:authorization")).toEqual([]);
+    expect(result.notices.some((notice) => notice.startsWith("mcp multi: header Authorization"))).toBe(true);
+  });
+});
+
+describe("deriveSandboxPi rules and hosts", () => {
+  const manual: CredentialRule = {
+    id: "corp-keyed",
+    host: "api.keyed.example",
+    placeholder: "pi-sandbox-manual",
+    secret: { env: "CORP_KEY" },
+  };
+
+  it("lets a manual rule replace derived rules for its host", () => {
+    const result = deriveSandboxPi(input({ manual: [manual] }));
+
+    expect(result.rules.filter((rule) => rule.host === "api.keyed.example")).toEqual([manual]);
+    expect(result.hosts).not.toContain("api.keyed.example");
+  });
+
+  it("lists derived hosts once and honours derive.enabled and derive.hosts", () => {
+    const all = deriveSandboxPi(input());
+    const limited = deriveSandboxPi(input({ derive: { enabled: true, hosts: ["*.custom.example"] } }));
+    const disabled = deriveSandboxPi(input({ derive: { enabled: false }, manual: [manual] }));
+
+    expect(new Set(all.hosts).size).toBe(all.hosts.length);
+    expect(all.hosts).toContain("mcp.oauth.example");
+    expect(limited.hosts).toEqual(["llm.custom.example", "model-a.custom.example"]);
+    expect(disabled.hosts).toEqual([]);
+    expect(disabled.rules).toEqual([manual]);
+  });
+
+  it("renders the legacy gateway providers and adds its rule", () => {
+    const gateway = {
+      url: "https://gateway.corp.example",
+      authHeader: "x-gateway-key",
+      placeholder: "pi-sandbox-gateway",
+      providers: [{ id: "keyed", apiKind: "example-api" }],
+    };
+    const result = deriveSandboxPi(input({ gateway }));
+
+    expect(result.files["auth.json"].keyed).toEqual({ type: "api_key", key: "pi-sandbox-gateway" });
+    expect((result.files["models.json"].providers as Record<string, unknown>).keyed).toEqual({
+      baseUrl: "https://gateway.corp.example/keyed",
+      apiKey: "pi-sandbox-gateway",
+      api: "example-api",
+      models: [],
+    });
+    expect(rulesOf(result.rules, "gateway")).toEqual([
+      {
+        id: "gateway",
+        host: "gateway.corp.example",
+        placeholder: "pi-sandbox-gateway",
+        header: "x-gateway-key",
+        template: "{secret}",
+        secret: { piAuth: "keyed" },
+      },
+    ]);
+    expect(rulesOf(result.rules, "derived:auth:keyed:key")).toEqual([]);
+  });
+
+  it("passes read notices through", () => {
+    const result = deriveSandboxPi(
+      input({ files: { agentDir: AGENT_DIR, notices: ["auth.json: invalid JSON, ignored"] } }),
+    );
+
+    expect(result.notices).toContain("auth.json: invalid JSON, ignored");
+  });
+});
+
+describe("deriveSandboxPi url userinfo", () => {
+  const PASSWORD = "SECRET-USERINFO-PASSWORD-83";
+
+  const files = () => ({
+    agentDir: AGENT_DIR,
+    models: {
+      providers: {
+        proxied: {
+          baseUrl: `https://bob:${PASSWORD}@llm.proxied.example/v1`,
+          models: [{ id: "m1", baseUrl: `https://amy:${PASSWORD}@m1.proxied.example/v1` }],
+        },
+      },
+    },
+    mcp: { mcpServers: { guarded: { url: `https://eve:${PASSWORD}@mcp.guarded.example/mcp` } } },
+  });
+
+  it("strips userinfo from every url, names the key and adds a Basic header rule", () => {
+    const result = deriveSandboxPi(input({ files: files() }));
+    const providers = result.files["models.json"].providers as Record<string, Record<string, unknown>>;
+    const servers = result.files["mcp.json"].mcpServers as Record<string, Record<string, unknown>>;
+
+    expect(JSON.stringify(result.files)).not.toContain(PASSWORD);
+    expect(JSON.stringify(result.files)).not.toContain("bob");
+    expect(JSON.stringify(result.notices)).not.toContain(PASSWORD);
+    expect(providers.proxied?.baseUrl).toBe("https://llm.proxied.example/v1");
+    expect(servers.guarded?.url).toBe("https://mcp.guarded.example/mcp");
+    expect(result.notices).toContain(
+      "models proxied: providers.proxied.baseUrl carried user credentials; they were removed in the sandbox",
+    );
+    expect(rulesOf(result.rules, "derived:models:proxied:baseUrl:userinfo")).toEqual([
+      {
+        id: "derived:models:proxied:baseUrl:userinfo",
+        host: "llm.proxied.example",
+        header: "Authorization",
+        template: "Basic {secret}",
+        transform: "urlUserinfoBase64",
+        secret: { file: `${AGENT_DIR}/models.json`, pointer: "/providers/proxied/baseUrl" },
+      },
+    ]);
+    expect(rulesOf(result.rules, "derived:models:proxied:model:m1:baseUrl:userinfo")[0]?.host).toBe(
+      "m1.proxied.example",
+    );
+    expect(servers.guarded?.headers).toBeUndefined();
+    expect(rulesOf(result.rules, "derived:mcp:guarded:oauth")).toEqual([]);
+    expect(result.notices).not.toContain("mcp guarded: sign in with pi mcp login guarded");
+    expect(rulesOf(result.rules, "derived:mcp:guarded:url:userinfo")[0]).toMatchObject({
+      host: "mcp.guarded.example",
+      transform: "urlUserinfoBase64",
+      secret: { file: `${AGENT_DIR}/mcp.json`, pointer: "/mcpServers/guarded/url" },
+    });
+  });
+});
+
+describe("deriveSandboxPi safety and stability", () => {
+  it("never puts a real secret into the files, rules or notices", () => {
+    const text = JSON.stringify(deriveSandboxPi(input()));
+
+    Object.values(SECRETS).forEach((secret) => {
+      expect(text).not.toContain(secret);
+    });
+  });
+
+  it("gives the same output for the same input", () => {
+    expect(JSON.stringify(deriveSandboxPi(input()))).toBe(JSON.stringify(deriveSandboxPi(input())));
+  });
+
+  it("works with no host files", () => {
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR }, env: {} }));
+
+    expect(result.files).toEqual({
+      "auth.json": {},
+      "models.json": { providers: {} },
+      "mcp.json": { mcpServers: {} },
+    });
+    expect(result.rules).toEqual([]);
+  });
+});
+
+describe("privateHostNotices", () => {
+  const rule = (host: string): CredentialRule => ({
+    id: host,
+    host,
+    placeholder: "pi-sandbox-x",
+    secret: { env: "X" },
+  });
+
+  it("names rule hosts that resolve privately unless privateHosts lists them", async () => {
+    const addresses: Record<string, string[]> = {
+      "inside.corp.example": ["10.1.2.3"],
+      "listed.corp.example": ["192.168.1.1"],
+      "public.example": ["93.184.216.34"],
+      "v6.corp.example": ["fd00::1"],
+    };
+    const notices = await privateHostNotices({
+      rules: Object.keys(addresses).map(rule),
+      privateHosts: ["listed.corp.example"],
+      resolve: async (host) => addresses[host] ?? [],
+    });
+
+    expect(notices).toEqual([
+      "inside.corp.example resolves to a private address; add it to egress.privateHosts so the sandbox may reach it",
+      "v6.corp.example resolves to a private address; add it to egress.privateHosts so the sandbox may reach it",
+    ]);
+  });
+
+  it("ignores hosts that do not resolve", async () => {
+    const notices = await privateHostNotices({
+      rules: [rule("gone.example")],
+      privateHosts: [],
+      resolve: async () => {
+        throw new Error("ENOTFOUND");
+      },
+    });
+
+    expect(notices).toEqual([]);
+  });
+});

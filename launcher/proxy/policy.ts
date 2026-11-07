@@ -5,6 +5,8 @@ export interface EgressPolicy {
   mcpHosts: string[];
   gatewayHost?: string;
   gatewayPort?: number;
+  deny?: string[];
+  credentialHosts?: string[];
 }
 
 export interface ConnectRequest {
@@ -136,15 +138,15 @@ export const normalizeHost = (host: string) => host.trim().toLowerCase().replace
 
 const ENTRY_PORT = /^(.+):(\d{1,5})$/;
 
-const parseEntry = (entry: string) => {
+export const parseEntry = (entry: string) => {
   const withPort = ENTRY_PORT.exec(entry.trim());
 
   return withPort === null
-    ? { pattern: normalizeHost(entry), port: TLS_PORT }
+    ? { pattern: normalizeHost(entry), port: undefined }
     : { pattern: normalizeHost(withPort[1] ?? ""), port: Number(withPort[2]) };
 };
 
-const matchesPattern = (host: string, pattern: string) => {
+export const matchesPattern = (host: string, pattern: string) => {
   if (pattern.startsWith("*.")) {
     const suffix = pattern.slice(1);
     const label = host.slice(0, -suffix.length);
@@ -155,11 +157,29 @@ const matchesPattern = (host: string, pattern: string) => {
   return host === pattern;
 };
 
+export const matchesEntry = (entry: string, host: string, port: number) => {
+  const parsed = parseEntry(entry);
+
+  return matchesPattern(normalizeHost(host), parsed.pattern) && (parsed.port ?? TLS_PORT) === port;
+};
+
+export const authorityOf = (host: string, port: number) => (port === TLS_PORT ? host : `${host}:${port}`);
+
+export const notAllowedReason = (host: string, port: number) => {
+  const target = authorityOf(host, port);
+
+  return `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`;
+};
+
 const policyHosts = (policy: EgressPolicy) => [
   ...policy.allow,
   ...policy.mcpHosts,
+  ...(policy.credentialHosts ?? []),
   ...(policy.gatewayHost === undefined ? [] : [`${policy.gatewayHost}:${policy.gatewayPort ?? TLS_PORT}`]),
 ];
+
+const isDenied = (host: string, port: number, deny: string[]) =>
+  deny.map(parseEntry).some((entry) => matchesPattern(host, entry.pattern) && (entry.port ?? port) === port);
 
 export const isGatewayHost = (host: string, port: number, policy: EgressPolicy) =>
   policy.gatewayHost !== undefined &&
@@ -180,7 +200,7 @@ const isNumericHost = (host: string) => NUMERIC_LABEL.test(host.split(".").at(-1
 
 const isLocalhost = (host: string) => host === "localhost" || host.endsWith(".localhost");
 
-const hostDecision = (host: string, port: number, policy: EgressPolicy): ConnectDecision => {
+const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: string[]): ConnectDecision => {
   if (isLiteral(host)) {
     return literalDecision(host);
   }
@@ -197,26 +217,32 @@ const hostDecision = (host: string, port: number, policy: EgressPolicy): Connect
     return deny("loopback", `${host} is a loopback name`);
   }
 
-  const entries = policyHosts(policy)
+  if (isDenied(host, port, policy.deny ?? [])) {
+    return deny("egress.deny", `${host} is in egress.deny`);
+  }
+
+  const entries = [...policyHosts(policy), ...extra]
     .map(parseEntry)
     .filter((entry) => matchesPattern(host, entry.pattern));
 
   if (entries.length === 0) {
-    return deny("egress.allow", `${host} is not in egress.allow, egress.mcpHosts or the gateway`);
+    return deny("egress.allow", notAllowedReason(host, port));
   }
 
-  if (!entries.some((entry) => entry.port === port)) {
-    const ports = entries.map((entry) => entry.port).join(", ");
-
-    return deny("egress.port", `port ${port} is not allowed for ${host}; allowed: ${ports}`);
+  if (!entries.some((entry) => (entry.port ?? TLS_PORT) === port)) {
+    return deny("egress.port", notAllowedReason(host, port));
   }
 
   return { allowed: true };
 };
 
-export const decideConnect = (request: ConnectRequest, policy: EgressPolicy): ConnectDecision => {
+export const decideConnect = (
+  request: ConnectRequest,
+  policy: EgressPolicy,
+  extra: string[] = [],
+): ConnectDecision => {
   const host = normalizeHost(request.host);
-  const decision = hostDecision(host, request.port, policy);
+  const decision = hostDecision(host, request.port, policy, extra);
 
   if (!decision.allowed || request.sni === undefined) {
     return decision;

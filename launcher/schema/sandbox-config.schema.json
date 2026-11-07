@@ -145,6 +145,10 @@
                     "type": "string",
                     "pattern": "\\{secret\\}"
                   },
+                  "transform": {
+                    "description": "applied to the resolved secret before the template",
+                    "enum": ["urlUserinfoBase64"]
+                  },
                   "secret": {
                     "oneOf": [
                       {
@@ -314,6 +318,10 @@
                   "template": {
                     "type": "string",
                     "pattern": "\\{secret\\}"
+                  },
+                  "transform": {
+                    "description": "applied to the resolved secret before the template",
+                    "enum": ["urlUserinfoBase64"]
                   },
                   "secret": {
                     "oneOf": [
@@ -488,6 +496,10 @@
                     "type": "string",
                     "pattern": "\\{secret\\}"
                   },
+                  "transform": {
+                    "description": "applied to the resolved secret before the template",
+                    "enum": ["urlUserinfoBase64"]
+                  },
                   "secret": {
                     "oneOf": [
                       {
@@ -650,6 +662,10 @@
                   "template": {
                     "type": "string",
                     "pattern": "\\{secret\\}"
+                  },
+                  "transform": {
+                    "description": "applied to the resolved secret before the template",
+                    "enum": ["urlUserinfoBase64"]
                   },
                   "secret": {
                     "oneOf": [

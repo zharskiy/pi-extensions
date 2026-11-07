@@ -1,5 +1,12 @@
 import type { SecretRef } from "../../config/index.ts";
-import { type CommandRunner, LauncherError } from "../../shared/index.ts";
+import type { CommandRunner } from "../../shared/index.ts";
+import { type CachedSecret, createSecretCache, type SecretLoadOptions } from "./cache.ts";
+import { commandSecret } from "./command.ts";
+import { collectEnvValues, envSecret } from "./env.ts";
+import { SecretUnavailable } from "./errors.ts";
+import { fileSecret } from "./file.ts";
+import { createMcpOAuthSource } from "./mcp-oauth.ts";
+import { piAuthSecret } from "./pi-auth.ts";
 
 export const PARENT_PROXY_SECRET_KEY = "egress.parentProxy";
 
@@ -24,13 +31,79 @@ export interface EnvSecretEntry {
   ref: SecretRef;
 }
 
-export const createSecretResolver = (_deps: SecretResolverDeps): SecretResolver => {
-  throw new LauncherError("createSecretResolver is not implemented");
+const kindOf = (ref: SecretRef) => Object.keys(ref)[0] ?? "unknown";
+
+const success = (secret: CachedSecret): SecretResult =>
+  secret.expiresAt === undefined
+    ? { ok: true, value: secret.value }
+    : { ok: true, value: secret.value, expiresAt: secret.expiresAt };
+
+const failure = (key: string, ref: SecretRef, error: unknown): SecretResult => ({
+  ok: false,
+  reason: error instanceof SecretUnavailable ? error.message : `${kindOf(ref)} secret for ${key} failed`,
+});
+
+export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver => {
+  const cache = createSecretCache(deps.now);
+  const mcpOAuth = createMcpOAuthSource(deps);
+  const entries = new Map<string, Set<string>>();
+
+  const cacheKey = (key: string, ref: SecretRef) => {
+    const composite = `${key}\n${JSON.stringify(ref)}`;
+
+    entries.set(key, new Set([...(entries.get(key) ?? []), composite]));
+
+    return composite;
+  };
+
+  const invalidate = (key: string) => {
+    (entries.get(key) ?? new Set<string>()).forEach((composite) => {
+      cache.invalidate(composite);
+    });
+  };
+
+  const load = (key: string, ref: SecretRef) => async (options: SecretLoadOptions) => {
+    if ("command" in ref) {
+      return commandSecret({
+        key,
+        kind: "command",
+        argv: ref.command,
+        ttlSeconds: ref.ttlSeconds,
+        runner: deps.runner,
+        now: deps.now,
+      });
+    }
+
+    if ("piAuth" in ref) {
+      return piAuthSecret(key, ref, deps);
+    }
+
+    if ("mcpOAuth" in ref) {
+      return mcpOAuth(key, ref, options);
+    }
+
+    if ("file" in ref) {
+      return fileSecret(key, ref, deps.home);
+    }
+
+    return envSecret(key, deps.envSecrets());
+  };
+
+  const fetch = (key: string, ref: SecretRef) => {
+    if ("env" in ref || "file" in ref) {
+      return load(key, ref)({ forced: true });
+    }
+
+    return cache.get(cacheKey(key, ref), load(key, ref));
+  };
+
+  const resolve = async (key: string, ref: SecretRef) =>
+    fetch(key, ref).then(success, (error: unknown) => failure(key, ref, error));
+
+  return { resolve, invalidate };
 };
 
 export const collectEnvSecrets = (
-  _entries: EnvSecretEntry[],
-  _env: Record<string, string | undefined>,
-): Record<string, string> => {
-  throw new LauncherError("collectEnvSecrets is not implemented");
-};
+  entries: EnvSecretEntry[],
+  env: Record<string, string | undefined>,
+): Record<string, string> => collectEnvValues(entries, env);

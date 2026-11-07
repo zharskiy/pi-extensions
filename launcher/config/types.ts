@@ -26,6 +26,7 @@ export interface CredentialRule {
   placeholder?: string;
   header?: string;
   template?: string;
+  transform?: "urlUserinfoBase64";
   secret: SecretRef;
 }
 

@@ -9,11 +9,14 @@ import {
   ensureProxyRunning,
   guestProxyUrl,
   proxyPolicyHash,
+  readDenials,
   readProxyInstances,
   removeProxyInstance,
+  repoProxyToken,
+  sendProxyControl,
   stopProxy,
 } from "../../proxy/index.ts";
-import { plainGet } from "./proxy-client.ts";
+import { CONTROL_USER, openConnect, plainGet, readRest } from "./proxy-client.ts";
 
 const state = { stateDir: "", home: "" };
 
@@ -124,7 +127,7 @@ describe("ensureProxyRunning", () => {
 
   it("answers health only with the instance token", async () => {
     const instance = await ensureProxyRunning(options(["registry.npmjs.org"]));
-    const authorized = await plainGet(instance.port, "/healthz", "127.0.0.1", instance.token);
+    const authorized = await plainGet(instance.port, "/healthz", "127.0.0.1", instance.token, CONTROL_USER);
     const anonymous = await plainGet(instance.port, "/healthz");
 
     expect(JSON.parse(authorized.body)).toMatchObject({ ok: true, pid: instance.pid });
@@ -136,7 +139,7 @@ describe("ensureProxyRunning", () => {
     const dir = instanceDir(["registry.npmjs.org"]);
     const record = JSON.parse(await readFile(join(dir, "proxy.json"), "utf8"));
 
-    await plainGet(instance.port, "http://evil.test/", "evil.test", instance.token);
+    await plainGet(instance.port, "http://evil.test/", "evil.test", instance.token, CONTROL_USER);
 
     expect(record).toEqual({
       policyHash: instance.policyHash,
@@ -340,6 +343,48 @@ describe("stopProxy on a hung instance", () => {
 
     expect(await stopProxy(state.stateDir)).toBe(1);
     expect(await exited(hung)).toBe(true);
+  }, 20_000);
+});
+
+describe("control socket and repository tokens", () => {
+  const repoHash = "4".repeat(64);
+
+  it("takes env secrets from the launcher and serves a repository its denials", async () => {
+    const instance = await ensureProxyRunning(options(["registry.npmjs.org"]));
+    const token = await repoProxyToken(state.stateDir, instance.policyHash, repoHash);
+    const reply = await openConnect(instance.port, "evil.test:443", token);
+
+    await readRest(reply.socket);
+
+    expect(await sendProxyControl(instance, { type: "env-secrets", secrets: { rule: "value" } })).toEqual({
+      ok: true,
+    });
+    expect(reply.status).toBe(403);
+    expect(await readDenials(state.stateDir, instance.policyHash, { repoHash, since: 0 })).toContainEqual(
+      expect.objectContaining({ host: "evil.test", repoHash, rule: "egress.allow" }),
+    );
+    expect((await stat(join(instanceDir(["registry.npmjs.org"]), "tokens", repoHash))).mode & 0o777).toBe(
+      0o600,
+    );
+  }, 20_000);
+
+  it("refuses the instance token for tunnels", async () => {
+    const instance = await ensureProxyRunning(options(["registry.npmjs.org"]));
+    const reply = await openConnect(instance.port, "registry.npmjs.org:443", instance.token);
+
+    await readRest(reply.socket);
+
+    expect(reply.status).toBe(407);
+  }, 20_000);
+
+  it("gives a capped configuration its own policy instance", async () => {
+    const capped = await ensureProxyRunning({
+      ...options(["registry.npmjs.org"]),
+      egressCap: { grants: [] },
+    });
+
+    expect(capped.policyHash).toBe(proxyPolicyHash(config(["registry.npmjs.org"]), { grants: [] }));
+    expect(capped.policyHash).not.toBe(proxyPolicyHash(config(["registry.npmjs.org"])));
   }, 20_000);
 });
 

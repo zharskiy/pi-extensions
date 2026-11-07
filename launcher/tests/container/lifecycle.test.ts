@@ -9,6 +9,7 @@ import {
   findCurrentContainer,
   listLauncherContainers,
   removeRepoContainer,
+  stopIdleContainer,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
@@ -129,6 +130,20 @@ describe("ensureContainer", () => {
     expect(fake.containers.get(second.id)?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox:t@10.89.0.9:3128");
   });
 
+  it("replaces a stopped container whose spec is stale", async () => {
+    const fake = createFakeBackend();
+    const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
+
+    await stopIdleContainer(fake.backend, first.id);
+
+    const trusted = specOf({ trust: { pemPath: "/state/ca/trust.pem", hash: "trust-2" } });
+    const second = await ensureContainer({ backend: fake.backend, spec: trusted });
+
+    expect(second.created).toBe(true);
+    expect(fake.containers.has(first.id)).toBe(false);
+    expect(fake.containers.get(second.id)?.spec?.env.PI_SANDBOX_TRUST_HASH).toBe("trust-2");
+  });
+
   it("replaces the container when the config hash changes", async () => {
     const fake = createFakeBackend();
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
@@ -163,6 +178,32 @@ describe("ensureContainer", () => {
     expect(configMount?.source.startsWith(spec.copiesDir)).toBe(true);
     expect(spec.copiesDir.startsWith(state.dir)).toBe(true);
     expect(await readFile(configMount?.source ?? "", "utf8")).toBe("[core]\n\tbare = false\n");
+  });
+});
+
+describe("stopIdleContainer", () => {
+  it("stops a running container and keeps it for the next launch", async () => {
+    const fake = createFakeBackend();
+    const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
+
+    expect(await stopIdleContainer(fake.backend, id)).toEqual({ stopped: true });
+    expect(fake.containers.get(id)?.summary.state).toBe("stopped");
+
+    const again = await ensureContainer({ backend: fake.backend, spec: specOf() });
+
+    expect(again).toEqual({ id, created: false });
+    expect(fake.containers.get(id)?.summary.state).toBe("running");
+  });
+
+  it("does nothing for a container that is already stopped or gone", async () => {
+    const fake = createFakeBackend();
+    const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
+
+    await stopIdleContainer(fake.backend, id);
+
+    expect(await stopIdleContainer(fake.backend, id)).toEqual({ stopped: false });
+    expect(await stopIdleContainer(fake.backend, "container-missing")).toEqual({ stopped: false });
+    expect(fake.stops).toHaveLength(1);
   });
 });
 

@@ -3,9 +3,11 @@ import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { LauncherError, launcherRoot, readJsonFile, sha256Hex, writeJsonFile } from "../shared/index.ts";
+import { LauncherError, launcherRoot, sha256Hex } from "../shared/index.ts";
+import { buildProxyArgs } from "./build-proxy.ts";
+import { placeBuildTrust } from "./build-trust.ts";
 import type { ExtensionsSource } from "./extensions.ts";
-import { renderAuthJson, renderModelsJson } from "./render.ts";
+import { type ImageRecord, isImageRecord, readImageRecord, writeImageRecord } from "./record.ts";
 
 export interface ImageVersions {
   pi: string;
@@ -17,13 +19,8 @@ export interface EnsureImageInput {
   config: SandboxConfig;
   versions: ImageVersions;
   stateDir: string;
-}
-
-export interface ImageRecord {
-  reference: string;
-  digest: string;
-  id: string;
-  inputsHash: string;
+  trustPem?: string;
+  env?: Record<string, string | undefined>;
 }
 
 export interface BuiltImage {
@@ -40,8 +37,6 @@ const DOCKERFILE = "Dockerfile";
 const ENTRYPOINT = "entrypoint.sh";
 
 const PACKAGE_NAME = "pi-extensions-mz";
-
-const RECORD_FILE = "image.json";
 
 const PINNED = "pinned";
 
@@ -73,12 +68,7 @@ const pinVersions = (dockerfile: string, versions: ImageVersions) =>
       `ARG EXTENSIONS_SOURCE=${extensionsArgument(versions.extensions)}`,
     );
 
-const renderedFiles = (config: SandboxConfig) => ({
-  "models.json": `${JSON.stringify(renderModelsJson(config.gateway), null, 2)}\n`,
-  "auth.json": `${JSON.stringify(renderAuthJson(config.gateway), null, 2)}\n`,
-});
-
-export const prepareBuildContext = async (config: SandboxConfig, versions: ImageVersions, dir: string) => {
+export const prepareBuildContext = async (versions: ImageVersions, dir: string, trustPem?: string) => {
   const dockerfile = await readFile(join(imageAssets(), DOCKERFILE), "utf8");
 
   await mkdir(dir, { recursive: true });
@@ -87,9 +77,7 @@ export const prepareBuildContext = async (config: SandboxConfig, versions: Image
 
   await copyFile(join(imageAssets(), ENTRYPOINT), join(dir, ENTRYPOINT));
 
-  await Promise.all(
-    Object.entries(renderedFiles(config)).map(([name, text]) => writeFile(join(dir, name), text)),
-  );
+  await placeBuildTrust(dir, trustPem);
 
   if (versions.extensions.kind === "tarball") {
     await copyFile(versions.extensions.path, join(dir, CONTEXT_TARBALL));
@@ -118,27 +106,15 @@ const inputsHash = async (config: SandboxConfig, versions: ImageVersions) => {
       pi: versions.pi,
       extensions,
       assets,
-      files: renderedFiles(config),
     }),
   );
 };
 
-const recordFileOf = (stateDir: string) => join(stateDir, RECORD_FILE);
-
-const readRecord = (stateDir: string) =>
-  readJsonFile<Partial<ImageRecord>>(recordFileOf(stateDir)).catch(() => undefined);
-
-const isRecord = (record: Partial<ImageRecord> | undefined): record is ImageRecord =>
-  typeof record?.reference === "string" &&
-  typeof record.digest === "string" &&
-  typeof record.id === "string" &&
-  typeof record.inputsHash === "string";
-
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
-  const record = await readRecord(stateDir);
+  const record = await readImageRecord(stateDir);
   const { reference, digest } = config.image;
 
-  if (!isRecord(record) || record.reference !== reference) {
+  if (!isImageRecord(record) || record.reference !== reference) {
     return undefined;
   }
 
@@ -160,16 +136,17 @@ const buildLocally = async (input: EnsureImageInput, hash: string): Promise<Buil
   const contextDir = join(input.stateDir, `build-${randomBytes(4).toString("hex")}`);
 
   try {
-    await prepareBuildContext(input.config, input.versions, contextDir);
+    await prepareBuildContext(input.versions, contextDir, input.trustPem);
 
-    const { id, digest } = await input.backend.buildImage(contextDir, reference);
+    const buildArgs = buildProxyArgs(input.config.egress.parentProxy, input.env ?? {});
+    const { id, digest } = await input.backend.buildImage(contextDir, reference, buildArgs);
 
-    await writeJsonFile(recordFileOf(input.stateDir), {
+    await writeImageRecord(input.stateDir, {
       reference,
       digest,
       id,
       inputsHash: hash,
-    } satisfies ImageRecord);
+    });
 
     return { reference, digest, id, built: true };
   } finally {
@@ -185,12 +162,7 @@ const pullPinned = async (input: EnsureImageInput, pinned: string): Promise<Buil
     throw new LauncherError(`image ${reference} has digest ${digest}, expected ${pinned}`);
   }
 
-  await writeJsonFile(recordFileOf(input.stateDir), {
-    reference,
-    digest,
-    id,
-    inputsHash: PINNED,
-  } satisfies ImageRecord);
+  await writeImageRecord(input.stateDir, { reference, digest, id, inputsHash: PINNED });
 
   return { reference, digest, id, built: false };
 };

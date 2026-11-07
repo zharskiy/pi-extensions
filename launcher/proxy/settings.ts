@@ -1,4 +1,12 @@
-import type { CredentialSource, SandboxConfig } from "../config/index.ts";
+import type {
+  CredentialRule,
+  CredentialSource,
+  EgressCap,
+  ExtraCa,
+  GrantsConfig,
+  ParentProxy,
+  SandboxConfig,
+} from "../config/index.ts";
 import { sha256Hex } from "../shared/index.ts";
 import type { EgressPolicy } from "./policy.ts";
 
@@ -15,9 +23,15 @@ export interface ProxySettings {
   policy: EgressPolicy;
   gateway?: GatewaySettings;
   credentials: CredentialSource;
+  rules: CredentialRule[];
+  privateHosts: string[];
+  parentProxy: ParentProxy;
+  grants: GrantsConfig;
+  extraCa: ExtraCa[];
+  cap: EgressCap;
 }
 
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 2;
 
 const DEFAULT_TLS_PORT = 443;
 
@@ -38,19 +52,48 @@ const gatewaySettings = (config: SandboxConfig): GatewaySettings | undefined => 
   };
 };
 
-export const proxySettings = (config: SandboxConfig): ProxySettings => {
+const legacyCredentials = (credentials: SandboxConfig["credentials"]): CredentialSource => {
+  if (credentials.kind === "static") {
+    return { kind: "static", envVar: credentials.envVar, keychainService: credentials.keychainService };
+  }
+
+  if (credentials.kind === "sso") {
+    return { kind: "sso", command: credentials.command };
+  }
+
+  return { kind: "host-pi-auth", authFile: credentials.authFile };
+};
+
+const ruleHost = (rule: CredentialRule) =>
+  rule.port === undefined || rule.port === DEFAULT_TLS_PORT ? rule.host : `${rule.host}:${rule.port}`;
+
+const sorted = (values: string[]) => [...values].sort();
+
+export const proxySettings = (config: SandboxConfig, cap: EgressCap = {}): ProxySettings => {
   const gateway = gatewaySettings(config);
+  const rules = config.credentials.rules ?? [];
 
   return {
     policy: {
-      allow: [...config.egress.allow].sort(),
-      mcpHosts: [...config.egress.mcpHosts].sort(),
+      allow: sorted(config.egress.allow),
+      mcpHosts: sorted(config.egress.mcpHosts),
+      deny: sorted(config.egress.deny ?? []),
+      credentialHosts: sorted([...new Set(rules.map(ruleHost))]),
       ...(gateway === undefined ? {} : { gatewayHost: gateway.host, gatewayPort: gateway.port }),
     },
     ...(gateway === undefined ? {} : { gateway }),
-    credentials: config.credentials,
+    credentials: legacyCredentials(config.credentials),
+    rules,
+    privateHosts: sorted(config.egress.privateHosts ?? []),
+    parentProxy: config.egress.parentProxy ?? "env",
+    grants: config.egress.grants,
+    extraCa: config.tls?.extraCa ?? [],
+    cap: {
+      ...(cap.derivedHosts === undefined ? {} : { derivedHosts: sorted(cap.derivedHosts) }),
+      ...(cap.grants === undefined ? {} : { grants: sorted(cap.grants) }),
+    },
   };
 };
 
-export const proxyPolicyHash = (config: SandboxConfig) =>
-  sha256Hex(JSON.stringify({ version: SETTINGS_VERSION, ...proxySettings(config) }));
+export const proxyPolicyHash = (config: SandboxConfig, cap: EgressCap = {}) =>
+  sha256Hex(JSON.stringify({ version: SETTINGS_VERSION, ...proxySettings(config, cap) }));

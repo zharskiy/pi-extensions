@@ -1,7 +1,11 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { loadEffectiveConfig } from "../../config/index.ts";
 import { mergeLayers } from "../../config/merge.ts";
+import { createFakeClock } from "../support/fake-clock.ts";
+import { createFakeFetchText } from "../support/fake-fetch.ts";
 import { createLayers } from "./fixtures.ts";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
@@ -281,6 +285,127 @@ describe("loadEffectiveConfig", () => {
       "policy: egress.blocked is not a known key",
     );
     await expect(loadWith({ user: "{ not json" })).rejects.toThrow("invalid JSON");
+  });
+});
+
+const ORG_URL = "https://config.example.internal/baseline.json";
+
+const HOUR_MS = 3_600_000;
+
+interface OrgSetup {
+  baseline: unknown;
+  policy?: (orgFile: string) => unknown;
+  user?: (orgFile: string) => unknown;
+  project?: unknown;
+}
+
+const loadWithOrg = async (setup: OrgSetup) => {
+  const files = await createLayers();
+  const orgFile = join(files.repoRoot, "..", "org.json");
+  const fake = createFakeFetchText({ [ORG_URL]: { status: 200, body: JSON.stringify(setup.baseline) } });
+  const clock = createFakeClock();
+  const env = { ...files.env, PI_SANDBOX_STATE_DIR: join(files.repoRoot, "..", "state") };
+
+  await writeFile(orgFile, JSON.stringify(setup.baseline));
+
+  if (setup.policy !== undefined) {
+    await files.policy(setup.policy(orgFile));
+  }
+
+  if (setup.user !== undefined) {
+    await files.user(setup.user(orgFile));
+  }
+
+  if (setup.project !== undefined) {
+    await files.project(setup.project);
+  }
+
+  const load = () =>
+    loadEffectiveConfig({ repoRoot: files.repoRoot, env, fetchText: fake.fetchText, now: clock.now });
+
+  return { load, fake, clock };
+};
+
+describe("loadEffectiveConfig with an org baseline", () => {
+  it("applies the org layer between policy and user", async () => {
+    const { load } = await loadWithOrg({
+      baseline: { fallback: "refuse", egress: { allow: ["github.com", "pypi.org"] }, resources: { cpus: 2 } },
+      policy: (source) => ({ org: { source }, egress: { allow: ["github.com", "pypi.org", "crates.io"] } }),
+      user: () => ({ egress: { allow: ["github.com"] }, resources: { cpus: 4 } }),
+    });
+    const { config, sources, notices } = await load();
+
+    expect(config.fallback).toBe("refuse");
+    expect(config.egress.allow).toEqual(["github.com"]);
+    expect(config.resources.cpus).toBe(4);
+    expect(sources).toMatchObject({ fallback: "org", "egress.allow": "user", "resources.cpus": "user" });
+    expect(notices).toEqual([]);
+  });
+
+  it("loads the org named by the user when policy names none", async () => {
+    const { load, fake } = await loadWithOrg({
+      baseline: { fallback: "refuse" },
+      user: () => ({ org: { source: ORG_URL } }),
+    });
+
+    await expect(load()).resolves.toMatchObject({
+      config: { fallback: "refuse" },
+      sources: { fallback: "org" },
+    });
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("uses the org of the policy and refuses a different one from the user", async () => {
+    const { load, fake } = await loadWithOrg({
+      baseline: { fallback: "refuse" },
+      policy: (source) => ({ org: { source } }),
+      user: () => ({ org: { source: ORG_URL } }),
+    });
+
+    await expect(load()).rejects.toThrow("user: org cannot change, locked by policy");
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("keeps the org layer from loosening policy", async () => {
+    const { load } = await loadWithOrg({
+      baseline: { egress: { allow: ["github.com", "evil.test"] } },
+      policy: (source) => ({ org: { source }, egress: { allow: ["github.com"] } }),
+    });
+
+    await expect(load()).rejects.toThrow("org: egress.allow cannot add evil.test, locked by policy");
+  });
+
+  it("keeps the user from loosening the org layer", async () => {
+    const { load } = await loadWithOrg({
+      baseline: { fallback: "refuse", egress: { grants: { maxHours: 8 } } },
+      user: (source) => ({ org: { source }, egress: { grants: { maxHours: 24 } } }),
+    });
+
+    await expect(load()).rejects.toThrow("user: egress.grants.maxHours cannot grow, locked by org");
+  });
+
+  it("keeps the project from setting org", async () => {
+    const { load } = await loadWithOrg({ baseline: {}, project: { org: { source: ORG_URL } } });
+
+    await expect(load()).rejects.toThrow(/^project: org may/);
+  });
+
+  it("passes the org notices up when the baseline falls back to the cache", async () => {
+    const { load, fake, clock } = await loadWithOrg({
+      baseline: { fallback: "refuse" },
+      user: () => ({ org: { source: ORG_URL } }),
+    });
+
+    await load();
+
+    fake.route(ORG_URL, new Error("connect ECONNREFUSED"));
+
+    clock.advance(25 * HOUR_MS);
+
+    const { config, notices } = await load();
+
+    expect(config.fallback).toBe("refuse");
+    expect(notices).toEqual([expect.stringContaining("ECONNREFUSED")]);
   });
 });
 

@@ -395,6 +395,29 @@ describe("docker-engine images", () => {
     expect(built.digest).toBe(built.id);
     expect(engine.images.get("pi-sandbox:dev")?.Id).toBe(built.id);
   });
+
+  it("sends build args to the build and none when there are none", async () => {
+    const engine = await startEngine();
+    const context = await temporaryDir();
+
+    await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+    const backend = createDockerEngineBackend({
+      socketPath: engine.socketPath,
+      runner: createProcessRunner(),
+      home: context,
+    });
+
+    await backend.buildImage(context, "pi-sandbox:plain");
+    await backend.buildImage(context, "pi-sandbox:proxied", { HTTPS_PROXY: "http://proxy.example.com:8080" });
+
+    const builds = engine.requests.filter((request) => request.path === "/build");
+
+    expect(builds.map((request) => request.query.get("buildargs"))).toEqual([
+      null,
+      JSON.stringify({ HTTPS_PROXY: "http://proxy.example.com:8080" }),
+    ]);
+  });
 });
 
 describe("docker-engine exec", () => {

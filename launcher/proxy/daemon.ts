@@ -1,21 +1,27 @@
-import { appendFile, mkdir, rm } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
+import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
-import type { SandboxConfig } from "../config/index.ts";
+import { legacyGatewayRule, type SandboxConfig } from "../config/index.ts";
 import {
   createProcessRunner,
   errorMessage,
   LauncherError,
   launcherPaths,
   readJsonFile,
+  stateLayout,
   writeJsonFile,
 } from "../shared/index.ts";
 import { createAccessLog } from "./access-log.ts";
-import { createCredentialSource } from "./credentials.ts";
+import { createDialer } from "./dial.ts";
 import { type DaemonConfig, type ProxyInstance, proxyFiles } from "./files.ts";
+import { parentRouteFor } from "./parent.ts";
+import { createProxyRuntime } from "./runtime.ts";
+import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { proxyPolicyHash, proxySettings } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
+import { extraPemPathOf } from "./trust.ts";
 
 const LISTEN_HOST = "127.0.0.1";
 
@@ -43,6 +49,12 @@ const parseDaemonArgs = () => {
   };
 };
 
+const upstreamTrust = async (stateDir: string, hasExtraCa: boolean) => {
+  const extra = hasExtraCa ? await readFile(extraPemPathOf(stateDir), "utf8").catch(() => "") : "";
+
+  return extra.trim() === "" ? undefined : [...rootCertificates, extra];
+};
+
 const reportFailure = async (log: string | undefined, error: unknown) => {
   const hint = error instanceof LauncherError && error.hint !== undefined ? ` (${error.hint})` : "";
   const line = `${new Date().toISOString()} ${errorMessage(error)}${hint}\n`;
@@ -65,31 +77,52 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
   }
 
   const { config, token } = daemonConfig;
-  const policyHash = proxyPolicyHash(config);
+  const cap = daemonConfig.egressCap ?? {};
+  const policyHash = proxyPolicyHash(config, cap);
 
   if (policyHash !== args.policyHash) {
     throw new LauncherError(`${files.config}: policy hash does not match ${args.policyHash}`);
   }
 
-  const settings = proxySettings(config);
+  const settings = proxySettings(config, cap);
   const runner = createProcessRunner();
-  const ca =
-    settings.gateway === undefined ? undefined : await openLauncherCa({ stateDir: args.stateDir, runner });
-  const credentials = createCredentialSource(config.credentials, {
+  const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
+  const secrets = { current: new Map<string, string>() };
+  const resolver = createSecretResolver({
     runner,
-    env: process.env,
     home: args.home,
-    providers: settings.gateway?.providers,
+    now: Date.now,
+    piCommand: daemonConfig.piCommand ?? [],
+    mcpAuthDir: stateLayout(args.stateDir).mcpAuth,
+    envSecrets: () => secrets.current,
+  });
+  const gatewayRule = legacyGatewayRule(config, process.env);
+  const runtime = createProxyRuntime({
+    stateDir: args.stateDir,
+    policyHash,
+    staticRules: [...(gatewayRule === undefined ? [] : [gatewayRule]), ...settings.rules],
+    grantsEnabled: settings.grants.enabled,
+    cap: settings.cap,
   });
   const log = createAccessLog(files.accessLog);
   const server = await startProxyServer({
     listen: { host: LISTEN_HOST, port: args.port },
     policy: settings.policy,
     policyHash,
-    token,
-    gateway: settings.gateway === undefined ? undefined : { ...settings.gateway, credentials },
+    controlToken: token,
+    runtime,
+    resolver,
+    gateway: settings.gateway,
+    privateHosts: settings.privateHosts,
     ca,
     log: log.write,
+    dial: createDialer({ parent: parentRouteFor(settings.parentProxy, process.env, resolver) }),
+    upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
+    onControl: (message) => {
+      secrets.current = new Map(Object.entries(message.secrets));
+
+      return { ok: true };
+    },
   });
   const record: ProxyInstance = { policyHash, port: server.port, token, pid: process.pid };
 

@@ -11,12 +11,17 @@ export interface ConnectReply {
 
 const HEAD_END = "\r\n\r\n";
 
-const authorization = (token: string) => `Basic ${Buffer.from(`pi-sandbox:${token}`).toString("base64")}`;
+export const REPO_USER = "pi-sandbox";
 
-const authLine = (token: string | undefined) =>
-  token === undefined ? "" : `Proxy-Authorization: ${authorization(token)}\r\n`;
+export const CONTROL_USER = "pi-sandbox-control";
 
-export const openConnect = (proxyPort: number, authority: string, token?: string) =>
+const authorization = (token: string, user = REPO_USER) =>
+  `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
+
+const authLine = (token: string | undefined, user: string) =>
+  token === undefined ? "" : `Proxy-Authorization: ${authorization(token, user)}\r\n`;
+
+export const openConnect = (proxyPort: number, authority: string, token?: string, user = REPO_USER) =>
   new Promise<ConnectReply>((resolve, reject) => {
     const socket = connect({ host: "127.0.0.1", port: proxyPort });
     const state = { buffer: Buffer.alloc(0) };
@@ -48,7 +53,7 @@ export const openConnect = (proxyPort: number, authority: string, token?: string
 
     socket.once("error", reject);
 
-    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${authLine(token)}\r\n`);
+    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${authLine(token, user)}\r\n`);
   });
 
 export const readRest = (socket: Socket) =>
@@ -125,14 +130,27 @@ export const readBody = (response: IncomingMessage) =>
     response.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
   });
 
-export const plainGet = (proxyPort: number, path: string, host = "127.0.0.1", token?: string) =>
+export interface PlainOptions {
+  host?: string;
+  token?: string;
+  user?: string;
+  method?: string;
+  body?: string;
+}
+
+export const plainRequest = (proxyPort: number, path: string, options: PlainOptions = {}) =>
   new Promise<{ status: number; body: string; headers: IncomingMessage["headers"] }>((resolve, reject) => {
+    const host = options.host ?? "127.0.0.1";
     const request = httpRequest(
       {
         host: "127.0.0.1",
         port: proxyPort,
         path,
-        headers: token === undefined ? { host } : { host, "proxy-authorization": authorization(token) },
+        method: options.method ?? "GET",
+        headers:
+          options.token === undefined
+            ? { host }
+            : { host, "proxy-authorization": authorization(options.token, options.user) },
       },
       (response) => {
         void readBody(response).then((body) =>
@@ -143,5 +161,13 @@ export const plainGet = (proxyPort: number, path: string, host = "127.0.0.1", to
 
     request.once("error", reject);
 
-    request.end();
+    request.end(options.body);
   });
+
+export const plainGet = (
+  proxyPort: number,
+  path: string,
+  host = "127.0.0.1",
+  token?: string,
+  user?: string,
+) => plainRequest(proxyPort, path, { host, token, user });

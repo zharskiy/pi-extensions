@@ -6,6 +6,7 @@ export {
   findRepoContainer,
   policyHashesInUse,
   removeRepoContainer,
+  stopIdleContainer,
 } from "./lifecycle.ts";
 export { LABELS } from "./names.ts";
 export type { CheckResult, ProbeTarget } from "./probes.ts";

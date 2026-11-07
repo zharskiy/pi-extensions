@@ -34,25 +34,47 @@ afterEach(async () => {
 });
 
 describe("prepareBuildContext", () => {
-  it("writes the Dockerfile, entrypoint and rendered pi files", async () => {
+  it("writes the Dockerfile, the entrypoint and an empty trust file, and no pi auth or models", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(sandboxConfig({ gateway }), versions, dir);
+    await prepareBuildContext(versions, dir);
 
-    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "auth.json", "entrypoint.sh", "models.json"]);
-    expect(JSON.parse(await readFile(join(dir, "models.json"), "utf8")).providers.gateway.baseUrl).toBe(
-      "https://gateway.example.com/gateway",
-    );
-    expect(JSON.parse(await readFile(join(dir, "auth.json"), "utf8"))).toEqual({
-      gateway: { type: "api_key", key: "pi-sandbox-placeholder" },
-    });
+    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "entrypoint.sh", "trust.pem"]);
+    expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("");
     expect(await readFile(join(dir, "entrypoint.sh"), "utf8")).toContain("sleep infinity");
+  });
+
+  it("copies the trust bundle into the context", async () => {
+    const dir = await tempDir();
+    const trust = join(await tempDir(), "trust.pem");
+
+    await writeFile(trust, "-----BEGIN CERTIFICATE-----\n");
+    await prepareBuildContext(versions, dir, trust);
+
+    expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("-----BEGIN CERTIFICATE-----\n");
+  });
+
+  it("installs the trust bundle for the build only and wires the self-update command", async () => {
+    const dir = await tempDir();
+
+    await prepareBuildContext(versions, dir);
+
+    const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
+
+    expect(dockerfile).toContain("/usr/local/share/ca-certificates/");
+    expect(dockerfile).toContain("update-ca-certificates");
+    expect(dockerfile).toMatch(/^ARG NODE_EXTRA_CA_CERTS=/m);
+    expect(dockerfile).not.toMatch(/^ENV[^\n]*NODE_EXTRA_CA_CERTS/m);
+    expect(dockerfile).not.toContain("PI_OFFLINE");
+    expect(dockerfile).not.toMatch(/auth\.json|models\.json/);
+    expect(dockerfile).toContain("PI_SELF_UPDATE_COMMAND=/usr/local/bin/pi-sandbox-self-update");
+    expect(dockerfile).toContain("is managed by the sandbox and follows the launcher");
   });
 
   it("pins the pi and extensions versions as Dockerfile defaults", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(sandboxConfig(), versions, dir);
+    await prepareBuildContext(versions, dir);
 
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
 
@@ -66,11 +88,7 @@ describe("prepareBuildContext", () => {
     const tarball = join(await tempDir(), "pi-extensions-mz-0.4.0.tgz");
 
     await writeFile(tarball, "tarball bytes");
-    await prepareBuildContext(
-      sandboxConfig(),
-      { pi: "1.5.0", extensions: { kind: "tarball", path: tarball } },
-      dir,
-    );
+    await prepareBuildContext({ pi: "1.5.0", extensions: { kind: "tarball", path: tarball } }, dir);
 
     expect(await readFile(join(dir, "pi-extensions.tgz"), "utf8")).toBe("tarball bytes");
     expect(await readFile(join(dir, "Dockerfile"), "utf8")).toMatch(
@@ -81,7 +99,7 @@ describe("prepareBuildContext", () => {
   it("builds without extensions when the source is none", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(sandboxConfig(), { pi: "1.5.0", extensions: { kind: "none" } }, dir);
+    await prepareBuildContext({ pi: "1.5.0", extensions: { kind: "none" } }, dir);
 
     expect(await readdir(dir)).not.toContain("pi-extensions.tgz");
     expect(await readFile(join(dir, "Dockerfile"), "utf8")).toMatch(/^ARG EXTENSIONS_SOURCE=none$/m);
@@ -90,9 +108,9 @@ describe("prepareBuildContext", () => {
   it("refuses a version that is not a plain version string", async () => {
     const dir = await tempDir();
 
-    await expect(
-      prepareBuildContext(sandboxConfig(), { ...versions, pi: "1.5.0; rm -rf /" }, dir),
-    ).rejects.toThrow(/invalid pi version/);
+    await expect(prepareBuildContext({ ...versions, pi: "1.5.0; rm -rf /" }, dir)).rejects.toThrow(
+      /invalid pi version/,
+    );
   });
 });
 
@@ -127,7 +145,7 @@ describe("ensureBuiltImage", () => {
   it("builds locally when no digest is pinned and records the digest", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
-    const config = sandboxConfig({ gateway });
+    const config = sandboxConfig();
     const result = await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
 
     expect(result).toEqual({
@@ -139,9 +157,8 @@ describe("ensureBuiltImage", () => {
     expect(fake.builds.map((build) => build.tag)).toEqual([config.image.reference]);
     expect(Object.keys(fake.builds[0]?.files ?? {}).sort()).toEqual([
       "Dockerfile",
-      "auth.json",
       "entrypoint.sh",
-      "models.json",
+      "trust.pem",
     ]);
     expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toMatchObject({
       reference: config.image.reference,
@@ -151,14 +168,19 @@ describe("ensureBuiltImage", () => {
     expect((await readdir(stateDir)).sort()).toEqual(["image.json"]);
   });
 
-  it("reuses the recorded build while its inputs are unchanged", async () => {
+  it("reuses the recorded build while its inputs are unchanged, whatever the gateway", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
-    const config = sandboxConfig({ gateway });
+    const config = sandboxConfig();
 
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
 
-    const again = await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+    const again = await ensureBuiltImage({
+      backend: fake.backend,
+      config: sandboxConfig({ gateway }),
+      versions,
+      stateDir,
+    });
 
     expect(again).toEqual({
       reference: config.image.reference,
@@ -169,10 +191,10 @@ describe("ensureBuiltImage", () => {
     expect(fake.builds).toHaveLength(1);
   });
 
-  it("rebuilds when the versions or the rendered files change", async () => {
+  it("rebuilds when the versions change", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
-    const config = sandboxConfig({ gateway });
+    const config = sandboxConfig();
 
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
     await ensureBuiltImage({
@@ -181,14 +203,8 @@ describe("ensureBuiltImage", () => {
       versions: { ...versions, pi: "1.6.0" },
       stateDir,
     });
-    await ensureBuiltImage({
-      backend: fake.backend,
-      config: sandboxConfig({ gateway: { ...gateway, url: "https://other.example.com" } }),
-      versions: { ...versions, pi: "1.6.0" },
-      stateDir,
-    });
 
-    expect(fake.builds).toHaveLength(3);
+    expect(fake.builds).toHaveLength(2);
   });
 
   it("rebuilds when the extensions tarball content changes", async () => {

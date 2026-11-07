@@ -90,6 +90,18 @@ export const ensureContainer = async ({ backend, spec }: EnsureContainerInput) =
   return { id: current.id, created: false };
 };
 
+export const stopIdleContainer = async (backend: Backend, containerId: string) => {
+  const found = (await backend.findContainers(MANAGED)).find((container) => container.id === containerId);
+
+  if (found?.state !== "running") {
+    return { stopped: false };
+  }
+
+  await backend.stopContainer(found.id);
+
+  return { stopped: true };
+};
+
 export const findCurrentContainer = async (
   backend: Backend,
   workspace: Workspace,

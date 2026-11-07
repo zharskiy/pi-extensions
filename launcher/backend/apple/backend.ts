@@ -221,9 +221,10 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     return { id: target, digest: pulled };
   };
 
-  const buildImage = async (contextDir: string, tag: string) => {
+  const buildImage = async (contextDir: string, tag: string, buildArgs: Record<string, string> = {}) => {
     await checked("build", [
       ...APPLE_COMMANDS.build,
+      ...pairs(APPLE_FLAGS.buildArg, keyValues(buildArgs)),
       APPLE_FLAGS.tag,
       tag,
       APPLE_FLAGS.file,

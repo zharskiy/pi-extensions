@@ -82,7 +82,14 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     }
   };
 
-  const buildImage = async (contextDir: string, tag: string) => {
+  const buildQuery = (tag: string, buildArgs: Record<string, string>) => ({
+    t: tag,
+    rm: true,
+    forcerm: true,
+    ...(Object.keys(buildArgs).length === 0 ? {} : { buildargs: JSON.stringify(buildArgs) }),
+  });
+
+  const buildImage = async (contextDir: string, tag: string, buildArgs: Record<string, string> = {}) => {
     const workDir = await mkdtemp(join(tmpdir(), "pi-sandbox-build-"));
     const tarPath = join(workDir, "context.tar");
 
@@ -92,7 +99,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
       await client.progress({
         method: "POST",
         path: "/build",
-        query: { t: tag, rm: true, forcerm: true },
+        query: buildQuery(tag, buildArgs),
         stream: createReadStream(tarPath),
         contentType: "application/x-tar",
       });

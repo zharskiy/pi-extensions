@@ -143,7 +143,11 @@ describe("buildContainerSpec", () => {
   it("asks for copies of the git files in the spec's copies dir when the backend cannot mount single files", () => {
     const gitOverlay = { dirs: [], files: ["/work/repo/.git/worktrees/wt/config.worktree"] };
     const spec = buildContainerSpec(
-      specInput({ gitOverlay, capabilities: { ...capabilities, singleFileMount: false } }),
+      specInput({
+        gitOverlay,
+        proxy: { ...proxy, caPemPath: undefined },
+        capabilities: { ...capabilities, singleFileMount: false },
+      }),
     );
 
     expect(mountAt(spec.mounts, "/work/repo/.git/config")).toBeUndefined();
@@ -231,6 +235,94 @@ describe("buildContainerSpec", () => {
     });
   });
 
+  it("mounts the render dir read-only at the guest render path, and only when given", () => {
+    expect(mountAt(buildContainerSpec(specInput()).mounts, "/opt/pi-sandbox/render")).toBeUndefined();
+    expect(
+      mountAt(
+        buildContainerSpec(specInput({ renderDir: "/state/render/abc" })).mounts,
+        "/opt/pi-sandbox/render",
+      ),
+    ).toEqual({
+      source: "/state/render/abc",
+      target: "/opt/pi-sandbox/render",
+      readOnly: true,
+      kind: "bind",
+    });
+  });
+
+  it("mounts the trust bundle in place of the proxy CA and carries its hash in the env", () => {
+    const trust = { pemPath: "/state/ca/trust.pem", hash: "trust-1" };
+    const spec = buildContainerSpec(specInput({ trust }));
+
+    expect(spec.mounts.filter((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toEqual([
+      { source: "/state/ca/trust.pem", target: "/etc/pi-sandbox/ca.pem", readOnly: true, kind: "bind" },
+    ]);
+    expect(spec.env).toMatchObject({
+      NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",
+      PI_SANDBOX_TRUST_HASH: "trust-1",
+    });
+  });
+
+  it("mounts the trust bundle even without a proxy CA", () => {
+    const spec = buildContainerSpec(
+      specInput({
+        proxy: { ...proxy, caPemPath: undefined },
+        trust: { pemPath: "/state/ca/trust.pem", hash: "h" },
+      }),
+    );
+
+    expect(mountAt(spec.mounts, "/etc/pi-sandbox/ca.pem")?.source).toBe("/state/ca/trust.pem");
+  });
+
+  it("recreates the container when the trust content changes", () => {
+    const hashOf = (hash: string) =>
+      buildContainerSpec(specInput({ trust: { pemPath: "/state/ca/trust.pem", hash } })).labels[
+        "pi-sandbox.spec-hash"
+      ];
+
+    expect(hashOf("one")).toBe(hashOf("one"));
+    expect(hashOf("one")).not.toBe(hashOf("two"));
+  });
+
+  it("asks for a copy of the trust bundle when the backend cannot mount single files", () => {
+    const spec = buildContainerSpec(
+      specInput({
+        trust: { pemPath: "/state/ca/trust.pem", hash: "h" },
+        capabilities: { ...capabilities, singleFileMount: false },
+      }),
+    );
+
+    expect(mountAt(spec.mounts, "/etc/pi-sandbox/ca.pem")).toBeUndefined();
+    expect(spec.requiredCopies).toContainEqual({
+      source: "/state/ca/trust.pem",
+      target: "/etc/pi-sandbox/ca.pem",
+    });
+  });
+
+  it("puts the per-repo proxy token in the proxy URL instead of the instance token", () => {
+    const spec = buildContainerSpec(specInput({ repoProxyToken: "repo-token-1" }));
+
+    expect(spec.env.HTTPS_PROXY).toBe("http://pi-sandbox:repo-token-1@10.89.0.2:3128");
+    expect(spec.env.HTTP_PROXY).toBe("http://pi-sandbox:repo-token-1@10.89.0.2:3128");
+    expect(spec.env.ALL_PROXY).toBe("http://pi-sandbox:repo-token-1@10.89.0.2:3128");
+    expect(JSON.stringify(spec)).not.toContain(":token-1@");
+  });
+
+  it("marks the sandbox and never sets pi offline", () => {
+    const spec = buildContainerSpec(specInput());
+
+    expect(spec.env.PI_SANDBOX).toBe("1");
+    expect(spec.env.PI_OFFLINE).toBeUndefined();
+  });
+
+  it("keeps the launch id out of the spec and its hash", () => {
+    const first = buildContainerSpec(specInput({ launchId: "aaaaaaaaaaaaaaaa" }));
+    const second = buildContainerSpec(specInput({ launchId: "bbbbbbbbbbbbbbbb" }));
+
+    expect(second).toEqual(first);
+    expect(JSON.stringify(first)).not.toContain("aaaaaaaaaaaaaaaa");
+  });
+
   it("runs with a read-only root, tmpfs for /tmp and home, and an init process", () => {
     const spec = buildContainerSpec(specInput());
 
@@ -262,7 +354,7 @@ describe("buildContainerSpec", () => {
       SSL_CERT_FILE: "/tmp/pi-sandbox/ca-bundle.pem",
       REQUESTS_CA_BUNDLE: "/tmp/pi-sandbox/ca-bundle.pem",
       GIT_SSL_CAINFO: "/tmp/pi-sandbox/ca-bundle.pem",
-      PI_OFFLINE: "1",
+      PI_SANDBOX: "1",
       PI_SKIP_VERSION_CHECK: "1",
       PI_TELEMETRY: "0",
       PI_CLIPBOARD_OSC52: "1",

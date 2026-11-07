@@ -197,6 +197,19 @@ describe("apple adapter", () => {
     );
   });
 
+  it("passes build args to the build as --build-arg pairs", async () => {
+    const cli = createFakeContainerCli();
+    const backend = createAppleBackend({ runner: cli.runner });
+
+    await backend.buildImage("/ctx", "pi-sandbox:dev", { HTTPS_PROXY: "http://proxy.example.com:8080" });
+
+    expect(parse(lastCall(cli.calls, "build").slice(1)).pairs).toEqual([
+      "--build-arg HTTPS_PROXY=http://proxy.example.com:8080",
+      "--tag pi-sandbox:dev",
+      "--file /ctx/Dockerfile",
+    ]);
+  });
+
   it("resolves a local image and reports an absent one as undefined", async () => {
     const { backend } = await readyCli();
 

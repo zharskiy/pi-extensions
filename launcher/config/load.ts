@@ -8,8 +8,9 @@ import {
 import { defaultConfig } from "./defaults.ts";
 import { getPath } from "./dotted.ts";
 import { mergeLayers, resolveProfileName } from "./merge.ts";
+import { httpsFetchText, loadOrgLayer } from "./org-source.ts";
 import { loadProfile } from "./profiles.ts";
-import type { EffectiveConfig, LayerConfig, LayerName } from "./types.ts";
+import type { EffectiveConfig, FetchText, LayerConfig, LayerName, OrgRef } from "./types.ts";
 import { validateLayer } from "./validate.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
@@ -17,6 +18,8 @@ type Layers = Partial<Record<LayerName, LayerConfig>>;
 interface LoadOptions {
   repoRoot: string;
   env?: NodeJS.ProcessEnv;
+  fetchText?: FetchText;
+  now?: () => number;
 }
 
 export const layerFile = (layer: LayerName, repoRoot: string, env?: NodeJS.ProcessEnv) => {
@@ -73,12 +76,24 @@ export const resolveConfig = async (layers: Layers): Promise<EffectiveConfig> =>
   return mergeLayers({ defaults: await defaultConfig(), layers, profile });
 };
 
-export const loadEffectiveConfig = async ({ repoRoot, env }: LoadOptions) => {
+const loadOrg = (ref: OrgRef | undefined, options: LoadOptions) =>
+  ref === undefined
+    ? { layer: undefined, notices: [] }
+    : loadOrgLayer({
+        ref,
+        stateDir: launcherPaths({ env: options.env }).stateDir,
+        fetchText: options.fetchText ?? httpsFetchText,
+        now: options.now ?? Date.now,
+      });
+
+export const loadEffectiveConfig = async (options: LoadOptions) => {
   const [policy, user, project] = await Promise.all(
     (["policy", "user", "project"] as const).map((layer) =>
-      readLayer(layer, layerFile(layer, repoRoot, env)),
+      readLayer(layer, layerFile(layer, options.repoRoot, options.env)),
     ),
   );
+  const org = await loadOrg(policy?.org ?? user?.org, options);
+  const effective = await resolveConfig({ policy, org: org.layer, user, project });
 
-  return resolveConfig({ policy, user, project });
+  return { ...effective, notices: org.notices };
 };

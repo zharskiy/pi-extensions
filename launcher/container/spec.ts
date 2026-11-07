@@ -7,7 +7,7 @@ import type {
   NetworkRef,
 } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { isWithin, stableHash } from "../shared/index.ts";
+import { GUEST_PATHS, isWithin, stableHash } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
 import type { GitOverlay } from "./git-overlay.ts";
 import { agentVolumeName, cacheVolumeName, containerName, copiesDir, LABELS, repoHash } from "./names.ts";
@@ -62,10 +62,6 @@ export interface RepoVolumesInput {
 }
 
 const GUEST_HOME = "/home/pi";
-
-const GUEST_AGENT_DIR = "/home/pi/.pi/agent";
-
-const GUEST_CA_PATH = "/etc/pi-sandbox/ca.pem";
 
 const GUEST_CA_BUNDLE = "/tmp/pi-sandbox/ca-bundle.pem";
 
@@ -137,34 +133,59 @@ export const forwardedEnv = (names: string[], hostEnv: Record<string, string | u
     }),
   );
 
-const proxyEnv = (proxy: SpecProxy | undefined) => {
-  if (proxy === undefined) {
+const withRepoToken = (url: string, token: string | undefined) => {
+  if (token === undefined) {
+    return url;
+  }
+
+  const parsed = new URL(url);
+
+  return `${parsed.protocol}//${parsed.username}:${token}@${parsed.host}`;
+};
+
+const proxyEnv = (input: ContainerSpecInput): Record<string, string> => {
+  if (input.proxy === undefined) {
     return {};
   }
 
-  return {
-    HTTPS_PROXY: proxy.url,
-    HTTP_PROXY: proxy.url,
-    ALL_PROXY: proxy.url,
-    NO_PROXY: "",
-    NODE_USE_ENV_PROXY: "1",
-    ...(proxy.caPemPath === undefined ? {} : { NODE_EXTRA_CA_CERTS: GUEST_CA_PATH }),
-  };
+  const url = withRepoToken(input.proxy.url, input.repoProxyToken);
+
+  return { HTTPS_PROXY: url, HTTP_PROXY: url, ALL_PROXY: url, NO_PROXY: "", NODE_USE_ENV_PROXY: "1" };
 };
 
+const trustSource = (input: ContainerSpecInput) => input.trust?.pemPath ?? input.proxy?.caPemPath;
+
+const trustEnv = (input: ContainerSpecInput): Record<string, string> => ({
+  ...(trustSource(input) === undefined ? {} : { NODE_EXTRA_CA_CERTS: GUEST_PATHS.trustPem }),
+  ...(input.trust === undefined ? {} : { PI_SANDBOX_TRUST_HASH: input.trust.hash }),
+});
+
 const sandboxEnv = (input: ContainerSpecInput) => ({
-  ...proxyEnv(input.proxy),
+  ...proxyEnv(input),
+  ...trustEnv(input),
   SSL_CERT_FILE: GUEST_CA_BUNDLE,
   REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
   GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
-  PI_OFFLINE: "1",
+  PI_SANDBOX: "1",
   PI_SKIP_VERSION_CHECK: "1",
   PI_TELEMETRY: "0",
   PI_CLIPBOARD_OSC52: "1",
 });
 
-const caMounts = (proxy: SpecProxy | undefined) =>
-  proxy?.caPemPath === undefined ? [] : [bind(proxy.caPemPath, GUEST_CA_PATH, true)];
+const trustMounts = (input: ContainerSpecInput) => {
+  const source = trustSource(input);
+
+  if (source === undefined) {
+    return { mounts: [], copies: [] };
+  }
+
+  return input.capabilities.singleFileMount
+    ? { mounts: [bind(source, GUEST_PATHS.trustPem, true)], copies: [] }
+    : { mounts: [], copies: [{ source, target: GUEST_PATHS.trustPem }] };
+};
+
+const renderMounts = (renderDir: string | undefined) =>
+  renderDir === undefined ? [] : [bind(renderDir, GUEST_PATHS.renderDir, true)];
 
 const sshAgentOf = (input: ContainerSpecInput) =>
   input.config.ssh.agent && input.capabilities.sshAgent ? { guestSocket: GUEST_SSH_AUTH_SOCK } : undefined;
@@ -188,6 +209,7 @@ const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
   const { workspace, config } = input;
   const overlay = readOnlyOverlay(input);
+  const trust = trustMounts(input);
   const extraReadOnly = config.mounts.extraReadOnly.map((path) => {
     const absolute = resolvedPath(workspace.repoRoot, path);
 
@@ -206,9 +228,10 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
       ...writableRoots(workspace).map((path) => bind(path, path, false)),
       ...overlay.mounts,
       ...extraReadOnly,
-      volume(agentVolume, GUEST_AGENT_DIR),
+      volume(agentVolume, GUEST_PATHS.agentDir),
       ...caches,
-      ...caMounts(input.proxy),
+      ...renderMounts(input.renderDir),
+      ...trust.mounts,
     ],
     network: input.proxy?.network ?? NO_NETWORK,
     env: sandboxEnv(input),
@@ -219,7 +242,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     init: true,
     resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
     sshAgent: sshAgentOf(input),
-    requiredCopies: overlay.copies,
+    requiredCopies: [...overlay.copies, ...trust.copies],
     copiesDir: copiesDir(input.stateDir, workspace.repoRoot),
   });
 };

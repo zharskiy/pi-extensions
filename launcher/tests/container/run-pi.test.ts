@@ -89,6 +89,27 @@ describe("runPi", () => {
     expect(fake.stops).toEqual([]);
   });
 
+  it("passes the exec env through and adds the launch id to it only", async () => {
+    const fake = createFakeBackend({ exec: () => 0 });
+    const { terminal } = fakeTerminal(false);
+
+    await runPi({
+      backend: fake.backend,
+      containerId: "container-9",
+      piArgs: [],
+      env: { TERM: "xterm-256color", PI_SANDBOX_DEBUG: "1" },
+      launchId: "0123456789abcdef",
+      workspace,
+      terminal,
+    });
+
+    expect(fake.execs[0]?.spec.env).toEqual({
+      TERM: "xterm-256color",
+      PI_SANDBOX_DEBUG: "1",
+      PI_SANDBOX_LAUNCH_ID: "0123456789abcdef",
+    });
+  });
+
   it("gives every launch its own pid file", async () => {
     const fake = createFakeBackend();
     const { terminal } = fakeTerminal(false);

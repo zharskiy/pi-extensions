@@ -2,8 +2,8 @@ import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "nod
 import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { link, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { get } from "node:http";
-import type { SandboxConfig } from "../config/index.ts";
+import { get, request as httpRequest } from "node:http";
+import type { EgressCap, SandboxConfig } from "../config/index.ts";
 import {
   type CommandRunner,
   createProcessRunner,
@@ -13,8 +13,8 @@ import {
   readJsonFile,
   writeJsonFile,
 } from "../shared/index.ts";
+import { controlAuthorization } from "./auth.ts";
 import { type DaemonConfig, type ProxyInstance, proxyFiles, proxyRoot } from "./files.ts";
-import { proxyAuthorization } from "./server.ts";
 import { proxyPolicyHash } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
@@ -41,6 +41,8 @@ export interface EnsureProxyOptions {
   runner?: CommandRunner;
   port?: number;
   timeoutMs?: number;
+  egressCap?: EgressCap;
+  piCommand?: string[];
 }
 
 interface Health {
@@ -77,7 +79,7 @@ const readHealth = (instance: ProxyInstance) =>
         port: instance.port,
         path: "/healthz",
         timeout: HEALTH_TIMEOUT_MS,
-        headers: { "proxy-authorization": proxyAuthorization(instance.token) },
+        headers: { "proxy-authorization": controlAuthorization(instance.token) },
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -436,6 +438,8 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
   const daemonConfig: DaemonConfig<SandboxConfig> = {
     token: await instanceToken(files),
     config: options.config,
+    egressCap: options.egressCap ?? {},
+    piCommand: options.piCommand ?? [],
   };
 
   await writeJsonFile(files.config, daemonConfig, { mode: PRIVATE_MODE });
@@ -453,12 +457,10 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
 };
 
 export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<ProxyInstance> => {
-  const hash = proxyPolicyHash(options.config);
+  const hash = proxyPolicyHash(options.config, options.egressCap);
   const files = proxyFiles(options.stateDir, hash);
 
-  if (options.config.gateway !== undefined) {
-    await openLauncherCa({ stateDir: options.stateDir, runner: options.runner ?? createProcessRunner() });
-  }
+  await openLauncherCa({ stateDir: options.stateDir, runner: options.runner ?? createProcessRunner() });
 
   const current = await healthyRecord(files);
 
@@ -468,3 +470,49 @@ export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<P
 
   return withLock(files, options.now ?? Date.now, () => replaceInstance(options, files, hash));
 };
+
+const CONTROL_TIMEOUT_MS = 2000;
+
+const parseReply = (text: string): ControlReply => {
+  try {
+    const reply = JSON.parse(text) as ControlReply;
+
+    return typeof reply === "object" && reply !== null && typeof reply.ok === "boolean"
+      ? reply
+      : { ok: false, error: "the proxy sent an unreadable reply" };
+  } catch {
+    return { ok: false, error: "the proxy sent an unreadable reply" };
+  }
+};
+
+export const sendProxyControl = (instance: ProxyInstance, message: ControlMessage) =>
+  new Promise<ControlReply>((resolve) => {
+    const body = JSON.stringify(message);
+    const request = httpRequest(
+      {
+        host: LISTEN_HOST,
+        port: instance.port,
+        method: "POST",
+        path: "/control",
+        timeout: CONTROL_TIMEOUT_MS,
+        headers: {
+          "proxy-authorization": controlAuthorization(instance.token),
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+        response.on("end", () => resolve(parseReply(Buffer.concat(chunks).toString("utf8"))));
+      },
+    );
+
+    request.on("timeout", () => request.destroy());
+
+    request.on("error", (error) => resolve({ ok: false, error: `cannot reach the proxy: ${error.message}` }));
+
+    request.end(body);
+  });

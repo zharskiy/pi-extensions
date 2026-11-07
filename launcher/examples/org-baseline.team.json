@@ -1,0 +1,28 @@
+{
+  "fallback": "refuse",
+  "egress": {
+    "allow": [
+      "registry.npmjs.org",
+      "github.com",
+      "pypi.org",
+      "files.pythonhosted.org",
+      "gateway.example.internal"
+    ],
+    "privateHosts": ["gateway.example.internal"],
+    "grants": { "enabled": true, "maxHours": 24, "permanent": false }
+  },
+  "credentials": {
+    "rules": [
+      {
+        "id": "team-gateway",
+        "host": "gateway.example.internal",
+        "placeholder": "pi-sandbox-team-gateway",
+        "header": "authorization",
+        "template": "Bearer {secret}",
+        "secret": { "env": "TEAM_GATEWAY_TOKEN" }
+      }
+    ]
+  },
+  "tls": { "extraCa": [{ "file": "/etc/ssl/certs/example-team-root-ca.pem" }] },
+  "image": { "packages": ["jq", "ripgrep"] }
+}
